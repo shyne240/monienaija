@@ -1,7 +1,7 @@
 {
   "name": "monienaija",
   "version": "0.1.0",
-  "description": "MonieNaija wallet, payments, expanded products, resilience, and launch readiness backend",
+  "description": "MonieNaija wallet, payments, expanded products, resilience, and production maturity backend",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

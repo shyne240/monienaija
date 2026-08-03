@@ -14,6 +14,7 @@ import { HealthModule } from './health/health.module';
 import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { LimitModule } from './limit/limit.module';
+import { MaturityModule } from './maturity/maturity.module';
 import { OperationsModule } from './operations/operations.module';
 import { PaymentModule } from './payment/payment.module';
 import { ProductionModule } from './production/production.module';
@@ -57,6 +58,7 @@ import { WalletModule } from './wallet/wallet.module';
     FeeModule,
     LedgerModule,
     LimitModule,
+    MaturityModule,
     OperationsModule,
     PaymentModule,
     ProductionModule,

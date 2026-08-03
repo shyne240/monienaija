@@ -200,6 +200,20 @@ M8 adds production-readiness controls without adding financial products or exter
 
 See [docs/M8-PRODUCTION-LAUNCH.md](docs/M8-PRODUCTION-LAUNCH.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md) for launch evidence and operational procedures.
 
+## M9 production maturity
+
+M9 adds internal operational dashboards, daily and domain reports, dry-run/execution retention maintenance, immutable governance metadata, and a final acceptance endpoint. These services do not introduce new financial products or modify wallet balances.
+
+Internal routes include:
+
+- `/api/v1/internal/health-dashboard`
+- `/api/v1/internal/reports/daily`, `/ledger`, `/wallets`, `/transfers`, `/deposits`, `/withdrawals`, `/reconciliation`, `/outbox`, `/audit`
+- `/api/v1/internal/maintenance/preview`
+- `/api/v1/internal/maintenance/execute`
+- `/api/v1/internal/acceptance`
+
+See [docs/M9-PRODUCTION-MATURITY.md](docs/M9-PRODUCTION-MATURITY.md), [docs/OPERATIONS-GUIDE.md](docs/OPERATIONS-GUIDE.md), [docs/RETENTION-POLICY.md](docs/RETENTION-POLICY.md), [docs/MAINTENANCE.md](docs/MAINTENANCE.md), and [docs/FINAL-ACCEPTANCE.md](docs/FINAL-ACCEPTANCE.md).
+
 ## Health endpoints
 
 | Endpoint                   | Meaning                                                             | Expected response                          |

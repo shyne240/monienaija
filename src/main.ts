@@ -14,6 +14,7 @@ import {
 } from './production/request-context';
 import { ProductionReadinessService } from './production/production-readiness.service';
 import { RequestTrackerService } from './production/request-tracker.service';
+import { GovernanceService } from './maturity/governance.service';
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -23,6 +24,7 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(Logger);
   const requestTracker = app.get(RequestTrackerService);
   const readinessService = app.get(ProductionReadinessService);
+  const governanceService = app.get(GovernanceService);
   const http = app.getHttpAdapter().getInstance();
 
   app.useLogger(logger);
@@ -87,6 +89,7 @@ async function bootstrap(): Promise<void> {
   try {
     await app.init();
     await readinessService.verifyStartup();
+    await governanceService.recordStartup();
     await app.listen({ port: environment.PORT, host: '0.0.0.0' });
   } catch (error) {
     await app.close();

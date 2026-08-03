@@ -12,11 +12,17 @@ describe('validateEnvironment', () => {
     expect(validateEnvironment(validEnvironment)).toMatchObject({
       NODE_ENV: 'development',
       APP_VERSION: '0.1.0',
+      API_VERSION: 'v1',
       PORT: 3000,
       DB_PORT: 5432,
       DB_SSL: false,
       IDEMPOTENCY_RETENTION_SECONDS: 86400,
       OUTBOX_RETRY_DELAY_SECONDS: 60,
+      METRICS_RETENTION_SECONDS: 2592000,
+      AUDIT_RETENTION_SECONDS: 31536000,
+      OUTBOX_RETENTION_SECONDS: 2592000,
+      BUILD_TIMESTAMP: 'unknown',
+      SHUTDOWN_DRAIN_TIMEOUT_SECONDS: 30,
     });
   });
 

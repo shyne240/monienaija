@@ -16,6 +16,13 @@ export class ProductionConfigurationService {
       idempotencyRetentionSeconds:
         this.configService.get<number>('IDEMPOTENCY_RETENTION_SECONDS') ?? 86_400,
       outboxRetryDelaySeconds: this.configService.get<number>('OUTBOX_RETRY_DELAY_SECONDS') ?? 60,
+      metricsRetentionSeconds:
+        this.configService.get<number>('METRICS_RETENTION_SECONDS') ?? 2_592_000,
+      auditRetentionSeconds:
+        this.configService.get<number>('AUDIT_RETENTION_SECONDS') ?? 31_536_000,
+      outboxRetentionSeconds:
+        this.configService.get<number>('OUTBOX_RETENTION_SECONDS') ?? 2_592_000,
+      buildTimestamp: this.configService.get<string>('BUILD_TIMESTAMP') ?? 'unknown',
       shutdownDrainTimeoutSeconds:
         this.configService.get<number>('SHUTDOWN_DRAIN_TIMEOUT_SECONDS') ?? 30,
     };
