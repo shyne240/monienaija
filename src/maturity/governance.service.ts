@@ -47,7 +47,11 @@ export class GovernanceService {
   }
 
   async latest(): Promise<GovernanceMetadataView | null> {
-    const metadata = await this.repository.findOne({ order: { startupTimestamp: 'DESC' } });
+    const records = await this.repository.find({
+      order: { startupTimestamp: 'DESC' },
+      take: 1,
+    });
+    const metadata = records[0];
     return metadata ? this.toView(metadata) : null;
   }
 
