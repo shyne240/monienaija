@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -18,7 +20,11 @@ export class BankService {
   async create(command: CreateBankCommand): Promise<BankView> {
     const normalized = this.normalizeCreate(command);
     try {
-      return this.toView(await this.bankRepository.save(this.bankRepository.create(normalized)));
+      return this.toView(
+        await this.bankRepository.save(
+          this.bankRepository.create({ id: randomUUID(), ...normalized }),
+        ),
+      );
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('A bank with this code already exists');

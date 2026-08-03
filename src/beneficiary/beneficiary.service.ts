@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -26,7 +28,7 @@ export class BeneficiaryService {
     const normalized = this.normalizeCreate(command);
     try {
       const beneficiary = await this.beneficiaryRepository.save(
-        this.beneficiaryRepository.create(normalized),
+        this.beneficiaryRepository.create({ id: randomUUID(), ...normalized }),
       );
       return this.toView(beneficiary);
     } catch (error) {

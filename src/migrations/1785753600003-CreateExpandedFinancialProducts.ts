@@ -20,7 +20,7 @@ export class CreateExpandedFinancialProducts1785753600003 implements MigrationIn
 
     await queryRunner.query(`
       CREATE TABLE virtual_accounts (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         wallet_id UUID NOT NULL,
         bank_code VARCHAR(20) NOT NULL,
         account_number VARCHAR(32) NOT NULL,
@@ -50,7 +50,7 @@ export class CreateExpandedFinancialProducts1785753600003 implements MigrationIn
 
     await queryRunner.query(`
       CREATE TABLE beneficiaries (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         customer_id VARCHAR(160) NOT NULL,
         nickname VARCHAR(100) NOT NULL,
         bank_code VARCHAR(20) NOT NULL,
@@ -72,7 +72,7 @@ export class CreateExpandedFinancialProducts1785753600003 implements MigrationIn
 
     await queryRunner.query(`
       CREATE TABLE banks (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         bank_code VARCHAR(20) NOT NULL,
         bank_name VARCHAR(160) NOT NULL,
         short_name VARCHAR(80) NOT NULL,
@@ -89,7 +89,7 @@ export class CreateExpandedFinancialProducts1785753600003 implements MigrationIn
 
     await queryRunner.query(`
       CREATE TABLE payment_quotes (
-        id UUID PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         quote_reference VARCHAR(64) NOT NULL,
         payment_type VARCHAR(20) NOT NULL,
         amount_minor BIGINT NOT NULL,
