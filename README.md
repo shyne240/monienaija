@@ -1,16 +1,17 @@
-# MonieNaija Backend Foundation
+# MonieNaija Wallet and Ledger Backend
 
-Production-oriented backend foundation for the future MonieNaija mobile-money platform. This milestone intentionally contains **only infrastructure**: application bootstrap, PostgreSQL connectivity, health checks, configuration validation, logging, error handling, testing, and delivery tooling. It contains no customer, authentication, wallet, transfer, ledger, or financial-product functionality.
+Production-oriented NestJS backend for MonieNaija. The verified backend foundation is now extended with the **customer wallet account** and **double-entry ledger** domains only. Identity, authentication, KYC, payment rails, transfers, fees, limits, settlement, and other financial products remain outside this milestone.
 
 ## Architecture
 
 - **NestJS 11** with the **Fastify** HTTP adapter and strict TypeScript.
-- **PostgreSQL** connectivity through TypeORM, with schema synchronisation disabled and migrations configured.
-- **Configuration** is read from `.env` and validated at startup. Missing/invalid required database configuration prevents the process from starting.
-- **Pino** provides structured request logs. Authorization, cookie, and API-key headers are redacted.
-- `/api/v1` is the global API prefix. A global validation pipe and a structured global exception filter are installed at bootstrap.
-- Liveness is process-only; readiness verifies the PostgreSQL connection with `SELECT 1`.
-- Nest shutdown hooks close application resources cleanly on termination signals.
+- **PostgreSQL** through TypeORM, with schema synchronisation disabled and migrations required for every schema change.
+- **Wallet accounts** hold an opaque customer reference, ISO currency, lifecycle status, and a one-to-one customer-funds liability ledger account. Wallet balances are calculated from posted ledger lines; there is no direct balance mutation.
+- **Double-entry ledger** consists of a chart of accounts, immutable posted journals, and immutable debit/credit lines. Each journal must contain at least two positive lines and equal debit and credit totals in one currency and accounting unit.
+- **Integer minor units** are used for money. API monetary values are strings so PostgreSQL `BIGINT` values cannot be rounded by JSON or JavaScript numbers.
+- **Idempotent commands** require an idempotency key. Journal requests are fingerprinted so reusing a key with a different command is rejected.
+- **Database controls** enforce positive line amounts, valid currencies and directions, foreign-key ownership, journal balance at transaction commit, and immutability of posted journals and lines.
+- `/api/v1` is the global API prefix. The existing validation pipe, structured error contract, request logging, and health endpoints remain installed.
 
 ## Prerequisites
 
@@ -39,7 +40,7 @@ Production-oriented backend foundation for the future MonieNaija mobile-money pl
    docker compose ps
    ```
 
-4. Run pending migrations (the initial foundation has no business schema migrations):
+4. Run the wallet and ledger migration:
 
    ```bash
    npm run migration:run
@@ -63,6 +64,66 @@ Use `.env.example` as the complete local reference. These database values are re
 - `DB_PASSWORD`
 
 `DB_PORT`, `PORT`, `NODE_ENV`, log level, and SSL controls have validated defaults. `DB_SSL` and `DB_SSL_REJECT_UNAUTHORIZED` must be the literal strings `true` or `false`. Never commit a real `.env` file or production credentials.
+
+## Wallet and ledger API
+
+All routes below are prefixed with `/api/v1`. These routes are the domain contract for this milestone. Authentication and privileged-operation authorisation are intentionally not implemented until the identity/access domain exists; the ledger posting and chart-of-accounts routes must therefore be treated as internal development operations, not a public production surface.
+
+### Create a customer wallet
+
+`POST /wallets` requires an `Idempotency-Key` header (or `idempotencyKey` in the body):
+
+```json
+{
+  "customerId": "customer-reference",
+  "currency": "NGN"
+}
+```
+
+The operation atomically creates an active customer wallet and its customer-funds liability account. A customer has at most one wallet per currency. The initial `balanceMinor` is `"0"`.
+
+`GET /wallets/:walletId` returns the wallet and its ledger-derived balance. `GET /wallets?customerId=...` lists a customer's wallets. `GET /wallets/:walletId/balance` is an equivalent balance read for channel code that needs an explicit balance route.
+
+### Create ledger accounts
+
+`POST /ledger/accounts` creates a non-wallet chart-of-accounts account. A normal balance is derived from the account type and cannot be overridden inconsistently:
+
+```json
+{
+  "code": "CASH-NGN",
+  "name": "NGN settlement cash",
+  "accountType": "ASSET",
+  "currency": "NGN",
+  "allowNegativeBalance": false
+}
+```
+
+`GET /ledger/accounts`, `GET /ledger/accounts/:accountId`, and `GET /ledger/accounts/:accountId/balance` expose ledger-owned account reads.
+
+### Post a balanced journal
+
+`POST /ledger/journals` requires an `Idempotency-Key` header (or `idempotencyKey` in the body):
+
+```json
+{
+  "currency": "NGN",
+  "reference": "controlled-funding-operation",
+  "lines": [
+    {
+      "accountId": "00000000-0000-4000-8000-000000000001",
+      "direction": "DEBIT",
+      "amountMinor": "125000"
+    },
+    {
+      "accountId": "00000000-0000-4000-8000-000000000002",
+      "direction": "CREDIT",
+      "amountMinor": "125000"
+    }
+  ]
+}
+```
+
+Every line amount is a positive integer in minor units (for NGN, kobo). The ledger validates account existence, active status, currency and accounting-unit compatibility, exact debit/credit equality, and non-negative customer-funds accounts. `GET /ledger/journals/:journalId` returns the immutable journal and lines. `POST /ledger/journals/:journalId/reversal` creates a compensating journal linked to the original; it never edits the original record.
 
 ## Health endpoints
 
@@ -90,18 +151,14 @@ npm run migration:run
 npm run migration:revert
 ```
 
-Review generated migrations, test upgrade and rollback behaviour on representative data, and never alter a migration that has been applied to a shared environment.
+The wallet/ledger migration is intentionally reversible. Review generated migrations, test upgrade and rollback behaviour on representative synthetic data, and never alter a migration that has been applied to a shared environment.
 
-## Manual verification
+## Operational and scope notes
 
-With PostgreSQL and the application running:
-
-```bash
-curl -i http://localhost:3000/api/v1/health
-curl -i http://localhost:3000/api/v1/health/ready
-```
-
-Both commands should return HTTP `200` and a JSON body with `status: "ok"`. To verify readiness handling, stop PostgreSQL (`docker compose stop postgres`) and repeat the readiness request; it should return HTTP `503`. Start PostgreSQL again with `docker compose start postgres`.
+- Posted journal headers and lines are immutable at both the application and database layers. Corrections use linked compensating journals.
+- Wallet balances are derived from the ledger source of truth; no controller or service directly updates a balance column.
+- `customerId` is an opaque reference. Customer identity, authentication, KYC, limits, fees, reconciliation operations, and payment orchestration are not part of this change.
+- Do not use real customer data or credentials in local or automated tests. Production release still requires the governance, finance, risk, security, reconciliation, and operational evidence described by the repository documentation.
 
 ## Container image
 

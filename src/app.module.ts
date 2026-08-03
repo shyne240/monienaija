@@ -6,6 +6,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './health/health.module';
+import { LedgerModule } from './ledger/ledger.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { HealthModule } from './health/health.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    LedgerModule,
+    WalletModule,
   ],
 })
 export class AppModule {}

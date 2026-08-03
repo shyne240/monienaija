@@ -18,6 +18,7 @@ export function createDatabaseOptions(environment: Environment): DataSourceOptio
     synchronize: false,
     migrationsRun: false,
     migrationsTableName: 'typeorm_migrations',
+    entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
     migrations: [`${__dirname}/../migrations/*{.ts,.js}`],
   };
 }
