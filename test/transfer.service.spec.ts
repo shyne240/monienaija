@@ -167,22 +167,49 @@ class InMemoryManager {
   }
 }
 
+interface InMemorySnapshot {
+  transfers: Map<string, Transfer>;
+  journals: Map<string, LedgerJournal>;
+  balances: Map<string, bigint>;
+}
+
 class InMemoryDataSource {
   readonly isolationLevels: string[] = [];
+  timeoutAfterCommitOnce = false;
 
-  constructor(private readonly manager: InMemoryManager) {}
+  constructor(
+    private readonly manager: InMemoryManager,
+    private readonly snapshotState: () => InMemorySnapshot,
+    private readonly restoreState: (snapshot: InMemorySnapshot) => void,
+  ) {}
 
   async transaction<T>(
     isolationLevel: string,
     callback: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     this.isolationLevels.push(isolationLevel);
-    return callback(this.manager as unknown as EntityManager);
+    const snapshot = this.snapshotState();
+    let committed = false;
+    try {
+      const result = await callback(this.manager as unknown as EntityManager);
+      committed = true;
+      if (this.timeoutAfterCommitOnce) {
+        this.timeoutAfterCommitOnce = false;
+        throw new Error('simulated client timeout after commit');
+      }
+      return result;
+    } catch (error) {
+      if (!committed) {
+        this.restoreState(snapshot);
+      }
+      throw error;
+    }
   }
 }
 
 class InMemoryLedgerService {
   readonly calls: PostJournalCommand[] = [];
+  failAfterMutation = false;
 
   constructor(
     readonly balances: Map<string, bigint>,
@@ -212,6 +239,9 @@ class InMemoryLedgerService {
     );
     const journalId = '00000000-0000-4000-8000-000000000099';
     this.journalRepository.add(journalId, command.reference);
+    if (this.failAfterMutation) {
+      throw new Error('simulated journal persistence failure');
+    }
     return Promise.resolve(journalId);
   }
 }
@@ -252,13 +282,44 @@ function makeFixture(sourceBalance = 125000n, destinationCurrency = 'NGN'): Fixt
     makeWallet(DESTINATION_WALLET_ID, DESTINATION_LEDGER_ACCOUNT_ID, destinationCurrency),
   );
   const manager = new InMemoryManager(transfers, wallets, journals);
-  const dataSource = new InMemoryDataSource(manager);
   const ledger = new InMemoryLedgerService(
     new Map([
       [SOURCE_LEDGER_ACCOUNT_ID, sourceBalance],
       [DESTINATION_LEDGER_ACCOUNT_ID, 0n],
     ]),
     journals,
+  );
+  const dataSource = new InMemoryDataSource(
+    manager,
+    () => ({
+      transfers: new Map(
+        [...transfers.records].map(([id, transfer]) => [
+          id,
+          Object.assign(new Transfer(), transfer),
+        ]),
+      ),
+      journals: new Map(
+        [...journals.records].map(([id, journal]) => [
+          id,
+          Object.assign(new LedgerJournal(), journal),
+        ]),
+      ),
+      balances: new Map(ledger.balances),
+    }),
+    (snapshot) => {
+      transfers.records.clear();
+      for (const [id, transfer] of snapshot.transfers) {
+        transfers.records.set(id, transfer);
+      }
+      journals.records.clear();
+      for (const [id, journal] of snapshot.journals) {
+        journals.records.set(id, journal);
+      }
+      ledger.balances.clear();
+      for (const [id, balance] of snapshot.balances) {
+        ledger.balances.set(id, balance);
+      }
+    },
   );
   const service = new TransferService(
     transfers as unknown as Repository<Transfer>,
@@ -326,6 +387,20 @@ describe('TransferService', () => {
     expect(fixture.ledger.calls).toHaveLength(1);
   });
 
+  it('returns the committed result after a client timeout', async () => {
+    const fixture = makeFixture();
+    fixture.dataSource.timeoutAfterCommitOnce = true;
+
+    await expect(fixture.service.createTransfer(transferCommand())).rejects.toThrow(
+      'simulated client timeout after commit',
+    );
+    const retry = await fixture.service.createTransfer(transferCommand());
+
+    expect(retry.status).toBe(TransferStatus.COMPLETED);
+    expect(fixture.transfers.records.size).toBe(1);
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
   it('rejects a changed payload that reuses an idempotency key', async () => {
     const fixture = makeFixture();
     await fixture.service.createTransfer(transferCommand());
@@ -379,6 +454,38 @@ describe('TransferService', () => {
     expect([...fixture.transfers.records.values()][0]).toMatchObject({
       status: TransferStatus.FAILED,
     });
+  });
+
+  it('rejects a closed wallet', async () => {
+    const fixture = makeFixture();
+    const destinationWallet = fixture.wallets.wallets.get(DESTINATION_WALLET_ID)!;
+    destinationWallet.status = WalletStatus.CLOSED;
+
+    await expect(fixture.service.createTransfer(transferCommand())).rejects.toMatchObject({
+      status: 409,
+    });
+    expect([...fixture.transfers.records.values()][0]).toMatchObject({
+      status: TransferStatus.FAILED,
+    });
+  });
+
+  it('rolls back transfer and ledger state after an interrupted journal creation', async () => {
+    const fixture = makeFixture();
+    fixture.ledger.failAfterMutation = true;
+
+    await expect(fixture.service.createTransfer(transferCommand())).rejects.toThrow(
+      'simulated journal persistence failure',
+    );
+    expect(fixture.transfers.records.size).toBe(0);
+    expect(fixture.journals.records.size).toBe(0);
+    expect(fixture.ledger.balances.get(SOURCE_LEDGER_ACCOUNT_ID)).toBe(125000n);
+    expect(fixture.ledger.balances.get(DESTINATION_LEDGER_ACCOUNT_ID)).toBe(0n);
+
+    fixture.ledger.failAfterMutation = false;
+    const recovered = await fixture.service.createTransfer(transferCommand());
+    expect(recovered.status).toBe(TransferStatus.COMPLETED);
+    expect(fixture.transfers.records.size).toBe(1);
+    expect(fixture.journals.records.size).toBe(1);
   });
 
   it('allows only one of two concurrent attempts to spend the same balance', async () => {

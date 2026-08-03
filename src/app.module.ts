@@ -7,6 +7,7 @@ import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './health/health.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { WalletModule } from './wallet/wallet.module';
 
@@ -37,6 +38,7 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     HealthModule,
     LedgerModule,
+    ReconciliationModule,
     TransferModule,
     WalletModule,
   ],

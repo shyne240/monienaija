@@ -1,7 +1,7 @@
 {
   "name": "monienaija",
   "version": "0.1.0",
-  "description": "MonieNaija wallet accounts and double-entry ledger backend",
+  "description": "MonieNaija wallet, ledger, transfer, and finance verification backend",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

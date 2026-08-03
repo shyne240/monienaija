@@ -143,7 +143,11 @@ Every line amount is a positive integer in minor units (for NGN, kobo). The ledg
 
 The transfer service locks both wallets in deterministic order, validates their active status and currency, and posts a debit to the source wallet and a credit to the destination wallet through the existing ledger. The transfer record and journal commit or roll back together. `GET /transfers/:transferId` returns the transfer and journal references. `GET /wallets/:walletId/transactions?page=1&limit=20` returns newest-first sent and received transfer history.
 
-See [docs/M3-MANUAL-VERIFICATION.md](docs/M3-MANUAL-VERIFICATION.md) for a complete local verification sequence.
+See [docs/M3-MANUAL-VERIFICATION.md](docs/M3-MANUAL-VERIFICATION.md) for a complete local transfer verification sequence.
+
+## M4 finance verification
+
+The internal-only reconciliation and finance verification routes are available under `/api/v1/internal/reconciliation`. They independently check ledger integrity, wallet/account ownership, transfer journal references, currency/accounting-unit consistency, trial balance, assets, liabilities, conservation, and account activity. See [docs/M4-FINANCE-VERIFICATION.md](docs/M4-FINANCE-VERIFICATION.md) for the reconciliation, failure-recovery, and disaster-recovery checklist.
 
 ## Health endpoints
 
