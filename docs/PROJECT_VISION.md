@@ -22,7 +22,7 @@ The platform architecture must be ready to evolve toward customer wallets, doubl
 
 ## Scope of the current implementation
 
-The repository contains the verified engineering foundation plus bounded wallet-account, double-entry-ledger, internal-transfer, finance-verification, controlled internal-payment, non-money-moving expanded financial product, and scale/resilience implementations. It does not provide a production financial service or make regulatory claims. Identity, authentication, KYC, external payment rails, external synchronization, external settlement, and later financial products remain outside this scope.
+The repository contains the verified engineering foundation plus bounded wallet-account, double-entry-ledger, internal-transfer, finance-verification, controlled internal-payment, non-money-moving expanded financial product, scale/resilience, and production-launch readiness implementations. It does not provide a production financial service or make regulatory claims. Identity, authentication, KYC, external payment rails, external synchronization, external settlement, and later financial products remain outside this scope.
 
 ## Non-goals
 

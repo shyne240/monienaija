@@ -186,6 +186,20 @@ M7 adds PostgreSQL-backed operational resilience primitives without Redis, Kafka
 
 Internal routes are available at `/api/v1/internal/metrics`, `/api/v1/internal/diagnostics`, `/api/v1/internal/audit`, and `/api/v1/internal/outbox`. See [docs/M7-MANUAL-VERIFICATION.md](docs/M7-MANUAL-VERIFICATION.md) for the operational checklist.
 
+## M8 production launch
+
+M8 adds production-readiness controls without adding financial products or external integrations:
+
+- Fail-fast environment and schema-head validation.
+- Development, test, staging, and production profiles.
+- API version metadata and compatibility discovery.
+- Request, correlation, trace, and API-version headers.
+- Structured request/error logging and standardized error responses.
+- Graceful request draining for SIGTERM and SIGINT.
+- Internal endpoints at `/api/v1/internal/version`, `/configuration`, `/deployment`, and `/readiness`.
+
+See [docs/M8-PRODUCTION-LAUNCH.md](docs/M8-PRODUCTION-LAUNCH.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md) for launch evidence and operational procedures.
+
 ## Health endpoints
 
 | Endpoint                   | Meaning                                                             | Expected response                          |
