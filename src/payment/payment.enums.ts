@@ -1,6 +1,9 @@
 export enum PaymentType {
   DEPOSIT = 'DEPOSIT',
   WITHDRAWAL = 'WITHDRAWAL',
+  TRANSFER = 'TRANSFER',
+  QUOTE = 'QUOTE',
+  VIRTUAL_ACCOUNT = 'VIRTUAL_ACCOUNT',
 }
 
 export enum SettlementAccountRole {

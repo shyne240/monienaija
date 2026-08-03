@@ -5,12 +5,18 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { BankModule } from './bank/bank.module';
+import { BeneficiaryModule } from './beneficiary/beneficiary.module';
+import { FeeModule } from './fee/fee.module';
 import { HealthModule } from './health/health.module';
 import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { LimitModule } from './limit/limit.module';
 import { PaymentModule } from './payment/payment.module';
+import { QuoteModule } from './quote/quote.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
+import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { WalletModule } from './wallet/wallet.module';
 
@@ -40,11 +46,17 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    BankModule,
+    BeneficiaryModule,
     DepositModule,
+    FeeModule,
     LedgerModule,
+    LimitModule,
     PaymentModule,
+    QuoteModule,
     ReconciliationModule,
     TransferModule,
+    VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
   ],

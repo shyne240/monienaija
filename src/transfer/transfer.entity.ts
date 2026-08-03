@@ -29,6 +29,9 @@ export class Transfer {
   @Column({ name: 'journal_id', type: 'uuid', nullable: true })
   journalId!: string | null;
 
+  @Column({ name: 'payment_reference', type: 'varchar', length: 64, nullable: true })
+  paymentReference!: string | null;
+
   @Column({ name: 'amount_minor', type: 'bigint', transformer: bigintTransformer })
   amountMinor!: string;
 

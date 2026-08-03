@@ -15,6 +15,7 @@ export interface TransferView {
   sourceWalletId: string;
   destinationWalletId: string;
   journalId: string | null;
+  paymentReference: string | null;
   journalReference: string | null;
   amountMinor: string;
   currency: string;

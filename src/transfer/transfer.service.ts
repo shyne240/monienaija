@@ -6,12 +6,15 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
 import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
+import { PaymentType } from '../payment/payment.enums';
+import { PaymentReferenceService } from '../payment/payment-reference.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
@@ -54,6 +57,8 @@ export class TransferService {
     private readonly journalRepository: Repository<LedgerJournal>,
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
+    @Optional()
+    private readonly paymentReferenceService?: PaymentReferenceService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -210,11 +215,16 @@ export class TransferService {
       };
     }
 
+    const transferId = randomUUID();
+    const paymentReference = this.paymentReferenceService
+      ? await this.paymentReferenceService.nextReference(manager, PaymentType.TRANSFER, transferId)
+      : null;
     const transfer = transferRepository.create({
-      id: randomUUID(),
+      id: transferId,
       sourceWalletId: command.sourceWalletId,
       destinationWalletId: command.destinationWalletId,
       journalId: null,
+      paymentReference,
       amountMinor: command.amountMinor.toString(),
       currency: command.currency,
       status: TransferStatus.FAILED,
@@ -456,6 +466,7 @@ export class TransferService {
       sourceWalletId: transfer.sourceWalletId,
       destinationWalletId: transfer.destinationWalletId,
       journalId: transfer.journalId,
+      paymentReference: transfer.paymentReference,
       journalReference,
       amountMinor: minorUnitsToString(transfer.amountMinor),
       currency: transfer.currency,
