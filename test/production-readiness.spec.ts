@@ -37,8 +37,10 @@ class ReadinessDataSource {
 }
 
 class ReconciliationStub {
-  runReconciliation(): Promise<{ status: 'PASS' }> {
-    return Promise.resolve({ status: 'PASS' });
+  constructor(private readonly status: 'PASS' | 'WARNING' | 'ERROR' = 'PASS') {}
+
+  runReconciliation(): Promise<{ status: 'PASS' | 'WARNING' | 'ERROR' }> {
+    return Promise.resolve({ status: this.status });
   }
 }
 
@@ -53,6 +55,22 @@ describe('M8 production readiness', () => {
       status: 'ok',
       migrations: { compatible: true },
     });
+
+    const warning = new ProductionReadinessService(
+      new ReadinessDataSource(true) as unknown as DataSource,
+      new ReconciliationStub('WARNING') as never,
+    );
+    await expect(warning.verifyStartup()).resolves.toBeUndefined();
+    await expect(warning.getReadiness()).resolves.toMatchObject({
+      status: 'ok',
+      reconciliation: { status: 'WARNING' },
+    });
+
+    const reconciliationError = new ProductionReadinessService(
+      new ReadinessDataSource(true) as unknown as DataSource,
+      new ReconciliationStub('ERROR') as never,
+    );
+    await expect(reconciliationError.verifyStartup()).rejects.toThrow('reconciliation_not_ready');
 
     const incompatible = new ProductionReadinessService(
       new ReadinessDataSource(false) as unknown as DataSource,

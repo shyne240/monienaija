@@ -46,7 +46,7 @@ export class ProductionReadinessService {
     const status =
       database.status === 'ok' &&
       migrations.compatible &&
-      reconciliation === 'PASS' &&
+      reconciliation !== 'ERROR' &&
       pendingOutbox >= 0
         ? 'ok'
         : 'error';
@@ -57,7 +57,7 @@ export class ProductionReadinessService {
           ? 'database_unavailable'
           : !migrations.compatible
             ? 'schema_incompatible'
-            : reconciliation !== 'PASS'
+            : reconciliation === 'ERROR'
               ? 'reconciliation_not_ready'
               : 'outbox_unavailable';
     return {
