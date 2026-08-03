@@ -164,6 +164,19 @@ export class LedgerService {
     return this.calculateBalances(accounts);
   }
 
+  /**
+   * Post a journal using a transaction owned by another domain command.
+   * The caller must commit or roll back the supplied manager; this keeps a
+   * transfer and its ledger journal in one PostgreSQL transaction.
+   */
+  async postJournalInTransaction(
+    manager: EntityManager,
+    command: PostJournalCommand,
+  ): Promise<string> {
+    const normalized = this.normalizeJournal(command);
+    return this.postWithinTransaction(manager, normalized);
+  }
+
   async postJournal(command: PostJournalCommand): Promise<LedgerJournalView> {
     const normalized = this.normalizeJournal(command);
     let journalId: string | undefined;

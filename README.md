@@ -1,6 +1,6 @@
 # MonieNaija Wallet and Ledger Backend
 
-Production-oriented NestJS backend for MonieNaija. The verified backend foundation is now extended with the **customer wallet account** and **double-entry ledger** domains only. Identity, authentication, KYC, payment rails, transfers, fees, limits, settlement, and other financial products remain outside this milestone.
+Production-oriented NestJS backend for MonieNaija. The verified backend foundation now includes customer wallet accounts, a double-entry ledger, and internal wallet-to-wallet transfers. Identity, authentication, KYC, external payment rails, fees, limits, settlement, and other financial products remain outside this milestone.
 
 ## Architecture
 
@@ -8,8 +8,9 @@ Production-oriented NestJS backend for MonieNaija. The verified backend foundati
 - **PostgreSQL** through TypeORM, with schema synchronisation disabled and migrations required for every schema change.
 - **Wallet accounts** hold an opaque customer reference, ISO currency, lifecycle status, and a one-to-one customer-funds liability ledger account. Wallet balances are calculated from posted ledger lines; there is no direct balance mutation.
 - **Double-entry ledger** consists of a chart of accounts, immutable posted journals, and immutable debit/credit lines. Each journal must contain at least two positive lines and equal debit and credit totals in one currency and accounting unit.
+- **Wallet-to-wallet transfers** execute a transfer record and its balanced ledger journal in one serializable PostgreSQL transaction. Wallet balances remain derived from ledger lines.
 - **Integer minor units** are used for money. API monetary values are strings so PostgreSQL `BIGINT` values cannot be rounded by JSON or JavaScript numbers.
-- **Idempotent commands** require an idempotency key. Journal requests are fingerprinted so reusing a key with a different command is rejected.
+- **Idempotent commands** require an idempotency key. Journal and transfer requests are fingerprinted so reusing a key with a different command is rejected.
 - **Database controls** enforce positive line amounts, valid currencies and directions, foreign-key ownership, journal balance at transaction commit, and immutability of posted journals and lines.
 - `/api/v1` is the global API prefix. The existing validation pipe, structured error contract, request logging, and health endpoints remain installed.
 
@@ -40,7 +41,7 @@ Production-oriented NestJS backend for MonieNaija. The verified backend foundati
    docker compose ps
    ```
 
-4. Run the wallet and ledger migration:
+4. Run all pending migrations:
 
    ```bash
    npm run migration:run
@@ -125,6 +126,25 @@ The operation atomically creates an active customer wallet and its customer-fund
 
 Every line amount is a positive integer in minor units (for NGN, kobo). The ledger validates account existence, active status, currency and accounting-unit compatibility, exact debit/credit equality, and non-negative customer-funds accounts. `GET /ledger/journals/:journalId` returns the immutable journal and lines. `POST /ledger/journals/:journalId/reversal` creates a compensating journal linked to the original; it never edits the original record.
 
+## Wallet-to-wallet transfers
+
+`POST /transfers` creates an internal wallet-to-wallet transfer. It requires an `Idempotency-Key` header and accepts integer minor units:
+
+```json
+{
+  "sourceWalletId": "wallet-a-uuid",
+  "destinationWalletId": "wallet-b-uuid",
+  "amountMinor": "50000",
+  "currency": "NGN",
+  "reference": "customer-transfer-001",
+  "narration": "Wallet-to-wallet transfer"
+}
+```
+
+The transfer service locks both wallets in deterministic order, validates their active status and currency, and posts a debit to the source wallet and a credit to the destination wallet through the existing ledger. The transfer record and journal commit or roll back together. `GET /transfers/:transferId` returns the transfer and journal references. `GET /wallets/:walletId/transactions?page=1&limit=20` returns newest-first sent and received transfer history.
+
+See [docs/M3-MANUAL-VERIFICATION.md](docs/M3-MANUAL-VERIFICATION.md) for a complete local verification sequence.
+
 ## Health endpoints
 
 | Endpoint                   | Meaning                                                             | Expected response                          |
@@ -151,13 +171,14 @@ npm run migration:run
 npm run migration:revert
 ```
 
-The wallet/ledger migration is intentionally reversible. Review generated migrations, test upgrade and rollback behaviour on representative synthetic data, and never alter a migration that has been applied to a shared environment.
+The wallet, ledger, and transfer migrations are intentionally reversible. Review generated migrations, test upgrade and rollback behaviour on representative synthetic data, and never alter a migration that has been applied to a shared environment.
 
 ## Operational and scope notes
 
 - Posted journal headers and lines are immutable at both the application and database layers. Corrections use linked compensating journals.
 - Wallet balances are derived from the ledger source of truth; no controller or service directly updates a balance column.
-- `customerId` is an opaque reference. Customer identity, authentication, KYC, limits, fees, reconciliation operations, and payment orchestration are not part of this change.
+- `customerId` is an opaque reference. Customer identity, authentication, KYC, limits, fees, reconciliation operations, and external payment orchestration are not part of this change.
+- Transfers are internal only. Bank rails, NIBSS, cards, QR, USSD, notifications, fees, FX, limits, AML, settlement, webhooks, reporting, and background jobs are not part of this milestone.
 - Do not use real customer data or credentials in local or automated tests. Production release still requires the governance, finance, risk, security, reconciliation, and operational evidence described by the repository documentation.
 
 ## Container image
