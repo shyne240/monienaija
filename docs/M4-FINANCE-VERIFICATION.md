@@ -6,12 +6,12 @@ This guide covers controlled verification of the wallet, ledger, and transfer do
 
 The internal-only verification routes are prefixed with `/api/v1/internal/reconciliation`:
 
-| Route | Purpose |
-|---|---|
-| `GET /report` | Independent reconciliation checks with `PASS`, `WARNING`, or `ERROR`. |
-| `GET /trial-balance` | Account-level debit, credit, and normal-balance totals. |
-| `GET /finance` | Trial balance, assets, liabilities, journal integrity, conservation, and account activity. |
-| `GET /accounts/:accountId/activity` | Activity summary for one ledger account. |
+| Route                               | Purpose                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `GET /report`                       | Independent reconciliation checks with `PASS`, `WARNING`, or `ERROR`.                      |
+| `GET /trial-balance`                | Account-level debit, credit, and normal-balance totals.                                    |
+| `GET /finance`                      | Trial balance, assets, liabilities, journal integrity, conservation, and account activity. |
+| `GET /accounts/:accountId/activity` | Activity summary for one ledger account.                                                   |
 
 These routes have no authentication in the current application because identity and access are outside this scope. They are not a production public API and must remain restricted by deployment/network controls until the appropriate trust boundary exists.
 
@@ -33,19 +33,17 @@ These routes have no authentication in the current application because identity 
    ```
 
 3. Confirm that the report contains checks for:
-
    - Ledger-derived wallet balances and negative balances
    - One compatible liability account per wallet
    - Balanced journals
    - Orphan ledger lines
    - Missing journal-line accounts
-   - Completed transfers without journals
+   - Completed transfers, deposits, and withdrawals without journals
    - Currency consistency
    - Accounting-unit consistency
    - Failed transfer attempts
 
 4. Interpret statuses:
-
    - `PASS`: the check found no exception.
    - `WARNING`: the check completed and found an operational condition requiring review, such as failed transfer records.
    - `ERROR`: financial integrity cannot be proven or an exception was found. Treat this as a release blocker until investigated and cleared.

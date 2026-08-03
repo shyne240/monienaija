@@ -22,12 +22,12 @@ The platform architecture must be ready to evolve toward customer wallets, doubl
 
 ## Scope of the current implementation
 
-The repository contains the verified engineering foundation plus bounded wallet-account, double-entry-ledger, internal-transfer, and M4 finance-verification implementations. It does not provide a production financial service or make regulatory claims. Identity, authentication, KYC, external payment rails, limits, fees, settlement, and other financial products remain outside this scope.
+The repository contains the verified engineering foundation plus bounded wallet-account, double-entry-ledger, internal-transfer, finance-verification, and controlled internal-payment implementations. It does not provide a production financial service or make regulatory claims. Identity, authentication, KYC, external payment rails, limits, fees, external settlement, and other financial products remain outside this scope.
 
 ## Non-goals
 
 - Operating or representing MonieNaija as a licensed financial institution before approval.
-- Expanding this bounded wallet, ledger, transfer, and verification implementation into identity, external payment rails, UI, settlement, reconciliation operations, or other financial products without their own authorised scope.
+- Expanding this bounded wallet, ledger, transfer, verification, and internal-payment implementation into identity, external payment rails, UI, external settlement, reconciliation operations, or other financial products without their own authorised scope.
 - Replacing CBN rules, legal advice, compliance policy, or contractual obligations.
 - Optimising for feature volume at the expense of controls, customer protection, or financial correctness.
 - Assuming one provider, channel, geography, or regulatory regime is permanent.

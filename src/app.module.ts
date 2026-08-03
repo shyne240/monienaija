@@ -6,9 +6,12 @@ import { LoggerModule } from 'nestjs-pino';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './health/health.module';
+import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { PaymentModule } from './payment/payment.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
+import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -37,10 +40,13 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    DepositModule,
     LedgerModule,
+    PaymentModule,
     ReconciliationModule,
     TransferModule,
     WalletModule,
+    WithdrawalModule,
   ],
 })
 export class AppModule {}

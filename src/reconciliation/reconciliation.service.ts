@@ -143,16 +143,24 @@ export class ReconciliationService {
       checks.push(
         await this.executeCheck(
           manager,
-          'completed_transfer_journal_integrity',
+          'completed_payment_journal_integrity',
           `
-            SELECT COUNT(*) FILTER (
-                     WHERE t.status = 'COMPLETED' AND (t.journal_id IS NULL OR j.id IS NULL)
-                   )::text AS violations,
-                   COUNT(*) FILTER (WHERE t.status = 'COMPLETED')::text AS completed_transfers
-              FROM transfers t
-              LEFT JOIN ledger_journals j ON j.id = t.journal_id
+            SELECT (
+              (SELECT COUNT(*)
+                 FROM transfers t
+                 LEFT JOIN ledger_journals j ON j.id = t.journal_id
+                WHERE t.status = 'COMPLETED' AND (t.journal_id IS NULL OR j.id IS NULL))
+              + (SELECT COUNT(*)
+                   FROM deposits d
+                   LEFT JOIN ledger_journals j ON j.id = d.journal_id
+                  WHERE d.status = 'COMPLETED' AND (d.journal_id IS NULL OR j.id IS NULL))
+              + (SELECT COUNT(*)
+                   FROM withdrawals w
+                   LEFT JOIN ledger_journals j ON j.id = w.journal_id
+                  WHERE w.status = 'COMPLETED' AND (w.journal_id IS NULL OR j.id IS NULL))
+            )::text AS violations
           `,
-          'Every completed transfer references an existing journal.',
+          'Every completed transfer, deposit, and withdrawal references an existing journal.',
         ),
       );
       checks.push(
@@ -194,6 +202,14 @@ export class ReconciliationService {
                    JOIN wallet_accounts dw ON dw.id = t.destination_wallet_id
                   WHERE t.status = 'COMPLETED'
                     AND (t.currency <> sw.currency OR t.currency <> dw.currency))
+              + (SELECT COUNT(*)
+                   FROM deposits d
+                   JOIN wallet_accounts w ON w.id = d.wallet_id
+                  WHERE d.currency <> w.currency)
+              + (SELECT COUNT(*)
+                   FROM withdrawals wth
+                   JOIN wallet_accounts w ON w.id = wth.wallet_id
+                  WHERE wth.currency <> w.currency)
             )::text AS violations
           `,
           'Wallets, transfers, journals, lines, and accounts use consistent currencies.',
