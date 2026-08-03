@@ -18,6 +18,7 @@ import { MaturityModule } from './maturity/maturity.module';
 import { OperationsModule } from './operations/operations.module';
 import { PaymentModule } from './payment/payment.module';
 import { ProductionModule } from './production/production.module';
+import { ProductGovernanceModule } from './product-governance/product-governance.module';
 import { QuoteModule } from './quote/quote.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
@@ -62,6 +63,7 @@ import { WalletModule } from './wallet/wallet.module';
     OperationsModule,
     PaymentModule,
     ProductionModule,
+    ProductGovernanceModule,
     QuoteModule,
     ReconciliationModule,
     TransferModule,

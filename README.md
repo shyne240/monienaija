@@ -214,6 +214,12 @@ Internal routes include:
 
 See [docs/M9-PRODUCTION-MATURITY.md](docs/M9-PRODUCTION-MATURITY.md), [docs/OPERATIONS-GUIDE.md](docs/OPERATIONS-GUIDE.md), [docs/RETENTION-POLICY.md](docs/RETENTION-POLICY.md), [docs/MAINTENANCE.md](docs/MAINTENANCE.md), and [docs/FINAL-ACCEPTANCE.md](docs/FINAL-ACCEPTANCE.md).
 
+## P1.0 product governance
+
+P1.0 adds an internal PostgreSQL-backed governance registry for product requirements, scope, launch envelopes, pilot cohorts, customer segments, regulatory requirements, capabilities, features, flags, risks, owners, partners, SLOs/SLIs, rollback strategies, success metrics, configuration, checklists, and launch metadata. Mutations use the existing audit framework; immutable records require versioned replacement.
+
+Internal routes are available at `/api/v1/internal/product-governance/records`, `/report`, `/readiness`, and `/configuration`. See [docs/P1.0-PRODUCT-GOVERNANCE.md](docs/P1.0-PRODUCT-GOVERNANCE.md) for PowerShell verification.
+
 ## Health endpoints
 
 | Endpoint                   | Meaning                                                             | Expected response                          |
