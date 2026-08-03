@@ -5,7 +5,9 @@ import type { Environment } from './environment';
 export function createDatabaseOptions(environment: Environment): DataSourceOptions {
   return {
     type: 'postgres',
-    host: environment.DB_HOST,
+    // Docker Desktop exposes the published PostgreSQL port over IPv4. Node can
+    // otherwise resolve localhost to the IPv6 loopback address on Windows.
+    host: environment.DB_HOST === 'localhost' ? '127.0.0.1' : environment.DB_HOST,
     port: environment.DB_PORT,
     username: environment.DB_USER,
     password: environment.DB_PASSWORD,
