@@ -4,8 +4,11 @@ const booleanFromEnvironment = z.enum(['true', 'false']).transform((value) => va
 
 export const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_VERSION: z.string().trim().min(1).max(64).default('0.1.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  IDEMPOTENCY_RETENTION_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(86_400),
+  OUTBOX_RETRY_DELAY_SECONDS: z.coerce.number().int().min(1).max(86_400).default(60),
   DB_HOST: z.string().trim().min(1),
   DB_PORT: z.coerce.number().int().min(1).max(65535).default(5432),
   DB_NAME: z.string().trim().min(1),

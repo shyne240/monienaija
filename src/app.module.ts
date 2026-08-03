@@ -12,6 +12,7 @@ import { HealthModule } from './health/health.module';
 import { DepositModule } from './deposit/deposit.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { LimitModule } from './limit/limit.module';
+import { OperationsModule } from './operations/operations.module';
 import { PaymentModule } from './payment/payment.module';
 import { QuoteModule } from './quote/quote.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
@@ -52,6 +53,7 @@ import { WalletModule } from './wallet/wallet.module';
     FeeModule,
     LedgerModule,
     LimitModule,
+    OperationsModule,
     PaymentModule,
     QuoteModule,
     ReconciliationModule,

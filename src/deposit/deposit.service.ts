@@ -6,6 +6,7 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
@@ -28,6 +29,9 @@ import {
 } from '../payment/payment-support';
 import { PaymentType, SettlementAccountRole } from '../payment/payment.enums';
 import { PaymentReferenceService } from '../payment/payment-reference.service';
+import { AuditService } from '../operations/audit.service';
+import { MetricsService } from '../operations/metrics.service';
+import { OutboxService } from '../operations/outbox.service';
 import { SettlementAccountService } from '../payment/settlement-account.service';
 import { Deposit } from './deposit.entity';
 import { DepositFailureCode, DepositStatus } from './deposit.enums';
@@ -50,6 +54,12 @@ export class DepositService {
     private readonly ledgerService: LedgerService,
     private readonly paymentReferenceService: PaymentReferenceService,
     private readonly settlementAccountService: SettlementAccountService,
+    @Optional()
+    private readonly auditService?: AuditService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
+    @Optional()
+    private readonly metricsService?: MetricsService,
   ) {}
 
   async createDeposit(command: CreateDepositCommand): Promise<DepositView> {
@@ -69,6 +79,7 @@ export class DepositService {
       if (existing.requestHash !== normalized.requestHash) {
         throw new ConflictException('The idempotency key was already used for another deposit');
       }
+      await this.metricsService?.increment(undefined, 'idempotency.hits');
       return existing.id;
     });
 
@@ -139,6 +150,7 @@ export class DepositService {
       if (existing.requestHash !== command.requestHash) {
         throw new ConflictException('The idempotency key was already used for another deposit');
       }
+      await this.metricsService?.increment(manager, 'idempotency.hits');
       return existing.id;
     }
 
@@ -261,6 +273,21 @@ export class DepositService {
     deposit.journalId = journalId;
     deposit.completedAt = new Date();
     await repository.save(deposit);
+    await this.auditService?.record(manager, {
+      entityType: 'DEPOSIT',
+      entityId: deposit.id,
+      action: 'COMPLETED',
+      actor: 'internal',
+      correlationId: `deposit:${deposit.id}`,
+      newValues: { status: deposit.status, journalId: deposit.journalId },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'deposit.completed',
+      aggregateType: 'DEPOSIT',
+      aggregateId: deposit.id,
+      payload: { depositId: deposit.id, journalId: deposit.journalId },
+    });
+    await this.metricsService?.increment(manager, 'deposits.completed');
     return deposit.id;
   }
 
@@ -324,6 +351,21 @@ export class DepositService {
     deposit.journalId = null;
     deposit.completedAt = null;
     await repository.save(deposit);
+    await this.auditService?.record(manager, {
+      entityType: 'DEPOSIT',
+      entityId: deposit.id,
+      action: 'FAILED',
+      actor: 'internal',
+      correlationId: `deposit:${deposit.id}`,
+      newValues: { status: deposit.status, failureCode: deposit.failureCode },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'deposit.failed',
+      aggregateType: 'DEPOSIT',
+      aggregateId: deposit.id,
+      payload: { depositId: deposit.id, failureCode: deposit.failureCode },
+    });
+    await this.metricsService?.increment(manager, 'deposits.failed');
     return deposit.id;
   }
 
@@ -400,6 +442,7 @@ export class DepositService {
         if (!isRetryableTransactionError(error) || attempt === 2) {
           throw error;
         }
+        await this.metricsService?.increment(undefined, 'retries');
       }
     }
     throw new ConflictException('Payment operation could not complete after retries');

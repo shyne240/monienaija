@@ -1,6 +1,6 @@
 # MonieNaija Wallet and Ledger Backend
 
-Production-oriented NestJS backend for MonieNaija. The verified backend foundation now includes customer wallet accounts, a double-entry ledger, internal wallet-to-wallet transfers, controlled internal deposits and withdrawals, and non-money-moving expanded financial product tooling. Identity, authentication, KYC, external payment rails, external synchronization, settlement, and later financial products remain outside this milestone.
+Production-oriented NestJS backend for MonieNaija. The verified backend foundation now includes customer wallet accounts, a double-entry ledger, internal wallet-to-wallet transfers, controlled internal deposits and withdrawals, non-money-moving expanded financial product tooling, and database-backed operational resilience. Identity, authentication, KYC, external payment rails, external synchronization, settlement, and later financial products remain outside this milestone.
 
 ## Architecture
 
@@ -174,6 +174,18 @@ M6 adds non-money-moving internal capabilities for virtual accounts, beneficiari
 
 Virtual-account and quote references use the shared payment-reference generator. These APIs do not execute payments, mutate wallet balances, or call external providers. See [docs/M6-MANUAL-VERIFICATION.md](docs/M6-MANUAL-VERIFICATION.md) for the verification sequence.
 
+## M7 scale and resilience
+
+M7 adds PostgreSQL-backed operational resilience primitives without Redis, Kafka, RabbitMQ, or background workers:
+
+- Distributed idempotency records with retention, replay detection, hash validation, and cleanup.
+- Immutable audit events.
+- Transactional outbox storage with pending, published, failed, and retry states.
+- Database-backed operational metrics.
+- Internal diagnostics and expanded readiness checks.
+
+Internal routes are available at `/api/v1/internal/metrics`, `/api/v1/internal/diagnostics`, `/api/v1/internal/audit`, and `/api/v1/internal/outbox`. See [docs/M7-MANUAL-VERIFICATION.md](docs/M7-MANUAL-VERIFICATION.md) for the operational checklist.
+
 ## Health endpoints
 
 | Endpoint                   | Meaning                                                             | Expected response                          |
@@ -200,7 +212,7 @@ npm run migration:run
 npm run migration:revert
 ```
 
-The wallet, ledger, transfer, controlled-payment, and expanded-financial-product migrations are intentionally reversible. Review generated migrations, test upgrade and rollback behaviour on representative synthetic data, and never alter a migration that has been applied to a shared environment.
+The wallet, ledger, transfer, controlled-payment, expanded-financial-product, and operational-resilience migrations are intentionally reversible. The M7 migration adds no external service dependency and stores only operational state. Review generated migrations, test upgrade and rollback behaviour on representative synthetic data, and never alter a migration that has been applied to a shared environment.
 
 ## Operational and scope notes
 

@@ -15,6 +15,9 @@ import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { PaymentType } from '../payment/payment.enums';
 import { PaymentReferenceService } from '../payment/payment-reference.service';
+import { AuditService } from '../operations/audit.service';
+import { MetricsService } from '../operations/metrics.service';
+import { OutboxService } from '../operations/outbox.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
@@ -59,6 +62,12 @@ export class TransferService {
     private readonly ledgerService: LedgerService,
     @Optional()
     private readonly paymentReferenceService?: PaymentReferenceService,
+    @Optional()
+    private readonly auditService?: AuditService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
+    @Optional()
+    private readonly metricsService?: MetricsService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -72,6 +81,7 @@ export class TransferService {
         });
       } catch (error) {
         if (this.isRetryableTransactionError(error) && attempt < 2) {
+          await this.metricsService?.increment(undefined, 'retries');
           continue;
         }
 
@@ -175,6 +185,7 @@ export class TransferService {
         throw new ConflictException('The idempotency key was already used for another transfer');
       }
 
+      await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
     }
 
@@ -304,6 +315,29 @@ export class TransferService {
     transfer.failureMessage = null;
     transfer.failureStatusCode = null;
     await transferRepository.save(transfer);
+    await this.auditService?.record(manager, {
+      entityType: 'TRANSFER',
+      entityId: transfer.id,
+      action: 'COMPLETED',
+      actor: 'internal',
+      correlationId: `transfer:${transfer.id}`,
+      newValues: {
+        status: transfer.status,
+        journalId: transfer.journalId,
+        amountMinor: transfer.amountMinor,
+      },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'transfer.completed',
+      aggregateType: 'TRANSFER',
+      aggregateId: transfer.id,
+      payload: {
+        transferId: transfer.id,
+        journalId: transfer.journalId,
+        paymentReference: transfer.paymentReference,
+      },
+    });
+    await this.metricsService?.increment(manager, 'transfers.completed');
 
     return { transferId: transfer.id };
   }
@@ -331,6 +365,21 @@ export class TransferService {
     transfer.failureStatusCode = failure.statusCode;
     transfer.completedAt = null;
     await manager.getRepository(Transfer).save(transfer);
+    await this.auditService?.record(manager, {
+      entityType: 'TRANSFER',
+      entityId: transfer.id,
+      action: 'FAILED',
+      actor: 'internal',
+      correlationId: `transfer:${transfer.id}`,
+      newValues: { status: transfer.status, failureCode: transfer.failureCode },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'transfer.failed',
+      aggregateType: 'TRANSFER',
+      aggregateId: transfer.id,
+      payload: { transferId: transfer.id, failureCode: transfer.failureCode },
+    });
+    await this.metricsService?.increment(manager, 'transfers.failed');
     return { transferId: transfer.id };
   }
 

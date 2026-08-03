@@ -5,6 +5,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,6 +18,7 @@ import {
   normalizeCurrency,
   parsePositiveMinorUnits,
 } from '../common/money';
+import { MetricsService } from '../operations/metrics.service';
 import { LedgerAccount } from './ledger-account.entity';
 import {
   LedgerAccountType,
@@ -68,6 +70,7 @@ export class LedgerService {
     @InjectRepository(LedgerLine)
     private readonly lineRepository: Repository<LedgerLine>,
     private readonly dataSource: DataSource,
+    @Optional() private readonly metricsService?: MetricsService,
   ) {}
 
   async createAccount(command: CreateLedgerAccountCommand): Promise<LedgerAccountView> {
@@ -383,6 +386,7 @@ export class LedgerService {
       }),
     );
     await lineRepository.save(lines);
+    await this.metricsService?.increment(manager, 'journals.posted');
 
     return journal.id;
   }

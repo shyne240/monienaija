@@ -6,6 +6,7 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
@@ -28,6 +29,9 @@ import {
 } from '../payment/payment-support';
 import { PaymentType, SettlementAccountRole } from '../payment/payment.enums';
 import { PaymentReferenceService } from '../payment/payment-reference.service';
+import { AuditService } from '../operations/audit.service';
+import { MetricsService } from '../operations/metrics.service';
+import { OutboxService } from '../operations/outbox.service';
 import { SettlementAccountService } from '../payment/settlement-account.service';
 import { Withdrawal } from './withdrawal.entity';
 import { WithdrawalFailureCode, WithdrawalStatus } from './withdrawal.enums';
@@ -50,6 +54,12 @@ export class WithdrawalService {
     private readonly ledgerService: LedgerService,
     private readonly paymentReferenceService: PaymentReferenceService,
     private readonly settlementAccountService: SettlementAccountService,
+    @Optional()
+    private readonly auditService?: AuditService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
+    @Optional()
+    private readonly metricsService?: MetricsService,
   ) {}
 
   async createWithdrawal(command: CreateWithdrawalCommand): Promise<WithdrawalView> {
@@ -69,6 +79,7 @@ export class WithdrawalService {
       if (existing.requestHash !== normalized.requestHash) {
         throw new ConflictException('The idempotency key was already used for another withdrawal');
       }
+      await this.metricsService?.increment(undefined, 'idempotency.hits');
       return existing.id;
     });
 
@@ -147,6 +158,7 @@ export class WithdrawalService {
       if (existing.requestHash !== command.requestHash) {
         throw new ConflictException('The idempotency key was already used for another withdrawal');
       }
+      await this.metricsService?.increment(manager, 'idempotency.hits');
       return existing.id;
     }
 
@@ -312,6 +324,21 @@ export class WithdrawalService {
     withdrawal.journalId = journalId;
     withdrawal.completedAt = new Date();
     await repository.save(withdrawal);
+    await this.auditService?.record(manager, {
+      entityType: 'WITHDRAWAL',
+      entityId: withdrawal.id,
+      action: 'COMPLETED',
+      actor: 'internal',
+      correlationId: `withdrawal:${withdrawal.id}`,
+      newValues: { status: withdrawal.status, journalId: withdrawal.journalId },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'withdrawal.completed',
+      aggregateType: 'WITHDRAWAL',
+      aggregateId: withdrawal.id,
+      payload: { withdrawalId: withdrawal.id, journalId: withdrawal.journalId },
+    });
+    await this.metricsService?.increment(manager, 'withdrawals.completed');
     return withdrawal.id;
   }
 
@@ -396,6 +423,21 @@ export class WithdrawalService {
     withdrawal.journalId = null;
     withdrawal.completedAt = null;
     await repository.save(withdrawal);
+    await this.auditService?.record(manager, {
+      entityType: 'WITHDRAWAL',
+      entityId: withdrawal.id,
+      action: 'FAILED',
+      actor: 'internal',
+      correlationId: `withdrawal:${withdrawal.id}`,
+      newValues: { status: withdrawal.status, failureCode: withdrawal.failureCode },
+    });
+    await this.outboxService?.enqueue(manager, {
+      eventType: 'withdrawal.failed',
+      aggregateType: 'WITHDRAWAL',
+      aggregateId: withdrawal.id,
+      payload: { withdrawalId: withdrawal.id, failureCode: withdrawal.failureCode },
+    });
+    await this.metricsService?.increment(manager, 'withdrawals.failed');
     return withdrawal.id;
   }
 
@@ -463,6 +505,7 @@ export class WithdrawalService {
         if (!isRetryableTransactionError(error) || attempt === 2) {
           throw error;
         }
+        await this.metricsService?.increment(undefined, 'retries');
       }
     }
     throw new ConflictException('Payment operation could not complete after retries');

@@ -1,5 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+
+import { MetricsService } from '../operations/metrics.service';
 
 import { VerificationStatus } from './reconciliation.types';
 import type {
@@ -22,10 +24,14 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 @Injectable()
 export class ReconciliationService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    @Optional() private readonly metricsService?: MetricsService,
+  ) {}
 
   async runReconciliation(): Promise<ReconciliationReport> {
-    return this.withReadOnlyTransaction(async (manager) => {
+    const startedAt = performance.now();
+    const report = await this.withReadOnlyTransaction(async (manager) => {
       const checks: ReconciliationCheck[] = [];
       checks.push(
         await this.executeCheck(
@@ -245,6 +251,8 @@ export class ReconciliationService {
         checks,
       };
     });
+    await this.metricsService?.observeDuration('reconciliation.duration_ms', startedAt);
+    return report;
   }
 
   async getTrialBalance(): Promise<TrialBalanceReport> {
