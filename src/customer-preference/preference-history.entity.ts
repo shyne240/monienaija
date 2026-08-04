@@ -23,10 +23,10 @@ export class PreferenceHistory {
   @Column({ type: 'varchar', length: 20 })
   action!: PreferenceHistoryAction;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ name: 'previous_values', type: 'jsonb', nullable: true })
   previousValues!: Record<string, unknown> | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ name: 'new_values', type: 'jsonb', nullable: true })
   newValues!: Record<string, unknown> | null;
 
   @Column({ type: 'varchar', length: 160 })
