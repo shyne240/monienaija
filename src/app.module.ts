@@ -10,6 +10,7 @@ import { CustomerModule } from './customer/customer.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
 import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
+import { CustomerPreferenceModule } from './customer-preference/customer-preference.module';
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
 import { getRequestContext } from './production/request-context';
@@ -65,6 +66,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
+    CustomerPreferenceModule,
     BankModule,
     BeneficiaryModule,
     DepositModule,
