@@ -73,6 +73,7 @@ Establish the authoritative A1 starting point and complete the ADR chronology.
 #### Deliverables
 
 - A1 baseline checklist.
+- Complete ADR inventory: [`ADR-INVENTORY.md`](ADR-INVENTORY.md).
 - ADR status matrix.
 - ADR-to-phase dependency inventory.
 - Explicit determination of ADR-0012 status.
