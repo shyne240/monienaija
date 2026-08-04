@@ -8,6 +8,7 @@ import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
+import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
 import { getRequestContext } from './production/request-context';
@@ -61,6 +62,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerOnboardingModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
+    CustomerFundingInstrumentModule,
     BankModule,
     BeneficiaryModule,
     DepositModule,
