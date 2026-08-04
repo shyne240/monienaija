@@ -1,62 +1,90 @@
 # Post-Customer-Foundation Dependency Graph
 
-## 1. Phase graph
+## Naming rule
+
+This graph uses **Architecture phases A1-A8**. The Product Roadmap retains its original P1.0-P1.15 business-capability names. Product-to-Architecture mapping is maintained in [`ROADMAP.md`](ROADMAP.md).
+
+## 1. Complete project evolution
+
+```text
+M0-M9
+  |
+  v
+Engineering & Financial Core
+  |
+  v
+P1.0-P1.10
+  |
+  v
+Customer Foundation
+  |
+  v
+Architecture Phases A1-A8
+  |
+  v
+Runtime activation
+  |
+  v
+Product Roadmap continues P1.11-P1.15
+```
+
+## 2. Architecture phase graph
 
 ```mermaid
 flowchart TD
   P1[Customer Foundation P1.0-P1.10]
-  P20[P2.0 Foundation Closure]
-  P21[P2.1 Identity and Access]
-  P22[P2.2 Customer-to-Ledger Binding]
-  P23[P2.3 Capability and Risk Policy]
-  P24[P2.4 Internal Financial Pilot]
-  P25[P2.5 External Partners and Settlement]
-  P26[P2.6 Product Expansion]
-  P27[P2.7 Scale and Selective Extraction]
+  A1[A1 Foundation Consolidation]
+  A2[A2 Runtime Identity & Access]
+  A3[A3 Customer-to-Financial Account Binding]
+  A4[A4 Capability & Policy Engine]
+  A5[A5 Internal Financial Pilot]
+  A6[A6 External Partners & Settlement]
+  A7[A7 Product Expansion Infrastructure]
+  A8[A8 Scale & Selective Extraction]
 
-  P1 --> P20
-  P20 --> P21
-  P20 --> P22
-  P21 --> P22
-  P20 --> P23
-  P21 --> P23
-  P22 --> P24
-  P23 --> P24
-  P21 --> P24
-  P24 --> P25
-  P25 --> P26
-  P24 --> P26
-  P26 --> P27
-  P25 --> P27
+  P1 --> A1
+  A1 --> A2
+  A1 --> A3
+  A2 --> A3
+  A1 --> A4
+  A2 --> A4
+  A3 --> A5
+  A4 --> A5
+  A2 --> A5
+  A5 --> A6
+  A5 --> A7
+  A6 --> A7
+  A7 --> A8
+  A6 --> A8
 ```
 
-P2.2 and P2.3 may be designed in parallel after P2.0, but P2.4 requires both.
+A3 and A4 may be designed in parallel after A1, but A5 requires both.
 
-## 2. ADR-to-phase map
+## 3. ADR-to-Architecture map
 
-| ADR      | Decision                                                   | Primary dependency phase |
-| -------- | ---------------------------------------------------------- | ------------------------ |
-| ADR-0001 | Domain-oriented, ledger-centred architecture               | P2.0, P2.7               |
-| ADR-0002 | Minor-unit money and currency                              | P2.2, P2.4, P2.5, P2.6   |
-| ADR-0003 | Durable events and transactional publication               | P2.4, P2.5, P2.6, P2.7   |
-| ADR-0004 | Ledger-backed liability wallets                            | P2.2, P2.4               |
-| ADR-0005 | Independent reconciliation                                 | P2.2, P2.4, P2.5, P2.6   |
-| ADR-0006 | Controlled internal deposits and withdrawals               | P2.4, P2.5               |
-| ADR-0007 | Non-money-moving expanded tooling                          | P2.3, P2.5, P2.6         |
-| ADR-0008 | Operational resilience primitives                          | P2.1-P2.7                |
-| ADR-0009 | Production launch gates and runtime behavior               | P2.1-P2.7                |
-| ADR-0010 | Production maturity and governed operations                | P2.4-P2.7                |
-| ADR-0011 | Product governance                                         | P2.0, P2.3, P2.5, P2.6   |
-| ADR-0012 | Customer Identity/Profile/KYC Foundation, reconstructed    | P2.0, P2.1, P2.3         |
-| ADR-0013 | Customer onboarding and lifecycle                          | P2.0, P2.3               |
-| ADR-0014 | Eligibility, limits, enrollment, permissions, restrictions | P2.0, P2.3, P2.4         |
-| ADR-0015 | Customer wallet provisioning metadata                      | P2.0, P2.2               |
-| ADR-0016 | Funding-instrument metadata                                | P2.0, P2.5               |
-| ADR-0017 | Beneficiary metadata                                       | P2.0, P2.4, P2.5         |
-| ADR-0018 | Customer preferences metadata                              | P2.1, P2.5, P2.6         |
-| ADR-0019 | Authentication and recovery metadata                       | P2.0, P2.1               |
+| ADR      | Decision                                                   | Architecture dependency |
+| -------- | ---------------------------------------------------------- | ----------------------- |
+| ADR-0001 | Domain-oriented, ledger-centred architecture               | A1, A8                  |
+| ADR-0002 | Minor-unit money and currency                              | A3, A5, A6, A7          |
+| ADR-0003 | Durable events and transactional publication               | A5, A6, A7, A8          |
+| ADR-0004 | Ledger-backed liability wallets                            | A3, A5                  |
+| ADR-0005 | Independent reconciliation                                 | A3, A5, A6, A7          |
+| ADR-0006 | Controlled internal deposits and withdrawals               | A5, A6                  |
+| ADR-0007 | Non-money-moving expanded tooling                          | A4, A6, A7              |
+| ADR-0008 | Operational resilience primitives                          | A2-A8                   |
+| ADR-0009 | Production launch gates and runtime behavior               | A2-A8                   |
+| ADR-0010 | Production maturity and governed operations                | A5-A8                   |
+| ADR-0011 | Product governance                                         | A1, A4, A6, A7          |
+| ADR-0012 | Customer Identity/Profile/KYC Foundation, reconstructed    | A1, A2, A4              |
+| ADR-0013 | Customer onboarding and lifecycle                          | A1, A4                  |
+| ADR-0014 | Eligibility, limits, enrollment, permissions, restrictions | A1, A4, A5              |
+| ADR-0015 | Customer wallet provisioning metadata                      | A1, A3                  |
+| ADR-0016 | Funding-instrument metadata                                | A1, A6                  |
+| ADR-0017 | Beneficiary metadata                                       | A1, A5, A6              |
+| ADR-0018 | Customer preferences metadata                              | A2, A6, A7              |
+| ADR-0019 | Authentication and recovery metadata                       | A1, A2                  |
 
-## 3. Data dependency graph
+## 4. Data dependency graph
 
 ```text
 Customer UUID
@@ -66,40 +94,61 @@ Customer UUID
   │           ├── Restrictions and limit profile
   │           └── Capability policy decision
   ├── Authentication metadata
-  │     └── Runtime authentication and authorization
+  │     └── Runtime authentication and authorization (A2)
   ├── Compliance cases
   ├── Risk assessments
-  │     └── Capability policy decision
+  │     └── Capability & Policy Engine (A4)
   ├── Customer wallet metadata
-  │     └── Customer-to-ledger account binding
+  │     └── Customer-to-Financial Account Binding (A3)
   ├── Funding instruments
   ├── Beneficiaries
   └── Preferences
 
 Capability policy + authorization + account binding
-  └── Customer-aware financial command
+  └── Customer-aware financial command (A5)
         ├── Idempotency
         ├── Ledger posting
         ├── Transactional outbox
         └── Independent reconciliation
 ```
 
-## 4. Missing or unsafe edges
+## 5. Product dependency summary
 
-- Customer UUID to ledger account: not canonical yet.
-- Authentication metadata to runtime access control: not implemented.
-- Risk assessments to eligibility/policy decisions: overlapping authority.
-- Customer beneficiaries to transfer commands: not authorized or connected.
-- Funding instruments to external settlement: metadata only.
-- Preferences to notification delivery: intentionally disconnected.
-- Compliance cases to policy decisions: case metadata only.
+| Product milestone                          | Required Architecture phases    |
+| ------------------------------------------ | ------------------------------- |
+| P1.0 Product, Regulatory & Launch Envelope | M0-M9 and A1 governance closure |
+| P1.1 Identity & Customer Accounts          | A1-A3                           |
+| P1.2 KYC & Compliance                      | A1, A2, A4                      |
+| P1.3 Customer Wallet Experience            | A1-A5                           |
+| P1.4 Risk & Fraud                          | A1, A2, A4                      |
+| P1.5 Banking Rails & Settlement            | A1-A6                           |
+| P1.6 Provider-backed Virtual Accounts      | A1-A7                           |
+| P1.7 Notifications & Background Jobs       | A1, A2, A5-A7                   |
+| P1.8 Support, Reporting & Operations       | A1-A8                           |
+| P1.9 Customer Web Portal                   | A1-A5, A7                       |
+| P1.10 Admin & Operations Portal            | A1-A7                           |
+| P1.11 Public APIs & Partner Platform       | A1-A8                           |
+| P1.12 Cloud, Security & Observability      | A1, A2, A6-A8                   |
+| P1.13 Android, iOS & PWA                   | A1-A5, A7                       |
+| P1.14 Controlled Pilot Launch              | A1-A8                           |
+| P1.15 Product Expansion                    | A1-A8                           |
 
-## 5. Prohibited dependency edges
+## 6. Missing or unsafe edges
 
-No phase may create a direct dependency from:
+- Customer UUID to ledger account: not canonical yet; A3.
+- Authentication metadata to runtime access control: not implemented; A2.
+- Risk assessments to eligibility/policy decisions: overlapping authority; A1/A4.
+- Customer beneficiaries to transfer commands: not authorized or connected; A5.
+- Funding instruments to external settlement: metadata only; A6.
+- Preferences to notification delivery: intentionally disconnected until A7.
+- Compliance cases to policy decisions: case metadata only until A4.
+
+## 7. Prohibited dependency edges
+
+No Architecture phase may create a direct dependency from:
 
 - Customer metadata to ledger balance mutation.
-- Preferences to notification delivery before notification architecture.
-- Funding instruments to banks before partner and settlement architecture.
-- Beneficiaries to transfer execution before P2.4.
-- Risk records to automated AML/sanctions/fraud decisions without separately approved policy architecture.
+- Preferences to notification delivery before A7 notification architecture.
+- Funding instruments to banks before A6 partner and settlement architecture.
+- Beneficiaries to transfer execution before A5.
+- Risk records to automated AML, sanctions, or fraud decisions without separately approved policy architecture.

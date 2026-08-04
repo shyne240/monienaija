@@ -1,124 +1,162 @@
-# MonieNaija Architecture and Product Roadmap
+# MonieNaija Roadmap
 
-- Status: Canonical post-Customer-Foundation roadmap
+- Status: Canonical product and architecture roadmap
 - Last reviewed: 2026-08-04
-- Scope: Remaining platform evolution after P1.0-P1.10
 - Authority: Engineering, Security, Risk, Finance, Operations, Product, Compliance, and accountable release owners
 
-## 1. Purpose
+## 1. Two complementary tracks
 
-This document is the single source of truth for the architectural phase after the completed Customer Foundation. It governs sequencing, dependencies, ADR work, release gates, and long-term product expansion.
+MonieNaija has two roadmap tracks with different purposes:
 
-The roadmap is a set of decision gates, not a delivery promise. Code completion is not sufficient for a phase to exit. Each phase requires evidence, operational ownership, risk acceptance, and applicable legal or regulatory review.
+1. **Product Roadmap:** business capabilities and customer-facing outcomes. It retains the original P1.0-P1.15 numbering and names exactly.
+2. **Architecture Phases:** engineering execution phases required to make those capabilities safe, scalable, governed, and operationally supportable. Architecture phases are named A1-A8 and must not be confused with Product Roadmap milestones.
 
-## 2. Current state
+Product numbering is not renumbered or replaced by the Architecture phase names.
 
-MonieNaija is a domain-oriented NestJS modular monolith backed by PostgreSQL and TypeORM. The platform includes:
+## 2. Complete project evolution
+
+```text
+M0-M9
+  |
+  v
+Engineering & Financial Core
+  |
+  v
+P1.0-P1.10
+  |
+  v
+Customer Foundation
+  |
+  v
+Architecture Phases (A1-A8)
+  |
+  v
+Runtime activation
+  |
+  v
+Product Roadmap continues (P1.11-P1.15)
+```
+
+The labels in the evolution diagram describe the implementation sequence. The Product Roadmap below remains the permanent business roadmap.
+
+## 3. Original Product Roadmap — unchanged
+
+The Product Roadmap remains:
+
+| Product milestone | Business capability                   |
+| ----------------- | ------------------------------------- |
+| P1.0              | Product, Regulatory & Launch Envelope |
+| P1.1              | Identity & Customer Accounts          |
+| P1.2              | KYC & Compliance                      |
+| P1.3              | Customer Wallet Experience            |
+| P1.4              | Risk & Fraud                          |
+| P1.5              | Banking Rails & Settlement            |
+| P1.6              | Provider-backed Virtual Accounts      |
+| P1.7              | Notifications & Background Jobs       |
+| P1.8              | Support, Reporting & Operations       |
+| P1.9              | Customer Web Portal                   |
+| P1.10             | Admin & Operations Portal             |
+| P1.11             | Public APIs & Partner Platform        |
+| P1.12             | Cloud, Security & Observability       |
+| P1.13             | Android, iOS & PWA                    |
+| P1.14             | Controlled Pilot Launch               |
+| P1.15             | Product Expansion                     |
+
+This table is the original Product Roadmap. It is not replaced by the Customer Foundation implementation milestones or by A1-A8.
+
+## 4. Current architecture state
+
+MonieNaija is a domain-oriented NestJS modular monolith backed by PostgreSQL and TypeORM. It includes:
 
 - M0-M9 engineering, financial, resilience, production, maturity, and governance foundations.
-- P1.0 product governance.
-- P1.1-P1.10 customer foundation.
+- P1.0-P1.10 Customer Foundation metadata and lifecycle domains.
 - A ledger-centred financial core.
 - PostgreSQL-backed audit, idempotency, outbox, metrics, diagnostics, and readiness primitives.
 
 The Customer Foundation is complete as a metadata and lifecycle domain. It is not yet a production customer-access trust boundary and is not yet canonically bound to the ledger-backed financial wallet.
 
-## 3. Completed Customer Foundation
+## 5. Architecture phases
 
-| Milestone | Completed capability                                                                                                                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1.0      | Product governance, product scope, launch envelope, configuration, ownership, and readiness evidence.                                                                                                               |
-| P1.1      | Customer identity, profile, address, contacts, identity-document metadata, KYC assessment metadata, UUID customers, soft deletion, optimistic versioning, and audit.                                                |
-| P1.2      | Onboarding lifecycle, agreements, risk-profile metadata, tasks, approval decisions, readiness, and completion gates.                                                                                                |
-| P1.3      | Eligibility, limits, product enrollment, operating permissions, restrictions, and operating-status decisions.                                                                                                       |
-| P1.4      | Customer-wallet provisioning metadata, ownership, aliases, wallet lifecycle, and provisioning history without ledger interaction.                                                                                   |
-| P1.5      | Funding-instrument metadata, hash-independent verification metadata, ownership, lifecycle, and history without external providers.                                                                                  |
-| P1.6      | Beneficiary and trusted-recipient metadata, destination deduplication, ownership, verification, lifecycle, and history without transfer execution.                                                                  |
-| P1.7      | Language, theme, notification, and security preference metadata with versioned history.                                                                                                                             |
-| P1.8      | Password hash metadata, password history and rotation, expiry, failed-authentication counters, locks, reset metadata, MFA metadata, trusted devices, recovery codes, and security events without login or delivery. |
-| P1.9      | Compliance case lifecycle, assignments, comments, evidence metadata, resolution, closure, and append-only history.                                                                                                  |
-| P1.10     | Manual risk assessments, risk factors, reassessment snapshots, factor history, review dates, and closed-profile protection.                                                                                         |
+| Order | Architecture phase                           | Primary result                                                                                      | Product impact                                                   |
+| ----: | -------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+|     1 | **A1 Foundation Consolidation**              | Canonical ownership, identity, risk, wallet, beneficiary, and compliance boundaries.                | Stabilizes all remaining product work.                           |
+|     2 | **A2 Runtime Identity & Access**             | Protected customer, operator, support, and internal APIs.                                           | Required before customer-facing or financial activation.         |
+|     3 | **A3 Customer-to-Financial Account Binding** | Canonical mapping from customer-wallet metadata to ledger-backed accounts.                          | Enables a truthful Customer Wallet Experience.                   |
+|     4 | **A4 Capability & Policy Engine**            | Explainable, versioned product-access decisions.                                                    | Enables consistent risk, eligibility, limits, and product gates. |
+|     5 | **A5 Internal Financial Pilot**              | One internal money-moving flow with authorization, ledger, idempotency, outbox, and reconciliation. | Proves safe runtime activation.                                  |
+|     6 | **A6 External Partners & Settlement**        | Isolated bank, NIBSS, funding, callback, and settlement boundaries.                                 | Enables Banking Rails and provider-backed capabilities.          |
+|     7 | **A7 Product Expansion Infrastructure**      | Shared contracts for product, notification, support, reporting, API, and channel expansion.         | Enables P1.6-P1.15 without duplicated foundations.               |
+|     8 | **A8 Scale & Selective Extraction**          | Evidence-led scaling, recovery, regional strategy, and service extraction.                          | Supports pilot and long-term product expansion.                  |
 
-## 4. Architectural decision
+Detailed definitions are in [`PHASES.md`](PHASES.md). The execution sequence is in [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md). The full engineering plan is in [`ARCHITECTURE-PHASE-PLAN.md`](ARCHITECTURE-PHASE-PLAN.md).
 
-The next phase is **P2 — Controlled Customer Activation**.
+## 6. Product-to-Architecture mapping
 
-P2 must not begin with another isolated metadata module. It must establish the trust and ownership boundaries that connect the Customer Foundation to the existing financial core safely:
+| Product milestone                          | Depends on Architecture phases |
+| ------------------------------------------ | ------------------------------ |
+| P1.0 Product, Regulatory & Launch Envelope | M0-M9, A1                      |
+| P1.1 Identity & Customer Accounts          | A1, A2, A3                     |
+| P1.2 KYC & Compliance                      | A1, A2, A4                     |
+| P1.3 Customer Wallet Experience            | A1, A2, A3, A4, A5             |
+| P1.4 Risk & Fraud                          | A1, A2, A4                     |
+| P1.5 Banking Rails & Settlement            | A1-A6                          |
+| P1.6 Provider-backed Virtual Accounts      | A1-A6, A7                      |
+| P1.7 Notifications & Background Jobs       | A1, A2, A5, A6, A7             |
+| P1.8 Support, Reporting & Operations       | A1, A2, A4, A5, A6, A7, A8     |
+| P1.9 Customer Web Portal                   | A1, A2, A3, A4, A5, A7         |
+| P1.10 Admin & Operations Portal            | A1, A2, A4, A5, A6, A7         |
+| P1.11 Public APIs & Partner Platform       | A1-A7, A8                      |
+| P1.12 Cloud, Security & Observability      | A1, A2, A6, A7, A8             |
+| P1.13 Android, iOS & PWA                   | A1, A2, A3, A4, A5, A7         |
+| P1.14 Controlled Pilot Launch              | A1-A8                          |
+| P1.15 Product Expansion                    | A1-A8                          |
 
-1. Close and consolidate the Customer Foundation architecture.
-2. Establish runtime identity, authentication, and authorization.
-3. Bind customer-wallet metadata to ledger-backed financial accounts.
-4. Establish one canonical capability and policy decision layer.
-5. Activate one narrowly bounded internal financial flow.
-6. Add external rails and product capabilities only after internal proof.
-7. Scale or extract services only from measured evidence.
+Dependencies mean that the Architecture phase supplies a required platform contract. They do not imply that the phase itself implements the Product milestone.
 
-## 5. Roadmap phases
+## 7. Architecture gaps before runtime activation
 
-| Order | Phase                                                     | Primary result                                                                                              | Required before                                       |
-| ----: | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-|     0 | P2.0 Foundation Closure and Model Consolidation           | Canonical ownership, identity, risk, wallet, beneficiary, and compliance boundaries.                        | Any P2 implementation that changes runtime authority. |
-|     1 | P2.1 Identity and Access Trust Boundary                   | Protected customer, operator, and internal APIs.                                                            | Customer-facing or financial activation.              |
-|     2 | P2.2 Customer-to-Financial Account Binding                | One canonical mapping from customer-wallet metadata to ledger-backed accounts.                              | Customer-aware money movement.                        |
-|     3 | P2.3 Capability and Risk Policy Authority                 | Explainable, versioned product-access decisions.                                                            | Product or payment command execution.                 |
-|     4 | P2.4 Controlled Internal Financial Pilot                  | One internal money-moving flow with authorization, ledger posting, idempotency, outbox, and reconciliation. | External rails or broad customer rollout.             |
-|     5 | P2.5 External Partner and Settlement Boundary             | Isolated bank, NIBSS, funding, callback, and settlement integration.                                        | External customer money movement.                     |
-|     6 | P2.6 Product-Specific Expansion                           | Virtual accounts, bills, QR, agents, cards, payroll, savings, and other products one at a time.             | Product-specific governance and partner gates.        |
-|     7 | P2.7 Scale, Regional Resilience, and Selective Extraction | Evidence-led scaling, recovery, regional strategy, and service extraction where justified.                  | High-volume production expansion.                     |
+1. **No runtime authentication or authorization:** P1.8 stores metadata only; existing internal APIs remain protected by deployment and network controls until A2.
+2. **No canonical customer-to-ledger mapping:** P1.4 `CustomerWallet` remains distinct from ledger-backed `WalletAccount` until A3.
+3. **Overlapping risk models:** P1.3 eligibility-era risk metadata and P1.10 assessment records require A1 consolidation and A4 policy authority.
+4. **Overlapping beneficiary models:** M6 beneficiary tooling and P1.6 customer beneficiaries require A1 ownership decisions before A5 transfers.
+5. **No central capability-policy authority:** A4 must prevent financial services from implementing divergent policy checks.
+6. **No customer-aware financial command boundary:** A5 must connect authenticated customer commands to account binding and ledger operations.
+7. **No external settlement boundary:** P1.5 metadata remains non-financial until A6.
+8. **Governance status:** ADR-0004-0011 remain proposed for domain review; ADR-0012 was missing and has been reconstructed.
 
-Detailed phase definitions are in [`PHASES.md`](PHASES.md). The mandatory sequence is in [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md).
+## 8. Phase gates
 
-## 6. Critical architectural gaps
-
-1. **No runtime authentication or authorization:** P1.8 stores metadata only. Existing internal APIs must remain protected by deployment/network controls until P2.1.
-2. **No canonical customer-to-ledger mapping:** P1.4 `CustomerWallet` is intentionally separate from the ledger-backed `WalletAccount`.
-3. **Overlapping risk models:** P1.3 contains an eligibility-era risk representation while P1.10 contains manual risk-assessment records. P2.0 must define authority and projection rules.
-4. **Overlapping beneficiary models:** the pre-Customer-Foundation M6 beneficiary module and P1.6 customer-beneficiary module have different ownership and lifecycle semantics. P2.0 must designate the canonical model for future transfers.
-5. **No central capability-policy authority:** P1.3 produces eligibility and operating decisions, but financial domains do not yet consume one versioned, explainable policy decision.
-6. **No customer-aware financial command boundary:** the existing financial core predates the Customer Foundation and must not infer customer authorization from opaque references.
-7. **External settlement boundary is not implemented:** P1.5 registers instruments only; banks and NIBSS remain out of scope.
-8. **Governance status is incomplete:** ADR-0004 through ADR-0011 remain proposed for domain review, and ADR-0012 was missing and is reconstructed by this roadmap package.
-
-## 7. Phase gates
-
-No phase may pass its gate without:
+No Architecture phase may pass its gate without:
 
 - Approved scope and ADRs.
-- A threat, privacy, and operational risk review where applicable.
+- Threat, privacy, security, risk, and operational reviews where applicable.
 - DTO and domain validation.
-- PostgreSQL migration evidence.
+- Migration and rollback evidence.
 - Immutable audit evidence.
-- Idempotency and optimistic-lock evidence where mutations can be retried.
-- Rollback and recovery procedures.
+- Idempotency and optimistic-lock evidence.
 - Metrics, diagnostics, and support ownership.
 - Reconciliation evidence for any financial state.
-- Product governance and legal/compliance sign-off where customer money or regulated activity is affected.
+- Product governance and legal/compliance approval where customer money or regulated activity is affected.
 
-## 8. Long-term product roadmap
+## 9. Long-term product direction
 
-Long-term product delivery follows this order:
+The Product Roadmap continues from P1.11 through P1.15 only after the required Architecture phases are complete:
 
-1. Protected customer and operator access.
-2. Canonical financial-account binding.
-3. Internal customer-to-customer transfer pilot.
-4. Controlled internal funding and withdrawal pilot.
-5. Bank/NIBSS and settlement integrations.
-6. Virtual accounts and external funding instruments.
-7. Bills, airtime, QR, merchant, and agent channels.
-8. Cards, payroll, bulk payments, and business products.
-9. Savings, credit, and other products subject to separate risk and regulatory approval.
-10. Regional scale and selective service extraction.
+1. Public APIs and partner platform.
+2. Cloud, security, and observability maturity.
+3. Android, iOS, and PWA channels.
+4. Controlled pilot launch.
+5. Product expansion.
 
-Product expansion is not automatic. Each capability requires a product-specific ADR, governance record, partner plan, reconciliation design, support runbook, and rollback strategy.
+Product expansion is not automatic. Each capability requires product-specific governance, an ADR, a partner plan where applicable, reconciliation design, support ownership, and rollback strategy.
 
-## 9. Source documents
+## 10. References
 
-- Current architecture: [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md)
-- Phase detail: [`PHASES.md`](PHASES.md)
-- Implementation order: [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md)
-- Dependency graph: [`DEPENDENCY-GRAPH.md`](DEPENDENCY-GRAPH.md)
-- Architecture inventory: [`ARCHITECTURE-INVENTORY.md`](ARCHITECTURE-INVENTORY.md)
-- Ownership matrix: [`CANONICAL-OWNERSHIP-MATRIX.md`](CANONICAL-OWNERSHIP-MATRIX.md)
-- P2 plan: [`P2-PLAN.md`](P2-PLAN.md)
-- ADR reconstruction and map: [`ADR/ADR-0012-Customer-Foundation.md`](ADR/ADR-0012-Customer-Foundation.md)
-- ADR-0001 through ADR-0019: [`ADR/`](ADR/)
+- [`PHASES.md`](PHASES.md)
+- [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md)
+- [`DEPENDENCY-GRAPH.md`](DEPENDENCY-GRAPH.md)
+- [`ARCHITECTURE-INVENTORY.md`](ARCHITECTURE-INVENTORY.md)
+- [`CANONICAL-OWNERSHIP-MATRIX.md`](CANONICAL-OWNERSHIP-MATRIX.md)
+- [`ARCHITECTURE-PHASE-PLAN.md`](ARCHITECTURE-PHASE-PLAN.md)
+- [`ADR/ADR-0012-Customer-Foundation.md`](ADR/ADR-0012-Customer-Foundation.md)
+- [`ADR/`](ADR/)

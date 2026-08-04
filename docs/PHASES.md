@@ -2,9 +2,11 @@
 
 ## Scope
 
-These phases begin after P1.0-P1.10. They are architecture and delivery gates. A phase does not authorize production release merely because its implementation is complete.
+These are Architecture phases, not Product Roadmap milestones. They begin after the completed Customer Foundation implementation P1.0-P1.10. They are architecture and delivery gates. An Architecture phase does not authorize production release merely because its implementation is complete.
 
-## Phase P2.0 — Foundation Closure and Model Consolidation
+The permanent Product Roadmap retains its original business names from P1.0 through P1.15. The mapping between Product milestones and A1-A8 is maintained in [`ROADMAP.md`](ROADMAP.md).
+
+## Phase A1 — Foundation Consolidation
 
 ### Objective
 
@@ -34,10 +36,10 @@ Resolve overlapping models and make canonical ownership explicit before runtime 
 - Approved risk and policy authority model.
 - Approved wallet/account mapping model.
 - ADR-0012 formally reconstructed and accepted.
-- Proposed ADRs for P2.1-P2.4 reviewed.
+- Proposed ADRs for A2-A5 reviewed.
 - No unresolved duplicate authoritative writers.
 
-## Phase P2.1 — Identity and Access Trust Boundary
+## Phase A2 — Runtime Identity & Access
 
 ### Objective
 
@@ -60,7 +62,7 @@ Protect customer, operator, support, and internal APIs with runtime authenticati
 - P1.8 authentication metadata.
 - ADR-0008 audit and operational resilience.
 - ADR-0009 production runtime.
-- P2.0 data and ownership decisions.
+- A1 data and ownership decisions.
 
 ### Exit criteria
 
@@ -72,7 +74,7 @@ Protect customer, operator, support, and internal APIs with runtime authenticati
 - Privileged action audit evidence.
 - Key rotation and incident-response runbook.
 
-## Phase P2.2 — Customer-to-Financial Account Binding
+## Phase A3 — Customer-to-Financial Account Binding
 
 ### Objective
 
@@ -89,8 +91,8 @@ Create one canonical mapping between Customer Foundation wallet metadata and led
 
 ### Dependencies
 
-- P2.0 canonical ownership.
-- P2.1 authorization.
+- A1 canonical ownership.
+- A2 authorization.
 - ADR-0002, ADR-0004, ADR-0005, ADR-0008.
 - P1.4 customer-wallet metadata.
 - Existing Wallet and Ledger modules.
@@ -103,7 +105,7 @@ Create one canonical mapping between Customer Foundation wallet metadata and led
 - Ledger and customer ownership reconciliation pass.
 - Partial-failure repair procedure.
 
-## Phase P2.3 — Capability and Risk Policy Authority
+## Phase A4 — Capability & Policy Engine
 
 ### Objective
 
@@ -119,12 +121,12 @@ Convert customer state into a single explainable and versioned policy decision c
 
 ### Dependencies
 
-- P2.0 risk and model consolidation.
+- A1 risk and model consolidation.
 - P1.3 eligibility.
 - P1.9 compliance cases.
 - P1.10 risk profiles.
 - P1.4 product enrollment.
-- P2.1 authorization.
+- A2 authorization.
 
 ### Exit criteria
 
@@ -135,7 +137,7 @@ Convert customer state into a single explainable and versioned policy decision c
 - Conflict and precedence cases documented.
 - Consumer contract approved for financial commands.
 
-## Phase P2.4 — Controlled Internal Financial Pilot
+## Phase A5 — Internal Financial Pilot
 
 ### Objective
 
@@ -147,9 +149,9 @@ Internal customer-to-customer transfer. It avoids external provider and settleme
 
 ### Dependencies
 
-- P2.1 identity and authorization.
-- P2.2 account binding.
-- P2.3 capability policy.
+- A2 identity and authorization.
+- A3 account binding.
+- A4 capability policy.
 - ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0008.
 - Existing transfer and ledger implementations.
 
@@ -163,7 +165,7 @@ Internal customer-to-customer transfer. It avoids external provider and settleme
 - Customer and support trace from command to journal.
 - Pilot cohort, limits, rollback, and go/no-go approval.
 
-## Phase P2.5 — External Partner and Settlement Boundary
+## Phase A6 — External Partners & Settlement
 
 ### Objective
 
@@ -181,7 +183,7 @@ Add external banks, NIBSS, funding, callback, and settlement workflows only afte
 
 ### Dependencies
 
-- P2.1-P2.4.
+- A2-A5.
 - ADR-0005, ADR-0006, ADR-0007.
 - Partner certification.
 - Legal, regulatory, security, and data-protection review.
@@ -195,7 +197,7 @@ Add external banks, NIBSS, funding, callback, and settlement workflows only afte
 - Suspense-account procedures.
 - Customer-support and rollback runbooks.
 
-## Phase P2.6 — Product-Specific Expansion
+## Phase A7 — Product Expansion Infrastructure
 
 ### Objective
 
@@ -213,7 +215,7 @@ Add new financial products one at a time under the common authorization, policy,
 
 ### Dependencies
 
-- P2.1-P2.5 as applicable.
+- A2-A6 as applicable.
 - P1.0 product governance.
 - Product-specific legal, risk, settlement, disclosure, support, and rollback approval.
 
@@ -225,7 +227,7 @@ Add new financial products one at a time under the common authorization, policy,
 - Partner readiness where applicable.
 - Controlled cohort and rollback evidence.
 
-## Phase P2.7 — Scale, Regional Resilience, and Selective Extraction
+## Phase A8 — Scale & Selective Extraction
 
 ### Objective
 

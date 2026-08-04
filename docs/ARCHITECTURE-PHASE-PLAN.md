@@ -1,12 +1,12 @@
-# P2 Plan — Controlled Customer Activation
+# Architecture Phase Plan — A1-A8
 
-## 1. P2 objective
+## 1. Architecture-phase objective
 
-P2 is the architectural phase after Customer Foundation. It connects customer identity and lifecycle to protected operational and financial capabilities without weakening the ledger, audit, idempotency, outbox, or reconciliation boundaries.
+The A1-A8 Architecture phases are the engineering execution track after Customer Foundation. They connect customer identity and lifecycle to protected operational and financial capabilities without weakening the ledger, audit, idempotency, outbox, or reconciliation boundaries. They enable the unchanged Product Roadmap P1.0-P1.15; they do not replace it.
 
-P2 must not be treated as a request to add another isolated customer metadata module.
+The Architecture phases must not be treated as a request to add another isolated customer metadata module.
 
-## 2. P2.0 — Foundation Closure
+## 2. A1 — Foundation Consolidation
 
 ### Deliverables
 
@@ -17,7 +17,7 @@ P2 must not be treated as a request to add another isolated customer metadata mo
 - Customer/account identity map.
 - Risk and policy authority decision.
 - Data classification and retention decisions.
-- P2 ADR review calendar.
+- Architecture-phase ADR review calendar.
 
 ### Proposed ADRs
 
@@ -33,9 +33,9 @@ ADR-0001, ADR-0003, ADR-0008, ADR-0011, ADR-0012, and P1.0-P1.10.
 
 ### Exit gate
 
-No duplicate authoritative writer remains unresolved. All P2.1-P2.4 boundaries have owners, source-of-truth definitions, data contracts, and rollback assumptions.
+No duplicate authoritative writer remains unresolved. All A2-A5 boundaries have owners, source-of-truth definitions, data contracts, and rollback assumptions.
 
-## 3. P2.1 — Identity and Access
+## 3. A2 — Runtime Identity & Access
 
 ### Objective
 
@@ -52,7 +52,7 @@ Create the runtime trust boundary needed to protect customer, operator, support,
 
 ### Depends on
 
-P2.0, P1.7 preferences, P1.8 authentication metadata, ADR-0008, and ADR-0009.
+A1, P1.7 preferences, P1.8 authentication metadata, ADR-0008, and ADR-0009.
 
 ### Must not include
 
@@ -62,7 +62,7 @@ No payment authorization implementation, external OTP delivery, wallet changes, 
 
 Protected routes, login/session/revocation tests, MFA execution tests, lockout tests, operator-role tests, secret-handling review, and privileged audit evidence pass.
 
-## 4. P2.2 — Customer-to-Financial Account Binding
+## 4. A3 — Customer-to-Financial Account Binding
 
 ### Objective
 
@@ -78,13 +78,13 @@ Make the relationship between customer-wallet metadata and ledger-backed financi
 
 ### Depends on
 
-P2.0, P2.1, ADR-0002, ADR-0004, ADR-0005, ADR-0008, P1.4, Wallet, and Ledger.
+A1, A2, ADR-0002, ADR-0004, ADR-0005, ADR-0008, P1.4, Wallet, and Ledger.
 
 ### Exit gate
 
 Customer UUID to account mappings reconcile, duplicate mappings are impossible, provisioning is idempotent, and no mapping operation creates or changes monetary value unexpectedly.
 
-## 5. P2.3 — Capability and Risk Policy
+## 5. A4 — Capability & Policy Engine
 
 ### Objective
 
@@ -100,13 +100,13 @@ Create one versioned and explainable policy decision consumed by future financia
 
 ### Depends on
 
-P2.0, P2.1, P1.3 eligibility, P1.9 compliance cases, P1.10 risk assessments, and P1.4 enrollment.
+A1, A2, P1.3 eligibility, P1.9 compliance cases, P1.10 risk assessments, and P1.4 enrollment.
 
 ### Exit gate
 
 A policy result includes decision, product/capability, policy version, source evidence, expiry, and reasons. Financial services no longer implement independent eligibility or restriction logic.
 
-## 6. P2.4 — Internal Financial Pilot
+## 6. A5 — Internal Financial Pilot
 
 ### Objective
 
@@ -123,13 +123,13 @@ Activate one bounded internal money-moving capability, recommended as customer-t
 
 ### Depends on
 
-P2.1, P2.2, P2.3, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0008, and existing transfer/ledger modules.
+A2, A3, A4, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0008, and existing transfer/ledger modules.
 
 ### Exit gate
 
 Concurrent commands, duplicate retries, failed database transactions, outbox replay, ledger invariants, reconciliation, support traceability, and rollback all pass.
 
-## 7. P2.5 — External Partners and Settlement
+## 7. A6 — External Partners & Settlement
 
 ### Objective
 
@@ -146,13 +146,13 @@ Introduce external banks, NIBSS, funding, callbacks, settlement, and suspense ha
 
 ### Depends on
 
-P2.1-P2.4, ADR-0005-0007, partner certification, legal, regulatory, security, and privacy review.
+A2-A5, ADR-0005-0007, partner certification, legal, regulatory, security, and privacy review.
 
 ### Exit gate
 
 Callback replay, provider outage, timeout, ambiguous outcome, settlement, suspense, reconciliation, and partner rollback evidence is approved.
 
-## 8. P2.6 — Product Expansion
+## 8. A7 — Product Expansion Infrastructure
 
 ### Objective
 
@@ -170,9 +170,9 @@ Deliver products one at a time under common access, policy, ledger, event, and r
 
 ### Depends on
 
-P2.1-P2.5 as applicable, product governance, legal scope, partner readiness, risk approval, and product-specific reconciliation.
+A2-A6 as applicable, product governance, legal scope, partner readiness, risk approval, and product-specific reconciliation.
 
-## 9. P2.7 — Scale and Selective Extraction
+## 9. A8 — Scale & Selective Extraction
 
 ### Objective
 
@@ -192,7 +192,7 @@ Production volume, load/chaos tests, DR evidence, reconciliation throughput, out
 
 ## 10. Rollback strategy
 
-Every P2 implementation must provide:
+Every Architecture-phase implementation must provide:
 
 - Feature or cohort gate.
 - Command-level kill switch where applicable.

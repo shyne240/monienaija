@@ -1,7 +1,7 @@
 # MonieNaija Architecture Inventory
 
 - Review point: Customer Foundation complete through P1.10
-- Purpose: single inventory used before P2 design and implementation
+- Purpose: single inventory used before A1-A8 Architecture phase design and implementation
 
 ## 1. Runtime
 
@@ -96,7 +96,7 @@ The Nest application includes:
 - `maturity`
 - `product-governance`
 
-The duplicate `beneficiary`/`customer-beneficiary` and risk representations are documented in the ownership matrix and require P2 consolidation decisions.
+The duplicate `beneficiary`/`customer-beneficiary` and risk representations are documented in the ownership matrix and require A1 consolidation decisions.
 
 ## 7. ADR inventory
 
@@ -108,7 +108,7 @@ The duplicate `beneficiary`/`customer-beneficiary` and risk representations are 
 | ADR-0012      | Missing historical ADR; reconstructed in `ADR-0012-Customer-Foundation.md`.                                                                         |
 | ADR-0013-0019 | Accepted Customer Foundation decisions: onboarding, eligibility, wallet metadata, instruments, beneficiaries, preferences, authentication metadata. |
 
-The proposed ADRs must be ratified or superseded before the corresponding P2 production gate.
+The proposed ADRs must be ratified or superseded before the corresponding A1-A8 Architecture phase production gate.
 
 ## 8. Architecture gaps
 
@@ -120,7 +120,7 @@ The proposed ADRs must be ratified or superseded before the corresponding P2 pro
 6. **External partner boundary:** no bank/NIBSS adapter, callback, settlement, or external reconciliation boundary.
 7. **Event delivery:** outbox persistence exists, but broker/publisher/inbox delivery is not part of the foundation.
 8. **Operational authorization:** compliance, risk, support, and privileged administrative endpoints need role and approval controls.
-9. **Privacy and retention:** P2 must define classification, minimization, retention, legal holds, and data-subject operations across customer records.
+9. **Privacy and retention:** A1 must define classification, minimization, retention, legal holds, and data-subject operations across customer records.
 
 ## 9. Non-negotiable invariants
 

@@ -1,74 +1,84 @@
 # Post-Customer-Foundation Implementation Order
 
+## Naming rule
+
+This document orders **Architecture phases A1-A8**. It does not renumber, replace, or redefine the permanent Product Roadmap P1.0-P1.15. Product-to-Architecture dependencies are maintained in [`ROADMAP.md`](ROADMAP.md).
+
 ## 1. Mandatory critical path
 
 ```text
+M0-M9 Engineering & Financial Core
+            |
+            v
 P1.0-P1.10 Customer Foundation
             |
             v
-P2.0 Model and ownership consolidation
+A1 Foundation Consolidation
             |
             v
-P2.1 Runtime identity, authentication, authorization
+A2 Runtime Identity & Access
             |
             v
-P2.2 Customer-to-ledger account binding
+A3 Customer-to-Financial Account Binding
             |
             v
-P2.3 Canonical capability and risk policy
+A4 Capability & Policy Engine
             |
             v
-P2.4 Internal financial pilot
+A5 Internal Financial Pilot
             |
             v
-P2.5 External partners and settlement
+A6 External Partners & Settlement
             |
             v
-P2.6 Product expansion
+A7 Product Expansion Infrastructure
             |
             v
-P2.7 Scale and selective extraction
+A8 Scale & Selective Extraction
+            |
+            v
+Runtime activation and controlled Product Roadmap delivery
 ```
 
 ## 2. Ordered work packages
 
-| Order | Work package                | Must produce                                                                     | Cannot proceed without                                            |
-| ----: | --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-|     0 | Customer Foundation closure | Ownership matrix, architecture inventory, ADR-0012, overlap decisions            | P1.0-P1.10 inventory                                              |
-|     1 | Runtime trust boundary      | Authentication, sessions/tokens, MFA execution, authorization, privileged access | Security threat model and P2.0 ownership                          |
-|     2 | Account identity binding    | Customer-wallet to ledger-account mapping, idempotent provisioning, repair       | P2.0 canonical identity and P2.1 authorization                    |
-|     3 | Policy decision service     | Versioned, explainable capability decision                                       | P1.3, P1.9, P1.10 consolidation and P2.1                          |
-|     4 | Internal transfer pilot     | Customer-aware, authorized, ledger-backed transfer                               | P2.1, P2.2, P2.3, reconciliation                                  |
-|     5 | External funding/settlement | Isolated bank/NIBSS adapters, callbacks, settlement, suspense                    | Internal pilot evidence and partner approval                      |
-|     6 | Product activation          | One approved product at a time                                                   | Common policy, ledger, events, reconciliation, product governance |
-|     7 | Scale/extraction            | Evidence-led topology and regional resilience                                    | Production volume, DR, and capacity evidence                      |
+| Order | Architecture phase                       | Must produce                                                                     | Cannot proceed without                                    |
+| ----: | ---------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
+|     0 | A1 Foundation Consolidation              | Ownership matrix, architecture inventory, ADR-0012, overlap decisions            | P1.0-P1.10 inventory                                      |
+|     1 | A2 Runtime Identity & Access             | Authentication, sessions/tokens, MFA execution, authorization, privileged access | Security threat model and A1 ownership                    |
+|     2 | A3 Customer-to-Financial Account Binding | Customer-wallet to ledger-account mapping, idempotent provisioning, repair       | A1 canonical identity and A2 authorization                |
+|     3 | A4 Capability & Policy Engine            | Versioned, explainable capability decision                                       | P1.3, P1.9, P1.10 consolidation and A2                    |
+|     4 | A5 Internal Financial Pilot              | Customer-aware, authorized, ledger-backed transfer                               | A2, A3, A4, reconciliation                                |
+|     5 | A6 External Partners & Settlement        | Isolated bank/NIBSS adapters, callbacks, settlement, suspense                    | Internal pilot evidence and partner approval              |
+|     6 | A7 Product Expansion Infrastructure      | Shared contracts for products, jobs, APIs, support, and channels                 | Common policy, ledger, events, reconciliation, governance |
+|     7 | A8 Scale & Selective Extraction          | Evidence-led topology and regional resilience                                    | Production volume, DR, and capacity evidence              |
 
 ## 3. Work that may run in parallel
 
 The following work may be designed in parallel but may not bypass the critical path:
 
-- P2.0 ADR drafting, data-classification review, and ownership workshops.
-- P2.1 threat modeling, credential protection design, and authorization model design.
-- P2.2 mapping design and reconciliation query design.
-- P2.3 policy matrix workshops with Risk, Compliance, Product, and Finance.
-- P2.4 transfer pilot test-plan and failure-mode design.
-- P2.5 partner due diligence and settlement design.
-- P2.7 capacity-model preparation.
+- A1 ADR drafting, data-classification review, and ownership workshops.
+- A2 threat modeling, credential protection design, and authorization model design.
+- A3 mapping design and reconciliation query design.
+- A4 policy matrix workshops with Risk, Compliance, Product, and Finance.
+- A5 transfer pilot test-plan and failure-mode design.
+- A6 partner due diligence and settlement design.
+- A8 capacity-model preparation.
 
 Parallel design work must not expose an API, add a migration, or authorize a product before its dependency gate is passed.
 
 ## 4. Order constraints
 
-1. Do not expose current internal APIs publicly before P2.1.
+1. Do not expose current internal APIs publicly before A2.
 2. Do not let customer-wallet metadata become a ledger balance source.
 3. Do not wire eligibility, risk, or compliance rules independently into each financial module.
-4. Do not activate external rails before the internal pilot has reconciliation and rollback evidence.
-5. Do not add product-specific financial logic before policy, authorization, idempotency, audit, and reconciliation contracts exist.
+4. Do not activate external rails before A5 has reconciliation and rollback evidence.
+5. Do not add product-specific financial logic before A2-A5 policy, authorization, idempotency, audit, and reconciliation contracts exist.
 6. Do not extract services merely because the module count increases.
 
 ## 5. Phase gate evidence
 
-Each work package must attach:
+Each Architecture phase must attach:
 
 - Approved ADRs.
 - Migration and rollback plan.

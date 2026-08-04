@@ -57,7 +57,7 @@ Rejected. ADR-0001 requires domain ownership and ADR-0004 makes the ledger-backe
 
 ### Use authentication credentials as customer identity
 
-Rejected. Authentication and authorization were explicitly outside P1.1. Credential metadata is addressed later by ADR-0019 and runtime access is a future P2 phase.
+Rejected. Authentication and authorization were explicitly outside P1.1. Credential metadata is addressed later by ADR-0019 and runtime access is a future Architecture phase.
 
 ### Call BVN/NIN providers during customer creation
 
@@ -80,9 +80,9 @@ Rejected. Typed PostgreSQL entities permit field validation, uniqueness, foreign
 ### Trade-offs
 
 - KYC completion is metadata, not external verification.
-- Customer endpoints are not production-public until the P2 identity/access boundary exists.
+- Customer endpoints are not production-public until the A2 Runtime Identity & Access boundary exists.
 - Customer-to-ledger account binding remains a future phase.
-- Some later milestones introduced adjacent models that require P2 consolidation.
+- Some later milestones introduced adjacent models that require A1 consolidation.
 
 ## Dependencies
 
@@ -100,11 +100,11 @@ Rejected. Typed PostgreSQL entities permit field validation, uniqueness, foreign
 
 ADR-0012 is a prerequisite for:
 
-- **P2.0:** canonical ownership and model consolidation.
-- **P2.1:** runtime identity and access.
-- **P2.2:** customer-to-financial-account binding.
-- **P2.3:** capability and risk policy decisions.
-- **P2.4:** customer-aware financial commands.
+- **A1:** canonical ownership and model consolidation.
+- **A2:** runtime identity and access.
+- **A3:** customer-to-financial-account binding.
+- **A4:** capability and risk policy decisions.
+- **A5:** customer-aware financial commands.
 
 ## Verification record
 
