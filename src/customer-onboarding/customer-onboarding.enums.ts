@@ -1,0 +1,46 @@
+export enum CustomerOnboardingStatus {
+  NOT_STARTED = 'NOT_STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  AWAITING_REVIEW = 'AWAITING_REVIEW',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  COMPLETED = 'COMPLETED',
+}
+
+export enum CustomerRiskLevel {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  PROHIBITED = 'PROHIBITED',
+}
+
+export enum CustomerApprovalDecisionStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  ESCALATED = 'ESCALATED',
+}
+
+export enum CustomerAgreementType {
+  TERMS_AND_CONDITIONS = 'TERMS_AND_CONDITIONS',
+  PRIVACY_POLICY = 'PRIVACY_POLICY',
+  KYC_CONSENT = 'KYC_CONSENT',
+  DATA_PROCESSING = 'DATA_PROCESSING',
+  CUSTOMER_DECLARATION = 'CUSTOMER_DECLARATION',
+}
+
+export enum CustomerOnboardingTaskType {
+  PROFILE_COMPLETION = 'PROFILE_COMPLETION',
+  ADDRESS_VERIFICATION = 'ADDRESS_VERIFICATION',
+  IDENTITY_DOCUMENT = 'IDENTITY_DOCUMENT',
+  KYC_REVIEW = 'KYC_REVIEW',
+  AGREEMENT_ACCEPTANCE = 'AGREEMENT_ACCEPTANCE',
+  MANUAL_REVIEW = 'MANUAL_REVIEW',
+}
+
+export enum CustomerOnboardingTaskStatus {
+  PENDING = 'PENDING',
+  COMPLETED = 'COMPLETED',
+}
+
+export { CustomerApprovalDecisionStatus as ApprovalDecisionStatus };
