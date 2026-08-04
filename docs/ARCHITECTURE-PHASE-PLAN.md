@@ -13,6 +13,7 @@ The Architecture phases must not be treated as a request to add another isolated
 - Reconstructed ADR-0012.
 - Architecture inventory.
 - Canonical ownership matrix.
+- Detailed task plan: [`A1-IMPLEMENTATION-PLAN.md`](A1-IMPLEMENTATION-PLAN.md).
 - Duplicate-model disposition plan.
 - Customer/account identity map.
 - Risk and policy authority decision.

@@ -2,7 +2,7 @@
 
 ## Naming rule
 
-This document orders **Architecture phases A1-A8**. It does not renumber, replace, or redefine the permanent Product Roadmap P1.0-P1.15. Product-to-Architecture dependencies are maintained in [`ROADMAP.md`](ROADMAP.md).
+This document orders **Architecture phases A1-A8**. It does not renumber, replace, or redefine the permanent Product Roadmap P1.0-P1.15. Product-to-Architecture dependencies are maintained in [`ROADMAP.md`](ROADMAP.md). The complete optimized A1 task breakdown is maintained in [`A1-IMPLEMENTATION-PLAN.md`](A1-IMPLEMENTATION-PLAN.md).
 
 ## 1. Mandatory critical path
 
