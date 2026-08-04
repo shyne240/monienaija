@@ -9,6 +9,7 @@ import { validateEnvironment } from './config/environment';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
+import { CustomerComplianceModule } from './customer-compliance/customer-compliance.module';
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
 import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
 import { CustomerPreferenceModule } from './customer-preference/customer-preference.module';
@@ -64,6 +65,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,
+    CustomerComplianceModule,
     CustomerOnboardingModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
