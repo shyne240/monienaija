@@ -6,6 +6,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { CustomerModule } from './customer/customer.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -53,6 +54,7 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    CustomerModule,
     BankModule,
     BeneficiaryModule,
     DepositModule,
