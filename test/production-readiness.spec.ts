@@ -19,15 +19,15 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600014' : '1785753600004',
+          timestamp: this.compatible ? '1785753600015' : '1785753600004',
           name: this.compatible
-            ? 'CreateCustomerPreferences1785753600014'
+            ? 'CreateCustomerAuthentication1785753600015'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);
     }
     if (sql.includes('applied_count')) {
-      return Promise.resolve([{ applied_count: '15' }]);
+      return Promise.resolve([{ applied_count: '16' }]);
     }
     if (sql.includes('pending_count')) {
       return Promise.resolve([{ pending_count: '0' }]);
