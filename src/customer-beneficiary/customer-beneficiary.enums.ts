@@ -1,0 +1,20 @@
+export enum CustomerBeneficiaryType {
+  INTERNAL_CUSTOMER = 'INTERNAL_CUSTOMER',
+  BANK_ACCOUNT = 'BANK_ACCOUNT',
+  MOBILE_MONEY = 'MOBILE_MONEY',
+  CASH_AGENT = 'CASH_AGENT',
+}
+
+export enum CustomerBeneficiaryStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  DELETED = 'DELETED',
+}
+
+export enum BeneficiaryHistoryAction {
+  CREATED = 'CREATED',
+  OWNERSHIP_CREATED = 'OWNERSHIP_CREATED',
+  STATUS_CHANGED = 'STATUS_CHANGED',
+  VERIFIED = 'VERIFIED',
+}

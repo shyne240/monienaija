@@ -7,6 +7,7 @@ import type { FastifyRequest } from 'fastify';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
 import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
@@ -59,6 +60,7 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     HealthModule,
     CustomerModule,
+    CustomerBeneficiaryModule,
     CustomerOnboardingModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
