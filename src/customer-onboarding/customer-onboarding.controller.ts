@@ -4,7 +4,6 @@ import { CreateCustomerAgreementDto } from './dto/create-customer-agreement.dto'
 import { CreateCustomerApprovalDecisionDto } from './dto/create-customer-approval-decision.dto';
 import { CreateCustomerOnboardingDto } from './dto/create-customer-onboarding.dto';
 import { CreateCustomerOnboardingTaskDto } from './dto/create-customer-onboarding-task.dto';
-import { CreateCustomerRiskProfileDto } from './dto/create-customer-risk-profile.dto';
 import { UpdateCustomerOnboardingDto } from './dto/update-customer-onboarding.dto';
 import { CustomerOnboardingService } from './customer-onboarding.service';
 
@@ -35,16 +34,6 @@ export class CustomerOnboardingController {
   @Get(':id/agreements')
   listAgreements(@Param('id') id: string) {
     return this.onboardingService.listAgreements(id);
-  }
-
-  @Post(':id/risk-profile')
-  createRiskProfile(@Param('id') id: string, @Body() dto: CreateCustomerRiskProfileDto) {
-    return this.onboardingService.createRiskProfile(id, dto);
-  }
-
-  @Get(':id/risk-profile')
-  getRiskProfile(@Param('id') id: string) {
-    return this.onboardingService.getRiskProfile(id);
   }
 
   @Post(':id/onboarding-task')
