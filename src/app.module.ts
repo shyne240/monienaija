@@ -13,6 +13,7 @@ import { CustomerComplianceModule } from './customer-compliance/customer-complia
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
 import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
 import { CustomerPreferenceModule } from './customer-preference/customer-preference.module';
+import { CustomerRiskProfileModule } from './customer-risk-profile/customer-risk-profile.module';
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
 import { getRequestContext } from './production/request-context';
@@ -71,6 +72,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
     CustomerPreferenceModule,
+    CustomerRiskProfileModule,
     BankModule,
     BeneficiaryModule,
     DepositModule,
