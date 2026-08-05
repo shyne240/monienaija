@@ -168,6 +168,7 @@ Create one current-state inventory of bounded contexts, database authorities, mi
 
 #### Deliverables
 
+- Definitive technical inventory: [`MODULE-SCHEMA-API-INVENTORY.md`](MODULE-SCHEMA-API-INVENTORY.md).
 - Module-to-domain matrix.
 - Table-to-authority matrix.
 - Migration-to-domain map.

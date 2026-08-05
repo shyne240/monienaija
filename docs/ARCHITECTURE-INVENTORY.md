@@ -2,7 +2,8 @@
 
 - Review point: Customer Foundation complete through P1.10
 - Purpose: single inventory used before A1-A8 Architecture phase design and implementation
-- Detailed module inventory: [`PLATFORM-CUSTOMER-INVENTORY.md`](PLATFORM-CUSTOMER-INVENTORY.md)
+- A1T02 Customer Foundation summary: [`PLATFORM-CUSTOMER-INVENTORY.md`](PLATFORM-CUSTOMER-INVENTORY.md)
+- A1T03 technical module/schema/API inventory: [`MODULE-SCHEMA-API-INVENTORY.md`](MODULE-SCHEMA-API-INVENTORY.md)
 
 ## 1. Runtime
 
