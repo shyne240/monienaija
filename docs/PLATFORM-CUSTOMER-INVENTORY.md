@@ -2,6 +2,7 @@
 
 - Task: A1T02 — Platform and Customer Foundation Inventory
 - Review point: M0-M9 and P1.0-P1.10
+- A1T05 overlap review: [`CUSTOMER-ADJACENT-OVERLAP-REVIEW.md`](CUSTOMER-ADJACENT-OVERLAP-REVIEW.md)
 - Classification: Documentation-only baseline
 - Runtime/API status: Implemented internal routes are not production-public until A2 runtime identity and access exists.
 

@@ -1,6 +1,7 @@
 # Canonical Ownership Matrix
 
 - Scope: MonieNaija after Customer Foundation P1.0-P1.10
+- A1T05 detailed overlap decisions: [`CUSTOMER-ADJACENT-OVERLAP-REVIEW.md`](CUSTOMER-ADJACENT-OVERLAP-REVIEW.md)
 - Rule: one authoritative writer per concept; projections and metadata must never become competing sources of truth
 
 | Concept                  | Authoritative owner                                                                            | Current model/module                                          | Metadata or projection                        | Consolidation recommendation                                                            | Target phase |

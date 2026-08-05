@@ -277,7 +277,7 @@ Review overlapping Customer Foundation and adjacent financial/security models in
 
 #### Deliverables
 
-- Customer and adjacent-domain overlap report.
+- Customer and adjacent-domain overlap report: [`CUSTOMER-ADJACENT-OVERLAP-REVIEW.md`](CUSTOMER-ADJACENT-OVERLAP-REVIEW.md).
 - Authority/projection classification.
 - Wallet/account binding decision inputs.
 - Beneficiary consolidation decision inputs.
