@@ -205,6 +205,7 @@ Create one current-state inventory of bounded contexts, database authorities, mi
 - **Code impact:** None
 - **ADR required:** No
 - **Estimate:** 25 minutes
+- **Canonical artifact:** [`CROSS-CUTTING-CONTRACTS.md`](CROSS-CUTTING-CONTRACTS.md)
 
 #### Objective
 
