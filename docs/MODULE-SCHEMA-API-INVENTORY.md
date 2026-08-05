@@ -175,7 +175,283 @@ The following inventory includes every TypeORM `@Entity` discovered in `src`. Em
 | `WalletController`                    | `wallet`                      | `WalletService`                                                                                                                         | `/wallets`                     | Ledger-backed wallet and balance.                           |
 | `WithdrawalController`                | `withdrawal`                  | `WithdrawalService`                                                                                                                     | `/withdrawals`                 | Withdrawal lifecycle.                                       |
 
-## 5. Service-only and infrastructure service inventory
+## 5. Complete endpoint inventory
+
+Each route below is owned by exactly one controller. These are implemented routes; “public” here means HTTP-registered, not authorized for public production exposure.
+
+### `BankController`
+
+- `POST /api/v1/banks`
+- `GET /api/v1/banks`
+- `GET /api/v1/banks/:id`
+- `PATCH /api/v1/banks/:id`
+- `DELETE /api/v1/banks/:id`
+
+### `BeneficiaryController`
+
+- `POST /api/v1/beneficiaries`
+- `GET /api/v1/beneficiaries`
+- `GET /api/v1/beneficiaries/:id`
+- `PATCH /api/v1/beneficiaries/:id`
+- `DELETE /api/v1/beneficiaries/:id`
+
+### `CustomerController`
+
+- `POST /api/v1/customers`
+- `GET /api/v1/customers`
+- `GET /api/v1/customers/:id`
+- `PATCH /api/v1/customers/:id`
+- `POST /api/v1/customers/:id/profile`
+- `POST /api/v1/customers/:id/address`
+- `POST /api/v1/customers/:id/contact-method`
+- `POST /api/v1/customers/:id/identity-document`
+- `POST /api/v1/customers/:id/kyc-assessment`
+- `GET /api/v1/customers/:id/profile`
+- `GET /api/v1/customers/:id/addresses`
+- `GET /api/v1/customers/:id/contact-methods`
+- `GET /api/v1/customers/:id/identity-documents`
+- `GET /api/v1/customers/:id/kyc`
+
+### `CustomerAuthenticationController`
+
+- `POST /api/v1/customers/:id/authentication-credentials`
+- `GET /api/v1/customers/:id/authentication-credentials`
+- `GET /api/v1/customers/:id/authentication-credentials/:credentialId`
+- `PATCH /api/v1/customers/:id/authentication-credentials/:credentialId`
+- `POST /api/v1/customers/:id/authentication-credentials/:credentialId/password-rotate`
+- `POST /api/v1/customers/:id/authentication-credentials/:credentialId/failed-attempt`
+- `POST /api/v1/customers/:id/authentication-credentials/:credentialId/unlock`
+- `GET /api/v1/customers/:id/authentication-credentials/:credentialId/password-history`
+- `POST /api/v1/customers/:id/password-reset-requests`
+- `GET /api/v1/customers/:id/password-reset-requests`
+- `PATCH /api/v1/customers/:id/password-reset-requests/:requestId`
+- `POST /api/v1/customers/:id/password-reset-requests/:requestId/token`
+- `GET /api/v1/customers/:id/password-reset-requests/:requestId/tokens`
+- `PATCH /api/v1/customers/:id/password-reset-requests/:requestId/tokens/:tokenId`
+- `POST /api/v1/customers/:id/mfa-enrollments`
+- `GET /api/v1/customers/:id/mfa-enrollments`
+- `PATCH /api/v1/customers/:id/mfa-enrollments/:enrollmentId`
+- `POST /api/v1/customers/:id/mfa-enrollments/:enrollmentId/method`
+- `GET /api/v1/customers/:id/mfa-enrollments/:enrollmentId/methods`
+- `PATCH /api/v1/customers/:id/mfa-methods/:methodId`
+- `POST /api/v1/customers/:id/trusted-devices`
+- `GET /api/v1/customers/:id/trusted-devices`
+- `PATCH /api/v1/customers/:id/trusted-devices/:deviceId`
+- `POST /api/v1/customers/:id/recovery-codes`
+- `GET /api/v1/customers/:id/recovery-codes`
+- `PATCH /api/v1/customers/:id/recovery-codes/:codeId`
+- `GET /api/v1/customers/:id/security-events`
+
+### `CustomerBeneficiaryController`
+
+- `POST /api/v1/customers/:id/beneficiaries`
+- `GET /api/v1/customers/:id/beneficiaries`
+- `GET /api/v1/customers/:id/beneficiaries/:beneficiaryId`
+- `PATCH /api/v1/customers/:id/beneficiaries/:beneficiaryId`
+- `POST /api/v1/customers/:id/beneficiaries/:beneficiaryId/verify`
+- `GET /api/v1/customers/:id/beneficiaries/:beneficiaryId/history`
+- `GET /api/v1/customers/:id/beneficiaries/:beneficiaryId/ownership`
+
+### `CustomerComplianceController`
+
+- `POST /api/v1/customers/:id/compliance-cases`
+- `GET /api/v1/customers/:id/compliance-cases`
+- `GET /api/v1/customers/:id/compliance-cases/:caseId`
+- `PATCH /api/v1/customers/:id/compliance-cases/:caseId`
+- `POST /api/v1/customers/:id/compliance-cases/:caseId/comment`
+- `GET /api/v1/customers/:id/compliance-cases/:caseId/comments`
+- `POST /api/v1/customers/:id/compliance-cases/:caseId/evidence`
+- `GET /api/v1/customers/:id/compliance-cases/:caseId/evidence`
+- `POST /api/v1/customers/:id/compliance-cases/:caseId/assignment`
+- `GET /api/v1/customers/:id/compliance-cases/:caseId/assignments`
+- `GET /api/v1/customers/:id/compliance-cases/:caseId/history`
+
+### `CustomerEligibilityController`
+
+- `POST /api/v1/customers/:id/eligibility`
+- `GET /api/v1/customers/:id/eligibility`
+- `PATCH /api/v1/customers/:id/eligibility`
+- `POST /api/v1/customers/:id/limit-profile`
+- `GET /api/v1/customers/:id/limit-profile`
+- `PATCH /api/v1/customers/:id/limit-profile`
+- `POST /api/v1/customers/:id/product-enrollment`
+- `GET /api/v1/customers/:id/product-enrollments`
+- `PATCH /api/v1/customers/:id/product-enrollments/:enrollmentId`
+- `POST /api/v1/customers/:id/permission`
+- `GET /api/v1/customers/:id/permissions`
+- `POST /api/v1/customers/:id/restriction`
+- `GET /api/v1/customers/:id/restrictions`
+- `GET /api/v1/customers/:id/operating-status`
+
+### `CustomerFundingInstrumentController`
+
+- `POST /api/v1/customers/:id/funding-instruments`
+- `GET /api/v1/customers/:id/funding-instruments`
+- `GET /api/v1/customers/:id/funding-instruments/:instrumentId`
+- `PATCH /api/v1/customers/:id/funding-instruments/:instrumentId`
+- `POST /api/v1/customers/:id/funding-instruments/:instrumentId/verify`
+- `GET /api/v1/customers/:id/funding-instruments/:instrumentId/history`
+- `GET /api/v1/customers/:id/funding-instruments/:instrumentId/ownership`
+
+### `CustomerOnboardingController`
+
+- `POST /api/v1/customers/:id/onboarding`
+- `GET /api/v1/customers/:id/onboarding`
+- `PATCH /api/v1/customers/:id/onboarding`
+- `POST /api/v1/customers/:id/agreements`
+- `GET /api/v1/customers/:id/agreements`
+- `POST /api/v1/customers/:id/onboarding-task`
+- `GET /api/v1/customers/:id/onboarding-tasks`
+- `POST /api/v1/customers/:id/approval`
+- `GET /api/v1/customers/:id/approval`
+- `GET /api/v1/customers/:id/onboarding-readiness`
+
+### `CustomerPreferenceController`
+
+- `POST /api/v1/customers/:id/preferences`
+- `GET /api/v1/customers/:id/preferences`
+- `PATCH /api/v1/customers/:id/preferences`
+- `GET /api/v1/customers/:id/preferences/history`
+
+### `CustomerRiskProfileController`
+
+- `POST /api/v1/customers/:id/risk-profile`
+- `GET /api/v1/customers/:id/risk-profile`
+- `PATCH /api/v1/customers/:id/risk-profile`
+- `POST /api/v1/customers/:id/risk-profile/reassess`
+- `GET /api/v1/customers/:id/risk-profile/history`
+
+### `CustomerWalletController`
+
+- `POST /api/v1/customers/:id/wallets`
+- `GET /api/v1/customers/:id/wallets`
+- `GET /api/v1/customers/:id/wallets/:walletId`
+- `PATCH /api/v1/customers/:id/wallets/:walletId`
+- `POST /api/v1/customers/:id/wallets/:walletId/alias`
+- `GET /api/v1/customers/:id/wallets/:walletId/history`
+- `GET /api/v1/customers/:id/wallets/:walletId/ownership`
+
+### `DepositController`
+
+- `POST /api/v1/deposits`
+- `GET /api/v1/deposits`
+- `GET /api/v1/deposits/:depositId`
+- `POST /api/v1/deposits/:depositId/complete`
+- `POST /api/v1/deposits/:depositId/fail`
+- `POST /api/v1/deposits/:depositId/cancel`
+
+### `FeeController`
+
+- `POST /api/v1/fees/calculate`
+
+### `HealthController`
+
+- `GET /api/v1/health`
+- `GET /api/v1/health/ready`
+
+### `LedgerController`
+
+- `POST /api/v1/ledger/accounts`
+- `GET /api/v1/ledger/accounts`
+- `GET /api/v1/ledger/accounts/:accountId/balance`
+- `GET /api/v1/ledger/accounts/:accountId`
+- `POST /api/v1/ledger/journals`
+- `GET /api/v1/ledger/journals/:journalId`
+- `POST /api/v1/ledger/journals/:journalId/reversal`
+
+### `LimitController`
+
+- `POST /api/v1/limits/evaluate`
+
+### `MaturityController`
+
+- `GET /api/v1/internal/health-dashboard`
+- `GET /api/v1/internal/acceptance`
+- `GET /api/v1/internal/maintenance/preview`
+- `POST /api/v1/internal/maintenance/execute`
+- `GET /api/v1/internal/reports/daily`
+- `GET /api/v1/internal/reports/ledger`
+- `GET /api/v1/internal/reports/wallets`
+- `GET /api/v1/internal/reports/transfers`
+- `GET /api/v1/internal/reports/deposits`
+- `GET /api/v1/internal/reports/withdrawals`
+- `GET /api/v1/internal/reports/reconciliation`
+- `GET /api/v1/internal/reports/outbox`
+- `GET /api/v1/internal/reports/audit`
+
+### `OperationsController`
+
+- `GET /api/v1/internal/metrics`
+- `GET /api/v1/internal/diagnostics`
+- `GET /api/v1/internal/audit`
+- `GET /api/v1/internal/outbox`
+
+### `ProductGovernanceController`
+
+- `POST /api/v1/internal/product-governance/records`
+- `GET /api/v1/internal/product-governance/records`
+- `GET /api/v1/internal/product-governance/records/:id`
+- `PATCH /api/v1/internal/product-governance/records/:id`
+- `GET /api/v1/internal/product-governance/report`
+- `GET /api/v1/internal/product-governance/readiness`
+- `GET /api/v1/internal/product-governance/configuration`
+
+### `ProductionController`
+
+- `GET /api/v1/internal/version`
+- `GET /api/v1/internal/configuration`
+- `GET /api/v1/internal/deployment`
+- `GET /api/v1/internal/readiness`
+
+### `QuoteController`
+
+- `POST /api/v1/quotes`
+- `GET /api/v1/quotes`
+- `GET /api/v1/quotes/:id`
+- `POST /api/v1/quotes/:id/use`
+
+### `ReconciliationController`
+
+- `GET /api/v1/internal/reconciliation/report`
+- `GET /api/v1/internal/reconciliation/trial-balance`
+- `GET /api/v1/internal/reconciliation/finance`
+- `GET /api/v1/internal/reconciliation/accounts/:accountId/activity`
+
+### `TransferController`
+
+- `POST /api/v1/transfers`
+- `GET /api/v1/transfers/:transferId`
+
+### `WalletTransactionController`
+
+- `GET /api/v1/wallets/:walletId/transactions`
+
+### `VirtualAccountController`
+
+- `POST /api/v1/virtual-accounts`
+- `GET /api/v1/virtual-accounts`
+- `GET /api/v1/virtual-accounts/lookup`
+- `GET /api/v1/virtual-accounts/:id`
+- `POST /api/v1/virtual-accounts/:id/deactivate`
+
+### `WalletController`
+
+- `POST /api/v1/wallets`
+- `GET /api/v1/wallets`
+- `GET /api/v1/wallets/:walletId/balance`
+- `GET /api/v1/wallets/:walletId`
+
+### `WithdrawalController`
+
+- `POST /api/v1/withdrawals`
+- `GET /api/v1/withdrawals`
+- `GET /api/v1/withdrawals/:withdrawalId`
+- `POST /api/v1/withdrawals/:withdrawalId/process`
+- `POST /api/v1/withdrawals/:withdrawalId/complete`
+- `POST /api/v1/withdrawals/:withdrawalId/fail`
+- `POST /api/v1/withdrawals/:withdrawalId/cancel`
+
+## 6. Service-only and infrastructure service inventory
 
 | Service                            | Owning module                 | Role                                                   | Classification                | Downstream consumers                          |
 | ---------------------------------- | ----------------------------- | ------------------------------------------------------ | ----------------------------- | --------------------------------------------- |
@@ -220,7 +496,7 @@ The following inventory includes every TypeORM `@Entity` discovered in `src`. Em
 | `WalletService`                    | `wallet`                      | Financial wallet creation and ledger-derived balances. | Financial facade              | Transfer, deposit, withdrawal, channels.      |
 | `WithdrawalService`                | `withdrawal`                  | Withdrawal lifecycle and posting.                      | Financial lifecycle           | Ledger, payment, reconciliation.              |
 
-## 6. Public endpoint ownership and duplicate API analysis
+## 7. Public endpoint ownership and duplicate API analysis
 
 ### Endpoint ownership verification
 
@@ -249,7 +525,7 @@ Every implemented route is owned by one controller in the current route inventor
 
 No duplicate HTTP method/path combination is intended in the current route inventory. Overlap is primarily semantic ownership, not identical route registration.
 
-## 7. Entity ownership verification
+## 8. Entity ownership verification
 
 - Every TypeORM `@Entity` is mapped to one owning module in the entity/table inventory.
 - Embedded preference value objects intentionally do not own tables.
@@ -258,7 +534,7 @@ No duplicate HTTP method/path combination is intended in the current route inven
 - Legacy `Beneficiary` and `CustomerBeneficiary` represent separate historical/Customer Foundation models and require A1/A5 disposition.
 - No entity is intentionally assigned to multiple module owners.
 
-## 8. Database and financial authority verification
+## 9. Database and financial authority verification
 
 - Ledger accounts, journals, and lines are the only financial source-of-truth tables.
 - Wallet balances are derived from ledger lines; no customer metadata table is an authoritative balance store.
@@ -267,7 +543,7 @@ No duplicate HTTP method/path combination is intended in the current route inven
 - Customer Foundation tables do not write ledger tables.
 - Operations tables own audit, idempotency, metrics, and outbox infrastructure.
 
-## 9. Current implementation status
+## 10. Current implementation status
 
 - M0-M9 platform and financial modules: implemented with internal operational boundaries.
 - P1.0-P1.10 Customer Foundation modules: implemented as metadata, lifecycle, governance, and decision-input domains.
@@ -277,7 +553,7 @@ No duplicate HTTP method/path combination is intended in the current route inven
 - External bank/NIBSS and settlement integrations: not implemented.
 - Public customer-facing exposure: not authorized before A2.
 
-## 10. A1T03 acceptance evidence
+## 11. A1T03 acceptance evidence
 
 A1T03 is complete when:
 
