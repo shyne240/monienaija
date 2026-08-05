@@ -553,7 +553,80 @@ No duplicate HTTP method/path combination is intended in the current route inven
 - External bank/NIBSS and settlement integrations: not implemented.
 - Public customer-facing exposure: not authorized before A2.
 
-## 11. A1T03 acceptance evidence
+## 11. Migration and schema-control inventory
+
+The migration chain is explicit and migration-only. The current expected head is `1785753600017`.
+
+| Migration                                           | Primary tables / domain                                                       | Authority and control boundary                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `1785753600000-CreateWalletAndLedger.ts`            | `ledger_accounts`, `ledger_journals`, `ledger_lines`, `wallet_accounts`       | Ledger owns accounts, journals, lines, and balances; wallet is a ledger-backed facade.            |
+| `1785753600001-CreateTransfers.ts`                  | `transfers`                                                                   | Transfer lifecycle metadata; posted value remains ledger-owned.                                   |
+| `1785753600002-CreatePaymentCapabilities.ts`        | `payment_references`, `deposits`, `withdrawals`                               | Payment lifecycle/reference authority; no external rail is implied.                               |
+| `1785753600003-CreateExpandedFinancialProducts.ts`  | `virtual_accounts`, legacy `beneficiaries`, `banks`, `payment_quotes`         | Metadata/product tooling; external activation remains future A6.                                  |
+| `1785753600004-RepairM6UuidDefaults.ts`             | Existing M6 UUID defaults                                                     | Compatibility repair only; no new domain authority.                                               |
+| `1785753600005-CreateOperationalResilience.ts`      | `idempotency_records`, `audit_events`, `outbox_events`, `operational_metrics` | Operations owns shared operational primitives and retention controls.                             |
+| `1785753600006-CreateProductionMaturityMetadata.ts` | `governance_metadata`                                                         | Maturity/governance metadata; readiness is not financial truth.                                   |
+| `1785753600007-CreateProductGovernance.ts`          | `product_governance_records`                                                  | Product governance and release evidence.                                                          |
+| `1785753600008-CreateCustomerFoundation.ts`         | Customer identity/profile/address/contact/document/KYC tables                 | `customer` owns canonical customer identity and evidence metadata.                                |
+| `1785753600009-CreateCustomerOnboarding.ts`         | Onboarding, agreements, tasks, approval decisions, onboarding-era risk        | `customer-onboarding` owns workflow evidence; no financial writes.                                |
+| `1785753600010-CreateCustomerEligibility.ts`        | Eligibility, limits, enrollment, permissions, restrictions                    | `customer-eligibility` owns current source metadata until A4.                                     |
+| `1785753600011-CreateCustomerWalletProvisioning.ts` | Customer wallets, aliases, ownership, provisioning history                    | `customer-wallet` owns provisioning metadata; no ledger account/balance authority.                |
+| `1785753600012-CreateCustomerFundingInstruments.ts` | Funding instruments, ownership, verification, history                         | `customer-funding-instrument` owns registration metadata; no provider settlement authority.       |
+| `1785753600013-CreateCustomerBeneficiaries.ts`      | Customer beneficiaries, ownership, verification, history                      | `customer-beneficiary` owns preferred customer-recipient metadata; legacy model remains separate. |
+| `1785753600014-CreateCustomerPreferences.ts`        | Preferences and preference histories                                          | `customer-preference` owns customer intent; no delivery state.                                    |
+| `1785753600015-CreateCustomerAuthentication.ts`     | Credentials, password/recovery, MFA, devices, security events                 | `customer-authentication` owns metadata; no runtime authentication/authorization.                 |
+| `1785753600016-CreateCustomerComplianceCases.ts`    | Compliance cases, histories, assignments, comments, evidence                  | `customer-compliance` owns case-management evidence; no screening engine.                         |
+| `1785753600017-CreateCustomerRiskAssessments.ts`    | Risk assessments, factors, assessment/factor histories                        | `customer-risk-profile` owns manual assessment evidence; no automated risk engine.                |
+
+All schema changes remain migration-controlled. `synchronize=false` is required, and the production readiness boundary rejects an incompatible migration head.
+
+## 12. Foreign-key, uniqueness, deletion, and version inventory
+
+### Foreign-key and relationship authorities
+
+- Customer Foundation child records use `customer_id` relationships to the canonical `customers` record where defined; child modules do not own customer identity.
+- Customer onboarding, eligibility, wallet metadata, funding instruments, beneficiaries, preferences, authentication, compliance, and risk records retain parent/history relationships within their owning module.
+- `wallet_accounts.ledger_account_id` identifies the ledger account used by the financial wallet facade; it does not make the wallet table the balance authority.
+- Financial lifecycle records reference wallet/journal/payment records through their financial-domain contracts; reconciliation reads those relationships independently.
+- Operations audit/outbox records identify entities or aggregates for evidence and publication; they do not become source-domain writers.
+
+### Constraint and lifecycle inventory
+
+| Constraint/lifecycle category | Current enforcement / authority                                                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UUID primary keys             | TypeORM UUID primary keys across customer, metadata, financial, and operations records; identifiers are owned by the bounded context.                                                       |
+| Domain references             | Customer, case, beneficiary, funding-instrument, MFA, and wallet aliases use domain normalization and declared uniqueness rules.                                                            |
+| Financial uniqueness          | Ledger account codes, wallet customer/currency pairs, ledger-account bindings, payment references, financial journal links, and command/idempotency keys have domain-specific constraints.  |
+| Scoped idempotency            | Operations uses `(scope, idempotencyKey)`; financial command tables may add local constraints without replacing the shared scope rule.                                                      |
+| Soft deletion                 | Customer Foundation metadata uses `deleted_at`/TypeORM soft deletion where defined; active-only partial indexes exclude deleted rows only where reuse is explicitly allowed.                |
+| Non-reusable references       | Customer, case, beneficiary, funding-instrument, and payment references remain unique across soft deletion where their owning schema defines global uniqueness.                             |
+| Optimistic versioning         | Mutable Customer Foundation records use version columns and expected-version checks; stale updates are rejected rather than silently overwritten.                                           |
+| Append-only history           | Beneficiary, funding-instrument, preference, authentication/security, compliance, risk, audit, and financial posting histories are preserved according to their owner and retention policy. |
+| Financial immutability        | Posted ledger journals and lines are immutable; corrections use compensating entries and reconciliation.                                                                                    |
+| Operational immutability      | Audit event facts are append-only; outbox payload/identity facts are immutable while lifecycle status/retry fields are operationally mutable.                                               |
+
+These are inventory findings, not new schema decisions. Detailed identifier and privacy rules remain in [`IDENTIFIER-PRIVACY-RETENTION-CONTROLS.md`](IDENTIFIER-PRIVACY-RETENTION-CONTROLS.md).
+
+## 13. Duplicate-route and overlap report
+
+| Concern                                      | Current finding                                                                                      | Ownership result                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Identical HTTP method/path combinations      | Static route inventory contains no intended duplicate method/path combination                        | Each route remains assigned to one controller; any future collision blocks the route review. |
+| Legacy versus Customer Beneficiary APIs      | `/beneficiaries` and `/customers/:id/beneficiaries` are different paths and different models         | Semantic overlap is documented; A1/A5 chooses one transfer-facing authority.                 |
+| Financial wallet versus customer-wallet APIs | `/wallets` and `/customers/:id/wallets` are different paths                                          | Financial wallet and provisioning metadata remain separate; A3 binds them.                   |
+| Risk representations                         | P1.10 risk-profile routes and eligibility-era risk metadata are different responsibilities           | P1.10 is preferred evidence; A4 owns future policy output.                                   |
+| Limits                                       | `/limits/evaluate` and customer limit-profile routes are different responsibilities                  | Evaluation versus stored configuration remains explicit; A4 defines enforcement.             |
+| Operations/readiness surfaces                | Operations, maturity, production, reconciliation, and governance expose read-oriented internal views | Views do not write source records and are not production-public before A2.                   |
+
+## 14. Internal-route exposure report
+
+- HTTP registration is not public authorization. Routes under `/api/v1/internal` and other current routes remain internal until A2 provides authentication and authorization.
+- DTO validation, request context, and error envelopes do not establish a runtime principal or permission.
+- Operations, production, maturity, product-governance, reconciliation, ledger, wallet, and financial lifecycle controllers require deployment/network restriction before A2.
+- Customer Foundation routes are metadata/lifecycle APIs and must not be interpreted as customer-authenticated or financial-command APIs.
+- No A1T03 change exposes, protects, removes, or renames an existing route.
+
+## 15. A1T03 acceptance evidence
 
 A1T03 is complete when:
 
