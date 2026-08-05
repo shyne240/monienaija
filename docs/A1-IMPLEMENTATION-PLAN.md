@@ -122,6 +122,7 @@ Record what M0-M9 and P1.0-P1.10 already provide and prevent Product and Archite
 
 - M0-M9 capability matrix.
 - P1.0-P1.10 completion matrix.
+- Definitive module inventory: [`PLATFORM-CUSTOMER-INVENTORY.md`](PLATFORM-CUSTOMER-INVENTORY.md).
 - Original Product Roadmap preservation section.
 - Product-track versus Architecture-track explanation.
 
