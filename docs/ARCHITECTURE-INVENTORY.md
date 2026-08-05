@@ -6,6 +6,7 @@
 - A1T03 technical module/schema/API inventory: [`MODULE-SCHEMA-API-INVENTORY.md`](MODULE-SCHEMA-API-INVENTORY.md)
 - A1T04 cross-cutting contracts and trust boundaries: [`CROSS-CUTTING-CONTRACTS.md`](CROSS-CUTTING-CONTRACTS.md)
 - A1T04 cross-cutting contracts and trust boundaries: [`CROSS-CUTTING-CONTRACTS.md`](CROSS-CUTTING-CONTRACTS.md)
+- A1T06 risk, eligibility, and compliance authority review: [`RISK-COMPLIANCE-AUTHORITY-REVIEW.md`](RISK-COMPLIANCE-AUTHORITY-REVIEW.md)
 
 ## 1. Runtime
 

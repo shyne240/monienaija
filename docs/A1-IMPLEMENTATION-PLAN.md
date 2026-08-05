@@ -313,6 +313,7 @@ Review overlapping Customer Foundation and adjacent financial/security models in
 - **Code impact:** None
 - **ADR required:** Yes — ADR-0022 input
 - **Estimate:** 25 minutes
+- **Canonical artifact:** [`RISK-COMPLIANCE-AUTHORITY-REVIEW.md`](RISK-COMPLIANCE-AUTHORITY-REVIEW.md)
 
 #### Objective
 
