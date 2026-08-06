@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import type { FastifyRequest } from 'fastify';
 
+import { AuthorizationModule } from './authorization/authorization.module';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { CustomerModule } from './customer/customer.module';
@@ -63,6 +64,7 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    AuthorizationModule,
     CustomerModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,
