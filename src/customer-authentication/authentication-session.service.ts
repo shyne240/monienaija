@@ -227,6 +227,43 @@ export class AuthenticationSessionService {
     return this.toToken(accessToken, replacement);
   }
 
+  async revokeAllForCredential(
+    credentialId: string,
+    actor: string,
+    reason = 'Credential invalidated',
+    now = new Date(),
+  ): Promise<number> {
+    if (!UUID_PATTERN.test(credentialId)) {
+      throw new BadRequestException('credentialId must be a UUID');
+    }
+    const normalizedActor = this.normalizeActor(actor);
+    const normalizedReason = this.normalizeReason(reason);
+    const sessions = await this.sessionRepository.find({
+      where: { credentialId, status: AuthenticationSessionStatus.ACTIVE },
+    });
+    if (sessions.length === 0) {
+      return 0;
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(AuthenticationSession);
+      for (const session of sessions) {
+        session.status = AuthenticationSessionStatus.REVOKED;
+        session.revokedAt = now;
+        session.revokeReason = normalizedReason;
+        const saved = await repository.save(session);
+        await this.audit(manager, saved, 'SESSION_REVOKED', normalizedActor, {
+          customerId: saved.customerId,
+          credentialId: saved.credentialId,
+          audience: saved.audience,
+          revokeReason: saved.revokeReason,
+          invalidatedByCredential: true,
+        });
+      }
+    });
+    return sessions.length;
+  }
+
   async getSession(sessionId: string): Promise<AuthenticationSessionView | null> {
     if (!UUID_PATTERN.test(sessionId)) {
       throw new BadRequestException('sessionId must be a UUID');
