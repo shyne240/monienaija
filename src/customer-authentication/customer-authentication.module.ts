@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer } from '../customer/customer.entity';
 import { OperationsModule } from '../operations/operations.module';
 import { AuthenticationExecutionService } from './authentication-execution.service';
+import { AuthenticationSession } from './authentication-session.entity';
+import { AuthenticationSessionService } from './authentication-session.service';
 import { CustomerAuthenticationController } from './customer-authentication.controller';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import { CustomerAuthenticationService } from './customer-authentication.service';
@@ -23,6 +25,7 @@ import { TrustedDevice } from './trusted-device.entity';
     TypeOrmModule.forFeature([
       Customer,
       CustomerAuthenticationCredential,
+      AuthenticationSession,
       PasswordHistory,
       PasswordResetRequest,
       PasswordResetToken,
@@ -38,7 +41,12 @@ import { TrustedDevice } from './trusted-device.entity';
     CustomerAuthenticationService,
     AuthenticationExecutionService,
     PasswordHashVerificationService,
+    AuthenticationSessionService,
   ],
-  exports: [CustomerAuthenticationService, AuthenticationExecutionService],
+  exports: [
+    CustomerAuthenticationService,
+    AuthenticationExecutionService,
+    AuthenticationSessionService,
+  ],
 })
 export class CustomerAuthenticationModule {}
