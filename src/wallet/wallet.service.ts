@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
 import { normalizeCurrency } from '../common/money';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
@@ -45,48 +45,12 @@ export class WalletService {
     let walletId: string;
     try {
       walletId = await this.dataSource.transaction(async (manager) => {
-        const repository = manager.getRepository(WalletAccount);
-        const existingByKey = await repository.findOne({
-          where: { creationIdempotencyKey: idempotencyKey },
+        const wallet = await this.createWalletInTransaction(manager, {
+          customerId,
+          currency,
+          idempotencyKey,
         });
-        if (existingByKey) {
-          this.assertSameCreationRequest(existingByKey, customerId, currency);
-          return existingByKey.id;
-        }
-
-        const existingWallet = await repository.findOne({ where: { customerId, currency } });
-        if (existingWallet) {
-          throw new ConflictException('A wallet already exists for this customer and currency');
-        }
-
-        const id = randomUUID();
-        const ledgerAccountRepository = manager.getRepository(LedgerAccount);
-        const ledgerAccount = await ledgerAccountRepository.save(
-          ledgerAccountRepository.create({
-            id: randomUUID(),
-            code: `WALLET-${id}`,
-            name: `Customer wallet ${id}`,
-            accountType: LedgerAccountType.LIABILITY,
-            normalBalance: LedgerNormalBalance.CREDIT,
-            currency,
-            accountingUnit: 'CUSTOMER_FUNDS',
-            allowNegativeBalance: false,
-            isActive: true,
-          }),
-        );
-        const walletRepository = manager.getRepository(WalletAccount);
-        await walletRepository.save(
-          walletRepository.create({
-            id,
-            customerId,
-            currency,
-            status: WalletStatus.ACTIVE,
-            ledgerAccountId: ledgerAccount.id,
-            creationIdempotencyKey: idempotencyKey,
-          }),
-        );
-
-        return id;
+        return wallet.id;
       });
     } catch (error) {
       if (this.isConstraintViolation(error, 'uq_wallet_accounts_creation_idempotency_key')) {
@@ -107,6 +71,64 @@ export class WalletService {
     }
 
     return this.getWallet(walletId);
+  }
+
+  async createWalletInTransaction(
+    manager: EntityManager,
+    command: CreateWalletCommand,
+  ): Promise<WalletAccount> {
+    const customerId = command.customerId.trim();
+    const currency = normalizeCurrency(command.currency);
+    const idempotencyKey = command.idempotencyKey?.trim();
+
+    if (customerId.length < 1 || customerId.length > 160) {
+      throw new BadRequestException('customerId must contain between 1 and 160 characters');
+    }
+    if (!idempotencyKey || idempotencyKey.length > 255) {
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
+    }
+
+    const repository = manager.getRepository(WalletAccount);
+    const existingByKey = await repository.findOne({
+      where: { creationIdempotencyKey: idempotencyKey },
+    });
+    if (existingByKey) {
+      this.assertSameCreationRequest(existingByKey, customerId, currency);
+      return existingByKey;
+    }
+
+    const existingWallet = await repository.findOne({ where: { customerId, currency } });
+    if (existingWallet) {
+      throw new ConflictException('A wallet already exists for this customer and currency');
+    }
+
+    const id = randomUUID();
+    const ledgerAccountRepository = manager.getRepository(LedgerAccount);
+    const ledgerAccount = await ledgerAccountRepository.save(
+      ledgerAccountRepository.create({
+        id: randomUUID(),
+        code: `WALLET-${id}`,
+        name: `Customer wallet ${id}`,
+        accountType: LedgerAccountType.LIABILITY,
+        normalBalance: LedgerNormalBalance.CREDIT,
+        currency,
+        accountingUnit: 'CUSTOMER_FUNDS',
+        allowNegativeBalance: false,
+        isActive: true,
+      }),
+    );
+    return repository.save(
+      repository.create({
+        id,
+        customerId,
+        currency,
+        status: WalletStatus.ACTIVE,
+        ledgerAccountId: ledgerAccount.id,
+        creationIdempotencyKey: idempotencyKey,
+      }),
+    );
   }
 
   async getWallet(walletId: string): Promise<WalletView> {
