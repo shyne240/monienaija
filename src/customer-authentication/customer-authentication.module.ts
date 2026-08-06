@@ -3,9 +3,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Customer } from '../customer/customer.entity';
 import { OperationsModule } from '../operations/operations.module';
+import { AuthenticationExecutionService } from './authentication-execution.service';
 import { CustomerAuthenticationController } from './customer-authentication.controller';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import { CustomerAuthenticationService } from './customer-authentication.service';
+import { PasswordHashVerificationService } from './password-hash-verification.service';
 import { MfaEnrollment } from './mfa-enrollment.entity';
 import { MfaMethod } from './mfa-method.entity';
 import { PasswordHistory } from './password-history.entity';
@@ -32,7 +34,11 @@ import { TrustedDevice } from './trusted-device.entity';
     ]),
   ],
   controllers: [CustomerAuthenticationController],
-  providers: [CustomerAuthenticationService],
-  exports: [CustomerAuthenticationService],
+  providers: [
+    CustomerAuthenticationService,
+    AuthenticationExecutionService,
+    PasswordHashVerificationService,
+  ],
+  exports: [CustomerAuthenticationService, AuthenticationExecutionService],
 })
 export class CustomerAuthenticationModule {}
