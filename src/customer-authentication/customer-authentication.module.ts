@@ -11,7 +11,9 @@ import { CustomerAuthenticationController } from './customer-authentication.cont
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import { CustomerAuthenticationService } from './customer-authentication.service';
 import { PasswordHashVerificationService } from './password-hash-verification.service';
+import { MfaChallenge } from './mfa-challenge.entity';
 import { MfaEnrollment } from './mfa-enrollment.entity';
+import { MfaExecutionService } from './mfa-execution.service';
 import { MfaMethod } from './mfa-method.entity';
 import { PasswordHistory } from './password-history.entity';
 import { PasswordResetRequest } from './password-reset-request.entity';
@@ -27,6 +29,7 @@ import { TrustedDevice } from './trusted-device.entity';
       Customer,
       CustomerAuthenticationCredential,
       AuthenticationSession,
+      MfaChallenge,
       PasswordHistory,
       PasswordResetRequest,
       PasswordResetToken,
@@ -44,12 +47,14 @@ import { TrustedDevice } from './trusted-device.entity';
     PasswordHashVerificationService,
     AuthenticationSessionService,
     CustomerAuthenticationRuntimeService,
+    MfaExecutionService,
   ],
   exports: [
     CustomerAuthenticationService,
     AuthenticationExecutionService,
     AuthenticationSessionService,
     CustomerAuthenticationRuntimeService,
+    MfaExecutionService,
   ],
 })
 export class CustomerAuthenticationModule {}
