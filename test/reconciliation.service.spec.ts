@@ -129,7 +129,7 @@ describe('ReconciliationService', () => {
     const report = await service.runReconciliation();
 
     expect(report.status).toBe(VerificationStatus.PASS);
-    expect(report.checks).toHaveLength(9);
+    expect(report.checks).toHaveLength(10);
     expect(report.checks.every((check) => check.status === VerificationStatus.PASS)).toBe(true);
     expect(fixture.queries.some((query) => query.includes('ledger_journals'))).toBe(true);
     expect(fixture.queries.some((query) => query.includes('transfers'))).toBe(true);

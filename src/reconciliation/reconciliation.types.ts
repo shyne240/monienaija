@@ -1,3 +1,5 @@
+import type { CustomerFinancialAccountReconciliationReport } from './customer-financial-account-reconciliation.types';
+
 export enum VerificationStatus {
   PASS = 'PASS',
   WARNING = 'WARNING',
@@ -15,6 +17,7 @@ export interface ReconciliationReport {
   status: VerificationStatus;
   generatedAt: string;
   checks: ReconciliationCheck[];
+  binding: CustomerFinancialAccountReconciliationReport;
 }
 
 export interface TrialBalanceRow {
