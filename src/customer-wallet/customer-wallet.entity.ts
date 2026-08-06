@@ -6,6 +6,7 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
@@ -13,6 +14,7 @@ import {
 import { CustomerWalletStatus, CustomerWalletType } from './customer-wallet.enums';
 
 @Entity({ name: 'customer_wallets' })
+@Unique('uq_customer_wallets_id_customer', ['id', 'customerId'])
 @Index('uq_customer_wallets_primary_customer', ['customerId'], {
   unique: true,
   where: "type = 'PRIMARY' AND deleted_at IS NULL",

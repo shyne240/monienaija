@@ -6,6 +6,7 @@ import {
   JoinColumn,
   OneToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -13,6 +14,7 @@ import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { WalletStatus } from './wallet.enums';
 
 @Entity({ name: 'wallet_accounts' })
+@Unique('uq_wallet_accounts_id_ledger_account', ['id', 'ledgerAccountId'])
 @Index('uq_wallet_accounts_customer_currency', ['customerId', 'currency'], { unique: true })
 @Index('idx_wallet_accounts_customer', ['customerId'])
 @Index('uq_wallet_accounts_creation_idempotency_key', ['creationIdempotencyKey'], {
