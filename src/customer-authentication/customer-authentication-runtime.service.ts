@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { AuthenticationExecutionService } from './authentication-execution.service';
 import { AuthenticationSessionService } from './authentication-session.service';
@@ -320,7 +321,7 @@ export class CustomerAuthenticationRuntimeService {
         credentialId,
         eventType,
         actor,
-        metadata,
+        metadata: redactRecord(metadata),
         occurredAt: new Date(),
         deletedAt: null,
       }),

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { redactSensitiveText } from './common/sensitive-data-redaction';
 import { getRequestContext } from './production/request-context';
 
 interface ErrorResponse {
@@ -36,7 +37,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? 'Internal server error'
         : (details.message ??
           (typeof exceptionResponse === 'string' ? exceptionResponse : 'Request failed'));
-    const code = this.errorCode(statusCode, message);
+    const safeMessage = Array.isArray(message)
+      ? message.map((item) => redactSensitiveText(item))
+      : redactSensitiveText(message);
+    const code = this.errorCode(statusCode, safeMessage);
 
     response.header('X-Request-Id', requestContext.requestId);
     response.header('X-Correlation-Id', requestContext.correlationId);
@@ -45,7 +49,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (statusCode >= 500) {
       this.logger.error(
-        { err: exception, ...requestContext, path: request.url, operationName: request.method },
+        {
+          errorMessage: redactSensitiveText(
+            exception instanceof Error ? exception.message : String(exception),
+          ),
+          ...requestContext,
+          path: request.url,
+          operationName: request.method,
+        },
         'Unhandled request error',
       );
     }
@@ -53,7 +64,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     void response.status(statusCode).send({
       statusCode,
       code,
-      message,
+      message: safeMessage,
       error: details.error ?? code,
       timestamp: new Date().toISOString(),
       path: request.url,

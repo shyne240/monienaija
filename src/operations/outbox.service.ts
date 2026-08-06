@@ -4,6 +4,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { OutboxEvent } from './outbox-event.entity';
 import { OutboxEventStatus } from './operations.enums';
 import type { OutboxEventCommand, OutboxQuery, OutboxView } from './operations.types';
@@ -21,7 +22,7 @@ export class OutboxService {
       eventType: command.eventType,
       aggregateType: command.aggregateType,
       aggregateId: command.aggregateId,
-      payload: command.payload,
+      payload: redactRecord(command.payload),
       status: OutboxEventStatus.PENDING,
       attempts: 0,
       availableAt: command.availableAt ?? new Date(),

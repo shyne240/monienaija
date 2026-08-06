@@ -4,6 +4,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
@@ -528,7 +529,7 @@ export class PrivilegedActionApprovalService {
         credentialId: null,
         eventType,
         actor,
-        metadata: { approvalId: approval.id, ...metadata },
+        metadata: redactRecord({ approvalId: approval.id, ...metadata }),
         occurredAt: new Date(),
         deletedAt: null,
       }),

@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditEvent } from './audit-event.entity';
 import type { AuditEventCommand, AuditQuery, AuditView } from './operations.types';
 
@@ -23,8 +24,8 @@ export class AuditService {
       actor: command.actor,
       correlationId: command.correlationId ?? null,
       requestId: command.requestId ?? null,
-      previousValues: command.previousValues ?? null,
-      newValues: command.newValues ?? null,
+      previousValues: command.previousValues ? redactRecord(command.previousValues) : null,
+      newValues: command.newValues ? redactRecord(command.newValues) : null,
       occurredAt: command.occurredAt ?? new Date(),
     });
     return manager.getRepository(AuditEvent).save(event);

@@ -2,6 +2,8 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import type { AuthenticatedPrincipal } from './authentication-session.types';
@@ -371,7 +373,7 @@ export class MfaExecutionService {
         credentialId,
         eventType,
         actor,
-        metadata,
+        metadata: redactRecord(metadata),
         occurredAt: new Date(),
         deletedAt: null,
       }),

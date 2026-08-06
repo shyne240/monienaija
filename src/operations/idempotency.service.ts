@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, LessThan, Repository } from 'typeorm';
 
+import { redactRecord } from '../common/sensitive-data-redaction';
 import { IdempotencyRecord } from './idempotency-record.entity';
 import { IdempotencyRecordStatus } from './operations.enums';
 import type {
@@ -85,7 +86,7 @@ export class IdempotencyService {
     }
     record.status = IdempotencyRecordStatus.COMPLETED;
     record.responseStatusCode = command.statusCode;
-    record.responseBody = command.responseBody;
+    record.responseBody = redactRecord(command.responseBody);
     record.resourceType = command.resourceType ?? null;
     record.resourceId = command.resourceId ?? null;
     record.lastSeenAt = new Date();
@@ -104,7 +105,7 @@ export class IdempotencyService {
     }
     record.status = IdempotencyRecordStatus.FAILED;
     record.responseStatusCode = command.statusCode;
-    record.responseBody = command.responseBody;
+    record.responseBody = redactRecord(command.responseBody);
     record.resourceType = command.resourceType ?? null;
     record.resourceId = command.resourceId ?? null;
     record.lastSeenAt = new Date();
