@@ -45,7 +45,11 @@ function canonicalJson(value: unknown): string {
 export function calculatePolicyProfileDefinitionHash(
   input: Omit<CapabilityPolicyProfile, 'definitionHash'>,
 ): string {
-  return createHash('sha256').update(canonicalJson(input)).digest('hex');
+  const definition = { ...input };
+  delete definition.effectiveFrom;
+  delete definition.effectiveTo;
+  delete definition.lifecycleState;
+  return createHash('sha256').update(canonicalJson(definition)).digest('hex');
 }
 
 function sources(overrides: Partial<PolicySourceRequirements> = {}): PolicySourceRequirements {
@@ -475,12 +479,31 @@ export class StaticCapabilityPolicyProfileRegistry implements PolicyProfileRegis
     action: string,
     policyVersionHint?: string,
   ): Promise<CapabilityPolicyProfile | null> {
-    const profile = this.profiles.find(
-      (candidate) =>
+    return this.getProfileAt(capability, action, new Date().toISOString(), policyVersionHint);
+  }
+
+  getProfileAt(
+    capability: string,
+    action: string,
+    evaluationAt: string,
+    policyVersionHint?: string,
+  ): Promise<CapabilityPolicyProfile | null> {
+    const evaluationMillis = Date.parse(evaluationAt);
+    const profile = this.profiles.find((candidate) => {
+      const effectiveFrom = candidate.effectiveFrom
+        ? Date.parse(candidate.effectiveFrom)
+        : -Infinity;
+      const effectiveTo = candidate.effectiveTo ? Date.parse(candidate.effectiveTo) : Infinity;
+      const lifecycleState = candidate.lifecycleState ?? 'ACTIVE';
+      return (
         candidate.capability === capability &&
         candidate.actions.includes(action) &&
-        (policyVersionHint === undefined || candidate.policyVersion === policyVersionHint),
-    );
+        lifecycleState === 'ACTIVE' &&
+        (policyVersionHint === undefined || candidate.policyVersion === policyVersionHint) &&
+        (Number.isNaN(evaluationMillis) ||
+          (effectiveFrom <= evaluationMillis && effectiveTo > evaluationMillis))
+      );
+    });
     return Promise.resolve(profile ?? null);
   }
 }

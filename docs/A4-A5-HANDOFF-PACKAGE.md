@@ -144,7 +144,7 @@ A5 entry remains blocked until the following are approved and recorded:
 - A2 authentication, authorization, route/data-exposure, privileged approval, security/privacy, and rollback gates;
 - A3 binding, account read, reconciliation, repair, migration, and rollback gates;
 - A4 ADR-0036 through ADR-0040 review and A4 exit/approval;
-- physical A4T06 persistence/replay/retention evidence if A5 depends on durable policy decisions;
+- A4T06 physical persistence/replay/retention artifacts and their approved live migration/operational evidence if A5 depends on durable policy decisions;
 - source-adapter and Operations production wiring with transactionality, idempotency, audit, and diagnostic evidence;
 - exact A5 command contracts for amount/currency/account/limit/ledger/outbox/recovery/reconciliation behavior;
 - independent Finance/Ledger/Reconciliation approval; and

@@ -19,6 +19,7 @@ import { CustomerPreferenceModule } from './customer-preference/customer-prefere
 import { CustomerRiskProfileModule } from './customer-risk-profile/customer-risk-profile.module';
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
+import { CapabilityPolicyModule } from './policy/capability-policy.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -85,6 +86,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerBeneficiaryModule,
     CustomerComplianceModule,
     CustomerOnboardingModule,
+    CapabilityPolicyModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,

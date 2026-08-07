@@ -70,7 +70,7 @@ export interface PolicyEvidenceSnapshot {
     readonly asOf: string;
     readonly evidenceProfile: string;
     readonly policyVersionHint?: string;
-    readonly evaluationContext?: Readonly<Record<string, unknown>>;
+    readonly evaluationContext?: PolicyEvaluationContext;
     readonly targetBindingId?: string;
   };
   readonly collection: {
@@ -168,6 +168,10 @@ export interface CapabilityPolicyProfile {
   readonly policyVersion: string;
   readonly definitionHash: string;
   readonly decisionValidity?: PolicyDecisionValidity;
+  /** Populated by a physical policy-version repository; absent for static profiles. */
+  readonly effectiveFrom?: string;
+  readonly effectiveTo?: string | null;
+  readonly lifecycleState?: 'DRAFT' | 'ACTIVE' | 'RETIRED' | 'REJECTED' | 'ABANDONED';
   readonly capability: string;
   readonly actions: readonly string[];
   readonly subjectType: 'CUSTOMER';
@@ -340,11 +344,19 @@ export interface PolicyProfileRegistry {
     action: string,
     policyVersionHint?: string,
   ): Promise<CapabilityPolicyProfile | null>;
+  /** Optional effective-time selection used by the physical A4T06 registry. */
+  getProfileAt?(
+    capability: string,
+    action: string,
+    evaluationAt: string,
+    policyVersionHint?: string,
+  ): Promise<CapabilityPolicyProfile | null>;
 }
 
 export interface PolicyDecisionStore {
   findByRequestHash(requestHash: string): Promise<PolicyDecisionResult | null>;
   save(result: PolicyDecisionResult): Promise<void>;
+  saveWithSnapshot?(result: PolicyDecisionResult, snapshot: PolicyEvidenceSnapshot): Promise<void>;
   findByDecisionReference(decisionReference: string): Promise<PolicyDecisionResult | null>;
 }
 

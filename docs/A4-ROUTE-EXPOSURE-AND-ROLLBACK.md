@@ -38,12 +38,11 @@ A future A4 route must be added only through a separately reviewed A2 route/data
 
 ### 3.1 Current repository evidence
 
-- The A4T07-A4T09 source compiles and the full test/lint/build/format validation passes.
-- A4T06 physical policy-profile, decision, and snapshot persistence is not present.
-- No A4 migration or schema head was introduced.
-- No A4 module/controller/route is registered.
+- The A4T03-A4T09 source compiles and the full test/lint/build/format validation passes.
+- A4T06 physical policy-profile, decision, and snapshot entities, repositories, retention metadata, and migration artifacts are present.
+- No A4 migration has been applied to a live database in this environment, and no live schema head is claimed.
+- `CapabilityPolicyModule` wires the A4 persistence, source-evidence, Operations, profile-selection, evaluator, recovery, and replay artifacts without exposing a controller or route.
 - No scheduler, notification, provider, outbox consumer, or financial command was introduced.
-- The A4 services use declared ports/fakes for persistence, idempotency, audit, lifecycle, current evidence, and diagnostics; production adapter wiring is not claimed.
 
 Because A4T10 is documentation-only, there is no A4 deployment, migration application, route canary, traffic release, or production activation to report from this repository.
 
@@ -54,7 +53,7 @@ If an approved later change wires A4 into runtime, the release owner must execut
 1. Confirm A2 and A3 approval, A4 ADR review, security/privacy review, Operations ownership, and the A4 exit checklist.
 2. Confirm that the proposed change has an explicit rollback/disable control and does not expose a route by default.
 3. Run the lockfile-consistent build, full tests, lint, formatting, security/privacy checks, and documentation/link validation.
-4. If A4T06 persistence is approved, take the database backup and execute its separately reviewed migration up/down evidence before traffic release. Do not claim this evidence from the current branch.
+4. Before applying the A4T06 migration, take the database backup and execute the separately reviewed migration up/down evidence before traffic release. The current branch contains the migration artifact but does not claim live application evidence.
 5. Deploy inert/service-internal A4 code with the expected application version and configuration; verify startup, readiness, audit, idempotency, diagnostics, and reconciliation signals.
 6. Verify A2 authorization separation, source-owner read boundaries, immutable snapshot/hash checks, explanation redaction, and fail-closed behavior using synthetic or approved test data.
 7. Enable only an approved internal consumer/route under a controlled rollout. Do not enable a financial command merely because A4 returns `ALLOW`.
@@ -108,7 +107,7 @@ A code rollback must not silently reinterpret a durable decision under a differe
 
 The current branch has no physical A4 schema, so no A4 migration rollback is claimed or required by this documentation-only task.
 
-### 5.3 Schema rollback if future A4T06 persistence is introduced
+### 5.3 Schema rollback if the A4T06 persistence migration is applied
 
 A future A4 migration rollback is a controlled destructive decision, not an ordinary retry:
 

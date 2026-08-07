@@ -586,6 +586,37 @@ describe('CapabilityPolicyEvaluationService', () => {
     expect(fixture.decisions.saveCalls).toBe(1);
   });
 
+  it('supports deterministic read-only evaluation without persisting a decision', async () => {
+    const fixture = makeFixture();
+    const result = await fixture.service.evaluateReadOnly(makeRequest(makeSnapshot()));
+
+    expect(result.decision).toBe(PolicyDecisionState.ALLOW_WITH_LIMITS);
+    expect(fixture.decisions.saveCalls).toBe(0);
+    expect(fixture.audit.facts).toHaveLength(0);
+  });
+
+  it('prevents concurrent identical evaluations from creating ambiguous decisions', async () => {
+    const fixture = makeFixture();
+    const request = makeRequest(makeSnapshot(), {
+      idempotencyContext: { scope: 'policy.capability-decision.v1', key: 'concurrent-1' },
+    });
+
+    const outcomes = await Promise.allSettled([
+      fixture.service.evaluate(request),
+      fixture.service.evaluate(request),
+    ]);
+    const fulfilled = outcomes.filter(
+      (outcome): outcome is PromiseFulfilledResult<PolicyDecisionResult> =>
+        outcome.status === 'fulfilled',
+    );
+    const rejected = outcomes.filter((outcome) => outcome.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toBeInstanceOf(ConflictException);
+    expect(fixture.decisions.saveCalls).toBe(1);
+  });
+
   it('fails closed for authorization denial, snapshot mismatch, and invalid policy profiles', async () => {
     const fixture = makeFixture();
     fixture.authorization.allowed = false;

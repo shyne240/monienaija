@@ -109,6 +109,40 @@ export class CapabilityPolicyEvaluationService {
     private readonly audit: PolicyAuditPort,
   ) {}
 
+  async evaluateReadOnly(command: PolicyEvaluationCommand): Promise<PolicyDecisionResult> {
+    const normalized = this.normalizeRequest(command);
+    const authorization = await this.authorize(command.actorContext.principal, normalized.request);
+    if (!authorization.allowed) {
+      throw new ForbiddenException(`Authorization denied: ${authorization.reason ?? 'UNKNOWN'}`);
+    }
+    const profile = this.profileRegistry.getProfileAt
+      ? await this.profileRegistry.getProfileAt(
+          normalized.request.capability,
+          normalized.request.action,
+          normalized.request.requestedAt,
+          normalized.request.policyVersionHint,
+        )
+      : await this.profileRegistry.getProfile(
+          normalized.request.capability,
+          normalized.request.action,
+          normalized.request.policyVersionHint,
+        );
+    if (!profile) {
+      throw new BadRequestException(
+        'No A4 policy profile is registered for this capability/action',
+      );
+    }
+    this.assertProfile(profile, normalized.request);
+    this.assertSnapshot(command.snapshot, normalized.request);
+    return this.evaluateSnapshot(
+      normalized.request,
+      command.snapshot,
+      profile,
+      authorization,
+      normalized.requestHash,
+    );
+  }
+
   async evaluate(command: PolicyEvaluationCommand): Promise<PolicyDecisionResult> {
     const normalized = this.normalizeRequest(command);
     const authorization = await this.authorize(command.actorContext.principal, normalized.request);
@@ -116,11 +150,18 @@ export class CapabilityPolicyEvaluationService {
       throw new ForbiddenException(`Authorization denied: ${authorization.reason ?? 'UNKNOWN'}`);
     }
 
-    const profile = await this.profileRegistry.getProfile(
-      normalized.request.capability,
-      normalized.request.action,
-      normalized.request.policyVersionHint,
-    );
+    const profile = this.profileRegistry.getProfileAt
+      ? await this.profileRegistry.getProfileAt(
+          normalized.request.capability,
+          normalized.request.action,
+          normalized.request.requestedAt,
+          normalized.request.policyVersionHint,
+        )
+      : await this.profileRegistry.getProfile(
+          normalized.request.capability,
+          normalized.request.action,
+          normalized.request.policyVersionHint,
+        );
     if (!profile) {
       throw new BadRequestException(
         'No A4 policy profile is registered for this capability/action',
@@ -156,7 +197,11 @@ export class CapabilityPolicyEvaluationService {
         authorization,
         normalized.requestHash,
       );
-      await this.decisionStore.save(result);
+      if (this.decisionStore.saveWithSnapshot) {
+        await this.decisionStore.saveWithSnapshot(result, command.snapshot);
+      } else {
+        await this.decisionStore.save(result);
+      }
       if (reservationContext.managed) {
         await this.idempotency.complete(reservation.reservationId, result);
       }
@@ -1076,6 +1121,9 @@ export class CapabilityPolicyEvaluationService {
 
   private assertProfile(profile: CapabilityPolicyProfile, request: PolicyDecisionRequest): void {
     const { definitionHash, ...definition } = profile;
+    delete definition.effectiveFrom;
+    delete definition.effectiveTo;
+    delete definition.lifecycleState;
     if (
       profile.subjectType !== 'CUSTOMER' ||
       profile.contractName !== request.contractName ||

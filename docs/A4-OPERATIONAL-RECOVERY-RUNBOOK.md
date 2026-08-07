@@ -130,7 +130,7 @@ Escalate independent reconciliation errors, unresolved binding drift, ledger dis
 
 ### Operations/Production
 
-Escalate idempotency, audit, diagnostics, readiness, migration, deployment, request-drain, or rollback incidents to Operations/Production. The current A4 branch has no physical A4 migration or production adapter wiring to recover.
+Escalate idempotency, audit, diagnostics, readiness, migration, deployment, request-drain, or rollback incidents to Operations/Production. The current A4 branch has physical persistence and adapter artifacts, but no live A4 migration application or production recovery drill is claimed.
 
 ## 8. Privacy, retention, and incident preservation
 
