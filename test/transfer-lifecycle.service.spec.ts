@@ -11,6 +11,14 @@ import type {
 
 import type { AuditService } from '../src/operations/audit.service';
 import type { IdempotencyService } from '../src/operations/idempotency.service';
+import { LedgerAccount } from '../src/ledger/ledger-account.entity';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
+import type { LedgerService } from '../src/ledger/ledger.service';
+import type { PostJournalCommand } from '../src/ledger/ledger.types';
 import { Transfer } from '../src/transfer/transfer.entity';
 import { TransferFailureCode, TransferStatus } from '../src/transfer/transfer.enums';
 import { TransferLifecycleService } from '../src/transfer/transfer-lifecycle.service';
@@ -88,11 +96,57 @@ class InMemoryTransferRepository {
   }
 }
 
+class InMemoryLedgerAccountRepository {
+  readonly accounts = new Map<string, LedgerAccount>();
+  readonly lockOrders: string[][] = [];
+
+  createQueryBuilder(): {
+    where: (condition: string, parameters: { accountIds: string[] }) => unknown;
+    orderBy: (column: string, direction: 'ASC' | 'DESC') => unknown;
+    setLock: (mode: 'pessimistic_write') => unknown;
+    getMany: () => Promise<LedgerAccount[]>;
+  } {
+    let requestedIds: string[] = [];
+    const builder = {
+      where: (_condition: string, parameters: { accountIds: string[] }) => {
+        requestedIds = parameters.accountIds;
+        return builder;
+      },
+      orderBy: () => builder,
+      setLock: () => builder,
+      getMany: () => {
+        this.lockOrders.push([...requestedIds]);
+        return Promise.resolve(
+          requestedIds
+            .map((id) => this.accounts.get(id))
+            .filter((account): account is LedgerAccount => account !== undefined),
+        );
+      },
+    };
+    return builder;
+  }
+}
+
+class FakeLedgerService {
+  readonly calls: PostJournalCommand[] = [];
+  failure: Error | null = null;
+
+  postJournalInTransaction(_manager: EntityManager, command: PostJournalCommand): Promise<string> {
+    this.calls.push(command);
+    if (this.failure) return Promise.reject(this.failure);
+    return Promise.resolve(JOURNAL_ID);
+  }
+}
+
 class InMemoryManager {
-  constructor(private readonly transfers: InMemoryTransferRepository) {}
+  constructor(
+    private readonly transfers: InMemoryTransferRepository,
+    private readonly ledgerAccounts: InMemoryLedgerAccountRepository,
+  ) {}
 
   getRepository<T extends ObjectLiteral>(target: EntityTarget<T>): Repository<T> {
     if (target === Transfer) return this.transfers as unknown as Repository<T>;
+    if (target === LedgerAccount) return this.ledgerAccounts as unknown as Repository<T>;
     throw new Error('Unexpected repository requested by lifecycle test');
   }
 }
@@ -199,6 +253,8 @@ class FakeIdempotencyService {
 interface Fixture {
   service: TransferLifecycleService;
   transfers: InMemoryTransferRepository;
+  ledgerAccounts: InMemoryLedgerAccountRepository;
+  ledger: FakeLedgerService;
   dataSource: InMemoryDataSource;
   audit: FakeAuditService;
   idempotency: FakeIdempotencyService;
@@ -210,18 +266,38 @@ const requestContext: TransferLifecycleRequestContext = {
   traceId: 'trace-transfer-lifecycle-1',
 };
 
+function makeLedgerAccount(id: string, overrides: Partial<LedgerAccount> = {}): LedgerAccount {
+  return Object.assign(new LedgerAccount(), {
+    id,
+    code: `ACCOUNT-${id.slice(-4)}`,
+    name: 'Customer funds account',
+    accountType: LedgerAccountType.LIABILITY,
+    normalBalance: LedgerNormalBalance.CREDIT,
+    currency: 'NGN',
+    accountingUnit: 'CUSTOMER_FUNDS',
+    allowNegativeBalance: false,
+    isActive: true,
+    ...overrides,
+  });
+}
+
 function makeFixture(): Fixture {
   const transfers = new InMemoryTransferRepository();
-  const dataSource = new InMemoryDataSource(new InMemoryManager(transfers));
+  const ledgerAccounts = new InMemoryLedgerAccountRepository();
+  ledgerAccounts.accounts.set(SOURCE_LEDGER_ID, makeLedgerAccount(SOURCE_LEDGER_ID));
+  ledgerAccounts.accounts.set(DESTINATION_LEDGER_ID, makeLedgerAccount(DESTINATION_LEDGER_ID));
+  const ledger = new FakeLedgerService();
+  const dataSource = new InMemoryDataSource(new InMemoryManager(transfers, ledgerAccounts));
   const audit = new FakeAuditService();
   const idempotency = new FakeIdempotencyService();
   const service = new TransferLifecycleService(
     transfers as unknown as Repository<Transfer>,
     dataSource as unknown as DataSource,
+    ledger as unknown as LedgerService,
     audit as unknown as AuditService,
     idempotency as unknown as IdempotencyService,
   );
-  return { service, transfers, dataSource, audit, idempotency };
+  return { service, transfers, ledgerAccounts, ledger, dataSource, audit, idempotency };
 }
 
 function makeCreateCommand(
@@ -283,6 +359,25 @@ function makeTransition(
 async function createPending(fixture: Fixture): Promise<string> {
   const result = await fixture.service.createPending(makeCreateCommand());
   return result.id;
+}
+
+async function prepareProcessing(fixture: Fixture): Promise<string> {
+  const transferId = await createPending(fixture);
+  await fixture.service.transition(
+    transferId,
+    makeTransition(TransferStatus.PROCESSING, {
+      transferId,
+      idempotencyKey: 'state-processing-for-ledger',
+    }),
+  );
+  return transferId;
+}
+
+function postCommand(idempotencyKey = 'ledger-post-1') {
+  return {
+    idempotencyKey,
+    requestContext,
+  };
 }
 
 describe('TransferLifecycleService', () => {
@@ -559,5 +654,110 @@ describe('TransferLifecycleService', () => {
       failureCode: TransferFailureCode.TRANSFER_CANCELLED,
     });
     expect(cancelled.cancelledAt).toBeInstanceOf(Date);
+  });
+
+  it('posts one balanced debit and credit journal atomically through Ledger', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+
+    const result = await fixture.service.postToLedger(transferId, postCommand());
+
+    expect(result).toMatchObject({
+      status: TransferStatus.COMPLETED,
+      journalId: JOURNAL_ID,
+      sourceLedgerAccountId: SOURCE_LEDGER_ID,
+      destinationLedgerAccountId: DESTINATION_LEDGER_ID,
+    });
+    expect(fixture.ledger.calls).toHaveLength(1);
+    const journal = fixture.ledger.calls[0]!;
+    expect(journal.lines).toEqual([
+      expect.objectContaining({
+        accountId: SOURCE_LEDGER_ID,
+        direction: LedgerEntryDirection.DEBIT,
+        amountMinor: '10000',
+      }),
+      expect.objectContaining({
+        accountId: DESTINATION_LEDGER_ID,
+        direction: LedgerEntryDirection.CREDIT,
+        amountMinor: '10000',
+      }),
+    ]);
+    const debitTotal = journal.lines
+      .filter((line) => line.direction === LedgerEntryDirection.DEBIT)
+      .reduce((total, line) => total + BigInt(line.amountMinor), 0n);
+    const creditTotal = journal.lines
+      .filter((line) => line.direction === LedgerEntryDirection.CREDIT)
+      .reduce((total, line) => total + BigInt(line.amountMinor), 0n);
+    expect(debitTotal).toBe(creditTotal);
+  });
+
+  it('rejects a Ledger currency mismatch without posting or completing the transfer', async () => {
+    const fixture = makeFixture();
+    fixture.ledgerAccounts.accounts.get(DESTINATION_LEDGER_ID)!.currency = 'USD';
+    const transferId = await prepareProcessing(fixture);
+
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-currency-1'));
+
+    expect(result).toMatchObject({
+      status: TransferStatus.FAILED,
+      journalId: null,
+      failureCode: TransferFailureCode.LEDGER_REJECTED,
+    });
+    expect(fixture.ledger.calls).toHaveLength(0);
+  });
+
+  it('rejects an accounting-unit mismatch without posting', async () => {
+    const fixture = makeFixture();
+    fixture.ledgerAccounts.accounts.get(SOURCE_LEDGER_ID)!.accountingUnit = 'OTHER_UNIT';
+    const transferId = await prepareProcessing(fixture);
+
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-unit-1'));
+
+    expect(result.status).toBe(TransferStatus.FAILED);
+    expect(result.failureCode).toBe(TransferFailureCode.LEDGER_REJECTED);
+    expect(fixture.ledger.calls).toHaveLength(0);
+  });
+
+  it('locks source and destination Ledger accounts in deterministic order', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+
+    await fixture.service.postToLedger(transferId, postCommand('ledger-lock-1'));
+
+    expect(fixture.ledgerAccounts.lockOrders).toEqual([
+      [SOURCE_LEDGER_ID, DESTINATION_LEDGER_ID].sort(),
+    ]);
+  });
+
+  it('replays an identical Ledger post without creating a second journal effect', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    const command = postCommand('ledger-replay-1');
+
+    const first = await fixture.service.postToLedger(transferId, command);
+    const second = await fixture.service.postToLedger(transferId, command);
+
+    expect(first.journalId).toBe(JOURNAL_ID);
+    expect(second).toMatchObject({
+      status: TransferStatus.COMPLETED,
+      journalId: JOURNAL_ID,
+      idempotencyReplay: true,
+    });
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('does not complete the transfer when the Ledger transaction fails unexpectedly', async () => {
+    const fixture = makeFixture();
+    fixture.ledger.failure = new Error('simulated Ledger transaction failure');
+    const transferId = await prepareProcessing(fixture);
+
+    await expect(
+      fixture.service.postToLedger(transferId, postCommand('ledger-failure-1')),
+    ).rejects.toThrow('simulated Ledger transaction failure');
+
+    const current = await fixture.service.get(transferId);
+    expect(current.status).toBe(TransferStatus.PROCESSING);
+    expect(current.journalId).toBeNull();
+    expect(fixture.ledger.calls).toHaveLength(1);
   });
 });

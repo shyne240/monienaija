@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +15,13 @@ import {
   normalizeCurrency,
   parsePositiveMinorUnits,
 } from '../common/money';
+import {
+  LedgerEntryDirection,
+  LedgerAccountType,
+  LedgerNormalBalance,
+} from '../ledger/ledger.enums';
+import { LedgerAccount } from '../ledger/ledger-account.entity';
+import { LedgerService } from '../ledger/ledger.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import {
@@ -26,12 +34,14 @@ import { assertTransferTransition, isTerminalTransferStatus } from './transfer-l
 import { TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
   CreateTransferLifecycleCommand,
+  PostTransferToLedgerCommand,
   TransferLifecycleRequestContext,
   TransferLifecycleView,
   TransitionTransferLifecycleCommand,
 } from './transfer-lifecycle.types';
 import {
   TRANSFER_COMMAND_SCOPE,
+  TRANSFER_LEDGER_POST_IDEMPOTENCY_SCOPE,
   TRANSFER_LIFECYCLE_IDEMPOTENCY_SCOPE,
   TRANSFER_STATE_IDEMPOTENCY_SCOPE,
 } from './transfer-lifecycle.types';
@@ -75,12 +85,18 @@ interface NormalizedTransitionTransferLifecycleCommand
   requestHash: string;
 }
 
+interface NormalizedPostTransferToLedgerCommand {
+  idempotencyKey: string;
+  requestContext: TransferLifecycleRequestContext;
+}
+
 @Injectable()
 export class TransferLifecycleService {
   constructor(
     @InjectRepository(Transfer)
     private readonly transferRepository: Repository<Transfer>,
     private readonly dataSource: DataSource,
+    private readonly ledgerService: LedgerService,
     private readonly auditService: AuditService,
     private readonly idempotencyService: IdempotencyService,
   ) {}
@@ -100,6 +116,17 @@ export class TransferLifecycleService {
     const normalized = this.normalizeTransition(normalizedTransferId, command);
     return this.dataSource.transaction('SERIALIZABLE', (manager) =>
       this.transitionWithinTransaction(manager, normalizedTransferId, normalized),
+    );
+  }
+
+  async postToLedger(
+    transferId: string,
+    command: PostTransferToLedgerCommand,
+  ): Promise<TransferLifecycleView> {
+    const normalizedTransferId = this.normalizeUuid(transferId, 'transferId');
+    const normalized = this.normalizePostCommand(command);
+    return this.dataSource.transaction('SERIALIZABLE', (manager) =>
+      this.postToLedgerWithinTransaction(manager, normalizedTransferId, normalized),
     );
   }
 
@@ -227,6 +254,245 @@ export class TransferLifecycleService {
       resourceId: transfer.id,
     });
     return result;
+  }
+
+  private async postToLedgerWithinTransaction(
+    manager: EntityManager,
+    transferId: string,
+    command: NormalizedPostTransferToLedgerCommand,
+  ): Promise<TransferLifecycleView> {
+    const transfer = await this.lockTransfer(manager, transferId);
+    if (!transfer) {
+      throw new NotFoundException(`Transfer ${transferId} was not found`);
+    }
+    if (!transfer.commandId) {
+      throw new ConflictException('Legacy transfers cannot use the A5 Ledger posting contract');
+    }
+    if (
+      !transfer.sourceLedgerAccountId ||
+      !transfer.destinationLedgerAccountId ||
+      !transfer.accountingUnit ||
+      transfer.accountingUnit !== 'CUSTOMER_FUNDS'
+    ) {
+      throw new ConflictException('The transfer Ledger metadata is incomplete or incompatible');
+    }
+    if (transfer.sourceLedgerAccountId === transfer.destinationLedgerAccountId) {
+      throw new ConflictException('Source and destination Ledger accounts must differ');
+    }
+    const requestHash = paymentRequestHash({
+      transferId,
+      idempotencyKey: command.idempotencyKey,
+      sourceLedgerAccountId: transfer.sourceLedgerAccountId,
+      destinationLedgerAccountId: transfer.destinationLedgerAccountId,
+      amountMinor: transfer.amountMinor,
+      currency: transfer.currency,
+      accountingUnit: transfer.accountingUnit,
+    });
+    const reservation = await this.idempotencyService.reserve(manager, {
+      scope: TRANSFER_LEDGER_POST_IDEMPOTENCY_SCOPE,
+      key: this.stateIdempotencyKey(transferId, command.idempotencyKey),
+      requestHash,
+      retentionSeconds: IDEMPOTENCY_RETENTION_SECONDS,
+    });
+    if (reservation.kind === 'IN_PROGRESS') {
+      throw new ConflictException('The transfer Ledger posting request is already in progress');
+    }
+    if (reservation.kind === 'REPLAY') {
+      return this.replayTransfer(
+        manager,
+        reservation.record.resourceId,
+        reservation.record.responseBody,
+      );
+    }
+    if (transfer.status !== TransferStatus.PROCESSING) {
+      throw new ConflictException(`Transfer ${transfer.id} is already ${transfer.status}`);
+    }
+
+    let journalId: string;
+    try {
+      const accounts = await this.lockLedgerAccounts(manager, [
+        transfer.sourceLedgerAccountId,
+        transfer.destinationLedgerAccountId,
+      ]);
+      this.assertTransferLedgerAccounts(transfer, accounts);
+      journalId = await this.ledgerService.postJournalInTransaction(manager, {
+        idempotencyKey: `transfer:${transfer.id}:ledger-post`,
+        currency: transfer.currency,
+        accountingUnit: transfer.accountingUnit,
+        reference: transfer.reference ?? transfer.paymentReference ?? undefined,
+        description: transfer.narration ?? `Transfer ${transfer.id}`,
+        correlationId: transfer.correlationId ?? `transfer:${transfer.id}`,
+        metadata: {
+          transferId: transfer.id,
+          commandId: transfer.commandId,
+          sourceLedgerAccountId: transfer.sourceLedgerAccountId,
+          destinationLedgerAccountId: transfer.destinationLedgerAccountId,
+        },
+        lines: [
+          {
+            accountId: transfer.sourceLedgerAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: transfer.amountMinor,
+          },
+          {
+            accountId: transfer.destinationLedgerAccountId,
+            direction: LedgerEntryDirection.CREDIT,
+            amountMinor: transfer.amountMinor,
+          },
+        ],
+      });
+    } catch (error) {
+      if (!(error instanceof HttpException) || error.getStatus() >= 500) {
+        throw error;
+      }
+      return this.failLedgerPostWithinTransaction(
+        manager,
+        transfer,
+        command,
+        requestHash,
+        this.postFailureFromHttpException(error),
+        reservation.record.id,
+      );
+    }
+
+    this.applyTransition(transfer, {
+      nextStatus: TransferStatus.COMPLETED,
+      journalId,
+      requestContext: command.requestContext,
+      idempotencyKey: command.idempotencyKey,
+      reason: 'LEDGER_POSTED',
+      recoveryReference: null,
+      failureCode: undefined,
+      failureMessage: null,
+      failureStatusCode: undefined,
+      expectedVersion: undefined,
+      transferId,
+      requestHash,
+    });
+    await manager.getRepository(Transfer).save(transfer);
+    const result = this.toView(transfer, false);
+    await this.recordAudit(manager, transfer, 'LEDGER_POSTED', command.requestContext, {
+      requestHash,
+      journalId,
+    });
+    await this.idempotencyService.complete(manager, reservation.record.id, {
+      statusCode: 200,
+      responseBody: result as unknown as Record<string, unknown>,
+      resourceType: 'TRANSFER',
+      resourceId: transfer.id,
+    });
+    return result;
+  }
+
+  private async failLedgerPostWithinTransaction(
+    manager: EntityManager,
+    transfer: Transfer,
+    command: NormalizedPostTransferToLedgerCommand,
+    requestHash: string,
+    failure: { code: TransferFailureCode; statusCode: number; message: string },
+    reservationId: string,
+  ): Promise<TransferLifecycleView> {
+    this.applyTransition(transfer, {
+      nextStatus: TransferStatus.FAILED,
+      requestContext: command.requestContext,
+      idempotencyKey: command.idempotencyKey,
+      reason: 'LEDGER_POST_REJECTED',
+      recoveryReference: null,
+      failureCode: failure.code,
+      failureMessage: failure.message,
+      failureStatusCode: failure.statusCode,
+      expectedVersion: undefined,
+      transferId: transfer.id,
+      requestHash,
+    });
+    await manager.getRepository(Transfer).save(transfer);
+    const result = this.toView(transfer, false);
+    await this.recordAudit(manager, transfer, 'LEDGER_POST_FAILED', command.requestContext, {
+      requestHash,
+      failureCode: failure.code,
+    });
+    await this.idempotencyService.complete(manager, reservationId, {
+      statusCode: failure.statusCode,
+      responseBody: result as unknown as Record<string, unknown>,
+      resourceType: 'TRANSFER',
+      resourceId: transfer.id,
+    });
+    return result;
+  }
+
+  private async lockLedgerAccounts(
+    manager: EntityManager,
+    accountIds: string[],
+  ): Promise<LedgerAccount[]> {
+    const orderedAccountIds = [...new Set(accountIds)].sort();
+    return manager
+      .getRepository(LedgerAccount)
+      .createQueryBuilder('account')
+      .where('account.id IN (:...accountIds)', { accountIds: orderedAccountIds })
+      .orderBy('account.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+  }
+
+  private assertTransferLedgerAccounts(transfer: Transfer, accounts: LedgerAccount[]): void {
+    const accountById = new Map(accounts.map((account) => [account.id, account]));
+    const accountIds = [transfer.sourceLedgerAccountId, transfer.destinationLedgerAccountId];
+    for (const accountId of accountIds) {
+      if (!accountId) {
+        throw new ConflictException('The transfer Ledger account metadata is incomplete');
+      }
+      const account = accountById.get(accountId);
+      if (!account) {
+        throw new NotFoundException(`Ledger account ${accountId} was not found`);
+      }
+      if (!account.isActive || account.allowNegativeBalance) {
+        throw new ConflictException(
+          `Ledger account ${accountId} is not an active customer-funds account`,
+        );
+      }
+      if (
+        account.currency !== transfer.currency ||
+        account.accountingUnit !== transfer.accountingUnit ||
+        account.accountType !== LedgerAccountType.LIABILITY ||
+        account.normalBalance !== LedgerNormalBalance.CREDIT
+      ) {
+        throw new ConflictException(
+          `Ledger account ${accountId} does not match the transfer currency or accounting unit`,
+        );
+      }
+    }
+  }
+
+  private postFailureFromHttpException(error: HttpException): {
+    code: TransferFailureCode;
+    statusCode: number;
+    message: string;
+  } {
+    const statusCode = error.getStatus();
+    const response = error.getResponse();
+    const rawMessage =
+      typeof response === 'string'
+        ? response
+        : ((response as { message?: string | string[] }).message ?? 'Ledger rejected the transfer');
+    const message = Array.isArray(rawMessage) ? rawMessage.join('; ') : rawMessage;
+    return {
+      code:
+        statusCode === 422
+          ? TransferFailureCode.INSUFFICIENT_FUNDS
+          : TransferFailureCode.LEDGER_REJECTED,
+      statusCode,
+      message: message.slice(0, 255),
+    };
+  }
+
+  private normalizePostCommand(
+    command: PostTransferToLedgerCommand,
+  ): NormalizedPostTransferToLedgerCommand {
+    const idempotencyKey = this.normalizeText(command.idempotencyKey, 'idempotencyKey');
+    return {
+      idempotencyKey,
+      requestContext: this.normalizeRequestContext(command.requestContext),
+    };
   }
 
   private async transitionWithinTransaction(

@@ -2,6 +2,7 @@ import type { TransferFailureCode, TransferStatus } from './transfer.enums';
 
 export const TRANSFER_LIFECYCLE_IDEMPOTENCY_SCOPE = 'wallet.transfer.lifecycle.v1';
 export const TRANSFER_STATE_IDEMPOTENCY_SCOPE = 'wallet.transfer.state.v1';
+export const TRANSFER_LEDGER_POST_IDEMPOTENCY_SCOPE = 'wallet.transfer.ledger-post.v1';
 export const TRANSFER_COMMAND_SCOPE = 'wallet.transfer.create.v1';
 
 export interface TransferLifecycleRequestContext {
@@ -47,6 +48,11 @@ export interface CreateTransferLifecycleCommand {
   requestContext: TransferLifecycleRequestContext;
   reference?: string | null;
   narration?: string | null;
+}
+
+export interface PostTransferToLedgerCommand {
+  idempotencyKey: string;
+  requestContext: TransferLifecycleRequestContext;
 }
 
 export interface TransitionTransferLifecycleCommand {
