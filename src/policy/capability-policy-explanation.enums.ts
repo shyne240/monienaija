@@ -1,0 +1,14 @@
+export enum PolicyExplanationAudience {
+  CUSTOMER = 'CUSTOMER',
+  CUSTOMER_SUPPORT = 'CUSTOMER_SUPPORT',
+  OPERATIONS = 'OPERATIONS',
+  INTERNAL_SERVICES = 'INTERNAL_SERVICES',
+}
+
+export enum PolicyExplanationReasonSeverity {
+  INFO = 'INFO',
+  LIMITED = 'LIMITED',
+  REVIEW = 'REVIEW',
+  SUSPENDED = 'SUSPENDED',
+  BLOCKED = 'BLOCKED',
+}
