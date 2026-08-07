@@ -8,7 +8,9 @@ import { WalletOwnership } from '../customer-wallet/wallet-ownership.entity';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerLine } from '../ledger/ledger-line.entity';
 import { LedgerModule } from '../ledger/ledger.module';
+import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { CustomerFinancialAccountBinding } from './customer-financial-account-binding.entity';
+import { CustomerFinancialAccountBindingRepairService } from './customer-financial-account-binding-repair.service';
 import { CustomerFinancialAccountBindingService } from './customer-financial-account-binding.service';
 import { CustomerFinancialAccountReadService } from './customer-financial-account-read.service';
 import { WalletAccount } from './wallet-account.entity';
@@ -19,6 +21,7 @@ import { WalletService } from './wallet.service';
   imports: [
     AuthorizationModule,
     LedgerModule,
+    ReconciliationModule,
     TypeOrmModule.forFeature([
       Customer,
       CustomerWallet,
@@ -34,11 +37,13 @@ import { WalletService } from './wallet.service';
     WalletService,
     CustomerFinancialAccountBindingService,
     CustomerFinancialAccountReadService,
+    CustomerFinancialAccountBindingRepairService,
   ],
   exports: [
     WalletService,
     CustomerFinancialAccountBindingService,
     CustomerFinancialAccountReadService,
+    CustomerFinancialAccountBindingRepairService,
   ],
 })
 export class WalletModule {}
