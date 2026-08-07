@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import type {
   DeepPartial,
   EntityManager,
@@ -18,7 +19,7 @@ import {
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
 import type { LedgerService } from '../src/ledger/ledger.service';
-import type { PostJournalCommand } from '../src/ledger/ledger.types';
+import type { LedgerJournalView, PostJournalCommand } from '../src/ledger/ledger.types';
 import { Transfer } from '../src/transfer/transfer.entity';
 import { TransferFailureCode, TransferStatus } from '../src/transfer/transfer.enums';
 import { TransferLifecycleService } from '../src/transfer/transfer-lifecycle.service';
@@ -129,12 +130,44 @@ class InMemoryLedgerAccountRepository {
 
 class FakeLedgerService {
   readonly calls: PostJournalCommand[] = [];
+  readonly journals = new Map<string, LedgerJournalView>();
   failure: Error | null = null;
 
   postJournalInTransaction(_manager: EntityManager, command: PostJournalCommand): Promise<string> {
     this.calls.push(command);
     if (this.failure) return Promise.reject(this.failure);
+    this.journals.set(JOURNAL_ID, {
+      id: JOURNAL_ID,
+      idempotencyKey: command.idempotencyKey,
+      currency: command.currency,
+      accountingUnit: command.accountingUnit ?? 'CUSTOMER_FUNDS',
+      status: 'POSTED',
+      reference: command.reference ?? null,
+      description: command.description ?? null,
+      correlationId: command.correlationId ?? null,
+      reversalOfJournalId: null,
+      metadata: command.metadata ?? {},
+      totalMinor: String(command.lines[0]?.amountMinor ?? '0'),
+      createdAt: new Date(),
+      postedAt: new Date(),
+      lines: command.lines.map((line, index) => ({
+        id: `line-${index + 1}`,
+        journalId: JOURNAL_ID,
+        accountId: line.accountId,
+        lineNumber: index + 1,
+        direction: line.direction,
+        amountMinor: String(line.amountMinor),
+        currency: command.currency,
+        accountingUnit: command.accountingUnit ?? 'CUSTOMER_FUNDS',
+        createdAt: new Date(),
+      })),
+    });
     return Promise.resolve(JOURNAL_ID);
+  }
+
+  getJournal(journalId: string): Promise<LedgerJournalView> {
+    const journal = this.journals.get(journalId);
+    return journal ? Promise.resolve(journal) : Promise.reject(new Error('journal not found'));
   }
 }
 
@@ -153,15 +186,25 @@ class InMemoryManager {
 
 class InMemoryDataSource {
   readonly isolationLevels: string[] = [];
+  readonly queuedErrors: unknown[] = [];
+  timeoutAfterCommitOnce = false;
 
   constructor(private readonly manager: InMemoryManager) {}
 
-  transaction<T>(
+  async transaction<T>(
     isolationLevel: string,
     callback: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     this.isolationLevels.push(isolationLevel);
-    return callback(this.manager as unknown as EntityManager);
+    const queuedError = this.queuedErrors.shift();
+    if (queuedError instanceof Error) throw queuedError;
+    if (queuedError) throw new Error('queued transaction failure');
+    const result = await callback(this.manager as unknown as EntityManager);
+    if (this.timeoutAfterCommitOnce) {
+      this.timeoutAfterCommitOnce = false;
+      throw new Error('simulated commit timeout');
+    }
+    return result;
   }
 }
 
@@ -378,6 +421,11 @@ function postCommand(idempotencyKey = 'ledger-post-1') {
     idempotencyKey,
     requestContext,
   };
+}
+
+function transactionFailure(code: '40001' | '40P01'): QueryFailedError {
+  const driverError = Object.assign(new Error('serialization/deadlock failure'), { code });
+  return new QueryFailedError('serialization/deadlock failure', [], driverError);
 }
 
 describe('TransferLifecycleService', () => {
@@ -691,6 +739,90 @@ describe('TransferLifecycleService', () => {
     expect(debitTotal).toBe(creditTotal);
   });
 
+  it('retries serialization failures with the same logical posting command', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    fixture.dataSource.isolationLevels.length = 0;
+    fixture.dataSource.queuedErrors.push(transactionFailure('40001'), transactionFailure('40001'));
+
+    const result = await fixture.service.postToLedger(
+      transferId,
+      postCommand('ledger-serialization-1'),
+    );
+
+    expect(result.status).toBe(TransferStatus.COMPLETED);
+    expect(fixture.dataSource.isolationLevels).toHaveLength(3);
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('retries deadlock failures with bounded attempts', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    fixture.dataSource.isolationLevels.length = 0;
+    fixture.dataSource.queuedErrors.push(transactionFailure('40P01'));
+
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-deadlock-1'));
+
+    expect(result.status).toBe(TransferStatus.COMPLETED);
+    expect(fixture.dataSource.isolationLevels).toHaveLength(2);
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('exhausts bounded serialization retries without posting or changing lifecycle state', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    fixture.dataSource.isolationLevels.length = 0;
+    fixture.dataSource.queuedErrors.push(
+      transactionFailure('40001'),
+      transactionFailure('40001'),
+      transactionFailure('40001'),
+    );
+
+    await expect(
+      fixture.service.postToLedger(transferId, postCommand('ledger-retry-exhausted-1')),
+    ).rejects.toThrow('exhausted 3 bounded transaction attempts');
+    expect(fixture.dataSource.isolationLevels).toHaveLength(3);
+    expect(fixture.ledger.calls).toHaveLength(0);
+    expect((await fixture.service.get(transferId)).status).toBe(TransferStatus.PROCESSING);
+  });
+
+  it('verifies a committed post after a commit-timeout error', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    fixture.dataSource.timeoutAfterCommitOnce = true;
+
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-timeout-1'));
+
+    expect(result).toMatchObject({
+      status: TransferStatus.COMPLETED,
+      journalId: JOURNAL_ID,
+    });
+    expect(fixture.ledger.calls).toHaveLength(1);
+  });
+
+  it('persists and deterministically exposes an unknown outcome when durable evidence is absent', async () => {
+    const fixture = makeFixture();
+    const transferId = await prepareProcessing(fixture);
+    fixture.dataSource.queuedErrors.push(new Error('connection reset before commit'));
+
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-unknown-1'));
+
+    expect(result).toMatchObject({
+      status: TransferStatus.UNKNOWN,
+      journalId: null,
+    });
+    expect(typeof result.recoveryReference).toBe('string');
+    expect(fixture.ledger.calls).toHaveLength(0);
+    const recovered = await fixture.service.get(transferId);
+    expect(recovered.recoveryReference).toBe(result.recoveryReference);
+    await expect(
+      fixture.service.postToLedger(transferId, postCommand('ledger-unknown-1')),
+    ).rejects.toThrow('already UNKNOWN');
+    expect((await fixture.service.get(transferId)).recoveryReference).toBe(
+      result.recoveryReference,
+    );
+  });
+
   it('rejects a Ledger currency mismatch without posting or completing the transfer', async () => {
     const fixture = makeFixture();
     fixture.ledgerAccounts.accounts.get(DESTINATION_LEDGER_ID)!.currency = 'USD';
@@ -746,18 +878,16 @@ describe('TransferLifecycleService', () => {
     expect(fixture.ledger.calls).toHaveLength(1);
   });
 
-  it('does not complete the transfer when the Ledger transaction fails unexpectedly', async () => {
+  it('moves an ambiguous Ledger error to an explicit unknown outcome without claiming success', async () => {
     const fixture = makeFixture();
     fixture.ledger.failure = new Error('simulated Ledger transaction failure');
     const transferId = await prepareProcessing(fixture);
 
-    await expect(
-      fixture.service.postToLedger(transferId, postCommand('ledger-failure-1')),
-    ).rejects.toThrow('simulated Ledger transaction failure');
+    const result = await fixture.service.postToLedger(transferId, postCommand('ledger-failure-1'));
 
-    const current = await fixture.service.get(transferId);
-    expect(current.status).toBe(TransferStatus.PROCESSING);
-    expect(current.journalId).toBeNull();
+    expect(result.status).toBe(TransferStatus.UNKNOWN);
+    expect(result.journalId).toBeNull();
+    expect(result.recoveryReference).toEqual(expect.any(String));
     expect(fixture.ledger.calls).toHaveLength(1);
   });
 });

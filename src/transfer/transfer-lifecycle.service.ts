@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
 import {
   normalizeAccountingUnit,
@@ -51,6 +51,17 @@ const HASH_PATTERN = /^[a-f0-9]{64}$/i;
 const MAX_CONTEXT_LENGTH = 255;
 const MAX_REFERENCE_LENGTH = 180;
 const IDEMPOTENCY_RETENTION_SECONDS = 86_400;
+const MAX_LEDGER_POST_ATTEMPTS = 3;
+
+export class TransferOutcomeUnknownException extends ConflictException {
+  constructor(readonly recoveryReference: string) {
+    super({
+      code: 'UNKNOWN_OUTCOME',
+      message: 'The transfer Ledger outcome could not be verified',
+      recoveryReference,
+    });
+  }
+}
 
 interface NormalizedCreateTransferLifecycleCommand
   extends Omit<
@@ -125,9 +136,7 @@ export class TransferLifecycleService {
   ): Promise<TransferLifecycleView> {
     const normalizedTransferId = this.normalizeUuid(transferId, 'transferId');
     const normalized = this.normalizePostCommand(command);
-    return this.dataSource.transaction('SERIALIZABLE', (manager) =>
-      this.postToLedgerWithinTransaction(manager, normalizedTransferId, normalized),
-    );
+    return this.postToLedgerWithRetry(normalizedTransferId, normalized);
   }
 
   async get(transferId: string): Promise<TransferLifecycleView> {
@@ -254,6 +263,147 @@ export class TransferLifecycleService {
       resourceId: transfer.id,
     });
     return result;
+  }
+
+  private async postToLedgerWithRetry(
+    transferId: string,
+    command: NormalizedPostTransferToLedgerCommand,
+  ): Promise<TransferLifecycleView> {
+    for (let attempt = 1; attempt <= MAX_LEDGER_POST_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.dataSource.transaction('SERIALIZABLE', (manager) =>
+          this.postToLedgerWithinTransaction(manager, transferId, command),
+        );
+      } catch (error) {
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < MAX_LEDGER_POST_ATTEMPTS) {
+            continue;
+          }
+          throw new ConflictException(
+            `The transfer Ledger post exhausted ${MAX_LEDGER_POST_ATTEMPTS} bounded transaction attempts`,
+          );
+        }
+        if (error instanceof HttpException || error instanceof QueryFailedError) {
+          throw error;
+        }
+        return this.resolveUncertainPostOutcome(transferId, command);
+      }
+    }
+    throw new ConflictException('The transfer Ledger post could not complete');
+  }
+
+  private async resolveUncertainPostOutcome(
+    transferId: string,
+    command: NormalizedPostTransferToLedgerCommand,
+  ): Promise<TransferLifecycleView> {
+    const recoveryReference = this.postRecoveryReference(transferId);
+    let transfer: Transfer | null;
+    try {
+      transfer = await this.transferRepository.findOne({ where: { id: transferId } });
+    } catch {
+      throw new TransferOutcomeUnknownException(recoveryReference);
+    }
+    if (!transfer) {
+      throw new TransferOutcomeUnknownException(recoveryReference);
+    }
+
+    if (transfer.journalId) {
+      if (!(await this.isVerifiedTransferJournal(transfer))) {
+        throw new TransferOutcomeUnknownException(recoveryReference);
+      }
+      if (transfer.status === TransferStatus.COMPLETED) {
+        return this.toView(transfer, false);
+      }
+      try {
+        return await this.transition(transferId, {
+          transferId,
+          nextStatus: TransferStatus.COMPLETED,
+          idempotencyKey: `outcome-complete:${recoveryReference}`,
+          requestContext: command.requestContext,
+          journalId: transfer.journalId,
+          recoveryReference,
+          reason: 'LEDGER_POST_OUTCOME_VERIFIED',
+        });
+      } catch {
+        throw new TransferOutcomeUnknownException(recoveryReference);
+      }
+    }
+    if (
+      transfer.status === TransferStatus.FAILED ||
+      transfer.status === TransferStatus.CANCELLED ||
+      transfer.status === TransferStatus.UNKNOWN ||
+      transfer.status === TransferStatus.PENDING_RECOVERY
+    ) {
+      return this.toView(transfer, false);
+    }
+
+    try {
+      return await this.transition(transferId, {
+        transferId,
+        nextStatus: TransferStatus.UNKNOWN,
+        idempotencyKey: `outcome:${recoveryReference}`,
+        requestContext: command.requestContext,
+        recoveryReference,
+        reason: 'LEDGER_POST_OUTCOME_UNKNOWN',
+      });
+    } catch {
+      throw new TransferOutcomeUnknownException(recoveryReference);
+    }
+  }
+
+  private async isVerifiedTransferJournal(transfer: Transfer): Promise<boolean> {
+    if (
+      !transfer.journalId ||
+      !transfer.sourceLedgerAccountId ||
+      !transfer.destinationLedgerAccountId
+    ) {
+      return false;
+    }
+    try {
+      const journal = await this.ledgerService.getJournal(transfer.journalId);
+      if (
+        journal.id !== transfer.journalId ||
+        journal.idempotencyKey !== `transfer:${transfer.id}:ledger-post` ||
+        journal.currency !== transfer.currency ||
+        journal.accountingUnit !== transfer.accountingUnit ||
+        journal.totalMinor !== transfer.amountMinor ||
+        journal.lines.length !== 2
+      ) {
+        return false;
+      }
+      const sourceLine = journal.lines.find(
+        (line) =>
+          line.accountId === transfer.sourceLedgerAccountId &&
+          line.direction === LedgerEntryDirection.DEBIT,
+      );
+      const destinationLine = journal.lines.find(
+        (line) =>
+          line.accountId === transfer.destinationLedgerAccountId &&
+          line.direction === LedgerEntryDirection.CREDIT,
+      );
+      return (
+        sourceLine?.amountMinor === transfer.amountMinor &&
+        destinationLine?.amountMinor === transfer.amountMinor &&
+        sourceLine?.currency === transfer.currency &&
+        destinationLine?.currency === transfer.currency &&
+        sourceLine?.accountingUnit === transfer.accountingUnit &&
+        destinationLine?.accountingUnit === transfer.accountingUnit
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private postRecoveryReference(transferId: string): string {
+    return `transfer-recovery:${createHash('sha256').update(`${transferId}:ledger-post`).digest('hex')}`;
+  }
+
+  private isRetryableTransactionError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const driverError = error.driverError as { code?: string };
+    return driverError.code === '40001' || driverError.code === '40P01';
   }
 
   private async postToLedgerWithinTransaction(
