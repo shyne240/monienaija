@@ -35,6 +35,10 @@ import {
   'chk_policy_profile_versions_lifecycle',
   "lifecycle_state IN ('DRAFT', 'ACTIVE', 'RETIRED', 'REJECTED', 'ABANDONED')",
 )
+@Check(
+  'chk_policy_profile_versions_publication_metadata',
+  "(lifecycle_state <> 'ACTIVE' OR (published_at IS NOT NULL AND published_by IS NOT NULL)) AND (lifecycle_state <> 'RETIRED' OR (retired_at IS NOT NULL AND retired_by IS NOT NULL))",
+)
 export class PolicyProfileVersion {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

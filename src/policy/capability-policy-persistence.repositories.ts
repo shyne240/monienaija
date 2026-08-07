@@ -17,6 +17,7 @@ import {
   decisionToEntity,
   entityToDecision,
   entityToProfile,
+  assertPublishedProfileImmutable,
   entityToSnapshot,
   profileToEntity,
   snapshotToEntity,
@@ -31,6 +32,7 @@ import type {
   PolicySnapshotAttachmentInput,
   PolicyEvidenceSnapshotAttachmentRepository,
   PolicyDecisionPersistenceServiceContract,
+  PolicyProfileLifecycleUpdate,
 } from './capability-policy-persistence.types';
 import {
   PolicyProfileLifecycleState,
@@ -135,6 +137,45 @@ export class TypeOrmPolicyProfileVersionRepository implements PolicyProfileVersi
       Repository<PolicyProfileVersion>['insert']
     >[0];
     await this.repository.insert(insertValue);
+  }
+
+  async transitionLifecycle(
+    policyVersion: string,
+    update: PolicyProfileLifecycleUpdate,
+  ): Promise<void> {
+    const entity = await this.repository.findOne({ where: { policyVersion } });
+    if (!entity) throw new ConflictException('A4 policy profile version was not found');
+    if (
+      update.expectedRecordVersion !== undefined &&
+      update.expectedRecordVersion !== entity.recordVersion
+    ) {
+      throw new ConflictException('A4 policy profile lifecycle version is stale');
+    }
+    if (entity.lifecycleState === PolicyProfileLifecycleState.DRAFT) {
+      if (
+        ![
+          PolicyProfileLifecycleState.ACTIVE,
+          PolicyProfileLifecycleState.REJECTED,
+          PolicyProfileLifecycleState.ABANDONED,
+        ].includes(update.lifecycleState)
+      ) {
+        throw new ConflictException('Invalid A4 DRAFT profile lifecycle transition');
+      }
+    } else {
+      assertPublishedProfileImmutable(entity, { ...entity, lifecycleState: update.lifecycleState });
+    }
+    entity.lifecycleState = update.lifecycleState;
+    entity.lastCorrelationId = update.correlationId ?? entity.lastCorrelationId;
+    entity.lastRequestId = update.requestId ?? entity.lastRequestId;
+    if (update.lifecycleState === PolicyProfileLifecycleState.ACTIVE) {
+      entity.publishedAt = entity.publishedAt ?? new Date();
+      entity.publishedBy = entity.publishedBy ?? update.actor;
+    }
+    if (update.lifecycleState === PolicyProfileLifecycleState.RETIRED) {
+      entity.retiredAt = entity.retiredAt ?? new Date();
+      entity.retiredBy = entity.retiredBy ?? update.actor;
+    }
+    await this.repository.save(entity);
   }
 }
 

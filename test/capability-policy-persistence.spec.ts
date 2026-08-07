@@ -23,6 +23,7 @@ import {
   decisionToEntity,
   entityToDecision,
   entityToProfile,
+  assertPublishedProfileImmutable,
   entityToSnapshot,
   profileRecordFromProfile,
   profileToEntity,
@@ -77,6 +78,12 @@ class FakeRepository<T extends { id?: string }> {
   insert(entity: T): Promise<void> {
     this.records.push(entity);
     return Promise.resolve();
+  }
+
+  save(entity: T): Promise<T> {
+    const record = entity as T & { recordVersion?: number };
+    if (record.recordVersion !== undefined) record.recordVersion += 1;
+    return Promise.resolve(entity);
   }
 }
 
@@ -247,6 +254,9 @@ describe('A4 physical policy persistence artifacts', () => {
     expect(upSql).toContain('create table policy_decision_records');
     expect(upSql).toContain('effective_from timestamptz not null');
     expect(upSql).toContain('lifecycle_state varchar(20) not null');
+    expect(upSql).toContain('create trigger policy_profile_versions_are_immutable');
+    expect(upSql).toContain('before update or delete on policy_profile_versions');
+    expect(upSql).toContain('enforce_policy_profile_version_immutability()');
     expect(upSql).toContain('create trigger policy_decision_records_are_immutable');
     expect(upSql).toContain('create trigger immutable_evidence_snapshot_attachments_are_immutable');
     expect(upSql).not.toMatch(/(insert|update|delete)\s+(customers|ledger_|wallet_|customer_)/);
@@ -259,6 +269,10 @@ describe('A4 physical policy persistence artifacts', () => {
     expect(downSql).toContain('drop table if exists policy_decision_records');
     expect(downSql).toContain('drop table if exists immutable_evidence_snapshot_attachments');
     expect(downSql).toContain('drop table if exists policy_profile_versions');
+    expect(downSql).toContain('drop trigger if exists policy_profile_versions_are_immutable');
+    expect(downSql).toContain(
+      'drop function if exists enforce_policy_profile_version_immutability()',
+    );
     expect(downSql).toContain('drop function if exists reject_immutable_a4_history_mutation()');
   });
 
@@ -398,6 +412,59 @@ describe('A4 physical policy persistence artifacts', () => {
 
     expect(before?.policyVersion).toBe(profile.policyVersion);
     expect(after?.policyVersion).toBe('a4.profile.wallet-account-read.v2');
+  });
+
+  it('rejects published profile definition mutations and permits only ordered lifecycle transitions', async () => {
+    const repository = new FakeRepository<PolicyProfileVersion>();
+    const profile = DEFAULT_CAPABILITY_POLICY_PROFILES.find(
+      (candidate) => candidate.capability === 'wallet.account',
+    );
+    if (!profile) throw new Error('Expected a wallet account A4 profile');
+    const draft = profileToEntity(
+      profileRecordFromProfile(profile, 'publisher', new Date('2026-01-01T00:00:00.000Z')),
+    );
+    draft.lifecycleState = PolicyProfileLifecycleState.DRAFT;
+    draft.publishedAt = null;
+    draft.publishedBy = null;
+    repository.records.push(draft);
+    const registry = new TypeOrmPolicyProfileVersionRepository(
+      repository as unknown as Repository<PolicyProfileVersion>,
+    );
+
+    await registry.transitionLifecycle(profile.policyVersion, {
+      lifecycleState: PolicyProfileLifecycleState.ACTIVE,
+      actor: 'publisher',
+      expectedRecordVersion: 1,
+    });
+    expect(draft.lifecycleState).toBe(PolicyProfileLifecycleState.ACTIVE);
+    expect(draft.publishedBy).toBe('publisher');
+    expect(draft.recordVersion).toBe(2);
+
+    await registry.transitionLifecycle(profile.policyVersion, {
+      lifecycleState: PolicyProfileLifecycleState.RETIRED,
+      actor: 'publisher',
+      expectedRecordVersion: 2,
+    });
+    expect(draft.lifecycleState).toBe(PolicyProfileLifecycleState.RETIRED);
+    expect(draft.retiredBy).toBe('publisher');
+    expect(draft.recordVersion).toBe(3);
+
+    expect(() =>
+      assertPublishedProfileImmutable(draft, { ...draft, capability: 'wallet.changed' }),
+    ).toThrow(ConflictException);
+    expect(() =>
+      assertPublishedProfileImmutable(draft, {
+        ...draft,
+        effectiveFrom: new Date('2027-01-01T00:00:00.000Z'),
+      }),
+    ).toThrow(ConflictException);
+    await expect(
+      registry.transitionLifecycle(profile.policyVersion, {
+        lifecycleState: PolicyProfileLifecycleState.ACTIVE,
+        actor: 'publisher',
+        expectedRecordVersion: 3,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('returns only an active, non-expired, non-superseded current decision', async () => {

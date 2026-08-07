@@ -45,6 +45,10 @@ export class CreateCapabilityPolicyPersistence1785753600022 implements Migration
         ),
         CONSTRAINT chk_policy_profile_versions_subject CHECK (subject_type = 'CUSTOMER'),
         CONSTRAINT chk_policy_profile_versions_record_version CHECK (record_version > 0),
+        CONSTRAINT chk_policy_profile_versions_publication_metadata CHECK (
+          (lifecycle_state <> 'ACTIVE' OR (published_at IS NOT NULL AND published_by IS NOT NULL))
+          AND (lifecycle_state <> 'RETIRED' OR (retired_at IS NOT NULL AND retired_by IS NOT NULL))
+        ),
         CONSTRAINT chk_policy_profile_versions_created_by CHECK (length(created_by) > 0)
       )
     `);
@@ -62,6 +66,74 @@ export class CreateCapabilityPolicyPersistence1785753600022 implements Migration
       `CREATE INDEX idx_policy_profile_versions_lifecycle
          ON policy_profile_versions (lifecycle_state, effective_from)`,
     );
+    await queryRunner.query(`
+      CREATE OR REPLACE FUNCTION enforce_policy_profile_version_immutability()
+      RETURNS TRIGGER
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        IF TG_OP = 'DELETE' THEN
+          IF OLD.lifecycle_state <> 'DRAFT' THEN
+            RAISE EXCEPTION 'Published A4 policy profile cannot be deleted'
+              USING ERRCODE = '55000';
+          END IF;
+          RETURN OLD;
+        END IF;
+        IF OLD.lifecycle_state <> 'DRAFT' THEN
+          IF NEW.profile_reference IS DISTINCT FROM OLD.profile_reference
+             OR NEW.profile_key IS DISTINCT FROM OLD.profile_key
+             OR NEW.profile_version IS DISTINCT FROM OLD.profile_version
+             OR NEW.policy_version IS DISTINCT FROM OLD.policy_version
+             OR NEW.definition_hash IS DISTINCT FROM OLD.definition_hash
+             OR NEW.capability IS DISTINCT FROM OLD.capability
+             OR NEW.actions IS DISTINCT FROM OLD.actions
+             OR NEW.subject_type IS DISTINCT FROM OLD.subject_type
+             OR NEW.contract_name IS DISTINCT FROM OLD.contract_name
+             OR NEW.contract_version IS DISTINCT FROM OLD.contract_version
+             OR NEW.profile_contract_version IS DISTINCT FROM OLD.profile_contract_version
+             OR NEW.definition_payload IS DISTINCT FROM OLD.definition_payload
+             OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
+             OR NEW.effective_to IS DISTINCT FROM OLD.effective_to
+          THEN
+            RAISE EXCEPTION 'Published A4 policy profile definition is immutable'
+              USING ERRCODE = '55000';
+          END IF;
+        END IF;
+        IF OLD.lifecycle_state = 'DRAFT'
+           AND NEW.lifecycle_state = 'RETIRED'
+        THEN
+          RAISE EXCEPTION 'A4 policy profile must be ACTIVE before RETIRED'
+            USING ERRCODE = '23514';
+        END IF;
+        IF OLD.lifecycle_state = 'ACTIVE'
+           AND NEW.lifecycle_state NOT IN ('ACTIVE', 'RETIRED')
+        THEN
+          RAISE EXCEPTION 'An ACTIVE A4 policy profile may only remain ACTIVE or become RETIRED'
+            USING ERRCODE = '23514';
+        END IF;
+        IF OLD.lifecycle_state IN ('RETIRED', 'REJECTED', 'ABANDONED')
+           AND NEW.lifecycle_state <> OLD.lifecycle_state
+        THEN
+          RAISE EXCEPTION 'A terminal A4 policy profile lifecycle state cannot be reversed'
+            USING ERRCODE = '23514';
+        END IF;
+        IF NEW.lifecycle_state = 'ACTIVE' AND NEW.published_at IS NULL THEN
+          RAISE EXCEPTION 'An ACTIVE A4 policy profile requires published_at'
+            USING ERRCODE = '23514';
+        END IF;
+        IF NEW.lifecycle_state = 'RETIRED' AND NEW.retired_at IS NULL THEN
+          RAISE EXCEPTION 'A RETIRED A4 policy profile requires retired_at'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    await queryRunner.query(`
+      CREATE TRIGGER policy_profile_versions_are_immutable
+      BEFORE UPDATE OR DELETE ON policy_profile_versions
+      FOR EACH ROW EXECUTE FUNCTION enforce_policy_profile_version_immutability()
+    `);
 
     await queryRunner.query(`
       CREATE TABLE immutable_evidence_snapshot_attachments (
@@ -206,6 +278,12 @@ export class CreateCapabilityPolicyPersistence1785753600022 implements Migration
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS policy_profile_versions_are_immutable ON policy_profile_versions`,
+    );
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS enforce_policy_profile_version_immutability()`,
+    );
     await queryRunner.query(
       `DROP TRIGGER IF EXISTS policy_decision_records_are_immutable ON policy_decision_records`,
     );

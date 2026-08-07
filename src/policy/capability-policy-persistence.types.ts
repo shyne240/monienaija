@@ -46,6 +46,14 @@ export interface PolicySnapshotAttachmentInput extends PolicyRetentionMetadata {
   readonly createdAt: Date;
 }
 
+export interface PolicyProfileLifecycleUpdate {
+  readonly lifecycleState: PolicyProfileLifecycleState;
+  readonly actor: string;
+  readonly expectedRecordVersion?: number;
+  readonly correlationId?: string;
+  readonly requestId?: string;
+}
+
 export interface PolicyProfileVersionRepository extends PolicyProfileRegistry {
   getProfileAt(
     capability: string,
@@ -55,6 +63,7 @@ export interface PolicyProfileVersionRepository extends PolicyProfileRegistry {
   ): Promise<CapabilityPolicyProfile | null>;
   findByPolicyVersion(policyVersion: string): Promise<PolicyProfileVersionRecord | null>;
   insertImmutable(record: PolicyProfileVersionRecord): Promise<void>;
+  transitionLifecycle(policyVersion: string, update: PolicyProfileLifecycleUpdate): Promise<void>;
 }
 
 export interface PolicyEvidenceSnapshotAttachmentRepository {

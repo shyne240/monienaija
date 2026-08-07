@@ -62,19 +62,85 @@ export function profileToEntity(
   entity.contractName = 'A4-CAPABILITY-POLICY';
   entity.contractVersion = 1;
   entity.profileContractVersion = 1;
+  entity.recordVersion = existing?.recordVersion ?? 1;
   entity.definitionPayload = record.definitionPayload;
   entity.effectiveFrom = record.effectiveFrom;
   entity.effectiveTo = record.effectiveTo;
   entity.lifecycleState = record.lifecycleState;
   entity.createdBy = record.createdBy;
-  entity.publishedAt = existing?.publishedAt ?? null;
-  entity.publishedBy = existing?.publishedBy ?? null;
-  entity.retiredAt = existing?.retiredAt ?? null;
-  entity.retiredBy = existing?.retiredBy ?? null;
+  entity.publishedAt =
+    existing?.publishedAt ??
+    (record.lifecycleState === PolicyProfileLifecycleState.ACTIVE ? record.createdAt : null);
+  entity.publishedBy =
+    existing?.publishedBy ??
+    (record.lifecycleState === PolicyProfileLifecycleState.ACTIVE ? record.createdBy : null);
+  entity.retiredAt =
+    existing?.retiredAt ??
+    (record.lifecycleState === PolicyProfileLifecycleState.RETIRED ? record.createdAt : null);
+  entity.retiredBy =
+    existing?.retiredBy ??
+    (record.lifecycleState === PolicyProfileLifecycleState.RETIRED ? record.createdBy : null);
   entity.lastCorrelationId = existing?.lastCorrelationId ?? null;
   entity.lastRequestId = existing?.lastRequestId ?? null;
   applyRetention(entity, record);
   return entity;
+}
+
+export function assertPublishedProfileImmutable(
+  previous: PolicyProfileVersion,
+  next: PolicyProfileVersion,
+): void {
+  if (previous.lifecycleState === PolicyProfileLifecycleState.DRAFT) return;
+  const immutableFields: readonly (keyof PolicyProfileVersion)[] = [
+    'profileReference',
+    'profileKey',
+    'profileVersion',
+    'policyVersion',
+    'definitionHash',
+    'capability',
+    'actions',
+    'subjectType',
+    'contractName',
+    'contractVersion',
+    'profileContractVersion',
+    'definitionPayload',
+    'effectiveFrom',
+    'effectiveTo',
+  ];
+  for (const field of immutableFields) {
+    if (canonicalProfileValue(previous[field]) !== canonicalProfileValue(next[field])) {
+      throw new ConflictException(
+        `Published A4 policy profile field is immutable: ${String(field)}`,
+      );
+    }
+  }
+  if (
+    previous.lifecycleState === PolicyProfileLifecycleState.ACTIVE &&
+    ![PolicyProfileLifecycleState.ACTIVE, PolicyProfileLifecycleState.RETIRED].includes(
+      next.lifecycleState,
+    )
+  ) {
+    throw new ConflictException(
+      'An ACTIVE A4 policy profile may only remain ACTIVE or become RETIRED',
+    );
+  }
+  if (
+    previous.lifecycleState === PolicyProfileLifecycleState.RETIRED &&
+    next.lifecycleState !== PolicyProfileLifecycleState.RETIRED
+  ) {
+    throw new ConflictException('A RETIRED A4 policy profile cannot be reactivated');
+  }
+}
+
+function canonicalProfileValue(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalProfileValue).join(',')}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalProfileValue(object[key])}`)
+    .join(',')}}`;
 }
 
 export function entityToProfile(entity: PolicyProfileVersion): CapabilityPolicyProfile {
