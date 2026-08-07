@@ -6,6 +6,7 @@ import { CapabilityPolicyModule } from '../policy/capability-policy.module';
 import { OperationsModule } from '../operations/operations.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentModule } from '../payment/payment.module';
+import { PilotControlModule } from '../pilot/pilot-control.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
@@ -33,6 +34,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     LedgerModule,
     OperationsModule,
     PaymentModule,
+    PilotControlModule,
     WalletModule,
     TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
   ],

@@ -6,6 +6,8 @@ import type {
   AuthorizationPolicy,
 } from '../src/authorization/authorization.types';
 import type { AuthorizationService } from '../src/authorization/authorization.service';
+import type { PilotControlService } from '../src/pilot/pilot-control.service';
+import type { PilotControlDecision } from '../src/pilot/pilot-control.types';
 import {
   PolicyCollectionStatus,
   PolicyDecisionState,
@@ -88,6 +90,26 @@ class FakeAuthorizationService {
       requiredScopes: policy?.requiredScopes ?? [],
       requiredRoles: policy?.requiredRoles ?? [],
     });
+  }
+}
+
+class FakePilotControlService {
+  calls = 0;
+  decision: PilotControlDecision = {
+    allowed: true,
+    decisionCode: 'PILOT_ALLOWED',
+    message: 'pilot allowed',
+    controlId: '00000000-0000-4000-8000-000000000099',
+    controlKey: 'wallet.transfer.create.internal.v1',
+    controlVersion: 1,
+    cohortMember: true,
+    emergencyStopped: false,
+    evaluatedAt: new Date().toISOString(),
+  };
+
+  evaluate(): Promise<PilotControlDecision> {
+    this.calls += 1;
+    return Promise.resolve(this.decision);
   }
 }
 
@@ -215,6 +237,7 @@ class FakeAuditPort implements InternalTransferGateAuditPort {
 interface Fixture {
   service: InternalTransferGateService;
   authorization: FakeAuthorizationService;
+  pilot: FakePilotControlService;
   evidence: FakeEvidenceCoordinator;
   policy: FakePolicyService;
   bindings: FakeBindingPort;
@@ -400,6 +423,7 @@ function makeCommand(
 function makeFixture(): Fixture {
   const snapshot = makeSnapshot();
   const authorization = new FakeAuthorizationService();
+  const pilot = new FakePilotControlService();
   const evidence = new FakeEvidenceCoordinator(snapshot);
   const policy = new FakePolicyService(makePolicyResult(snapshot));
   const bindings = new FakeBindingPort();
@@ -407,13 +431,14 @@ function makeFixture(): Fixture {
   const audit = new FakeAuditPort();
   const service = new InternalTransferGateService(
     authorization as unknown as AuthorizationService,
+    pilot as unknown as PilotControlService,
     policy,
     evidence,
     bindings,
     idempotency,
     audit,
   );
-  return { service, authorization, evidence, policy, bindings, idempotency, audit };
+  return { service, authorization, pilot, evidence, policy, bindings, idempotency, audit };
 }
 
 async function expectGateFailure(
@@ -445,6 +470,27 @@ describe('InternalTransferGateService', () => {
     expect(fixture.audit.facts[0]).toMatchObject({
       action: 'REJECTED',
       failureCode: 'AUTHORIZATION_REQUIRED',
+    });
+  });
+
+  it('fails closed when the pilot control denies the customer', async () => {
+    const fixture = makeFixture();
+    fixture.pilot.decision = {
+      ...fixture.pilot.decision,
+      allowed: false,
+      decisionCode: 'PILOT_COHORT_DENIED',
+      message: 'customer is outside the pilot cohort',
+      cohortMember: false,
+    };
+
+    await expectGateFailure(fixture.service.validate(makeCommand()), 'PILOT_COHORT_DENIED');
+
+    expect(fixture.pilot.calls).toBe(1);
+    expect(fixture.evidence.calls).toBe(0);
+    expect(fixture.idempotency.reserveCalls).toBe(0);
+    expect(fixture.audit.facts[0]).toMatchObject({
+      failureCode: 'PILOT_COHORT_DENIED',
+      pilotDecisionCode: 'PILOT_COHORT_DENIED',
     });
   });
 

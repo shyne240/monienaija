@@ -15,6 +15,7 @@ export const environmentSchema = z.object({
   OUTBOX_RETENTION_SECONDS: z.coerce.number().int().min(3_600).max(31_536_000).default(2_592_000),
   BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
   SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
+  A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),
   DB_HOST: z.string().trim().min(1),
   DB_PORT: z.coerce.number().int().min(1).max(65535).default(5432),
   DB_NAME: z.string().trim().min(1),

@@ -27,6 +27,11 @@ import type {
   PolicyLimitOutput,
 } from '../policy/capability-policy.types';
 import type { PolicyEvidenceCollectionCommand } from '../policy/capability-policy-evidence.types';
+import {
+  PilotControlService,
+  PilotControlUnavailableException,
+} from '../pilot/pilot-control.service';
+import type { PilotControlDecision } from '../pilot/pilot-control.types';
 import type {
   CustomerFinancialAccountBindingAssertion,
   CustomerFinancialAccountBindingValidation,
@@ -77,6 +82,7 @@ export class InternalTransferGateException extends HttpException {
 export class InternalTransferGateService {
   constructor(
     private readonly authorizationService: AuthorizationService,
+    private readonly pilotControlService: PilotControlService,
     @Inject(CapabilityPolicyEvaluationService)
     private readonly policyService: InternalTransferPolicyEvaluationPort,
     @Inject(PolicySourceEvidenceCoordinator)
@@ -126,6 +132,58 @@ export class InternalTransferGateService {
       throw new InternalTransferGateException(failure);
     }
 
+    let pilotDecision: PilotControlDecision;
+    try {
+      const usage = normalized.policy.limitUsage;
+      pilotDecision = await this.pilotControlService.evaluate({
+        customerId: normalized.sourceCustomerId,
+        capability: normalized.capability,
+        action: normalized.action,
+        scope: normalized.scope,
+        amountMinor: normalized.amountMinor,
+        currency: normalized.currency,
+        principal: normalized.principal,
+        authorizationDecision: authorization,
+        requestContext: {
+          requestId: normalized.requestContext.requestId,
+          correlationId: normalized.requestContext.correlationId,
+          traceId: normalized.requestContext.traceId ?? normalized.requestContext.requestId,
+        },
+        ...(usage?.dailyUsedCount !== undefined
+          ? { dailyTransactionCount: usage.dailyUsedCount }
+          : {}),
+        ...(usage?.dailyUsedAmountMinor !== undefined
+          ? { dailyTransactionAmountMinor: usage.dailyUsedAmountMinor }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof PilotControlUnavailableException) {
+        const failure = this.failure(
+          'PILOT_CONTROL_UNAVAILABLE',
+          error.message,
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+        await this.recordAudit(normalized, failure);
+        throw new InternalTransferGateException(failure);
+      }
+      const failure = this.failure(
+        'PILOT_CONTROL_UNAVAILABLE',
+        'Pilot control evaluation could not be established',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+      await this.recordAudit(normalized, failure);
+      throw new InternalTransferGateException(failure);
+    }
+    if (!pilotDecision.allowed) {
+      const failure = this.failure(
+        pilotDecision.decisionCode,
+        pilotDecision.message,
+        HttpStatus.CONFLICT,
+      );
+      await this.recordAudit(normalized, failure, 'REJECTED', undefined, pilotDecision);
+      throw new InternalTransferGateException(failure);
+    }
+
     let reservation;
     try {
       reservation = await this.idempotencyPort.reserve({
@@ -152,7 +210,13 @@ export class InternalTransferGateService {
       if (reservation.result) {
         const replay = { ...reservation.result, replayed: true };
         try {
-          await this.recordAudit(normalized, undefined, 'REPLAYED', replay.policy);
+          await this.recordAudit(
+            normalized,
+            undefined,
+            'REPLAYED',
+            replay.policy,
+            replay.pilotControl,
+          );
         } catch (error) {
           throw new InternalTransferGateException(
             this.failure(
@@ -205,13 +269,14 @@ export class InternalTransferGateService {
           action: authorization.action,
           evaluatedAt: authorization.evaluatedAt.toISOString(),
         },
+        pilotControl: pilotDecision,
         policy: this.policyView(policy, snapshot),
         sourceBinding,
         destinationBinding,
         requestContext: normalized.requestContext,
       };
 
-      await this.recordAudit(normalized, undefined, 'PASSED', result.policy);
+      await this.recordAudit(normalized, undefined, 'PASSED', result.policy, pilotDecision);
       await this.idempotencyPort.complete(reservation.reservationId, result);
       return result;
     } catch (error) {
@@ -1066,6 +1131,7 @@ export class InternalTransferGateService {
     failure?: InternalTransferGateFailure,
     action: InternalTransferGateAuditFact['action'] = 'REJECTED',
     policy?: InternalTransferGatePolicyView,
+    pilot?: PilotControlDecision,
   ): Promise<void> {
     await this.auditPort.record({
       action,
@@ -1080,6 +1146,9 @@ export class InternalTransferGateService {
       requestId: command.requestContext.requestId,
       ...(policy?.decisionReference ? { policyDecisionReference: policy.decisionReference } : {}),
       ...(policy?.policyVersion ? { policyVersion: policy.policyVersion } : {}),
+      ...(pilot ? { pilotControlKey: pilot.controlKey } : {}),
+      ...(pilot ? { pilotControlVersion: pilot.controlVersion } : {}),
+      ...(pilot ? { pilotDecisionCode: pilot.decisionCode } : {}),
       ...(failure?.code ? { failureCode: failure.code } : {}),
     });
   }

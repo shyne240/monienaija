@@ -14,6 +14,7 @@ import type {
   CustomerFinancialAccountBindingAssertion,
   CustomerFinancialAccountBindingValidation,
 } from '../wallet/customer-financial-account-binding.types';
+import type { PilotControlDecision } from '../pilot/pilot-control.types';
 
 export const INTERNAL_TRANSFER_GATE_IDEMPOTENCY_SCOPE = 'wallet.transfer.create.v1';
 export const INTERNAL_TRANSFER_POLICY_IDEMPOTENCY_SCOPE = 'policy.capability-decision.v1';
@@ -42,7 +43,8 @@ export type InternalTransferGateFailureCode =
   | 'ACCOUNT_DIMENSION_MISMATCH'
   | 'IDEMPOTENCY_KEY_CONFLICT'
   | 'IDEMPOTENCY_IN_PROGRESS'
-  | 'OPERATIONS_EVIDENCE_UNAVAILABLE';
+  | 'OPERATIONS_EVIDENCE_UNAVAILABLE'
+  | PilotControlDecision['decisionCode'];
 
 export interface InternalTransferGateFailure {
   readonly code: InternalTransferGateFailureCode;
@@ -195,6 +197,7 @@ export interface InternalTransferGateResult {
   readonly currency: string;
   readonly accountingUnit: 'CUSTOMER_FUNDS';
   readonly a2Authorization: InternalTransferGateAuthorizationView;
+  readonly pilotControl: PilotControlDecision;
   readonly policy: InternalTransferGatePolicyView;
   readonly sourceBinding: InternalTransferGateBindingView;
   readonly destinationBinding: InternalTransferGateBindingView;
@@ -235,6 +238,9 @@ export interface InternalTransferGateAuditFact {
   readonly requestId: string;
   readonly policyDecisionReference?: string;
   readonly policyVersion?: string;
+  readonly pilotControlKey?: string;
+  readonly pilotControlVersion?: number | null;
+  readonly pilotDecisionCode?: PilotControlDecision['decisionCode'];
   readonly failureCode?: InternalTransferGateFailureCode;
 }
 
