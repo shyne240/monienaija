@@ -37,6 +37,13 @@ export interface OutboxEventCommand {
   aggregateType: string;
   aggregateId: string;
   payload: Record<string, unknown>;
+  eventKey?: string;
+  schemaVersion?: number;
+  classification?: string;
+  retentionClass?: string;
+  occurredAt?: Date;
+  correlationId?: string;
+  causationId?: string;
   availableAt?: Date;
 }
 
@@ -50,6 +57,13 @@ export interface OutboxView {
   eventType: string;
   aggregateType: string;
   aggregateId: string;
+  eventKey: string | null;
+  schemaVersion: number;
+  classification: string;
+  retentionClass: string;
+  occurredAt: Date;
+  correlationId: string | null;
+  causationId: string | null;
   payload: Record<string, unknown>;
   status: OutboxEventStatus;
   attempts: number;

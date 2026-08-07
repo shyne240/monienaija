@@ -1,11 +1,11 @@
 # ADR-0044: Transfer Idempotency, Outbox, and Recovery
 
-- **Status:** Proposed A5 resilience decision; A5T06 recovery implementation added, outbox deferred
+- **Status:** Proposed A5 resilience and event decision; A5T06/A5T07 implementation added, activation not approved
 - **Date:** 2026-08-07
 - **Decision owners:** Architecture, Operations, Ledger, Finance, Reconciliation, Security, Wallet, and Customer Engineering
-- **Scope:** Internal transfer idempotency, bounded transaction retry, commit-timeout verification, and unknown-outcome recovery
+- **Scope:** Internal transfer idempotency, bounded transaction retry, commit-timeout verification, unknown-outcome recovery, and transactional outbox facts
 - **Tasks:** A5T06 — Idempotency, Concurrency, and Transaction Recovery; A5T07 — Transactional Outbox and Internal Transfer Event Contract
-- **Implementation status:** A5T06 retry/recovery behavior and tests added; A5T07 outbox implementation is not included
+- **Implementation status:** A5T06 retry/recovery behavior and A5T07 transactional outbox/event contract added; no external publisher is included
 
 ## Context
 
@@ -20,6 +20,8 @@ The safe boundary must:
 - persist `UNKNOWN` with a deterministic recovery reference when no financial outcome can be established.
 
 An unknown result must never become an optimistic success or a blind financial retry. Ledger remains the only authority for journals, lines, balances, and posted value.
+
+A5T07 adds one minimal `transfer.completed` fact to the existing Operations outbox. The fact is committed in the same transaction as the Transfer completion and Ledger journal, but it is not published externally and it is not treated as financial truth.
 
 ## Decision
 
@@ -102,7 +104,34 @@ The retry/recovery code does not write Ledger rows directly. It uses:
 
 The transfer and Ledger journal update remain one transaction for each posting attempt. A transaction that fails before commit rolls back the transfer update, Ledger journal/line writes, and idempotency completion together. A timeout after commit is resolved from durable evidence rather than from a new financial write.
 
-No audit/outbox record is treated as financial truth. A5T06 records the recovery/state audit through the existing lifecycle service; the transactional outbox event contract is A5T07 work.
+No audit/outbox record is treated as financial truth. A5T06 records the recovery/state audit through the existing lifecycle service.
+
+### 6. Minimal transactional outbox fact
+
+A5T07 writes one versioned internal fact for successful completion:
+
+```text
+eventType:       transfer.completed
+schemaVersion:   1
+aggregateType:   TRANSFER
+aggregateId:     Transfer.id
+eventKey:        transfer.completed:<transferId>:v1
+classification:  RESTRICTED_FINANCIAL
+retentionClass:  A5_TRANSFER_EVENT
+```
+
+The payload contains only the minimum transfer/journal correlation and financial dimensions required by an approved internal consumer:
+
+- event/aggregate identity and occurrence time;
+- command ID, transfer ID, request hash, correlation/causation IDs;
+- source/destination customer and account IDs;
+- positive minor-unit amount, currency, and `CUSTOMER_FUNDS` accounting unit;
+- verified Ledger journal ID; and
+- A4 policy decision reference without raw evidence.
+
+It contains no credentials, raw policy/risk/compliance content, full Ledger lines, balance snapshots, or external-provider data. The deterministic `eventKey` is unique in the outbox and `OutboxService.enqueueOnce` verifies payload/identity equality on replay. The generated `OutboxEvent.id` remains the durable Operations event record identity.
+
+The outbox event is enqueued after the Transfer metadata is updated and while the same transaction manager still owns the Ledger journal and Transfer update. An outbox insert failure rolls back the Transfer completion, Ledger journal/lines, audit, and idempotency completion together. No publisher or broker is called.
 
 ## Alternatives considered
 
@@ -139,20 +168,20 @@ Rejected for A5T06. Recovery is a bounded command/service path. Background sched
 - Commit-timeout results are verified from Transfer and Ledger evidence.
 - Unknown outcomes remain explicit and support-traceable.
 - Ledger remains the sole authority for financial value.
-- A5T07 can add its event fact later without changing retry or financial authority.
+- A5T07 adds its event fact without changing retry or financial authority.
 
 ### Future review items
 
-- A5T07 must define the minimal transactional outbox fact and its immutable event payload without adding a broker or external publisher.
-- A5T08 must independently reconcile unknown/recovered transfers and journal evidence.
+- A5T08 must independently reconcile unknown/recovered transfers, journal evidence, and outbox linkage.
+- Future event-type expansion requires a separate reviewed contract; no broker or external publisher is implied.
 - Operations must confirm retention, diagnostics, alerting, and support ownership for repeated unknown outcomes.
 - Finance/Ledger must approve live posting and recovery runbooks before pilot activation.
 
 ## Explicitly out of scope
 
-This ADR and A5T06 do not:
+This ADR and A5T06/A5T07 do not:
 
-- implement the transactional outbox or any external event publisher;
+- publish events externally or deploy a broker/queue;
 - add controllers, public APIs, routes, schedulers, brokers, providers, settlement, callbacks, or notifications;
 - alter Customer, Wallet, A3 binding, A4 policy, Ledger source records, or reconciliation records to make a retry pass;
 - edit/delete posted journals or lines;
@@ -167,7 +196,12 @@ This ADR and A5T06 do not:
 - [`src/transfer/transfer.entity.ts`](../../src/transfer/transfer.entity.ts)
 - [`src/ledger/ledger.service.ts`](../../src/ledger/ledger.service.ts)
 - [`src/operations/idempotency.service.ts`](../../src/operations/idempotency.service.ts)
+- [`src/operations/outbox.service.ts`](../../src/operations/outbox.service.ts)
+- [`src/operations/outbox-event.entity.ts`](../../src/operations/outbox-event.entity.ts)
+- [`src/transfer/transfer-events.ts`](../../src/transfer/transfer-events.ts)
+- [`src/migrations/1785753600024-AddOutboxEventContract.ts`](../../src/migrations/1785753600024-AddOutboxEventContract.ts)
 - [`test/transfer-lifecycle.service.spec.ts`](../../test/transfer-lifecycle.service.spec.ts)
+- [`test/outbox.service.spec.ts`](../../test/outbox.service.spec.ts)
 - [`A5-IMPLEMENTATION-PLAN.md`](../A5-IMPLEMENTATION-PLAN.md)
 - [`ADR-0043-Ledger-Posting-and-Customer-Transaction-Correlation.md`](ADR-0043-Ledger-Posting-and-Customer-Transaction-Correlation.md)
 - [`ADR-0045-Customer-Transaction-State-and-Pending-Outcomes.md`](ADR-0045-Customer-Transaction-State-and-Pending-Outcomes.md)
@@ -181,5 +215,7 @@ This ADR and A5T06 do not:
 - [x] Duplicate replay does not invoke Ledger a second time.
 - [x] Retry exhaustion is deterministic and non-success.
 - [x] Unexpected failures do not silently become success or trigger blind financial retry.
-- [x] The transactional outbox remains intentionally unimplemented for A5T07.
+- [x] `transfer.completed` event identity, schema version, classification, retention, and minimal payload are defined.
+- [x] Outbox creation is transactionally linked to successful Transfer/Ledger completion and protected by a unique event key.
+- [x] No external publisher, broker, queue, scheduler, or consumer delivery is implemented.
 - [ ] Operations recovery runbook, live deployment, and pilot approval evidence remain unresolved.

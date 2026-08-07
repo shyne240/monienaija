@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
@@ -22,6 +22,13 @@ export class OutboxService {
       eventType: command.eventType,
       aggregateType: command.aggregateType,
       aggregateId: command.aggregateId,
+      eventKey: command.eventKey ?? null,
+      schemaVersion: command.schemaVersion ?? 1,
+      classification: command.classification ?? 'INTERNAL_OPERATIONS',
+      retentionClass: command.retentionClass ?? 'OPERATIONS_DEFAULT',
+      occurredAt: command.occurredAt ?? new Date(),
+      correlationId: command.correlationId ?? null,
+      causationId: command.causationId ?? null,
       payload: redactRecord(command.payload),
       status: OutboxEventStatus.PENDING,
       attempts: 0,
@@ -30,6 +37,27 @@ export class OutboxService {
       publishedAt: null,
     });
     return manager.getRepository(OutboxEvent).save(event);
+  }
+
+  async enqueueOnce(
+    manager: EntityManager,
+    command: OutboxEventCommand & { eventKey: string },
+  ): Promise<OutboxEvent> {
+    const eventKey = command.eventKey.trim();
+    if (!eventKey || eventKey.length > 180) {
+      throw new ConflictException('Outbox eventKey is invalid');
+    }
+    const repository = manager.getRepository(OutboxEvent);
+    const existing = await repository.findOne({ where: { eventKey } });
+    if (existing) {
+      this.assertSameEvent(existing, command);
+      return existing;
+    }
+
+    return this.enqueue(manager, {
+      ...command,
+      eventKey,
+    });
   }
 
   async list(query: OutboxQuery = {}): Promise<OutboxView[]> {
@@ -105,12 +133,54 @@ export class OutboxService {
     return events.length;
   }
 
+  private assertSameEvent(
+    existing: OutboxEvent,
+    command: OutboxEventCommand & { eventKey: string },
+  ): void {
+    if (
+      existing.eventType !== command.eventType ||
+      existing.aggregateType !== command.aggregateType ||
+      existing.aggregateId !== command.aggregateId ||
+      existing.schemaVersion !== (command.schemaVersion ?? 1) ||
+      existing.classification !== (command.classification ?? 'INTERNAL_OPERATIONS') ||
+      existing.retentionClass !== (command.retentionClass ?? 'OPERATIONS_DEFAULT') ||
+      (command.occurredAt !== undefined &&
+        existing.occurredAt.getTime() !== command.occurredAt.getTime()) ||
+      existing.correlationId !== (command.correlationId ?? null) ||
+      existing.causationId !== (command.causationId ?? null) ||
+      this.canonicalJson(existing.payload) !== this.canonicalJson(redactRecord(command.payload))
+    ) {
+      throw new ConflictException('The outbox event key was reused for a different event');
+    }
+  }
+
+  private canonicalJson(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value) ?? 'null';
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.canonicalJson(item)).join(',')}]`;
+    }
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${this.canonicalJson(object[key])}`)
+      .join(',')}}`;
+  }
+
   private toView(event: OutboxEvent): OutboxView {
     return {
       id: event.id,
       eventType: event.eventType,
       aggregateType: event.aggregateType,
       aggregateId: event.aggregateId,
+      eventKey: event.eventKey,
+      schemaVersion: event.schemaVersion,
+      classification: event.classification,
+      retentionClass: event.retentionClass,
+      occurredAt: event.occurredAt,
+      correlationId: event.correlationId,
+      causationId: event.causationId,
       payload: event.payload,
       status: event.status,
       attempts: event.attempts,

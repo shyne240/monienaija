@@ -24,12 +24,19 @@ import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
+import { OutboxService } from '../operations/outbox.service';
 import {
   assertPaymentUuid,
   normalizePaymentText,
   paymentRequestHash,
 } from '../payment/payment-support';
 import { Transfer } from './transfer.entity';
+import {
+  INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+  INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+  INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+  buildInternalTransferCompletedEvent,
+} from './transfer-events';
 import { assertTransferTransition, isTerminalTransferStatus } from './transfer-lifecycle';
 import { TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
@@ -109,6 +116,7 @@ export class TransferLifecycleService {
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
     private readonly auditService: AuditService,
+    private readonly outboxService: OutboxService,
     private readonly idempotencyService: IdempotencyService,
   ) {}
 
@@ -520,6 +528,23 @@ export class TransferLifecycleService {
       requestHash,
     });
     await manager.getRepository(Transfer).save(transfer);
+    const completedEvent = buildInternalTransferCompletedEvent(
+      transfer,
+      transfer.completedAt ?? new Date(),
+    );
+    await this.outboxService.enqueueOnce(manager, {
+      eventKey: completedEvent.eventKey,
+      eventType: INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+      aggregateType: completedEvent.aggregateType,
+      aggregateId: completedEvent.aggregateId,
+      schemaVersion: completedEvent.schemaVersion,
+      classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+      retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+      occurredAt: new Date(completedEvent.occurredAt),
+      correlationId: completedEvent.correlationId ?? undefined,
+      causationId: completedEvent.causationId ?? undefined,
+      payload: completedEvent as unknown as Record<string, unknown>,
+    });
     const result = this.toView(transfer, false);
     await this.recordAudit(manager, transfer, 'LEDGER_POSTED', command.requestContext, {
       requestHash,

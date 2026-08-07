@@ -12,6 +12,9 @@ import type {
 
 import type { AuditService } from '../src/operations/audit.service';
 import type { IdempotencyService } from '../src/operations/idempotency.service';
+import type { OutboxService } from '../src/operations/outbox.service';
+import type { OutboxEvent } from '../src/operations/outbox-event.entity';
+import type { OutboxEventCommand } from '../src/operations/operations.types';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import {
   LedgerAccountType,
@@ -189,22 +192,34 @@ class InMemoryDataSource {
   readonly queuedErrors: unknown[] = [];
   timeoutAfterCommitOnce = false;
 
-  constructor(private readonly manager: InMemoryManager) {}
+  constructor(
+    private readonly manager: InMemoryManager,
+    private readonly snapshotState: () => unknown,
+    private readonly restoreState: (snapshot: unknown) => void,
+  ) {}
 
   async transaction<T>(
     isolationLevel: string,
     callback: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     this.isolationLevels.push(isolationLevel);
-    const queuedError = this.queuedErrors.shift();
-    if (queuedError instanceof Error) throw queuedError;
-    if (queuedError) throw new Error('queued transaction failure');
-    const result = await callback(this.manager as unknown as EntityManager);
-    if (this.timeoutAfterCommitOnce) {
-      this.timeoutAfterCommitOnce = false;
-      throw new Error('simulated commit timeout');
+    const snapshot = this.snapshotState();
+    let committed = false;
+    try {
+      const queuedError = this.queuedErrors.shift();
+      if (queuedError instanceof Error) throw queuedError;
+      if (queuedError) throw new Error('queued transaction failure');
+      const result = await callback(this.manager as unknown as EntityManager);
+      committed = true;
+      if (this.timeoutAfterCommitOnce) {
+        this.timeoutAfterCommitOnce = false;
+        throw new Error('simulated commit timeout');
+      }
+      return result;
+    } catch (error) {
+      if (!committed) this.restoreState(snapshot);
+      throw error;
     }
-    return result;
   }
 }
 
@@ -220,18 +235,42 @@ class FakeAuditService {
   }
 }
 
-class FakeIdempotencyService {
-  readonly records = new Map<
-    string,
-    {
-      id: string;
-      key: string;
-      requestHash: string;
-      status: 'IN_PROGRESS' | 'COMPLETED';
-      resourceId: string | null;
-      responseBody: Record<string, unknown> | null;
+class FakeOutboxService {
+  readonly events: OutboxEventCommand[] = [];
+  failure: Error | null = null;
+
+  enqueueOnce(
+    _manager: EntityManager,
+    command: OutboxEventCommand & { eventKey: string },
+  ): Promise<OutboxEvent> {
+    if (this.failure) return Promise.reject(this.failure);
+    const existing = this.events.find((event) => event.eventKey === command.eventKey);
+    if (existing) {
+      if (
+        existing.eventType !== command.eventType ||
+        existing.aggregateId !== command.aggregateId ||
+        JSON.stringify(existing.payload) !== JSON.stringify(command.payload)
+      ) {
+        return Promise.reject(new ConflictException('Outbox event key was reused'));
+      }
+      return Promise.resolve({} as OutboxEvent);
     }
-  >();
+    this.events.push(command);
+    return Promise.resolve({} as OutboxEvent);
+  }
+}
+
+interface FakeIdempotencyRecord {
+  id: string;
+  key: string;
+  requestHash: string;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  resourceId: string | null;
+  responseBody: Record<string, unknown> | null;
+}
+
+class FakeIdempotencyService {
+  readonly records = new Map<string, FakeIdempotencyRecord>();
   completeCalls = 0;
   private sequence = 0;
 
@@ -293,11 +332,20 @@ class FakeIdempotencyService {
   }
 }
 
+interface TestSnapshot {
+  transfers: Map<string, Transfer>;
+  journals: Map<string, LedgerJournalView>;
+  outbox: OutboxEventCommand[];
+  idempotency: Map<string, FakeIdempotencyRecord>;
+  idempotencyCompleteCalls: number;
+}
+
 interface Fixture {
   service: TransferLifecycleService;
   transfers: InMemoryTransferRepository;
   ledgerAccounts: InMemoryLedgerAccountRepository;
   ledger: FakeLedgerService;
+  outbox: FakeOutboxService;
   dataSource: InMemoryDataSource;
   audit: FakeAuditService;
   idempotency: FakeIdempotencyService;
@@ -330,17 +378,52 @@ function makeFixture(): Fixture {
   ledgerAccounts.accounts.set(SOURCE_LEDGER_ID, makeLedgerAccount(SOURCE_LEDGER_ID));
   ledgerAccounts.accounts.set(DESTINATION_LEDGER_ID, makeLedgerAccount(DESTINATION_LEDGER_ID));
   const ledger = new FakeLedgerService();
-  const dataSource = new InMemoryDataSource(new InMemoryManager(transfers, ledgerAccounts));
+  const outbox = new FakeOutboxService();
   const audit = new FakeAuditService();
   const idempotency = new FakeIdempotencyService();
+  const dataSource = new InMemoryDataSource(
+    new InMemoryManager(transfers, ledgerAccounts),
+    () => ({
+      transfers: new Map(
+        [...transfers.records].map(([id, transfer]) => [
+          id,
+          Object.assign(new Transfer(), transfer),
+        ]),
+      ),
+      journals: new Map(ledger.journals),
+      outbox: outbox.events.map((event) => ({
+        ...event,
+        payload: { ...event.payload },
+      })),
+      idempotency: new Map(
+        [...idempotency.records].map(([key, record]) => [
+          key,
+          { ...record, responseBody: record.responseBody ? { ...record.responseBody } : null },
+        ]),
+      ),
+      idempotencyCompleteCalls: idempotency.completeCalls,
+    }),
+    (snapshot: unknown) => {
+      const value = snapshot as TestSnapshot;
+      transfers.records.clear();
+      for (const [id, transfer] of value.transfers) transfers.records.set(id, transfer);
+      ledger.journals.clear();
+      for (const [id, journal] of value.journals) ledger.journals.set(id, journal);
+      outbox.events.splice(0, outbox.events.length, ...value.outbox);
+      idempotency.records.clear();
+      for (const [key, record] of value.idempotency) idempotency.records.set(key, record);
+      idempotency.completeCalls = value.idempotencyCompleteCalls;
+    },
+  );
   const service = new TransferLifecycleService(
     transfers as unknown as Repository<Transfer>,
     dataSource as unknown as DataSource,
     ledger as unknown as LedgerService,
     audit as unknown as AuditService,
+    outbox as unknown as OutboxService,
     idempotency as unknown as IdempotencyService,
   );
-  return { service, transfers, ledgerAccounts, ledger, dataSource, audit, idempotency };
+  return { service, transfers, ledgerAccounts, ledger, outbox, dataSource, audit, idempotency };
 }
 
 function makeCreateCommand(
@@ -717,6 +800,28 @@ describe('TransferLifecycleService', () => {
       destinationLedgerAccountId: DESTINATION_LEDGER_ID,
     });
     expect(fixture.ledger.calls).toHaveLength(1);
+    expect(fixture.outbox.events).toHaveLength(1);
+    expect(fixture.outbox.events[0]).toMatchObject({
+      eventKey: `transfer.completed:${transferId}:v1`,
+      eventType: 'transfer.completed',
+      aggregateType: 'TRANSFER',
+      aggregateId: transferId,
+      schemaVersion: 1,
+      classification: 'RESTRICTED_FINANCIAL',
+      retentionClass: 'A5_TRANSFER_EVENT',
+      correlationId: requestContext.correlationId,
+    });
+    expect(fixture.outbox.events[0]?.payload).toMatchObject({
+      eventType: 'transfer.completed',
+      schemaVersion: 1,
+      transferId,
+      commandId: COMMAND_ID,
+      journalId: JOURNAL_ID,
+      amountMinor: '10000',
+      currency: 'NGN',
+      accountingUnit: 'CUSTOMER_FUNDS',
+    });
+    expect(fixture.outbox.events[0]?.payload).not.toHaveProperty('lines');
     const journal = fixture.ledger.calls[0]!;
     expect(journal.lines).toEqual([
       expect.objectContaining({
@@ -737,6 +842,30 @@ describe('TransferLifecycleService', () => {
       .filter((line) => line.direction === LedgerEntryDirection.CREDIT)
       .reduce((total, line) => total + BigInt(line.amountMinor), 0n);
     expect(debitTotal).toBe(creditTotal);
+  });
+
+  it('rolls back transfer and Ledger state when transactional outbox creation fails', async () => {
+    const fixture = makeFixture();
+    fixture.outbox.failure = new ConflictException('simulated outbox failure');
+    const transferId = await prepareProcessing(fixture);
+
+    await expect(
+      fixture.service.postToLedger(transferId, postCommand('outbox-rollback-1')),
+    ).rejects.toThrow('simulated outbox failure');
+
+    const current = await fixture.service.get(transferId);
+    expect(current.status).toBe(TransferStatus.PROCESSING);
+    expect(current.journalId).toBeNull();
+    expect(fixture.ledger.journals.size).toBe(0);
+    expect(fixture.outbox.events).toHaveLength(0);
+
+    fixture.outbox.failure = null;
+    const recovered = await fixture.service.postToLedger(
+      transferId,
+      postCommand('outbox-rollback-1'),
+    );
+    expect(recovered.status).toBe(TransferStatus.COMPLETED);
+    expect(fixture.outbox.events).toHaveLength(1);
   });
 
   it('retries serialization failures with the same logical posting command', async () => {
@@ -876,6 +1005,7 @@ describe('TransferLifecycleService', () => {
       idempotencyReplay: true,
     });
     expect(fixture.ledger.calls).toHaveLength(1);
+    expect(fixture.outbox.events).toHaveLength(1);
   });
 
   it('moves an ambiguous Ledger error to an explicit unknown outcome without claiming success', async () => {
