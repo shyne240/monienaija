@@ -56,3 +56,51 @@ export interface NormalizedCustomerFinancialAccountBindingCommand {
   principal: AuthorizationPrincipal;
   requestContext: RequestContext;
 }
+
+export interface CustomerFinancialAccountBindingAssertion {
+  customerId: string;
+  customerWalletId: string;
+  bindingId: string;
+  walletAccountId: string;
+  ledgerAccountId: string;
+  expectedCurrency: string;
+  expectedAccountingUnit: 'CUSTOMER_FUNDS';
+  expectedBindingVersion: number | null;
+}
+
+export type CustomerFinancialAccountBindingValidationFailureCode =
+  | 'MISSING_BINDING'
+  | 'IDENTITY_MISMATCH'
+  | 'STALE_BINDING'
+  | 'BINDING_NOT_ACTIVE'
+  | 'CUSTOMER_MISSING'
+  | 'CUSTOMER_NOT_ACTIVE'
+  | 'CUSTOMER_WALLET_MISSING'
+  | 'CUSTOMER_WALLET_NOT_ACTIVE'
+  | 'WALLET_ACCOUNT_MISSING'
+  | 'WALLET_ACCOUNT_NOT_ACTIVE'
+  | 'LEDGER_ACCOUNT_MISSING'
+  | 'LEDGER_ACCOUNT_NOT_ACTIVE'
+  | 'ACCOUNT_DIMENSION_MISMATCH';
+
+export interface CustomerFinancialAccountBindingValidationSuccess {
+  valid: true;
+  bindingId: string;
+  customerId: string;
+  customerWalletId: string;
+  walletAccountId: string;
+  ledgerAccountId: string;
+  bindingVersion: number;
+  currency: string;
+  accountingUnit: string;
+}
+
+export interface CustomerFinancialAccountBindingValidationFailure {
+  valid: false;
+  code: CustomerFinancialAccountBindingValidationFailureCode;
+  message: string;
+}
+
+export type CustomerFinancialAccountBindingValidation =
+  | CustomerFinancialAccountBindingValidationSuccess
+  | CustomerFinancialAccountBindingValidationFailure;

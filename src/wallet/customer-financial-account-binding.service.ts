@@ -33,8 +33,10 @@ import {
   CustomerFinancialAccountBindingState,
 } from './customer-financial-account-binding.enums';
 import type {
+  CustomerFinancialAccountBindingAssertion,
   CustomerFinancialAccountBindingCommand,
   CustomerFinancialAccountBindingResult,
+  CustomerFinancialAccountBindingValidation,
   NormalizedCustomerFinancialAccountBindingCommand,
 } from './customer-financial-account-binding.types';
 import { WalletAccount } from './wallet-account.entity';
@@ -75,6 +77,213 @@ export class CustomerFinancialAccountBindingService {
     private readonly auditService: AuditService,
     private readonly idempotencyService: IdempotencyService,
   ) {}
+
+  /**
+   * Read-only A3 consumer boundary for a future financial command. It validates
+   * the complete explicit binding tuple without reading balances or mutating
+   * any customer, wallet, binding, or Ledger record.
+   */
+  async validateActiveBinding(
+    assertion: CustomerFinancialAccountBindingAssertion,
+  ): Promise<CustomerFinancialAccountBindingValidation> {
+    const binding = await this.bindingRepository.findOne({
+      where: { id: assertion.bindingId },
+    });
+    if (!binding) {
+      return {
+        valid: false,
+        code: 'MISSING_BINDING',
+        message: 'The requested customer financial-account binding does not exist',
+      };
+    }
+
+    if (
+      binding.customerId !== assertion.customerId ||
+      binding.customerWalletId !== assertion.customerWalletId ||
+      binding.walletAccountId !== assertion.walletAccountId ||
+      binding.ledgerAccountId !== assertion.ledgerAccountId
+    ) {
+      return {
+        valid: false,
+        code: 'IDENTITY_MISMATCH',
+        message: 'The binding identity tuple does not match the command assertion',
+      };
+    }
+    if (
+      assertion.expectedBindingVersion !== null &&
+      binding.version !== assertion.expectedBindingVersion
+    ) {
+      return {
+        valid: false,
+        code: 'STALE_BINDING',
+        message: 'The customer financial-account binding version is stale',
+      };
+    }
+    if (binding.state !== CustomerFinancialAccountBindingState.ACTIVE) {
+      return {
+        valid: false,
+        code: 'BINDING_NOT_ACTIVE',
+        message: 'The customer financial-account binding is not ACTIVE',
+      };
+    }
+    if (
+      binding.currency !== assertion.expectedCurrency ||
+      binding.accountingUnit !== assertion.expectedAccountingUnit
+    ) {
+      return {
+        valid: false,
+        code: 'ACCOUNT_DIMENSION_MISMATCH',
+        message: 'The binding currency or accounting unit does not match the command',
+      };
+    }
+
+    const customer = await this.customerRepository.findOne({
+      where: { id: assertion.customerId },
+    });
+    if (!customer || customer.deletedAt) {
+      return {
+        valid: false,
+        code: 'CUSTOMER_MISSING',
+        message: 'The bound customer does not exist or is deleted',
+      };
+    }
+    if (customer.status !== CustomerStatus.ACTIVE) {
+      return {
+        valid: false,
+        code: 'CUSTOMER_NOT_ACTIVE',
+        message: 'The bound customer is not ACTIVE',
+      };
+    }
+    if (customer.version !== binding.sourceCustomerVersion) {
+      return {
+        valid: false,
+        code: 'STALE_BINDING',
+        message: 'The bound customer version is stale',
+      };
+    }
+
+    const customerWallet = await this.customerWalletRepository.findOne({
+      where: { id: assertion.customerWalletId },
+    });
+    if (!customerWallet || customerWallet.deletedAt) {
+      return {
+        valid: false,
+        code: 'CUSTOMER_WALLET_MISSING',
+        message: 'The bound customer wallet does not exist or is deleted',
+      };
+    }
+    if (customerWallet.customerId !== assertion.customerId) {
+      return {
+        valid: false,
+        code: 'IDENTITY_MISMATCH',
+        message: 'The customer wallet owner does not match the binding customer',
+      };
+    }
+    if (customerWallet.status !== CustomerWalletStatus.ACTIVE) {
+      return {
+        valid: false,
+        code: 'CUSTOMER_WALLET_NOT_ACTIVE',
+        message: 'The bound customer wallet is not ACTIVE',
+      };
+    }
+    if (
+      customerWallet.currency !== assertion.expectedCurrency ||
+      customerWallet.version !== binding.sourceCustomerWalletVersion
+    ) {
+      return {
+        valid: false,
+        code:
+          customerWallet.currency !== assertion.expectedCurrency
+            ? 'ACCOUNT_DIMENSION_MISMATCH'
+            : 'STALE_BINDING',
+        message:
+          customerWallet.currency !== assertion.expectedCurrency
+            ? 'The customer wallet currency does not match the command'
+            : 'The bound customer wallet version is stale',
+      };
+    }
+
+    const ownership = await this.ownershipRepository.findOne({
+      where: { walletId: assertion.customerWalletId, customerId: assertion.customerId },
+    });
+    if (!ownership || ownership.deletedAt) {
+      return {
+        valid: false,
+        code: 'IDENTITY_MISMATCH',
+        message: 'The customer wallet ownership evidence is missing',
+      };
+    }
+
+    const walletAccount = await this.walletRepository.findOne({
+      where: { id: assertion.walletAccountId },
+    });
+    if (!walletAccount) {
+      return {
+        valid: false,
+        code: 'WALLET_ACCOUNT_MISSING',
+        message: 'The bound wallet account does not exist',
+      };
+    }
+    if (walletAccount.status !== WalletStatus.ACTIVE) {
+      return {
+        valid: false,
+        code: 'WALLET_ACCOUNT_NOT_ACTIVE',
+        message: 'The bound wallet account is not ACTIVE',
+      };
+    }
+    if (
+      walletAccount.currency !== assertion.expectedCurrency ||
+      walletAccount.ledgerAccountId !== assertion.ledgerAccountId
+    ) {
+      return {
+        valid: false,
+        code: 'ACCOUNT_DIMENSION_MISMATCH',
+        message: 'The wallet account dimensions or Ledger relationship do not match',
+      };
+    }
+
+    const ledgerAccount = await this.ledgerAccountRepository.findOne({
+      where: { id: assertion.ledgerAccountId },
+    });
+    if (!ledgerAccount) {
+      return {
+        valid: false,
+        code: 'LEDGER_ACCOUNT_MISSING',
+        message: 'The bound Ledger account does not exist',
+      };
+    }
+    if (!ledgerAccount.isActive || ledgerAccount.allowNegativeBalance) {
+      return {
+        valid: false,
+        code: 'LEDGER_ACCOUNT_NOT_ACTIVE',
+        message: 'The bound Ledger account is not an active customer-funds account',
+      };
+    }
+    if (
+      ledgerAccount.currency !== assertion.expectedCurrency ||
+      ledgerAccount.accountingUnit !== assertion.expectedAccountingUnit ||
+      ledgerAccount.accountType !== LedgerAccountType.LIABILITY ||
+      ledgerAccount.normalBalance !== LedgerNormalBalance.CREDIT
+    ) {
+      return {
+        valid: false,
+        code: 'ACCOUNT_DIMENSION_MISMATCH',
+        message: 'The Ledger account dimensions are incompatible with customer funds',
+      };
+    }
+
+    return {
+      valid: true,
+      bindingId: binding.id,
+      customerId: binding.customerId,
+      customerWalletId: binding.customerWalletId,
+      walletAccountId: binding.walletAccountId,
+      ledgerAccountId: binding.ledgerAccountId,
+      bindingVersion: binding.version,
+      currency: binding.currency,
+      accountingUnit: binding.accountingUnit,
+    };
+  }
 
   async bind(
     command: CustomerFinancialAccountBindingCommand,
