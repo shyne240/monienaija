@@ -17,6 +17,7 @@ import {
   TypeOrmInternalTransferGateIdempotencyAdapter,
 } from './internal-transfer-gate.adapters';
 import { InternalTransferGateService } from './internal-transfer-gate.service';
+import { TransferLifecycleService } from './transfer-lifecycle.service';
 import {
   INTERNAL_TRANSFER_AUDIT_PORT,
   INTERNAL_TRANSFER_BINDING_PORT,
@@ -54,7 +55,8 @@ import { WalletTransactionController } from './wallet-transaction.controller';
       useExisting: TypeOrmInternalTransferGateIdempotencyAdapter,
     },
     InternalTransferGateService,
+    TransferLifecycleService,
   ],
-  exports: [TransferService, InternalTransferGateService],
+  exports: [TransferService, InternalTransferGateService, TransferLifecycleService],
 })
 export class TransferModule {}
