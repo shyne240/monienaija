@@ -156,12 +156,18 @@ export interface PolicyObligationTemplate {
   readonly reference?: string;
 }
 
+export interface PolicyDecisionValidity {
+  /** A bounded, immutable validity interval for a decision produced by this profile. */
+  readonly expiresInSeconds: number;
+}
+
 export interface CapabilityPolicyProfile {
   readonly profileReference: string;
   readonly profileKey: string;
   readonly profileVersion: number;
   readonly policyVersion: string;
   readonly definitionHash: string;
+  readonly decisionValidity?: PolicyDecisionValidity;
   readonly capability: string;
   readonly actions: readonly string[];
   readonly subjectType: 'CUSTOMER';
@@ -291,6 +297,8 @@ export interface PolicyDecisionResult {
   readonly policyVersion: string;
   readonly definitionHash: string;
   readonly decision: PolicyDecisionState;
+  /** Immutable append-only lineage; the referenced result is never mutated. */
+  readonly supersedesDecisionReference?: string;
   readonly requestedAt: string;
   readonly evaluatedAt: string;
   readonly expiresAt: string | null;

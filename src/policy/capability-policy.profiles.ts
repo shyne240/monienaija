@@ -14,11 +14,19 @@ import {
 } from './capability-policy.enums';
 import type {
   CapabilityPolicyProfile,
+  PolicyDecisionValidity,
   PolicyProfileRegistry,
   PolicySourceRequirements,
 } from './capability-policy.types';
 
 const ALL_DECISIONS = Object.values(PolicyDecisionState);
+
+// A4T09 keeps an explicit, versioned validity window on each published profile.
+// The interval is deliberately short and fail-closed; a future policy version may
+// choose a different value without changing historical decisions.
+const DEFAULT_DECISION_VALIDITY: PolicyDecisionValidity = {
+  expiresInSeconds: 15 * 60,
+};
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') {
@@ -72,7 +80,11 @@ function financialSources(): PolicySourceRequirements {
 }
 
 function profile(input: Omit<CapabilityPolicyProfile, 'definitionHash'>): CapabilityPolicyProfile {
-  return { ...input, definitionHash: calculatePolicyProfileDefinitionHash(input) };
+  const definition = {
+    ...input,
+    decisionValidity: input.decisionValidity ?? DEFAULT_DECISION_VALIDITY,
+  };
+  return { ...definition, definitionHash: calculatePolicyProfileDefinitionHash(definition) };
 }
 
 const commonFinancialEligibility = {

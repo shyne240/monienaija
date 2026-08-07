@@ -268,12 +268,13 @@ export class CapabilityPolicyEvaluationService {
       request.actorContext.principal,
       authorization,
     );
-    const decisionReference = `a4-decision-${hashCanonical({
+    const decisionReference = calculatePolicyDecisionReference(
       requestHash,
-      policyVersion: profile.policyVersion,
-      normalizedInputHash: snapshot.evidenceSummary.normalizedInputHash,
-    })}`;
+      profile.policyVersion,
+      snapshot.evidenceSummary.normalizedInputHash,
+    );
     const reviewAt = this.reviewAt(state.reviewDates);
+    const expiresAt = this.decisionExpiry(profile, evaluatedAt);
     const resultCore = {
       contractName: 'A4-CAPABILITY-POLICY' as const,
       contractVersion: 1 as const,
@@ -288,7 +289,7 @@ export class CapabilityPolicyEvaluationService {
       decision: selected,
       requestedAt: request.requestedAt,
       evaluatedAt,
-      expiresAt: null,
+      expiresAt,
       reviewAt,
       reasonCodes,
       explanation: {
@@ -309,29 +310,7 @@ export class CapabilityPolicyEvaluationService {
       requestHash,
       requestContext: request.requestContext,
     };
-    const resultHash = hashCanonical({
-      contractName: resultCore.contractName,
-      contractVersion: resultCore.contractVersion,
-      subject: resultCore.subject,
-      capability: resultCore.capability,
-      action: resultCore.action,
-      profileReference: resultCore.profileReference,
-      profileKey: resultCore.profileKey,
-      profileVersion: resultCore.profileVersion,
-      policyVersion: resultCore.policyVersion,
-      definitionHash: resultCore.definitionHash,
-      decision: resultCore.decision,
-      requestedAt: resultCore.requestedAt,
-      evaluatedAt: resultCore.evaluatedAt,
-      expiresAt: resultCore.expiresAt,
-      reviewAt: resultCore.reviewAt,
-      reasonCodes: resultCore.reasonCodes,
-      explanation: resultCore.explanation,
-      obligations: resultCore.obligations,
-      limits: resultCore.limits,
-      sourceReferences: resultCore.sourceReferences,
-      evidenceContext: resultCore.evidenceContext,
-    });
+    const resultHash = calculatePolicyDecisionResultHash(resultCore);
     return {
       ...resultCore,
       decisionReference,
@@ -1048,6 +1027,20 @@ export class CapabilityPolicyEvaluationService {
     })}`;
   }
 
+  private decisionExpiry(profile: CapabilityPolicyProfile, evaluatedAt: string): string | null {
+    const seconds = profile.decisionValidity?.expiresInSeconds;
+    if (seconds === undefined) return null;
+    if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+      throw new ConflictException('The A4 policy decision validity interval is invalid');
+    }
+    const evaluatedMillis = Date.parse(evaluatedAt);
+    const expiresMillis = evaluatedMillis + seconds * 1000;
+    if (!Number.isSafeInteger(expiresMillis)) {
+      throw new ConflictException('The A4 policy decision expiry is invalid');
+    }
+    return new Date(expiresMillis).toISOString();
+  }
+
   private reviewAt(reviewDates: readonly string[]): string | null {
     return [...reviewDates].sort()[0] ?? null;
   }
@@ -1161,28 +1154,8 @@ export class CapabilityPolicyEvaluationService {
         correlationId: request.requestContext.correlationId.trim(),
       },
     };
-    const requestHash = hashCanonical(this.businessRequest(normalizedRequest));
+    const requestHash = calculatePolicyRequestHash(normalizedRequest);
     return { request: normalizedRequest, requestHash };
-  }
-
-  private businessRequest(request: PolicyDecisionRequest): Record<string, unknown> {
-    return {
-      contractName: request.contractName,
-      contractVersion: request.contractVersion,
-      subject: request.subject,
-      capability: request.capability,
-      action: request.action,
-      requestedAt: request.requestedAt,
-      evaluationContext: request.evaluationContext ?? null,
-      sourceEvidenceRequest: request.sourceEvidenceRequest,
-      policyVersionHint: request.policyVersionHint ?? null,
-      actorContext: {
-        principalType: request.actorContext.principal.type,
-        customerId: request.actorContext.principal.customerId ?? null,
-        audience: request.actorContext.principal.audience ?? null,
-        assuranceLevel: request.actorContext.principal.assuranceLevel ?? null,
-      },
-    };
   }
 
   private safeErrorMessage(error: unknown): string {
@@ -1319,6 +1292,92 @@ export class CapabilityPolicyEvaluationService {
       String(item.sourceVersion ?? ''),
     ].join('|');
   }
+}
+
+export function calculatePolicyRequestHash(request: PolicyDecisionRequest): string {
+  return hashCanonical({
+    contractName: request.contractName,
+    contractVersion: request.contractVersion,
+    subject: request.subject,
+    capability: request.capability,
+    action: request.action,
+    requestedAt: request.requestedAt,
+    evaluationContext: request.evaluationContext ?? null,
+    sourceEvidenceRequest: request.sourceEvidenceRequest,
+    policyVersionHint: request.policyVersionHint ?? null,
+    actorContext: {
+      principalType: request.actorContext.principal.type,
+      customerId: request.actorContext.principal.customerId ?? null,
+      audience: request.actorContext.principal.audience ?? null,
+      assuranceLevel: request.actorContext.principal.assuranceLevel ?? null,
+    },
+  });
+}
+
+export function calculatePolicyDecisionReference(
+  requestHash: string,
+  policyVersion: string,
+  normalizedInputHash: string,
+  lineageReference?: string,
+): string {
+  const base = { requestHash, policyVersion, normalizedInputHash };
+  return `a4-decision-${hashCanonical(lineageReference ? { ...base, lineageReference } : base)}`;
+}
+
+type PolicyDecisionResultHashInput = Pick<
+  PolicyDecisionResult,
+  | 'contractName'
+  | 'contractVersion'
+  | 'subject'
+  | 'capability'
+  | 'action'
+  | 'profileReference'
+  | 'profileKey'
+  | 'profileVersion'
+  | 'policyVersion'
+  | 'definitionHash'
+  | 'decision'
+  | 'requestedAt'
+  | 'evaluatedAt'
+  | 'expiresAt'
+  | 'reviewAt'
+  | 'reasonCodes'
+  | 'explanation'
+  | 'obligations'
+  | 'limits'
+  | 'sourceReferences'
+  | 'evidenceContext'
+> & {
+  readonly supersedesDecisionReference?: string;
+};
+
+export function calculatePolicyDecisionResultHash(result: PolicyDecisionResultHashInput): string {
+  return hashCanonical({
+    contractName: result.contractName,
+    contractVersion: result.contractVersion,
+    subject: result.subject,
+    capability: result.capability,
+    action: result.action,
+    profileReference: result.profileReference,
+    profileKey: result.profileKey,
+    profileVersion: result.profileVersion,
+    policyVersion: result.policyVersion,
+    definitionHash: result.definitionHash,
+    decision: result.decision,
+    ...(result.supersedesDecisionReference
+      ? { supersedesDecisionReference: result.supersedesDecisionReference }
+      : {}),
+    requestedAt: result.requestedAt,
+    evaluatedAt: result.evaluatedAt,
+    expiresAt: result.expiresAt,
+    reviewAt: result.reviewAt,
+    reasonCodes: result.reasonCodes,
+    explanation: result.explanation,
+    obligations: result.obligations,
+    limits: result.limits,
+    sourceReferences: result.sourceReferences,
+    evidenceContext: result.evidenceContext,
+  });
 }
 
 export function calculateSnapshotInputHash(snapshot: PolicyEvidenceSnapshot): string {
