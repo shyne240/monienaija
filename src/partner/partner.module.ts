@@ -5,7 +5,9 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { BankModule } from '../bank/bank.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/customer-funding-instrument.module';
+import { LedgerModule } from '../ledger/ledger.module';
 import { OperationsModule } from '../operations/operations.module';
+import { PaymentModule } from '../payment/payment.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { ExternalCallbackReceipt } from './external-callback-receipt.entity';
 import { PartnerCallbackController } from './partner-callback.controller';
@@ -24,6 +26,9 @@ import {
   EXTERNAL_OPERATION_STATUS_VERIFIER,
   UnavailableExternalOperationStatusVerifier,
 } from './external-operation-status-verifier';
+import { ExternalSettlement } from './external-settlement.entity';
+import { ExternalSettlementService } from './external-settlement.service';
+import { ExternalSuspenseEntry } from './external-suspense-entry.entity';
 import { PartnerCircuitBreakerService } from './partner-circuit-breaker.service';
 import { PartnerCapabilityRegistry } from './partner-capability.registry';
 import { PartnerConnectionAuditService } from './partner-connection-audit.service';
@@ -43,11 +48,15 @@ import {
     BankModule,
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
+    LedgerModule,
     OperationsModule,
+    PaymentModule,
     TypeOrmModule.forFeature([
       ExternalCallbackReceipt,
       ExternalOperation,
       ExternalOperationReference,
+      ExternalSettlement,
+      ExternalSuspenseEntry,
     ]),
     WalletModule,
   ],
@@ -63,6 +72,7 @@ import {
     },
     ExternalOperationLifecycleService,
     ExternalOperationService,
+    ExternalSettlementService,
     PartnerCircuitBreakerService,
     {
       provide: EXTERNAL_OPERATION_STATUS_VERIFIER,
@@ -86,6 +96,7 @@ import {
     ExternalFundingTargetMappingService,
     ExternalOperationLifecycleService,
     ExternalOperationService,
+    ExternalSettlementService,
     PartnerCallbackAuthenticationService,
     PartnerCallbackIngestionService,
     PartnerCapabilityRegistry,
