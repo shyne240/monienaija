@@ -17,7 +17,12 @@ import {
   EnvironmentPartnerCallbackSecretSource,
   PARTNER_CALLBACK_SECRET_SOURCE,
 } from './partner-callback-authentication.service';
+import { ExternalConsentAssertionEntity } from './external-consent-assertion.entity';
+import { ExternalDataClassificationEntity } from './external-data-classification.entity';
+import { ExternalDataClassificationRegistry } from './external-data-classification.registry';
+import { ExternalDataMinimizationService } from './external-data-minimization.service';
 import { ExternalFundingTargetMappingService } from './external-funding-target.service';
+import { ExternalLegalHoldEntity } from './external-legal-hold.entity';
 import { ExternalOperation } from './external-operation.entity';
 import { ExternalOperationReference } from './external-operation-reference.entity';
 import { ExternalOperationLifecycleService } from './external-operation-lifecycle.service';
@@ -26,6 +31,8 @@ import {
   EXTERNAL_OPERATION_STATUS_VERIFIER,
   UnavailableExternalOperationStatusVerifier,
 } from './external-operation-status-verifier';
+import { ExternalRetentionClassificationEntity } from './external-retention-classification.entity';
+import { ExternalSecretClassificationEntity } from './external-secret-classification.entity';
 import { ExternalSettlement } from './external-settlement.entity';
 import { ExternalSettlementService } from './external-settlement.service';
 import { ExternalSuspenseEntry } from './external-suspense-entry.entity';
@@ -53,8 +60,13 @@ import {
     PaymentModule,
     TypeOrmModule.forFeature([
       ExternalCallbackReceipt,
+      ExternalConsentAssertionEntity,
+      ExternalDataClassificationEntity,
+      ExternalLegalHoldEntity,
       ExternalOperation,
       ExternalOperationReference,
+      ExternalRetentionClassificationEntity,
+      ExternalSecretClassificationEntity,
       ExternalSettlement,
       ExternalSuspenseEntry,
     ]),
@@ -62,6 +74,8 @@ import {
   ],
   controllers: [PartnerCallbackController],
   providers: [
+    ExternalDataClassificationRegistry,
+    ExternalDataMinimizationService,
     ExternalFundingTargetMappingService,
     PartnerCallbackAuthenticationService,
     PartnerCallbackIngestionService,
@@ -93,6 +107,8 @@ import {
     },
   ],
   exports: [
+    ExternalDataClassificationRegistry,
+    ExternalDataMinimizationService,
     ExternalFundingTargetMappingService,
     ExternalOperationLifecycleService,
     ExternalOperationService,
