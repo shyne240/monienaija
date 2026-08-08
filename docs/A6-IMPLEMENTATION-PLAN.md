@@ -817,3 +817,16 @@ A7 remains responsible for product-expansion contracts, product-specific policy 
 - [x] Data minimization, consent, classification, retention, legal-hold, secret, and disclosure controls are explicit.
 - [x] A6 prohibited edges, rollback/disable boundaries, A7 handoff, and A8 exclusion are explicit.
 - [x] No application source, entity, migration, service, controller, API, route, scheduler, provider integration, credential, financial behavior, settlement behavior, or runtime activation is created by this planning task.
+
+## 15. A6T11 plan evidence record
+
+- [x] [`A6-INTEGRATION-MATRIX.md`](A6-INTEGRATION-MATRIX.md) records the end-to-end task-to-evidence matrix and the A2 → A4 → A3 → A6T05 → A6T07 → A6T08 → A6T09 trace.
+- [x] [`A6-ROUTE-EXPOSURE-AND-ROLLBACK.md`](A6-ROUTE-EXPOSURE-AND-ROLLBACK.md) records A6 disable / circuit-breaker / environment emergency-stop / rollback-safe procedure, the `partner-callback.controller` is an A2-protected internal surface, and no public route is approved.
+- [x] [`A6-ADR-REVIEW-STATUS.md`](A6-ADR-REVIEW-STATUS.md) reviews ADR-0047 / ADR-0049 / ADR-0050 / ADR-0051 / ADR-0052 against committed implementation evidence and records ADR-0048 as not yet authored as a release-gate blocker.
+- [x] [`A6-OPERATIONAL-RECOVERY-RUNBOOK.md`](A6-OPERATIONAL-RECOVERY-RUNBOOK.md) records operating principles, evidence sources, incident classification, recovery procedure, decision matrix, support-trace contract, and ownership / stop conditions.
+- [x] [`A6-EXIT-CHECKLIST.md`](A6-EXIT-CHECKLIST.md) records acceptance checklist, unresolved blockers, and `NOT APPROVED / CONDITIONAL` phase result.
+- [x] [`A6-APPROVAL-PACKAGE.md`](A6-APPROVAL-PACKAGE.md) records the owner approval register, no-go recommendation, go conditions, and explicit non-claims.
+- [x] [`A6-A7-HANDOFF-PACKAGE.md`](A6-A7-HANDOFF-PACKAGE.md) records the bounded handoff to A7, the prohibited edges, the A7 entry conditions, and the blocked handoff status.
+- [x] Local automated validation passes: `npm test` (54 suites / 414 tests), `npm run lint`, `npm run build`, `npm run format:check`.
+- [x] A6T11 introduces no application source, entity, migration, service, controller, API, route, scheduler, provider integration, credential, financial behavior, settlement behavior, or runtime activation.
+- [x] A6T11 does not begin A7, A8, or any product-roadmap expansion.
