@@ -20,6 +20,7 @@ import { CustomerRiskProfileModule } from './customer-risk-profile/customer-risk
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
 import { CapabilityPolicyModule } from './policy/capability-policy.module';
+import { A7ProductPolicyModule } from './policy/a7-product-policy.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -88,6 +89,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerComplianceModule,
     CustomerOnboardingModule,
     CapabilityPolicyModule,
+    A7ProductPolicyModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
