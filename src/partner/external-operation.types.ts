@@ -11,6 +11,7 @@ import type {
   ExternalOperationReferenceType,
   ExternalOperationResourceType,
 } from './external-operation.enums';
+import type { ExternalOperationLifecycleState } from './external-operation-lifecycle.enums';
 
 export const EXTERNAL_OPERATION_CONTRACT_VERSION = 1 as const;
 export const EXTERNAL_OPERATION_IDEMPOTENCY_SCOPE = 'external.partner.operation.v1';
@@ -59,6 +60,23 @@ export interface ExternalOperationView {
   requestHash: string;
   requestContext: RequestContext;
   causationId: string | null;
+  lifecycleState: ExternalOperationLifecycleState;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRetryAt: Date | null;
+  lastAttemptAt: Date | null;
+  providerStatus: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  failureStatusCode: number | null;
+  recoveryReference: string | null;
+  submittingAt: Date | null;
+  pendingAt: Date | null;
+  pendingVerificationAt: Date | null;
+  unknownAt: Date | null;
+  manualReviewAt: Date | null;
+  failedAt: Date | null;
+  cancelledAt: Date | null;
   providerReferences: readonly ExternalOperationReferenceView[];
   replayed: boolean;
   createdAt: Date;

@@ -57,6 +57,8 @@ export const environmentSchema = z
     A6_PARTNER_SANDBOX_CALLBACK_SECRET: optionalEnvironmentSecret,
     A6_PARTNER_PRODUCTION_CALLBACK_SECRET: optionalEnvironmentSecret,
     A6_PARTNER_CALLBACK_MAX_SKEW_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
+    A6_PARTNER_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(3),
+    A6_PARTNER_CIRCUIT_OPEN_SECONDS: z.coerce.number().int().min(1).max(86_400).default(60),
     A6_PARTNER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
     A6_PARTNER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(50).max(30_000).default(3_000),
     DB_HOST: z.string().trim().min(1),

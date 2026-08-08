@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 
 import { ExternalOperationResourceType } from './external-operation.enums';
+import { ExternalOperationLifecycleState } from './external-operation-lifecycle.enums';
 
 @Entity({ name: 'external_operations' })
 @Index('uq_external_operations_internal_command_id', ['internalCommandId'], { unique: true })
@@ -42,6 +43,22 @@ import { ExternalOperationResourceType } from './external-operation.enums';
   "target_mapping_reference ~ '^a6-target:[a-f0-9]{64}$'",
 )
 @Check('chk_external_operations_version', 'version > 0')
+@Check(
+  'chk_external_operations_lifecycle_state',
+  "lifecycle_state IN ('CREATED', 'SUBMITTING', 'PENDING_PROVIDER', 'PENDING_VERIFICATION', 'UNKNOWN', 'MANUAL_REVIEW', 'FAILED', 'CANCELLED')",
+)
+@Check(
+  'chk_external_operations_attempts',
+  'attempt_count >= 0 AND max_attempts > 0 AND attempt_count <= max_attempts',
+)
+@Check(
+  'chk_external_operations_recovery_reference',
+  "lifecycle_state NOT IN ('UNKNOWN', 'MANUAL_REVIEW') OR recovery_reference IS NOT NULL",
+)
+@Check(
+  'chk_external_operations_failure_details',
+  "lifecycle_state <> 'FAILED' OR (failure_code IS NOT NULL AND failure_message IS NOT NULL)",
+)
 export class ExternalOperation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -114,6 +131,57 @@ export class ExternalOperation {
 
   @Column({ name: 'causation_id', type: 'varchar', length: 255, nullable: true })
   causationId!: string | null;
+
+  @Column({ name: 'lifecycle_state', type: 'varchar', length: 32 })
+  lifecycleState!: ExternalOperationLifecycleState;
+
+  @Column({ name: 'attempt_count', type: 'integer' })
+  attemptCount!: number;
+
+  @Column({ name: 'max_attempts', type: 'integer' })
+  maxAttempts!: number;
+
+  @Column({ name: 'next_retry_at', type: 'timestamptz', nullable: true })
+  nextRetryAt!: Date | null;
+
+  @Column({ name: 'last_attempt_at', type: 'timestamptz', nullable: true })
+  lastAttemptAt!: Date | null;
+
+  @Column({ name: 'provider_status', type: 'varchar', length: 80, nullable: true })
+  providerStatus!: string | null;
+
+  @Column({ name: 'failure_code', type: 'varchar', length: 80, nullable: true })
+  failureCode!: string | null;
+
+  @Column({ name: 'failure_message', type: 'varchar', length: 255, nullable: true })
+  failureMessage!: string | null;
+
+  @Column({ name: 'failure_status_code', type: 'integer', nullable: true })
+  failureStatusCode!: number | null;
+
+  @Column({ name: 'recovery_reference', type: 'varchar', length: 180, nullable: true })
+  recoveryReference!: string | null;
+
+  @Column({ name: 'submitting_at', type: 'timestamptz', nullable: true })
+  submittingAt!: Date | null;
+
+  @Column({ name: 'pending_at', type: 'timestamptz', nullable: true })
+  pendingAt!: Date | null;
+
+  @Column({ name: 'pending_verification_at', type: 'timestamptz', nullable: true })
+  pendingVerificationAt!: Date | null;
+
+  @Column({ name: 'unknown_at', type: 'timestamptz', nullable: true })
+  unknownAt!: Date | null;
+
+  @Column({ name: 'manual_review_at', type: 'timestamptz', nullable: true })
+  manualReviewAt!: Date | null;
+
+  @Column({ name: 'failed_at', type: 'timestamptz', nullable: true })
+  failedAt!: Date | null;
+
+  @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
