@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthorizationPolicy } from './authorization.types';
 
+export type RouteAuthenticationMode = 'PRINCIPAL' | 'PROVIDER_CALLBACK';
+
 export interface RoutePolicyInput {
   method: string;
   url: string;
@@ -10,6 +12,7 @@ export interface RoutePolicyInput {
 
 export interface RoutePolicyResolution {
   public: boolean;
+  authenticationMode?: RouteAuthenticationMode;
   policy?: AuthorizationPolicy;
   resourceType: string;
   resourceId?: string;
@@ -29,6 +32,20 @@ export class RoutePolicyRegistry {
     const path = input.url.split('?', 1)[0] ?? input.url;
     if (PUBLIC_ROUTES.has(`${method} ${path}`)) {
       return { public: true, resourceType: 'public-route' };
+    }
+
+    if (method === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
+      return {
+        public: false,
+        authenticationMode: 'PROVIDER_CALLBACK',
+        resourceType: 'external-partner-callback',
+        policy: {
+          resourceType: 'external-partner-callback',
+          action: 'partner:callback:receive',
+          allowedPrincipalTypes: ['SERVICE'],
+          customerAccess: 'NONE',
+        },
+      };
     }
 
     const customerId = input.params?.id;

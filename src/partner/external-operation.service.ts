@@ -132,6 +132,28 @@ export class ExternalOperationService {
     );
   }
 
+  async getInTransaction(
+    manager: EntityManager,
+    externalOperationId: string,
+  ): Promise<ExternalOperationView> {
+    const normalizedId = this.normalizeUuid(externalOperationId, 'externalOperationId');
+    const operation = await manager.getRepository(ExternalOperation).findOne({
+      where: { id: normalizedId },
+    });
+    if (!operation) {
+      throw new NotFoundException(`External operation ${normalizedId} was not found`);
+    }
+    return this.toView(operation, await this.referencesFor(manager, normalizedId), false);
+  }
+
+  async recordProviderReferenceInTransaction(
+    manager: EntityManager,
+    command: RecordProviderReferenceCommand,
+  ): Promise<RecordProviderReferenceResult> {
+    const normalized = this.normalizeProviderReference(command);
+    return this.recordProviderReferenceWithinTransaction(manager, normalized);
+  }
+
   private async createWithinTransaction(
     manager: EntityManager,
     command: NormalizedCreateExternalOperationCommand,

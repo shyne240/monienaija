@@ -9,6 +9,10 @@ const optionalEnvironmentUrl = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.string().trim().url().max(2048).optional(),
 );
+const optionalEnvironmentSecret = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(16).max(512).optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -50,6 +54,9 @@ export const environmentSchema = z
     A6_PARTNER_SANDBOX_SIGNING_KEY_REFERENCE: optionalEnvironmentString,
     A6_PARTNER_PRODUCTION_SIGNING_KEY_REFERENCE: optionalEnvironmentString,
     A6_PARTNER_SIGNING_ALGORITHM: z.enum(['HMAC_SHA256', 'RSA_SHA256']).default('HMAC_SHA256'),
+    A6_PARTNER_SANDBOX_CALLBACK_SECRET: optionalEnvironmentSecret,
+    A6_PARTNER_PRODUCTION_CALLBACK_SECRET: optionalEnvironmentSecret,
+    A6_PARTNER_CALLBACK_MAX_SKEW_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
     A6_PARTNER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
     A6_PARTNER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(50).max(30_000).default(3_000),
     DB_HOST: z.string().trim().min(1),
@@ -95,6 +102,10 @@ export const environmentSchema = z
       config.A6_PARTNER_ENVIRONMENT === 'sandbox'
         ? config.A6_PARTNER_SANDBOX_SIGNING_KEY_REFERENCE
         : config.A6_PARTNER_PRODUCTION_SIGNING_KEY_REFERENCE;
+    const callbackSecret =
+      config.A6_PARTNER_ENVIRONMENT === 'sandbox'
+        ? config.A6_PARTNER_SANDBOX_CALLBACK_SECRET
+        : config.A6_PARTNER_PRODUCTION_CALLBACK_SECRET;
 
     if (!endpoint) {
       context.addIssue({
@@ -115,6 +126,13 @@ export const environmentSchema = z
         code: 'custom',
         path: ['A6_PARTNER_ENVIRONMENT'],
         message: 'The selected A6 partner environment requires a signing-key reference',
+      });
+    }
+    if (!callbackSecret) {
+      context.addIssue({
+        code: 'custom',
+        path: ['A6_PARTNER_ENVIRONMENT'],
+        message: 'The selected A6 partner environment requires a callback secret',
       });
     }
   });

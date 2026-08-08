@@ -24,6 +24,13 @@ describe('RoutePolicyRegistry', () => {
     expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(true);
     expect(registry.isPublic('GET', '/api/v1/customers/1')).toBe(false);
     expect(registry.isPublic('GET', '/api/v1/internal/diagnostics')).toBe(false);
+    expect(registry.isPublic('POST', '/api/v1/internal/partner-callbacks/nibss-nip')).toBe(false);
+    expect(
+      registry.resolve({
+        method: 'POST',
+        url: '/api/v1/internal/partner-callbacks/nibss-nip',
+      }).authenticationMode,
+    ).toBe('PROVIDER_CALLBACK');
   });
 });
 
@@ -44,6 +51,20 @@ describe('RuntimeAccessGuard', () => {
     await expect(
       testFixture.guard.canActivate(
         context({ method: 'GET', url: '/api/v1/health', headers: {} }) as never,
+      ),
+    ).resolves.toBe(true);
+    expect(testFixture.sessionService.validate).not.toHaveBeenCalled();
+  });
+
+  it('allows the non-public provider callback route to reach its signature boundary without a bearer token', async () => {
+    const testFixture = fixture();
+    await expect(
+      testFixture.guard.canActivate(
+        context({
+          method: 'POST',
+          url: '/api/v1/internal/partner-callbacks/nibss-nip',
+          headers: {},
+        }) as never,
       ),
     ).resolves.toBe(true);
     expect(testFixture.sessionService.validate).not.toHaveBeenCalled();

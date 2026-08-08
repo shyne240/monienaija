@@ -37,6 +37,13 @@ export class RuntimeAccessGuard implements CanActivate {
       return true;
     }
 
+    if (route.authenticationMode === 'PROVIDER_CALLBACK') {
+      // Provider callbacks use their signed partner envelope. The callback
+      // boundary performs authentication and replay checks before ingestion;
+      // a customer bearer session is not a valid provider credential.
+      return true;
+    }
+
     const token = this.bearerToken(request.headers.authorization);
     const validation = await this.sessionService.validate({ token });
     if (!validation.valid || !validation.principal) {

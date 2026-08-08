@@ -7,6 +7,14 @@ import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-bene
 import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/customer-funding-instrument.module';
 import { OperationsModule } from '../operations/operations.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { ExternalCallbackReceipt } from './external-callback-receipt.entity';
+import { PartnerCallbackController } from './partner-callback.controller';
+import { PartnerCallbackAuthenticationService } from './partner-callback-authentication.service';
+import { PartnerCallbackIngestionService } from './partner-callback-ingestion.service';
+import {
+  EnvironmentPartnerCallbackSecretSource,
+  PARTNER_CALLBACK_SECRET_SOURCE,
+} from './partner-callback-authentication.service';
 import { ExternalFundingTargetMappingService } from './external-funding-target.service';
 import { ExternalOperation } from './external-operation.entity';
 import { ExternalOperationReference } from './external-operation-reference.entity';
@@ -30,11 +38,23 @@ import {
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
     OperationsModule,
-    TypeOrmModule.forFeature([ExternalOperation, ExternalOperationReference]),
+    TypeOrmModule.forFeature([
+      ExternalCallbackReceipt,
+      ExternalOperation,
+      ExternalOperationReference,
+    ]),
     WalletModule,
   ],
+  controllers: [PartnerCallbackController],
   providers: [
     ExternalFundingTargetMappingService,
+    PartnerCallbackAuthenticationService,
+    PartnerCallbackIngestionService,
+    EnvironmentPartnerCallbackSecretSource,
+    {
+      provide: PARTNER_CALLBACK_SECRET_SOURCE,
+      useExisting: EnvironmentPartnerCallbackSecretSource,
+    },
     ExternalOperationService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
@@ -53,6 +73,8 @@ import {
   exports: [
     ExternalFundingTargetMappingService,
     ExternalOperationService,
+    PartnerCallbackAuthenticationService,
+    PartnerCallbackIngestionService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
     PartnerConnectionService,

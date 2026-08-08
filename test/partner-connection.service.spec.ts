@@ -185,6 +185,8 @@ describe('A6 partner capability and environment contracts', () => {
       A6_PARTNER_PRODUCTION_CREDENTIAL_REFERENCE: 'secret://partner/production/client',
       A6_PARTNER_SANDBOX_SIGNING_KEY_REFERENCE: 'secret://partner/sandbox/signing',
       A6_PARTNER_PRODUCTION_SIGNING_KEY_REFERENCE: 'secret://partner/production/signing',
+      A6_PARTNER_SANDBOX_CALLBACK_SECRET: 'sandbox-callback-secret-123',
+      A6_PARTNER_PRODUCTION_CALLBACK_SECRET: 'production-callback-secret-123',
     };
 
     expect(validateEnvironment(valid)).toMatchObject({
