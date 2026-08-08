@@ -31,6 +31,7 @@ import { LimitModule } from './limit/limit.module';
 import { MaturityModule } from './maturity/maturity.module';
 import { OperationsModule } from './operations/operations.module';
 import { PaymentModule } from './payment/payment.module';
+import { PartnerModule } from './partner/partner.module';
 import { ProductionModule } from './production/production.module';
 import { ProductGovernanceModule } from './product-governance/product-governance.module';
 import { QuoteModule } from './quote/quote.module';
@@ -100,6 +101,7 @@ import { WalletModule } from './wallet/wallet.module';
     LimitModule,
     MaturityModule,
     OperationsModule,
+    PartnerModule,
     PaymentModule,
     ProductionModule,
     ProductGovernanceModule,
