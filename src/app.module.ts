@@ -22,6 +22,7 @@ import { CustomerOnboardingModule } from './customer-onboarding/customer-onboard
 import { CapabilityPolicyModule } from './policy/capability-policy.module';
 import { A7ProductPolicyModule } from './policy/a7-product-policy.module';
 import { A7ProductCustomerBindingModule } from './policy/a7-product-customer-binding.module';
+import { A7ProductCommandModule } from './policy/a7-product-command.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -92,6 +93,7 @@ import { WalletModule } from './wallet/wallet.module';
     CapabilityPolicyModule,
     A7ProductPolicyModule,
     A7ProductCustomerBindingModule,
+    A7ProductCommandModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
