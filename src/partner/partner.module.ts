@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
+import { BankModule } from '../bank/bank.module';
+import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
+import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/customer-funding-instrument.module';
 import { OperationsModule } from '../operations/operations.module';
+import { WalletModule } from '../wallet/wallet.module';
+import { ExternalFundingTargetMappingService } from './external-funding-target.service';
 import { PartnerCapabilityRegistry } from './partner-capability.registry';
 import { PartnerConnectionAuditService } from './partner-connection-audit.service';
 import { PartnerConnectionService } from './partner-connection.service';
@@ -14,8 +20,16 @@ import {
 } from './partner-request-signing.service';
 
 @Module({
-  imports: [OperationsModule],
+  imports: [
+    AuthorizationModule,
+    BankModule,
+    CustomerBeneficiaryModule,
+    CustomerFundingInstrumentModule,
+    OperationsModule,
+    WalletModule,
+  ],
   providers: [
+    ExternalFundingTargetMappingService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
     PartnerConnectionService,
@@ -31,6 +45,7 @@ import {
     },
   ],
   exports: [
+    ExternalFundingTargetMappingService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
     PartnerConnectionService,
