@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { BankModule } from '../bank/bank.module';
@@ -7,6 +8,9 @@ import { CustomerFundingInstrumentModule } from '../customer-funding-instrument/
 import { OperationsModule } from '../operations/operations.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { ExternalFundingTargetMappingService } from './external-funding-target.service';
+import { ExternalOperation } from './external-operation.entity';
+import { ExternalOperationReference } from './external-operation-reference.entity';
+import { ExternalOperationService } from './external-operation.service';
 import { PartnerCapabilityRegistry } from './partner-capability.registry';
 import { PartnerConnectionAuditService } from './partner-connection-audit.service';
 import { PartnerConnectionService } from './partner-connection.service';
@@ -26,10 +30,12 @@ import {
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
     OperationsModule,
+    TypeOrmModule.forFeature([ExternalOperation, ExternalOperationReference]),
     WalletModule,
   ],
   providers: [
     ExternalFundingTargetMappingService,
+    ExternalOperationService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
     PartnerConnectionService,
@@ -46,6 +52,7 @@ import {
   ],
   exports: [
     ExternalFundingTargetMappingService,
+    ExternalOperationService,
     PartnerCapabilityRegistry,
     PartnerConnectionAuditService,
     PartnerConnectionService,
