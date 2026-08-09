@@ -1,0 +1,206 @@
+import {
+  B1_CAMPAIGN_ENGINE_AUDIT_ACTOR,
+  B1_CAMPAIGN_ENGINE_AUDIT_ENTITY_TYPE,
+  B1_CAMPAIGN_ENGINE_CAMPAIGN_IDEMPOTENCY_SCOPE,
+  B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES,
+  B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS,
+  B1_CAMPAIGN_ENGINE_COMPATIBILITY_RULE_IDS,
+  B1_CAMPAIGN_ENGINE_CONSUMER_CONTRACT_IDS,
+  B1_CAMPAIGN_ENGINE_CONTRACT_NAME,
+  B1_CAMPAIGN_ENGINE_CONTRACT_VERSION,
+  B1_CAMPAIGN_ENGINE_COUPON_IDEMPOTENCY_SCOPE,
+  B1_CAMPAIGN_ENGINE_COUPON_STATES,
+  B1_CAMPAIGN_ENGINE_DATA_CONTROL_CLASSIFICATIONS,
+  B1_CAMPAIGN_ENGINE_DECISION_KINDS,
+  B1_CAMPAIGN_ENGINE_DECISION_OUTCOMES,
+  B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES,
+  B1_CAMPAIGN_ENGINE_DOCUMENT_KINDS,
+  B1_CAMPAIGN_ENGINE_ELIGIBILITIES,
+  B1_CAMPAIGN_ENGINE_FAILURE_CODES,
+  B1_CAMPAIGN_ENGINE_FAILURE_INCOMPATIBLE,
+  B1_CAMPAIGN_ENGINE_FAILURE_INVALID_COMMAND,
+  B1_CAMPAIGN_ENGINE_IDEMPOTENCY_RETENTION_SECONDS,
+  B1_CAMPAIGN_ENGINE_OUTBOX_EVENT_TYPE,
+  B1_CAMPAIGN_ENGINE_PERIOD_KEY,
+  B1_CAMPAIGN_ENGINE_PRIORITIES,
+  B1_CAMPAIGN_ENGINE_PROHIBITED_ADJACENT_SCOPES,
+  B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES,
+  B1_CAMPAIGN_ENGINE_PROMOTION_IDEMPOTENCY_SCOPE,
+  B1_CAMPAIGN_ENGINE_PROMOTION_STATES,
+  B1_CAMPAIGN_ENGINE_REFERENCE_PREFIX,
+  B1_CAMPAIGN_ENGINE_REPLAY_RULE_IDS,
+  B1_CAMPAIGN_ENGINE_RETENTION_DAYS,
+  B1_CAMPAIGN_ENGINE_RULE_KINDS,
+  B1_CAMPAIGN_ENGINE_RULE_OUTCOMES,
+  B1_CAMPAIGN_ENGINE_SCOPE_ACCOUNTING_UNIT,
+  B1_CAMPAIGN_ENGINE_SCOPE_CURRENCY,
+  B1_CAMPAIGN_ENGINE_SCOPE_DIRECTION,
+  B1_CAMPAIGN_ENGINE_SCOPE_KEY,
+  B1_CAMPAIGN_ENGINE_SCOPE_PARTNER_DEPENDENCY,
+  B1_CAMPAIGN_ENGINE_SCOPE_PRODUCT_DEPENDENCY,
+  B1_CAMPAIGN_ENGINE_SCOPE_PRODUCT_DEPENDENCY_VERSION,
+  B1_CAMPAIGN_ENGINE_SCOPE_VERSION,
+  B1_CAMPAIGN_ENGINE_STACKING_RULES,
+  B1_CAMPAIGN_ENGINE_VERSION_NEGOTIATION_RULE_IDS,
+} from '../src/policy/b1-campaign-engine.constants';
+
+describe('B1 campaign engine types (B1T06)', () => {
+  it('exposes the B1 campaign engine contract name and version', () => {
+    expect(B1_CAMPAIGN_ENGINE_CONTRACT_NAME).toBe('B1-CAMPAIGN-ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_CONTRACT_VERSION).toBe(1);
+  });
+
+  it('exposes the B1 campaign engine first commercial scope identity', () => {
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_KEY).toBe('commercial.virtual-account.inbound-funding');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_VERSION).toBe(1);
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_DIRECTION).toBe('inbound');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_CURRENCY).toBe('NGN');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_ACCOUNTING_UNIT).toBe('CUSTOMER_FUNDS');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_PARTNER_DEPENDENCY).toBe('NIBSS_NIP');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_PRODUCT_DEPENDENCY).toBe('VIRTUAL_ACCOUNT');
+    expect(B1_CAMPAIGN_ENGINE_SCOPE_PRODUCT_DEPENDENCY_VERSION).toBe(1);
+  });
+
+  it('exposes the B1 campaign engine period identity', () => {
+    expect(B1_CAMPAIGN_ENGINE_PERIOD_KEY).toBe(
+      'commercial.virtual-account.inbound-funding.campaign-period.per-flow.v1',
+    );
+  });
+
+  it('exposes the B1 campaign engine decision kind vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_DECISION_KINDS).toContain('CAMPAIGN');
+    expect(B1_CAMPAIGN_ENGINE_DECISION_KINDS).toContain('PROMOTION');
+    expect(B1_CAMPAIGN_ENGINE_DECISION_KINDS).toContain('COUPON');
+  });
+
+  it('exposes the B1 campaign engine decision outcome vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_DECISION_OUTCOMES).toContain('ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_DECISION_OUTCOMES).toContain('APPLIED');
+    expect(B1_CAMPAIGN_ENGINE_DECISION_OUTCOMES).toContain('REJECTED');
+    expect(B1_CAMPAIGN_ENGINE_DECISION_OUTCOMES).toContain('REPLAYED');
+  });
+
+  it('exposes the B1 campaign engine campaign state vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES).toContain('DRAFT');
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES).toContain('ACTIVE');
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES).toContain('PAUSED');
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES).toContain('EXPIRED');
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_STATES).toContain('RETIRED');
+  });
+
+  it('exposes the B1 campaign engine promotion state vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_PROMOTION_STATES).toContain('CREATED');
+    expect(B1_CAMPAIGN_ENGINE_PROMOTION_STATES).toContain('ACTIVE');
+    expect(B1_CAMPAIGN_ENGINE_PROMOTION_STATES).toContain('EXPIRED');
+    expect(B1_CAMPAIGN_ENGINE_PROMOTION_STATES).toContain('CANCELLED');
+  });
+
+  it('exposes the B1 campaign engine coupon state vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_COUPON_STATES).toContain('CREATED');
+    expect(B1_CAMPAIGN_ENGINE_COUPON_STATES).toContain('ACTIVE');
+    expect(B1_CAMPAIGN_ENGINE_COUPON_STATES).toContain('REDEEMED');
+    expect(B1_CAMPAIGN_ENGINE_COUPON_STATES).toContain('EXPIRED');
+    expect(B1_CAMPAIGN_ENGINE_COUPON_STATES).toContain('CANCELLED');
+  });
+
+  it('exposes the B1 campaign engine priority vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_PRIORITIES).toContain('LOW');
+    expect(B1_CAMPAIGN_ENGINE_PRIORITIES).toContain('MEDIUM');
+    expect(B1_CAMPAIGN_ENGINE_PRIORITIES).toContain('HIGH');
+    expect(B1_CAMPAIGN_ENGINE_PRIORITIES).toContain('CRITICAL');
+  });
+
+  it('exposes the B1 campaign engine stacking rule vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_STACKING_RULES).toContain('STACKABLE');
+    expect(B1_CAMPAIGN_ENGINE_STACKING_RULES).toContain('EXCLUSIVE');
+    expect(B1_CAMPAIGN_ENGINE_STACKING_RULES).toContain('OVERRIDABLE');
+  });
+
+  it('exposes the B1 campaign engine eligibility vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('CUSTOMER_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('MERCHANT_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('PARTNER_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('PRODUCT_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('TIER_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('PERIOD_ELIGIBLE');
+    expect(B1_CAMPAIGN_ENGINE_ELIGIBILITIES).toContain('USAGE_LIMIT_ELIGIBLE');
+  });
+
+  it('exposes the B1 campaign engine document kind vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_DOCUMENT_KINDS.length).toBe(9);
+  });
+
+  it('exposes the B1 campaign engine failure code vocabulary', () => {
+    expect(B1_CAMPAIGN_ENGINE_FAILURE_INVALID_COMMAND).toBe('B1_CAMPAIGN_ENGINE_INVALID_COMMAND');
+    expect(B1_CAMPAIGN_ENGINE_FAILURE_INCOMPATIBLE).toBe('B1_CAMPAIGN_ENGINE_INCOMPATIBLE');
+    expect(B1_CAMPAIGN_ENGINE_FAILURE_CODES.length).toBe(22);
+  });
+
+  it('exposes the B1 campaign engine internal idempotency scopes and retention', () => {
+    expect(B1_CAMPAIGN_ENGINE_CAMPAIGN_IDEMPOTENCY_SCOPE).toBe(
+      'b1.campaign-engine.campaign.idempotency.v1',
+    );
+    expect(B1_CAMPAIGN_ENGINE_PROMOTION_IDEMPOTENCY_SCOPE).toBe(
+      'b1.campaign-engine.promotion.idempotency.v1',
+    );
+    expect(B1_CAMPAIGN_ENGINE_COUPON_IDEMPOTENCY_SCOPE).toBe(
+      'b1.campaign-engine.coupon.idempotency.v1',
+    );
+    expect(B1_CAMPAIGN_ENGINE_IDEMPOTENCY_RETENTION_SECONDS).toBe(86_400);
+  });
+
+  it('exposes the B1 campaign engine audit, outbox, metric, and reference prefix', () => {
+    expect(B1_CAMPAIGN_ENGINE_AUDIT_ACTOR).toBe('b1-campaign-engine');
+    expect(B1_CAMPAIGN_ENGINE_AUDIT_ENTITY_TYPE).toBe('B1_CAMPAIGN_DECISION');
+    expect(B1_CAMPAIGN_ENGINE_OUTBOX_EVENT_TYPE).toBe('B1CampaignDecisionDecided');
+    expect(B1_CAMPAIGN_ENGINE_REFERENCE_PREFIX).toBe('b1-campaign-decision');
+  });
+
+  it('exposes the B1 campaign engine retention, classification, and data control classification vocabularies', () => {
+    expect(B1_CAMPAIGN_ENGINE_RETENTION_DAYS).toBe(365);
+    expect(B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS).toContain('PUBLIC');
+    expect(B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS).toContain('INTERNAL');
+    expect(B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS).toContain('CONFIDENTIAL');
+    expect(B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS).toContain('RESTRICTED');
+    expect(B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS).toContain('HIGHLY_RESTRICTED');
+    expect(B1_CAMPAIGN_ENGINE_DATA_CONTROL_CLASSIFICATIONS).toEqual(
+      B1_CAMPAIGN_ENGINE_CLASSIFICATION_LEVELS,
+    );
+  });
+
+  it('exposes the B1 campaign engine rule outcome and rule kind vocabularies', () => {
+    expect(B1_CAMPAIGN_ENGINE_RULE_OUTCOMES).toContain('PASS');
+    expect(B1_CAMPAIGN_ENGINE_RULE_OUTCOMES).toContain('FAIL');
+    expect(B1_CAMPAIGN_ENGINE_RULE_OUTCOMES).toContain('SKIP');
+    expect(B1_CAMPAIGN_ENGINE_RULE_OUTCOMES).toContain('NOT_APPLICABLE');
+    expect(B1_CAMPAIGN_ENGINE_RULE_KINDS.length).toBeGreaterThan(30);
+  });
+
+  it('exposes the B1 campaign engine prohibited adjacent scopes, prohibited dependencies, and declared dependencies', () => {
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_ADJACENT_SCOPES.length).toBeGreaterThan(0);
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES).toContain('B1_REFERRAL_ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES).toContain('B1_CASHBACK_ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES).toContain('B1_LOYALTY_ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES).toContain('B1_REVENUE_RECOGNITION_ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_PROHIBITED_DEPENDENCIES).toContain('B1_TAX_ENGINE');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A1-CANONICAL-IDENTITY');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A2-AUTHORIZATION-CONTEXT');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain(
+      'A3-CUSTOMER-FINANCIAL-ACCOUNT-BINDING',
+    );
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A4-PRODUCT-POLICY-DECISION');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A5-LEDGER');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A6-PARTNER-ADAPTER');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('A7-PRODUCT-CATALOG');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('B1-COMMERCIAL-CATALOG');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('B1-COMMERCIAL-DECISION');
+    expect(B1_CAMPAIGN_ENGINE_DECLARED_DEPENDENCIES).toContain('B1-BILLING-ENGINE');
+  });
+
+  it('exposes the B1 campaign engine compatibility, consumer contract, version negotiation, and replay rule identifiers', () => {
+    expect(B1_CAMPAIGN_ENGINE_COMPATIBILITY_RULE_IDS.length).toBeGreaterThan(0);
+    expect(B1_CAMPAIGN_ENGINE_CONSUMER_CONTRACT_IDS.length).toBeGreaterThan(0);
+    expect(B1_CAMPAIGN_ENGINE_VERSION_NEGOTIATION_RULE_IDS.length).toBeGreaterThan(0);
+    expect(B1_CAMPAIGN_ENGINE_REPLAY_RULE_IDS.length).toBeGreaterThan(0);
+  });
+});
