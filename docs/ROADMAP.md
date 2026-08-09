@@ -1,6 +1,8 @@
 # MonieNaija Roadmap
 
-- **Status:** Canonical product and architecture roadmap
+> **Roadmap reconciliation notice (2026-08-09):** This file is the historical A1–A8/P1 roadmap baseline. For all future platform ownership and sequencing, [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md) supersedes the A8/B2/B3 interpretation here. There is no authoritative A8; B2 is Finance Platform, B3 is Treasury Platform, C2 owns Observability, and D1 owns Scale & Selective Extraction. Historical implementation evidence remains valid.
+
+- **Status:** Historical canonical baseline; superseded for future platform sequencing by `AUTHORITATIVE-PLATFORM-ROADMAP.md`
 - **Last reviewed:** 2026-08-05
 - **Authority:** Engineering, Security, Risk, Finance, Operations, Product, Compliance, and accountable release owners
 - **A1T08 synthesis input:** [`CANONICAL-OWNERSHIP-MATRIX.md`](CANONICAL-OWNERSHIP-MATRIX.md), [`DEPENDENCY-GRAPH.md`](DEPENDENCY-GRAPH.md), and [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md)

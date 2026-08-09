@@ -1,5 +1,7 @@
 # Post-Customer-Foundation Phases
 
+> **Roadmap reconciliation notice (2026-08-09):** This file preserves the historical A1–A8 phase model. [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md) controls future sequencing: A ends at A7 Product Layer, B2 is Finance, B3 is Treasury, C2 is Observability, and D1 is Scale & Selective Extraction. The historical A8 section below is not authorization for future A8 work.
+
 ## Scope
 
 These are Architecture phases, not Product Roadmap milestones. They begin after the completed Customer Foundation implementation P1.0-P1.10. They are architecture and delivery gates. An Architecture phase does not authorize production release merely because its implementation is complete.
