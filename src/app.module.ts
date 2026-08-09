@@ -32,6 +32,7 @@ import { B1BillingEngineModule } from './policy/b1-billing-engine.module';
 import { B1CampaignEngineModule } from './policy/b1-campaign-engine.module';
 import { B1CommercialAnalyticsEngineModule } from './policy/b1-commercial-analytics-engine.module';
 import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
+import { B1CommercialGovernanceEngineModule } from './policy/b1-commercial-governance-engine.module';
 import { B1ReferralEngineModule } from './policy/b1-referral-engine.module';
 import { B1RevenueRecognitionEngineModule } from './policy/b1-revenue-recognition-engine.module';
 import { B1FeeEngineModule } from './policy/b1-fee-engine.module';
@@ -115,6 +116,7 @@ import { WalletModule } from './wallet/wallet.module';
     B1CampaignEngineModule,
     B1CommercialAnalyticsEngineModule,
     B1CommercialCatalogModule,
+    B1CommercialGovernanceEngineModule,
     B1FeeEngineModule,
     B1ReferralEngineModule,
     B1RevenueRecognitionEngineModule,
