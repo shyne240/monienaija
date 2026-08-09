@@ -28,6 +28,7 @@ import { A7ProductLifecycleModule } from './policy/a7-product-lifecycle.module';
 import { A7ProductFinancialEffectModule } from './policy/a7-product-financial-effect.module';
 import { A7ProductReconciliationModule } from './policy/a7-product-reconciliation.module';
 import { A7ProductDataMinimizationModule } from './policy/a7-product-data-minimization.module';
+import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -104,6 +105,7 @@ import { WalletModule } from './wallet/wallet.module';
     A7ProductFinancialEffectModule,
     A7ProductReconciliationModule,
     A7ProductDataMinimizationModule,
+    B1CommercialCatalogModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
