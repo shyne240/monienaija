@@ -41,6 +41,7 @@ import { B2MerchantAgentActivationReadinessModule } from './policy/b2-merchant-a
 import { B2ActivationWorkflowModule } from './policy/b2-activation-workflow.module';
 import { B2ConsentModule } from './policy/b2-consent.module';
 import { B2ApiConsumerModule } from './policy/b2-api-consumer.module';
+import { B2WebhookModule } from './policy/b2-webhook.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -130,6 +131,7 @@ import { WalletModule } from './wallet/wallet.module';
     B2ActivationWorkflowModule,
     B2ConsentModule,
     B2ApiConsumerModule,
+    B2WebhookModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
