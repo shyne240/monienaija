@@ -31,6 +31,7 @@ import { A7ProductDataMinimizationModule } from './policy/a7-product-data-minimi
 import { B1BillingEngineModule } from './policy/b1-billing-engine.module';
 import { B1CampaignEngineModule } from './policy/b1-campaign-engine.module';
 import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
+import { B1ReferralEngineModule } from './policy/b1-referral-engine.module';
 import { B1FeeEngineModule } from './policy/b1-fee-engine.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
@@ -112,6 +113,7 @@ import { WalletModule } from './wallet/wallet.module';
     B1CampaignEngineModule,
     B1CommercialCatalogModule,
     B1FeeEngineModule,
+    B1ReferralEngineModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
