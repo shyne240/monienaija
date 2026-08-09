@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
 /**
  * B2T04 — B2 merchant and agent activation-readiness repository.
  *

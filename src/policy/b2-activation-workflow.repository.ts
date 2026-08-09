@@ -12,7 +12,6 @@
  * notification, or performs settlement.
  */
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { createHash, randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
