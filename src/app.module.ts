@@ -30,6 +30,7 @@ import { A7ProductReconciliationModule } from './policy/a7-product-reconciliatio
 import { A7ProductDataMinimizationModule } from './policy/a7-product-data-minimization.module';
 import { B1BillingEngineModule } from './policy/b1-billing-engine.module';
 import { B1CampaignEngineModule } from './policy/b1-campaign-engine.module';
+import { B1CommercialAnalyticsEngineModule } from './policy/b1-commercial-analytics-engine.module';
 import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
 import { B1ReferralEngineModule } from './policy/b1-referral-engine.module';
 import { B1RevenueRecognitionEngineModule } from './policy/b1-revenue-recognition-engine.module';
@@ -112,6 +113,7 @@ import { WalletModule } from './wallet/wallet.module';
     A7ProductDataMinimizationModule,
     B1BillingEngineModule,
     B1CampaignEngineModule,
+    B1CommercialAnalyticsEngineModule,
     B1CommercialCatalogModule,
     B1FeeEngineModule,
     B1ReferralEngineModule,
