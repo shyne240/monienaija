@@ -39,6 +39,7 @@ import { B1FeeEngineModule } from './policy/b1-fee-engine.module';
 import { B2CustomerActivationReadinessModule } from './policy/b2-customer-activation-readiness.module';
 import { B2MerchantAgentActivationReadinessModule } from './policy/b2-merchant-agent-activation-readiness.module';
 import { B2ActivationWorkflowModule } from './policy/b2-activation-workflow.module';
+import { B2ConsentModule } from './policy/b2-consent.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -126,6 +127,7 @@ import { WalletModule } from './wallet/wallet.module';
     B2CustomerActivationReadinessModule,
     B2MerchantAgentActivationReadinessModule,
     B2ActivationWorkflowModule,
+    B2ConsentModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,
