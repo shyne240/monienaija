@@ -1,0 +1,1154 @@
+openapi: 3.1.0
+info:
+  title: MonieNaija B2 Public Commercial Platform
+  version: 1.0.0
+  description: |
+    Canonical OpenAPI 3.1 specification for the B2 Public Commercial Platform — the single source of truth for every public route. It exactly matches the B2 public API catalog `B2-PUBLIC-API-CATALOG` v1 frozen in `docs/B2-PUBLIC-API-CATALOG-CONTRACT.md` (`b2.activation.cohort.inbound-funding` v1). Every public route at v1 is A2 audience/scope-protected unless explicitly marked anonymous. Cohort `b2.activation.cohort.inbound-funding` v1, B1 scope `commercial.virtual-account.inbound-funding` v1, `VIRTUAL_ACCOUNT` v1, `NIBSS_NIP`, `NGN`/`CUSTOMER_FUNDS`/`NG`.
+  contact:
+    name: B2 Public Platform Owner
+  license:
+    name: UNLICENSED
+servers:
+  - url: https://api.monienaija.com/v1
+    description: Production (NG)
+  - url: https://sandbox-api.monienaija.com/v1
+    description: Sandbox
+tags:
+  - name: commercial-activations
+    description: Activation cohort `b2.activation.cohort.inbound-funding` v1 — deterministic, replay-safe, `ATTESTED_READY`-gated
+  - name: commercial-catalog
+    description: Minimized B1 catalog reads — audience-scoped per A6T10
+  - name: authentication
+    description: `clientId`/`clientSecret` exchange for an A2-scoped JWT (15m)
+  - name: webhooks
+    description: HMAC-SHA256 webhook registrations — HTTPS allowlist, challenge-verified
+  - name: consents
+    description: `CustomerConsent` / `MarketingConsent` intent authorities — explicit `GRANTED`
+  - name: health
+    description: Platform liveness (no B2 audience)
+  - name: support
+    description: Minimized activation trace — support audience, legal-hold aware
+paths:
+  /v1/commercial/activations:
+    post:
+      operationId: b2.post-commercial-activations
+      summary: Create an activation for `b2.activation.cohort.inbound-funding` v1
+      description: |
+        Idempotent create. Requires `B2_ACTIVATION` `GRANTED` via `B2Consent` and `ATTESTED_READY` via `B2T03`/`B2T04`. Deterministic `requestHash` stableJson excluding `activationReference`/`createdAt`. Dedicated idempotency scope `b2.activation-workflow.idempotency.v1` (86400s). Audience `public:commercial:activation:b2:inbound-funding:write`, scope `b2:activation:write`, quota `commercial.write:daily:500` cost 1, rate-limit `b2:commercial:activations:write` 10 rps burst 20. Version `v1` via `/v1` + `Accept: application/vnd.monienaija.v1+json`; response `B2-Api-Version: v1`. `B2_ACTIVATION` consent gated.
+      tags:
+        - commercial-activations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      requestBody:
+        required: true
+        content:
+          application/vnd.monienaija.v1+json:
+            schema:
+              $ref: '#/components/schemas/B2ActivationCreateRequest'
+            examples:
+              customerReady:
+                summary: Customer `VERIFIED` + `ATTESTED_READY`
+                value:
+                  kind: CUSTOMER
+                  principalId: 550e8400-e29b-41d4-a716-446655440001
+                  cohortKey: b2.activation.cohort.inbound-funding
+                  cohortVersion: 1
+                  b1ScopeKey: commercial.virtual-account.inbound-funding
+                  b1ScopeVersion: 1
+                  currency: NGN
+                  accountingUnit: CUSTOMER_FUNDS
+                  region: NG
+                  readinessOutcome: ATTESTED_READY
+                  readinessReference: b2-activation-readiness-550e8400-e29b-41d4-a716-446655440010
+                  readinessKind: CUSTOMER
+                  causationId: 550e8400-e29b-41d4-a716-446655440020
+      responses:
+        '201':
+          description: Created — `PENDING` (deterministic, read-only ports)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2ActivationCreateResponse'
+              example:
+                activationReference: b2-activation-550e8400-e29b-41d4-a716-446655440100
+                state: PENDING
+                outcome: PENDING
+                readinessReference: b2-activation-readiness-550e8400-e29b-41d4-a716-446655440010
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/ConflictIdempotency'
+        '422':
+          $ref: '#/components/responses/UnprocessableIdempotencyRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/commercial/activations/{activationReference}:
+    get:
+      operationId: b2.get-commercial-activations-id
+      summary: Read a single activation by `activationReference`
+      description: |
+        Audience-scoped read. Audience `public:commercial:activation:b2:inbound-funding:read`, scope `b2:activation:read`, quota `commercial.read:daily:5000` cost 1, rate-limit `b2:commercial:read` 50 rps. Returns `404` (not `403` leak) when outside the caller's audience-scoped cohort.
+      tags:
+        - commercial-activations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationReference'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      responses:
+        '200':
+          description: Activation trace (minimized, cohort-scoped)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2ActivationReadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/commercial/catalog:
+    get:
+      operationId: b2.get-commercial-catalog
+      summary: Read the minimized B1 catalog for the caller's audience
+      description: |
+        Audience `public:commercial:activation:b2:inbound-funding:read`, scope `b2:activation:read`, quota `commercial.read:daily:5000` cost 1, rate-limit `b2:commercial:read` 50 rps. `GET` with no `Accept` negotiates to `v1`; `Accept: v2` at v1 is `406` per version negotiation.
+      tags:
+        - commercial-catalog
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+        - name: cohortKey
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [b2.activation.cohort.inbound-funding]
+          example: b2.activation.cohort.inbound-funding
+        - name: cohortVersion
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [1]
+          example: 1
+      responses:
+        '200':
+          description: Minimized `commercial.virtual-account.inbound-funding` catalog (audience-scoped, A6T10 filtered)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2CatalogResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/WrongVersion'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/commercial/plans/{planKey}:
+    get:
+      operationId: b2.get-commercial-plans-planKey
+      summary: Read a single plan `commercial.virtual-account.inbound-funding.*`
+      description: |
+        Audience `public:commercial:activation:b2:inbound-funding:read`, scope `b2:activation:read`. `404` (not `403` leak) when outside the caller's audience-scoped plan.
+      tags:
+        - commercial-catalog
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PlanKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      responses:
+        '200':
+          description: Minimized plan (audience-scoped)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2PlanResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/commercial/tiers/{tierKey}:
+    get:
+      operationId: b2.get-commercial-tiers-tierKey
+      summary: Read a single tier for the caller's audience
+      tags:
+        - commercial-catalog
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TierKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      responses:
+        '200':
+          description: Minimized tier (audience-scoped)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2TierResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/auth/token:
+    post:
+      operationId: b2.post-auth-token
+      summary: Exchange `clientId` + `clientSecret` for an A2-scoped JWT
+      description: |
+        Anonymous `client_credentials` exchange. `clientSecret` is hash-only stored (`argon2id`/`bcrypt`) and is returned only in the exchange request; it never appears in logs/traces. JWT `aud` is the caller's `public:*` audience, `scope` is the consumer audience/scope set, `exp` is 15m. Anonymous scope `public:auth:token:exchange`, idempotency scope `b2:auth:token:exchange`, no quota, rate-limit `b2:global` 100 rps. `404` for unknown `clientId`.
+      tags:
+        - authentication
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      requestBody:
+        required: true
+        content:
+          application/vnd.monienaija.v1+json:
+            schema:
+              $ref: '#/components/schemas/B2TokenRequest'
+            example:
+              clientId: mnj_live_abc123def456ghi789jkl0
+              clientSecret: s3cret_Example_Only_Once_Returned_1234567890
+              scope: b2:activation:write
+      responses:
+        '200':
+          description: A2-scoped JWT
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2TokenResponse'
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
+                tokenType: Bearer
+                expiresIn: 900
+                scope: b2:activation:write
+                consumerId: 550e8400-e29b-41d4-a716-446655440030
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/webhooks/registrations:
+    post:
+      operationId: b2.post-webhooks-registrations
+      summary: Register a webhook for `b2.activation.*` + `b2.webhook.test`
+      description: |
+        HTTPS-only allowlisted `url`, events `b2.activation.succeeded`/`b2.activation.suspended`/`b2.webhook.test`, `HMAC_SHA256` `secret` (raw returned once, then `secretHash` only), challenge-verified `PENDING_VERIFICATION` via `X-Monienaija-Challenge` echo. Audience `public:webhooks:b2:manage`, scope `b2:webhooks:manage`, idempotency `b2:webhooks:registrations:create`, quota `webhooks.manage:daily:100` cost 1, rate-limit `b2:webhooks:manage` 5 rps. `B2_COMMERCIAL` consent gated.
+      tags:
+        - webhooks
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/vnd.monienaija.v1+json:
+            schema:
+              $ref: '#/components/schemas/B2WebhookRegistrationRequest'
+            example:
+              url: https://example.com/webhooks/monienaija
+              events:
+                - b2.activation.succeeded
+                - b2.webhook.test
+              secret: whsec_1234567890abcdef1234567890abcdef1234567890ab
+              hmacAlgorithm: HMAC_SHA256
+      responses:
+        '201':
+          description: `PENDING_VERIFICATION` — challenge ping pending
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2WebhookRegistrationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/ConflictIdempotency'
+        '422':
+          $ref: '#/components/responses/UnprocessableIdempotencyRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/consents:
+    post:
+      operationId: b2.post-consents
+      summary: Register explicit `CustomerConsent` or `MarketingConsent`
+      description: |
+        Explicit intent `GRANTED` for `B2_ACTIVATION`/`B2_COMMERCIAL`/`B2_SELF_SERVICE`/`MARKETING_COMMERCIAL_OFFER` (channel `email`/`sms`/`push`/`inApp` only for `MARKETING_COMMERCIAL_OFFER`). Audience `public:consents:b2:manage`, scope `b2:consents:manage`, idempotency `b2:consents:create`, quota `commercial.write:daily:500` cost 1, rate-limit `b2:commercial:activations:write` 10 rps. Never inferred from `CustomerPreference`; `CustomerPreference.notifications` remains the only delivery intent for `A7T06`.
+      tags:
+        - consents
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/vnd.monienaija.v1+json:
+            schema:
+              $ref: '#/components/schemas/B2ConsentCreateRequest'
+            example:
+              subjectCustomerId: 550e8400-e29b-41d4-a716-446655440040
+              purpose: B2_ACTIVATION
+              channel: null
+              granted: true
+      responses:
+        '201':
+          description: `GRANTED` (replay-safe per `b2.consent.idempotency.v1` 86400s)
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2ConsentCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/ConflictIdempotency'
+        '422':
+          $ref: '#/components/responses/UnprocessableIdempotencyRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/health:
+    get:
+      operationId: b2.get-health
+      summary: Platform health/readiness (non-commercial)
+      description: |
+        No B2 audience required; existing platform health. No quota, rate-limit `b2:global` 100 rps. `B2-Api-Version: v1` always present.
+      tags:
+        - health
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      responses:
+        '200':
+          description: Health
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2HealthResponse'
+              example:
+                status: ok
+                version: 1.0.0
+                cohortKey: b2.activation.cohort.inbound-funding
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /v1/support/activations/{activationReference}:
+    get:
+      operationId: b2.get-support-read
+      summary: Support read of an activation trace (minimized)
+      description: |
+        Audience `public:support:b2:read`, scope `b2:support:read`, quota `commercial.read:daily:5000` cost 1, rate-limit `b2:commercial:read` 50 rps. Legal-hold aware; `PUBLIC`/`INTERNAL`/`CONFIDENTIAL`/`RESTRICTED` per A6T10, never raw `clientSecret`/webhook `secret`/`PAN`/`PIN`.
+      tags:
+        - support
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivationReference'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/AcceptHeader'
+      responses:
+        '200':
+          description: Minimized activation trace
+          headers:
+            B2-Api-Version:
+              $ref: '#/components/headers/B2ApiVersion'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+            X-Quota-Limit:
+              $ref: '#/components/headers/XQuotaLimit'
+            X-Quota-Remaining:
+              $ref: '#/components/headers/XQuotaRemaining'
+            X-Quota-Reset:
+              $ref: '#/components/headers/XQuotaReset'
+          content:
+            application/vnd.monienaija.v1+json:
+              schema:
+                $ref: '#/components/schemas/B2SupportActivationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A2-scoped JWT issued by `POST /v1/auth/token`. `aud` is one of `public:commercial:activation:b2:inbound-funding:read|write`, `public:webhooks:b2:manage`, `public:consents:b2:manage`, `public:support:b2:read`. `scope` is space-separated `b2:activation:read|write`, `b2:webhooks:manage`, `b2:consents:manage`, `b2:support:read`, `b2:auth:token:exchange` — subset of the consumer's `audience` scopes. `exp` is 15m. Revoked `ApiCredential` or suspended `ApiConsumer` is `401`/`403`.
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Caller `requestId` (generated server-side if absent, echoed).
+    XCorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+    AcceptHeader:
+      name: Accept
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [application/vnd.monienaija.v1+json, application/json]
+        default: application/vnd.monienaija.v1+json
+      description: Version negotiation — `application/vnd.monienaija.v1+json` or `application/json` negotiates to `v1`; absent negotiates to `v1`; unknown `v2` is `406`.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Dedicated `Idempotency-Key` per route's `idempotencyScope` (`b2:commercial:activations:create`, `b2:webhooks:registrations:create`, `b2:consents:create`, `b2:auth:token:exchange`).
+    ActivationReference:
+      name: activationReference
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^b2-activation-[0-9a-f-]+$
+      description: `b2-activation-<uuid>` from `POST /v1/commercial/activations`.
+    PlanKey:
+      name: planKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^commercial\.virtual-account\.inbound-funding.*$
+      example: commercial.virtual-account.inbound-funding
+    TierKey:
+      name: tierKey
+      in: path
+      required: true
+      schema:
+        type: string
+      example: tier.b2.inbound-funding.standard
+  headers:
+    B2ApiVersion:
+      schema:
+        type: string
+        enum: [v1]
+      description: Response `B2-Api-Version: v1` always present; plus `Deprecation: true` + `Sunset: <HTTP-date>` when deprecated (none at v1).
+    XRateLimitLimit:
+      schema:
+        type: integer
+      description: `X-RateLimit-Limit` — bucket capacity.
+    XRateLimitRemaining:
+      schema:
+        type: integer
+      description: `X-RateLimit-Remaining` — tokens remaining.
+    XRateLimitReset:
+      schema:
+        type: integer
+      description: `X-RateLimit-Reset` — seconds until window reset.
+    XQuotaLimit:
+      schema:
+        type: integer
+      description: `X-Quota-Limit` — calendar-day budget.
+    XQuotaRemaining:
+      schema:
+        type: integer
+      description: `X-Quota-Remaining` — budget remaining.
+    XQuotaReset:
+      schema:
+        type: string
+        format: date-time
+      description: `X-Quota-Reset` — next `00:00Z`.
+  responses:
+    BadRequest:
+      description: 400 `B2_API_MALFORMED` — `additionalProperties: false` or wrong type.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+          example:
+            b2ApiVersion: v1
+            code: B2_API_MALFORMED
+            message: Malformed request — additionalProperties not allowed.
+            field: /customerReference/customerId
+    Unauthorized:
+      description: 401 `B2_API_UNAUTHORIZED` — missing/invalid/expired bearer or wrong `clientSecret`.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    Forbidden:
+      description: 403 `B2_API_FORBIDDEN` / `B2_API_FORBIDDEN_CONSENT` / `B2_API_FORBIDDEN_COHORT` — wrong audience/scope, not `GRANTED`, or wrong cohort.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    NotFound:
+      description: 404 `B2_API_NOT_FOUND` — path not in catalog or audience-scoped `GET` outside the caller's cohort (not `403` leak).
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    ConflictIdempotency:
+      description: 409 `B2_API_IDEMPOTENCY_CONFLICT` — same `Idempotency-Key` + same scope + same cohort but different `requestHash`.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    UnprocessableIdempotencyRequired:
+      description: 422 `B2_API_IDEMPOTENCY_REQUIRED` — route requires `Idempotency-Key` but none supplied.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    TooManyRequests:
+      description: 429 `B2_API_RATE_LIMITED` or `B2_API_QUOTA_EXCEEDED` — bucket `THROTTLED` or calendar budget `EXCEEDED`.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until `X-RateLimit-Reset` or `X-Quota-Reset`.
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/XRateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/XRateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/XRateLimitReset'
+        X-Quota-Limit:
+          $ref: '#/components/headers/XQuotaLimit'
+        X-Quota-Remaining:
+          $ref: '#/components/headers/XQuotaRemaining'
+        X-Quota-Reset:
+          $ref: '#/components/headers/XQuotaReset'
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+    WrongVersion:
+      description: 406 `B2_API_WRONG_VERSION` — `Accept: v2` at `v1`.
+      headers:
+        B2-Api-Version:
+          $ref: '#/components/headers/B2ApiVersion'
+        Deprecation:
+          schema:
+            type: string
+          description: Present when deprecated.
+        Sunset:
+          schema:
+            type: string
+            format: date-time
+      content:
+        application/vnd.monienaija.v1+json:
+          schema:
+            $ref: '#/components/schemas/B2Error'
+  schemas:
+    B2ActivationCreateRequest:
+      type: object
+      required:
+        - kind
+        - principalId
+        - cohortKey
+        - cohortVersion
+        - b1ScopeKey
+        - b1ScopeVersion
+        - currency
+        - accountingUnit
+        - region
+        - readinessOutcome
+        - readinessReference
+        - readinessKind
+        - causationId
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [CUSTOMER, MERCHANT, AGENT]
+        principalId:
+          type: string
+          format: uuid
+        beneficialOwnerCustomerId:
+          type: string
+          format: uuid
+          description: For `MERCHANT`/`AGENT` the trace to `Customer.id`; absent for `CUSTOMER`.
+        cohortKey:
+          type: string
+          enum: [b2.activation.cohort.inbound-funding]
+        cohortVersion:
+          type: integer
+          enum: [1]
+        b1ScopeKey:
+          type: string
+          enum: [commercial.virtual-account.inbound-funding]
+        b1ScopeVersion:
+          type: integer
+          enum: [1]
+        currency:
+          type: string
+          enum: [NGN]
+        accountingUnit:
+          type: string
+          enum: [CUSTOMER_FUNDS]
+        region:
+          type: string
+          enum: [NG]
+        readinessOutcome:
+          type: string
+          enum: [ATTESTED_READY]
+          description: Must be `ATTESTED_READY` — consumed via `B2T03`/`B2T04` consumer ports, never recalculated.
+        readinessReference:
+          type: string
+          description: `b2-activation-readiness-<uuid>` / `b2-merchant-readiness-<uuid>` / `b2-agent-readiness-<uuid>` provenance.
+        readinessKind:
+          type: string
+          enum: [CUSTOMER, MERCHANT, AGENT]
+          description: Must match `kind`.
+        causationId:
+          type: string
+          format: uuid
+      example:
+        kind: CUSTOMER
+        principalId: 550e8400-e29b-41d4-a716-446655440001
+        cohortKey: b2.activation.cohort.inbound-funding
+        cohortVersion: 1
+        b1ScopeKey: commercial.virtual-account.inbound-funding
+        b1ScopeVersion: 1
+        currency: NGN
+        accountingUnit: CUSTOMER_FUNDS
+        region: NG
+        readinessOutcome: ATTESTED_READY
+        readinessReference: b2-activation-readiness-550e8400-e29b-41d4-a716-446655440010
+        readinessKind: CUSTOMER
+        causationId: 550e8400-e29b-41d4-a716-446655440020
+    B2ActivationCreateResponse:
+      type: object
+      required:
+        - activationReference
+        - state
+        - outcome
+        - readinessReference
+        - b2ApiVersion
+      properties:
+        activationReference:
+          type: string
+          pattern: ^b2-activation-[0-9a-f-]+$
+        state:
+          type: string
+          enum: [PENDING, ACTIVE, SUSPENDED, REVOKED]
+        outcome:
+          type: string
+          enum: [PENDING, ACTIVATED, SUSPENDED, REVOKED, REJECTED]
+        readinessReference:
+          type: string
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2ActivationReadResponse:
+      type: object
+      required:
+        - activationReference
+        - kind
+        - principalId
+        - cohortKey
+        - state
+        - outcome
+        - b2ApiVersion
+      properties:
+        activationReference:
+          type: string
+        kind:
+          type: string
+          enum: [CUSTOMER, MERCHANT, AGENT]
+        principalId:
+          type: string
+          format: uuid
+        cohortKey:
+          type: string
+          enum: [b2.activation.cohort.inbound-funding]
+        state:
+          type: string
+          enum: [PENDING, ACTIVE, SUSPENDED, REVOKED]
+        outcome:
+          type: string
+          enum: [PENDING, ACTIVATED, SUSPENDED, REVOKED, REJECTED]
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2CatalogResponse:
+      type: object
+      required:
+        - cohortKey
+        - b1ScopeKey
+        - b2ApiVersion
+      properties:
+        cohortKey:
+          type: string
+          enum: [b2.activation.cohort.inbound-funding]
+        b1ScopeKey:
+          type: string
+          enum: [commercial.virtual-account.inbound-funding]
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+        plans:
+          type: array
+          items:
+            type: string
+    B2PlanResponse:
+      type: object
+      required:
+        - planKey
+        - b2ApiVersion
+      properties:
+        planKey:
+          type: string
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+        tierKey:
+          type: string
+        entitlement:
+          type: string
+    B2TierResponse:
+      type: object
+      required:
+        - tierKey
+        - b2ApiVersion
+      properties:
+        tierKey:
+          type: string
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2TokenRequest:
+      type: object
+      required:
+        - clientId
+        - clientSecret
+      additionalProperties: false
+      properties:
+        clientId:
+          type: string
+          pattern: ^mnj_(live|test)_[a-z0-9]{24}$
+          example: mnj_live_abc123def456ghi789jkl0
+        clientSecret:
+          type: string
+          description: Raw secret — hash-only stored, never logged.
+          example: s3cret_Example_Only_Once_Returned_1234567890
+        scope:
+          type: string
+          example: b2:activation:write
+          description: Requested scope subset of the credential's granted scopes.
+    B2TokenResponse:
+      type: object
+      required:
+        - accessToken
+        - tokenType
+        - expiresIn
+        - scope
+        - consumerId
+      properties:
+        accessToken:
+          type: string
+          description: A2-scoped JWT (`aud` is `public:*`, `scope` is `b2:*`, `exp` 900s).
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          example: 900
+        scope:
+          type: string
+        consumerId:
+          type: string
+          format: uuid
+    B2WebhookRegistrationRequest:
+      type: object
+      required:
+        - url
+        - events
+        - secret
+        - hmacAlgorithm
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: ^https://
+          example: https://example.com/webhooks/monienaija
+        events:
+          type: array
+          items:
+            type: string
+            enum: [b2.activation.succeeded, b2.activation.suspended, b2.webhook.test]
+          minItems: 1
+        secret:
+          type: string
+          description: Raw HMAC secret — hash-only stored, never logged.
+          example: whsec_1234567890abcdef1234567890abcdef1234567890ab
+        hmacAlgorithm:
+          type: string
+          enum: [HMAC_SHA256]
+    B2WebhookRegistrationResponse:
+      type: object
+      required:
+        - registrationId
+        - state
+        - url
+        - events
+        - b2ApiVersion
+      properties:
+        registrationId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [PENDING_VERIFICATION]
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        secretHashPrefix:
+          type: string
+          description: First 8 chars of `secretHash`, never the raw `secret`.
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2ConsentCreateRequest:
+      type: object
+      required:
+        - subjectCustomerId
+        - purpose
+        - granted
+      additionalProperties: false
+      properties:
+        subjectCustomerId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          enum: [B2_ACTIVATION, B2_COMMERCIAL, B2_SELF_SERVICE, MARKETING_COMMERCIAL_OFFER]
+        channel:
+          type: string
+          enum: [email, sms, push, inApp]
+          nullable: true
+          description: Required only for `MARKETING_COMMERCIAL_OFFER`.
+        granted:
+          type: boolean
+          description: true = GRANTED intent.
+    B2ConsentCreateResponse:
+      type: object
+      required:
+        - consentId
+        - purpose
+        - state
+        - b2ApiVersion
+      properties:
+        consentId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+        state:
+          type: string
+          enum: [GRANTED]
+          example: GRANTED
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - cohortKey
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+        cohortKey:
+          type: string
+          enum: [b2.activation.cohort.inbound-funding]
+    B2SupportActivationResponse:
+      type: object
+      required:
+        - activationReference
+        - kind
+        - state
+        - outcome
+        - b2ApiVersion
+      properties:
+        activationReference:
+          type: string
+        kind:
+          type: string
+          enum: [CUSTOMER, MERCHANT, AGENT]
+        state:
+          type: string
+          enum: [PENDING, ACTIVE, SUSPENDED, REVOKED]
+        outcome:
+          type: string
+          enum: [PENDING, ACTIVATED, SUSPENDED, REVOKED, REJECTED]
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+    B2Error:
+      type: object
+      required:
+        - b2ApiVersion
+        - code
+        - message
+      properties:
+        b2ApiVersion:
+          type: string
+          enum: [v1]
+        code:
+          type: string
+          enum:
+            [
+              B2_API_NOT_FOUND,
+              B2_API_WRONG_VERSION,
+              B2_API_DEPRECATED,
+              B2_API_MALFORMED,
+              B2_API_UNAUTHORIZED,
+              B2_API_FORBIDDEN,
+              B2_API_FORBIDDEN_CONSENT,
+              B2_API_FORBIDDEN_COHORT,
+              B2_API_IDEMPOTENCY_CONFLICT,
+              B2_API_IDEMPOTENCY_REQUIRED,
+              B2_API_RATE_LIMITED,
+              B2_API_QUOTA_EXCEEDED,
+              B2_API_UNAVAILABLE,
+              B2_API_PROHIBITED,
+              B2_API_CONFLICT,
+            ]
+        message:
+          type: string
+          description: Safe, non-leaking, classified PUBLIC per A6T10.
+        field:
+          type: string
+          nullable: true
+        retryAfter:
+          type: integer
+          nullable: true
