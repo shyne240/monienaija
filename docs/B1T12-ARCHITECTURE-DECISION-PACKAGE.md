@@ -4,7 +4,7 @@
 - **Owner:** B1 Commercial Platform
 - **ADR:** ADR-0091 — finalized architecture decision; runtime not implemented
 - **Package status:** FINALIZED — AUTHORITATIVE FOR SUBSEQUENT B1T12 IMPLEMENTATION
-- **Runtime status:** BLOCKED — no B1T12 runtime is authorized by this package
+- **Runtime status:** IMPLEMENTED — no production payment term seeded or activated
 - **B2F07 status:** BLOCKED
 - **Scope:** Architecture decision package only
 
@@ -197,6 +197,22 @@ The approval fingerprint canonical payload includes operation/action, resource t
 **FINALIZED — AUTHORITATIVE FOR B1T12:** A prospective internal B1T12 orchestration may invoke unchanged canonical B1T05 generation, obtain `B1InvoiceV1`, freeze its generated `issuedAt` as stable issuance evidence, persist that exact unchanged invoice through canonical `b1_billing_documents`, and persist the immutable term binding/due evidence. Where existing persistence permits, invoice and binding writes occur in one transaction using established serializable/locking and shared-idempotency patterns.
 
 The operation must first recover by canonical invoice/binding lookup on replay or uncertain outcome. It must never call the clock-dependent generator again and treat a new timestamp as truth for an already persisted semantic invoice. Existing `generateInvoice()` and historical replay behavior remain unchanged and available; the new operation is prospective and additive. It accepts neither a caller-supplied invoice snapshot nor caller-supplied `issuedAt`/`dueAt` as authority. It performs no historical backfill, invoice JSON mutation, invoice hash change, or second invoice-table creation.
+
+## 2B. Final commercial applicability and amendment-input decisions
+
+### 2B.1 Exact applicability tuple
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** The v1 applicability tuple contains exactly `capability`, `plan`, `subscription`, `product`, `customer`, `merchant`, and `partner`, in that semantic order. Capability, plan, subscription, and product use their canonical B1 key/version pair; customer, merchant, and partner use their canonical B1 identifiers. Every dimension is explicitly nullable and canonical null is serialized as JSON `null`.
+
+A non-null dimension must equal the corresponding canonical `B1InvoiceV1` dimension exactly. Null means the term intentionally imposes no constraint for that dimension; it does not create inheritance, a specificity rank, a fallback, fuzzy matching, or a “most specific wins” rule. The caller cannot replace invoice dimensions or bypass this verification. Package, bundle, entitlement, and tier fields are not term-applicability dimensions in v1.
+
+The tuple is included in `commercialScopeProvenance.applicability` in the payment-term definition hash. For one exact tuple, ACTIVE effective ranges cannot overlap. Across different tuples, if more than one ACTIVE/effective term matches one invoice after applying the non-null constraints, binding fails closed; creation order, version, and value never resolve ambiguity.
+
+### 2B.2 Amendment replacement authority
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** A due-date amendment accepts only `replacementElapsedDays`, an integer in `0..3660`. B1 derives `replacementDueAt` from the original authoritative invoice `issuedAt` using `UTC_INSTANT_ELAPSED` and exactly 86,400 seconds per unit. Caller-supplied replacement timestamps, current time, civil/calendar/business-day arithmetic, and creation of a replacement payment-term definition are prohibited.
+
+The amendment persists original binding reference/hash/due date/issuedAt, `replacementElapsedDays`, derived replacement due date, normalized reason, effective time, A2 provenance, deterministic hash, and supersession reference. The frozen amendment hash remains result-oriented: `replacementDueAt` uniquely commits to `replacementElapsedDays` for one original authoritative `issuedAt` because bounded integer elapsed-second addition is injective. The input value is additionally retained as provenance but is not silently added to the frozen amendment-hash field set.
 
 ## 3. Decision 1 — term basis
 
@@ -658,18 +674,18 @@ The five implementation architecture blockers are resolved. The following are in
 
 The exact retention duration for the new commercial evidence remains **NOT VERIFIED / REQUIRES REVIEW** by Commercial, Finance, Tax, Legal, Privacy, Compliance, and Audit. Runtime design must preserve evidence and legal-hold capability and must not invent disposal behavior while that duration is unresolved. This does not reopen the finalized term, hash, lifecycle, authorization, or orchestration decisions.
 
-The action names in §2A.4 are documented for exact runtime vocabulary allocation in the subsequent implementation task; no runtime vocabulary is modified here.
+The action names in §2A.4 are implemented by the internal B1T12 lifecycle/amendment service and are consumed through existing A2 approval semantics.
 
-## 16. Historical-preservation and no-runtime declaration
+## 16. Historical preservation and implemented boundary
 
-This package changes documentation only. It does not:
+The bounded B1T12 runtime adds internal source, three B1-owned persistence aggregates, migration `1785753600051`, and focused tests. It does not:
 
-- modify B1T03 or B1T05;
-- modify A5T01–A5T11 or ADR-0090;
+- modify frozen `B1InvoiceV1`, its hash, or existing B1T05 generation/replay methods;
+- modify B1T03, A5T01–A5T11, or ADR-0090;
 - modify B2F03, B2F04, B2F05, B2F06, or B2F09-PRE;
 - modify historical B2T01–B2T10 or revive B2T11/B2T12;
-- create source files, migrations, entities, services, controllers, APIs, routes, tests, idempotency records, payment terms, invoice records, invoice modifications, mappings, AR records, journals, balances, or production activation;
-- authorize B2F07, B2F08, or B2F09 implementation;
+- seed/activate a production term, backfill an invoice, create a second invoice table, controller, API, route, mapping, AR record, journal, balance, or payment execution;
+- authorize or implement B2F07, B2F08, or B2F09; or
 - alter the permanent platform order.
 
 ## 17. References

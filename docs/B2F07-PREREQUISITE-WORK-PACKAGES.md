@@ -1,7 +1,7 @@
 # B2F07 Prerequisite Work Packages
 
 - **Document type:** Architecture authorization package
-- **Status:** PARTIALLY IMPLEMENTED — A5T11 RUNTIME COMPLETE; B1T12 NOT STARTED; B2F07 BLOCKED
+- **Status:** PREREQUISITE RUNTIMES IMPLEMENTED — A5T11 AND B1T12 COMPLETE; OPERATIONAL A5/B2F03 CONVERGENCE AND B2F07 GO STILL BLOCKED
 - **Task numbers:** A5T11 and B1T12
 - **ADR allocations:** ADR-0090 → A5T11; ADR-0091 → B1T12
 - **Blocked task:** B2F07 — Accounts Receivable and Invoice-Accounting Boundary
@@ -287,7 +287,7 @@ Work Package A must not:
 - **Identifier:** B1T12
 - **ADR allocation:** ADR-0091
 - **Owning platform:** B1 Commercial Platform
-- **Implementation status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
+- **Implementation status:** IMPLEMENTED — NO PRODUCTION PAYMENT TERM SEEDED OR ACTIVATED
 
 ## B.2 Purpose
 
@@ -550,8 +550,8 @@ Architecture authorizes two new extension tasks:
 
 | Task  | Title                                                     | Owner                               | ADR allocation | Status                                  |
 | ----- | --------------------------------------------------------- | ----------------------------------- | -------------- | --------------------------------------- |
-| A5T11 | A5 AR Control Account Provisioning                        | A5 Ledger & Internal Financial Core | ADR-0090       | AUTHORIZED — IMPLEMENTATION NOT STARTED |
-| B1T12 | B1 Commercial Payment-Term and Invoice Due-Date Extension | B1 Commercial Platform              | ADR-0091       | AUTHORIZED — IMPLEMENTATION NOT STARTED |
+| A5T11 | A5 AR Control Account Provisioning                        | A5 Ledger & Internal Financial Core | ADR-0090       | IMPLEMENTED — ACCOUNT NOT PROVISIONED    |
+| B1T12 | B1 Commercial Payment-Term and Invoice Due-Date Extension | B1 Commercial Platform              | ADR-0091       | IMPLEMENTED — NO PRODUCTION TERM ACTIVE |
 
 No ADR file, migration, idempotency scope, runtime artifact, or release claim is created by this authorization gate.
 

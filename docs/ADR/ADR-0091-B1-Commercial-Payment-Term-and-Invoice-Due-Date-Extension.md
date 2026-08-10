@@ -3,9 +3,9 @@
 - **ADR ID:** ADR-0091
 - **Task:** B1T12 — B1 Commercial Payment-Term and Invoice Due-Date Extension
 - **Owner:** B1 Commercial Platform
-- **Status:** Accepted architecture; runtime not implemented
+- **Status:** Accepted; bounded B1T12 runtime implemented
 - **Decision package:** [`docs/B1T12-ARCHITECTURE-DECISION-PACKAGE.md`](../B1T12-ARCHITECTURE-DECISION-PACKAGE.md)
-- **Migration:** None in this architecture-finalization task
+- **Migration:** `1785753600051-CreateB1PaymentTermTables.ts`
 - **Production payment term:** None authorized
 
 ## Context
@@ -94,13 +94,25 @@ A replay must return original durable issuance/binding evidence and must not cal
 
 Canonical invoice persistence remains `b1_billing_documents`. Separate additive B1-owned aggregates may persist versioned term definitions, immutable invoice bindings/due evidence, and immutable amendments. They are commercial evidence, not Finance invoices or AR records.
 
-### 6. Correction and supersession
+### 6. Commercial applicability
+
+The v1 applicability tuple contains exactly, in semantic order: `capability`, `plan`, `subscription`, `product`, `customer`, `merchant`, and `partner`. The first four dimensions are canonical B1 key/version pairs; the last three are canonical B1 identifiers. Every dimension is nullable and null is represented explicitly in canonical JSON.
+
+A non-null term dimension must exactly equal the corresponding canonical `B1InvoiceV1` dimension. Null means the term intentionally does not constrain that dimension; it does not establish inheritance, fallback, fuzzy or partial substitution, a specificity hierarchy, or a “most specific wins” rule. Package, bundle, entitlement, and tier fields are excluded from v1 applicability.
+
+The complete tuple participates in the definition hash under commercial scope/provenance. ACTIVE effective ranges cannot overlap for an identical tuple. If distinct tuples nevertheless cause more than one ACTIVE/effective term to match one invoice, binding fails closed without using creation order, version, specificity, or term value.
+
+### 7. Correction and supersession
+
+Due-date-only correction uses append-only immutable amendment evidence. Its only replacement authority is `replacementElapsedDays`, bounded to integer `0..3660`. B1 calculates `replacementDueAt = originalIssuedAt + replacementElapsedDays × 86400 seconds` under `UTC_INSTANT_ELAPSED`. Caller-supplied replacement timestamps and new replacement term definitions are prohibited.
+
+The amendment persists the original binding reference/hash/due date/issuedAt, replacement value, derived replacement due date, reason, effective time, A2 provenance, hash, and supersession relationship. The frozen result-oriented amendment hash continues to include `replacementDueAt` rather than `replacementElapsedDays`: for one original authoritative issuance instant, bounded integer elapsed-second addition is injective, so the result uniquely commits to the input. The input remains explicit amendment provenance.
 
 Due-date-only correction uses append-only immutable amendment evidence. The original binding and due instant remain immutable and queryable. Each amendment records the prior binding/evidence reference and hash, original and replacement due instants, reason, effective instant, actor/control evidence, deterministic hashes, and an explicit supersession relationship.
 
 B1T12 v1 prohibits mutable overwrite and does not use void-and-reissue. An amendment cannot change invoice amount, currency, accounting unit, customer, or other frozen invoice content.
 
-### 7. Exact idempotency scopes
+### 8. Exact idempotency scopes
 
 B1T12 uses only:
 
@@ -112,7 +124,7 @@ b1.payment-term.due-date-amendment.idempotency.v1
 
 The shared Operations `IdempotencyService` remains the only idempotency authority. Generated UUIDs and execution timestamps do not contaminate semantic request hashes. Identical semantic requests replay original durable results; same-key semantic changes conflict; unknown outcomes recover through canonical lookup. No fourth B1T12 scope is authorized.
 
-### 8. Read-only B2F07 consumer
+### 9. Read-only B2F07 consumer
 
 A later B1T12 runtime task will expose an internal composed read-only lookup by canonical invoice reference/version. It must provide canonical invoice identity/version/hash/state, stable issuance evidence, term identity/version/hash/basis/value/effective status, authoritative due evidence and calculation hash, currency/unit, supersession status/history, and commercial/audit/idempotency/correlation/causation provenance.
 
@@ -154,9 +166,20 @@ The five B1T12 architecture blockers are resolved. The following remain outside 
 - exact retention duration, pending Commercial/Finance/Tax/Legal/Privacy/Compliance/Audit review; legal hold must remain preservable;
 - any future term basis or calendar semantics;
 - any historical backfill, public/admin surface, or production rollout;
-- exact runtime vocabulary insertion for the three documented A2 action names;
-- a later B1T12 runtime authorization and validation; and
+- production activation and operational validation under an explicitly approved real term; and
 - B2F07 entry approval after both B1T12 and the A5/B2F03 track converge, followed by explicit `B2F07 = GO`.
+
+## Implemented runtime artifacts
+
+- `src/policy/b1-payment-term.types.ts`
+- `src/policy/b1-payment-term.entity.ts`
+- `src/policy/b1-payment-term.service.ts`
+- `src/policy/b1-payment-term.module.ts`
+- `src/migrations/1785753600051-CreateB1PaymentTermTables.ts`
+- `test/b1-payment-term.contract.spec.ts`
+- `test/b1-payment-term.service.spec.ts`
+
+The migration creates only `b1_payment_terms`, `b1_invoice_payment_term_bindings`, and `b1_due_date_amendments`. Canonical invoices continue in `b1_billing_documents`. No production term or historical backfill is included.
 
 ## Verification
 
@@ -165,5 +188,5 @@ The five B1T12 architecture blockers are resolved. The following remain outside 
 - [x] Exactly three B1T12 idempotency scopes frozen.
 - [x] No production term authorized.
 - [x] `B1InvoiceV1`, B1T03, B1T05, A5T11, B2F03–B2F06, B2F09-PRE, and historical B2 tasks unchanged.
-- [x] No runtime source, test, migration, table, term, binding, due date, amendment, AR, public API, or later-platform implementation created.
+- [x] Bounded internal runtime, migration, and focused tests implemented without any production term, historical backfill, AR, public API, or later-platform behavior.
 - [x] B2F07 remains blocked.
