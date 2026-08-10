@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { OperationsModule } from '../operations/operations.module';
@@ -36,7 +37,44 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
   ],
   controllers: [A2WorkforceAdministrationController],
   providers: [
-    { provide: A2_WORKFORCE_CONFIG, useFactory: () => workforceConfiguration(process.env) },
+    {
+      provide: A2_WORKFORCE_CONFIG,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        workforceConfiguration(
+          Object.fromEntries(
+            [
+              'NODE_ENV',
+              'A2_WORKFORCE_ENABLED',
+              'A2_WORKFORCE_OIDC_ISSUER',
+              'A2_WORKFORCE_OIDC_JWKS_URI',
+              'A2_WORKFORCE_OIDC_AUDIENCE',
+              'A2_WORKFORCE_OIDC_CLIENT_ID',
+              'A2_WORKFORCE_INTERNAL_AUDIENCE',
+              'A2_WORKFORCE_SESSION_TTL_SECONDS',
+              'A2_BOOTSTRAP_ENABLED',
+              'A2_BOOTSTRAP_ISSUER',
+              'A2_BOOTSTRAP_AUDIENCE',
+              'A2_BOOTSTRAP_JWKS_JSON',
+              'A2_BOOTSTRAP_ADMIN_SCOPES_JSON',
+              'A2_FINANCE_ROLES_JSON',
+              'A2_MAKER_CHECKER_RULES_JSON',
+              'A2_WORKFORCE_RATE_LIMITS_JSON',
+              'A2_TRUSTED_PROXY_ADDRESSES_JSON',
+            ].map((name) => {
+              const value = config.get<unknown>(name);
+              return [
+                name,
+                typeof value === 'string'
+                  ? value
+                  : typeof value === 'number' || typeof value === 'boolean'
+                    ? `${value}`
+                    : undefined,
+              ];
+            }),
+          ),
+        ),
+    },
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,

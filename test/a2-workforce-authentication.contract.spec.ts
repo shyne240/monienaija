@@ -62,7 +62,9 @@ describe('A2T11 workforce trust boundary contract', () => {
     ).toBeUndefined();
   });
   it('fails enabled configuration without provider and role evidence', () =>
-    expect(() => workforceConfiguration({ A2_WORKFORCE_ENABLED: 'true' })).toThrow('incomplete'));
+    expect(() => workforceConfiguration({ A2_WORKFORCE_ENABLED: 'true' })).toThrow(
+      'A2_FINANCE_ROLES_JSON',
+    ));
   it('does not enable workforce authentication by default', () =>
     expect(workforceConfiguration({}).enabled).toBe(false));
   it('registers four bounded A2T11 persistence aggregates', () => {
