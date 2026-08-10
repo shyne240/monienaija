@@ -99,9 +99,11 @@ No compatibility migration or code adapter is required merely for planning class
 
 ## 7. Corrected execution decision
 
-The next authoritative task is:
+The next authoritative task remains:
 
 > **B2F07 — Accounts Receivable and Invoice-Accounting Boundary**
+
+B2F07 remains blocked. Architecture has authorized A5T11 (ADR-0090 allocated) and B1T12 (ADR-0091 allocated) as parallel prerequisites, both with implementation not started. After A5T11 completion, an approved B2F03 `finance.asset.receivable` mapping must be activated; after B1T12 completion, canonical B1 due-date evidence must be verified. Architecture must then record an explicit B2F07 GO.
 
 It must consume the preserved B2F09-PRE source-adoption foundation and must not recreate B1 invoice lookup, source verification, treatment provenance, period admission, control evaluation, or journal-draft handoff.
 

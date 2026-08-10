@@ -39,6 +39,10 @@ B2F01 Baseline and authority map
   -> B2F06 Finance controls, approvals, and segregation
   -> B2F09-PRE Source decision adoption and accounting-treatment foundation
      (already implemented under historical label B2F07; shared prerequisite, not task completion)
+  -> A5T11 AR control-account provisioning + B1T12 payment-term/invoice due-date extension
+     (authorized parallel prerequisites; implementation not started)
+  -> B2F03 finance.asset.receivable mapping approval/activation
+  -> B2F07 renewed entry review and explicit GO
   -> B2F07 Receivables and invoice-accounting boundary
   -> B2F08 Payables and disbursement-accounting boundary
   -> B2F09 Revenue, tax, cost, and commercial-effect accounting
@@ -178,6 +182,8 @@ No actor can prepare and finally approve a prohibited same-scope action. B2 stor
 B2F09-PRE supplies source-decision verification/adoption and Finance treatment provenance for B2F07, B2F08, B2F09, and B2F10. It remains unchanged and must be consumed rather than duplicated. It does not implement receivable/payable lifecycles and does not satisfy the remaining recognition, tax, cost, output, or A5-correlation acceptance criteria of B2F09. This is a planning classification only; existing ADR, migration, contract, code, table, scope, and test identities remain unchanged.
 
 ### B2F07 — Accounts Receivable and Invoice-Accounting Boundary
+
+**Status:** BLOCKED pending completion of authorized A5T11 and B1T12, activation of the approved B2F03 `finance.asset.receivable` mapping, and an explicit B2F07 GO decision. Authorization of prerequisites does not authorize B2F07 implementation.
 
 **Objective**
 

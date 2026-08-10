@@ -1,8 +1,9 @@
 # B2F07 Prerequisite Work Packages
 
 - **Document type:** Architecture authorization package
-- **Status:** PROPOSED / REQUIRES ARCHITECTURE APPROVAL
-- **Task numbers:** NOT ASSIGNED
+- **Status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
+- **Task numbers:** A5T11 and B1T12
+- **ADR allocations:** ADR-0090 → A5T11; ADR-0091 → B1T12
 - **Blocked task:** B2F07 — Accounts Receivable and Invoice-Accounting Boundary
 - **Runtime, migration, schema, ADR, account, mapping, contract, and roadmap changes:** None
 - **Authoritative roadmap:** [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md)
@@ -11,7 +12,7 @@
 
 ## 1. Purpose and authorization boundary
 
-This package formally defines two bounded prerequisite work packages required before B2F07 may resume. It does not authorize implementation, assign final task numbers, allocate ADRs, change the platform roadmap, or imply that either prerequisite is approved.
+This package formally defines and authorizes two bounded prerequisite work packages required before B2F07 may resume. It assigns A5T11/ADR-0090 and B1T12/ADR-0091 without changing the platform roadmap or implementing either prerequisite.
 
 The prerequisites are owned by the platforms that own the missing authorities:
 
@@ -56,11 +57,11 @@ Historical B2T01–B2T10 classification and the B2F09-PRE implementation remain 
 
 ## A.1 Proposed identifier
 
-- **Title:** A5 AR Control Account Provisioning Prerequisite
-- **Identifier:** PROPOSED / REQUIRES ARCHITECTURE APPROVAL
-- **Task number:** NOT ASSIGNED
-- **Owning platform:** A5 Ledger
-- **Implementation status:** Not authorized; not started
+- **Title:** A5 AR Control Account Provisioning
+- **Identifier:** A5T11
+- **ADR allocation:** ADR-0090
+- **Owning platform:** A5 Ledger & Internal Financial Core
+- **Implementation status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
 
 ## A.2 Purpose
 
@@ -96,17 +97,17 @@ normal balance:       DEBIT
 currency:             NGN
 accounting unit:      CUSTOMER_FUNDS
 active state:         ACTIVE after successful approved provisioning
-negative balance:     proposed FALSE; explicit Finance/Ledger approval required
+negative balance:     FALSE
 ```
 
-Candidate naming for review only:
+Authorized architectural target:
 
 ```text
-candidate code:       FINANCE-ACCOUNTS_RECEIVABLE-NGN
-candidate name:       Finance accounts receivable control NGN
+account code:         FINANCE-ACCOUNTS_RECEIVABLE-NGN
+account name:         Finance accounts receivable control NGN
 ```
 
-The code, name, and negative-balance policy are not approved by this package. They must not be treated as reserved or created until accountable owners approve the exact definition.
+A5T11 implementation must validate this target against existing A5 rules before provisioning. Authorization does not mean the account exists, and it must not be created outside A5T11's controlled execution.
 
 Existing settlement, clearing, suspense, or wallet accounts are not candidates for repurposing.
 
@@ -132,7 +133,7 @@ A future authorized implementation must require:
 - approved account code/name;
 - `ASSET` / `DEBIT` dimensions;
 - `NGN` / `CUSTOMER_FUNDS` dimensions;
-- explicit `allowNegativeBalance` decision;
+- authorized `allowNegativeBalance = false` assertion;
 - exact idempotency key and semantic request hash;
 - A2 principal, request, correlation, causation, and privileged approval evidence;
 - B2F06 control evidence if required by active Finance policy;
@@ -199,7 +200,7 @@ No event may claim the account exists until `LedgerService.getAccount()` verifie
 
 ## A.10 Verification and acceptance criteria
 
-The proposed task may exit only when:
+A5T11 may exit only when:
 
 1. The canonical A5 UUID exists and is returned by `LedgerService.getAccount()`.
 2. Type is `ASSET`.
@@ -281,10 +282,10 @@ Work Package A must not:
 ## B.1 Proposed identifier
 
 - **Title:** B1 Commercial Payment-Term and Invoice Due-Date Extension
-- **Identifier:** PROPOSED / REQUIRES ARCHITECTURE APPROVAL
-- **Task number:** NOT ASSIGNED
+- **Identifier:** B1T12
+- **ADR allocation:** ADR-0091
 - **Owning platform:** B1 Commercial Platform
-- **Implementation status:** Not authorized; not started
+- **Implementation status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
 
 ## B.2 Purpose
 
@@ -449,7 +450,7 @@ B2F07 may copy the minimum immutable references/hash/due date into AR provenance
 
 ## B.12 Proposed acceptance criteria
 
-The proposed task may exit only when:
+B1T12 may exit only when:
 
 1. One bounded payment-term definition is approved without inventing an industry default.
 2. The term is versioned, effective-dated, immutable, and hash-addressed.
@@ -496,9 +497,9 @@ Work Package B must not:
 Architecture review/design for Work Packages A and B may proceed in parallel because neither depends on the other's runtime output.
 
 ```text
-Work Package A approved                         Work Package B approved
+A5T11 authorized                               B1T12 authorized
         |                                                |
-A5 AR account definition approved              B1 payment-term model approved
+A5 AR account target validated                 B1 payment-term model approved
         |                                                |
 A5 account provisioned                          B1 term authority implemented
         |                                                |
@@ -536,25 +537,28 @@ B2F07 remains blocked until all are true:
 - no competing AR authority is introduced;
 - Architecture records an explicit B2F07 `GO` decision.
 
-## 5. Task-numbering decision
+## 5. Task and ADR allocation decision
 
-No existing A5 or B1 task number safely absorbs these prerequisites:
+No historical task is reopened or expanded:
 
-- A5T01–A5T10 are the completed internal financial-pilot sequence; A5T05 excludes broader chart expansion.
-- B1T03/B1T05 are semantic predecessors but completed historical tasks; the B1 plan requires later expansions to use a separate reviewed B1 cycle.
+- A5T01–A5T10 remain the completed internal financial-pilot sequence; A5T05 continues to exclude broader chart expansion.
+- B1T01–B1T11 remain completed historical tasks; B1T03/B1T05 remain semantic predecessors only.
 
-Accordingly, both identifiers remain exactly:
+Architecture authorizes two new extension tasks:
 
-> **PROPOSED / REQUIRES ARCHITECTURE APPROVAL**
+| Task  | Title                                                     | Owner                               | ADR allocation | Status                                  |
+| ----- | --------------------------------------------------------- | ----------------------------------- | -------------- | --------------------------------------- |
+| A5T11 | A5 AR Control Account Provisioning                        | A5 Ledger & Internal Financial Core | ADR-0090       | AUTHORIZED — IMPLEMENTATION NOT STARTED |
+| B1T12 | B1 Commercial Payment-Term and Invoice Due-Date Extension | B1 Commercial Platform              | ADR-0091       | AUTHORIZED — IMPLEMENTATION NOT STARTED |
 
-No final task number, ADR number, migration number, idempotency scope, or release claim is assigned here.
+No ADR file, migration, idempotency scope, runtime artifact, or release claim is created by this authorization gate.
 
 ## 6. Documentation and implementation non-claims
 
 This package does not:
 
 - modify the authoritative roadmap;
-- approve either work package;
+- implement either authorized work package;
 - implement runtime behavior;
 - create an A5 account or B2F03 mapping;
 - modify B1 contracts or invoices;

@@ -4,9 +4,11 @@
 - **Status:** Planned
 - **Scope:** Reusable commercial foundation (commercial catalog and plan boundary, pricing catalog, fee and commission engines, billing and invoice engines, campaign/promotion/coupon engines, referral/cashback/loyalty engines, revenue recognition and tax/VAT/cost accounting, commercial analytics and profitability, commercial reconciliation, commercial data classification and feature flags, commercial audit and idempotency, commercial approvals, commercial release gate, and B2 handoff) consumed by every existing and future A7 product and by every future product
 - **Implementation order:** Architecture phase after the completed A1 Foundation Consolidation, A2 Runtime Identity & Access, A3 Customer-to-Financial Account Binding, A4 Capability & Policy Engine, A5 Internal Financial Pilot, A6 External Partners & Settlement, and A7 Product Expansion Infrastructure
-- **Number of implementation tasks:** 11
+- **Number of historical implementation tasks:** 11 (B1T01–B1T11, unchanged)
+- **Authorized extension:** B1T12 — B1 Commercial Payment-Term and Invoice Due-Date Extension; ADR-0091 allocated; implementation not started. Detailed scope: [`B2F07-PREREQUISITE-WORK-PACKAGES.md`](B2F07-PREREQUISITE-WORK-PACKAGES.md).
 - **Source planning documents:** [`ROADMAP.md`](ROADMAP.md), [`PHASES.md`](PHASES.md), [`ARCHITECTURE-PHASE-PLAN.md`](ARCHITECTURE-PHASE-PLAN.md), [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md), [`A7-IMPLEMENTATION-PLAN.md`](A7-IMPLEMENTATION-PLAN.md), [`A7-A8-HANDOFF-PACKAGE.md`](A7-A8-HANDOFF-PACKAGE.md), [`A7-INTEGRATION-MATRIX.md`](A7-INTEGRATION-MATRIX.md), [`A7-EXIT-CHECKLIST.md`](A7-EXIT-CHECKLIST.md), [`A6-IMPLEMENTATION-PLAN.md`](A6-IMPLEMENTATION-PLAN.md), [`A5-IMPLEMENTATION-PLAN.md`](A5-IMPLEMENTATION-PLAN.md), [`A4-IMPLEMENTATION-PLAN.md`](A4-IMPLEMENTATION-PLAN.md), [`A3-IMPLEMENTATION-PLAN.md`](A3-IMPLEMENTATION-PLAN.md), [`A2-IMPLEMENTATION-PLAN.md`](A2-IMPLEMENTATION-PLAN.md), [`A1-IMPLEMENTATION-PLAN.md`](A1-IMPLEMENTATION-PLAN.md)
-- **Proposed B1 ADR range:** ADR-0061 through ADR-0071 (ADR-0054 through ADR-0060 is already used by the A7 plan; ADR-0053 is already used by A6T09 Independent External Reconciliation, which is outside the A6 reserved range; ADR-0047 through ADR-0052 is already used by A6; B1 reserves the next contiguous range. Each B1T task may own one ADR; subsequent B1 expansions or B2 boundary expansions will require their own ADR in a later range or extension of this one and are out of scope for this plan.)
+- **Historical B1 ADR range:** ADR-0061 through ADR-0071 (ADR-0061–ADR-0069 authored for the original scope; ADR-0070/ADR-0071 remain historical reserved slots and are not reassigned by this extension.)
+- **Authorized extension ADR allocation:** ADR-0091 → B1T12; ADR not yet authored.
 
 This document is a planning artifact only. It creates no application source, entity, migration, service, controller, API, route, scheduler, billing, invoicing, pricing, fee, commission, revenue, campaign, promotion, coupon, referral, cashback, loyalty, tax, cost-accounting, profitability, analytics, audit, idempotency, reconciliation, classification, retention, feature flag, approval, or runtime activation.
 
@@ -772,6 +774,17 @@ Validate the complete B1 commercial-platform foundation and the bounded first co
 
 - B2 customer-activation rollout.
 - B2 public APIs, mobile / web channels, marketing consent, broad customer activation, additional commercial scopes, additional commercial partner onboarding, or B2 production rollout beyond the separately approved release boundary.
+
+### B1T12 — B1 Commercial Payment-Term and Invoice Due-Date Extension
+
+- **Type:** Authorized B1 extension cycle; implementation not started
+- **ADR allocation:** ADR-0091
+- **Owner:** B1 Commercial Platform
+- **Detailed authoritative scope:** [`B2F07-PREREQUISITE-WORK-PACKAGES.md`](B2F07-PREREQUISITE-WORK-PACKAGES.md)
+
+B1T12 defines versioned commercial payment terms, binds an approved selected term to B1 invoice evidence, and exposes deterministic due-date provenance through the canonical B1 read boundary. It does not reopen or modify historical B1T03/B1T05 task definitions, invent a payment-term value, implement AR/AP, post a journal, execute payment, or move payment-term authority into B2 Finance.
+
+No Net 7, Net 15, Net 30, or other term value is authorized by this allocation. B1T12 implementation requires a separate instruction that explicitly approves the first bounded term value and all entry controls in the prerequisite package.
 
 ## 9. B1 critical path
 
