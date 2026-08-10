@@ -40,6 +40,11 @@ export class PrivilegedActionApprovalService {
     private readonly authorizationService: AuthorizationService,
   ) {}
 
+  async getApproval(approvalId: string): Promise<PrivilegedActionApprovalView | null> {
+    const approval = await this.findApproval(approvalId);
+    return approval ? this.toView(approval) : null;
+  }
+
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
     const actionFingerprint = this.normalizeFingerprint(command.actionFingerprint);
     const reason = this.normalizeText(command.reason, 'reason', 500);

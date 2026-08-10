@@ -4,6 +4,8 @@ import type { AuthorizationService } from '../src/authorization/authorization.se
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import type { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
+import type { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
+import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000001';
 const SESSION_ID = '00000000-0000-4000-8000-000000000002';
@@ -38,12 +40,19 @@ describe('RuntimeAccessGuard', () => {
   function fixture() {
     const sessionService = { validate: jest.fn() };
     const authorizationService = { authorize: jest.fn() };
+    const workforceSessions = { validate: jest.fn() };
+    const workforceConfig = {
+      enabled: true,
+      internalAudience: 'workforce-admin',
+    } as A2WorkforceConfigurationV1;
     const guard = new RuntimeAccessGuard(
       sessionService as unknown as AuthenticationSessionService,
       authorizationService as unknown as AuthorizationService,
       new RoutePolicyRegistry(),
+      workforceSessions as unknown as A2WorkforceSessionService,
+      workforceConfig,
     );
-    return { guard, sessionService, authorizationService };
+    return { guard, sessionService, authorizationService, workforceSessions };
   }
 
   it('allows explicit public routes without a session', async () => {
@@ -68,6 +77,28 @@ describe('RuntimeAccessGuard', () => {
       ),
     ).resolves.toBe(true);
     expect(testFixture.sessionService.validate).not.toHaveBeenCalled();
+  });
+
+  it('uses only the workforce session authority for internal workforce administration', async () => {
+    const testFixture = fixture();
+    testFixture.workforceSessions.validate.mockResolvedValue({
+      type: 'PRIVILEGED',
+      principalId: 'https://issuer.test:operator',
+      sessionId: SESSION_ID,
+      audience: 'workforce-admin',
+      roles: ['FINANCE_ADMIN'],
+      scopes: ['privileged:execute'],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    });
+    const request: Record<string, unknown> = {
+      method: 'POST',
+      url: '/api/v1/internal/a2/workforce/bootstrap',
+      headers: { authorization: 'Bearer workforce-token' },
+    };
+    await expect(testFixture.guard.canActivate(context(request) as never)).resolves.toBe(true);
+    expect(testFixture.sessionService.validate).not.toHaveBeenCalled();
+    expect(request.authorizationPrincipal).toMatchObject({ type: 'PRIVILEGED' });
   });
 
   it('rejects missing and malformed bearer credentials', async () => {

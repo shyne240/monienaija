@@ -3,11 +3,15 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Inject,
   UnauthorizedException,
 } from '@nestjs/common';
 
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { AuthorizationService } from './authorization.service';
+import { A2WorkforceSessionService } from './workforce-session.service';
+import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
+import type { A2WorkforceConfigurationV1 } from './workforce-authentication.types';
 import type { AuthorizationRequest, AuthorizationPrincipal } from './authorization.types';
 import { RoutePolicyRegistry } from './route-policy-registry';
 
@@ -24,6 +28,8 @@ export class RuntimeAccessGuard implements CanActivate {
     private readonly sessionService: AuthenticationSessionService,
     private readonly authorizationService: AuthorizationService,
     private readonly routePolicyRegistry: RoutePolicyRegistry,
+    private readonly workforceSessions: A2WorkforceSessionService,
+    @Inject(A2_WORKFORCE_CONFIG) private readonly workforceConfig: A2WorkforceConfigurationV1,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -34,6 +40,20 @@ export class RuntimeAccessGuard implements CanActivate {
       params: request.params,
     });
     if (route.public) {
+      return true;
+    }
+
+    if (route.authenticationMode === 'WORKFORCE_ASSERTION') {
+      if (!this.workforceConfig.enabled)
+        throw new UnauthorizedException('Workforce authentication disabled');
+      return true;
+    }
+    if (route.authenticationMode === 'WORKFORCE_SESSION') {
+      const token = this.bearerToken(request.headers.authorization);
+      request.authorizationPrincipal = await this.workforceSessions.validate(
+        token,
+        this.workforceConfig.internalAudience,
+      );
       return true;
     }
 

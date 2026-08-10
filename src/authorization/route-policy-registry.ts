@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthorizationPolicy } from './authorization.types';
 
-export type RouteAuthenticationMode = 'PRINCIPAL' | 'PROVIDER_CALLBACK';
+export type RouteAuthenticationMode =
+  | 'PRINCIPAL'
+  | 'WORKFORCE_ASSERTION'
+  | 'WORKFORCE_SESSION'
+  | 'PROVIDER_CALLBACK';
 
 export interface RoutePolicyInput {
   method: string;
@@ -32,6 +36,21 @@ export class RoutePolicyRegistry {
     const path = input.url.split('?', 1)[0] ?? input.url;
     if (PUBLIC_ROUTES.has(`${method} ${path}`)) {
       return { public: true, resourceType: 'public-route' };
+    }
+
+    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/sessions') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_ASSERTION',
+        resourceType: 'a2-workforce-session-exchange',
+      };
+    }
+    if (path.startsWith('/api/v1/internal/a2/workforce/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'a2-workforce-administration',
+      };
     }
 
     if (method === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
