@@ -83,7 +83,7 @@ Policy status is:
 - `RETIRED`
 - `REJECTED`
 
-Policy definitions are immutable/versioned/effective-dated and SHA-256 hashed. Activation consumes A2 action `FINANCE_CONTROL_POLICY_ACTIVATE`, exact policy UUID, and fingerprint. Only one active version exists per policy key. Activating a new version retires the previous active version without deleting it.
+Policy definitions are immutable/versioned/effective-dated and SHA-256 hashed. Activation consumes A2 action `FINANCE_CONTROL_POLICY_ACTIVATE`, exact policy UUID, and a self-describing fingerprint over policy reference, policy key, policy version, complete definition hash, canonical effective-from/effective-to instants, and expected persisted record version. Changing only the expected record version changes the fingerprint, so an approval for another persisted version fails closed. Only one active version exists per policy key. Activating a new version retires the previous active version without deleting it.
 
 Policy idempotency scope:
 

@@ -161,12 +161,16 @@ describe('B2F Finance control service (B2F06)', () => {
     decisions: Repo<B2FFinanceControlDecision>,
     service: B2FFinanceControlService,
     audits: string[],
-    approvalCalls: number;
+    approvalCalls: number,
+    expectedApprovalFingerprint: string | null,
+    consumedApprovalFingerprint: string | null;
   beforeEach(async () => {
     policies = new Repo();
     decisions = new Repo();
     audits = [];
     approvalCalls = 0;
+    expectedApprovalFingerprint = null;
+    consumedApprovalFingerprint = null;
     const manager = {
       getRepository: (e: unknown) => (e === B2FFinanceControlPolicy ? policies : decisions),
     } as unknown as EntityManager;
@@ -184,10 +188,20 @@ describe('B2F Finance control service (B2F06)', () => {
         },
       } as never,
       {
-        consume: async () => {
+        consume: async (command: { actionFingerprint: string }) => {
           await Promise.resolve();
           approvalCalls += 1;
-          return { approved: true, reason: 'CONSUMED' };
+          consumedApprovalFingerprint = command.actionFingerprint;
+          return {
+            approved:
+              expectedApprovalFingerprint === null ||
+              expectedApprovalFingerprint === command.actionFingerprint,
+            reason:
+              expectedApprovalFingerprint === null ||
+              expectedApprovalFingerprint === command.actionFingerprint
+                ? 'CONSUMED'
+                : 'FINGERPRINT_MISMATCH',
+          };
         },
       } as never,
     );
@@ -246,9 +260,51 @@ describe('B2F Finance control service (B2F06)', () => {
     expect(service.getConsumerPorts().contractName).toBe('B2F-FINANCE-CONTROL');
     expect((await service.getConsumerPorts().getActivePolicy())?.policyVersion).toBe(1);
   });
-  it('activates policy only through the existing A2 privileged approval integration', async () => {
+  it('keeps definition hashing deterministic while extending only activation evidence', () => {
+    expect(service.computePolicyHash(definition)).toBe(
+      service.computePolicyHash({ ...definition }),
+    );
+  });
+  it('computes the same activation fingerprint for the same policy and record version', () => {
+    const policy = policies.rows[0]!,
+      fingerprint = () =>
+        service.computeActivationFingerprint(
+          policy.policyReference,
+          policy.policyKey,
+          policy.policyVersion,
+          policy.definitionHash,
+          policy.effectiveFrom.toISOString(),
+          policy.effectiveTo?.toISOString() ?? null,
+          policy.recordVersion,
+        );
+    expect(fingerprint()).toBe(fingerprint());
+  });
+  it('changes the activation fingerprint when only expectedRecordVersion changes', () => {
+    const policy = policies.rows[0]!,
+      fingerprint = (expectedRecordVersion: number) =>
+        service.computeActivationFingerprint(
+          policy.policyReference,
+          policy.policyKey,
+          policy.policyVersion,
+          policy.definitionHash,
+          policy.effectiveFrom.toISOString(),
+          policy.effectiveTo?.toISOString() ?? null,
+          expectedRecordVersion,
+        );
+    expect(fingerprint(policy.recordVersion)).not.toBe(fingerprint(policy.recordVersion + 1));
+  });
+  it('activates policy only through the exact existing A2 fingerprint integration', async () => {
     const policy = policies.rows[0]!;
     policy.status = 'DRAFT';
+    expectedApprovalFingerprint = service.computeActivationFingerprint(
+      policy.policyReference,
+      policy.policyKey,
+      policy.policyVersion,
+      policy.definitionHash,
+      policy.effectiveFrom.toISOString(),
+      policy.effectiveTo?.toISOString() ?? null,
+      policy.recordVersion,
+    );
     const result = await service.activatePolicy({
       policyReference: policy.policyReference,
       expectedRecordVersion: policy.recordVersion,
@@ -259,6 +315,46 @@ describe('B2F Finance control service (B2F06)', () => {
     });
     expect(result).toMatchObject({ status: 'ACTIVE' });
     expect(approvalCalls).toBe(1);
+    expect(consumedApprovalFingerprint).toBe(expectedApprovalFingerprint);
+  });
+  it('rejects an approval created for another expected record version', async () => {
+    const policy = policies.rows[0]!;
+    policy.status = 'DRAFT';
+    expectedApprovalFingerprint = service.computeActivationFingerprint(
+      policy.policyReference,
+      policy.policyKey,
+      policy.policyVersion,
+      policy.definitionHash,
+      policy.effectiveFrom.toISOString(),
+      policy.effectiveTo?.toISOString() ?? null,
+      policy.recordVersion + 1,
+    );
+    await expect(
+      service.activatePolicy({
+        policyReference: policy.policyReference,
+        expectedRecordVersion: policy.recordVersion,
+        approvalId: randomUUID(),
+        principal,
+        idempotencyKey: randomUUID(),
+        requestContext: ctx,
+      }),
+    ).rejects.toThrow('Finance control policy approval rejected: FINGERPRINT_MISMATCH');
+    expect(policy.status).toBe('DRAFT');
+  });
+  it('rejects stale expectedRecordVersion before consuming approval', async () => {
+    const policy = policies.rows[0]!;
+    policy.status = 'DRAFT';
+    await expect(
+      service.activatePolicy({
+        policyReference: policy.policyReference,
+        expectedRecordVersion: policy.recordVersion + 1,
+        approvalId: randomUUID(),
+        principal,
+        idempotencyKey: randomUUID(),
+        requestContext: ctx,
+      }),
+    ).rejects.toThrow('Finance control policy state/version is invalid');
+    expect(approvalCalls).toBe(0);
   });
   it('selects deterministic standard and elevated materiality bands', async () => {
     expect((await service.evaluate(request())).materialityBand).toBe('STANDARD');

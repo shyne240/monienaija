@@ -50,8 +50,25 @@ export class B2FFinanceControlService {
   computePolicyHash(definition: B2FFinanceControlPolicyDefinitionV1) {
     return hash(definition);
   }
-  computeActivationFingerprint(reference: string, version: number, definitionHash: string) {
-    return hash({ action: 'FINANCE_CONTROL_POLICY_ACTIVATE', reference, version, definitionHash });
+  computeActivationFingerprint(
+    policyReference: string,
+    policyKey: B2FFinanceControlPolicyDefinitionV1['policyKey'],
+    policyVersion: number,
+    definitionHash: string,
+    effectiveFrom: string,
+    effectiveTo: string | null,
+    expectedRecordVersion: number,
+  ) {
+    return hash({
+      action: 'FINANCE_CONTROL_POLICY_ACTIVATE',
+      policyReference,
+      policyKey,
+      policyVersion,
+      definitionHash,
+      effectiveFrom: new Date(effectiveFrom).toISOString(),
+      effectiveTo: effectiveTo ? new Date(effectiveTo).toISOString() : null,
+      expectedRecordVersion,
+    });
   }
   async createPolicy(command: B2FFinanceControlPolicyCommandV1) {
     this.validateDefinition(command.definition);
@@ -161,8 +178,12 @@ export class B2FFinanceControlService {
         resource: { type: 'B2F_FINANCE_CONTROL_POLICY', id: policy.id },
         actionFingerprint: this.computeActivationFingerprint(
           policy.policyReference,
+          policy.policyKey,
           policy.policyVersion,
           policy.definitionHash,
+          policy.effectiveFrom.toISOString(),
+          policy.effectiveTo?.toISOString() ?? null,
+          input.expectedRecordVersion,
         ),
         now: input.now,
       });

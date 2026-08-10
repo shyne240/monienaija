@@ -25,6 +25,7 @@ No repository-approved monetary thresholds or final regulatory role matrix exist
 8. Integrate B2F04 transitions and B2F05 posting after A2 approval but before state/value effects.
 9. Extend A2 approval views with their existing immutable policy payload; do not create or copy an approval vault.
 10. Expose only an internal read-only policy/evaluation consumer port.
+11. The canonical A2 policy-activation fingerprint explicitly binds policy reference, policy key, policy version, complete definition hash, canonical effective window, and expected persisted policy record version. This keeps activation approval self-describing and prevents approval reuse after a record-version change.
 
 Exact production thresholds, legal requirements, multi-approval workflows above one checker, and final B9 role administration are **NOT VERIFIED / REQUIRES REVIEW**.
 
