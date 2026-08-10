@@ -43,6 +43,7 @@ import { B2ConsentModule } from './policy/b2-consent.module';
 import { B2ApiConsumerModule } from './policy/b2-api-consumer.module';
 import { B2WebhookModule } from './policy/b2-webhook.module';
 import { B2PublicApiAuthenticationModule } from './policy/b2-public-api-authentication.module';
+import { B2FAccountMappingModule } from './policy/b2f-account-mapping.module';
 import { B2FAccountingTreatmentModule } from './policy/b2f-accounting-treatment.module';
 import { B2FFinanceControlModule } from './policy/b2f-finance-control.module';
 import { B2FFiscalPeriodModule } from './policy/b2f-fiscal-period.module';
@@ -138,6 +139,7 @@ import { WalletModule } from './wallet/wallet.module';
     B2ApiConsumerModule,
     B2WebhookModule,
     B2PublicApiAuthenticationModule,
+    B2FAccountMappingModule,
     B2FAccountingTreatmentModule,
     B2FFinanceControlModule,
     B2FFiscalPeriodModule,

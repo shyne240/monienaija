@@ -5,8 +5,8 @@
 - **Contract:** `B2FinanceChartClassificationContractV1`
 - **Contract name:** `B2-FINANCE-CHART-CLASSIFICATION`
 - **Contract version:** `1`
-- **ADR:** [`ADR-0084 — B2 Finance Chart Classification and A5 Account Mapping`](ADR/ADR-0084-B2-Finance-Chart-Classification-and-A5-Account-Mapping.md)
-- **Status:** Contract accepted for architecture sequencing; runtime mapping not implemented
+- **ADRs:** [`ADR-0084 — B2 Finance Chart Classification and A5 Account Mapping`](ADR/ADR-0084-B2-Finance-Chart-Classification-and-A5-Account-Mapping.md); [`ADR-0089 — B2 Finance-to-A5 Account Mapping Runtime`](ADR/ADR-0089-B2-Finance-to-A5-Account-Mapping-Runtime.md)
+- **Status:** Contract and bounded durable mapping runtime implemented; no mapping is auto-activated
 - **Book scope:** `finance.book.ng.primary` v1
 - **Depends on:** [`B2F-ACCOUNTING-MODEL-CONTRACT.md`](B2F-ACCOUNTING-MODEL-CONTRACT.md), [`B2F-FINANCE-INVENTORY.md`](B2F-FINANCE-INVENTORY.md), and existing A5/B1/A6/A7 authorities
 - **Application source, entity, migration, service, controller, route, API, configuration, ledger-account, mapping-record, posting, balance, and frontend changes:** None
@@ -26,7 +26,24 @@ currency:             NGN
 accounting unit:      CUSTOMER_FUNDS
 ```
 
-This task defines classifications and mapping contracts only. It does not create an A5 account, copy an A5 account, persist a Finance mapping, alter an A5 code/type/status, or post value.
+The original B2F03 task defined classifications and mapping contracts without runtime persistence. The bounded prerequisite completed under ADR-0089 now persists and governs Finance mapping metadata only. It does not create an A5 account, copy an A5 account authority, alter an A5 code/type/status, or post value.
+
+### 1.1 Implemented runtime status
+
+The runtime now provides:
+
+- durable `b2f_finance_account_mappings` records;
+- lifecycle `DRAFT → PENDING_APPROVAL → ACTIVE`, plus `REJECTED`, `EXPIRED`, and `REVOKED` terminal outcomes;
+- canonical A5 verification through `LedgerService.getAccount()`;
+- effective dating, immutable semantic versions, deterministic hashes, and shared idempotency;
+- A2 privileged approval plus B2F06 controls for activation/rejection/revocation;
+- audit, outbox, and metrics through shared Operations services;
+- narrow read-only lookup and compatibility consumer ports;
+- B2F05 resolution of mapping reference/version before journal-governance creation.
+
+No mapping is seeded or activated by the migration. The documented legacy `PAYMENT-*` accounts remain candidates requiring lifecycle approval. Repository inspection found no verified canonical A5 receivable asset account; the B2F07 AR mapping prerequisite remains `NOT VERIFIED / REQUIRES REVIEW` and no A5 account was created.
+
+B2F07 remains Accounts Receivable, B2F08 remains Accounts Payable, and B2F09 remains Revenue Recognition/Tax/Cost/Commercial Financial Effects. This prerequisite implements none of those tasks.
 
 ## 2. Repository evidence and verified A5 baseline
 
@@ -415,9 +432,9 @@ It must carry:
 
 Observed A5 metadata is a verification snapshot, not a copied authority. The canonical values remain in A5 and must be rechecked before use.
 
-### 19.2 No runtime record
+### 19.2 Runtime persistence
 
-No `FinanceA5AccountMappingV1` is persisted by B2F03. The model is frozen for future separately authorized implementation.
+`FinanceA5AccountMappingV1` is persisted as `b2f_finance_account_mappings` by migration `1785753600050`. Persistence records Finance metadata and an observed A5 snapshot/hash for compatibility checks; A5 remains authoritative and is re-read before activation and consumer verification. No A5 values or balances are copied.
 
 ## 20. Mapping identity and version
 
@@ -529,7 +546,7 @@ Ambiguity must not be resolved by choosing the first account, manufacturing an a
 
 ## 25. Unmapped-account handling
 
-Every A5 account in the bounded book scope should eventually be classified or explicitly excepted. Until runtime exists:
+Every A5 account in the bounded book scope should eventually be classified or explicitly excepted. Until an approved effective `ACTIVE` mapping exists:
 
 - existing accounts continue under A5 authority;
 - absence of a B2 mapping does not invalidate A5 history;
@@ -813,7 +830,7 @@ B2F03 does not implement or authorize:
 - any entity, table, migration, repository, service, controller, route, API, scheduler, worker, configuration, or frontend;
 - creation, update, deactivation, deletion, renumbering, or copying of A5 accounts;
 - a second chart of accounts, ledger, journal, line, posting engine, balance, or value authority;
-- active Finance mapping records;
+- automatic seeding or activation of Finance mapping records;
 - direct posting by classification key;
 - A5 hierarchy changes;
 - contra-account runtime;
@@ -854,8 +871,11 @@ B2F04 must not begin automatically.
 - [x] B1 and A6 handoffs preserve source ownership.
 - [x] Reconciliation, idempotency, audit, maker-checker, deterministic hash, compatibility, failure, retention, and rollback expectations are defined.
 - [x] No A5 or B1 authority is duplicated.
-- [x] No runtime source, migration, account, or mapping record is created or modified.
+- [x] Durable mapping runtime, migration, lifecycle, A5 verification, controls, idempotency, audit/outbox/metrics, and read-only consumer port are implemented.
+- [x] B2F05 now resolves authoritative mapping records instead of trusting mapping-reference shape alone.
+- [x] No A5 account, balance, journal, line, or posting authority is created or modified.
+- [x] No mapping is automatically activated; AR and legacy candidate mappings remain review-gated.
 
 ### B2F03 result
 
-> **Finance classification and A5 mapping contract frozen — runtime mapping not implemented; legacy, contra, equity, revenue, expense, clearing, and suspense activation reviews remain required.**
+> **Finance classification and durable A5 mapping runtime implemented — no mappings auto-activated; AR, legacy, contra, equity, revenue, expense, clearing, and suspense activation reviews remain required.**

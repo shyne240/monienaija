@@ -69,9 +69,9 @@ Before persistence, B2F05 enforces:
 - NGN and `CUSTOMER_FUNDS` compatibility;
 - B2F04 period admission and accounting date.
 
-### Mapping limitation
+### Authoritative mapping verification
 
-B2F03 did not implement a durable mapping registry. B2F05 validates mapping-reference shape and rechecks the canonical A5 account against Finance classification semantics, but cannot independently resolve an approved persisted B2F03 mapping record. This is **NOT VERIFIED / REQUIRES REVIEW** before production posting. The implementation does not invent or persist a second account authority; a future mapping consumer port must replace/strengthen this contract check without changing A5 identity.
+The bounded B2F03 prerequisite now provides a durable mapping registry and read-only verification port. B2F05 resolves every supplied mapping reference/version and requires an `ACTIVE`, effective mapping whose book, classification, canonical A5 UUID, and current A5 metadata remain compatible. Mapping-reference shape alone is insufficient. Missing, inactive, ineffective, mismatched, ambiguous, or drifted mappings fail before journal-governance creation. A5 remains the account authority.
 
 ## 6. Governance states
 
@@ -191,8 +191,9 @@ Migration `0047` creates only `b2f_finance_journal_governance`, references B2F04
 - [x] Read-only consumer status/provenance port implemented.
 - [x] No controller/public API or external communication introduced.
 - [x] No second ledger, balance, journal-of-record, B1 decision, or settlement authority introduced.
-- [x] Durable mapping verification and final materiality thresholds remain explicit follow-up items.
+- [x] Durable B2F03 mapping verification is consumed before governance creation.
+- [x] Final materiality thresholds remain an explicit B2F06 review item.
 
 ### B2F05 result
 
-> **Finance journal governance and controlled A5 posting implemented; A5 remains sole posting/value authority, and production use remains blocked on durable B2F03 mapping verification and B2F06 controls.**
+> **Finance journal governance and controlled A5 posting implemented; A5 remains sole posting/value authority, and every mapping must resolve through the active/effective B2F03 mapping runtime.**

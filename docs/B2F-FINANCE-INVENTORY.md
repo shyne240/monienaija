@@ -672,7 +672,7 @@ Must define finance capabilities, maker-checker, segregation, thresholds, materi
 
 ### B2F09-PRE — implementation-status reconciliation
 
-Commit `4e0e72c90fb336efdd9cf596cc1c8b60612b4589`, historically labeled B2F07, implemented Finance Accounting Treatment and Source Decision Adoption. It is preserved and classified for planning as **B2F09-PRE**, a shared foundation for B2F07–B2F10. Verified capabilities include read-only B1/A6 source adoption, source provenance/currentness, B2F04 period admission, B2F06 controls, and B2F05 journal-draft handoff. A7 by-reference adoption and durable B2F03 mapping verification remain `NOT VERIFIED / REQUIRES REVIEW`.
+Commit `4e0e72c90fb336efdd9cf596cc1c8b60612b4589`, historically labeled B2F07, implemented Finance Accounting Treatment and Source Decision Adoption. It is preserved and classified for planning as **B2F09-PRE**, a shared foundation for B2F07–B2F10. Verified capabilities include read-only B1/A6 source adoption, source provenance/currentness, B2F04 period admission, B2F06 controls, and B2F05 journal-draft handoff. A7 by-reference adoption remains `NOT VERIFIED / REQUIRES REVIEW`. Durable generic B2F03 mapping verification is now implemented by the bounded prerequisite, but specific mappings—including an AR receivable account mapping—still require verified A5 accounts and approval.
 
 This foundation does not implement receivable/payable lifecycle and does not complete B2F09 recognition schedules, tax accounting, cost-allocation treatment, complete A5 correlation, or B6/B7 outputs. See [`B2F-TASK-SEQUENCE-RECONCILIATION.md`](B2F-TASK-SEQUENCE-RECONCILIATION.md).
 

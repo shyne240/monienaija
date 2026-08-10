@@ -80,7 +80,7 @@ Missing B2F08 scope includes payable identity/lifecycle, due/hold/dispute state,
 
 ### It does not complete authoritative B2F09
 
-Missing B2F09 scope includes Finance recognition schedules/status/adjustments, tax liability/receivable and control-account treatment, tax settlement/audit schedules, Finance-owned cost-allocation application rules, complete commercial-effect-to-A5 correlation, and B6/B7 read-only outputs. A7 source verification and durable B2F03 mapping verification also remain blocked.
+Missing B2F09 scope includes Finance recognition schedules/status/adjustments, tax liability/receivable and control-account treatment, tax settlement/audit schedules, Finance-owned cost-allocation application rules, complete commercial-effect-to-A5 correlation, and B6/B7 read-only outputs. A7 source verification remains blocked. The bounded B2F03 prerequisite now supplies generic durable mapping verification, while each specific account mapping—including AR—still requires a verified canonical A5 account and lifecycle approval.
 
 ## 6. Non-destructive preservation rules
 

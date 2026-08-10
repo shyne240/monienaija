@@ -12,6 +12,7 @@ import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import { B2FFiscalPeriodService } from './b2f-fiscal-period.service';
+import { B2FAccountMappingService } from './b2f-account-mapping.service';
 import { B2FFinanceControlService } from './b2f-finance-control.service';
 import { B2FFinanceJournalGovernance } from './b2f-finance-journal.entity';
 import type {
@@ -48,6 +49,7 @@ export class B2FJournalGovernanceService {
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
     private readonly fiscalPeriodService: B2FFiscalPeriodService,
+    private readonly accountMappingService: B2FAccountMappingService,
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
     private readonly outboxService: OutboxService,
@@ -507,6 +509,19 @@ export class B2FJournalGovernanceService {
           message: 'line identity, amount, classification, or mapping is invalid',
         };
       numbers.add(line.lineNumber);
+      const mapping = await this.accountMappingService.verify({
+        mappingReference: line.mappingReference,
+        mappingVersion: line.mappingVersion,
+        bookKey: 'finance.book.ng.primary',
+        classificationKey: line.financeClassificationKey,
+        a5LedgerAccountId: line.a5LedgerAccountId,
+        accountingDate: command.accountingDate,
+      });
+      if (!mapping.compatible)
+        return {
+          code: 'FINANCE_MAPPING_INVALID',
+          message: mapping.reasons.join(',') || 'Finance mapping is invalid',
+        };
       let account: Awaited<ReturnType<LedgerService['getAccount']>>;
       try {
         account = await this.ledgerService.getAccount(line.a5LedgerAccountId);

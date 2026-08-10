@@ -141,6 +141,7 @@ describe('B2F journal governance service (B2F05)', () => {
     postCalls: number,
     approval: boolean,
     period: boolean,
+    mappingCompatible: boolean,
     service: B2FJournalGovernanceService;
   beforeEach(() => {
     repo = new Repo();
@@ -151,6 +152,7 @@ describe('B2F journal governance service (B2F05)', () => {
     postCalls = 0;
     approval = true;
     period = true;
+    mappingCompatible = true;
     const manager = { getRepository: () => repo } as unknown as EntityManager;
     const ds = {
       transaction: async (_i: string, cb: (m: EntityManager) => Promise<unknown>) => cb(manager),
@@ -190,6 +192,17 @@ describe('B2F journal governance service (B2F05)', () => {
         checkAdmission: async () => {
           await Promise.resolve();
           return { compatible: period, reason: period ? 'ADMISSIBLE' : 'PERIOD_LOCKED' };
+        },
+      } as never,
+      {
+        verify: async () => {
+          await Promise.resolve();
+          return {
+            compatible: mappingCompatible,
+            reasons: mappingCompatible ? [] : ['MAPPING_NOT_ACTIVE'],
+            readOnly: true,
+            mapping: mappingCompatible ? {} : null,
+          };
         },
       } as never,
       idem as never,
@@ -318,6 +331,13 @@ describe('B2F journal governance service (B2F05)', () => {
     });
     expect((await service.compatibilityCheck(bad)).failure?.code).toBe('A5_MAPPING_INVALID');
   });
+  it('fails closed when the durable B2F03 mapping is not active or compatible', async () => {
+    mappingCompatible = false;
+    const result = await service.createJournal(command());
+    expect(result.outcome).toBe('REJECTED');
+    expect(result.failure?.code).toBe('FINANCE_MAPPING_INVALID');
+  });
+
   it('replays identical creation and conflicts changed payload', async () => {
     const c = command(),
       first = await service.createJournal(c),

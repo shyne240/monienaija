@@ -66,7 +66,7 @@ Source hashes are taken from canonical decision/document/evidence records. Reque
 
 Treatment lines carry B2F03 classification and mapping references plus canonical A5 UUIDs. B2F07 does not map by code/name or create accounts. It delegates journal compatibility to B2F05, which rechecks A5 type/normal-balance/currency/unit/active state.
 
-The durable B2F03 mapping registry is still not implemented. Therefore production adoption/posting remains blocked on that `NOT VERIFIED / REQUIRES REVIEW` item, exactly as documented by B2F05.
+The bounded B2F03 prerequisite now provides a durable mapping registry and B2F05 consumes it. Treatment adoption still requires an approved, active, effective mapping to a canonical A5 UUID. No mappings are auto-activated, and no verified A7 or AR-specific mapping is implied by runtime availability.
 
 No split/percentage/many-to-many mapping is introduced.
 
