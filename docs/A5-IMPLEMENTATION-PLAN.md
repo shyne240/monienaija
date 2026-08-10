@@ -527,14 +527,15 @@ Validate the complete internal financial pilot and prepare the next-phase handof
 
 ### A5T11 — A5 AR Control Account Provisioning
 
-- **Type:** Authorized post-pilot A5 extension; implementation not started
-- **ADR allocation:** ADR-0090
+- **Type:** Authorized post-pilot A5 extension; bounded provisioning runtime implemented
+- **ADR:** [`ADR-0090`](ADR/ADR-0090-A5-AR-Control-Account-Provisioning.md)
 - **Owner:** A5 Ledger & Internal Financial Core
+- **Contract:** [`A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md`](A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md)
 - **Detailed authoritative scope:** [`B2F07-PREREQUISITE-WORK-PACKAGES.md`](B2F07-PREREQUISITE-WORK-PACKAGES.md)
 
-A5T11 provisions exactly one canonical A5 receivable control account through the existing A5 account authority and hands verified account evidence to B2F03. It does not alter A5T01–A5T10, create a Finance mapping, implement AR, post a journal, or move value. The architectural target is `FINANCE-ACCOUNTS_RECEIVABLE-NGN`, `ASSET`, `DEBIT`, `NGN`, `CUSTOMER_FUNDS`, and `allowNegativeBalance = false`; implementation must validate the target against A5 rules before provisioning.
+A5T11 provides a privileged, idempotent orchestration that provisions exactly one canonical A5 receivable control account through `LedgerService.createAccount()` and hands verified account evidence to B2F03. It does not alter A5T01–A5T10, create a Finance mapping, implement AR, post a journal, or move value. The runtime validates `FINANCE-ACCOUNTS_RECEIVABLE-NGN`, `ASSET`, `DEBIT`, `NGN`, `CUSTOMER_FUNDS`, and `allowNegativeBalance = false` before any account creation.
 
-A5T11 must not begin merely because this allocation exists; execution requires a separate implementation instruction and all entry controls in the prerequisite package.
+No account is seeded or created merely by module startup. Actual provisioning requires valid A2 approval and an allowing B2F06 policy; B2F03 mapping remains a separate subsequent action.
 
 ## 8. A5 critical path
 

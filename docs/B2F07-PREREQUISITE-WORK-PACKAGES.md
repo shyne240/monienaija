@@ -1,7 +1,7 @@
 # B2F07 Prerequisite Work Packages
 
 - **Document type:** Architecture authorization package
-- **Status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
+- **Status:** PARTIALLY IMPLEMENTED — A5T11 RUNTIME COMPLETE; B1T12 NOT STARTED; B2F07 BLOCKED
 - **Task numbers:** A5T11 and B1T12
 - **ADR allocations:** ADR-0090 → A5T11; ADR-0091 → B1T12
 - **Blocked task:** B2F07 — Accounts Receivable and Invoice-Accounting Boundary
@@ -61,7 +61,9 @@ Historical B2T01–B2T10 classification and the B2F09-PRE implementation remain 
 - **Identifier:** A5T11
 - **ADR allocation:** ADR-0090
 - **Owning platform:** A5 Ledger & Internal Financial Core
-- **Implementation status:** AUTHORIZED — IMPLEMENTATION NOT STARTED
+- **Implementation status:** BOUNDED PROVISIONING RUNTIME IMPLEMENTED — ACCOUNT NOT AUTO-PROVISIONED; B2F03 MAPPING NOT CREATED
+- **ADR:** [`ADR-0090`](ADR/ADR-0090-A5-AR-Control-Account-Provisioning.md)
+- **Contract:** [`A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md`](A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md)
 
 ## A.2 Purpose
 

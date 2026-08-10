@@ -50,6 +50,7 @@ export interface PrivilegedActionApprovalView {
   resourceType: string;
   resourceId: string | null;
   customerId: string | null;
+  actionFingerprint: string;
   requesterPrincipalId: string;
   approvedBy: string | null;
   approvalScope: string;

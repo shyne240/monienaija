@@ -480,6 +480,7 @@ export class PrivilegedActionApprovalService {
       resourceType: approval.resourceType,
       resourceId: approval.resourceId,
       customerId: approval.customerId,
+      actionFingerprint: approval.actionFingerprint,
       requesterPrincipalId: approval.requesterPrincipalId,
       approvedBy: approval.approvedBy,
       approvalScope: approval.approvalScope,

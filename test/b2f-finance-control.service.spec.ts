@@ -208,6 +208,7 @@ describe('B2F Finance control service (B2F06)', () => {
     resourceType: 'JOURNAL',
     resourceId: 'resource-1',
     customerId: null,
+    actionFingerprint: 'd'.repeat(64),
     requesterPrincipalId: maker,
     approvedBy: checker,
     approvalScope: 'finance:approve',

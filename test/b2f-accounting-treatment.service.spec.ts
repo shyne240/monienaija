@@ -69,6 +69,7 @@ const approval = {
   resourceType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
   resourceId: null,
   customerId: null,
+  actionFingerprint: 'c'.repeat(64),
   requesterPrincipalId: 'maker',
   approvedBy: 'checker',
   approvalScope: 'finance:approve',
