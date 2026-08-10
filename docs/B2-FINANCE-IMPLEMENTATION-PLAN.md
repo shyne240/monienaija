@@ -1,5 +1,7 @@
 # B2 Finance Platform — Preliminary Implementation Plan
 
+> **Task-sequence reconciliation notice (2026-08-10):** The implementation historically labeled **B2F07 — Finance Accounting Treatment and Source Decision Adoption** at commit `4e0e72c90fb336efdd9cf596cc1c8b60612b4589` is preserved unchanged and classified for planning as **B2F09-PRE — Finance Accounting Treatment and Source Decision Adoption Foundation**. It is shared support for B2F07–B2F10 and does not complete authoritative B2F07 or B2F09. Authoritative definitions remain B2F07 Accounts Receivable, B2F08 Accounts Payable, and B2F09 Revenue Recognition/Tax/Cost/Commercial Financial Effects. See [`B2F-TASK-SEQUENCE-RECONCILIATION.md`](B2F-TASK-SEQUENCE-RECONCILIATION.md).
+
 - **Platform:** B2 — Finance Platform
 - **Planning task:** B2R01 — Authoritative Platform Roadmap and B2 Finance Reconciliation
 - **Status:** Preliminary planning artifact; no B2 Finance runtime implementation has started
@@ -35,6 +37,8 @@ B2F01 Baseline and authority map
   -> B2F04 Fiscal years and accounting periods
   -> B2F05 Journal governance and A5 posting interface
   -> B2F06 Finance controls, approvals, and segregation
+  -> B2F09-PRE Source decision adoption and accounting-treatment foundation
+     (already implemented under historical label B2F07; shared prerequisite, not task completion)
   -> B2F07 Receivables and invoice-accounting boundary
   -> B2F08 Payables and disbursement-accounting boundary
   -> B2F09 Revenue, tax, cost, and commercial-effect accounting
@@ -166,6 +170,13 @@ Define finance controls and approval evidence while consuming A2 authorization a
 
 No actor can prepare and finally approve a prohibited same-scope action. B2 stores approval evidence/correlation, not credentials or IAM truth.
 
+### Completed supporting foundation — B2F09-PRE
+
+**Historical implementation label:** B2F07 — Finance Accounting Treatment and Source Decision Adoption
+**Commit:** `4e0e72c90fb336efdd9cf596cc1c8b60612b4589`
+
+B2F09-PRE supplies source-decision verification/adoption and Finance treatment provenance for B2F07, B2F08, B2F09, and B2F10. It remains unchanged and must be consumed rather than duplicated. It does not implement receivable/payable lifecycles and does not satisfy the remaining recognition, tax, cost, output, or A5-correlation acceptance criteria of B2F09. This is a planning classification only; existing ADR, migration, contract, code, table, scope, and test identities remain unchanged.
+
 ### B2F07 — Accounts Receivable and Invoice-Accounting Boundary
 
 **Objective**
@@ -206,7 +217,7 @@ A payable never proves cash movement. B3 later owns treasury/cash positioning; A
 
 **Objective**
 
-Implement the bounded B1→B2→A5 accounting integration for existing B1 finance-implication capabilities.
+Implement the bounded B1→B2→A5 accounting integration for existing B1 finance-implication capabilities. Consume the completed B2F09-PRE source-adoption/treatment foundation; do not recreate it or count it as completion of the remaining B2F09 scope.
 
 **Required deliverables**
 

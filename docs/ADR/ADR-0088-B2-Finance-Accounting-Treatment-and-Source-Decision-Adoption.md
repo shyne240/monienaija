@@ -1,5 +1,7 @@
 # ADR-0088 — B2 Finance Accounting Treatment and Source Decision Adoption
 
+> **Non-destructive classification note (2026-08-10):** ADR-0088 preserves its number, title, decision, implementation history, and historical B2F07 task label. For authoritative planning, its completed capability is **B2F09-PRE — Finance Accounting Treatment and Source Decision Adoption Foundation**, shared by B2F07–B2F10. It does not complete authoritative B2F07 or the remaining B2F09 deliverables. See [`docs/B2F-TASK-SEQUENCE-RECONCILIATION.md`](../B2F-TASK-SEQUENCE-RECONCILIATION.md).
+
 - **ADR ID:** ADR-0088
 - **Platform:** B2 — Finance Platform
 - **Task:** B2F07

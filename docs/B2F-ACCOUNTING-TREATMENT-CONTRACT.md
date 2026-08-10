@@ -1,5 +1,7 @@
 # B2F07 — Finance Accounting Treatment and Source Decision Adoption Contract
 
+> **Non-destructive classification notice (2026-08-10):** This contract and implementation retain the historical **B2F07** label and all existing technical identities. For authoritative planning, the completed capability is classified as **B2F09-PRE — Finance Accounting Treatment and Source Decision Adoption Foundation**, shared by B2F07–B2F10. It does not complete authoritative B2F07 Accounts Receivable or the remaining authoritative B2F09 scope. See [`B2F-TASK-SEQUENCE-RECONCILIATION.md`](B2F-TASK-SEQUENCE-RECONCILIATION.md).
+
 - **Platform:** B2 — Finance Platform
 - **Contract:** `B2F-ACCOUNTING-TREATMENT` v1
 - **ADR:** [`ADR-0088 — B2 Finance Accounting Treatment and Source Decision Adoption`](ADR/ADR-0088-B2-Finance-Accounting-Treatment-and-Source-Decision-Adoption.md)

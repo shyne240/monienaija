@@ -281,3 +281,23 @@ B2T01 and B2T02 are documentation/contract foundations. B2T07 is documentation/O
 - C5/B10 must approve secret/key infrastructure versus API/webhook product ownership.
 - C6/B10 must approve generic background processing versus webhook retry/delivery semantics.
 - Security, Privacy, Legal, Risk, Compliance, Operations, and Support must retain the existing no-live-certification status until later release gates are completed.
+
+## 9. B2 Finance artifact classification
+
+This section is separate from and does not rewrite the preserved legacy B2T01–B2T10 classification.
+
+| Historical implementation label                                   | Preserved capability                                                                                           | Authoritative planning classification                                                                       | Completion claim                               |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| B2F07 — Finance Accounting Treatment and Source Decision Adoption | Verified B1/A6 source adoption, treatment provenance, period/control/journal-draft integration; fail-closed A7 | **B2F09-PRE — Finance Accounting Treatment and Source Decision Adoption Foundation**, shared by B2F07–B2F10 | Does not complete authoritative B2F07 or B2F09 |
+
+Preserved identity:
+
+- commit `4e0e72c90fb336efdd9cf596cc1c8b60612b4589`;
+- ADR-0088;
+- migration `1785753600049`;
+- `B2F-ACCOUNTING-TREATMENT` v1;
+- `b2f_finance_accounting_treatments`;
+- `b2.finance.accounting-treatment.idempotency.v1`;
+- all source, class, event, reference, hash, and test identities.
+
+The next authoritative task remains B2F07 Accounts Receivable. See [`B2F-TASK-SEQUENCE-RECONCILIATION.md`](B2F-TASK-SEQUENCE-RECONCILIATION.md).

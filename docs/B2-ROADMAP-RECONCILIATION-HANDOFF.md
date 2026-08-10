@@ -222,6 +222,16 @@ The old B2 plan proposed ADR-0072 through ADR-0083 and tasks through B2T12. Exis
 
 Existing ADR numbers remain unchanged. Finance uses fresh task labels `B2F01`–`B2F15`. B2F01 must allocate future ADRs based on the actual repository state; it must not fill gaps or renumber existing ADRs merely for visual continuity.
 
+### C-09 — B2 Finance B2F07 implementation-label mismatch
+
+**Contradiction**
+
+The authoritative Finance plan defines B2F07 as Accounts Receivable and Invoice-Accounting Boundary. Commit `4e0e72c90fb336efdd9cf596cc1c8b60612b4589` was implemented under the B2F07 label as Finance Accounting Treatment and Source Decision Adoption instead.
+
+**Resolution**
+
+The implementation is preserved unchanged and classified for planning as **B2F09-PRE — Finance Accounting Treatment and Source Decision Adoption Foundation**. It primarily supports authoritative B2F09 and is shared by B2F07, B2F08, and B2F10. Authoritative B2F07 remains Accounts Receivable, B2F08 remains Accounts Payable, and B2F09 retains its complete original scope. The foundation does not count as completion of B2F07 or B2F09. No source, migration, table, ADR, contract, event, idempotency scope, test, or Git history is renamed or invalidated. See [`B2F-TASK-SEQUENCE-RECONCILIATION.md`](B2F-TASK-SEQUENCE-RECONCILIATION.md).
+
 ## 6. Supersession rules for historical documents
 
 1. Historical implementation facts remain valid.
