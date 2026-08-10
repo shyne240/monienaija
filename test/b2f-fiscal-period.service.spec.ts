@@ -208,7 +208,24 @@ describe('B2F fiscal period service (B2F04)', () => {
           return {
             approved: approvals.approved,
             reason: approvals.approved ? 'CONSUMED' : 'NOT_FOUND',
+            approval: approvals.approved
+              ? {
+                  id: randomUUID(),
+                  requesterPrincipalId: 'finance-maker',
+                  approvedBy: principal.principalId,
+                  resourceType: 'B2F_ACCOUNTING_PERIOD',
+                  resourceId: null,
+                  status: 'CONSUMED',
+                  policy: { requiredRoles: ['FINANCE_PREPARER'] },
+                }
+              : undefined,
           };
+        },
+      } as never,
+      {
+        evaluate: async () => {
+          await Promise.resolve();
+          return { outcome: 'ALLOW', decisionReference: 'b2f-control-decision-test', reasons: [] };
         },
       } as never,
     );

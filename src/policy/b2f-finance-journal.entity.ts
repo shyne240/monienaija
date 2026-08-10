@@ -70,6 +70,13 @@ export class B2FFinanceJournalGovernance {
   @Column({ name: 'decision_hash', type: 'char', length: 64 }) decisionHash!: string;
   @Column({ name: 'replay_hash', type: 'char', length: 64 }) replayHash!: string;
   @Column({ name: 'approval_id', type: 'uuid', nullable: true }) approvalId!: string | null;
+  @Column({ name: 'prepared_by', type: 'varchar', length: 160, nullable: true }) preparedBy!:
+    | string
+    | null;
+  @Column({ name: 'prepared_roles', type: 'jsonb', default: () => "'[]'::jsonb" })
+  preparedRoles!: readonly string[];
+  @Column({ name: 'control_decision_reference', type: 'varchar', length: 100, nullable: true })
+  controlDecisionReference!: string | null;
   @Column({ name: 'a5_idempotency_key', type: 'varchar', length: 255 }) a5IdempotencyKey!: string;
   @Column({ name: 'a5_journal_id', type: 'uuid', nullable: true }) a5JournalId!: string | null;
   @Column({ name: 'a5_posted_at', type: 'timestamptz', nullable: true }) a5PostedAt!: Date | null;

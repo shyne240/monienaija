@@ -208,7 +208,27 @@ describe('B2F journal governance service (B2F05)', () => {
       {
         consume: async () => {
           await Promise.resolve();
-          return { approved: approval, reason: approval ? 'CONSUMED' : 'NOT_FOUND' };
+          return {
+            approved: approval,
+            reason: approval ? 'CONSUMED' : 'NOT_FOUND',
+            approval: approval
+              ? {
+                  id: randomUUID(),
+                  requesterPrincipalId: 'finance-maker',
+                  approvedBy: principal.principalId,
+                  resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+                  resourceId: null,
+                  status: 'CONSUMED',
+                  policy: { requiredRoles: ['FINANCE_PREPARER'] },
+                }
+              : undefined,
+          };
+        },
+      } as never,
+      {
+        evaluate: async () => {
+          await Promise.resolve();
+          return { outcome: 'ALLOW', decisionReference: 'b2f-control-decision-test', reasons: [] };
         },
       } as never,
     );

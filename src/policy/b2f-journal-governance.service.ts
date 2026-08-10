@@ -12,6 +12,7 @@ import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import { B2FFiscalPeriodService } from './b2f-fiscal-period.service';
+import { B2FFinanceControlService } from './b2f-finance-control.service';
 import { B2FFinanceJournalGovernance } from './b2f-finance-journal.entity';
 import type {
   B2FFinanceJournalConsumerPortsV1,
@@ -51,6 +52,7 @@ export class B2FJournalGovernanceService {
     private readonly auditService: AuditService,
     private readonly outboxService: OutboxService,
     private readonly approvalService: PrivilegedActionApprovalService,
+    private readonly financeControlService: B2FFinanceControlService,
   ) {}
 
   getConsumerPorts(): B2FFinanceJournalConsumerPortsV1 {
@@ -163,6 +165,9 @@ export class B2FJournalGovernanceService {
         decisionHash: sha({ requestHash, state: 'DRAFT' }),
         replayHash: sha({ requestHash, reference }),
         approvalId: null,
+        preparedBy: command.principal.principalId,
+        preparedRoles: [...command.principal.roles],
+        controlDecisionReference: null,
         a5IdempotencyKey: `b2f-a5-${requestHash}`,
         a5JournalId: null,
         a5PostedAt: null,
@@ -284,8 +289,56 @@ export class B2FJournalGovernanceService {
             journal,
           );
         }
+        const approvalView = approval.approval;
+        if (!approvalView) {
+          return this.finishRejected(
+            manager,
+            reservation.record.id,
+            {
+              code: 'CONTROL_APPROVAL_EVIDENCE_MISSING',
+              message: 'consumed A2 approval evidence is missing',
+            },
+            journal,
+          );
+        }
+        const policyRoles = Array.isArray(approvalView.policy.requiredRoles)
+          ? approvalView.policy.requiredRoles.filter(
+              (role): role is string => typeof role === 'string',
+            )
+          : journal.preparedRoles;
+        const control = await this.financeControlService.evaluate({
+          action: 'FINANCE_JOURNAL_POST',
+          amountMinor: journal.totalDebitMinor,
+          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+          resourceId: journal.id,
+          resourceVersion: journal.recordVersion,
+          resourceHash: this.computeApprovalFingerprint(this.view(journal)),
+          makerPrincipalId: journal.preparedBy ?? approvalView.requesterPrincipalId,
+          makerRoles: policyRoles,
+          executorPrincipal: command.principal,
+          approvals: [approvalView],
+          idempotencyKey: `${command.idempotencyKey}:control`,
+          requestContext: command.requestContext,
+          evaluatedAt: command.now,
+        });
+        if (control.outcome !== 'ALLOW') {
+          journal.state = 'REJECTED';
+          journal.approvalId = command.approvalId;
+          journal.controlDecisionReference = control.decisionReference;
+          await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+          return this.finishRejected(
+            manager,
+            reservation.record.id,
+            {
+              code: 'FINANCE_CONTROL_DENIED',
+              message: control.reasons.join(',') || 'Finance control denied',
+            },
+            journal,
+          );
+        }
         journal.state = 'APPROVED';
         journal.approvalId = command.approvalId;
+        journal.controlDecisionReference = control.decisionReference;
         await this.audit(
           manager,
           journal,

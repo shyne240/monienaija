@@ -17,6 +17,8 @@ import {
   B2F_PERIOD_LIFECYCLE_IDEMPOTENCY_SCOPE,
 } from './b2f-fiscal-period.constants';
 import { B2FFinanceAccountingPeriod } from './b2f-accounting-period.entity';
+import { B2FFinanceControlService } from './b2f-finance-control.service';
+import type { B2FFinanceControlAction } from './b2f-finance-control.types';
 import { b2fSha256, B2FFiscalPeriodRepository } from './b2f-fiscal-period.repository';
 import type {
   B2FFiscalPeriodConsumerPortsV1,
@@ -40,6 +42,7 @@ export class B2FFiscalPeriodService {
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
     private readonly privilegedApprovalService: PrivilegedActionApprovalService,
+    private readonly financeControlService: B2FFinanceControlService,
   ) {}
 
   getConsumerPorts(): B2FFiscalPeriodConsumerPortsV1 {
@@ -226,6 +229,51 @@ export class B2FFiscalPeriodService {
           period,
           'B2F_FISCAL_PERIOD_APPROVAL_REQUIRED',
           `privileged approval rejected: ${approval.reason ?? 'unknown'}`,
+          403,
+        );
+
+      const approvalView = approval.approval;
+      if (!approvalView)
+        return this.rejectTransition(
+          manager,
+          reservation.record.id,
+          command,
+          requestHash,
+          period,
+          'B2F_FISCAL_PERIOD_APPROVAL_REQUIRED',
+          'consumed A2 approval evidence is missing',
+          403,
+        );
+      const makerRoles = Array.isArray(approvalView.policy.requiredRoles)
+        ? approvalView.policy.requiredRoles.filter(
+            (role): role is string => typeof role === 'string',
+          )
+        : [];
+      const control = await this.financeControlService.evaluate({
+        action: action as B2FFinanceControlAction,
+        amountMinor: '0',
+        resourceType: B2F_ACCOUNTING_PERIOD_RESOURCE_TYPE,
+        resourceId: period.id,
+        resourceVersion: period.recordVersion,
+        resourceHash: this.repository.computeActionFingerprint(command),
+        makerPrincipalId: approvalView.requesterPrincipalId,
+        makerRoles,
+        executorPrincipal: command.principal,
+        approvals: [approvalView],
+        overrideEvidenceReference: command.controlEvidence.materialityReference,
+        idempotencyKey: `${command.idempotencyKey}:control`,
+        requestContext: command.requestContext,
+        evaluatedAt: now,
+      });
+      if (control.outcome !== 'ALLOW')
+        return this.rejectTransition(
+          manager,
+          reservation.record.id,
+          command,
+          requestHash,
+          period,
+          'B2F_FISCAL_PERIOD_APPROVAL_REQUIRED',
+          `Finance control denied: ${control.reasons.join(',')}`,
           403,
         );
 

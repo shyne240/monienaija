@@ -54,6 +54,7 @@ export interface PrivilegedActionApprovalView {
   approvedBy: string | null;
   approvalScope: string;
   requiredAssurance: string;
+  policy: Readonly<Record<string, unknown>>;
   status: PrivilegedActionApprovalStatus;
   isEmergency: boolean;
   requestedAt: Date;

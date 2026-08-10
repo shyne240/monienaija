@@ -484,6 +484,7 @@ export class PrivilegedActionApprovalService {
       approvedBy: approval.approvedBy,
       approvalScope: approval.approvalScope,
       requiredAssurance: approval.requiredAssurance,
+      policy: approval.policy,
       status: approval.status,
       isEmergency: approval.isEmergency,
       requestedAt: approval.requestedAt,
