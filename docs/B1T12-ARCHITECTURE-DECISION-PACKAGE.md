@@ -2,13 +2,13 @@
 
 - **Task:** B1T12 — B1 Commercial Payment-Term and Invoice Due-Date Extension
 - **Owner:** B1 Commercial Platform
-- **ADR allocation:** ADR-0091 (allocated; not authored by this package)
-- **Package status:** PROPOSED — REQUIRES ARCHITECTURE APPROVAL
+- **ADR:** ADR-0091 — finalized architecture decision; runtime not implemented
+- **Package status:** FINALIZED — AUTHORITATIVE FOR SUBSEQUENT B1T12 IMPLEMENTATION
 - **Runtime status:** BLOCKED — no B1T12 runtime is authorized by this package
 - **B2F07 status:** BLOCKED
 - **Scope:** Architecture decision package only
 
-Every recommendation in this document is **PROPOSED — REQUIRES ARCHITECTURE APPROVAL**. This document records repository facts, evaluates bounded options, and identifies a least-invasive proposed architecture. It does not approve a recommendation, define or activate a production payment term, implement runtime behavior, or modify any historical contract.
+The architecture decisions in this document are finalized by ADR-0091 for a subsequent, separately authorized B1T12 runtime task. This package defines architecture only: it does not activate a production payment term, implement runtime behavior, create a migration, or modify any historical contract.
 
 ## 1. Current repository facts
 
@@ -120,7 +120,7 @@ No authoritative B1 holiday calendar, business-day calendar, payment-term calend
 
 ### 1.6 Existing B1T12 allocation facts
 
-The prerequisite package currently states that:
+The B2F07 prerequisite package predates this finalization and records the original entry blockers. It states that:
 
 - no term basis or term value is approved;
 - the future task must define a closed reviewed term-basis vocabulary;
@@ -130,25 +130,79 @@ The prerequisite package currently states that:
 - one bounded payment-term definition is currently listed as a B1T12 exit criterion;
 - no fallback/default term is allowed.
 
-ADR-0091 is allocated to B1T12 but is not authored. This decision package does not consume or alter that allocation.
+ADR-0091 is allocated to B1T12 and is authored with this finalization package. It accepts these architecture decisions while explicitly recording that B1T12 runtime is not implemented by this documentation task.
 
-## 2. B1T12 blocker summary
+## 2. Finalized B1T12 blocker decisions
 
-| #   | Unresolved decision                          | Why runtime remains blocked                                                                                                 |
-| --- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Closed payment-term-basis vocabulary         | Selecting day/month/business-calendar semantics creates commercial meaning.                                                 |
-| 2   | Due-date arithmetic and timezone/calendar    | ISO UTC storage does not decide elapsed-time versus civil-calendar behavior.                                                |
-| 3   | Stable canonical invoice issuance evidence   | Current replay regenerates `issuedAt`; current invoice hash excludes it; generation does not guarantee durable persistence. |
-| 4   | Payment-term and invoice-binding persistence | Evidence must be durable without creating a second invoice authority or rewriting frozen B1T05.                             |
-| 5   | Correction/supersession                      | Existing architecture has not selected version, void/reissue, or additive amendment semantics.                              |
-| 6   | Dedicated idempotency scopes                 | Scope identities and semantic operation boundaries are not approved.                                                        |
-| 7   | Bounded term value                           | Authority implementation can be generic, but tests and the current exit criterion require explicit treatment.               |
+| #   | Finalized decision                           | Authoritative disposition                                                                                                    |
+| --- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Closed payment-term-basis vocabulary         | `ELAPSED_DAYS` only.                                                                                                         |
+| 2   | Due-date arithmetic and timezone/calendar    | `UTC_INSTANT_ELAPSED`; exactly 86,400 seconds per unit.                                                                      |
+| 3   | Stable canonical invoice issuance evidence   | Prospective additive orchestration persists unchanged `B1InvoiceV1` plus stable binding evidence; historical methods remain. |
+| 4   | Payment-term and invoice-binding persistence | `b1_billing_documents` remains invoice authority; additive B1 term/binding/amendment aggregates are permitted.               |
+| 5   | Correction/supersession                      | Append-only due-date amendment evidence; no overwrite or void/reissue in v1.                                                 |
+| 6   | Dedicated idempotency scopes                 | Exactly the three scopes in §8; lifecycle operations share the definition scope with an operation discriminator.             |
+| 7   | Bounded term value                           | Integer `0..3660`; test fixtures only absent separate production approval.                                                   |
+
+## 2A. Five final architecture decisions
+
+### 2A.1 Decision A — term-value bounds
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** `termValue` is a JSON/TypeScript integer from `0` through `3660` inclusive. Zero is permitted and means the authoritative `dueAt` equals the authoritative `issuedAt`. Negative, fractional, non-numeric, unsafe, and greater-than-3660 values fail closed. Arithmetic must detect an invalid instant, overflow, or loss of integer precision and reject rather than wrap or clamp. This is an implementation bound, not approval for any production commercial term. No default or seed is authorized.
+
+### 2A.2 Decision B — canonical hash contract
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** All B1T12 semantic hashes use SHA-256 over UTF-8 deterministic JSON and are encoded as lowercase hexadecimal. Canonical JSON recursively sorts object keys lexicographically, preserves arrays in declared semantic order, emits no insignificant whitespace, represents schema-defined absent optional values explicitly as `null`, and uses canonical JSON numeric representation. Timestamps are normalized to ISO-8601 UTC with millisecond precision (`YYYY-MM-DDTHH:mm:ss.SSSZ`). Equivalent numeric values must have one canonical textual form.
+
+The separate frozen field sets are:
+
+1. **Payment-term definition hash:** `paymentTermReference`, `paymentTermVersion`, `termBasis`, `termValue`, `effectiveFrom`, `effectiveTo` (explicit null when open-ended), `currency`, `accountingUnit`, and the complete defined commercial scope/provenance object. It excludes generated UUIDs, creation/update timestamps, audit timestamps, correlation IDs, and random values.
+2. **Invoice-binding decision/hash:** `invoiceReference`, `invoiceVersion`, `invoiceHash`, stable `issuedAt`, `paymentTermReference`, `paymentTermVersion`, `paymentTermDefinitionHash`, `termBasis`, `termValue`, calculated `dueAt`, `currency`, and `accountingUnit`.
+3. **Due-date calculation hash:** stable `issuedAt`, `termBasis`, `termValue`, `arithmeticRule` equal to `UTC_INSTANT_ELAPSED`, `secondsPerDay` equal to `86400`, and calculated `dueAt`.
+4. **Amendment hash:** `originalBindingReference`, `originalBindingHash`, `originalDueAt`, `replacementDueAt`, normalized amendment `reason`, amendment `effectiveAt`, and `supersedesEvidenceReference`. The supersession reference identifies the prior binding or amendment being superseded; it is not a generated reference to the new record.
+
+Generated IDs, persistence/audit timestamps, correlation IDs, and random values are excluded unless a future version explicitly makes one semantic. Hash schemas are versioned; field-set changes require a new hash/contract version and cannot reinterpret stored v1 hashes.
+
+### 2A.3 Decision C — payment-term lifecycle
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** The lifecycle is `DRAFT -> PENDING_APPROVAL -> ACTIVE`, with explicit terminal `REVOKED` and time-derived `EXPIRED`. Creation always creates `DRAFT`; creation never activates. `DRAFT` and `PENDING_APPROVAL` cannot bind an invoice. Activation is a separate A2-approved operation. `ACTIVE` is eligible only inside its effective window. `EXPIRED` is derived when the effective window has ended and does not require a time-triggered mutation. `REVOKED` is an explicit A2-approved retirement. Historical versions remain queryable. A used term cannot be semantically mutated; semantic change requires a new version.
+
+Creation, activation, and revocation use only `b1.payment-term.definition.idempotency.v1`, differentiated by a required semantic operation discriminator. No lifecycle idempotency scope may be added. An activation/revocation approval binds term reference/version/hash, requested lifecycle action, effective dates, actor/resource context, semantic request hash, and expected version.
+
+### 2A.4 Decision D — A2 authorization contract
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** A2 `PrivilegedActionApprovalService` remains the only privileged approval authority. Payment-term creation as `DRAFT` and prospective invoice binding do not require privileged approval. Activation, revocation, and due-date amendment do require request/approve/consume semantics with exact resource and fingerprint matching. No B1 approval vault, IAM role, user, credential, session, or B9 behavior is authorized.
+
+Repository convention uses uppercase domain/action verbs such as `FINANCE_ACCOUNT_MAPPING_ACTIVATE` and binds an exact resource/fingerprint. The following B1T12 action names are documented for allocation in the subsequent runtime task and must not be replaced with Finance actions:
+
+```text
+B1_PAYMENT_TERM_ACTIVATE
+B1_PAYMENT_TERM_REVOKE
+B1_PAYMENT_TERM_DUE_DATE_AMEND
+```
+
+Resource contracts are:
+
+```text
+activation/revocation resource type: B1_PAYMENT_TERM
+activation/revocation resource id:   <paymentTermReference>/v<paymentTermVersion>
+amendment resource type:             B1_PAYMENT_TERM_DUE_DATE_AMENDMENT
+amendment resource id:               <canonicalAmendmentReference>
+```
+
+The approval fingerprint canonical payload includes operation/action, resource type, resource ID, semantic request hash, relevant definition/binding/amendment hash, actor principal ID, effective date, and expected version where applicable. The runtime must use existing A2 request/consume behavior and must fail closed on action, resource, actor/context, fingerprint, status, expiry, assurance, or scope mismatch. The three action names are the only remaining implementation-task vocabulary allocations; this documentation task does not add them to runtime types.
+
+### 2A.5 Decision E — stable invoice-persistence orchestration
+
+**FINALIZED — AUTHORITATIVE FOR B1T12:** A prospective internal B1T12 orchestration may invoke unchanged canonical B1T05 generation, obtain `B1InvoiceV1`, freeze its generated `issuedAt` as stable issuance evidence, persist that exact unchanged invoice through canonical `b1_billing_documents`, and persist the immutable term binding/due evidence. Where existing persistence permits, invoice and binding writes occur in one transaction using established serializable/locking and shared-idempotency patterns.
+
+The operation must first recover by canonical invoice/binding lookup on replay or uncertain outcome. It must never call the clock-dependent generator again and treat a new timestamp as truth for an already persisted semantic invoice. Existing `generateInvoice()` and historical replay behavior remain unchanged and available; the new operation is prospective and additive. It accepts neither a caller-supplied invoice snapshot nor caller-supplied `issuedAt`/`dueAt` as authority. It performs no historical backfill, invoice JSON mutation, invoice hash change, or second invoice-table creation.
 
 ## 3. Decision 1 — term basis
 
 ### 3.1 Candidate: `ELAPSED_DAYS`
 
-**Arithmetic semantics:** Add `termValue × 86,400` SI seconds to the canonical invoice issuance instant. The result remains an instant. A positive-integer value and overflow bounds would be required. This option must not be described as a civil-calendar or business-day promise.
+**Arithmetic semantics:** Add `termValue × 86,400` SI seconds to the canonical invoice issuance instant. The result remains an instant. An integer from `0` through `3660` inclusive is required, and arithmetic overflow or invalid results fail closed. This option must not be described as a civil-calendar or business-day promise.
 
 **Weekends/holidays:** Irrelevant. Every elapsed 24-hour interval counts.
 
@@ -210,17 +264,17 @@ ADR-0091 is allocated to B1T12 but is not authored. This decision package does n
 
 **Compatibility:** B1 has no approved payment month-end rule. This is more semantically complex than required for the first bounded authority.
 
-### 3.5 Proposed recommendation
+### 3.5 Finalized decision
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Freeze the B1T12 v1 closed vocabulary to `ELAPSED_DAYS` only. Define it explicitly as exact elapsed 24-hour intervals, not civil dates and not business days. Reject zero, negative, fractional, unsafe, or out-of-range values. A later semantic basis requires a new contract/calculation version and, where applicable, an authoritative calendar dependency.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Freeze the B1T12 v1 closed vocabulary to `ELAPSED_DAYS` only. Define it explicitly as exact elapsed 24-hour intervals, not civil dates and not business days. Permit integer values from `0` through `3660` inclusive; reject negative, fractional, non-numeric, unsafe, or greater values. Zero means `dueAt` equals the authoritative issuance instant. A later semantic basis requires a new contract/calculation version and, where applicable, an authoritative calendar dependency.
 
-This is the least invasive technical option because it needs no new calendar authority and can produce one unambiguous instant. The recommendation does not authorize any `termValue`, default, seed, or production activation.
+This is the least invasive technical option because it needs no new calendar authority and can produce one unambiguous instant. The bounded technical range does not authorize any production `termValue`, default, seed, or production activation.
 
 ## 4. Decision 2 — due-date/time semantics
 
 ### 4.1 UTC instant arithmetic
 
-Normalize the canonical `issuedAt` to an unambiguous instant and add an exact duration. For proposed `ELAPSED_DAYS`, the formula would be:
+Normalize the canonical `issuedAt` to an unambiguous instant and add an exact duration. For finalized `ELAPSED_DAYS`, the formula would be:
 
 ```text
 dueAt = issuedAtInstant + (termValue × 86,400 seconds)
@@ -261,11 +315,11 @@ calendarReference/version/hash (or explicit null)
 dueAt
 ```
 
-It must exclude random IDs, execution-generated persistence timestamps, audit record IDs, and replay flags. The exact canonical serialization and hash algorithm must be frozen by ADR-0091 before runtime.
+It excludes random IDs, execution-generated persistence timestamps, audit record IDs, and replay flags. ADR-0091 freezes SHA-256, UTF-8 deterministic JSON, UTC millisecond timestamp normalization, and the exact field sets in §2A.2.
 
-### 4.6 Proposed recommendation
+### 4.6 Finalized decision
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** For v1 `ELAPSED_DAYS`, adopt UTC instant representation and elapsed-second arithmetic. Canonicalize both `issuedAt` and `dueAt` as UTC ISO-8601 instants with millisecond precision; set the calculation timezone rule to an explicit `UTC_INSTANT_ELAPSED` contract value; set calendar reference/version/hash to null; and never call this result calendar-day or business-day arithmetic.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** For v1 `ELAPSED_DAYS`, adopt UTC instant representation and elapsed-second arithmetic. Canonicalize both `issuedAt` and `dueAt` as UTC ISO-8601 instants with millisecond precision; set the calculation timezone rule to an explicit `UTC_INSTANT_ELAPSED` contract value; set calendar reference/version/hash to null; and never call this result calendar-day or business-day arithmetic.
 
 Repository evidence supports feasibility and determinism, not automatic approval. Architecture must explicitly approve the commercial meaning.
 
@@ -318,11 +372,11 @@ Update existing stored `B1InvoiceV1` JSON after generation to add term fields wi
 
 **Authority boundary:** B1-owned but violates historical preservation.
 
-### 5.5 Proposed recommendation
+### 5.5 Finalized decision
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Select Option B. Preserve `B1InvoiceV1` and its historical hash unchanged. Add B1T12-owned immutable issuance/binding evidence, and expose a composed B1 read. The prospective B1T12 issuance operation must freeze one canonical `issuedAt`, durably store the unchanged canonical invoice in the existing B1 billing persistence authority, and bind the payment term to that exact invoice reference/version/hash/issuedAt. Replay must read original durable evidence rather than call the clock-dependent generation path to manufacture new issuance evidence.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Select Option B. Preserve `B1InvoiceV1` and its historical hash unchanged. Add B1T12-owned immutable issuance/binding evidence, and expose a composed B1 read. The prospective B1T12 issuance operation must freeze one canonical `issuedAt`, durably store the unchanged canonical invoice in the existing B1 billing persistence authority, and bind the payment term to that exact invoice reference/version/hash/issuedAt. Replay must read original durable evidence rather than call the clock-dependent generation path to manufacture new issuance evidence.
 
-This recommendation does not authorize a repair or rewrite of historical B1T05 records. Existing invoices without B1T12 evidence remain unbound and cannot be assigned a term by inference.
+This decision does not authorize a repair or rewrite of historical B1T05 records. Existing invoices without B1T12 evidence remain unbound and cannot be assigned a term by inference.
 
 ## 6. Decision 4 — payment-term and invoice-binding persistence
 
@@ -361,9 +415,9 @@ Have B2F07 persist the first authoritative binding/due date.
 
 **Consequences:** Violates the authority boundary, duplicates commercial calculation, and allows Finance to define the customer obligation.
 
-### 6.5 Proposed recommendation
+### 6.5 Finalized decision
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Select Option B. Use bounded, additive, B1-owned persistence for versioned term definitions and immutable invoice bindings. Continue using `b1_billing_documents` as the canonical invoice persistence authority; do not create a second invoice table. The B1T12 binding must contain references and evidence, not a caller-supplied invoice snapshot.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Select Option B. Use bounded, additive, B1-owned persistence for versioned term definitions and immutable invoice bindings. Continue using `b1_billing_documents` as the canonical invoice persistence authority; do not create a second invoice table. The B1T12 binding must contain references and evidence, not a caller-supplied invoice snapshot.
 
 Expose an internal read-only B1T12 consumer port with a method equivalent to:
 
@@ -425,11 +479,11 @@ Update the original binding in place.
 
 **Consequences:** Destroys historical reproducibility, weakens audit, and can desynchronize B2F07. It is incompatible with the stated requirements.
 
-### 7.5 Proposed recommendation
+### 7.5 Finalized decision
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Select Option C for due-date-only corrections: an additive immutable amendment chain under B1 authority. Require explicit reason, authorization/approval reference, expected prior evidence hash, and idempotency. Never overwrite the original binding. The consumer read must resolve exactly one effective result and expose the full chain for verification.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Select Option C for due-date-only corrections: an additive immutable amendment chain under B1 authority. Require explicit reason, authorization/approval reference, expected prior evidence hash, and idempotency. Never overwrite the original binding. The consumer read must resolve exactly one effective result and expose the full chain for verification.
 
-Use void-and-reissue only when the canonical invoice itself must be cancelled/replaced under a separately approved B1 invoice-state workflow. Do not use a due-date amendment to change invoice amount, currency, accounting unit, customer, or other invoice content.
+B1T12 v1 does not implement void-and-reissue. Any future canonical invoice cancellation/replacement requires a separately approved B1 invoice-state workflow outside this task. A due-date amendment cannot change invoice amount, currency, accounting unit, customer, or other invoice content.
 
 ## 8. Decision 6 — idempotency scopes
 
@@ -437,7 +491,7 @@ The shared Operations `IdempotencyService` remains the only idempotency authorit
 
 ### 8.1 Payment-term definition creation/versioning
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:**
+**FINALIZED — AUTHORITATIVE FOR B1T12:**
 
 ```text
 b1.payment-term.definition.idempotency.v1
@@ -445,11 +499,11 @@ b1.payment-term.definition.idempotency.v1
 
 Semantic boundary: create a specific immutable payment-term reference/version definition. Its request hash covers semantic definition, applicability, effective window, currency/unit, provenance references, and expected predecessor for new versions. It excludes generated IDs, execution timestamps, audit IDs, and persistence timestamps. The same semantic request replays; the same key with changed semantics conflicts.
 
-Activation/lifecycle transition should not be silently folded into definition creation if approval or state-transition semantics differ. ADR-0091 must decide whether lifecycle transitions use the same scope with an operation discriminator or a separately approved scope.
+Creation produces `DRAFT`. Activation is a separate A2-approved operation represented in this same definition scope with an explicit lifecycle-operation discriminator in the semantic request payload. No additional lifecycle idempotency scope is authorized.
 
 ### 8.2 Invoice payment-term binding and due-date generation
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:**
+**FINALIZED — AUTHORITATIVE FOR B1T12:**
 
 ```text
 b1.payment-term.invoice-binding.idempotency.v1
@@ -459,7 +513,7 @@ Semantic boundary: bind exactly one selected term version to one canonical invoi
 
 ### 8.3 Due-date amendment
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:**
+**FINALIZED — AUTHORITATIVE FOR B1T12:**
 
 ```text
 b1.payment-term.due-date-amendment.idempotency.v1
@@ -467,11 +521,11 @@ b1.payment-term.due-date-amendment.idempotency.v1
 
 Semantic boundary: append one approved correction to one expected prior binding/amendment hash. Its request hash covers invoice identity, prior evidence hash, replacement term evidence or approved correction inputs, reason, approval reference, and commercial provenance. It excludes the calculated due date as caller authority; B1 recalculates it. Replay returns the original amendment; changed semantics conflict.
 
-If Architecture rejects additive amendment persistence, this third scope must not be created.
+Additive amendment persistence is finalized, so this third scope is required when amendment runtime is implemented.
 
-### 8.4 Minimum scope conclusion
+### 8.4 Exact scope conclusion
 
-Two scopes are the proposed minimum for base authority plus invoice binding. A third is required only if the proposed additive amendment mechanism is approved. Scope strings above are proposals, not allocations, and must not appear in runtime before approval.
+Exactly these three scopes are authorized. No fourth scope, including a lifecycle-only scope, may be introduced in B1T12 v1.
 
 ## 9. Decision 7 — bounded term value
 
@@ -483,7 +537,7 @@ A generic payment-term authority can be implemented without authorizing a produc
 
 Deterministic due-date tests necessarily need at least one concrete numeric input. Such values can remain source-controlled test fixtures with no migration, bootstrap, seed, configuration registration, activation, or production identifier.
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Permit concrete positive-integer term values in tests only, labelled `TEST/IMPLEMENTATION FIXTURE ONLY`. The implementation task may choose fixture values needed for boundary tests, but those values carry no commercial meaning and must never be exported as defaults or production configuration.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Permit concrete integer term values in the inclusive range `0..3660` in tests only, labelled `TEST/IMPLEMENTATION FIXTURE ONLY`. The implementation task may choose fixture values needed for boundary tests, but those values carry no commercial meaning and must never be exported as defaults or production configuration.
 
 ### 9.3 Production activation and task exit
 
@@ -494,11 +548,11 @@ The current prerequisite package lists one approved bounded payment-term definit
 1. runtime implementation may complete using test-only fixtures, while B1T12 remains not production-activated and does not satisfy its production exit criterion; or
 2. a separately approved bounded production definition is supplied before B1T12 is declared complete.
 
-**PROPOSED — REQUIRES ARCHITECTURE APPROVAL:** Adopt position 1 for runtime implementation and testing. Keep production activation and final production-exit evidence blocked until a real term is separately approved. Do not weaken or silently rewrite the existing exit criterion.
+**FINALIZED — AUTHORITATIVE FOR B1T12:** Adopt position 1 for runtime implementation and testing. Keep production activation and final production-exit evidence blocked until a real term is separately approved. Do not weaken or silently rewrite the existing exit criterion.
 
-## 10. Recommended architecture
+## 10. Finalized architecture
 
-The following is one coherent least-invasive proposal. Every item is **PROPOSED — REQUIRES ARCHITECTURE APPROVAL**:
+The following is the coherent finalized architecture. Every item is **FINALIZED — AUTHORITATIVE FOR B1T12**:
 
 1. Freeze B1T12 v1 `termBasis` to `ELAPSED_DAYS` only.
 2. Define one day as exactly 86,400 elapsed seconds.
@@ -509,15 +563,15 @@ The following is one coherent least-invasive proposal. Every item is **PROPOSED 
 7. Add B1-owned, versioned payment-term-definition persistence and B1-owned immutable invoice-binding persistence; neither is another invoice authority.
 8. Expose one composed internal read-only B1 consumer port for B2F07; expose no B2 mutation path.
 9. Use additive immutable due-date amendments for due-date-only corrections; preserve original evidence and complete chain.
-10. Propose two base idempotency scopes and one conditional amendment scope as documented in §8.
+10. Use exactly the three finalized idempotency scopes documented in §8.
 11. Permit concrete test values only as `TEST/IMPLEMENTATION FIXTURE ONLY`; authorize no production value, default, or seed.
 12. Keep existing invoices without B1T12 evidence unbound; never infer or backfill a term or due date.
 
 ## 11. Alternatives rejected and why
 
-These rejections are part of the proposal and therefore are **PROPOSED — REQUIRES ARCHITECTURE APPROVAL** until ADR-0091 approves them.
+These alternatives are rejected by **FINALIZED — AUTHORITATIVE FOR B1T12** decisions in ADR-0091.
 
-| Alternative                                               | Proposed disposition                | Reason                                                                            |
+| Alternative                                               | Final disposition                   | Reason                                                                            |
 | --------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------- |
 | `CALENDAR_DAYS` in v1                                     | Reject for first bounded vocabulary | Requires unapproved timezone, date-inclusion, and due-time semantics.             |
 | `BUSINESS_DAYS` in v1                                     | Reject                              | No authoritative B1 holiday/business calendar exists.                             |
@@ -536,7 +590,7 @@ These rejections are part of the proposal and therefore are **PROPOSED — REQUI
 
 ## 12. Authority-boundary analysis
 
-| Concern                                                        | Authority after proposed design         | Boundary rule                                                   |
+| Concern                                                        | Authority after finalized design        | Boundary rule                                                   |
 | -------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------- |
 | Payment-term definition/version/lifecycle                      | B1                                      | B1 is the only commercial-term authority.                       |
 | Term applicability and invoice selection                       | B1                                      | Exactly one effective compatible term; ambiguity fails closed.  |
@@ -552,26 +606,24 @@ These rejections are part of the proposal and therefore are **PROPOSED — REQUI
 | Shared idempotency/audit/outbox/metrics primitives             | Operations                              | B1T12 reuses services; it creates no duplicate authority.       |
 | Public API                                                     | None in B1T12                           | Internal consumer only.                                         |
 
-The proposal creates no authority for A5 mutation, B2F03 mapping, B2F04 period change, B2F05 posting, B2F06 policy mutation, B2F07 AR implementation, B2F08 AP, B2F09, Treasury, Reporting, Statements, IAM, Developer/API, C1–C7, Frontend, D1, or E1–E6.
+The finalized architecture creates no authority for A5 mutation, B2F03 mapping, B2F04 period change, B2F05 posting, B2F06 policy mutation, B2F07 AR implementation, B2F08 AP, B2F09, Treasury, Reporting, Statements, IAM, Developer/API, C1–C7, Frontend, D1, or E1–E6.
 
 ## 13. B1T12 implementation prerequisites
 
-B1T12 runtime must not resume until all of the following are explicit:
+The five architecture blockers are finalized by this package and ADR-0091. A later runtime task may begin only under a separate execution instruction and must:
 
-1. ADR-0091 is authored and approved.
-2. The closed v1 `termBasis` vocabulary is approved.
-3. Exact arithmetic, instant precision, canonical serialization, hash algorithm, bounds, and overflow behavior are approved.
-4. The timezone/calendar rule is approved and named.
-5. The additive stable issuance/binding approach—or a bounded alternative—is approved.
-6. The rule for durably preserving the unchanged canonical invoice and atomically preserving/recovering binding evidence is approved.
-7. The B1-owned payment-term and binding persistence aggregates and read-only composition are approved.
-8. The correction/supersession mechanism is approved.
-9. The exact idempotency scopes and semantic request-hash boundaries are approved.
-10. Test-only concrete term values are explicitly permitted, or a different test strategy is approved.
-11. Production activation remains disabled unless a real term basis/value/applicability/effective window is separately approved.
-12. Existing invoices without B1T12 evidence are explicitly excluded from inference/backfill.
-13. The implementation plan confirms no modification to historical B1T03/B1T05 contracts, A5T11, B2F03–B2F06, B2F09-PRE, or historical B2T01–B2T10.
-14. Focused tests and full repository validation are required by the later implementation authorization.
+1. implement exactly the finalized basis, bounds, arithmetic, canonical hash contracts, lifecycle, A2 resources/fingerprints, orchestration, amendment model, and three idempotency scopes;
+2. allocate the three documented B1T12 A2 action names in runtime without reusing a Finance action;
+3. create no production/default/seed term and perform no automatic activation;
+4. treat concrete values `0`, `7`, and `30` only as test/implementation fixtures unless separately approved for production;
+5. preserve frozen `B1InvoiceV1`, its hash semantics, historical B1T05 methods, existing invoice records, and `b1_billing_documents` authority;
+6. use additive B1-owned term, binding, and amendment aggregates with no historical backfill;
+7. reuse A2 and shared Operations idempotency, audit, outbox, and metrics infrastructure;
+8. expose only an internal read-only composed consumer to future B2F07;
+9. preserve B1T03/B1T05, A5T11, B2F03–B2F06, B2F09-PRE, historical B2T01–B2T10, and the permanent roadmap; and
+10. complete focused and full-repository validation before B1T12 runtime can be declared technically complete.
+
+Production activation remains separately blocked until an exact real term basis/value/applicability/effective window is commercially approved and passes the finalized A2 lifecycle.
 
 ## 14. B2F07 convergence requirements
 
@@ -592,28 +644,21 @@ B2F07 remains blocked after this documentation package. Entry review may converg
 
 Only then may B2F07 implementation begin. This package is not a B2F07 GO decision.
 
-## 15. Decisions requiring human/architecture approval
+## 15. Remaining review and activation decisions
 
-The following remain unresolved until explicitly approved:
+The five implementation architecture blockers are resolved. The following are intentionally **not** authorized by this package and remain future review/activation matters rather than B1T12 v1 design ambiguity:
 
-1. Whether v1 term basis is limited to proposed `ELAPSED_DAYS`.
-2. Whether `ELAPSED_DAYS` means exactly 86,400 elapsed seconds per unit.
-3. Whether UTC instant arithmetic and canonical UTC millisecond output are approved commercial semantics.
-4. Exact term-value type, minimum, maximum, and overflow rules.
-5. Exact canonical serialization and hashing contract for definition and calculation hashes.
-6. Whether the additive immutable invoice issuance/binding approach is approved.
-7. How prospective B1T12 orchestration durably preserves the unchanged canonical invoice and binding atomically or recoverably.
-8. Whether additive B1-owned term-definition and invoice-binding persistence is approved.
-9. Exact internal read-only consumer interface and fail-closed verification rules.
-10. Whether additive due-date amendment evidence is the approved correction mechanism.
-11. Approval of each proposed idempotency scope and its semantic request-hash boundary.
-12. Whether lifecycle transitions share the definition scope with an operation discriminator or require another scope.
-13. Whether concrete test-only term values are permitted without production commercial approval.
-14. Whether runtime implementation may be declared technically complete while production activation and the existing bounded-production-term exit criterion remain blocked.
-15. The first real production payment-term basis, value, applicability, effective window, lifecycle state, and activation controls; none is proposed here.
-16. ADR-0091 final decision and approval status.
+1. the first real production payment-term value, applicability, effective window, and commercial approval;
+2. any term basis other than `ELAPSED_DAYS`;
+3. any calendar, business-day, month-end, local-time, or Africa/Lagos civil-time semantics;
+4. any public API, administrative UI, B9 IAM administration, B8 configuration distribution, or production rollout;
+5. any retrospective term assignment or backfill for historical invoices;
+6. any new invoice version, void-and-reissue workflow, or amendment that changes invoice content/value rather than due-date evidence; and
+7. B2F07 entry approval, which still requires the A5/B2F03 convergence track and an explicit `B2F07 = GO`.
 
-Until these approvals exist, all recommendations remain proposals, B1T12 runtime remains blocked, no payment term may be activated, and B2F07 remains blocked.
+The exact retention duration for the new commercial evidence remains **NOT VERIFIED / REQUIRES REVIEW** by Commercial, Finance, Tax, Legal, Privacy, Compliance, and Audit. Runtime design must preserve evidence and legal-hold capability and must not invent disposal behavior while that duration is unresolved. This does not reopen the finalized term, hash, lifecycle, authorization, or orchestration decisions.
+
+The action names in §2A.4 are documented for exact runtime vocabulary allocation in the subsequent implementation task; no runtime vocabulary is modified here.
 
 ## 16. Historical-preservation and no-runtime declaration
 
@@ -629,6 +674,7 @@ This package changes documentation only. It does not:
 
 ## 17. References
 
+- [`ADR-0091 — B1 Commercial Payment-Term and Invoice Due-Date Extension`](ADR/ADR-0091-B1-Commercial-Payment-Term-and-Invoice-Due-Date-Extension.md)
 - [`B1-IMPLEMENTATION-PLAN.md`](B1-IMPLEMENTATION-PLAN.md)
 - [`B1-BILLING-ENGINE-CONTRACT.md`](B1-BILLING-ENGINE-CONTRACT.md)
 - [`B1-COMMERCIAL-CATALOG-CONTRACT.md`](B1-COMMERCIAL-CATALOG-CONTRACT.md)
