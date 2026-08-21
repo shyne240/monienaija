@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { LedgerModule } from '../ledger/ledger.module';
@@ -7,7 +7,7 @@ import { PaymentReferenceService } from './payment-reference.service';
 import { SettlementAccountService } from './settlement-account.service';
 
 @Module({
-  imports: [LedgerModule, TypeOrmModule.forFeature([PaymentReference])],
+  imports: [forwardRef(() => LedgerModule), TypeOrmModule.forFeature([PaymentReference])],
   providers: [PaymentReferenceService, SettlementAccountService],
   exports: [PaymentReferenceService, SettlementAccountService],
 })

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
-import type { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
@@ -19,6 +20,7 @@ import type {
   B2FAccountMappingViewV1,
 } from './b2f-account-mapping.types';
 import { B2FFinanceControlService } from './b2f-finance-control.service';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 
 const SCOPE = 'b2.finance.account-mapping.idempotency.v1',
   LIFECYCLE_SCOPE = 'b2.finance.account-mapping.lifecycle.idempotency.v1',
@@ -87,113 +89,117 @@ export class B2FAccountMappingService {
   }
   async create(command: B2FAccountMappingCreateCommandV1): Promise<B2FAccountMappingResultV1> {
     const requestHash = this.computeCreateHash(command);
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const failure = await this.validateCandidate(command);
-      if (failure) return this.rejectIdempotency(manager, reservation.record.id, failure);
-      const account = await this.ledger.getAccount(command.a5LedgerAccountId);
-      const effectiveFrom = new Date(command.effectiveFrom),
-        effectiveTo = command.effectiveTo ? new Date(command.effectiveTo) : null;
-      const semantic = {
-        bookKey: 'finance.book.ng.primary',
-        bookVersion: 1,
-        classificationKey: command.classificationKey,
-        classificationVersion: 1,
-        a5LedgerAccountId: account.id,
-        mappingVersion: command.mappingVersion,
-      };
-      const mappingReference = `b2f-account-map-${sha(semantic).slice(0, 32)}`;
-      const existing = await manager.getRepository(B2FFinanceAccountMapping).findOne({
-        where: {
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FAccountMappingService.create',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION,
+        });
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const failure = await this.validateCandidate(command);
+        if (failure) return this.rejectIdempotency(manager, reservation.record.id, failure);
+        const account = await this.ledger.getAccount(command.a5LedgerAccountId);
+        const effectiveFrom = new Date(command.effectiveFrom),
+          effectiveTo = command.effectiveTo ? new Date(command.effectiveTo) : null;
+        const semantic = {
           bookKey: 'finance.book.ng.primary',
+          bookVersion: 1,
           classificationKey: command.classificationKey,
+          classificationVersion: 1,
           a5LedgerAccountId: account.id,
           mappingVersion: command.mappingVersion,
-        },
-      });
-      if (existing)
-        return this.rejectIdempotency(manager, reservation.record.id, {
-          code: 'MAPPING_VERSION_EXISTS',
-          message: 'mapping semantic version already exists',
+        };
+        const mappingReference = `b2f-account-map-${sha(semantic).slice(0, 32)}`;
+        const existing = await manager.getRepository(B2FFinanceAccountMapping).findOne({
+          where: {
+            bookKey: 'finance.book.ng.primary',
+            classificationKey: command.classificationKey,
+            a5LedgerAccountId: account.id,
+            mappingVersion: command.mappingVersion,
+          },
         });
-      const snapshot = {
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        accountType: account.accountType,
-        normalBalance: account.normalBalance,
-        currency: account.currency,
-        accountingUnit: account.accountingUnit,
-        isActive: account.isActive,
-        allowNegativeBalance: account.allowNegativeBalance,
-      };
-      const now = command.now ?? new Date();
-      const entity = manager.getRepository(B2FFinanceAccountMapping).create({
-        id: randomUUID(),
-        mappingReference,
-        mappingVersion: command.mappingVersion,
-        status: 'DRAFT',
-        bookKey: 'finance.book.ng.primary',
-        bookVersion: 1,
-        classificationKey: command.classificationKey,
-        classificationVersion: 1,
-        a5LedgerAccountId: account.id,
-        observedA5Code: account.code,
-        observedA5Name: account.name,
-        observedA5AccountType: account.accountType,
-        observedA5NormalBalance: account.normalBalance,
-        observedA5Active: account.isActive,
-        observedA5AllowNegativeBalance: account.allowNegativeBalance,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        effectiveFrom,
-        effectiveTo,
-        idempotencyScope: SCOPE,
-        idempotencyKey: command.idempotencyKey,
-        requestHash,
-        decisionHash: sha({ requestHash, status: 'DRAFT', snapshot }),
-        a5SnapshotHash: sha(snapshot),
-        controlDecisionReference: null,
-        createdBy: command.principal.principalId,
-        createdRoles: [...command.principal.roles],
-        approvedBy: null,
-        lastReason: null,
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId ?? null,
-        recordVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const saved = await manager.getRepository(B2FFinanceAccountMapping).save(entity);
-      await this.record(
-        manager,
-        saved,
-        'FINANCE_ACCOUNT_MAPPING_CREATED',
-        command.principal.principalId,
-        { status: saved.status },
-      );
-      await this.emit(manager, saved, 'B2FFinanceAccountMappingCreated');
-      await this.metrics.increment(manager, 'b2f.account-mapping.created');
-      const result = {
-        outcome: 'CREATED',
-        mapping: this.view(saved),
-        replayed: false,
-        failure: null,
-      } as const;
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 201,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        if (existing)
+          return this.rejectIdempotency(manager, reservation.record.id, {
+            code: 'MAPPING_VERSION_EXISTS',
+            message: 'mapping semantic version already exists',
+          });
+        const snapshot = {
+          id: account.id,
+          code: account.code,
+          name: account.name,
+          accountType: account.accountType,
+          normalBalance: account.normalBalance,
+          currency: account.currency,
+          accountingUnit: account.accountingUnit,
+          isActive: account.isActive,
+          allowNegativeBalance: account.allowNegativeBalance,
+        };
+        const now = command.now ?? new Date();
+        const entity = manager.getRepository(B2FFinanceAccountMapping).create({
+          id: randomUUID(),
+          mappingReference,
+          mappingVersion: command.mappingVersion,
+          status: 'DRAFT',
+          bookKey: 'finance.book.ng.primary',
+          bookVersion: 1,
+          classificationKey: command.classificationKey,
+          classificationVersion: 1,
+          a5LedgerAccountId: account.id,
+          observedA5Code: account.code,
+          observedA5Name: account.name,
+          observedA5AccountType: account.accountType,
+          observedA5NormalBalance: account.normalBalance,
+          observedA5Active: account.isActive,
+          observedA5AllowNegativeBalance: account.allowNegativeBalance,
+          currency: 'NGN',
+          accountingUnit: 'CUSTOMER_FUNDS',
+          effectiveFrom,
+          effectiveTo,
+          idempotencyScope: SCOPE,
+          idempotencyKey: command.idempotencyKey,
+          requestHash,
+          decisionHash: sha({ requestHash, status: 'DRAFT', snapshot }),
+          a5SnapshotHash: sha(snapshot),
+          controlDecisionReference: null,
+          createdBy: command.principal.principalId,
+          createdRoles: [...command.principal.roles],
+          approvedBy: null,
+          lastReason: null,
+          correlationId: command.requestContext.correlationId,
+          causationId: command.causationId ?? null,
+          recordVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+        const saved = await manager.getRepository(B2FFinanceAccountMapping).save(entity);
+        await this.record(
+          manager,
+          saved,
+          'FINANCE_ACCOUNT_MAPPING_CREATED',
+          command.principal.principalId,
+          { status: saved.status },
+        );
+        await this.emit(manager, saved, 'B2FFinanceAccountMappingCreated');
+        await this.metrics.increment(manager, 'b2f.account-mapping.created');
+        const result = {
+          outcome: 'CREATED',
+          mapping: this.view(saved),
+          replayed: false,
+          failure: null,
+        } as const;
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
   async submitForApproval(c: B2FAccountMappingLifecycleCommandV1) {
     return this.simpleTransition(
@@ -235,41 +241,48 @@ export class B2FAccountMappingService {
     version: number,
     now = new Date(),
   ): Promise<B2FAccountMappingResultV1> {
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const mapping = await this.lock(manager, reference, version);
-      if (!mapping)
-        return {
-          outcome: 'REJECTED',
-          mapping: null,
-          replayed: false,
-          failure: { code: 'MAPPING_NOT_FOUND', message: 'mapping not found' },
-        };
-      if (mapping.status !== 'ACTIVE' || !mapping.effectiveTo || mapping.effectiveTo > now)
-        return {
-          outcome: 'REJECTED',
-          mapping: this.view(mapping),
-          replayed: false,
-          failure: { code: 'MAPPING_NOT_EXPIRABLE', message: 'mapping is not active and expired' },
-        };
-      mapping.status = 'EXPIRED';
-      mapping.lastReason = 'effective interval ended';
-      mapping.decisionHash = sha({
-        previous: 'ACTIVE',
-        status: 'EXPIRED',
-        mappingReference: reference,
-        now: now.toISOString(),
-      });
-      const saved = await manager.getRepository(B2FFinanceAccountMapping).save(mapping);
-      await this.record(
-        manager,
-        saved,
-        'FINANCE_ACCOUNT_MAPPING_EXPIRED',
-        'b2f-account-mapping-expiry',
-        { status: 'EXPIRED' },
-      );
-      await this.emit(manager, saved, 'B2FFinanceAccountMappingExpired');
-      return { outcome: 'UPDATED', mapping: this.view(saved), replayed: false, failure: null };
-    });
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FAccountMappingService.expire',
+      async (manager) => {
+        const mapping = await this.lock(manager, reference, version);
+        if (!mapping)
+          return {
+            outcome: 'REJECTED',
+            mapping: null,
+            replayed: false,
+            failure: { code: 'MAPPING_NOT_FOUND', message: 'mapping not found' },
+          };
+        if (mapping.status !== 'ACTIVE' || !mapping.effectiveTo || mapping.effectiveTo > now)
+          return {
+            outcome: 'REJECTED',
+            mapping: this.view(mapping),
+            replayed: false,
+            failure: {
+              code: 'MAPPING_NOT_EXPIRABLE',
+              message: 'mapping is not active and expired',
+            },
+          };
+        mapping.status = 'EXPIRED';
+        mapping.lastReason = 'effective interval ended';
+        mapping.decisionHash = sha({
+          previous: 'ACTIVE',
+          status: 'EXPIRED',
+          mappingReference: reference,
+          now: now.toISOString(),
+        });
+        const saved = await manager.getRepository(B2FFinanceAccountMapping).save(mapping);
+        await this.record(
+          manager,
+          saved,
+          'FINANCE_ACCOUNT_MAPPING_EXPIRED',
+          'b2f-account-mapping-expiry',
+          { status: 'EXPIRED' },
+        );
+        await this.emit(manager, saved, 'B2FFinanceAccountMappingExpired');
+        return { outcome: 'UPDATED', mapping: this.view(saved), replayed: false, failure: null };
+      },
+    );
   }
   async verify(
     r: B2FAccountMappingVerificationRequestV1,
@@ -353,49 +366,53 @@ export class B2FAccountMappingService {
     to: 'PENDING_APPROVAL',
     action: string,
   ) {
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const requestHash = sha({
-        reference: c.mappingReference,
-        version: c.mappingVersion,
-        expected: c.expectedRecordVersion,
-        from,
-        to,
-        reason: c.reason,
-        idempotencyKey: c.idempotencyKey,
-      });
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: LIFECYCLE_SCOPE,
-        key: c.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const m = await this.lock(manager, c.mappingReference, c.mappingVersion);
-      if (!m || m.status !== from || m.recordVersion !== c.expectedRecordVersion)
-        return this.rejectIdempotency(
-          manager,
-          reservation.record.id,
-          { code: 'INVALID_STATE_OR_VERSION', message: 'mapping state/version invalid' },
-          m ?? undefined,
-        );
-      m.status = to;
-      m.lastReason = c.reason.trim();
-      const saved = await manager.getRepository(B2FFinanceAccountMapping).save(m);
-      await this.record(manager, saved, action, c.principal.principalId, { status: to });
-      const result = {
-        outcome: 'UPDATED',
-        mapping: this.view(saved),
-        replayed: false,
-        failure: null,
-      } as const;
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 200,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FAccountMappingService.simpleTransition',
+      async (manager) => {
+        const requestHash = sha({
+          reference: c.mappingReference,
+          version: c.mappingVersion,
+          expected: c.expectedRecordVersion,
+          from,
+          to,
+          reason: c.reason,
+          idempotencyKey: c.idempotencyKey,
+        });
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: LIFECYCLE_SCOPE,
+          key: c.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION,
+        });
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const m = await this.lock(manager, c.mappingReference, c.mappingVersion);
+        if (!m || m.status !== from || m.recordVersion !== c.expectedRecordVersion)
+          return this.rejectIdempotency(
+            manager,
+            reservation.record.id,
+            { code: 'INVALID_STATE_OR_VERSION', message: 'mapping state/version invalid' },
+            m ?? undefined,
+          );
+        m.status = to;
+        m.lastReason = c.reason.trim();
+        const saved = await manager.getRepository(B2FFinanceAccountMapping).save(m);
+        await this.record(manager, saved, action, c.principal.principalId, { status: to });
+        const result = {
+          outcome: 'UPDATED',
+          mapping: this.view(saved),
+          replayed: false,
+          failure: null,
+        } as const;
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 200,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
   private async controlledTransition(
     c: B2FAccountMappingLifecycleCommandV1,
@@ -417,146 +434,150 @@ export class B2FAccountMappingService {
       approvalId: c.approvalId,
       idempotencyKey: c.idempotencyKey,
     });
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: LIFECYCLE_SCOPE,
-        key: c.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const m = await this.lock(manager, c.mappingReference, c.mappingVersion);
-      if (!m || m.status !== from || m.recordVersion !== c.expectedRecordVersion)
-        return this.rejectIdempotency(
-          manager,
-          reservation.record.id,
-          { code: 'INVALID_STATE_OR_VERSION', message: 'mapping state/version invalid' },
-          m ?? undefined,
-        );
-      const compatibility = await this.verify({
-        ...this.verifyRequest(m),
-        accountingDate: (c.now ?? new Date()).toISOString().slice(0, 10),
-      });
-      if (to === 'ACTIVE' && compatibility.reasons.some((r) => r.startsWith('A5_')))
-        return this.rejectIdempotency(
-          manager,
-          reservation.record.id,
-          { code: 'A5_ACCOUNT_INCOMPATIBLE', message: compatibility.reasons.join(',') },
-          m,
-        );
-      if (!c.approvalId)
-        return this.rejectIdempotency(
-          manager,
-          reservation.record.id,
-          { code: 'APPROVAL_REQUIRED', message: 'A2 approval is required' },
-          m,
-        );
-      const fingerprint = this.computeLifecycleFingerprint(this.view(m), controlAction, c.reason);
-      const approval = await this.approvals.consume({
-        principal: c.principal,
-        approvalId: c.approvalId,
-        actionType: controlAction,
-        resource: { type: 'B2F_FINANCE_ACCOUNT_MAPPING', id: m.id },
-        actionFingerprint: fingerprint,
-        now: c.now,
-      });
-      if (!approval.approved || !approval.approval)
-        return this.rejectIdempotency(
-          manager,
-          reservation.record.id,
-          {
-            code: 'APPROVAL_REJECTED',
-            message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
-          },
-          m,
-        );
-      if (to === 'ACTIVE') {
-        const overlap = await manager
-          .getRepository(B2FFinanceAccountMapping)
-          .createQueryBuilder('mapping')
-          .where(
-            "mapping.book_key = :book AND mapping.a5_ledger_account_id = :accountId AND mapping.status = 'ACTIVE' AND mapping.id <> :id",
-            { book: m.bookKey, accountId: m.a5LedgerAccountId, id: m.id },
-          )
-          .andWhere('(mapping.effective_to IS NULL OR mapping.effective_to > :from)', {
-            from: m.effectiveFrom,
-          })
-          .andWhere('(:to::timestamptz IS NULL OR mapping.effective_from < :to)', {
-            to: m.effectiveTo,
-          })
-          .setLock('pessimistic_write')
-          .getOne();
-        if (overlap)
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FAccountMappingService.controlledTransition',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: LIFECYCLE_SCOPE,
+          key: c.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION,
+        });
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const m = await this.lock(manager, c.mappingReference, c.mappingVersion);
+        if (!m || m.status !== from || m.recordVersion !== c.expectedRecordVersion)
+          return this.rejectIdempotency(
+            manager,
+            reservation.record.id,
+            { code: 'INVALID_STATE_OR_VERSION', message: 'mapping state/version invalid' },
+            m ?? undefined,
+          );
+        const compatibility = await this.verify({
+          ...this.verifyRequest(m),
+          accountingDate: (c.now ?? new Date()).toISOString().slice(0, 10),
+        });
+        if (to === 'ACTIVE' && compatibility.reasons.some((r) => r.startsWith('A5_')))
+          return this.rejectIdempotency(
+            manager,
+            reservation.record.id,
+            { code: 'A5_ACCOUNT_INCOMPATIBLE', message: compatibility.reasons.join(',') },
+            m,
+          );
+        if (!c.approvalId)
+          return this.rejectIdempotency(
+            manager,
+            reservation.record.id,
+            { code: 'APPROVAL_REQUIRED', message: 'A2 approval is required' },
+            m,
+          );
+        const fingerprint = this.computeLifecycleFingerprint(this.view(m), controlAction, c.reason);
+        const approval = await this.approvals.consumeInTransaction(manager, {
+          principal: c.principal,
+          approvalId: c.approvalId,
+          actionType: controlAction,
+          resource: { type: 'B2F_FINANCE_ACCOUNT_MAPPING', id: m.id },
+          actionFingerprint: fingerprint,
+          now: c.now,
+        });
+        if (!approval.approved || !approval.approval)
           return this.rejectIdempotency(
             manager,
             reservation.record.id,
             {
-              code: 'OVERLAPPING_ACTIVE_MAPPING',
-              message: 'A5 account already has overlapping active primary mapping',
+              code: 'APPROVAL_REJECTED',
+              message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
             },
             m,
           );
-      }
-      const requiredRoles = Array.isArray(approval.approval.policy.requiredRoles)
-        ? approval.approval.policy.requiredRoles.filter((r): r is string => typeof r === 'string')
-        : m.createdRoles;
-      const control = await this.controls.evaluate({
-        action: controlAction,
-        amountMinor: '0',
-        resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
-        resourceId: m.id,
-        resourceVersion: m.recordVersion,
-        resourceHash: fingerprint,
-        makerPrincipalId: m.createdBy,
-        makerRoles: requiredRoles,
-        executorPrincipal: c.principal,
-        approvals: [approval.approval],
-        overrideEvidenceReference: c.overrideEvidenceReference,
-        idempotencyKey: `${c.idempotencyKey}:control`,
-        requestContext: c.requestContext,
-        evaluatedAt: c.now,
-      });
-      if (control.outcome !== 'ALLOW')
-        return this.rejectIdempotency(
+        if (to === 'ACTIVE') {
+          const overlap = await manager
+            .getRepository(B2FFinanceAccountMapping)
+            .createQueryBuilder('mapping')
+            .where(
+              "mapping.book_key = :book AND mapping.a5_ledger_account_id = :accountId AND mapping.status = 'ACTIVE' AND mapping.id <> :id",
+              { book: m.bookKey, accountId: m.a5LedgerAccountId, id: m.id },
+            )
+            .andWhere('(mapping.effective_to IS NULL OR mapping.effective_to > :from)', {
+              from: m.effectiveFrom,
+            })
+            .andWhere('(:to::timestamptz IS NULL OR mapping.effective_from < :to)', {
+              to: m.effectiveTo,
+            })
+            .setLock('pessimistic_write')
+            .getOne();
+          if (overlap)
+            return this.rejectIdempotency(
+              manager,
+              reservation.record.id,
+              {
+                code: 'OVERLAPPING_ACTIVE_MAPPING',
+                message: 'A5 account already has overlapping active primary mapping',
+              },
+              m,
+            );
+        }
+        const requiredRoles = Array.isArray(approval.approval.policy.requiredRoles)
+          ? approval.approval.policy.requiredRoles.filter((r): r is string => typeof r === 'string')
+          : m.createdRoles;
+        const control = await this.controls.evaluateInTransaction(manager, {
+          action: controlAction,
+          amountMinor: '0',
+          resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
+          resourceId: m.id,
+          resourceVersion: m.recordVersion,
+          resourceHash: fingerprint,
+          makerPrincipalId: m.createdBy,
+          makerRoles: requiredRoles,
+          executorPrincipal: c.principal,
+          approvals: [approval.approval],
+          overrideEvidenceReference: c.overrideEvidenceReference,
+          idempotencyKey: `${c.idempotencyKey}:control`,
+          requestContext: c.requestContext,
+          evaluatedAt: c.now,
+        });
+        if (control.outcome !== 'ALLOW')
+          return this.rejectIdempotency(
+            manager,
+            reservation.record.id,
+            { code: 'FINANCE_CONTROL_DENIED', message: control.reasons.join(',') },
+            m,
+          );
+        m.status = to;
+        m.controlDecisionReference = control.decisionReference;
+        m.approvedBy = c.principal.principalId;
+        m.lastReason = c.reason.trim();
+        m.decisionHash = sha({
+          requestHash,
+          status: to,
+          controlDecisionReference: control.decisionReference,
+        });
+        const saved = await manager.getRepository(B2FFinanceAccountMapping).save(m);
+        await this.record(manager, saved, auditAction, c.principal.principalId, {
+          status: to,
+          controlDecisionReference: control.decisionReference,
+        });
+        await this.emit(
           manager,
-          reservation.record.id,
-          { code: 'FINANCE_CONTROL_DENIED', message: control.reasons.join(',') },
-          m,
+          saved,
+          `B2FFinanceAccountMapping${to[0]}${to.slice(1).toLowerCase()}`,
         );
-      m.status = to;
-      m.controlDecisionReference = control.decisionReference;
-      m.approvedBy = c.principal.principalId;
-      m.lastReason = c.reason.trim();
-      m.decisionHash = sha({
-        requestHash,
-        status: to,
-        controlDecisionReference: control.decisionReference,
-      });
-      const saved = await manager.getRepository(B2FFinanceAccountMapping).save(m);
-      await this.record(manager, saved, auditAction, c.principal.principalId, {
-        status: to,
-        controlDecisionReference: control.decisionReference,
-      });
-      await this.emit(
-        manager,
-        saved,
-        `B2FFinanceAccountMapping${to[0]}${to.slice(1).toLowerCase()}`,
-      );
-      await this.metrics.increment(manager, `b2f.account-mapping.${to.toLowerCase()}`);
-      const result = {
-        outcome: 'UPDATED',
-        mapping: this.view(saved),
-        replayed: false,
-        failure: null,
-      } as const;
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 200,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        await this.metrics.increment(manager, `b2f.account-mapping.${to.toLowerCase()}`);
+        const result = {
+          outcome: 'UPDATED',
+          mapping: this.view(saved),
+          replayed: false,
+          failure: null,
+        } as const;
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 200,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_ACCOUNT_MAPPING',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
   private async validateCandidate(c: B2FAccountMappingCreateCommandV1) {
     if (

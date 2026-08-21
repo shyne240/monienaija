@@ -62,10 +62,9 @@ export class CreateB1CommercialAnalyticsDecisionTables1785753600037 implements M
         CONSTRAINT chk_b1_commercial_analytics_decisions_correlation_id CHECK (correlation_id ~ '^[\\x20-\\x7E]{1,255}$')
       )
     `);
-    await queryRunner.query(`
-      CREATE UNIQUE INDEX uq_b1_commercial_analytics_decisions_reference
-        ON b1_commercial_analytics_decisions (document_reference, document_version)
-    `);
+    // The UNIQUE table constraint of the same name already provides the backing
+    // unique index (PostgreSQL creates it implicitly), so declaring it again here
+    // collides with SQLSTATE 42P07. Uniqueness remains enforced by the constraint.
     await queryRunner.query(`
       CREATE INDEX idx_b1_commercial_analytics_decisions_scope
         ON b1_commercial_analytics_decisions (scope_key, scope_version)
@@ -147,7 +146,6 @@ export class CreateB1CommercialAnalyticsDecisionTables1785753600037 implements M
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_analytics_decisions_hash`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_analytics_decisions_kind`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_analytics_decisions_scope`);
-    await queryRunner.query(`DROP INDEX IF EXISTS uq_b1_commercial_analytics_decisions_reference`);
     await queryRunner.query(`DROP TABLE IF EXISTS b1_commercial_analytics_decisions`);
   }
 }

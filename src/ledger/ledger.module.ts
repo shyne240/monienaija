@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
@@ -13,9 +13,9 @@ import { LedgerService } from './ledger.service';
 
 @Module({
   imports: [
-    OperationsModule,
-    AuthorizationModule,
-    B2FFinanceControlModule,
+    forwardRef(() => OperationsModule),
+    forwardRef(() => AuthorizationModule),
+    forwardRef(() => B2FFinanceControlModule),
     TypeOrmModule.forFeature([LedgerAccount, LedgerJournal, LedgerLine]),
   ],
   controllers: [LedgerController],

@@ -56,10 +56,9 @@ export class CreateB1BillingDocumentTables1785753600033 implements MigrationInte
         CONSTRAINT chk_b1_billing_documents_correlation_id CHECK (correlation_id ~ '^[\\x20-\\x7E]{1,255}$')
       )
     `);
-    await queryRunner.query(`
-      CREATE UNIQUE INDEX uq_b1_billing_documents_reference
-        ON b1_billing_documents (document_reference, document_version)
-    `);
+    // The UNIQUE table constraint of the same name already provides the backing
+    // unique index (PostgreSQL creates it implicitly), so declaring it again here
+    // collides with SQLSTATE 42P07. Uniqueness remains enforced by the constraint.
     await queryRunner.query(`
       CREATE INDEX idx_b1_billing_documents_scope
         ON b1_billing_documents (scope_key, scope_version)
@@ -110,7 +109,6 @@ export class CreateB1BillingDocumentTables1785753600033 implements MigrationInte
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_billing_documents_hash`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_billing_documents_kind`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_billing_documents_scope`);
-    await queryRunner.query(`DROP INDEX IF EXISTS uq_b1_billing_documents_reference`);
     await queryRunner.query(`DROP TABLE IF EXISTS b1_billing_documents`);
   }
 }

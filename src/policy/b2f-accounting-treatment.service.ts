@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { ExternalSettlementService } from '../partner/external-settlement.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -20,6 +20,7 @@ import type {
 import { B2FFinanceControlService } from './b2f-finance-control.service';
 import { B2FFiscalPeriodService } from './b2f-fiscal-period.service';
 import { B2FJournalGovernanceService } from './b2f-journal-governance.service';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 
 const SCOPE = 'b2.finance.accounting-treatment.idempotency.v1',
   RETENTION = 86_400,
@@ -85,179 +86,186 @@ export class B2FAccountingTreatmentService {
   }
   async adopt(command: B2FAccountingTreatmentCommandV1): Promise<B2FAccountingTreatmentDecisionV1> {
     const requestHash = this.computeRequestHash(command);
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') {
-        const body = reservation.record.responseBody as unknown as B2FAccountingTreatmentDecisionV1;
-        if (!body) throw new ConflictException('Accounting treatment replay body missing');
-        return { ...body, replayed: true };
-      }
-      const now = command.evaluatedAt ?? new Date();
-      const source = await this.verifySource(command.source, now);
-      const failures = [...source.reasons];
-      if (
-        source.status === 'NOT_VERIFIED_REQUIRES_REVIEW' ||
-        !source.authoritative ||
-        !source.current
-      )
-        failures.push('SOURCE_NOT_ADOPTABLE');
-      const admission = await this.periods.checkAdmission({
-        periodKey: command.periodKey,
-        accountingDate: command.accountingDate,
-        admissionKind:
-          command.journalClassification === 'CLOSE_ADJUSTMENT'
-            ? 'CLOSE_ADJUSTMENT'
-            : command.journalClassification === 'REOPEN_CORRECTION'
-              ? 'REOPEN_CORRECTION'
-              : 'ORDINARY',
-        expectedBookKey: 'finance.book.ng.primary',
-        expectedBookVersion: 1,
-        expectedLegalEntityReference: 'finance.legal-entity.ng.primary',
-        expectedCurrency: 'NGN',
-        expectedAccountingUnit: 'CUSTOMER_FUNDS',
-        evaluatedAt: now.toISOString(),
-      });
-      if (!admission.compatible) failures.push(`PERIOD_${admission.reason}`);
-      const treatmentReference = `b2f-treatment-${requestHash.slice(0, 32)}`;
-      let controlReference: string | null = null;
-      if (!failures.length) {
-        const control = await this.controls.evaluate({
-          action: 'FINANCE_ACCOUNTING_TREATMENT_ADOPT',
-          amountMinor: this.totalDebit(command.lines),
-          resourceType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
-          resourceId: treatmentReference,
-          resourceVersion: 1,
-          resourceHash: requestHash,
-          makerPrincipalId: command.makerPrincipalId,
-          makerRoles: command.makerRoles,
-          executorPrincipal: command.principal,
-          approvals: command.approvals,
-          overrideEvidenceReference: command.overrideEvidenceReference,
-          idempotencyKey: `${command.idempotencyKey}:control`,
-          requestContext: command.requestContext,
-          evaluatedAt: now,
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FAccountingTreatmentService.adopt',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION,
         });
-        controlReference = control.decisionReference;
-        if (control.outcome !== 'ALLOW')
-          failures.push(...control.reasons.map((r) => `CONTROL_${r}`));
-      }
-      let financeJournalReference: string | null = null,
-        state: B2FAccountingTreatmentDecisionV1['state'] = failures.length ? 'REJECTED' : 'ADOPTED';
-      if (!failures.length) {
-        const journal = await this.journals.createJournal({
-          classification: command.journalClassification,
+        if (reservation.kind === 'REPLAY') {
+          const body = reservation.record
+            .responseBody as unknown as B2FAccountingTreatmentDecisionV1;
+          if (!body) throw new ConflictException('Accounting treatment replay body missing');
+          return { ...body, replayed: true };
+        }
+        const now = command.evaluatedAt ?? new Date();
+        const source = await this.verifySource(command.source, now);
+        const failures = [...source.reasons];
+        if (
+          source.status === 'NOT_VERIFIED_REQUIRES_REVIEW' ||
+          !source.authoritative ||
+          !source.current
+        )
+          failures.push('SOURCE_NOT_ADOPTABLE');
+        const admission = await this.periods.checkAdmission({
+          periodKey: command.periodKey,
+          accountingDate: command.accountingDate,
+          admissionKind:
+            command.journalClassification === 'CLOSE_ADJUSTMENT'
+              ? 'CLOSE_ADJUSTMENT'
+              : command.journalClassification === 'REOPEN_CORRECTION'
+                ? 'REOPEN_CORRECTION'
+                : 'ORDINARY',
+          expectedBookKey: 'finance.book.ng.primary',
+          expectedBookVersion: 1,
+          expectedLegalEntityReference: 'finance.legal-entity.ng.primary',
+          expectedCurrency: 'NGN',
+          expectedAccountingUnit: 'CUSTOMER_FUNDS',
+          evaluatedAt: now.toISOString(),
+        });
+        if (!admission.compatible) failures.push(`PERIOD_${admission.reason}`);
+        const treatmentReference = `b2f-treatment-${requestHash.slice(0, 32)}`;
+        let controlReference: string | null = null;
+        if (!failures.length) {
+          const control = await this.controls.evaluateInTransaction(manager, {
+            action: 'FINANCE_ACCOUNTING_TREATMENT_ADOPT',
+            amountMinor: this.totalDebit(command.lines),
+            resourceType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
+            resourceId: treatmentReference,
+            resourceVersion: 1,
+            resourceHash: requestHash,
+            makerPrincipalId: command.makerPrincipalId,
+            makerRoles: command.makerRoles,
+            executorPrincipal: command.principal,
+            approvals: command.approvals,
+            overrideEvidenceReference: command.overrideEvidenceReference,
+            idempotencyKey: `${command.idempotencyKey}:control`,
+            requestContext: command.requestContext,
+            evaluatedAt: now,
+          });
+          controlReference = control.decisionReference;
+          if (control.outcome !== 'ALLOW')
+            failures.push(...control.reasons.map((r) => `CONTROL_${r}`));
+        }
+        let financeJournalReference: string | null = null,
+          state: B2FAccountingTreatmentDecisionV1['state'] = failures.length
+            ? 'REJECTED'
+            : 'ADOPTED';
+        if (!failures.length) {
+          const journal = await this.journals.createJournal({
+            classification: command.journalClassification,
+            periodKey: command.periodKey,
+            periodVersion: 1,
+            accountingDate: command.accountingDate,
+            description: command.description,
+            sourceDocument: {
+              sourceKind: command.source.category,
+              sourceOwner: command.source.sourceOwner,
+              sourceReference: command.source.sourceReference,
+              sourceVersion: 1,
+              sourceHash: command.source.sourceHash,
+              sourceOccurredAt: command.source.effectiveAt,
+            },
+            lines: command.lines,
+            idempotencyKey: `${command.idempotencyKey}:journal`,
+            principal: command.principal,
+            requestContext: command.requestContext,
+            causationId: command.causationId,
+            now,
+          });
+          if (journal.outcome !== 'CREATED' && journal.outcome !== 'REPLAYED')
+            failures.push(`JOURNAL_${journal.failure?.code ?? 'REJECTED'}`);
+          else {
+            financeJournalReference = journal.journal?.financeJournalReference ?? null;
+            state = 'JOURNAL_DRAFT_CREATED';
+          }
+        }
+        if (failures.length) state = 'REJECTED';
+        const payload = {
+          treatmentReference,
+          treatmentVersion: 1 as const,
+          state,
+          source: command.source,
+          sourceVerification: source,
+          bookKey: 'finance.book.ng.primary' as const,
+          bookVersion: 1 as const,
+          legalEntityReference: 'finance.legal-entity.ng.primary' as const,
+          accountingBasis: 'ACCRUAL' as const,
+          currency: 'NGN' as const,
+          accountingUnit: 'CUSTOMER_FUNDS' as const,
+          periodKey: command.periodKey,
+          periodVersion: 1 as const,
+          accountingDate: command.accountingDate,
+          lines: command.lines,
+          requestHash,
+          controlDecisionReference: controlReference,
+          financeJournalReference,
+          failureReasons: [...new Set(failures)].sort(),
+          correlationId: command.requestContext.correlationId,
+          createdAt: now.toISOString(),
+          replayed: false,
+        };
+        const decisionHash = sha(payload);
+        const decision: B2FAccountingTreatmentDecisionV1 = { ...payload, decisionHash };
+        const entity = manager.getRepository(B2FFinanceAccountingTreatment).create({
+          id: randomUUID(),
+          treatmentReference,
+          treatmentVersion: 1,
+          state,
+          sourceCategory: command.source.category,
+          sourceOwner: command.source.sourceOwner,
+          sourceReference: command.source.sourceReference,
+          sourceVersion: 1,
+          sourceHash: command.source.sourceHash,
+          sourceEffectiveAt: new Date(command.source.effectiveAt),
+          bookKey: 'finance.book.ng.primary',
+          bookVersion: 1,
+          legalEntityReference: 'finance.legal-entity.ng.primary',
+          accountingBasis: 'ACCRUAL',
+          currency: 'NGN',
+          accountingUnit: 'CUSTOMER_FUNDS',
           periodKey: command.periodKey,
           periodVersion: 1,
           accountingDate: command.accountingDate,
-          description: command.description,
-          sourceDocument: {
-            sourceKind: command.source.category,
-            sourceOwner: command.source.sourceOwner,
-            sourceReference: command.source.sourceReference,
-            sourceVersion: 1,
-            sourceHash: command.source.sourceHash,
-            sourceOccurredAt: command.source.effectiveAt,
-          },
-          lines: command.lines,
-          idempotencyKey: `${command.idempotencyKey}:journal`,
-          principal: command.principal,
-          requestContext: command.requestContext,
-          causationId: command.causationId,
-          now,
-        });
-        if (journal.outcome !== 'CREATED' && journal.outcome !== 'REPLAYED')
-          failures.push(`JOURNAL_${journal.failure?.code ?? 'REJECTED'}`);
-        else {
-          financeJournalReference = journal.journal?.financeJournalReference ?? null;
-          state = 'JOURNAL_DRAFT_CREATED';
-        }
-      }
-      if (failures.length) state = 'REJECTED';
-      const payload = {
-        treatmentReference,
-        treatmentVersion: 1 as const,
-        state,
-        source: command.source,
-        sourceVerification: source,
-        bookKey: 'finance.book.ng.primary' as const,
-        bookVersion: 1 as const,
-        legalEntityReference: 'finance.legal-entity.ng.primary' as const,
-        accountingBasis: 'ACCRUAL' as const,
-        currency: 'NGN' as const,
-        accountingUnit: 'CUSTOMER_FUNDS' as const,
-        periodKey: command.periodKey,
-        periodVersion: 1 as const,
-        accountingDate: command.accountingDate,
-        lines: command.lines,
-        requestHash,
-        controlDecisionReference: controlReference,
-        financeJournalReference,
-        failureReasons: [...new Set(failures)].sort(),
-        correlationId: command.requestContext.correlationId,
-        createdAt: now.toISOString(),
-        replayed: false,
-      };
-      const decisionHash = sha(payload);
-      const decision: B2FAccountingTreatmentDecisionV1 = { ...payload, decisionHash };
-      const entity = manager.getRepository(B2FFinanceAccountingTreatment).create({
-        id: randomUUID(),
-        treatmentReference,
-        treatmentVersion: 1,
-        state,
-        sourceCategory: command.source.category,
-        sourceOwner: command.source.sourceOwner,
-        sourceReference: command.source.sourceReference,
-        sourceVersion: 1,
-        sourceHash: command.source.sourceHash,
-        sourceEffectiveAt: new Date(command.source.effectiveAt),
-        bookKey: 'finance.book.ng.primary',
-        bookVersion: 1,
-        legalEntityReference: 'finance.legal-entity.ng.primary',
-        accountingBasis: 'ACCRUAL',
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        periodKey: command.periodKey,
-        periodVersion: 1,
-        accountingDate: command.accountingDate,
-        requestHash,
-        decisionHash,
-        controlDecisionReference: controlReference,
-        financeJournalReference,
-        decision,
-        correlationId: command.requestContext.correlationId,
-        createdAt: now,
-      });
-      const saved = await manager.getRepository(B2FFinanceAccountingTreatment).save(entity);
-      await this.audit.record(manager, {
-        entityType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
-        entityId: saved.id,
-        action: state === 'REJECTED' ? 'FINANCE_TREATMENT_REJECTED' : 'FINANCE_TREATMENT_ADOPTED',
-        actor: command.principal.principalId,
-        correlationId: command.requestContext.correlationId,
-        newValues: {
-          treatmentReference,
-          state,
-          sourceCategory: command.source.category,
-          sourceReference: command.source.sourceReference,
-          sourceVerificationStatus: source.status,
+          requestHash,
+          decisionHash,
           controlDecisionReference: controlReference,
           financeJournalReference,
-          failureReasons: decision.failureReasons,
-        },
-      });
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: state === 'REJECTED' ? 422 : 201,
-        responseBody: decision as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
-        resourceId: saved.id,
-      });
-      return decision;
-    });
+          decision,
+          correlationId: command.requestContext.correlationId,
+          createdAt: now,
+        });
+        const saved = await manager.getRepository(B2FFinanceAccountingTreatment).save(entity);
+        await this.audit.record(manager, {
+          entityType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
+          entityId: saved.id,
+          action: state === 'REJECTED' ? 'FINANCE_TREATMENT_REJECTED' : 'FINANCE_TREATMENT_ADOPTED',
+          actor: command.principal.principalId,
+          correlationId: command.requestContext.correlationId,
+          newValues: {
+            treatmentReference,
+            state,
+            sourceCategory: command.source.category,
+            sourceReference: command.source.sourceReference,
+            sourceVerificationStatus: source.status,
+            controlDecisionReference: controlReference,
+            financeJournalReference,
+            failureReasons: decision.failureReasons,
+          },
+        });
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: state === 'REJECTED' ? 422 : 201,
+          responseBody: decision as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_ACCOUNTING_TREATMENT',
+          resourceId: saved.id,
+        });
+        return decision;
+      },
+    );
   }
   async verifySource(
     source: B2FSourceDecisionReferenceV1,

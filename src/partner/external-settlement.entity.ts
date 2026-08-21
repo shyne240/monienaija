@@ -40,7 +40,11 @@ import { ExternalOperationLifecycleState } from './external-operation-lifecycle.
 @Check('chk_external_settlements_evidence_value', "evidence_value ~ '^[\\x20-\\x7E]{1,255}$'")
 @Check(
   'chk_external_settlements_posted_journal',
-  "decision <> 'SETTLE' OR (journal_id IS NOT NULL AND posted_at IS NOT NULL AND reversal_journal_id IS NULL)",
+  // A posted SETTLE must carry its journal and must not yet reference a reversal; once the
+  // contractual compensation path runs, status becomes REVERSED and the reversal reference
+  // becomes mandatory. Requiring reversal_journal_id IS NULL for every SETTLE row made the
+  // compensation path structurally impossible.
+  "decision <> 'SETTLE' OR (journal_id IS NOT NULL AND posted_at IS NOT NULL AND ((status = 'POSTED' AND reversal_journal_id IS NULL) OR (status = 'REVERSED' AND reversal_journal_id IS NOT NULL)))",
 )
 @Check(
   'chk_external_settlements_reversal_metadata',

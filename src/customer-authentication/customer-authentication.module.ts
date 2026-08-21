@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Customer } from '../customer/customer.entity';
@@ -24,7 +24,7 @@ import { TrustedDevice } from './trusted-device.entity';
 
 @Module({
   imports: [
-    OperationsModule,
+    forwardRef(() => OperationsModule),
     TypeOrmModule.forFeature([
       Customer,
       CustomerAuthenticationCredential,

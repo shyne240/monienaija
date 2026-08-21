@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -108,7 +108,7 @@ export class A5ArControlAccountProvisioningService {
         );
 
       const fingerprint = this.computeApprovalFingerprint(command);
-      const approval = await this.approvalService.consume({
+      const approval = await this.approvalService.consumeInTransaction(manager, {
         principal: command.principal,
         approvalId: command.approvalId,
         actionType: ACTION,
@@ -138,7 +138,7 @@ export class A5ArControlAccountProvisioningService {
             (role): role is string => typeof role === 'string',
           )
         : [];
-      const control = await this.financeControlService.evaluate({
+      const control = await this.financeControlService.evaluateInTransaction(manager, {
         action: ACTION,
         amountMinor: '0',
         resourceType: RESOURCE_TYPE,

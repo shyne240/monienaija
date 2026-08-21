@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, HttpException, Injectable } from '@nestjs/common';
-import type { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import {
   LedgerAccountType,
@@ -23,6 +24,7 @@ import type {
   B2FFinanceJournalResultV1,
   B2FFinanceJournalViewV1,
 } from './b2f-journal-governance.types';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 
 const CREATE_SCOPE = 'b2.finance.journal.create.idempotency.v1';
 const LIFECYCLE_SCOPE = 'b2.finance.journal.lifecycle.idempotency.v1';
@@ -130,80 +132,84 @@ export class B2FJournalGovernanceService {
     command: B2FFinanceJournalCreateCommandV1,
   ): Promise<B2FFinanceJournalResultV1> {
     const requestHash = this.computeCreateHash(command);
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotencyService.reserve(manager, {
-        scope: CREATE_SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const validation = await this.validate(command);
-      if (validation) return this.finishRejected(manager, reservation.record.id, validation);
-      const now = command.now ?? new Date();
-      const totals = this.totals(command.lines);
-      const reference = `b2f-journal-${sha({ requestHash }).slice(0, 32)}`;
-      const entity = manager.getRepository(B2FFinanceJournalGovernance).create({
-        id: randomUUID(),
-        financeJournalReference: reference,
-        financeJournalVersion: 1,
-        state: 'DRAFT',
-        classification: command.classification,
-        bookKey: 'finance.book.ng.primary',
-        bookVersion: 1,
-        legalEntityReference: 'finance.legal-entity.ng.primary',
-        accountingBasis: 'ACCRUAL',
-        periodKey: command.periodKey,
-        periodVersion: command.periodVersion,
-        accountingDate: command.accountingDate,
-        currency: 'NGN',
-        accountingUnit: 'CUSTOMER_FUNDS',
-        description: command.description.trim(),
-        sourceDocument: command.sourceDocument,
-        lines: [...command.lines].sort((a, b) => a.lineNumber - b.lineNumber),
-        totalDebitMinor: totals.debit.toString(),
-        totalCreditMinor: totals.credit.toString(),
-        requestHash,
-        decisionHash: sha({ requestHash, state: 'DRAFT' }),
-        replayHash: sha({ requestHash, reference }),
-        approvalId: null,
-        preparedBy: command.principal.principalId,
-        preparedRoles: [...command.principal.roles],
-        controlDecisionReference: null,
-        a5IdempotencyKey: `b2f-a5-${requestHash}`,
-        a5JournalId: null,
-        a5PostedAt: null,
-        postingFailureCode: null,
-        postingFailureMessage: null,
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId ?? null,
-        recordVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(entity);
-      await this.audit(
-        manager,
-        saved,
-        'FINANCE_JOURNAL_CREATED',
-        command.principal.principalId,
-        null,
-        { state: saved.state, requestHash },
-      );
-      const result = {
-        outcome: 'CREATED',
-        journal: this.view(saved),
-        replayed: false,
-        failure: null,
-      } as const;
-      await this.idempotencyService.complete(manager, reservation.record.id, {
-        statusCode: 201,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FJournalGovernanceService.createJournal',
+      async (manager) => {
+        const reservation = await this.idempotencyService.reserve(manager, {
+          scope: CREATE_SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION,
+        });
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const validation = await this.validate(command);
+        if (validation) return this.finishRejected(manager, reservation.record.id, validation);
+        const now = command.now ?? new Date();
+        const totals = this.totals(command.lines);
+        const reference = `b2f-journal-${sha({ requestHash }).slice(0, 32)}`;
+        const entity = manager.getRepository(B2FFinanceJournalGovernance).create({
+          id: randomUUID(),
+          financeJournalReference: reference,
+          financeJournalVersion: 1,
+          state: 'DRAFT',
+          classification: command.classification,
+          bookKey: 'finance.book.ng.primary',
+          bookVersion: 1,
+          legalEntityReference: 'finance.legal-entity.ng.primary',
+          accountingBasis: 'ACCRUAL',
+          periodKey: command.periodKey,
+          periodVersion: command.periodVersion,
+          accountingDate: command.accountingDate,
+          currency: 'NGN',
+          accountingUnit: 'CUSTOMER_FUNDS',
+          description: command.description.trim(),
+          sourceDocument: command.sourceDocument,
+          lines: [...command.lines].sort((a, b) => a.lineNumber - b.lineNumber),
+          totalDebitMinor: totals.debit.toString(),
+          totalCreditMinor: totals.credit.toString(),
+          requestHash,
+          decisionHash: sha({ requestHash, state: 'DRAFT' }),
+          replayHash: sha({ requestHash, reference }),
+          approvalId: null,
+          preparedBy: command.principal.principalId,
+          preparedRoles: [...command.principal.roles],
+          controlDecisionReference: null,
+          a5IdempotencyKey: `b2f-a5-${requestHash}`,
+          a5JournalId: null,
+          a5PostedAt: null,
+          postingFailureCode: null,
+          postingFailureMessage: null,
+          correlationId: command.requestContext.correlationId,
+          causationId: command.causationId ?? null,
+          recordVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+        const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(entity);
+        await this.audit(
+          manager,
+          saved,
+          'FINANCE_JOURNAL_CREATED',
+          command.principal.principalId,
+          null,
+          { state: saved.state, requestHash },
+        );
+        const result = {
+          outcome: 'CREATED',
+          journal: this.view(saved),
+          replayed: false,
+          failure: null,
+        } as const;
+        await this.idempotencyService.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
 
   async submitForApproval(
@@ -231,240 +237,246 @@ export class B2FJournalGovernanceService {
       approvalId: command.approvalId,
       reason: command.reason.trim(),
     });
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotencyService.reserve(manager, {
-        scope: POST_SCOPE,
-        key: command.idempotencyKey,
-        requestHash: semanticHash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const journal = await this.lock(manager, command.financeJournalReference);
-      if (!journal)
-        return this.finishRejected(manager, reservation.record.id, {
-          code: 'JOURNAL_NOT_FOUND',
-          message: 'journal not found',
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FJournalGovernanceService.postApprovedJournal',
+      async (manager) => {
+        const reservation = await this.idempotencyService.reserve(manager, {
+          scope: POST_SCOPE,
+          key: command.idempotencyKey,
+          requestHash: semanticHash,
+          retentionSeconds: RETENTION,
         });
-      if (journal.recordVersion !== command.expectedRecordVersion)
-        return this.finishRejected(manager, reservation.record.id, {
-          code: 'VERSION_CONFLICT',
-          message: 'journal version changed',
-        });
-      if (!['PENDING_APPROVAL', 'POSTING_UNKNOWN'].includes(journal.state))
-        return this.finishRejected(manager, reservation.record.id, {
-          code: 'INVALID_STATE',
-          message: `cannot post from ${journal.state}`,
-        });
-      if (!command.approvalId || !UUID.test(command.approvalId))
-        return this.finishRejected(manager, reservation.record.id, {
-          code: 'APPROVAL_REQUIRED',
-          message: 'approval is required',
-        });
-      if (journal.state === 'PENDING_APPROVAL') {
-        const approval = await this.approvalService.consume({
-          principal: command.principal,
-          approvalId: command.approvalId,
-          actionType: 'FINANCE_JOURNAL_POST',
-          resource: { type: 'B2F_FINANCE_JOURNAL_GOVERNANCE', id: journal.id },
-          actionFingerprint: this.computeApprovalFingerprint(this.view(journal)),
-          now: command.now,
-        });
-        if (!approval.approved) {
-          journal.state = 'REJECTED';
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const journal = await this.lock(manager, command.financeJournalReference);
+        if (!journal)
+          return this.finishRejected(manager, reservation.record.id, {
+            code: 'JOURNAL_NOT_FOUND',
+            message: 'journal not found',
+          });
+        if (journal.recordVersion !== command.expectedRecordVersion)
+          return this.finishRejected(manager, reservation.record.id, {
+            code: 'VERSION_CONFLICT',
+            message: 'journal version changed',
+          });
+        if (!['PENDING_APPROVAL', 'POSTING_UNKNOWN'].includes(journal.state))
+          return this.finishRejected(manager, reservation.record.id, {
+            code: 'INVALID_STATE',
+            message: `cannot post from ${journal.state}`,
+          });
+        if (!command.approvalId || !UUID.test(command.approvalId))
+          return this.finishRejected(manager, reservation.record.id, {
+            code: 'APPROVAL_REQUIRED',
+            message: 'approval is required',
+          });
+        if (journal.state === 'PENDING_APPROVAL') {
+          const approval = await this.approvalService.consumeInTransaction(manager, {
+            principal: command.principal,
+            approvalId: command.approvalId,
+            actionType: 'FINANCE_JOURNAL_POST',
+            resource: { type: 'B2F_FINANCE_JOURNAL_GOVERNANCE', id: journal.id },
+            actionFingerprint: this.computeApprovalFingerprint(this.view(journal)),
+            now: command.now,
+          });
+          if (!approval.approved) {
+            journal.state = 'REJECTED';
+            journal.approvalId = command.approvalId;
+            await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+            await this.audit(
+              manager,
+              journal,
+              'FINANCE_JOURNAL_APPROVAL_REJECTED',
+              command.principal.principalId,
+              null,
+              { reason: approval.reason },
+            );
+            return this.finishRejected(
+              manager,
+              reservation.record.id,
+              {
+                code: 'APPROVAL_REJECTED',
+                message: `approval rejected: ${approval.reason ?? 'unknown'}`,
+              },
+              journal,
+            );
+          }
+          const approvalView = approval.approval;
+          if (!approvalView) {
+            return this.finishRejected(
+              manager,
+              reservation.record.id,
+              {
+                code: 'CONTROL_APPROVAL_EVIDENCE_MISSING',
+                message: 'consumed A2 approval evidence is missing',
+              },
+              journal,
+            );
+          }
+          const policyRoles = Array.isArray(approvalView.policy.requiredRoles)
+            ? approvalView.policy.requiredRoles.filter(
+                (role): role is string => typeof role === 'string',
+              )
+            : journal.preparedRoles;
+          const control = await this.financeControlService.evaluateInTransaction(manager, {
+            action: 'FINANCE_JOURNAL_POST',
+            amountMinor: journal.totalDebitMinor,
+            resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+            resourceId: journal.id,
+            resourceVersion: journal.recordVersion,
+            resourceHash: this.computeApprovalFingerprint(this.view(journal)),
+            makerPrincipalId: journal.preparedBy ?? approvalView.requesterPrincipalId,
+            makerRoles: policyRoles,
+            executorPrincipal: command.principal,
+            approvals: [approvalView],
+            idempotencyKey: `${command.idempotencyKey}:control`,
+            requestContext: command.requestContext,
+            evaluatedAt: command.now,
+          });
+          if (control.outcome !== 'ALLOW') {
+            journal.state = 'REJECTED';
+            journal.approvalId = command.approvalId;
+            journal.controlDecisionReference = control.decisionReference;
+            await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+            return this.finishRejected(
+              manager,
+              reservation.record.id,
+              {
+                code: 'FINANCE_CONTROL_DENIED',
+                message: control.reasons.join(',') || 'Finance control denied',
+              },
+              journal,
+            );
+          }
+          journal.state = 'APPROVED';
           journal.approvalId = command.approvalId;
-          await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+          journal.controlDecisionReference = control.decisionReference;
           await this.audit(
             manager,
             journal,
-            'FINANCE_JOURNAL_APPROVAL_REJECTED',
+            'FINANCE_JOURNAL_APPROVED',
             command.principal.principalId,
-            null,
-            { reason: approval.reason },
-          );
-          return this.finishRejected(
-            manager,
-            reservation.record.id,
-            {
-              code: 'APPROVAL_REJECTED',
-              message: `approval rejected: ${approval.reason ?? 'unknown'}`,
-            },
-            journal,
+            { state: 'PENDING_APPROVAL' },
+            { state: 'APPROVED', approvalId: command.approvalId },
           );
         }
-        const approvalView = approval.approval;
-        if (!approvalView) {
-          return this.finishRejected(
-            manager,
-            reservation.record.id,
-            {
-              code: 'CONTROL_APPROVAL_EVIDENCE_MISSING',
-              message: 'consumed A2 approval evidence is missing',
-            },
-            journal,
-          );
-        }
-        const policyRoles = Array.isArray(approvalView.policy.requiredRoles)
-          ? approvalView.policy.requiredRoles.filter(
-              (role): role is string => typeof role === 'string',
-            )
-          : journal.preparedRoles;
-        const control = await this.financeControlService.evaluate({
-          action: 'FINANCE_JOURNAL_POST',
-          amountMinor: journal.totalDebitMinor,
-          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-          resourceId: journal.id,
-          resourceVersion: journal.recordVersion,
-          resourceHash: this.computeApprovalFingerprint(this.view(journal)),
-          makerPrincipalId: journal.preparedBy ?? approvalView.requesterPrincipalId,
-          makerRoles: policyRoles,
-          executorPrincipal: command.principal,
-          approvals: [approvalView],
-          idempotencyKey: `${command.idempotencyKey}:control`,
-          requestContext: command.requestContext,
-          evaluatedAt: command.now,
-        });
-        if (control.outcome !== 'ALLOW') {
-          journal.state = 'REJECTED';
-          journal.approvalId = command.approvalId;
-          journal.controlDecisionReference = control.decisionReference;
-          await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
-          return this.finishRejected(
-            manager,
-            reservation.record.id,
-            {
-              code: 'FINANCE_CONTROL_DENIED',
-              message: control.reasons.join(',') || 'Finance control denied',
-            },
-            journal,
-          );
-        }
-        journal.state = 'APPROVED';
-        journal.approvalId = command.approvalId;
-        journal.controlDecisionReference = control.decisionReference;
+        journal.state = 'POSTING_REQUESTED';
+        journal.updatedAt = command.now ?? new Date();
+        await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
         await this.audit(
           manager,
           journal,
-          'FINANCE_JOURNAL_APPROVED',
+          'FINANCE_JOURNAL_POSTING_REQUESTED',
           command.principal.principalId,
-          { state: 'PENDING_APPROVAL' },
-          { state: 'APPROVED', approvalId: command.approvalId },
+          null,
+          { a5IdempotencyKey: journal.a5IdempotencyKey },
         );
-      }
-      journal.state = 'POSTING_REQUESTED';
-      journal.updatedAt = command.now ?? new Date();
-      await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
-      await this.audit(
-        manager,
-        journal,
-        'FINANCE_JOURNAL_POSTING_REQUESTED',
-        command.principal.principalId,
-        null,
-        { a5IdempotencyKey: journal.a5IdempotencyKey },
-      );
-      try {
-        const a5 = await this.ledgerService.postJournal({
-          idempotencyKey: journal.a5IdempotencyKey,
-          currency: 'NGN',
-          accountingUnit: 'CUSTOMER_FUNDS',
-          reference: journal.financeJournalReference,
-          description: journal.description,
-          correlationId: journal.correlationId,
-          metadata: {
-            financeJournalReference: journal.financeJournalReference,
-            financeJournalVersion: 1,
-            bookKey: journal.bookKey,
-            periodKey: journal.periodKey,
-            accountingDate: journal.accountingDate,
-            sourceReference: journal.sourceDocument.sourceReference,
-            approvalId: journal.approvalId,
+        try {
+          const a5 = await this.ledgerService.postJournal({
+            idempotencyKey: journal.a5IdempotencyKey,
+            currency: 'NGN',
+            accountingUnit: 'CUSTOMER_FUNDS',
+            reference: journal.financeJournalReference,
+            description: journal.description,
+            correlationId: journal.correlationId,
+            metadata: {
+              financeJournalReference: journal.financeJournalReference,
+              financeJournalVersion: 1,
+              bookKey: journal.bookKey,
+              periodKey: journal.periodKey,
+              accountingDate: journal.accountingDate,
+              sourceReference: journal.sourceDocument.sourceReference,
+              approvalId: journal.approvalId,
+              requestHash: journal.requestHash,
+            },
+            lines: journal.lines.map((line) => ({
+              accountId: line.a5LedgerAccountId,
+              direction:
+                line.direction === 'DEBIT'
+                  ? LedgerEntryDirection.DEBIT
+                  : LedgerEntryDirection.CREDIT,
+              amountMinor: line.amountMinor,
+            })),
+          });
+          journal.state = 'POSTED';
+          journal.a5JournalId = a5.id;
+          journal.a5PostedAt = a5.postedAt;
+          journal.postingFailureCode = null;
+          journal.postingFailureMessage = null;
+          journal.decisionHash = sha({
             requestHash: journal.requestHash,
-          },
-          lines: journal.lines.map((line) => ({
-            accountId: line.a5LedgerAccountId,
-            direction:
-              line.direction === 'DEBIT' ? LedgerEntryDirection.DEBIT : LedgerEntryDirection.CREDIT,
-            amountMinor: line.amountMinor,
-          })),
-        });
-        journal.state = 'POSTED';
-        journal.a5JournalId = a5.id;
-        journal.a5PostedAt = a5.postedAt;
-        journal.postingFailureCode = null;
-        journal.postingFailureMessage = null;
-        journal.decisionHash = sha({
-          requestHash: journal.requestHash,
-          state: 'POSTED',
-          a5JournalId: a5.id,
-          a5PostedAt: a5.postedAt.toISOString(),
-        });
-        const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
-        await this.audit(
-          manager,
-          saved,
-          'FINANCE_JOURNAL_POSTED',
-          command.principal.principalId,
-          null,
-          { state: 'POSTED', a5JournalId: a5.id },
-        );
-        await this.outboxService.enqueue(manager, {
-          eventType: 'B2FFinanceJournalPosted',
-          aggregateType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-          aggregateId: saved.id,
-          eventKey: `b2f.finance-journal.posted:${saved.id}:v1`,
-          schemaVersion: 1,
-          classification: 'INTERNAL',
-          retentionClass: 'FINANCE_AUDIT_EVIDENCE',
-          correlationId: saved.correlationId,
-          payload: {
-            financeJournalReference: saved.financeJournalReference,
+            state: 'POSTED',
             a5JournalId: a5.id,
-            periodKey: saved.periodKey,
-            requestHash: saved.requestHash,
-          },
-        });
-        const result = {
-          outcome: 'POSTED',
-          journal: this.view(saved),
-          replayed: false,
-          failure: null,
-        } as const;
-        await this.idempotencyService.complete(manager, reservation.record.id, {
-          statusCode: 200,
-          responseBody: result as unknown as Record<string, unknown>,
-          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-          resourceId: saved.id,
-        });
-        return result;
-      } catch (error) {
-        const rejection = error instanceof HttpException;
-        journal.state = rejection ? 'FAILED' : 'POSTING_UNKNOWN';
-        journal.postingFailureCode = rejection ? 'A5_REJECTED' : 'A5_RESULT_UNKNOWN';
-        journal.postingFailureMessage =
-          error instanceof Error ? error.message : 'A5 posting result unknown';
-        const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
-        await this.audit(
-          manager,
-          saved,
-          rejection ? 'FINANCE_JOURNAL_POSTING_FAILED' : 'FINANCE_JOURNAL_POSTING_UNKNOWN',
-          command.principal.principalId,
-          null,
-          { state: saved.state, failureCode: saved.postingFailureCode },
-        );
-        const result = {
-          outcome: rejection ? 'REJECTED' : 'UNKNOWN',
-          journal: this.view(saved),
-          replayed: false,
-          failure: { code: saved.postingFailureCode!, message: saved.postingFailureMessage! },
-        } as B2FFinanceJournalResultV1;
-        await this.idempotencyService.fail(manager, reservation.record.id, {
-          statusCode: rejection ? 422 : 503,
-          responseBody: result as unknown as Record<string, unknown>,
-          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-          resourceId: saved.id,
-        });
-        return result;
-      }
-    });
+            a5PostedAt: a5.postedAt.toISOString(),
+          });
+          const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+          await this.audit(
+            manager,
+            saved,
+            'FINANCE_JOURNAL_POSTED',
+            command.principal.principalId,
+            null,
+            { state: 'POSTED', a5JournalId: a5.id },
+          );
+          await this.outboxService.enqueue(manager, {
+            eventType: 'B2FFinanceJournalPosted',
+            aggregateType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+            aggregateId: saved.id,
+            eventKey: `b2f.finance-journal.posted:${saved.id}:v1`,
+            schemaVersion: 1,
+            classification: 'INTERNAL',
+            retentionClass: 'FINANCE_AUDIT_EVIDENCE',
+            correlationId: saved.correlationId,
+            payload: {
+              financeJournalReference: saved.financeJournalReference,
+              a5JournalId: a5.id,
+              periodKey: saved.periodKey,
+              requestHash: saved.requestHash,
+            },
+          });
+          const result = {
+            outcome: 'POSTED',
+            journal: this.view(saved),
+            replayed: false,
+            failure: null,
+          } as const;
+          await this.idempotencyService.complete(manager, reservation.record.id, {
+            statusCode: 200,
+            responseBody: result as unknown as Record<string, unknown>,
+            resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+            resourceId: saved.id,
+          });
+          return result;
+        } catch (error) {
+          const rejection = error instanceof HttpException;
+          journal.state = rejection ? 'FAILED' : 'POSTING_UNKNOWN';
+          journal.postingFailureCode = rejection ? 'A5_REJECTED' : 'A5_RESULT_UNKNOWN';
+          journal.postingFailureMessage =
+            error instanceof Error ? error.message : 'A5 posting result unknown';
+          const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+          await this.audit(
+            manager,
+            saved,
+            rejection ? 'FINANCE_JOURNAL_POSTING_FAILED' : 'FINANCE_JOURNAL_POSTING_UNKNOWN',
+            command.principal.principalId,
+            null,
+            { state: saved.state, failureCode: saved.postingFailureCode },
+          );
+          const result = {
+            outcome: rejection ? 'REJECTED' : 'UNKNOWN',
+            journal: this.view(saved),
+            replayed: false,
+            failure: { code: saved.postingFailureCode!, message: saved.postingFailureMessage! },
+          } as B2FFinanceJournalResultV1;
+          await this.idempotencyService.fail(manager, reservation.record.id, {
+            statusCode: rejection ? 422 : 503,
+            responseBody: result as unknown as Record<string, unknown>,
+            resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+            resourceId: saved.id,
+          });
+          return result;
+        }
+      },
+    );
   }
 
   async getJournal(reference: string): Promise<B2FFinanceJournalViewV1 | null> {
@@ -594,53 +606,57 @@ export class B2FJournalGovernanceService {
       expectedRecordVersion: command.expectedRecordVersion,
       reason: command.reason.trim(),
     });
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotencyService.reserve(manager, {
-        scope: LIFECYCLE_SCOPE,
-        key: command.idempotencyKey,
-        requestHash: hash,
-        retentionSeconds: RETENTION,
-      });
-      if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
-      const journal = await this.lock(manager, command.financeJournalReference);
-      if (
-        !journal ||
-        journal.state !== from ||
-        journal.recordVersion !== command.expectedRecordVersion
-      )
-        return this.finishRejected(
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B2FJournalGovernanceService.changeState',
+      async (manager) => {
+        const reservation = await this.idempotencyService.reserve(manager, {
+          scope: LIFECYCLE_SCOPE,
+          key: command.idempotencyKey,
+          requestHash: hash,
+          retentionSeconds: RETENTION,
+        });
+        if (reservation.kind === 'REPLAY') return this.replay(reservation.record.responseBody);
+        const journal = await this.lock(manager, command.financeJournalReference);
+        if (
+          !journal ||
+          journal.state !== from ||
+          journal.recordVersion !== command.expectedRecordVersion
+        )
+          return this.finishRejected(
+            manager,
+            reservation.record.id,
+            { code: 'INVALID_STATE_OR_VERSION', message: 'journal state or version is invalid' },
+            journal ?? undefined,
+          );
+        const previous = journal.state;
+        journal.state = to;
+        journal.postingFailureCode = to === 'REJECTED' ? 'FINANCE_REJECTED' : null;
+        journal.postingFailureMessage = to === 'REJECTED' ? command.reason.trim() : null;
+        const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
+        await this.audit(
           manager,
-          reservation.record.id,
-          { code: 'INVALID_STATE_OR_VERSION', message: 'journal state or version is invalid' },
-          journal ?? undefined,
+          saved,
+          action,
+          command.principal.principalId,
+          { state: previous },
+          { state: to, reason: command.reason },
         );
-      const previous = journal.state;
-      journal.state = to;
-      journal.postingFailureCode = to === 'REJECTED' ? 'FINANCE_REJECTED' : null;
-      journal.postingFailureMessage = to === 'REJECTED' ? command.reason.trim() : null;
-      const saved = await manager.getRepository(B2FFinanceJournalGovernance).save(journal);
-      await this.audit(
-        manager,
-        saved,
-        action,
-        command.principal.principalId,
-        { state: previous },
-        { state: to, reason: command.reason },
-      );
-      const result = {
-        outcome: 'UPDATED',
-        journal: this.view(saved),
-        replayed: false,
-        failure: null,
-      } as const;
-      await this.idempotencyService.complete(manager, reservation.record.id, {
-        statusCode: 200,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        const result = {
+          outcome: 'UPDATED',
+          journal: this.view(saved),
+          replayed: false,
+          failure: null,
+        } as const;
+        await this.idempotencyService.complete(manager, reservation.record.id, {
+          statusCode: 200,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B2F_FINANCE_JOURNAL_GOVERNANCE',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
   private async lock(manager: EntityManager, reference: string) {
     return manager

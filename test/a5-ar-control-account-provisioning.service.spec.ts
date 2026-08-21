@@ -128,7 +128,11 @@ describe('A5T11 AR control account provisioning service', () => {
       ledger as never,
       idempotency as never,
       {
-        consume: async (input: { approvalId: string; actionFingerprint: string }) => {
+        consumeInTransaction: async (
+          _manager: unknown,
+          input: { approvalId: string; actionFingerprint: string },
+        ) => {
+          void _manager;
           await Promise.resolve();
           return {
             approved: approvalAllowed,
@@ -148,7 +152,8 @@ describe('A5T11 AR control account provisioning service', () => {
         },
       } as never,
       {
-        evaluate: async () => {
+        evaluateInTransaction: async (_manager: unknown) => {
+          void _manager;
           await Promise.resolve();
           return {
             outcome: controlAllowed ? 'ALLOW' : 'DENY',

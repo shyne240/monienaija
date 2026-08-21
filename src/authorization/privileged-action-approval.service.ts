@@ -173,10 +173,28 @@ export class PrivilegedActionApprovalService {
   }
 
   async consume(command: ConsumePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApproval(command.approvalId);
+    return this.dataSource.transaction((manager) => this.consumeInTransaction(manager, command));
+  }
+
+  /**
+   * Transaction-aware variant of {@link consume}.
+   *
+   * Callers that already own a transaction — notably the SERIALIZABLE Finance (B2F) and
+   * B1T12 boundaries — must use this method. Calling {@link consume} from inside such a
+   * boundary opens a nested transaction on a second pooled connection, which cannot observe
+   * the caller's uncommitted writes and yields PostgreSQL serialization/atomicity failures.
+   *
+   * Approval enforcement, maker-checker semantics and A2 involvement are identical to
+   * {@link consume}; only the transaction boundary differs.
+   */
+  async consumeInTransaction(
+    manager: EntityManager,
+    command: ConsumePrivilegedActionCommand,
+  ): Promise<PrivilegedActionDecision> {
+    const approval = await this.findApprovalIn(manager, command.approvalId);
     if (!approval) return { approved: false, reason: 'NOT_FOUND' };
     const now = command.now ?? new Date();
-    const expired = await this.expireIfNeeded(approval, now);
+    const expired = await this.expireIfNeededIn(manager, approval, now);
     if (expired) return { approved: false, approval: this.toView(approval), reason: 'EXPIRED' };
     if (approval.status !== PrivilegedActionApprovalStatus.APPROVED) {
       return {
@@ -205,33 +223,24 @@ export class PrivilegedActionApprovalService {
 
     approval.status = PrivilegedActionApprovalStatus.CONSUMED;
     approval.consumedAt = now;
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
-      await this.audit(
-        manager,
-        result,
-        'PRIVILEGED_ACTION_CONSUMED',
-        command.principal.principalId,
-        {
-          actionType: result.actionType,
-          resourceType: result.resourceType,
-          resourceId: result.resourceId,
-          customerId: result.customerId,
-          consumedAt: result.consumedAt,
-        },
-      );
-      await this.securityEvent(
-        manager,
-        result,
-        SecurityEventType.PRIVILEGED_ACTION_CONSUMED,
-        command.principal.principalId,
-        {
-          actionType: result.actionType,
-          resourceType: result.resourceType,
-        },
-      );
-      return result;
+    const saved = await manager.getRepository(PrivilegedActionApproval).save(approval);
+    await this.audit(manager, saved, 'PRIVILEGED_ACTION_CONSUMED', command.principal.principalId, {
+      actionType: saved.actionType,
+      resourceType: saved.resourceType,
+      resourceId: saved.resourceId,
+      customerId: saved.customerId,
+      consumedAt: saved.consumedAt,
     });
+    await this.securityEvent(
+      manager,
+      saved,
+      SecurityEventType.PRIVILEGED_ACTION_CONSUMED,
+      command.principal.principalId,
+      {
+        actionType: saved.actionType,
+        resourceType: saved.resourceType,
+      },
+    );
     return { approved: true, approval: this.toView(saved), reason: 'CONSUMED' };
   }
 
@@ -423,40 +432,71 @@ export class PrivilegedActionApprovalService {
     return this.approvalRepository.findOne({ where: { id: approvalId } });
   }
 
-  private async expireIfNeeded(approval: PrivilegedActionApproval, now: Date): Promise<boolean> {
-    if (
-      approval.expiresAt.getTime() > now.getTime() ||
-      ![
+  /** Transaction-aware variant of {@link findApproval}. */
+  private async findApprovalIn(
+    manager: EntityManager,
+    approvalId: string,
+  ): Promise<PrivilegedActionApproval | null> {
+    if (!UUID_PATTERN.test(approvalId)) return null;
+    return manager.getRepository(PrivilegedActionApproval).findOne({ where: { id: approvalId } });
+  }
+
+  private requiresExpiry(approval: PrivilegedActionApproval, now: Date): boolean {
+    return (
+      approval.expiresAt.getTime() <= now.getTime() &&
+      [
         PrivilegedActionApprovalStatus.REQUESTED,
         PrivilegedActionApprovalStatus.APPROVED,
         PrivilegedActionApprovalStatus.EMERGENCY_ACTIVE,
       ].includes(approval.status)
-    ) {
-      return false;
-    }
+    );
+  }
 
+  private async applyExpiry(
+    manager: EntityManager,
+    approval: PrivilegedActionApproval,
+    now: Date,
+  ): Promise<void> {
     approval.status = PrivilegedActionApprovalStatus.EXPIRED;
-    await this.dataSource.transaction(async (manager) => {
-      const saved = await manager.getRepository(PrivilegedActionApproval).save(approval);
-      await this.audit(manager, saved, 'PRIVILEGED_ACTION_EXPIRED', 'approval-lifecycle', {
+    const saved = await manager.getRepository(PrivilegedActionApproval).save(approval);
+    await this.audit(manager, saved, 'PRIVILEGED_ACTION_EXPIRED', 'approval-lifecycle', {
+      actionType: saved.actionType,
+      resourceType: saved.resourceType,
+      resourceId: saved.resourceId,
+      isEmergency: saved.isEmergency,
+      expiredAt: now,
+    });
+    await this.securityEvent(
+      manager,
+      saved,
+      SecurityEventType.PRIVILEGED_ACTION_EXPIRED,
+      'approval-lifecycle',
+      {
         actionType: saved.actionType,
         resourceType: saved.resourceType,
-        resourceId: saved.resourceId,
         isEmergency: saved.isEmergency,
-        expiredAt: now,
-      });
-      await this.securityEvent(
-        manager,
-        saved,
-        SecurityEventType.PRIVILEGED_ACTION_EXPIRED,
-        'approval-lifecycle',
-        {
-          actionType: saved.actionType,
-          resourceType: saved.resourceType,
-          isEmergency: saved.isEmergency,
-        },
-      );
-    });
+      },
+    );
+  }
+
+  private async expireIfNeeded(approval: PrivilegedActionApproval, now: Date): Promise<boolean> {
+    if (!this.requiresExpiry(approval, now)) {
+      return false;
+    }
+    await this.dataSource.transaction((manager) => this.applyExpiry(manager, approval, now));
+    return true;
+  }
+
+  /** Transaction-aware variant of {@link expireIfNeeded}. */
+  private async expireIfNeededIn(
+    manager: EntityManager,
+    approval: PrivilegedActionApproval,
+    now: Date,
+  ): Promise<boolean> {
+    if (!this.requiresExpiry(approval, now)) {
+      return false;
+    }
+    await this.applyExpiry(manager, approval, now);
     return true;
   }
 

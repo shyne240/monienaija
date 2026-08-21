@@ -62,10 +62,9 @@ export class CreateB1CommercialGovernanceDecisionTables1785753600038 implements 
         CONSTRAINT chk_b1_commercial_governance_decisions_correlation_id CHECK (correlation_id ~ '^[\\x20-\\x7E]{1,255}$')
       )
     `);
-    await queryRunner.query(`
-      CREATE UNIQUE INDEX uq_b1_commercial_governance_decisions_reference
-        ON b1_commercial_governance_decisions (document_reference, document_version)
-    `);
+    // The UNIQUE table constraint of the same name already provides the backing
+    // unique index (PostgreSQL creates it implicitly), so declaring it again here
+    // collides with SQLSTATE 42P07. Uniqueness remains enforced by the constraint.
     await queryRunner.query(`
       CREATE INDEX idx_b1_commercial_governance_decisions_scope
         ON b1_commercial_governance_decisions (scope_key, scope_version)
@@ -156,7 +155,6 @@ export class CreateB1CommercialGovernanceDecisionTables1785753600038 implements 
     );
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_governance_decisions_period`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_governance_decisions_scope`);
-    await queryRunner.query(`DROP INDEX IF EXISTS uq_b1_commercial_governance_decisions_reference`);
     await queryRunner.query(`DROP TABLE IF EXISTS b1_commercial_governance_decisions`);
   }
 }

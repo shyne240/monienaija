@@ -208,7 +208,8 @@ describe('B2F accounting treatment service (B2F07)', () => {
         },
       } as never,
       {
-        evaluate: async () => {
+        evaluateInTransaction: async (_manager: unknown) => {
+          void _manager;
           await Promise.resolve();
           return {
             outcome: control ? 'ALLOW' : 'DENY',

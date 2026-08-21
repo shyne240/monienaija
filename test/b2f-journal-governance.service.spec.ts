@@ -219,7 +219,9 @@ describe('B2F journal governance service (B2F05)', () => {
         },
       } as never,
       {
-        consume: async () => {
+        consumeInTransaction: async (_manager: unknown) => {
+          void _manager;
+          void _manager;
           await Promise.resolve();
           return {
             approved: approval,
@@ -239,7 +241,8 @@ describe('B2F journal governance service (B2F05)', () => {
         },
       } as never,
       {
-        evaluate: async () => {
+        evaluateInTransaction: async (_manager: unknown) => {
+          void _manager;
           await Promise.resolve();
           return { outcome: 'ALLOW', decisionReference: 'b2f-control-decision-test', reasons: [] };
         },

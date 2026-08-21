@@ -202,7 +202,9 @@ describe('B2F fiscal period service (B2F04)', () => {
         },
       } as never,
       {
-        consume: async () => {
+        consumeInTransaction: async (_manager: unknown) => {
+          void _manager;
+          void _manager;
           await Promise.resolve();
           approvals.calls += 1;
           return {
@@ -223,7 +225,8 @@ describe('B2F fiscal period service (B2F04)', () => {
         },
       } as never,
       {
-        evaluate: async () => {
+        evaluateInTransaction: async (_manager: unknown) => {
+          void _manager;
           await Promise.resolve();
           return { outcome: 'ALLOW', decisionReference: 'b2f-control-decision-test', reasons: [] };
         },

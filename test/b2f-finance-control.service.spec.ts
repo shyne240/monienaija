@@ -188,7 +188,7 @@ describe('B2F Finance control service (B2F06)', () => {
         },
       } as never,
       {
-        consume: async (command: { actionFingerprint: string }) => {
+        consumeInTransaction: async (_manager: unknown, command: { actionFingerprint: string }) => {
           await Promise.resolve();
           approvalCalls += 1;
           consumedApprovalFingerprint = command.actionFingerprint;

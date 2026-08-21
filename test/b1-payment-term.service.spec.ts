@@ -184,7 +184,7 @@ describe('B1T12 payment-term lifecycle service', () => {
     amendmentRepo: Repo<B1DueDateAmendment>,
     billingRepo: Repo<B1BillingDocument>,
     idem: Idem,
-    approvals: { consume: jest.Mock },
+    approvals: { consumeInTransaction: jest.Mock },
     service: B1PaymentTermService;
   beforeEach(() => {
     termRepo = new Repo();
@@ -193,7 +193,9 @@ describe('B1T12 payment-term lifecycle service', () => {
     billingRepo = new Repo();
     idem = new Idem();
     approvals = {
-      consume: jest.fn().mockResolvedValue({ approved: true, approval: { approvedBy: 'checker' } }),
+      consumeInTransaction: jest
+        .fn()
+        .mockResolvedValue({ approved: true, approval: { approvedBy: 'checker' } }),
     };
     const repos = new Map<unknown, unknown>([
       [B1PaymentTerm, termRepo],
@@ -317,7 +319,7 @@ describe('B1T12 payment-term lifecycle service', () => {
       now: new Date('2026-12-02T00:00:00.000Z'),
     });
     expect(result.term?.status).toBe('PENDING_APPROVAL');
-    expect(approvals.consume).not.toHaveBeenCalled();
+    expect(approvals.consumeInTransaction).not.toHaveBeenCalled();
   });
   it('requires and consumes A2 approval for activation', async () => {
     const created = await service.create(createCommand());
@@ -344,7 +346,8 @@ describe('B1T12 payment-term lifecycle service', () => {
     };
     const active = await service.activate(command);
     expect(active.term?.status).toBe('ACTIVE');
-    expect(approvals.consume).toHaveBeenCalledWith(
+    expect(approvals.consumeInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         actionType: 'B1_PAYMENT_TERM_ACTIVATE',
         resource: { type: 'B1_PAYMENT_TERM', id: 'test.fixture.term/v1' },
@@ -367,7 +370,8 @@ describe('B1T12 payment-term lifecycle service', () => {
       now: new Date('2027-01-02T00:00:00.000Z'),
     });
     expect(result.term?.status).toBe('REVOKED');
-    expect(approvals.consume).toHaveBeenCalledWith(
+    expect(approvals.consumeInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ actionType: 'B1_PAYMENT_TERM_REVOKE' }),
     );
   });
@@ -429,7 +433,8 @@ describe('B1T12 payment-term lifecycle service', () => {
     const result = await service.amendDueDate(amendment);
     expect(result.amendment?.replacementDueAt).toBe('2027-01-31T00:00:00.000Z');
     expect(bindingRepo.rows[0]!.dueAt.toISOString()).toBe(originalDueAt);
-    expect(approvals.consume).toHaveBeenCalledWith(
+    expect(approvals.consumeInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ actionType: 'B1_PAYMENT_TERM_DUE_DATE_AMEND' }),
     );
     const replay = await service.amendDueDate(amendment);

@@ -210,7 +210,11 @@ describe('B2F account mapping service prerequisite', () => {
       } as never,
       { increment: async () => Promise.resolve() } as never,
       {
-        consume: async (input: { approvalId: string; resource: { id?: string } }) => {
+        consumeInTransaction: async (
+          _manager: unknown,
+          input: { approvalId: string; resource: { id?: string } },
+        ) => {
+          void _manager;
           await Promise.resolve();
           return approval
             ? {
@@ -230,7 +234,8 @@ describe('B2F account mapping service prerequisite', () => {
         },
       } as never,
       {
-        evaluate: async () => {
+        evaluateInTransaction: async (_manager: unknown) => {
+          void _manager;
           await Promise.resolve();
           return {
             outcome: control ? 'ALLOW' : 'DENY',

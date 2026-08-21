@@ -57,10 +57,9 @@ export class CreateB1CommercialCatalogTables1785753600031 implements MigrationIn
         CONSTRAINT chk_b1_commercial_catalog_registrations_retention_days CHECK (retention_days >= 0)
       )
     `);
-    await queryRunner.query(`
-      CREATE UNIQUE INDEX uq_b1_commercial_catalog_registrations_key
-        ON b1_commercial_catalog_registrations (catalog_key, catalog_version)
-    `);
+    // The UNIQUE table constraint of the same name already provides the backing
+    // unique index (PostgreSQL creates it implicitly), so declaring it again here
+    // collides with SQLSTATE 42P07. Uniqueness remains enforced by the constraint.
     await queryRunner.query(`
       CREATE INDEX idx_b1_commercial_catalog_registrations_scope
         ON b1_commercial_catalog_registrations (scope_key, scope_version)
@@ -138,7 +137,6 @@ export class CreateB1CommercialCatalogTables1785753600031 implements MigrationIn
     );
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_catalog_registrations_plan`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_b1_commercial_catalog_registrations_scope`);
-    await queryRunner.query(`DROP INDEX IF EXISTS uq_b1_commercial_catalog_registrations_key`);
     await queryRunner.query(`DROP TABLE IF EXISTS b1_commercial_catalog_registrations`);
   }
 }

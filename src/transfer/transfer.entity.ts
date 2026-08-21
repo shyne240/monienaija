@@ -140,7 +140,7 @@ export class Transfer {
   @Column({ type: 'varchar', length: 3 })
   currency!: string;
 
-  @Column({ type: 'varchar', length: 64, nullable: true })
+  @Column({ name: 'accounting_unit', type: 'varchar', length: 64, nullable: true })
   accountingUnit!: string | null;
 
   @Column({ type: 'varchar', length: 20 })

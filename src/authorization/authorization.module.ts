@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -21,11 +21,16 @@ import { PrivilegedActionApprovalService } from './privileged-action-approval.se
 import { AuthorizationGuard } from './authorization.guard';
 import { AuthorizationService } from './authorization.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { RuntimeAccessGuard } from './runtime-access.guard';
 
 @Module({
   imports: [
-    OperationsModule,
+    // RuntimeAccessGuard (provided here) depends on AuthenticationSessionService, which is
+    // exported by CustomerAuthenticationModule. That module reaches back to this one through
+    // OperationsModule, so the edge must be lazy.
+    forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(() => OperationsModule),
     TypeOrmModule.forFeature([
       PrivilegedActionApproval,
       SecurityEventHistory,

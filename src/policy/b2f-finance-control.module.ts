@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -7,8 +7,8 @@ import { B2FFinanceControlService } from './b2f-finance-control.service';
 
 @Module({
   imports: [
-    OperationsModule,
-    AuthorizationModule,
+    forwardRef(() => OperationsModule),
+    forwardRef(() => AuthorizationModule),
     TypeOrmModule.forFeature([B2FFinanceControlPolicy, B2FFinanceControlDecision]),
   ],
   providers: [B2FFinanceControlService],

@@ -34,6 +34,7 @@ import type {
   B1PaymentTermResultV1,
   B1PaymentTermViewV1,
 } from './b1-payment-term.types';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 
 const DEFINITION_SCOPE = 'b1.payment-term.definition.idempotency.v1' as const;
 const BINDING_SCOPE = 'b1.payment-term.invoice-binding.idempotency.v1' as const;
@@ -129,92 +130,96 @@ export class B1PaymentTermService {
     const normalized = this.normalizeCreate(command);
     const definitionHash = this.computeDefinitionHash(command);
     const requestHash = b1Hash({ operation: 'CREATE', definitionHash });
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: DEFINITION_SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION_SECONDS,
-      });
-      if (reservation.kind === 'REPLAY') return this.replayTerm(reservation.record.responseBody);
-      const repository = manager.getRepository(B1PaymentTerm);
-      const versions = await repository.find({
-        where: { paymentTermReference: normalized.paymentTermReference },
-        order: { paymentTermVersion: 'ASC' },
-      });
-      const expectedVersion =
-        versions.length === 0 ? 1 : versions[versions.length - 1]!.paymentTermVersion + 1;
-      if (normalized.paymentTermVersion !== expectedVersion)
-        return this.rejectTerm(manager, reservation.record.id, {
-          code: 'TERM_VERSION_INVALID',
-          message: `paymentTermVersion must be ${expectedVersion}`,
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B1PaymentTermService.create',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: DEFINITION_SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION_SECONDS,
         });
-      if (versions.some((term) => term.paymentTermVersion === normalized.paymentTermVersion))
-        return this.rejectTerm(manager, reservation.record.id, {
-          code: 'TERM_VERSION_EXISTS',
-          message: 'payment-term version already exists',
+        if (reservation.kind === 'REPLAY') return this.replayTerm(reservation.record.responseBody);
+        const repository = manager.getRepository(B1PaymentTerm);
+        const versions = await repository.find({
+          where: { paymentTermReference: normalized.paymentTermReference },
+          order: { paymentTermVersion: 'ASC' },
         });
-      const now = command.now ?? new Date();
-      const term = repository.create({
-        id: randomUUID(),
-        ...normalized,
-        effectiveFrom: new Date(normalized.effectiveFrom),
-        effectiveTo: normalized.effectiveTo ? new Date(normalized.effectiveTo) : null,
-        definitionHash,
-        commercialScopeKey: 'commercial.virtual-account.inbound-funding',
-        commercialScopeVersion: 1,
-        status: 'DRAFT',
-        idempotencyScope: DEFINITION_SCOPE,
-        idempotencyKey: command.idempotencyKey,
-        createdBy: command.principal.principalId,
-        approvedBy: null,
-        approvalId: null,
-        lastReason: null,
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId ?? null,
-        recordVersion: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const saved = await repository.save(term);
-      await this.record(
-        manager,
-        'B1_PAYMENT_TERM',
-        saved.id,
-        'B1_PAYMENT_TERM_CREATED',
-        command.principal.principalId,
-        {
-          paymentTermReference: saved.paymentTermReference,
-          paymentTermVersion: saved.paymentTermVersion,
+        const expectedVersion =
+          versions.length === 0 ? 1 : versions[versions.length - 1]!.paymentTermVersion + 1;
+        if (normalized.paymentTermVersion !== expectedVersion)
+          return this.rejectTerm(manager, reservation.record.id, {
+            code: 'TERM_VERSION_INVALID',
+            message: `paymentTermVersion must be ${expectedVersion}`,
+          });
+        if (versions.some((term) => term.paymentTermVersion === normalized.paymentTermVersion))
+          return this.rejectTerm(manager, reservation.record.id, {
+            code: 'TERM_VERSION_EXISTS',
+            message: 'payment-term version already exists',
+          });
+        const now = command.now ?? new Date();
+        const term = repository.create({
+          id: randomUUID(),
+          ...normalized,
+          effectiveFrom: new Date(normalized.effectiveFrom),
+          effectiveTo: normalized.effectiveTo ? new Date(normalized.effectiveTo) : null,
           definitionHash,
+          commercialScopeKey: 'commercial.virtual-account.inbound-funding',
+          commercialScopeVersion: 1,
           status: 'DRAFT',
-        },
-        command,
-      );
-      await this.emit(
-        manager,
-        'B1PaymentTermCreated',
-        'B1_PAYMENT_TERM',
-        saved.id,
-        definitionHash,
-        this.termView(saved, now),
-        command,
-      );
-      await this.metrics.increment(manager, 'b1.payment-term.created');
-      const result: B1PaymentTermResultV1 = {
-        outcome: 'CREATED',
-        term: this.termView(saved, now),
-        replayed: false,
-        failure: null,
-      };
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 201,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B1_PAYMENT_TERM',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+          idempotencyScope: DEFINITION_SCOPE,
+          idempotencyKey: command.idempotencyKey,
+          createdBy: command.principal.principalId,
+          approvedBy: null,
+          approvalId: null,
+          lastReason: null,
+          correlationId: command.requestContext.correlationId,
+          causationId: command.causationId ?? null,
+          recordVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
+        const saved = await repository.save(term);
+        await this.record(
+          manager,
+          'B1_PAYMENT_TERM',
+          saved.id,
+          'B1_PAYMENT_TERM_CREATED',
+          command.principal.principalId,
+          {
+            paymentTermReference: saved.paymentTermReference,
+            paymentTermVersion: saved.paymentTermVersion,
+            definitionHash,
+            status: 'DRAFT',
+          },
+          command,
+        );
+        await this.emit(
+          manager,
+          'B1PaymentTermCreated',
+          'B1_PAYMENT_TERM',
+          saved.id,
+          definitionHash,
+          this.termView(saved, now),
+          command,
+        );
+        await this.metrics.increment(manager, 'b1.payment-term.created');
+        const result: B1PaymentTermResultV1 = {
+          outcome: 'CREATED',
+          term: this.termView(saved, now),
+          replayed: false,
+          failure: null,
+        };
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B1_PAYMENT_TERM',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
 
   async submitForApproval(
@@ -258,145 +263,150 @@ export class B1PaymentTermService {
     command: B1InvoicePaymentTermBindingCommandV1,
   ): Promise<B1InvoicePaymentTermBindingResultV1> {
     const requestHash = this.bindingRequestHash(command);
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: BINDING_SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION_SECONDS,
-      });
-      if (reservation.kind === 'REPLAY') return this.replayBinding(reservation.record.responseBody);
-      const recovered = await manager
-        .getRepository(B1InvoicePaymentTermBinding)
-        .findOne({ where: { idempotencyKey: command.idempotencyKey, requestHash } });
-      if (recovered)
-        return this.completeRecoveredBinding(manager, reservation.record.id, recovered);
-      const generated = this.billing.generateInvoice(command.invoiceRequest);
-      if (generated.failure)
-        return this.rejectBinding(manager, reservation.record.id, {
-          code: 'CANONICAL_INVOICE_REJECTED',
-          message: generated.failure.message,
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B1PaymentTermService.issueInvoiceWithPaymentTerm',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: BINDING_SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION_SECONDS,
         });
-      const invoice = await this.persistOrReadCanonicalInvoice(manager, generated);
-      const issuedAt = b1CanonicalInstant(invoice.issuedAt, 'invoice.issuedAt');
-      const matches = await this.findApplicableTerms(manager, invoice, issuedAt);
-      if (matches.length !== 1)
-        return this.rejectBinding(manager, reservation.record.id, {
-          code: matches.length === 0 ? 'NO_APPLICABLE_TERM' : 'AMBIGUOUS_APPLICABLE_TERMS',
-          message: `expected exactly one applicable payment term; found ${matches.length}`,
+        if (reservation.kind === 'REPLAY')
+          return this.replayBinding(reservation.record.responseBody);
+        const recovered = await manager
+          .getRepository(B1InvoicePaymentTermBinding)
+          .findOne({ where: { idempotencyKey: command.idempotencyKey, requestHash } });
+        if (recovered)
+          return this.completeRecoveredBinding(manager, reservation.record.id, recovered);
+        const generated = this.billing.generateInvoice(command.invoiceRequest);
+        if (generated.failure)
+          return this.rejectBinding(manager, reservation.record.id, {
+            code: 'CANONICAL_INVOICE_REJECTED',
+            message: generated.failure.message,
+          });
+        const invoice = await this.persistOrReadCanonicalInvoice(manager, generated);
+        const issuedAt = b1CanonicalInstant(invoice.issuedAt, 'invoice.issuedAt');
+        const matches = await this.findApplicableTerms(manager, invoice, issuedAt);
+        if (matches.length !== 1)
+          return this.rejectBinding(manager, reservation.record.id, {
+            code: matches.length === 0 ? 'NO_APPLICABLE_TERM' : 'AMBIGUOUS_APPLICABLE_TERMS',
+            message: `expected exactly one applicable payment term; found ${matches.length}`,
+          });
+        const term = matches[0]!;
+        if (
+          term.paymentTermReference !== command.paymentTermReference ||
+          term.paymentTermVersion !== command.paymentTermVersion
+        )
+          return this.rejectBinding(manager, reservation.record.id, {
+            code: 'SELECTED_TERM_MISMATCH',
+            message: 'selected payment term is not the sole applicable term',
+          });
+        if (invoice.currency !== term.currency || invoice.accountingUnit !== term.accountingUnit)
+          return this.rejectBinding(manager, reservation.record.id, {
+            code: 'TERM_INVOICE_UNIT_MISMATCH',
+            message: 'term currency/accounting unit does not match invoice',
+          });
+        const dueAt = b1CalculateDueAt(issuedAt, term.termValue);
+        const calculationHash = b1Hash({
+          issuedAt,
+          termBasis: term.termBasis,
+          termValue: term.termValue,
+          arithmeticRule: 'UTC_INSTANT_ELAPSED',
+          secondsPerDay: SECONDS_PER_DAY,
+          dueAt,
         });
-      const term = matches[0]!;
-      if (
-        term.paymentTermReference !== command.paymentTermReference ||
-        term.paymentTermVersion !== command.paymentTermVersion
-      )
-        return this.rejectBinding(manager, reservation.record.id, {
-          code: 'SELECTED_TERM_MISMATCH',
-          message: 'selected payment term is not the sole applicable term',
+        const bindingHash = b1Hash({
+          invoiceReference: invoice.invoiceNumber,
+          invoiceVersion: invoice.invoiceVersion,
+          invoiceHash: invoice.invoiceHash,
+          issuedAt,
+          paymentTermReference: term.paymentTermReference,
+          paymentTermVersion: term.paymentTermVersion,
+          paymentTermDefinitionHash: term.definitionHash,
+          termBasis: term.termBasis,
+          termValue: term.termValue,
+          dueAt,
+          currency: invoice.currency,
+          accountingUnit: invoice.accountingUnit,
         });
-      if (invoice.currency !== term.currency || invoice.accountingUnit !== term.accountingUnit)
-        return this.rejectBinding(manager, reservation.record.id, {
-          code: 'TERM_INVOICE_UNIT_MISMATCH',
-          message: 'term currency/accounting unit does not match invoice',
+        const reference = `b1-invoice-term-${bindingHash.slice(0, 32)}`;
+        const existing = await manager
+          .getRepository(B1InvoicePaymentTermBinding)
+          .findOne({ where: { invoiceReference: invoice.invoiceNumber, invoiceVersion: 1 } });
+        if (existing) {
+          if (existing.bindingHash === bindingHash)
+            return this.completeRecoveredBinding(manager, reservation.record.id, existing);
+          return this.rejectBinding(manager, reservation.record.id, {
+            code: 'INVOICE_ALREADY_BOUND',
+            message: 'invoice already has different immutable payment-term evidence',
+          });
+        }
+        const now = command.now ?? new Date();
+        const entity = manager.getRepository(B1InvoicePaymentTermBinding).create({
+          id: randomUUID(),
+          bindingReference: reference,
+          bindingHash,
+          requestHash,
+          invoiceReference: invoice.invoiceNumber,
+          invoiceVersion: 1,
+          invoiceHash: invoice.invoiceHash,
+          issuedAt: new Date(issuedAt),
+          paymentTermReference: term.paymentTermReference,
+          paymentTermVersion: term.paymentTermVersion,
+          paymentTermDefinitionHash: term.definitionHash,
+          termBasis: term.termBasis,
+          termValue: term.termValue,
+          dueAt: new Date(dueAt),
+          dueDateCalculationHash: calculationHash,
+          currency: invoice.currency,
+          accountingUnit: invoice.accountingUnit,
+          effectiveAt: new Date(issuedAt),
+          applicability: term.applicability,
+          invoiceRecord: invoice,
+          idempotencyScope: BINDING_SCOPE,
+          idempotencyKey: command.idempotencyKey,
+          createdBy: command.principal.principalId,
+          correlationId: command.requestContext.correlationId,
+          causationId: command.causationId ?? null,
+          createdAt: now,
         });
-      const dueAt = b1CalculateDueAt(issuedAt, term.termValue);
-      const calculationHash = b1Hash({
-        issuedAt,
-        termBasis: term.termBasis,
-        termValue: term.termValue,
-        arithmeticRule: 'UTC_INSTANT_ELAPSED',
-        secondsPerDay: SECONDS_PER_DAY,
-        dueAt,
-      });
-      const bindingHash = b1Hash({
-        invoiceReference: invoice.invoiceNumber,
-        invoiceVersion: invoice.invoiceVersion,
-        invoiceHash: invoice.invoiceHash,
-        issuedAt,
-        paymentTermReference: term.paymentTermReference,
-        paymentTermVersion: term.paymentTermVersion,
-        paymentTermDefinitionHash: term.definitionHash,
-        termBasis: term.termBasis,
-        termValue: term.termValue,
-        dueAt,
-        currency: invoice.currency,
-        accountingUnit: invoice.accountingUnit,
-      });
-      const reference = `b1-invoice-term-${bindingHash.slice(0, 32)}`;
-      const existing = await manager
-        .getRepository(B1InvoicePaymentTermBinding)
-        .findOne({ where: { invoiceReference: invoice.invoiceNumber, invoiceVersion: 1 } });
-      if (existing) {
-        if (existing.bindingHash === bindingHash)
-          return this.completeRecoveredBinding(manager, reservation.record.id, existing);
-        return this.rejectBinding(manager, reservation.record.id, {
-          code: 'INVOICE_ALREADY_BOUND',
-          message: 'invoice already has different immutable payment-term evidence',
+        const saved = await manager.getRepository(B1InvoicePaymentTermBinding).save(entity);
+        await this.record(
+          manager,
+          'B1_INVOICE_PAYMENT_TERM_BINDING',
+          saved.id,
+          'B1_INVOICE_PAYMENT_TERM_BOUND',
+          command.principal.principalId,
+          { bindingReference: reference, bindingHash, dueAt, calculationHash },
+          command,
+        );
+        await this.emit(
+          manager,
+          'B1InvoicePaymentTermBound',
+          'B1_INVOICE_PAYMENT_TERM_BINDING',
+          saved.id,
+          bindingHash,
+          this.bindingView(saved),
+          command,
+        );
+        await this.metrics.increment(manager, 'b1.payment-term.invoice-bound');
+        const result: B1InvoicePaymentTermBindingResultV1 = {
+          outcome: 'BOUND',
+          binding: this.bindingView(saved),
+          replayed: false,
+          failure: null,
+        };
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B1_INVOICE_PAYMENT_TERM_BINDING',
+          resourceId: saved.id,
         });
-      }
-      const now = command.now ?? new Date();
-      const entity = manager.getRepository(B1InvoicePaymentTermBinding).create({
-        id: randomUUID(),
-        bindingReference: reference,
-        bindingHash,
-        requestHash,
-        invoiceReference: invoice.invoiceNumber,
-        invoiceVersion: 1,
-        invoiceHash: invoice.invoiceHash,
-        issuedAt: new Date(issuedAt),
-        paymentTermReference: term.paymentTermReference,
-        paymentTermVersion: term.paymentTermVersion,
-        paymentTermDefinitionHash: term.definitionHash,
-        termBasis: term.termBasis,
-        termValue: term.termValue,
-        dueAt: new Date(dueAt),
-        dueDateCalculationHash: calculationHash,
-        currency: invoice.currency,
-        accountingUnit: invoice.accountingUnit,
-        effectiveAt: new Date(issuedAt),
-        applicability: term.applicability,
-        invoiceRecord: invoice,
-        idempotencyScope: BINDING_SCOPE,
-        idempotencyKey: command.idempotencyKey,
-        createdBy: command.principal.principalId,
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId ?? null,
-        createdAt: now,
-      });
-      const saved = await manager.getRepository(B1InvoicePaymentTermBinding).save(entity);
-      await this.record(
-        manager,
-        'B1_INVOICE_PAYMENT_TERM_BINDING',
-        saved.id,
-        'B1_INVOICE_PAYMENT_TERM_BOUND',
-        command.principal.principalId,
-        { bindingReference: reference, bindingHash, dueAt, calculationHash },
-        command,
-      );
-      await this.emit(
-        manager,
-        'B1InvoicePaymentTermBound',
-        'B1_INVOICE_PAYMENT_TERM_BINDING',
-        saved.id,
-        bindingHash,
-        this.bindingView(saved),
-        command,
-      );
-      await this.metrics.increment(manager, 'b1.payment-term.invoice-bound');
-      const result: B1InvoicePaymentTermBindingResultV1 = {
-        outcome: 'BOUND',
-        binding: this.bindingView(saved),
-        replayed: false,
-        failure: null,
-      };
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 201,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B1_INVOICE_PAYMENT_TERM_BINDING',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        return result;
+      },
+    );
   }
 
   async computeAmendmentApprovalFingerprint(command: B1DueDateAmendmentCommandV1): Promise<string> {
@@ -415,118 +425,122 @@ export class B1PaymentTermService {
 
   async amendDueDate(command: B1DueDateAmendmentCommandV1): Promise<B1DueDateAmendmentResultV1> {
     const semantic = await this.amendmentSemantic(command);
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: AMENDMENT_SCOPE,
-        key: command.idempotencyKey,
-        requestHash: semantic.requestHash,
-        retentionSeconds: RETENTION_SECONDS,
-      });
-      if (reservation.kind === 'REPLAY')
-        return this.replayAmendment(reservation.record.responseBody);
-      const binding = await this.lockBinding(manager, command.bindingReference);
-      if (!binding)
-        return this.rejectAmendment(manager, reservation.record.id, {
-          code: 'BINDING_NOT_FOUND',
-          message: 'binding not found',
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B1PaymentTermService.amendDueDate',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: AMENDMENT_SCOPE,
+          key: command.idempotencyKey,
+          requestHash: semantic.requestHash,
+          retentionSeconds: RETENTION_SECONDS,
         });
-      const latest = await this.latestAmendment(manager, binding.bindingReference, true);
-      const expectedReference = latest?.amendmentReference ?? binding.bindingReference;
-      const expectedHash = latest?.amendmentHash ?? binding.bindingHash;
-      if (
-        command.supersedesEvidenceReference !== expectedReference ||
-        command.expectedEvidenceHash !== expectedHash
-      )
-        return this.rejectAmendment(manager, reservation.record.id, {
-          code: 'STALE_SUPERSESSION',
-          message: 'amendment does not supersede current evidence',
+        if (reservation.kind === 'REPLAY')
+          return this.replayAmendment(reservation.record.responseBody);
+        const binding = await this.lockBinding(manager, command.bindingReference);
+        if (!binding)
+          return this.rejectAmendment(manager, reservation.record.id, {
+            code: 'BINDING_NOT_FOUND',
+            message: 'binding not found',
+          });
+        const latest = await this.latestAmendment(manager, binding.bindingReference, true);
+        const expectedReference = latest?.amendmentReference ?? binding.bindingReference;
+        const expectedHash = latest?.amendmentHash ?? binding.bindingHash;
+        if (
+          command.supersedesEvidenceReference !== expectedReference ||
+          command.expectedEvidenceHash !== expectedHash
+        )
+          return this.rejectAmendment(manager, reservation.record.id, {
+            code: 'STALE_SUPERSESSION',
+            message: 'amendment does not supersede current evidence',
+          });
+        if (
+          semantic.originalBindingHash !== binding.bindingHash ||
+          semantic.sequence !== (latest?.sequence ?? 0) + 1
+        )
+          return this.rejectAmendment(manager, reservation.record.id, {
+            code: 'AMENDMENT_EVIDENCE_DRIFT',
+            message: 'amendment evidence changed before persistence',
+          });
+        const fingerprint = await this.computeAmendmentApprovalFingerprint(command);
+        const approval = await this.approvals.consumeInTransaction(manager, {
+          principal: command.principal,
+          approvalId: command.approvalId,
+          actionType: 'B1_PAYMENT_TERM_DUE_DATE_AMEND',
+          resource: { type: 'B1_PAYMENT_TERM_DUE_DATE_AMENDMENT', id: semantic.amendmentReference },
+          actionFingerprint: fingerprint,
+          now: command.now,
         });
-      if (
-        semantic.originalBindingHash !== binding.bindingHash ||
-        semantic.sequence !== (latest?.sequence ?? 0) + 1
-      )
-        return this.rejectAmendment(manager, reservation.record.id, {
-          code: 'AMENDMENT_EVIDENCE_DRIFT',
-          message: 'amendment evidence changed before persistence',
+        if (!approval.approved || !approval.approval)
+          return this.rejectAmendment(manager, reservation.record.id, {
+            code: 'APPROVAL_REJECTED',
+            message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
+          });
+        const entity = manager.getRepository(B1DueDateAmendment).create({
+          id: randomUUID(),
+          amendmentReference: semantic.amendmentReference,
+          amendmentHash: semantic.amendmentHash,
+          requestHash: semantic.requestHash,
+          originalBindingReference: binding.bindingReference,
+          originalBindingHash: binding.bindingHash,
+          originalIssuedAt: binding.issuedAt,
+          originalDueAt: binding.dueAt,
+          replacementElapsedDays: command.replacementElapsedDays,
+          replacementDueAt: new Date(semantic.replacementDueAt),
+          reason: semantic.reason,
+          effectiveAt: new Date(semantic.effectiveAt),
+          supersedesEvidenceReference: command.supersedesEvidenceReference,
+          supersedesEvidenceHash: command.expectedEvidenceHash,
+          sequence: semantic.sequence,
+          approvalId: command.approvalId,
+          approvedBy: approval.approval.approvedBy ?? command.principal.principalId,
+          idempotencyScope: AMENDMENT_SCOPE,
+          idempotencyKey: command.idempotencyKey,
+          createdBy: command.principal.principalId,
+          correlationId: command.requestContext.correlationId,
+          causationId: command.causationId ?? null,
+          createdAt: command.now ?? new Date(),
         });
-      const fingerprint = await this.computeAmendmentApprovalFingerprint(command);
-      const approval = await this.approvals.consume({
-        principal: command.principal,
-        approvalId: command.approvalId,
-        actionType: 'B1_PAYMENT_TERM_DUE_DATE_AMEND',
-        resource: { type: 'B1_PAYMENT_TERM_DUE_DATE_AMENDMENT', id: semantic.amendmentReference },
-        actionFingerprint: fingerprint,
-        now: command.now,
-      });
-      if (!approval.approved || !approval.approval)
-        return this.rejectAmendment(manager, reservation.record.id, {
-          code: 'APPROVAL_REJECTED',
-          message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
+        const saved = await manager.getRepository(B1DueDateAmendment).save(entity);
+        await this.record(
+          manager,
+          'B1_DUE_DATE_AMENDMENT',
+          saved.id,
+          'B1_PAYMENT_TERM_DUE_DATE_AMENDED',
+          command.principal.principalId,
+          {
+            amendmentReference: saved.amendmentReference,
+            amendmentHash: saved.amendmentHash,
+            supersedesEvidenceReference: saved.supersedesEvidenceReference,
+            replacementDueAt: semantic.replacementDueAt,
+          },
+          command,
+        );
+        await this.emit(
+          manager,
+          'B1PaymentTermDueDateAmended',
+          'B1_DUE_DATE_AMENDMENT',
+          saved.id,
+          saved.amendmentHash,
+          this.amendmentView(saved),
+          command,
+        );
+        await this.metrics.increment(manager, 'b1.payment-term.due-date-amended');
+        const result: B1DueDateAmendmentResultV1 = {
+          outcome: 'AMENDED',
+          amendment: this.amendmentView(saved),
+          replayed: false,
+          failure: null,
+        };
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B1_DUE_DATE_AMENDMENT',
+          resourceId: saved.id,
         });
-      const entity = manager.getRepository(B1DueDateAmendment).create({
-        id: randomUUID(),
-        amendmentReference: semantic.amendmentReference,
-        amendmentHash: semantic.amendmentHash,
-        requestHash: semantic.requestHash,
-        originalBindingReference: binding.bindingReference,
-        originalBindingHash: binding.bindingHash,
-        originalIssuedAt: binding.issuedAt,
-        originalDueAt: binding.dueAt,
-        replacementElapsedDays: command.replacementElapsedDays,
-        replacementDueAt: new Date(semantic.replacementDueAt),
-        reason: semantic.reason,
-        effectiveAt: new Date(semantic.effectiveAt),
-        supersedesEvidenceReference: command.supersedesEvidenceReference,
-        supersedesEvidenceHash: command.expectedEvidenceHash,
-        sequence: semantic.sequence,
-        approvalId: command.approvalId,
-        approvedBy: approval.approval.approvedBy ?? command.principal.principalId,
-        idempotencyScope: AMENDMENT_SCOPE,
-        idempotencyKey: command.idempotencyKey,
-        createdBy: command.principal.principalId,
-        correlationId: command.requestContext.correlationId,
-        causationId: command.causationId ?? null,
-        createdAt: command.now ?? new Date(),
-      });
-      const saved = await manager.getRepository(B1DueDateAmendment).save(entity);
-      await this.record(
-        manager,
-        'B1_DUE_DATE_AMENDMENT',
-        saved.id,
-        'B1_PAYMENT_TERM_DUE_DATE_AMENDED',
-        command.principal.principalId,
-        {
-          amendmentReference: saved.amendmentReference,
-          amendmentHash: saved.amendmentHash,
-          supersedesEvidenceReference: saved.supersedesEvidenceReference,
-          replacementDueAt: semantic.replacementDueAt,
-        },
-        command,
-      );
-      await this.emit(
-        manager,
-        'B1PaymentTermDueDateAmended',
-        'B1_DUE_DATE_AMENDMENT',
-        saved.id,
-        saved.amendmentHash,
-        this.amendmentView(saved),
-        command,
-      );
-      await this.metrics.increment(manager, 'b1.payment-term.due-date-amended');
-      const result: B1DueDateAmendmentResultV1 = {
-        outcome: 'AMENDED',
-        amendment: this.amendmentView(saved),
-        replayed: false,
-        failure: null,
-      };
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 201,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B1_DUE_DATE_AMENDMENT',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        return result;
+      },
+    );
   }
 
   async getByReference(
@@ -609,119 +623,123 @@ export class B1PaymentTermService {
       reason,
       actorIdentity: command.principal.principalId,
     });
-    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const reservation = await this.idempotency.reserve(manager, {
-        scope: DEFINITION_SCOPE,
-        key: command.idempotencyKey,
-        requestHash,
-        retentionSeconds: RETENTION_SECONDS,
-      });
-      if (reservation.kind === 'REPLAY') return this.replayTerm(reservation.record.responseBody);
-      const term = await this.lockTerm(
-        manager,
-        command.paymentTermReference,
-        command.paymentTermVersion,
-      );
-      if (!term || term.status !== from || term.recordVersion !== command.expectedRecordVersion)
-        return this.rejectTerm(
-          manager,
-          reservation.record.id,
-          {
-            code: 'INVALID_STATE_OR_VERSION',
-            message: 'payment-term state/version is stale or invalid',
-          },
-          term ?? undefined,
-        );
-      if (
-        to === 'ACTIVE' &&
-        term.effectiveTo &&
-        term.effectiveTo.getTime() <= (command.now ?? new Date()).getTime()
-      )
-        return this.rejectTerm(
-          manager,
-          reservation.record.id,
-          { code: 'TERM_EXPIRED', message: 'expired term cannot be activated' },
-          term,
-        );
-      let approvalId: string | null = null,
-        approvedBy: string | null = null;
-      if (controlled) {
-        if (!command.approvalId)
-          return this.rejectTerm(
-            manager,
-            reservation.record.id,
-            { code: 'APPROVAL_REQUIRED', message: 'A2 approval is required' },
-            term,
-          );
-        if (to === 'ACTIVE' && (await this.hasExactTupleOverlap(manager, term)))
-          return this.rejectTerm(
-            manager,
-            reservation.record.id,
-            {
-              code: 'ACTIVE_EFFECTIVE_OVERLAP',
-              message: 'another ACTIVE term overlaps this exact applicability tuple',
-            },
-            term,
-          );
-        const action =
-          operation === 'ACTIVATE' ? 'B1_PAYMENT_TERM_ACTIVATE' : 'B1_PAYMENT_TERM_REVOKE';
-        const approval = await this.approvals.consume({
-          principal: command.principal,
-          approvalId: command.approvalId,
-          actionType: action,
-          resource: {
-            type: 'B1_PAYMENT_TERM',
-            id: this.termResourceId(term.paymentTermReference, term.paymentTermVersion),
-          },
-          actionFingerprint: this.computeLifecycleFingerprint(
-            this.termView(term, command.now ?? new Date()),
-            command,
-            action,
-          ),
-          now: command.now,
+    return runSerializableWithRetry(
+      this.dataSource,
+      'B1PaymentTermService.transition',
+      async (manager) => {
+        const reservation = await this.idempotency.reserve(manager, {
+          scope: DEFINITION_SCOPE,
+          key: command.idempotencyKey,
+          requestHash,
+          retentionSeconds: RETENTION_SECONDS,
         });
-        if (!approval.approved || !approval.approval)
+        if (reservation.kind === 'REPLAY') return this.replayTerm(reservation.record.responseBody);
+        const term = await this.lockTerm(
+          manager,
+          command.paymentTermReference,
+          command.paymentTermVersion,
+        );
+        if (!term || term.status !== from || term.recordVersion !== command.expectedRecordVersion)
           return this.rejectTerm(
             manager,
             reservation.record.id,
             {
-              code: 'APPROVAL_REJECTED',
-              message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
+              code: 'INVALID_STATE_OR_VERSION',
+              message: 'payment-term state/version is stale or invalid',
             },
+            term ?? undefined,
+          );
+        if (
+          to === 'ACTIVE' &&
+          term.effectiveTo &&
+          term.effectiveTo.getTime() <= (command.now ?? new Date()).getTime()
+        )
+          return this.rejectTerm(
+            manager,
+            reservation.record.id,
+            { code: 'TERM_EXPIRED', message: 'expired term cannot be activated' },
             term,
           );
-        approvalId = command.approvalId;
-        approvedBy = approval.approval.approvedBy ?? command.principal.principalId;
-      }
-      term.status = to;
-      term.lastReason = reason;
-      term.approvalId = approvalId ?? term.approvalId;
-      term.approvedBy = approvedBy ?? term.approvedBy;
-      const saved = await manager.getRepository(B1PaymentTerm).save(term);
-      await this.record(
-        manager,
-        'B1_PAYMENT_TERM',
-        saved.id,
-        `B1_PAYMENT_TERM_${to}`,
-        command.principal.principalId,
-        { status: to, reason, approvalId },
-        command,
-      );
-      await this.metrics.increment(manager, `b1.payment-term.${to.toLowerCase()}`);
-      const result: B1PaymentTermResultV1 = {
-        outcome: 'UPDATED',
-        term: this.termView(saved, command.now ?? new Date()),
-        replayed: false,
-        failure: null,
-      };
-      await this.idempotency.complete(manager, reservation.record.id, {
-        statusCode: 200,
-        responseBody: result as unknown as Record<string, unknown>,
-        resourceType: 'B1_PAYMENT_TERM',
-        resourceId: saved.id,
-      });
-      return result;
-    });
+        let approvalId: string | null = null,
+          approvedBy: string | null = null;
+        if (controlled) {
+          if (!command.approvalId)
+            return this.rejectTerm(
+              manager,
+              reservation.record.id,
+              { code: 'APPROVAL_REQUIRED', message: 'A2 approval is required' },
+              term,
+            );
+          if (to === 'ACTIVE' && (await this.hasExactTupleOverlap(manager, term)))
+            return this.rejectTerm(
+              manager,
+              reservation.record.id,
+              {
+                code: 'ACTIVE_EFFECTIVE_OVERLAP',
+                message: 'another ACTIVE term overlaps this exact applicability tuple',
+              },
+              term,
+            );
+          const action =
+            operation === 'ACTIVATE' ? 'B1_PAYMENT_TERM_ACTIVATE' : 'B1_PAYMENT_TERM_REVOKE';
+          const approval = await this.approvals.consumeInTransaction(manager, {
+            principal: command.principal,
+            approvalId: command.approvalId,
+            actionType: action,
+            resource: {
+              type: 'B1_PAYMENT_TERM',
+              id: this.termResourceId(term.paymentTermReference, term.paymentTermVersion),
+            },
+            actionFingerprint: this.computeLifecycleFingerprint(
+              this.termView(term, command.now ?? new Date()),
+              command,
+              action,
+            ),
+            now: command.now,
+          });
+          if (!approval.approved || !approval.approval)
+            return this.rejectTerm(
+              manager,
+              reservation.record.id,
+              {
+                code: 'APPROVAL_REJECTED',
+                message: `A2 approval rejected: ${approval.reason ?? 'unknown'}`,
+              },
+              term,
+            );
+          approvalId = command.approvalId;
+          approvedBy = approval.approval.approvedBy ?? command.principal.principalId;
+        }
+        term.status = to;
+        term.lastReason = reason;
+        term.approvalId = approvalId ?? term.approvalId;
+        term.approvedBy = approvedBy ?? term.approvedBy;
+        const saved = await manager.getRepository(B1PaymentTerm).save(term);
+        await this.record(
+          manager,
+          'B1_PAYMENT_TERM',
+          saved.id,
+          `B1_PAYMENT_TERM_${to}`,
+          command.principal.principalId,
+          { status: to, reason, approvalId },
+          command,
+        );
+        await this.metrics.increment(manager, `b1.payment-term.${to.toLowerCase()}`);
+        const result: B1PaymentTermResultV1 = {
+          outcome: 'UPDATED',
+          term: this.termView(saved, command.now ?? new Date()),
+          replayed: false,
+          failure: null,
+        };
+        await this.idempotency.complete(manager, reservation.record.id, {
+          statusCode: 200,
+          responseBody: result as unknown as Record<string, unknown>,
+          resourceType: 'B1_PAYMENT_TERM',
+          resourceId: saved.id,
+        });
+        return result;
+      },
+    );
   }
 
   private normalizeCreate(command: B1PaymentTermCreateCommandV1) {
