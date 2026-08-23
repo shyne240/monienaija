@@ -19,6 +19,27 @@ The following directions represent the absolute architectural limits of the Mone
 9. **Authoritative Reference:** Every future Arena task must consult this `roadmap.md` first before any source, test, or config file changes are made.
 10. **Predecessor Invariance:** Completed tasks must never be reimplemented, refactored, or redesigned.
 11. **Fail-Closed Stop:** Arena agents **MUST STOP** immediately and notify operators if a proposed task conflicts with this `roadmap.md` or any accepted ADR.
+12. **NO NEXT CLIENT APPLICATION UNTIL THE CURRENT ADMIN/INTERNAL OPERATIONS MILESTONE PASSES HUMAN ACCEPTANCE TESTING.**
+13. **ARENA AUTOMATED VERIFICATION IS A DEVELOPMENT QUALITY GATE. IT DOES NOT SUBSTITUTE FOR FINAL HUMAN ACCEPTANCE TESTING.**
+
+---
+
+## HUMAN ACCEPTANCE TESTING GATE
+
+The final Admin milestone must stop before we move to the next client application. The sequence must be:
+
+```text
+Arena implementation
+  -> Arena automated verification
+  -> clean local commit
+  -> STOP
+  -> human acceptance testing
+  -> defect correction if required
+  -> milestone accepted
+  -> authorize next client/application
+```
+
+No future Customer Mobile, Agent, Merchant, or third-party work may begin until this human verification gate is fully satisfied and formally approved.
 
 ---
 
@@ -27,7 +48,7 @@ The following directions represent the absolute architectural limits of the Mone
 MoneyNaija is an in-house mobile-money company. To operate the business entirely on our own database ledger infrastructure, development follows this authoritative maturity order:
 
 ```text
-       CORE BACKEND (A1-A7, B1, B2F09-PRE)
+       CORE BANKING BACKEND (A1-A7, B1, B2F09-PRE)
                     ↓
   WORKFORCE / ADMIN AUTHENTICATION & AUTHORIZATION
                     ↓
@@ -87,13 +108,63 @@ The current execution status of every MoneyNaija segment is tracked below:
 
 To implement the back-office control plane cleanly, subsequent Admin Web tasks are partitioned as follows:
 
-* **`W1` — Admin Web Foundation & Workforce Login:** Establishes the boilerplate web shell, authenticates OIDC and Sandbox Bootstrap tokens, implements the central React state container, and enforces role-locked menu navigation.
-* **`W2` — Back-Office Customer & Wallet servicing:** Functional screen layouts for administrative customer search, profile verification, active NGN wallet provisioning, and status suspension toggles.
-* **`W3` — Ledger Operations, Approvals & Audits:** Exposes read-only views for double-entry ledger postings, logs for maker-checker reviews, and manual reversing controls.
+### W1 — Admin Web Foundation & Workforce Login (COMPLETE)
+* **Purpose:** Establishes the boilerplate web shell, OIDC/Bootstrap login, principal store, and role-locked sidebars.
+* **Backend APIs Consumed:** `POST /internal/a2/workforce/sessions`, `DELETE /internal/a2/workforce/sessions/:id`, `POST /internal/a2/workforce/bootstrap`, `POST /internal/a2/workforce/roles`, `DELETE /internal/a2/workforce/roles/:principalId/:roleKey`, `POST /internal/a2/workforce/approvals/:id/approve`.
+* **Backend API Gaps:** Listing and reading approvals (`GET /approvals`).
+* **Tests:** 9 assertions covering auth-store and navigation.
+
+### W2 — Administrative Customer, KYC, & Wallet Management (NOT STARTED)
+* **Purpose:** Manage and service customer accounts, verifications, and wallets.
+* **Backend APIs Consumed:** `POST /customers`, `GET /customers`, `GET /customers/:id`, `PATCH /customers/:id`, `POST /customers/:id/kyc-assessment`, `POST /customers/:id/wallets`, `GET /customers/:id/wallets`.
+* **Backend API Gaps:** Advanced multi-status querying at the controller level.
+* **Admin Web Functionality:** Search, view profiles, suspend users, verify KYC documents, provision primary NGN wallets.
+* **Tests:** Verification forms rendering, validation, and API integration testing.
+* **Blocks Completion Gate:** **YES**.
+
+### W3 — Ledger Operations, Audits, & Reversals (NOT STARTED)
+* **Purpose:** Monitor double-entry accounting entries, change logs, and execute reversals.
+* **Backend APIs Consumed:** `GET /ledger/accounts`, `POST /ledger/journals/:id/reverse`.
+* **Backend API Gaps:** `GET /operations/audits` (operational audit viewer), `GET /operations/outbox` (dispatch event tracing).
+* **Admin Web Functionality:** Ledger tree monitoring, double-entry journal posting lines tracing, manual reversal maker requests.
+* **Tests:** Reversal form signatures, error limit constraints.
+* **Blocks Completion Gate:** **YES**.
+
+### W4 — In-House Transaction Observability & Sandbox Utilities (NOT STARTED)
+* **Purpose:** Track, calculate fees, and execute sandbox transactions.
+* **Backend APIs Consumed:** `GET /wallets/:id/transactions`, `POST /fees/calculate`, `POST /deposits`, `/complete`, `POST /withdrawals`, `/complete`.
+* **Backend API Gaps:** Persistent general fee config tables and CRUD endpoints (Calculations rules must be supplied in DTO).
+* **Admin Web Functionality:** Tracking transaction status, running fee simulator calculations, manual sandbox adjustments triggers.
+* **Tests:** Fee simulator outputs, paginated scrolling.
+* **Blocks Completion Gate:** **YES**.
+
+### W5 — Independent Reconciliation & Breaks Management (NOT STARTED)
+* **Purpose:** Trigger matching runs and reconcile breaks.
+* **Backend APIs Consumed:** `POST /reconciliation/runs`.
+* **Backend API Gaps:** GET reconcile discrepancy matches detail and breaks reporting controller.
+* **Admin Web Functionality:** Triggering matching runs, tracking logs.
+* **Tests:** Run triggers verification.
+* **Blocks Completion Gate:** **YES**.
 
 ---
 
-## 4. W1 — Admin Web Foundation Implementation Record
+## 4. Formal Admin Completion Gate
+
+Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally signed off and accepted:
+1. **Workforce Authentication:** OIDC and Sandbox Bootstrap tokens must log in operators cleanly and enforce sidebar permissions for `FINANCE_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, and `FINANCE_AUDITOR` roles.
+2. **Customer Servicing:** Operators must be able to create, search, suspend, and view customer profiles.
+3. **KYC Verification:** Operators must be able to approve/reject identity documents (`customer_kyc_assessments` populated).
+4. **Wallet Provisioning:** Operators must be able to bind primary NGN accounts and view balances in Naira.
+5. **Transaction Tracking:** Tracing deposits, transfers, and withdrawals must work.
+6. **Ledger Auditing:** Tracing transactions to double-entry debit/credit lines must work.
+7. **Reversals:** Manual reversals must execute via checker approvals.
+8. **Reconciliation:** Independent matching runs must execute.
+9. **All W1–W5 Gaps Resolved or Deferred:** All documented backend gaps must either be resolved by additive controller paths or formally deferred to post-MVP production phases.
+10. **In-House Lifecycle Proved:** End-to-end sandbox money movements (Onboard -> Provision -> Fund -> P2P -> Withdraw) must operate flawlessly on the local PostgreSQL database.
+
+---
+
+## 5. W1 — Admin Web Foundation Implementation Record
 
 * **Completed Date:** 2026-08-23
 * **Files Created:**
@@ -123,4 +194,3 @@ To implement the back-office control plane cleanly, subsequent Admin Web tasks a
   * **ADMIN API GAP 4:** `GET /operations/outbox` event search is missing.
 * **Testing Scope:** Covered 9 comprehensive assertions over session lifecycles, and role-locked menu navigation (Fails closed on unauthorised views).
 * **Next Authorized Task:** `W2` — Administrative Customer and Wallet Servicing.
-
