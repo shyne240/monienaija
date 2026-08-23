@@ -31,6 +31,13 @@ export const WithdrawScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState('');
+
+  useEffect(() => {
+    if (customerId) {
+      setIdempotencyKey(`withdraw-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    }
+  }, [customerId]);
 
   useEffect(() => {
     const fetchWallets = async () => {
@@ -67,8 +74,6 @@ export const WithdrawScreen: React.FC = () => {
 
     setIsLoading(true);
     setError('');
-
-    const idempotencyKey = `withdraw-${customerId}-${Date.now()}`;
 
     try {
       // Step 1: Create the withdrawal request: POST /withdrawals

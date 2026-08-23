@@ -31,6 +31,13 @@ export const FundWalletScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState('');
+
+  useEffect(() => {
+    if (customerId) {
+      setIdempotencyKey(`fund-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    }
+  }, [customerId]);
 
   useEffect(() => {
     const fetchWallets = async () => {
@@ -59,8 +66,6 @@ export const FundWalletScreen: React.FC = () => {
 
     setIsLoading(true);
     setError('');
-
-    const idempotencyKey = `fund-${customerId}-${Date.now()}`;
 
     try {
       // Step 1: Create the deposit: POST /deposits

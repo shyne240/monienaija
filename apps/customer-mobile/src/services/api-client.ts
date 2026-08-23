@@ -1,4 +1,5 @@
 import { SecureStorage } from './secure-storage';
+import { DEFAULT_BASE_URL } from '../config';
 
 export interface ApiClientOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -26,7 +27,6 @@ export class NetworkError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL = 'http://10.0.2.2:3000'; // Default Android Emulator host pointing to localhost
 let currentBaseUrl = DEFAULT_BASE_URL;
 
 export const setBaseUrl = (url: string) => {

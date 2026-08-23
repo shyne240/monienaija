@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { ApiClient, ApiError } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
+import { DEV_AUTH_MOCK } from '../config';
 
 export interface UserSession {
   accessToken: string;
@@ -59,8 +60,9 @@ export const useAuthStore = create<AuthState>((set) => ({
           throw new Error('Invalid credentials');
         }
       } catch (err) {
-        // Fallback for demo/mock/sandbox mode when endpoint is not yet mounted on the backend
+        // Fallback for development/sandbox mode ONLY when DEV_AUTH_MOCK is explicitly active
         if (
+          DEV_AUTH_MOCK &&
           err instanceof ApiError &&
           (err.status === 404 || err.status === 405 || err.status === 500)
         ) {
