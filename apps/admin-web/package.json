@@ -1,0 +1,25 @@
+{
+  "name": "admin-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "tsc --watch",
+    "ts:check": "tsc",
+    "test": "jest --watchAll=false"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.3.1",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.3.3"
+  }
+}
