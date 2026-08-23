@@ -1,6 +1,8 @@
 # B2 Customer Activation and Public Commercial Platform — Implementation Plan
 
-- **Phase:** B2 — Customer Activation and Public Commercial Platform
+> **Superseded-for-sequencing notice (2026-08-09):** This is the historical plan that produced the preserved B2T01–B2T10 artifacts. It no longer defines the authoritative B2 platform. B2 is now Finance Platform under [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md); completed artifacts are classified in [`PLATFORM-ARTIFACT-CLASSIFICATION.md`](PLATFORM-ARTIFACT-CLASSIFICATION.md). Historical B2T11 and B2T12 **must not be executed**. Existing identifiers, migrations, ADRs, contracts, events, scopes, source, and tests remain unchanged.
+
+- **Phase:** Historical B2 label — Customer Activation and Public Commercial Platform
 - **Status:** Planned
 - **Scope:** Customer-facing commercial activation (customer, merchant, and agent onboarding, commercial activation workflows, public API exposure and authentication, API consumers, webhook registration/delivery/verification, developer onboarding, API credentials, sandbox, API documentation, API versioning, API quotas, rate limiting, customer consent and marketing consent, public commercial routes, commercial self-service, activation rollback, and production readiness) built on the frozen B1 commercial foundation
 - **Implementation order:** Architecture phase after the completed A1 Foundation Consolidation, A2 Runtime Identity & Access, A3 Customer-to-Financial Account Binding, A4 Capability & Policy Engine, A5 Internal Financial Pilot, A6 External Partners & Settlement, A7 Product Expansion Infrastructure, and B1 Commercial Platform
@@ -62,20 +64,20 @@ B2 must not simultaneously implement mobile/web/PWA native screens, card/bills/a
 
 ### 3.2 One-line summary of every task
 
-| Task   | One-line summary                                                                                                                                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task      | One-line summary                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **B2T01** | Establish the B2 activation baseline, select one bounded first activation cohort/segment for `commercial.virtual-account.inbound-funding` v1, and record prohibited edges and rollback assumptions. |
-| **B2T02** | Define the B2 public API catalog and route-exposure contract that keep public-surface behavior outside canonical authorities.                                              |
-| **B2T03** | Implement customer onboarding extension for activation (verification, eligibility re-check, and activation-ready state without creating a second identity authority).        |
-| **B2T04** | Implement merchant and agent onboarding (verification, approval, and suspension without creating a second boarding authority).                                              |
-| **B2T05** | Implement commercial activation workflows, public commercial routes, and commercial self-service that consume B1 and never become a policy/ledger authority.                |
-| **B2T06** | Implement customer consent and marketing consent (intent authorities consumed via A6T10/A7T10/B1T10 controls without inventing a parallel consent vault).                  |
-| **B2T07** | Implement API documentation, versioning, sandbox, and developer onboarding that provide a single versioned documented surface.                                             |
-| **B2T08** | Implement API credentials, consumers, quotas, and rate limiting that enforce A2 authentication and never store raw secrets.                                               |
-| **B2T09** | Implement webhook registration, delivery, and verification that reuse A6 callback authenticity/replay/freshness and the data-classification matrix.                        |
-| **B2T10** | Integrate public API authentication with A2 audience/authorization and expose B1 commercial capabilities as consented, rate-limited public resources.                      |
-| **B2T11** | Implement activation rollback, commercial disable, and operational recovery that stop new activation without rewriting financial history.                                   |
-| **B2T12** | Validate the complete B2 platform, certify the first activation cohort, and prepare the release gate and B3 handoff without beginning B3.                                 |
+| **B2T02** | Define the B2 public API catalog and route-exposure contract that keep public-surface behavior outside canonical authorities.                                                                       |
+| **B2T03** | Implement customer onboarding extension for activation (verification, eligibility re-check, and activation-ready state without creating a second identity authority).                               |
+| **B2T04** | Implement merchant and agent onboarding (verification, approval, and suspension without creating a second boarding authority).                                                                      |
+| **B2T05** | Implement commercial activation workflows, public commercial routes, and commercial self-service that consume B1 and never become a policy/ledger authority.                                        |
+| **B2T06** | Implement customer consent and marketing consent (intent authorities consumed via A6T10/A7T10/B1T10 controls without inventing a parallel consent vault).                                           |
+| **B2T07** | Implement API documentation, versioning, sandbox, and developer onboarding that provide a single versioned documented surface.                                                                      |
+| **B2T08** | Implement API credentials, consumers, quotas, and rate limiting that enforce A2 authentication and never store raw secrets.                                                                         |
+| **B2T09** | Implement webhook registration, delivery, and verification that reuse A6 callback authenticity/replay/freshness and the data-classification matrix.                                                 |
+| **B2T10** | Integrate public API authentication with A2 audience/authorization and expose B1 commercial capabilities as consented, rate-limited public resources.                                               |
+| **B2T11** | Implement activation rollback, commercial disable, and operational recovery that stop new activation without rewriting financial history.                                                           |
+| **B2T12** | Validate the complete B2 platform, certify the first activation cohort, and prepare the release gate and B3 handoff without beginning B3.                                                           |
 
 ### 3.3 Commercial activation boundary
 

@@ -22,6 +22,11 @@ import type {
 } from './b2-api-consumer.types';
 
 @Index('uq_b2_api_consumer_reference', ['consumerReference', 'consumerVersion'], { unique: true })
+// Unique rather than merely indexed: b2_api_credential, b2_api_quota and
+// b2_rate_limit_bucket carry foreign keys onto b2_api_consumer(consumer_id), which
+// PostgreSQL only permits against a uniquely constrained column. See
+// docs/B2-API-CONSUMER-SCHEMA-RECONCILIATION.md.
+@Index('uq_b2_api_consumer_consumer_id', ['consumerId'], { unique: true })
 @Index('idx_b2_api_consumer_type', ['consumerType'])
 @Index('idx_b2_api_consumer_state', ['state'])
 @Index('idx_b2_api_consumer_owner_customer', ['ownerCustomerId'])

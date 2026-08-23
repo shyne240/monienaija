@@ -6,6 +6,7 @@
 - **Implementation order:** Architecture phase after the completed A1 Foundation Consolidation, A2 Runtime Identity & Access, A3 Customer-to-Financial Account Binding, and A4 Capability & Policy Engine
 - **Recommended first capability:** Internal customer-to-customer transfer
 - **Source planning documents:** [`ROADMAP.md`](ROADMAP.md), [`PHASES.md`](PHASES.md), [`ARCHITECTURE-PHASE-PLAN.md`](ARCHITECTURE-PHASE-PLAN.md), [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md), [`A3-A4-HANDOFF-PACKAGE.md`](A3-A4-HANDOFF-PACKAGE.md), [`A5-COMMAND-CORRELATION-INPUTS.md`](A5-COMMAND-CORRELATION-INPUTS.md)
+- **Authorized extension:** A5T11 — A5 AR Control Account Provisioning; ADR-0090 allocated; implementation not started. Historical A5T01–A5T10 remain unchanged. Detailed scope: [`B2F07-PREREQUISITE-WORK-PACKAGES.md`](B2F07-PREREQUISITE-WORK-PACKAGES.md).
 
 This document is a planning artifact only. It creates no application source, entity, migration, service, controller, API, route, scheduler, provider integration, financial behavior, or runtime activation.
 
@@ -523,6 +524,18 @@ Validate the complete internal financial pilot and prepare the next-phase handof
 - A6 external partner and settlement implementation.
 - A7 product expansion infrastructure.
 - Public APIs, mobile/web channels, notification delivery, and general customer activation.
+
+### A5T11 — A5 AR Control Account Provisioning
+
+- **Type:** Authorized post-pilot A5 extension; bounded provisioning runtime implemented
+- **ADR:** [`ADR-0090`](ADR/ADR-0090-A5-AR-Control-Account-Provisioning.md)
+- **Owner:** A5 Ledger & Internal Financial Core
+- **Contract:** [`A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md`](A5-AR-CONTROL-ACCOUNT-PROVISIONING-CONTRACT.md)
+- **Detailed authoritative scope:** [`B2F07-PREREQUISITE-WORK-PACKAGES.md`](B2F07-PREREQUISITE-WORK-PACKAGES.md)
+
+A5T11 provides a privileged, idempotent orchestration that provisions exactly one canonical A5 receivable control account through `LedgerService.createAccount()` and hands verified account evidence to B2F03. It does not alter A5T01–A5T10, create a Finance mapping, implement AR, post a journal, or move value. The runtime validates `FINANCE-ACCOUNTS_RECEIVABLE-NGN`, `ASSET`, `DEBIT`, `NGN`, `CUSTOMER_FUNDS`, and `allowNegativeBalance = false` before any account creation.
+
+No account is seeded or created merely by module startup. Actual provisioning requires valid A2 approval and an allowing B2F06 policy; B2F03 mapping remains a separate subsequent action.
 
 ## 8. A5 critical path
 

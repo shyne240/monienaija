@@ -146,7 +146,10 @@ class FakePrivilegedApprovalService {
   approved = true;
   consumeCalls = 0;
 
-  consume(): Promise<{ approved: boolean; reason: 'CONSUMED' | 'APPROVAL_SCOPE_MISSING' }> {
+  consumeInTransaction(): Promise<{
+    approved: boolean;
+    reason: 'CONSUMED' | 'APPROVAL_SCOPE_MISSING';
+  }> {
     this.consumeCalls += 1;
     return Promise.resolve({
       approved: this.approved,

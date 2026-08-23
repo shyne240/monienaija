@@ -20,6 +20,10 @@ import type {
 @Index('uq_b2_webhook_registration_reference', ['registrationReference', 'registrationVersion'], {
   unique: true,
 })
+// Unique rather than merely indexed: b2_webhook_delivery carries a foreign key onto
+// b2_webhook_registration(registration_id), which PostgreSQL only permits against a
+// uniquely constrained column. See docs/B2-WEBHOOK-SCHEMA-RECONCILIATION.md.
+@Index('uq_b2_webhook_registration_registration_id', ['registrationId'], { unique: true })
 @Index('idx_b2_webhook_registration_consumer', ['consumerId'])
 @Index('idx_b2_webhook_registration_state', ['state'])
 @Index('idx_b2_webhook_registration_cohort', ['cohortKey', 'cohortVersion'])

@@ -13,6 +13,10 @@ const optionalEnvironmentSecret = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.string().min(16).max(512).optional(),
 );
+const optionalEnvironmentJson = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(2).max(65_535).optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -35,6 +39,22 @@ export const environmentSchema = z
     OUTBOX_RETENTION_SECONDS: z.coerce.number().int().min(3_600).max(31_536_000).default(2_592_000),
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
+    A2_WORKFORCE_ENABLED: booleanFromEnvironment.default(false),
+    A2_WORKFORCE_OIDC_ISSUER: optionalEnvironmentUrl,
+    A2_WORKFORCE_OIDC_JWKS_URI: optionalEnvironmentUrl,
+    A2_WORKFORCE_OIDC_AUDIENCE: optionalEnvironmentString,
+    A2_WORKFORCE_OIDC_CLIENT_ID: optionalEnvironmentString,
+    A2_WORKFORCE_INTERNAL_AUDIENCE: optionalEnvironmentString,
+    A2_WORKFORCE_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).optional(),
+    A2_BOOTSTRAP_ENABLED: booleanFromEnvironment.default(false),
+    A2_BOOTSTRAP_ISSUER: optionalEnvironmentString,
+    A2_BOOTSTRAP_AUDIENCE: optionalEnvironmentString,
+    A2_BOOTSTRAP_JWKS_JSON: optionalEnvironmentJson,
+    A2_BOOTSTRAP_ADMIN_SCOPES_JSON: optionalEnvironmentJson,
+    A2_FINANCE_ROLES_JSON: optionalEnvironmentJson,
+    A2_MAKER_CHECKER_RULES_JSON: optionalEnvironmentJson,
+    A2_WORKFORCE_RATE_LIMITS_JSON: optionalEnvironmentJson,
+    A2_TRUSTED_PROXY_ADDRESSES_JSON: optionalEnvironmentJson,
     A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),
     A6_PARTNER_ENABLED: booleanFromEnvironment.default(false),
     A6_PARTNER_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),

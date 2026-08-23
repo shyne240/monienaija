@@ -29,6 +29,7 @@ import { A7ProductFinancialEffectModule } from './policy/a7-product-financial-ef
 import { A7ProductReconciliationModule } from './policy/a7-product-reconciliation.module';
 import { A7ProductDataMinimizationModule } from './policy/a7-product-data-minimization.module';
 import { B1BillingEngineModule } from './policy/b1-billing-engine.module';
+import { B1PaymentTermModule } from './policy/b1-payment-term.module';
 import { B1CampaignEngineModule } from './policy/b1-campaign-engine.module';
 import { B1CommercialAnalyticsEngineModule } from './policy/b1-commercial-analytics-engine.module';
 import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
@@ -43,6 +44,11 @@ import { B2ConsentModule } from './policy/b2-consent.module';
 import { B2ApiConsumerModule } from './policy/b2-api-consumer.module';
 import { B2WebhookModule } from './policy/b2-webhook.module';
 import { B2PublicApiAuthenticationModule } from './policy/b2-public-api-authentication.module';
+import { B2FAccountMappingModule } from './policy/b2f-account-mapping.module';
+import { B2FAccountingTreatmentModule } from './policy/b2f-accounting-treatment.module';
+import { B2FFinanceControlModule } from './policy/b2f-finance-control.module';
+import { B2FFiscalPeriodModule } from './policy/b2f-fiscal-period.module';
+import { B2FJournalGovernanceModule } from './policy/b2f-journal-governance.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -120,6 +126,7 @@ import { WalletModule } from './wallet/wallet.module';
     A7ProductReconciliationModule,
     A7ProductDataMinimizationModule,
     B1BillingEngineModule,
+    B1PaymentTermModule,
     B1CampaignEngineModule,
     B1CommercialAnalyticsEngineModule,
     B1CommercialCatalogModule,
@@ -134,6 +141,11 @@ import { WalletModule } from './wallet/wallet.module';
     B2ApiConsumerModule,
     B2WebhookModule,
     B2PublicApiAuthenticationModule,
+    B2FAccountMappingModule,
+    B2FAccountingTreatmentModule,
+    B2FFinanceControlModule,
+    B2FFiscalPeriodModule,
+    B2FJournalGovernanceModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,

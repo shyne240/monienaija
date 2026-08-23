@@ -30,6 +30,10 @@ export class CreateB2ApiConsumerTables1785753600043 implements MigrationInterfac
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         CONSTRAINT uq_b2_api_consumer_reference UNIQUE (consumer_reference, consumer_version),
+        -- consumer_id is the referenced identity for b2_api_credential, b2_api_quota and
+        -- b2_rate_limit_bucket. PostgreSQL requires a unique constraint on the referenced
+        -- column, so this constraint is what makes those foreign keys creatable at all.
+        CONSTRAINT uq_b2_api_consumer_consumer_id UNIQUE (consumer_id),
         CONSTRAINT chk_b2_api_consumer_reference CHECK (consumer_reference ~ '^[\\x20-\\x7E]{1,200}$'),
         CONSTRAINT chk_b2_api_consumer_version CHECK (consumer_version = 1),
         CONSTRAINT chk_b2_api_consumer_type CHECK (consumer_type IN ('DEVELOPER','MERCHANT','AGENT','PARTNER')),
@@ -124,7 +128,7 @@ export class CreateB2ApiConsumerTables1785753600043 implements MigrationInterfac
         quota_group VARCHAR(32) NOT NULL,
         "limit" INTEGER NOT NULL,
         remaining INTEGER NOT NULL,
-        window VARCHAR(32) NOT NULL,
+        "window" VARCHAR(32) NOT NULL,
         state VARCHAR(16) NOT NULL,
         idempotency_scope VARCHAR(80) NOT NULL,
         idempotency_key VARCHAR(255) NOT NULL,
@@ -135,7 +139,7 @@ export class CreateB2ApiConsumerTables1785753600043 implements MigrationInterfac
         CONSTRAINT chk_b2_api_quota_group CHECK (quota_group IN ('commercial.read','commercial.write','webhooks.manage')),
         CONSTRAINT chk_b2_api_quota_state CHECK (state IN ('ALLOCATED','EXCEEDED')),
         CONSTRAINT chk_b2_api_quota_limit CHECK ("limit" IN (5000, 500, 100)),
-        CONSTRAINT chk_b2_api_quota_window CHECK (window = 'UTC_CALENDAR_DAY'),
+        CONSTRAINT chk_b2_api_quota_window CHECK ("window" = 'UTC_CALENDAR_DAY'),
         CONSTRAINT chk_b2_api_quota_idempotency_scope CHECK (idempotency_scope = 'b2.api-consumer.idempotency.v1'),
         CONSTRAINT fk_b2_api_quota_consumer FOREIGN KEY (consumer_id) REFERENCES b2_api_consumer(consumer_id)
       )

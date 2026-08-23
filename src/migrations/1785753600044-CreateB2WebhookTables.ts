@@ -29,6 +29,10 @@ export class CreateB2WebhookTables1785753600044 implements MigrationInterface {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         CONSTRAINT uq_b2_webhook_registration_reference UNIQUE (registration_reference, registration_version),
+        -- registration_id is the referenced identity for b2_webhook_delivery. PostgreSQL
+        -- requires a unique constraint on the referenced column, so this constraint is what
+        -- makes fk_b2_webhook_delivery_registration creatable at all.
+        CONSTRAINT uq_b2_webhook_registration_registration_id UNIQUE (registration_id),
         CONSTRAINT chk_b2_webhook_registration_reference CHECK (registration_reference ~ '^[\\x20-\\x7E]{1,200}$'),
         CONSTRAINT chk_b2_webhook_registration_version CHECK (registration_version = 1),
         CONSTRAINT chk_b2_webhook_registration_url CHECK (url ~ '^https://'),

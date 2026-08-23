@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
@@ -51,12 +51,12 @@ import {
 
 @Module({
   imports: [
-    AuthorizationModule,
+    forwardRef(() => AuthorizationModule),
     BankModule,
     CustomerBeneficiaryModule,
     CustomerFundingInstrumentModule,
-    LedgerModule,
-    OperationsModule,
+    forwardRef(() => LedgerModule),
+    forwardRef(() => OperationsModule),
     PaymentModule,
     TypeOrmModule.forFeature([
       ExternalCallbackReceipt,
@@ -107,6 +107,9 @@ import {
     },
   ],
   exports: [
+    // Injected by A7 product lifecycle/financial-effect repositories, which live in other
+    // modules; the token must therefore be exported, not merely provided.
+    EXTERNAL_OPERATION_STATUS_VERIFIER,
     ExternalDataClassificationRegistry,
     ExternalDataMinimizationService,
     ExternalFundingTargetMappingService,
