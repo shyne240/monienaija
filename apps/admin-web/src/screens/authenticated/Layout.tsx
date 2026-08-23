@@ -3,15 +3,17 @@ import { useAuthStore } from '../../store/auth-store';
 import { DashboardScreen } from './DashboardScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
+import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers'>('dashboard');
 
   if (!principal) return null;
 
   const isAdmin = principal.roles.includes('FINANCE_ADMIN') || principal.scopes.includes('privileged:execute');
   const isController = principal.roles.includes('FINANCE_CONTROLLER') || principal.scopes.includes('privileged:approve');
+  const isOperator = principal.roles.length > 0; // Expose directory views to any valid workforce role
 
   return (
     <div style={styles.layout}>
@@ -46,6 +48,15 @@ export const Layout: React.FC = () => {
             📊 Operational Dashboard
           </button>
 
+          {isOperator && (
+            <button
+              style={currentView === 'customers' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('customers')}
+            >
+              👥 Customer & KYC Servicing
+            </button>
+          )}
+
           {isAdmin && (
             <button
               style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
@@ -75,6 +86,7 @@ export const Layout: React.FC = () => {
         {currentView === 'dashboard' && <DashboardScreen />}
         {currentView === 'roles' && <RoleAssignmentScreen />}
         {currentView === 'approvals' && <ApprovalsScreen />}
+        {currentView === 'customers' && <CustomerDirectoryScreen />}
       </div>
     </div>
   );

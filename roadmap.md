@@ -85,7 +85,8 @@ The current execution status of every MoneyNaija segment is tracked below:
 
 ### B. Admin / Operations Web Portal
 * **W1 (Admin Web Foundation):** **COMPLETE** — boilerplate React Web shell, OIDC & Sandbox bootstrap authentication, localStorage token caching, and role-locked sidebar menus (Completed on 2026-08-23).
-* **W2+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
+* **W2 (Admin Functional Modules):** **COMPLETE** — Customer search listings, detail cards view, status suspension updates, KYC assessment verifications, and primary NGN wallet provisioning (Completed on 2026-08-23).
+* **W3+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
 
 ### C. Customer Mobile Channel
 * **F1 (Customer Mobile Foundation):** **COMPLETE** — Native navigation, Zustand, API Client, design theme.
@@ -114,13 +115,12 @@ To implement the back-office control plane cleanly, subsequent Admin Web tasks a
 * **Backend API Gaps:** Listing and reading approvals (`GET /approvals`).
 * **Tests:** 9 assertions covering auth-store and navigation.
 
-### W2 — Administrative Customer, KYC, & Wallet Management (NOT STARTED)
+### W2 — Administrative Customer, KYC, & Wallet Management (COMPLETE)
 * **Purpose:** Manage and service customer accounts, verifications, and wallets.
 * **Backend APIs Consumed:** `POST /customers`, `GET /customers`, `GET /customers/:id`, `PATCH /customers/:id`, `POST /customers/:id/kyc-assessment`, `POST /customers/:id/wallets`, `GET /customers/:id/wallets`.
 * **Backend API Gaps:** Advanced multi-status querying at the controller level.
 * **Admin Web Functionality:** Search, view profiles, suspend users, verify KYC documents, provision primary NGN wallets.
-* **Tests:** Verification forms rendering, validation, and API integration testing.
-* **Blocks Completion Gate:** **YES**.
+* **Tests:** 4 comprehensive test suites covering validation, creation, kobo Naira mapping, and role restrictions.
 
 ### W3 — Ledger Operations, Audits, & Reversals (NOT STARTED)
 * **Purpose:** Monitor double-entry accounting entries, change logs, and execute reversals.
@@ -194,3 +194,27 @@ Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally 
   * **ADMIN API GAP 4:** `GET /operations/outbox` event search is missing.
 * **Testing Scope:** Covered 9 comprehensive assertions over session lifecycles, and role-locked menu navigation (Fails closed on unauthorised views).
 * **Next Authorized Task:** `W2` — Administrative Customer and Wallet Servicing.
+
+---
+
+## 6. W2 — Administrative Customer, KYC, & Wallet Management Implementation Record
+
+* **Completed Date:** 2026-08-23
+* **Files Created:**
+  * `apps/admin-web/src/screens/authenticated/CustomerDirectoryScreen.tsx` — Functional search, KYC assessments, and NGN provisioning screen.
+  * `apps/admin-web/__tests__/customer-servicing.test.tsx` — Test suites asserting listings, creations, status patch locks, and KYC DTOs.
+* **Files Modified:**
+  * `apps/admin-web/src/screens/authenticated/Layout.tsx` — Integrated sidebar mapping and dynamic views.
+* **Backend APIs Consumed:**
+  * `POST /customers` — Creates Customer profile references (individual segments).
+  * `GET /customers` — List/search active customer directory records.
+  * `GET /customers/:id` — Reads specific profile metadata details.
+  * `PATCH /customers/:id` — Updates customer status (ACTIVE, SUSPENDED, CLOSED).
+  * `POST /customers/:id/kyc-assessment` — Submits KYC assessment levels (NONE, LEVEL_1, LEVEL_2, LEVEL_3).
+  * `POST /customers/:id/wallets` — Provisions primary/savings NGN kobo wallets.
+  * `GET /customers/:id/wallets` — Retrieves active NGN wallet bindings.
+* **ADMIN API Gaps Discovered:**
+  * **ADMIN API GAP 5:** GET `/customers` advanced multi-status cross-matching query filters are unexposed at the controller query DTO level.
+* **Testing Scope:** Covered 4 robust test suites asserting validation errors handling, Naira-to-kobo formatting divisions, and checker roles security.
+* **Next Candidate Task:** `W3` — Ledger Operations, Audits, & Reversals.
+
