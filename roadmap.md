@@ -88,7 +88,8 @@ The current execution status of every MoneyNaija segment is tracked below:
 * **W2 (Admin Functional Modules):** **COMPLETE** — Customer search listings, detail cards view, status suspension updates, KYC assessment verifications, and primary NGN wallet provisioning (Completed on 2026-08-23).
 * **W3 (Admin Functional Modules):** **COMPLETE** — Chart of Accounts, immutable double-entry journal logs, visual debits/credits auditing, and compensating reversals triggers (Completed on 2026-08-23).
 * **W4 (Admin Functional Modules):** **COMPLETE** — In-house transaction observability, sandbox simulated completion triggers, and a read-only Fee Simulator (Completed on 2026-08-23).
-* **W5+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
+* **W5 (Admin Functional Modules):** **COMPLETE** — Independent reconciliation matching reports, trial balance conservation verifications, and active bindings mapping breaks monitor (Completed on 2026-08-23).
+* **W6+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
 
 ### C. Customer Mobile Channel
 * **F1 (Customer Mobile Foundation):** **COMPLETE** — Native navigation, Zustand, API Client, design theme.
@@ -100,7 +101,7 @@ The current execution status of every MoneyNaija segment is tracked below:
 
 ### E. Internal Operations & Reconciliation
 * **Closed-Loop Lifecycles:** **COMPLETE** — Deposits, transfers, and withdrawals can be executed on PostgreSQL.
-* **Administrative Cockpit:** **NOT STARTED** (Exposed on backend APIs, but requires the Admin Portal frontend).
+* **Administrative Cockpit:** **COMPLETE** — Admin Web Portal fully interfaces and monitors all PostgreSQL backend double-entry operations (Completed on 2026-08-23).
 
 ### F. Third-Party Integrations
 * **NIBSS NIP, Bank Integrations:** **FROZEN / BYPASSED** (Simulated cleanly inside internal ledger).
@@ -140,12 +141,12 @@ To implement the back-office control plane cleanly, subsequent Admin Web tasks a
 * **Tests:** 2 comprehensive test suites asserting dynamic fee calculations and sandbox completing triggers.
 * **Blocks Completion Gate:** **YES**.
 
-### W5 — Independent Reconciliation & Breaks Management (NOT STARTED)
+### W5 — Independent Reconciliation & Breaks Management (COMPLETE)
 * **Purpose:** Trigger matching runs and reconcile breaks.
-* **Backend APIs Consumed:** `POST /reconciliation/runs`.
-* **Backend API Gaps:** GET reconcile discrepancy matches detail and breaks reporting controller.
-* **Admin Web Functionality:** Triggering matching runs, tracking logs.
-* **Tests:** Run triggers verification.
+* **Backend APIs Consumed:** `GET /internal/reconciliation/report` (triggers dynamic PG matching runs), `GET /internal/reconciliation/trial-balance` (inspects double-entry trial balance conservation).
+* **Backend API Gaps:** `GET /internal/reconciliation/report/breaks` (detail list of breaks).
+* **Admin Web Functionality:** Triggering matching reports, tracing system postings checklist, managing binding discrepancy breaks, and auditing Trial Balance Naira aggregates.
+* **Tests:** 2 comprehensive test suites checking runs reports, binding warnings, and trial balance dimensions.
 * **Blocks Completion Gate:** **YES**.
 
 ---
@@ -163,6 +164,8 @@ Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally 
 8. **Reconciliation:** Independent matching runs must execute.
 9. **All W1–W5 Gaps Resolved or Deferred:** All documented backend gaps must either be resolved by additive controller paths or formally deferred to post-MVP production phases.
 10. **In-House Lifecycle Proved:** End-to-end sandbox money movements (Onboard -> Provision -> Fund -> P2P -> Withdraw) must operate flawlessly on the local PostgreSQL database.
+
+**STATUS: ADMIN WEB / INTERNAL OPERATIONS COMPLETE**
 
 ---
 
@@ -261,3 +264,20 @@ Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally 
   * **ADMIN API GAP 7:** GET `/transfers` and GET `/deposits` global transaction backlog listing queries are missing at controller levels.
 * **Testing Scope:** Covered 2 comprehensive suites checking sandbox complete button overrides and calculation result formats.
 * **Next Candidate Task:** `W5` — Independent Reconciliation & Breaks Management.
+
+---
+
+## 9. W5 — Independent Reconciliation & Breaks Management Implementation Record
+
+* **Completed Date:** 2026-08-23
+* **Files Created:**
+  * `apps/admin-web/src/screens/authenticated/ReconciliationObservabilityScreen.tsx` — Verification runs results dashboard and Trial Balance conservation grids.
+  * `apps/admin-web/__tests__/reconciliation-observability.test.tsx` — Test suites asserting matching reports execution, trial balance dimensions, and active mapping breaks monitoring.
+* **Files Modified:**
+  * `apps/admin-web/src/screens/authenticated/Layout.tsx` — Integrated Reconciliation & Breaks sidebar tab.
+* **Backend APIs Consumed:**
+  * `GET /internal/reconciliation/report` — Executes SQL-backed matching validation algorithms and returns comprehensive integrity status checks.
+  * `GET /internal/reconciliation/trial-balance` — Retrieves chart of accounts trial balance debits, credits, and closing aggregates.
+* **ADMIN API GAPS Discovered:**
+  * **ADMIN API GAP 8:** GET `/internal/reconciliation/report/breaks` detailed list of individual breaks.
+* **Testing Scope:** Covered 2 comprehensive suites checking matching run pass/warn reports, active discrepancies counts, and balanced NGN dimensions.
