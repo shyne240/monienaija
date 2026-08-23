@@ -4,10 +4,11 @@ import { DashboardScreen } from './DashboardScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
+import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers' | 'ledger'>('dashboard');
 
   if (!principal) return null;
 
@@ -57,6 +58,15 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
+          {isOperator && (
+            <button
+              style={currentView === 'ledger' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('ledger')}
+            >
+              📖 Ledger & Reversals
+            </button>
+          )}
+
           {isAdmin && (
             <button
               style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
@@ -87,6 +97,7 @@ export const Layout: React.FC = () => {
         {currentView === 'roles' && <RoleAssignmentScreen />}
         {currentView === 'approvals' && <ApprovalsScreen />}
         {currentView === 'customers' && <CustomerDirectoryScreen />}
+        {currentView === 'ledger' && <LedgerOperationsScreen />}
       </div>
     </div>
   );

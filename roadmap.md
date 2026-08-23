@@ -86,7 +86,8 @@ The current execution status of every MoneyNaija segment is tracked below:
 ### B. Admin / Operations Web Portal
 * **W1 (Admin Web Foundation):** **COMPLETE** — boilerplate React Web shell, OIDC & Sandbox bootstrap authentication, localStorage token caching, and role-locked sidebar menus (Completed on 2026-08-23).
 * **W2 (Admin Functional Modules):** **COMPLETE** — Customer search listings, detail cards view, status suspension updates, KYC assessment verifications, and primary NGN wallet provisioning (Completed on 2026-08-23).
-* **W3+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
+* **W3 (Admin Functional Modules):** **COMPLETE** — Chart of Accounts, immutable double-entry journal logs, visual debits/credits auditing, and compensating reversals triggers (Completed on 2026-08-23).
+* **W4+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
 
 ### C. Customer Mobile Channel
 * **F1 (Customer Mobile Foundation):** **COMPLETE** — Native navigation, Zustand, API Client, design theme.
@@ -122,12 +123,12 @@ To implement the back-office control plane cleanly, subsequent Admin Web tasks a
 * **Admin Web Functionality:** Search, view profiles, suspend users, verify KYC documents, provision primary NGN wallets.
 * **Tests:** 4 comprehensive test suites covering validation, creation, kobo Naira mapping, and role restrictions.
 
-### W3 — Ledger Operations, Audits, & Reversals (NOT STARTED)
+### W3 — Ledger Operations, Audits, & Reversals (COMPLETE)
 * **Purpose:** Monitor double-entry accounting entries, change logs, and execute reversals.
-* **Backend APIs Consumed:** `GET /ledger/accounts`, `POST /ledger/journals/:id/reverse`.
-* **Backend API Gaps:** `GET /operations/audits` (operational audit viewer), `GET /operations/outbox` (dispatch event tracing).
-* **Admin Web Functionality:** Ledger tree monitoring, double-entry journal posting lines tracing, manual reversal maker requests.
-* **Tests:** Reversal form signatures, error limit constraints.
+* **Backend APIs Consumed:** `GET /ledger/accounts`, `GET /ledger/journals/:id`, `POST /ledger/journals/:id/reversal`.
+* **Backend API Gaps:** `GET /operations/audits` (operational audit viewer), `GET /operations/outbox` (dispatch event tracing), `GET /ledger/journals` (journals query listing).
+* **Admin Web Functionality:** Ledger tree monitoring, double-entry journal posting lines tracing, manual reversal maker requests, and controller reversals triggers.
+* **Tests:** 4 comprehensive test suites covering account loading, balance divisions, debit/credit tabular mappings, and role-locked overrides.
 * **Blocks Completion Gate:** **YES**.
 
 ### W4 — In-House Transaction Observability & Sandbox Utilities (NOT STARTED)
@@ -218,3 +219,22 @@ Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally 
 * **Testing Scope:** Covered 4 robust test suites asserting validation errors handling, Naira-to-kobo formatting divisions, and checker roles security.
 * **Next Candidate Task:** `W3` — Ledger Operations, Audits, & Reversals.
 
+---
+
+## 7. W3 — Ledger Operations, Audits, & Reversals Implementation Record
+
+* **Completed Date:** 2026-08-23
+* **Files Created:**
+  * `apps/admin-web/src/screens/authenticated/LedgerOperationsScreen.tsx` — Chart of accounts visual listing and compensating reversals screen.
+  * `apps/admin-web/__tests__/ledger-operations.test.tsx` — Unit test assertions for accounts balance checks, debit/credit listings, and roles.
+* **Files Modified:**
+  * `apps/admin-web/src/screens/authenticated/Layout.tsx` — Integrated ledger sidebar tab.
+  * `apps/admin-web/jest.config.js` — Enabled dual-resolutions root fallback paths.
+* **Backend APIs Consumed:**
+  * `GET /ledger/accounts` — Reads list of ledger accounts and balances.
+  * `GET /ledger/journals/:id` — Audits a single double-entry journal.
+  * `POST /ledger/journals/:id/reversal` — Posts compensating reversed journal entry.
+* **ADMIN API GAPS Discovered:**
+  * **ADMIN API GAP 6:** GET `/ledger/journals` query listing is unexposed at the controller level.
+* **Testing Scope:** Covered 4 robust assertions checking balance divisions, debit/credit tabular columns, and maker-checker reversal signatures.
+* **Next Candidate Task:** `W4` — In-House Transaction Observability & Sandbox Utilities.
