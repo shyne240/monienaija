@@ -142,7 +142,12 @@ export class CreateExternalSettlementTables1785753600029 implements MigrationInt
             'INVALID_SETTLEMENT_STATE',
             'PARTNER_DISABLED',
             'EXTERNAL_OPERATION_NOT_FOUND',
-            'COMPENSATING_NOT_PERMITTED'
+            'COMPENSATING_NOT_PERMITTED',
+            'PROVIDER_REJECTION',
+            'PROVIDER_SUSPENSE',
+            'PROVIDER_UNKNOWN',
+            'MANUAL_REVIEW',
+            'PROVIDER_FAILURE'
           )),
         CONSTRAINT chk_external_suspense_evidence_hash
           CHECK (evidence_hash ~ '^[a-f0-9]{64}$'),
