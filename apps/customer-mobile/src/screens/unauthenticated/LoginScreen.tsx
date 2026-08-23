@@ -4,7 +4,9 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
+import { Card } from '../../components/Card';
 import { useAuthStore } from '../../store/auth-store';
+import { DEV_AUTH_MOCK } from '../../config';
 
 export const LoginScreen: React.FC = () => {
   const [customerId, setCustomerId] = useState('');
@@ -43,6 +45,22 @@ export const LoginScreen: React.FC = () => {
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>Enter your Customer ID and Password to continue</Text>
         </View>
+
+        {DEV_AUTH_MOCK ? (
+          <Card variant="flat" style={styles.devBanner}>
+            <Text style={styles.devTitle}>🛠️ Sandbox Development Mode Active</Text>
+            <Text style={styles.devText}>
+              Standard customer sessions are currently parked under ADR-0019 as future A2 work. Mock credentials will be accepted.
+            </Text>
+          </Card>
+        ) : (
+          <Card variant="flat" style={styles.prodWarningBanner}>
+            <Text style={styles.prodWarningTitle}>⚠️ Production Mode Active</Text>
+            <Text style={styles.prodWarningText}>
+              Mock authentication is disabled. Authentication requires backend runtime capability.
+            </Text>
+          </Card>
+        )}
 
         {(!!validationError || !!error) && (
           <View style={styles.errorBanner}>
@@ -99,7 +117,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   header: {
-    marginBottom: theme.spacing.xxl,
+    marginBottom: theme.spacing.xl,
   },
   title: {
     fontSize: theme.typography.sizes.xxl,
@@ -130,4 +148,41 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
   },
+  devBanner: {
+    backgroundColor: theme.colors.secondary.lightest,
+    borderColor: theme.colors.secondary.main,
+    borderWidth: 1,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  devTitle: {
+    color: theme.colors.secondary.dark,
+    fontWeight: theme.typography.weights.bold,
+    fontSize: theme.typography.sizes.sm,
+    marginBottom: 4,
+  },
+  devText: {
+    color: theme.colors.neutral.slate,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: 16,
+  },
+  prodWarningBanner: {
+    backgroundColor: theme.colors.feedback.warningLight,
+    borderColor: theme.colors.feedback.warning,
+    borderWidth: 1,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  prodWarningTitle: {
+    color: theme.colors.feedback.warning,
+    fontWeight: theme.typography.weights.bold,
+    fontSize: theme.typography.sizes.sm,
+    marginBottom: 4,
+  },
+  prodWarningText: {
+    color: theme.colors.neutral.slate,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: 16,
+  },
 });
+

@@ -7,6 +7,7 @@ import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { AmountInput } from '../../components/AmountInput';
+import { Card } from '../../components/Card';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { RootStackParamList } from '../../navigation/types';
@@ -127,6 +128,13 @@ export const WithdrawScreen: React.FC = () => {
           <Text style={styles.title}>Withdraw</Text>
           <Text style={styles.subtitle}>Withdraw funds from your MoneyNaija wallet to your bank account</Text>
         </View>
+
+        <Card variant="flat" style={styles.sandboxCard}>
+          <Text style={styles.sandboxTitle}>⚙️ Sandbox Simulated Outflow</Text>
+          <Text style={styles.sandboxText}>
+            No real NIBSS or direct bank transfers exist. Initiating a withdrawal creates a ledger entry that immediately debits the primary wallet inside the sandbox environment.
+          </Text>
+        </Card>
 
         {!!error && (
           <View style={styles.errorBanner}>
@@ -264,5 +272,23 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral.slate,
     textAlign: 'center',
     marginBottom: theme.spacing.xl,
+  },
+  sandboxCard: {
+    backgroundColor: theme.colors.secondary.lightest,
+    borderColor: theme.colors.secondary.main,
+    borderWidth: 1,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  sandboxTitle: {
+    color: theme.colors.secondary.dark,
+    fontWeight: theme.typography.weights.bold,
+    fontSize: theme.typography.sizes.sm,
+    marginBottom: 4,
+  },
+  sandboxText: {
+    color: theme.colors.neutral.slate,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: 16,
   },
 });

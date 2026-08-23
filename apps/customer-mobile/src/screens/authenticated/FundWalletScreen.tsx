@@ -7,6 +7,7 @@ import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { AmountInput } from '../../components/AmountInput';
+import { Card } from '../../components/Card';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { RootStackParamList } from '../../navigation/types';
@@ -120,6 +121,13 @@ export const FundWalletScreen: React.FC = () => {
           <Text style={styles.subtitle}>Instantly fund your primary MoneyNaija NGN Wallet</Text>
         </View>
 
+        <Card variant="flat" style={styles.sandboxCard}>
+          <Text style={styles.sandboxTitle}>⚙️ Sandbox Simulated Transfer</Text>
+          <Text style={styles.sandboxText}>
+            No physical card or bank integration is connected. Creating a deposit instantly simulates payment fulfillment inside our sandbox ledger.
+          </Text>
+        </Card>
+
         {!!error && (
           <View style={styles.errorBanner}>
             <Text style={styles.errorText}>{error}</Text>
@@ -224,5 +232,23 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral.slate,
     textAlign: 'center',
     marginBottom: theme.spacing.xl,
+  },
+  sandboxCard: {
+    backgroundColor: theme.colors.secondary.lightest,
+    borderColor: theme.colors.secondary.main,
+    borderWidth: 1,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  sandboxTitle: {
+    color: theme.colors.secondary.dark,
+    fontWeight: theme.typography.weights.bold,
+    fontSize: theme.typography.sizes.sm,
+    marginBottom: 4,
+  },
+  sandboxText: {
+    color: theme.colors.neutral.slate,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: 16,
   },
 });
