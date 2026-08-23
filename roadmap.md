@@ -87,7 +87,8 @@ The current execution status of every MoneyNaija segment is tracked below:
 * **W1 (Admin Web Foundation):** **COMPLETE** — boilerplate React Web shell, OIDC & Sandbox bootstrap authentication, localStorage token caching, and role-locked sidebar menus (Completed on 2026-08-23).
 * **W2 (Admin Functional Modules):** **COMPLETE** — Customer search listings, detail cards view, status suspension updates, KYC assessment verifications, and primary NGN wallet provisioning (Completed on 2026-08-23).
 * **W3 (Admin Functional Modules):** **COMPLETE** — Chart of Accounts, immutable double-entry journal logs, visual debits/credits auditing, and compensating reversals triggers (Completed on 2026-08-23).
-* **W4+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
+* **W4 (Admin Functional Modules):** **COMPLETE** — In-house transaction observability, sandbox simulated completion triggers, and a read-only Fee Simulator (Completed on 2026-08-23).
+* **W5+ (Admin Functional Modules):** **NOT STARTED** — Reserved for future back-office interfaces.
 
 ### C. Customer Mobile Channel
 * **F1 (Customer Mobile Foundation):** **COMPLETE** — Native navigation, Zustand, API Client, design theme.
@@ -131,12 +132,12 @@ To implement the back-office control plane cleanly, subsequent Admin Web tasks a
 * **Tests:** 4 comprehensive test suites covering account loading, balance divisions, debit/credit tabular mappings, and role-locked overrides.
 * **Blocks Completion Gate:** **YES**.
 
-### W4 — In-House Transaction Observability & Sandbox Utilities (NOT STARTED)
+### W4 — In-House Transaction Observability & Sandbox Utilities (COMPLETE)
 * **Purpose:** Track, calculate fees, and execute sandbox transactions.
-* **Backend APIs Consumed:** `GET /wallets/:id/transactions`, `POST /fees/calculate`, `POST /deposits`, `/complete`, `POST /withdrawals`, `/complete`.
-* **Backend API Gaps:** Persistent general fee config tables and CRUD endpoints (Calculations rules must be supplied in DTO).
+* **Backend APIs Consumed:** `GET /deposits/:id`, `GET /withdrawals/:id`, `GET /transfers/:id`, `POST /fees/calculate`, `POST /deposits/:id/complete`, `POST /withdrawals/:id/complete`.
+* **Backend API Gaps:** Persistent general fee config tables and CRUD endpoints (Calculations rules must be supplied in DTO), global transactions listing `/transfers` and `/deposits`.
 * **Admin Web Functionality:** Tracking transaction status, running fee simulator calculations, manual sandbox adjustments triggers.
-* **Tests:** Fee simulator outputs, paginated scrolling.
+* **Tests:** 2 comprehensive test suites asserting dynamic fee calculations and sandbox completing triggers.
 * **Blocks Completion Gate:** **YES**.
 
 ### W5 — Independent Reconciliation & Breaks Management (NOT STARTED)
@@ -238,3 +239,25 @@ Before the **`ADMIN WEB / INTERNAL OPERATIONS COMPLETE`** milestone is formally 
   * **ADMIN API GAP 6:** GET `/ledger/journals` query listing is unexposed at the controller level.
 * **Testing Scope:** Covered 4 robust assertions checking balance divisions, debit/credit tabular columns, and maker-checker reversal signatures.
 * **Next Candidate Task:** `W4` — In-House Transaction Observability & Sandbox Utilities.
+
+---
+
+## 8. W4 — In-House Transaction Observability & Sandbox Utilities Implementation Record
+
+* **Completed Date:** 2026-08-23
+* **Files Created:**
+  * `apps/admin-web/src/screens/authenticated/TransactionObservabilityScreen.tsx` — Sandbox execution completion overrides and read-only Fee Simulator.
+  * `apps/admin-web/__tests__/transaction-observability.test.tsx` — Unit test assertions for tracking detail views, sandbox button complete clicks, and simulated calculations.
+* **Files Modified:**
+  * `apps/admin-web/src/screens/authenticated/Layout.tsx` — Integrated Transaction & Fee Ops sidebar tab.
+* **Backend APIs Consumed:**
+  * `GET /deposits/:id` — Inspects sandbox deposit states.
+  * `GET /withdrawals/:id` — Inspects sandbox outflow states.
+  * `GET /transfers/:id` — Audits specific P2P transfer states.
+  * `POST /fees/calculate` — Simulates fee pricing rules against the math engine.
+  * `POST /deposits/:id/complete` — Executes sandbox simulated deposit completion.
+  * `POST /withdrawals/:id/complete` — Executes sandbox simulated withdrawal completion.
+* **ADMIN API GAPS Discovered:**
+  * **ADMIN API GAP 7:** GET `/transfers` and GET `/deposits` global transaction backlog listing queries are missing at controller levels.
+* **Testing Scope:** Covered 2 comprehensive suites checking sandbox complete button overrides and calculation result formats.
+* **Next Candidate Task:** `W5` — Independent Reconciliation & Breaks Management.

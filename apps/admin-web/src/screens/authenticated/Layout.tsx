@@ -5,10 +5,11 @@ import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
+import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers' | 'ledger'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions'>('dashboard');
 
   if (!principal) return null;
 
@@ -67,6 +68,15 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
+          {isOperator && (
+            <button
+              style={currentView === 'transactions' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('transactions')}
+            >
+              💸 Transaction & Fee Ops
+            </button>
+          )}
+
           {isAdmin && (
             <button
               style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
@@ -98,6 +108,7 @@ export const Layout: React.FC = () => {
         {currentView === 'approvals' && <ApprovalsScreen />}
         {currentView === 'customers' && <CustomerDirectoryScreen />}
         {currentView === 'ledger' && <LedgerOperationsScreen />}
+        {currentView === 'transactions' && <TransactionObservabilityScreen />}
       </div>
     </div>
   );
