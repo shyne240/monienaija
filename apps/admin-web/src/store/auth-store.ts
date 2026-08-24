@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { ApiClient, ApiError } from '../services/api-client';
-import { DEV_AUTH_MOCK } from '../config';
+import { ApiClient } from '../services/api-client';
 
 export interface WorkforcePrincipal {
   type: 'PRIVILEGED' | 'OPERATOR';
@@ -48,40 +47,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       let sessionData: WorkforceSession;
 
-      try {
-        // Post OIDC assertion to backend
-        const response = await ApiClient.post<WorkforceSession>('/internal/a2/workforce/sessions', {
-          idToken: idToken.trim(),
-        });
-        sessionData = response;
-      } catch (err) {
-        // Explicit Sandbox Development mock fallback
-        if (
-          DEV_AUTH_MOCK &&
-          err instanceof ApiError &&
-          (err.status === 401 || err.status === 404 || err.status === 405 || err.status === 500)
-        ) {
-          console.warn('Backend OIDC session endpoint missing or offline, using Sandbox admin mock');
-          sessionData = {
-            accessToken: 'mock-workforce-token-' + Math.random().toString(36).substr(2),
-            tokenType: 'Bearer',
-            sessionId: 'mock-workforce-session-uuid',
-            expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-            principal: {
-              type: 'PRIVILEGED',
-              principalId: 'https://identity.issuer:mock-operator-admin',
-              sessionId: 'mock-workforce-session-uuid',
-              audience: 'workforce-admin',
-              roles: ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'],
-              scopes: ['privileged:execute', 'finance:prepare', 'privileged:approve', 'finance:audit'],
-              customerAccess: 'NONE',
-              assuranceLevel: 'MFA',
-            },
-          };
-        } else {
-          throw err;
-        }
-      }
+      // Post OIDC assertion to backend
+      const response = await ApiClient.post<WorkforceSession>('/internal/a2/workforce/sessions', {
+        idToken: idToken.trim(),
+      });
+      sessionData = response;
 
       localStorage.setItem('admin_workforce_token', sessionData.accessToken);
       localStorage.setItem('admin_workforce_session_id', sessionData.sessionId);
