@@ -64,6 +64,34 @@ export class RuntimeAccessGuard implements CanActivate {
       return true;
     }
 
+    // For routes that allow PRIVILEGED principals, try workforce session first
+    if (this.workforceConfig.enabled && route.policy?.allowedPrincipalTypes?.includes('PRIVILEGED')) {
+      try {
+        const token = this.bearerToken(request.headers.authorization);
+        const principal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
+        request.authorizationPrincipal = principal;
+        const decision = await this.authorizationService.authorize(principal, route.policy, {
+          type: route.resourceType,
+          id: route.resourceId,
+          customerId: route.customerId,
+        });
+        request.authorizationDecision = decision;
+        if (!decision.allowed) {
+          throw new ForbiddenException('Authorization denied');
+        }
+        return true;
+      } catch (err) {
+        // If workforce validation fails with UnauthorizedException (token not a workforce token),
+        // fall through to customer session validation. Re-throw all other errors.
+        if (!(err instanceof UnauthorizedException)) {
+          throw err;
+        }
+      }
+    }
+
     const token = this.bearerToken(request.headers.authorization);
     const validation = await this.sessionService.validate({ token });
     if (!validation.valid || !validation.principal) {

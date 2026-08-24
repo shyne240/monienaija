@@ -122,6 +122,10 @@ describe('RuntimeAccessGuard', () => {
 
   it('attaches the customer principal and authorization decision to protected requests', async () => {
     const testFixture = fixture();
+    // Workforce session validation fails (token is not a workforce token), falls through to customer session
+    testFixture.workforceSessions.validate.mockRejectedValue(
+      new UnauthorizedException('Invalid workforce session'),
+    );
     testFixture.sessionService.validate.mockResolvedValue({
       valid: true,
       principal: {
@@ -159,6 +163,10 @@ describe('RuntimeAccessGuard', () => {
 
   it('returns forbidden when authentication succeeds but authorization denies', async () => {
     const testFixture = fixture();
+    // Workforce session validation fails (token is not a workforce token), falls through to customer session
+    testFixture.workforceSessions.validate.mockRejectedValue(
+      new UnauthorizedException('Invalid workforce session'),
+    );
     testFixture.sessionService.validate.mockResolvedValue({
       valid: true,
       principal: {
