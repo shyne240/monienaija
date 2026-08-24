@@ -68,7 +68,7 @@ export class RoutePolicyRegistry {
     }
 
     const customerId = input.params?.id;
-    if (path.startsWith('/api/v1/customers/')) {
+    if (path === '/api/v1/customers' || path.startsWith('/api/v1/customers/')) {
       return {
         public: false,
         resourceType: 'customer',
