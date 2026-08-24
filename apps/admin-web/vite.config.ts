@@ -6,6 +6,13 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0', // Bind to 0.0.0.0 as required by Agent preview configurations
+    allowedHosts: true, // Allow preview hosts in sandboxed environments
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: 'dist',
