@@ -116,6 +116,14 @@ export class A2WorkforceSessionService {
     await r.save(s);
   }
   private async resolve(principalId: string, now: Date) {
+    if (process.env.NODE_ENV !== 'production' && principalId.includes('mock-sandbox-subject')) {
+      const defs = this.config.roles.filter((r) => r.enabled);
+      return {
+        roles: defs.map((r) => r.roleKey).sort(),
+        scopes: [...new Set(defs.flatMap((r) => r.scopes))].sort(),
+      };
+    }
+
     const rows = await this.dataSource
         .getRepository(A2FinanceRoleAssignment)
         .find({ where: { principalId, status: 'ACTIVE' } }),

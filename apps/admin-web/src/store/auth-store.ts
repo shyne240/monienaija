@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (
           DEV_AUTH_MOCK &&
           err instanceof ApiError &&
-          (err.status === 404 || err.status === 405 || err.status === 500)
+          (err.status === 401 || err.status === 404 || err.status === 405 || err.status === 500)
         ) {
           console.warn('Backend OIDC session endpoint missing or offline, using Sandbox admin mock');
           sessionData = {

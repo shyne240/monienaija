@@ -48,7 +48,7 @@ export const LoginScreen: React.FC = () => {
   };
 
   const fillMockToken = () => {
-    setTokenInput('mock-oidc-assertion-header.payload.signature-mfa');
+    setTokenInput('mock-sandbox-token-ADMIN');
   };
 
   const fillMockBootstrap = () => {
