@@ -20,6 +20,11 @@ import { OutboxService } from '../src/operations/outbox.service';
 import { B2FFinanceControlPolicy } from '../src/policy/b2f-finance-control.entity';
 import { B2FFinanceControlService } from '../src/policy/b2f-finance-control.service';
 import type { B2FFinanceControlPolicyDefinitionV1 } from '../src/policy/b2f-finance-control.types';
+
+import {
+  integrationMockCommandGate,
+  wrapLedgerForIntegration,
+} from './support/integration-mocks';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -125,12 +130,13 @@ describe('A5T11 / B2F03 convergence (real PostgreSQL)', () => {
     controls = new B2FFinanceControlService(dataSource, idempotency, audit, approvals);
     provisioning = new A5ArControlAccountProvisioningService(
       dataSource,
-      new LedgerService(
+      wrapLedgerForIntegration(new LedgerService(
         dataSource.getRepository(LedgerAccount),
         dataSource.getRepository(LedgerJournal),
         dataSource.getRepository(LedgerLine),
         dataSource,
-      ),
+        integrationMockCommandGate,
+      )),
       idempotency,
       approvals,
       controls,

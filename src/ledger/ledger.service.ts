@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional,
@@ -11,6 +12,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 
+import { requirePrincipal, isSystemContext } from '../authorization/authorization-context';
+import { FinancialCommandGateService } from '../authorization/financial-command-gate.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import {
   MAX_POSTGRES_BIGINT,
   minorUnitsToString,
@@ -70,10 +74,14 @@ export class LedgerService {
     @InjectRepository(LedgerLine)
     private readonly lineRepository: Repository<LedgerLine>,
     private readonly dataSource: DataSource,
+    private readonly commandGate: FinancialCommandGateService,
     @Optional() private readonly metricsService?: MetricsService,
   ) {}
 
   async createAccount(command: CreateLedgerAccountCommand): Promise<LedgerAccountView> {
+    // Require authorization context - no bypass possible
+    const principal = requirePrincipal();
+
     const accountType = command.accountType;
     const normalBalance = command.normalBalance ?? this.normalBalanceFor(accountType);
     const expectedNormalBalance = this.normalBalanceFor(accountType);
@@ -97,6 +105,18 @@ export class LedgerService {
 
     if (name.length < 2 || name.length > 160) {
       throw new BadRequestException('name must contain between 2 and 160 characters');
+    }
+
+    // A2 Authorization - always enforced
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'ledger',
+      action: 'ledger:account:create',
+      requiredScopes: ['ledger:write'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
     }
 
     try {
@@ -171,22 +191,111 @@ export class LedgerService {
    * Post a journal using a transaction owned by another domain command.
    * The caller must commit or roll back the supplied manager; this keeps a
    * transfer and its ledger journal in one PostgreSQL transaction.
+   *
+   * IMPORTANT: The caller MUST establish authorization context before calling this method.
+   * For external requests, the AuthorizationContextInterceptor establishes context.
+   * For internal service calls, use runWithSystemContext() to establish system context.
    */
   async postJournalInTransaction(
     manager: EntityManager,
     command: PostJournalCommand,
   ): Promise<string> {
+    // Require authorization context - no bypass possible
+    const principal = requirePrincipal();
+    const isSystem = isSystemContext();
+
     const normalized = this.normalizeJournal(command);
+
+    // A2 Authorization - always enforced (except for system context which is already authorized)
+    if (!isSystem) {
+      const authResult = await this.commandGate.authorize({
+        principal,
+        resourceType: 'ledger',
+        action: 'ledger:journal:post',
+        requiredScopes: ['ledger:write'],
+      });
+
+      if (!authResult.allowed) {
+        throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+      }
+    }
+
+    // Consume approval inside transaction (if required and not system context)
+    if (!isSystem && command.approvalId) {
+      const actionFingerprint = this.commandGate.computeActionFingerprint({
+        action: 'ledger:journal:post',
+        idempotencyKey: normalized.idempotencyKey,
+        currency: normalized.currency,
+        accountingUnit: normalized.accountingUnit,
+        totalMinor: normalized.totalMinor.toString(),
+        lineCount: normalized.lines.length,
+      });
+
+      const approvalResult = await this.commandGate.consumeApproval(manager, {
+        approvalId: command.approvalId,
+        actionType: 'LEDGER_JOURNAL_POST',
+        actionFingerprint,
+        principal,
+        resourceType: 'ledger',
+      });
+
+      if (!approvalResult.approved) {
+        throw new ForbiddenException(approvalResult.reason ?? 'Approval denied');
+      }
+    }
+
     return this.postWithinTransaction(manager, normalized);
   }
 
   async postJournal(command: PostJournalCommand): Promise<LedgerJournalView> {
+    // Require authorization context - no bypass possible
+    const principal = requirePrincipal();
+    const isSystem = isSystemContext();
+
     const normalized = this.normalizeJournal(command);
     let journalId: string | undefined;
+
+    // A2 Authorization - always enforced (except for system context which is already authorized)
+    if (!isSystem) {
+      const authResult = await this.commandGate.authorize({
+        principal,
+        resourceType: 'ledger',
+        action: 'ledger:journal:post',
+        requiredScopes: ['ledger:write'],
+      });
+
+      if (!authResult.allowed) {
+        throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+      }
+    }
 
     for (let attempt = 0; attempt < 3 && journalId === undefined; attempt += 1) {
       try {
         journalId = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+          // Consume approval inside transaction (if required and not system context)
+          if (!isSystem && command.approvalId) {
+            const actionFingerprint = this.commandGate.computeActionFingerprint({
+              action: 'ledger:journal:post',
+              idempotencyKey: normalized.idempotencyKey,
+              currency: normalized.currency,
+              accountingUnit: normalized.accountingUnit,
+              totalMinor: normalized.totalMinor.toString(),
+              lineCount: normalized.lines.length,
+            });
+
+            const approvalResult = await this.commandGate.consumeApproval(manager, {
+              approvalId: command.approvalId,
+              actionType: 'LEDGER_JOURNAL_POST',
+              actionFingerprint,
+              principal,
+              resourceType: 'ledger',
+            });
+
+            if (!approvalResult.approved) {
+              throw new ForbiddenException(approvalResult.reason ?? 'Approval denied');
+            }
+          }
+
           return this.postWithinTransaction(manager, normalized);
         });
       } catch (error) {
@@ -225,7 +334,12 @@ export class LedgerService {
     journalId: string,
     idempotencyKey: string,
     reason?: string,
+    approvalId?: string,
   ): Promise<LedgerJournalView> {
+    // Require authorization context - no bypass possible
+    const principal = requirePrincipal();
+    const isSystem = isSystemContext();
+
     const original = await this.findJournalAndLines(journalId);
     const normalizedIdempotencyKey = idempotencyKey.trim();
     const existingByKey = await this.journalRepository.findOne({
@@ -249,7 +363,22 @@ export class LedgerService {
       throw new ConflictException('This journal has already been reversed');
     }
 
-    return this.postJournal({
+    // A2 Authorization - always enforced (except for system context which is already authorized)
+    if (!isSystem) {
+      const authResult = await this.commandGate.authorize({
+        principal,
+        resourceType: 'ledger',
+        resourceId: journalId,
+        action: 'ledger:journal:reverse',
+        requiredScopes: ['ledger:reverse'],
+      });
+
+      if (!authResult.allowed) {
+        throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+      }
+    }
+
+    const reversalCommand: PostJournalCommand = {
       idempotencyKey: normalizedIdempotencyKey,
       currency: original.journal.currency,
       accountingUnit: original.journal.accountingUnit,
@@ -270,7 +399,10 @@ export class LedgerService {
             : LedgerEntryDirection.DEBIT,
         amountMinor: line.amountMinor,
       })),
-    });
+      approvalId,
+    };
+
+    return this.postJournal(reversalCommand);
   }
 
   async getJournal(journalId: string): Promise<LedgerJournalView> {

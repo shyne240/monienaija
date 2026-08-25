@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   NotFoundException,
@@ -11,7 +12,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { requirePrincipal, isSystemContext, runWithSystemContext } from '../authorization/authorization-context';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { FinancialCommandGateService } from '../authorization/financial-command-gate.service';
+import { MakerCheckerPolicyService } from '../authorization/maker-checker-policy.service';
 import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
+import { CustomerWallet } from '../customer-wallet/customer-wallet.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { PaymentType } from '../payment/payment.enums';
 import { PaymentReferenceService } from '../payment/payment-reference.service';
@@ -21,6 +27,8 @@ import { OutboxService } from '../operations/outbox.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { CustomerFinancialAccountBinding } from '../wallet/customer-financial-account-binding.entity';
+import { CustomerFinancialAccountBindingState } from '../wallet/customer-financial-account-binding.enums';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { Transfer } from './transfer.entity';
 import { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
@@ -32,6 +40,8 @@ import type {
   WalletTransactionHistoryView,
   WalletTransactionView,
 } from './transfer.types';
+import { InternalTransferGateService } from './internal-transfer-gate.service';
+import type { InternalTransferGateResult } from './internal-transfer-gate.types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_HISTORY_PAGE = 1;
@@ -56,10 +66,17 @@ export class TransferService {
     private readonly transferRepository: Repository<Transfer>,
     @InjectRepository(WalletAccount)
     private readonly walletRepository: Repository<WalletAccount>,
+    @InjectRepository(CustomerWallet)
+    private readonly customerWalletRepository: Repository<CustomerWallet>,
+    @InjectRepository(CustomerFinancialAccountBinding)
+    private readonly bindingRepository: Repository<CustomerFinancialAccountBinding>,
     @InjectRepository(LedgerJournal)
     private readonly journalRepository: Repository<LedgerJournal>,
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
+    private readonly internalTransferGate: InternalTransferGateService,
+    private readonly commandGate: FinancialCommandGateService,
+    private readonly makerCheckerPolicy: MakerCheckerPolicyService,
     @Optional()
     private readonly paymentReferenceService?: PaymentReferenceService,
     @Optional()
@@ -71,13 +88,65 @@ export class TransferService {
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
+    // REQUIRE authorization context - no bypass possible for top-level financial operations
+    const principal = requirePrincipal();
+
+    // A2 Authorization - ALWAYS enforced for top-level financial operations
+    // System context bypass is ONLY for sub-operations (e.g., ledger posting within a transfer)
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'transfer',
+      action: 'transfer:create',
+      requiredScopes: ['transfer:create'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+    }
+
+    // Build and validate transfer gate command (A3 bindings, A4 policy, limits, pilot control, idempotency)
+    // This MUST succeed before any financial mutation can occur - NO bypass possible
+    const gateCommand = await this.buildTransferGateCommand(command, principal);
+    let gateResult: InternalTransferGateResult;
+    try {
+      gateResult = await this.internalTransferGate.validate(gateCommand);
+    } catch (error) {
+      // Gate validation failed - no financial mutation should occur
+      if (error instanceof Error) {
+        throw new ForbiddenException(`Transfer gate validation failed: ${error.message}`);
+      }
+      throw new ForbiddenException('Transfer gate validation failed');
+    }
+
+    // Maker/Checker enforcement - check if approval is required
+    const makerCheckerCheck = await this.makerCheckerPolicy.checkRequirement({
+      principal,
+      actionType: 'TRANSFER_CREATE',
+      resourceType: 'transfer',
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+    });
+
+    if (makerCheckerCheck.required) {
+      // Approval is required - check if approvalId was provided
+      if (!command.approvalId) {
+        throw new ForbiddenException(
+          `Maker/checker approval required for this transfer. ${makerCheckerCheck.reason}. ` +
+          `Please request approval with scope: ${makerCheckerCheck.approvalScope}`
+        );
+      }
+
+      // Approval was provided - it will be consumed in the transaction
+      // The approval validation happens inside the transaction via commandGate.consumeApproval
+    }
+
     const normalized = this.normalizeCommand(command);
     let result: TransferTransactionResult | undefined;
 
     for (let attempt = 0; attempt < 3 && result === undefined; attempt += 1) {
       try {
         result = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-          return this.executeWithinTransaction(manager, normalized);
+          return this.executeWithinTransaction(manager, normalized, principal, gateResult);
         });
       } catch (error) {
         if (this.isRetryableTransactionError(error) && attempt < 2) {
@@ -175,6 +244,8 @@ export class TransferService {
   private async executeWithinTransaction(
     manager: EntityManager,
     command: NormalizedTransfer,
+    principal: AuthorizationPrincipal,
+    gateResult: InternalTransferGateResult,
   ): Promise<TransferTransactionResult> {
     const transferRepository = manager.getRepository(Transfer);
     const existing = await transferRepository.findOne({
@@ -187,6 +258,30 @@ export class TransferService {
 
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
+    }
+
+    // Consume maker/checker approval if required and provided
+    if (command.approvalId) {
+      const actionFingerprint = this.commandGate.computeActionFingerprint({
+        action: 'transfer:create',
+        idempotencyKey: command.idempotencyKey,
+        sourceWalletId: command.sourceWalletId,
+        destinationWalletId: command.destinationWalletId,
+        amountMinor: command.amountMinor.toString(),
+        currency: command.currency,
+      });
+
+      const approvalResult = await this.commandGate.consumeApproval(manager, {
+        approvalId: command.approvalId,
+        actionType: 'TRANSFER_CREATE',
+        actionFingerprint,
+        principal,
+        resourceType: 'transfer',
+      });
+
+      if (!approvalResult.approved) {
+        throw new ForbiddenException(approvalResult.reason ?? 'Approval denied');
+      }
     }
 
     const wallets = await this.lockWallets(manager, [
@@ -275,31 +370,36 @@ export class TransferService {
 
     let journalId: string;
     try {
-      journalId = await this.ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `transfer:${transfer.id}`,
-        currency: command.currency,
-        accountingUnit: 'CUSTOMER_FUNDS',
-        reference: command.reference,
-        description: command.narration,
-        correlationId: `transfer:${transfer.id}`,
-        metadata: {
-          transferId: transfer.id,
-          sourceWalletId: command.sourceWalletId,
-          destinationWalletId: command.destinationWalletId,
-        },
-        lines: [
-          {
-            accountId: sourceWallet.ledgerAccountId,
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: command.amountMinor,
+      // Call LedgerService with system context (already authorized at transfer level)
+      journalId = await runWithSystemContext(
+        `transfer:${transfer.id}:ledger-posting`,
+        () => this.ledgerService.postJournalInTransaction(manager, {
+          idempotencyKey: `transfer:${transfer.id}`,
+          currency: command.currency,
+          accountingUnit: 'CUSTOMER_FUNDS',
+          reference: command.reference,
+          description: command.narration,
+          correlationId: `transfer:${transfer.id}`,
+          metadata: {
+            transferId: transfer.id,
+            sourceWalletId: command.sourceWalletId,
+            destinationWalletId: command.destinationWalletId,
           },
-          {
-            accountId: destinationWallet.ledgerAccountId,
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: command.amountMinor,
-          },
-        ],
-      });
+          lines: [
+            {
+              accountId: sourceWallet.ledgerAccountId,
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: command.amountMinor,
+            },
+            {
+              accountId: destinationWallet.ledgerAccountId,
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: command.amountMinor,
+            },
+          ],
+        }),
+        principal, // Preserve original principal for audit trail
+      );
     } catch (error) {
       if (!(error instanceof HttpException) || error.getStatus() >= 500) {
         throw error;
@@ -383,6 +483,99 @@ export class TransferService {
     return { transferId: transfer.id };
   }
 
+  /**
+   * Build InternalTransferGateCommand from wallet IDs and transfer details.
+   * Looks up all required binding and account information.
+   */
+  private async buildTransferGateCommand(
+    command: CreateTransferCommand,
+    principal: AuthorizationPrincipal,
+  ): Promise<import('./internal-transfer-gate.types').InternalTransferGateCommand> {
+    // Look up source wallet
+    const sourceWallet = await this.walletRepository.findOne({
+      where: { id: command.sourceWalletId },
+    });
+    if (!sourceWallet) {
+      throw new NotFoundException(`Source wallet ${command.sourceWalletId} not found`);
+    }
+
+    // Look up destination wallet
+    const destinationWallet = await this.walletRepository.findOne({
+      where: { id: command.destinationWalletId },
+    });
+    if (!destinationWallet) {
+      throw new NotFoundException(`Destination wallet ${command.destinationWalletId} not found`);
+    }
+
+    // Look up source customer wallet
+    const sourceCustomerWallet = await this.customerWalletRepository.findOne({
+      where: { customerId: sourceWallet.customerId },
+    });
+    if (!sourceCustomerWallet) {
+      throw new NotFoundException(`Source customer wallet not found`);
+    }
+
+    // Look up destination customer wallet
+    const destinationCustomerWallet = await this.customerWalletRepository.findOne({
+      where: { customerId: destinationWallet.customerId },
+    });
+    if (!destinationCustomerWallet) {
+      throw new NotFoundException(`Destination customer wallet not found`);
+    }
+
+    // Look up source binding
+    const sourceBinding = await this.bindingRepository.findOne({
+      where: { walletAccountId: sourceWallet.id, state: CustomerFinancialAccountBindingState.ACTIVE },
+    });
+    if (!sourceBinding) {
+      throw new NotFoundException(`Source binding not found for wallet ${sourceWallet.id}`);
+    }
+
+    // Look up destination binding
+    const destinationBinding = await this.bindingRepository.findOne({
+      where: { walletAccountId: destinationWallet.id, state: CustomerFinancialAccountBindingState.ACTIVE },
+    });
+    if (!destinationBinding) {
+      throw new NotFoundException(`Destination binding not found for wallet ${destinationWallet.id}`);
+    }
+
+    // Build gate command
+    return {
+      contractVersion: 1,
+      commandType: 'INTERNAL_TRANSFER',
+      commandId: randomUUID(),
+      capability: 'wallet.transfer',
+      action: 'create',
+      scope: 'INTERNAL_CUSTOMER_TO_CUSTOMER',
+      sourceCustomerId: sourceCustomerWallet.customerId,
+      destinationCustomerId: destinationCustomerWallet.customerId,
+      sourceCustomerWalletId: sourceCustomerWallet.id,
+      destinationCustomerWalletId: destinationCustomerWallet.id,
+      sourceBindingId: sourceBinding.id,
+      destinationBindingId: destinationBinding.id,
+      sourceWalletAccountId: sourceWallet.id,
+      destinationWalletAccountId: destinationWallet.id,
+      sourceLedgerAccountId: sourceWallet.ledgerAccountId,
+      destinationLedgerAccountId: destinationWallet.ledgerAccountId,
+      sourceBindingVersion: sourceBinding.version,
+      destinationBindingVersion: destinationBinding.version,
+      amountMinor: command.amountMinor,
+      currency: command.currency,
+      accountingUnit: 'CUSTOMER_FUNDS',
+      reference: command.reference,
+      narration: command.narration,
+      authorizationContextReference: `transfer:${randomUUID()}`,
+      policy: {},
+      requestContext: {
+        requestId: randomUUID(),
+        correlationId: randomUUID(),
+      },
+      requestedAt: new Date().toISOString(),
+      idempotencyKey: command.idempotencyKey,
+      principal,
+    };
+  }
+
   private normalizeCommand(command: CreateTransferCommand): NormalizedTransfer {
     const sourceWalletId = command.sourceWalletId.trim().toLowerCase();
     const destinationWalletId = command.destinationWalletId.trim().toLowerCase();
@@ -422,6 +615,7 @@ export class TransferService {
       idempotencyKey,
       reference,
       narration,
+      approvalId: command.approvalId,
       requestHash,
     };
   }

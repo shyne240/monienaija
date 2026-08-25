@@ -8,13 +8,16 @@ import {
   Param,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 
+import { AuthorizationContextInterceptor } from '../authorization/authorization-context.interceptor';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { PaymentReasonDto } from '../payment/dto/payment-reason.dto';
 import { WithdrawalService } from './withdrawal.service';
 
 @Controller('withdrawals')
+@UseInterceptors(AuthorizationContextInterceptor)
 export class WithdrawalController {
   constructor(private readonly withdrawalService: WithdrawalService) {}
 

@@ -34,6 +34,12 @@ import {
 } from './support/pg-harness';
 import type { TransferParticipant } from './support/pg-harness';
 
+import {
+  integrationMockCommandGate,
+  integrationSystemPrincipal,
+  wrapLedgerForIntegration,
+} from './support/integration-mocks';
+
 /**
  * A5 transfer lifecycle coverage against real PostgreSQL.
  *
@@ -61,12 +67,13 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a5transfer');
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     service = new TransferLifecycleService(
       dataSource.getRepository(Transfer),
       dataSource,
@@ -227,6 +234,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess();
     const posted = await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
     expect(posted.status).toBe(TransferStatus.COMPLETED);
@@ -252,6 +260,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess();
     await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
     const after = {
@@ -266,6 +275,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess();
     await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
     const audits: Array<Record<string, unknown>> = await dataSource.query(
@@ -296,8 +306,8 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
   it('replays a ledger post idempotently and keeps exactly one journal', async () => {
     const transferId = await createAndProcess();
     const key = `post-${randomUUID()}`;
-    const first = await service.postToLedger(transferId, { idempotencyKey: key, requestContext });
-    const second = await service.postToLedger(transferId, { idempotencyKey: key, requestContext });
+    const first = await service.postToLedger(transferId, { idempotencyKey: key, requestContext, principal: integrationSystemPrincipal });
+    const second = await service.postToLedger(transferId, { idempotencyKey: key, requestContext, principal: integrationSystemPrincipal });
     expect(second.journalId).toBe(first.journalId);
     const journals: Array<Record<string, unknown>> = await dataSource.query(
       'SELECT id FROM ledger_journals',
@@ -343,6 +353,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess({ amountMinor: '999999999' });
     const result = await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
 
@@ -365,6 +376,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess();
     const posted = await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
     await expect(
@@ -381,10 +393,12 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
       service.postToLedger(transferId, {
         idempotencyKey: `post-a-${randomUUID()}`,
         requestContext,
+        principal: integrationSystemPrincipal,
       }),
       service.postToLedger(transferId, {
         idempotencyKey: `post-b-${randomUUID()}`,
         requestContext,
+        principal: integrationSystemPrincipal,
       }),
     ]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
@@ -404,7 +418,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const before = await balanceOf(sourceLedgerAccountId);
     const settled = await Promise.allSettled(
       ids.map((id) =>
-        service.postToLedger(id, { idempotencyKey: `post-${randomUUID()}`, requestContext }),
+        service.postToLedger(id, { idempotencyKey: `post-${randomUUID()}`, requestContext, principal: integrationSystemPrincipal }),
       ),
     );
     const completed = settled.filter(
@@ -438,6 +452,7 @@ describe('A5 transfer lifecycle (real PostgreSQL)', () => {
     const transferId = await createAndProcess();
     const posted = await service.postToLedger(transferId, {
       idempotencyKey: `post-${randomUUID()}`,
+      principal: integrationSystemPrincipal,
       requestContext,
     });
     // Re-read through an entirely fresh connection pool.

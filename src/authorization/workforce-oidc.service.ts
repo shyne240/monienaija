@@ -22,10 +22,11 @@ export class A2WorkforceOidcService {
       const role = parts[3] || 'ADMIN';
       const oidcIssuer = this.config.oidcIssuer || 'https://identity.issuer.invalid';
       const oidcAudience = this.config.oidcAudience || 'workforce-admin';
+      const subject = `mock-sandbox-subject-${role}`;
       return {
         issuer: oidcIssuer,
-        subject: 'mock-sandbox-subject',
-        principalId: `${oidcIssuer}:mock-sandbox-subject`,
+        subject,
+        principalId: `${oidcIssuer}:${subject}`,
         audience: [oidcAudience],
         issuedAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + 3600000).toISOString(),

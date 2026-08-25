@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   NotFoundException,
@@ -11,10 +12,17 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
+import { requirePrincipal, isSystemContext, runWithSystemContext } from '../authorization/authorization-context';
+import { FinancialCommandGateService } from '../authorization/financial-command-gate.service';
+import { MakerCheckerPolicyService } from '../authorization/maker-checker-policy.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { CustomerWallet } from '../customer-wallet/customer-wallet.entity';
+import { CustomerFinancialAccountBinding } from '../wallet/customer-financial-account-binding.entity';
+import { CustomerFinancialAccountBindingState } from '../wallet/customer-financial-account-binding.enums';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { assertPaymentTransition } from '../payment/payment-lifecycle';
 import { PaymentLifecycleState } from '../payment/payment.enums';
@@ -36,6 +44,7 @@ import { SettlementAccountService } from '../payment/settlement-account.service'
 import { Deposit } from './deposit.entity';
 import { DepositFailureCode, DepositStatus } from './deposit.enums';
 import type { CreateDepositCommand, DepositView } from './deposit.types';
+import { DepositGateService } from './deposit-gate.service';
 
 interface NormalizedDeposit
   extends Omit<CreateDepositCommand, 'amountMinor' | 'walletId' | 'currency'> {
@@ -50,10 +59,19 @@ export class DepositService {
   constructor(
     @InjectRepository(Deposit)
     private readonly depositRepository: Repository<Deposit>,
+    @InjectRepository(WalletAccount)
+    private readonly walletRepository: Repository<WalletAccount>,
+    @InjectRepository(CustomerWallet)
+    private readonly customerWalletRepository: Repository<CustomerWallet>,
+    @InjectRepository(CustomerFinancialAccountBinding)
+    private readonly bindingRepository: Repository<CustomerFinancialAccountBinding>,
     private readonly dataSource: DataSource,
     private readonly ledgerService: LedgerService,
     private readonly paymentReferenceService: PaymentReferenceService,
     private readonly settlementAccountService: SettlementAccountService,
+    private readonly commandGate: FinancialCommandGateService,
+    private readonly depositGate: DepositGateService,
+    private readonly makerCheckerPolicy: MakerCheckerPolicyService,
     @Optional()
     private readonly auditService?: AuditService,
     @Optional()
@@ -63,9 +81,52 @@ export class DepositService {
   ) {}
 
   async createDeposit(command: CreateDepositCommand): Promise<DepositView> {
+    // REQUIRE authorization context - no bypass possible for top-level financial operations
+    const principal = requirePrincipal();
+
+    // A2 Authorization - ALWAYS enforced for top-level financial operations
+    // System context bypass is ONLY for sub-operations (e.g., ledger posting within a deposit)
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'deposit',
+      action: 'deposit:create',
+      requiredScopes: ['deposit:create'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+    }
+
+    // Build and validate deposit gate command (A3 bindings, A4 policy, limits)
+    // This MUST succeed before any financial mutation can occur - NO bypass possible
+    const gateCommand = await this.buildDepositGateCommand(command, principal);
+    const gateResult = await this.depositGate.validate(gateCommand);
+
+    if (gateResult.status !== 'ALLOWED') {
+      throw new ForbiddenException(`Deposit gate validation failed: ${gateResult.reason}`);
+    }
+
+    // Maker/Checker enforcement - check if approval is required
+    const makerCheckerCheck = await this.makerCheckerPolicy.checkRequirement({
+      principal,
+      actionType: 'DEPOSIT_CREATE',
+      resourceType: 'deposit',
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+    });
+
+    if (makerCheckerCheck.required) {
+      if (!command.approvalId) {
+        throw new ForbiddenException(
+          `Maker/checker approval required for this deposit. ${makerCheckerCheck.reason}. ` +
+          `Please request approval with scope: ${makerCheckerCheck.approvalScope}`
+        );
+      }
+    }
+
     const normalized = this.normalizeCreate(command);
     const depositId = await this.runWithSerializationRetry((manager) =>
-      this.createWithinTransaction(manager, normalized),
+      this.createWithinTransaction(manager, normalized, principal),
     ).catch(async (error: unknown) => {
       if (!isConstraintViolation(error, 'uq_deposits_idempotency_key')) {
         throw error;
@@ -84,6 +145,58 @@ export class DepositService {
     });
 
     return this.getDeposit(depositId);
+  }
+
+  /**
+   * Build DepositGateCommand from deposit command and principal.
+   * Looks up all required binding and account information.
+   */
+  private async buildDepositGateCommand(
+    command: CreateDepositCommand,
+    principal: AuthorizationPrincipal,
+  ): Promise<import('./deposit-gate.types').DepositGateCommand> {
+    // Look up wallet
+    const wallet = await this.walletRepository.findOne({
+      where: { id: command.walletId },
+    });
+    if (!wallet) {
+      throw new NotFoundException(`Wallet ${command.walletId} not found`);
+    }
+
+    // Look up customer wallet
+    const customerWallet = await this.customerWalletRepository.findOne({
+      where: { customerId: wallet.customerId },
+    });
+    if (!customerWallet) {
+      throw new NotFoundException(`Customer wallet not found`);
+    }
+
+    // Look up binding
+    const binding = await this.bindingRepository.findOne({
+      where: { walletAccountId: wallet.id, state: CustomerFinancialAccountBindingState.ACTIVE },
+    });
+    if (!binding) {
+      throw new NotFoundException(`Binding not found for wallet ${wallet.id}`);
+    }
+
+    // Build gate command
+    return {
+      principal,
+      customerId: customerWallet.customerId,
+      walletId: customerWallet.id,
+      walletAccountId: wallet.id,
+      ledgerAccountId: wallet.ledgerAccountId,
+      bindingId: binding.id,
+      bindingVersion: binding.version,
+      amountMinor: command.amountMinor.toString(),
+      currency: command.currency,
+      accountingUnit: 'CUSTOMER_FUNDS',
+      idempotencyKey: command.idempotencyKey,
+      requestContext: {
+        requestId: randomUUID(),
+        correlationId: randomUUID(),
+      },
+    };
   }
 
   async getDeposit(depositId: string): Promise<DepositView> {
@@ -107,9 +220,25 @@ export class DepositService {
   }
 
   async completeDeposit(depositId: string): Promise<DepositView> {
+    // REQUIRE authorization context - no bypass possible for top-level financial operations
+    const principal = requirePrincipal();
+
+    // A2 Authorization - ALWAYS enforced for top-level financial operations
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'deposit',
+      resourceId: depositId,
+      action: 'deposit:complete',
+      requiredScopes: ['deposit:complete'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+    }
+
     assertPaymentUuid(depositId, 'depositId');
     const id = await this.runWithSerializationRetry((manager) =>
-      this.completeWithinTransaction(manager, depositId),
+      this.completeWithinTransaction(manager, depositId, principal),
     );
     const deposit = await this.getDeposit(id);
     if (deposit.status === DepositStatus.FAILED) {
@@ -123,6 +252,22 @@ export class DepositService {
   }
 
   async failDeposit(depositId: string, reason?: string): Promise<DepositView> {
+    // REQUIRE authorization context - no bypass possible for state-changing operations
+    const principal = requirePrincipal();
+
+    // A2 Authorization - ALWAYS enforced
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'deposit',
+      resourceId: depositId,
+      action: 'deposit:fail',
+      requiredScopes: ['deposit:manage'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+    }
+
     assertPaymentUuid(depositId, 'depositId');
     const id = await this.runWithSerializationRetry((manager) =>
       this.failWithinTransaction(manager, depositId, reason),
@@ -131,6 +276,22 @@ export class DepositService {
   }
 
   async cancelDeposit(depositId: string, reason?: string): Promise<DepositView> {
+    // REQUIRE authorization context - no bypass possible for state-changing operations
+    const principal = requirePrincipal();
+
+    // A2 Authorization - ALWAYS enforced
+    const authResult = await this.commandGate.authorize({
+      principal,
+      resourceType: 'deposit',
+      resourceId: depositId,
+      action: 'deposit:cancel',
+      requiredScopes: ['deposit:manage'],
+    });
+
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason ?? 'Authorization denied');
+    }
+
     assertPaymentUuid(depositId, 'depositId');
     const id = await this.runWithSerializationRetry((manager) =>
       this.cancelWithinTransaction(manager, depositId, reason),
@@ -141,6 +302,7 @@ export class DepositService {
   private async createWithinTransaction(
     manager: EntityManager,
     command: NormalizedDeposit,
+    principal: AuthorizationPrincipal,
   ): Promise<string> {
     const repository = manager.getRepository(Deposit);
     const existing = await repository.findOne({
@@ -152,6 +314,29 @@ export class DepositService {
       }
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return existing.id;
+    }
+
+    // Consume maker/checker approval if required and provided
+    if (command.approvalId) {
+      const actionFingerprint = this.commandGate.computeActionFingerprint({
+        action: 'deposit:create',
+        idempotencyKey: command.idempotencyKey,
+        walletId: command.walletId,
+        amountMinor: command.amountMinor.toString(),
+        currency: command.currency,
+      });
+
+      const approvalResult = await this.commandGate.consumeApproval(manager, {
+        approvalId: command.approvalId,
+        actionType: 'DEPOSIT_CREATE',
+        actionFingerprint,
+        principal,
+        resourceType: 'deposit',
+      });
+
+      if (!approvalResult.approved) {
+        throw new ForbiddenException(approvalResult.reason ?? 'Approval denied');
+      }
     }
 
     const wallet = await this.lockWallet(manager, command.walletId);
@@ -183,12 +368,29 @@ export class DepositService {
         completedAt: null,
       }),
     );
+    
+    // Audit the creation
+    await this.auditService?.record(manager, {
+      entityType: 'DEPOSIT',
+      entityId: depositId,
+      action: 'CREATED',
+      actor: principal.principalId,
+      correlationId: `deposit:${depositId}`,
+      newValues: { 
+        status: DepositStatus.PENDING,
+        walletId: command.walletId,
+        amountMinor: command.amountMinor.toString(),
+        currency: command.currency,
+      },
+    });
+    
     return depositId;
   }
 
   private async completeWithinTransaction(
     manager: EntityManager,
     depositId: string,
+    principal: AuthorizationPrincipal,
   ): Promise<string> {
     const repository = manager.getRepository(Deposit);
     const deposit = await this.lockDeposit(manager, depositId);
@@ -232,31 +434,37 @@ export class DepositService {
         deposit.currency,
         SettlementAccountRole.SETTLEMENT_ASSET,
       );
-      journalId = await this.ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `deposit:${deposit.id}:completion`,
-        currency: deposit.currency,
-        accountingUnit: 'CUSTOMER_FUNDS',
-        reference: deposit.paymentReference,
-        description: deposit.narration ?? `Deposit ${deposit.paymentReference}`,
-        correlationId: `deposit:${deposit.id}`,
-        metadata: {
-          depositId: deposit.id,
-          paymentReference: deposit.paymentReference,
-          walletId: deposit.walletId,
-        },
-        lines: [
-          {
-            accountId: settlementAccountId,
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: deposit.amountMinor,
+      
+      // Call LedgerService with system context (already authorized at deposit level)
+      journalId = await runWithSystemContext(
+        `deposit:${deposit.id}:completion:ledger-posting`,
+        () => this.ledgerService.postJournalInTransaction(manager, {
+          idempotencyKey: `deposit:${deposit.id}:completion`,
+          currency: deposit.currency,
+          accountingUnit: 'CUSTOMER_FUNDS',
+          reference: deposit.paymentReference,
+          description: deposit.narration ?? `Deposit ${deposit.paymentReference}`,
+          correlationId: `deposit:${deposit.id}`,
+          metadata: {
+            depositId: deposit.id,
+            paymentReference: deposit.paymentReference,
+            walletId: deposit.walletId,
           },
-          {
-            accountId: wallet.ledgerAccountId,
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: deposit.amountMinor,
-          },
-        ],
-      });
+          lines: [
+            {
+              accountId: settlementAccountId,
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: deposit.amountMinor,
+            },
+            {
+              accountId: wallet.ledgerAccountId,
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: deposit.amountMinor,
+            },
+          ],
+        }),
+        principal, // Preserve original principal for audit trail
+      );
     } catch (error) {
       if (!(error instanceof HttpException) || error.getStatus() >= 500) {
         throw error;
@@ -277,7 +485,7 @@ export class DepositService {
       entityType: 'DEPOSIT',
       entityId: deposit.id,
       action: 'COMPLETED',
-      actor: 'internal',
+      actor: principal.principalId,
       correlationId: `deposit:${deposit.id}`,
       newValues: { status: deposit.status, journalId: deposit.journalId },
     });

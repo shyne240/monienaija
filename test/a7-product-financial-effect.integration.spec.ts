@@ -36,6 +36,11 @@ import { SettlementAccountService } from '../src/payment/settlement-account.serv
 
 import { A7ProductFinancialEffectService } from '../src/policy/a7-product-financial-effect.service';
 import { A7ProductFinancialEffectRepository } from '../src/policy/a7-product-financial-effect.repository';
+
+import {
+  integrationMockCommandGate,
+  wrapLedgerForIntegration,
+} from './support/integration-mocks';
 import type {
   A7ProductFinancialEffectA2AuthorizationContextView,
   A7ProductFinancialEffectA3BindingView,
@@ -113,12 +118,13 @@ describe('A7 Product Financial Effect (real PostgreSQL)', () => {
     dataSource = await createIntegrationDataSource('a7financial');
     originalTransaction = dataSource.transaction;
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     idempotency = new IdempotencyService(
       dataSource.getRepository(IdempotencyRecord),
       mockConfigService,

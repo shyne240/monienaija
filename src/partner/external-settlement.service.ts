@@ -4,6 +4,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { runWithSystemContext } from '../authorization/authorization-context';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { AuditService } from '../operations/audit.service';
@@ -657,24 +658,38 @@ export class ExternalSettlementService {
           : LedgerEntryDirection.DEBIT,
       amountMinor: line.amountMinor,
     }));
-    const reversalJournalId = await this.ledgerService.postJournalInTransaction(manager, {
-      idempotencyKey: command.compensatingKey,
-      currency: originalJournal.currency,
-      accountingUnit: originalJournal.accountingUnit,
-      reference: originalJournal.reference ?? undefined,
-      description: command.reason ? command.reason : `Reversal of settlement ${settlement.id}`,
-      correlationId: command.requestContext.correlationId,
-      metadata: {
-        ...originalJournal.metadata,
-        settlementId: settlement.id,
-        externalOperationId: settlement.externalOperationId,
-        suspenseEntryId: suspense.id,
-        originalJournalId: originalJournal.id,
-        compensatingEntry: true,
+    
+    // Call LedgerService with system context (provider callback - already authenticated via PROVIDER_CALLBACK mode)
+    const reversalJournalId = await runWithSystemContext(
+      `external-settlement:${settlement.id}:compensating-reversal`,
+      () => this.ledgerService.postJournalInTransaction(manager, {
+        idempotencyKey: command.compensatingKey,
+        currency: originalJournal.currency,
+        accountingUnit: originalJournal.accountingUnit,
+        reference: originalJournal.reference ?? undefined,
+        description: command.reason ? command.reason : `Reversal of settlement ${settlement.id}`,
+        correlationId: command.requestContext.correlationId,
+        metadata: {
+          ...originalJournal.metadata,
+          settlementId: settlement.id,
+          externalOperationId: settlement.externalOperationId,
+          suspenseEntryId: suspense.id,
+          originalJournalId: originalJournal.id,
+          compensatingEntry: true,
+        },
+        reversalOfJournalId: originalJournal.id,
+        lines: reversalLines,
+      }),
+      // System principal for provider callback (no workforce principal available)
+      {
+        type: 'SERVICE',
+        principalId: 'system:external-settlement-compensation',
+        roles: [],
+        scopes: ['internal:service-call'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'PASSWORD',
       },
-      reversalOfJournalId: originalJournal.id,
-      lines: reversalLines,
-    });
+    );
 
     settlement.reversalJournalId = reversalJournalId;
     settlement.reversalPostedAt = new Date();
@@ -768,38 +783,51 @@ export class ExternalSettlementService {
 
     let journalId: string;
     try {
-      journalId = await this.ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: command.settlementKey,
-        currency: operation.currency,
-        accountingUnit: operation.accountingUnit,
-        reference: operation.id,
-        description: `a6-settlement:${operation.partnerKey}:${operation.capabilityKey}:${operation.operationType}`,
-        correlationId: command.requestContext.correlationId,
-        metadata: {
-          externalOperationId: operation.id,
-          externalOperationReference: this.externalOperationReference(operation.id),
-          partnerKey: operation.partnerKey,
-          capabilityKey: operation.capabilityKey,
-          operationType: operation.operationType,
-          verifiedProviderReferenceHash: evidenceHash,
-          verifiedProviderReferenceType: command.evidence.referenceType,
-          verifiedProviderReferenceValue: command.evidence.referenceValue,
-          verifiedProviderReferenceNamespace: command.evidence.namespace,
-          verifiedProviderSource: command.evidence.source,
+      // Call LedgerService with system context (provider callback - already authenticated via PROVIDER_CALLBACK mode)
+      journalId = await runWithSystemContext(
+        `external-settlement:${operation.id}:settlement-posting`,
+        () => this.ledgerService.postJournalInTransaction(manager, {
+          idempotencyKey: command.settlementKey,
+          currency: operation.currency,
+          accountingUnit: operation.accountingUnit,
+          reference: operation.id,
+          description: `a6-settlement:${operation.partnerKey}:${operation.capabilityKey}:${operation.operationType}`,
+          correlationId: command.requestContext.correlationId,
+          metadata: {
+            externalOperationId: operation.id,
+            externalOperationReference: this.externalOperationReference(operation.id),
+            partnerKey: operation.partnerKey,
+            capabilityKey: operation.capabilityKey,
+            operationType: operation.operationType,
+            verifiedProviderReferenceHash: evidenceHash,
+            verifiedProviderReferenceType: command.evidence.referenceType,
+            verifiedProviderReferenceValue: command.evidence.referenceValue,
+            verifiedProviderReferenceNamespace: command.evidence.namespace,
+            verifiedProviderSource: command.evidence.source,
+          },
+          lines: [
+            {
+              accountId: operation.ledgerAccountId,
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: operation.amountMinor,
+            },
+            {
+              accountId: settlementAssetAccountId,
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: operation.amountMinor,
+            },
+          ],
+        }),
+        // System principal for provider callback (no workforce principal available)
+        {
+          type: 'SERVICE',
+          principalId: 'system:external-settlement-posting',
+          roles: [],
+          scopes: ['internal:service-call'],
+          customerAccess: 'NONE',
+          assuranceLevel: 'PASSWORD',
         },
-        lines: [
-          {
-            accountId: operation.ledgerAccountId,
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: operation.amountMinor,
-          },
-          {
-            accountId: settlementAssetAccountId,
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: operation.amountMinor,
-          },
-        ],
-      });
+      );
     } catch (error) {
       const code = this.ledgerFailureCode(error);
       await this.completeFailedIdempotency(manager, idempotencyRecordId, command, {

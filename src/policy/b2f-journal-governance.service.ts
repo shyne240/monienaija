@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, HttpException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { EntityManager } from 'typeorm';
+import { runWithSystemContext } from '../authorization/authorization-context';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import {
   LedgerAccountType,
@@ -371,32 +372,37 @@ export class B2FJournalGovernanceService {
           { a5IdempotencyKey: journal.a5IdempotencyKey },
         );
         try {
-          const a5 = await this.ledgerService.postJournal({
-            idempotencyKey: journal.a5IdempotencyKey,
-            currency: 'NGN',
-            accountingUnit: 'CUSTOMER_FUNDS',
-            reference: journal.financeJournalReference,
-            description: journal.description,
-            correlationId: journal.correlationId,
-            metadata: {
-              financeJournalReference: journal.financeJournalReference,
-              financeJournalVersion: 1,
-              bookKey: journal.bookKey,
-              periodKey: journal.periodKey,
-              accountingDate: journal.accountingDate,
-              sourceReference: journal.sourceDocument.sourceReference,
-              approvalId: journal.approvalId,
-              requestHash: journal.requestHash,
-            },
-            lines: journal.lines.map((line) => ({
-              accountId: line.a5LedgerAccountId,
-              direction:
-                line.direction === 'DEBIT'
-                  ? LedgerEntryDirection.DEBIT
-                  : LedgerEntryDirection.CREDIT,
-              amountMinor: line.amountMinor,
-            })),
-          });
+          // Call LedgerService with system context (already authorized at B2F governance level)
+          const a5 = await runWithSystemContext(
+            `b2f-finance-journal:${journal.financeJournalReference}:posting`,
+            () => this.ledgerService.postJournal({
+              idempotencyKey: journal.a5IdempotencyKey,
+              currency: 'NGN',
+              accountingUnit: 'CUSTOMER_FUNDS',
+              reference: journal.financeJournalReference,
+              description: journal.description,
+              correlationId: journal.correlationId,
+              metadata: {
+                financeJournalReference: journal.financeJournalReference,
+                financeJournalVersion: 1,
+                bookKey: journal.bookKey,
+                periodKey: journal.periodKey,
+                accountingDate: journal.accountingDate,
+                sourceReference: journal.sourceDocument.sourceReference,
+                approvalId: journal.approvalId,
+                requestHash: journal.requestHash,
+              },
+              lines: journal.lines.map((line) => ({
+                accountId: line.a5LedgerAccountId,
+                direction:
+                  line.direction === 'DEBIT'
+                    ? LedgerEntryDirection.DEBIT
+                    : LedgerEntryDirection.CREDIT,
+                amountMinor: line.amountMinor,
+              })),
+            }),
+            command.principal, // Preserve original principal for audit trail
+          );
           journal.state = 'POSTED';
           journal.a5JournalId = a5.id;
           journal.a5PostedAt = a5.postedAt;

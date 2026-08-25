@@ -7,6 +7,7 @@ export interface CreateWithdrawalCommand {
   idempotencyKey: string;
   reference?: string;
   narration?: string;
+  approvalId?: string;
 }
 
 export interface WithdrawalView {

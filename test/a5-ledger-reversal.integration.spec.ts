@@ -12,6 +12,18 @@ import {
 } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
 
+import {
+  integrationMockCommandGate,
+  integrationMockDepositGate,
+  integrationMockWithdrawalGate,
+  integrationMockMakerCheckerPolicy,
+  wrapLedgerForIntegration,
+  wrapFinancialService,
+} from './support/integration-mocks';
+import { CustomerWallet } from '../src/customer-wallet/customer-wallet.entity';
+import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
+import { WalletAccount } from '../src/wallet/wallet-account.entity';
+
 import { Deposit } from '../src/deposit/deposit.entity';
 import { DepositFailureCode, DepositStatus } from '../src/deposit/deposit.enums';
 import { DepositService } from '../src/deposit/deposit.service';
@@ -47,38 +59,51 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a5reversal');
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     const audit = new AuditService(dataSource.getRepository(AuditEvent));
     const outbox = new OutboxService(dataSource.getRepository(OutboxEvent));
     const metrics = new MetricsService(dataSource);
     const references = new PaymentReferenceService();
     const settlement = new SettlementAccountService();
 
-    deposits = new DepositService(
+    deposits = wrapFinancialService(new DepositService(
       dataSource.getRepository(Deposit),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
       dataSource,
       ledger,
       references,
       settlement,
+      integrationMockCommandGate,
+      integrationMockDepositGate,
+      integrationMockMakerCheckerPolicy,
       audit,
       outbox,
       metrics,
-    );
-    withdrawals = new WithdrawalService(
+    ), ['createDeposit', 'completeDeposit', 'failDeposit', 'cancelDeposit', 'getDeposit', 'listDeposits']);
+    withdrawals = wrapFinancialService(new WithdrawalService(
       dataSource.getRepository(Withdrawal),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
       dataSource,
       ledger,
       references,
       settlement,
+      integrationMockCommandGate,
+      integrationMockWithdrawalGate,
+      integrationMockMakerCheckerPolicy,
       audit,
       outbox,
       metrics,
-    );
+    ), ['createWithdrawal', 'processWithdrawal', 'completeWithdrawal', 'failWithdrawal', 'cancelWithdrawal', 'getWithdrawal', 'listWithdrawals']);
   }, 180000);
 
   afterAll(async () => {

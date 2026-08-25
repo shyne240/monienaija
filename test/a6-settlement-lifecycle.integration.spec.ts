@@ -35,6 +35,11 @@ import { EnvironmentPartnerCredentialLoader } from '../src/partner/partner-crede
 import { PartnerCapabilityRegistry } from '../src/partner/partner-capability.registry';
 import { PartnerConnectionService } from '../src/partner/partner-connection.service';
 import { PartnerRequestSigningService } from '../src/partner/partner-request-signing.service';
+
+import {
+  integrationMockCommandGate,
+  wrapLedgerForIntegration,
+} from './support/integration-mocks';
 import type {
   RecordCompensatingEntryCommand,
   SettleVerifiedOutcomeCommand,
@@ -102,12 +107,13 @@ describe('A6T08 settlement lifecycle (real PostgreSQL)', () => {
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a6settlement');
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     const audit = new AuditService(dataSource.getRepository(AuditEvent));
     const idempotency = new IdempotencyService(dataSource.getRepository(IdempotencyRecord));
     const outbox = new OutboxService(dataSource.getRepository(OutboxEvent));

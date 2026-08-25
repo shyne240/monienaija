@@ -8,13 +8,16 @@ import {
   Param,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 
+import { AuthorizationContextInterceptor } from '../authorization/authorization-context.interceptor';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { PaymentReasonDto } from '../payment/dto/payment-reason.dto';
 import { DepositService } from './deposit.service';
 
 @Controller('deposits')
+@UseInterceptors(AuthorizationContextInterceptor)
 export class DepositController {
   constructor(private readonly depositService: DepositService) {}
 

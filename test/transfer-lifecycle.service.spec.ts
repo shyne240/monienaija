@@ -15,6 +15,7 @@ import type { IdempotencyService } from '../src/operations/idempotency.service';
 import type { OutboxService } from '../src/operations/outbox.service';
 import type { OutboxEvent } from '../src/operations/outbox-event.entity';
 import type { OutboxEventCommand } from '../src/operations/operations.types';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import {
   LedgerAccountType,
@@ -45,6 +46,16 @@ const DESTINATION_LEDGER_ID = '00000000-0000-4000-8000-000000000010';
 const COMMAND_ID = '00000000-0000-4000-8000-000000000011';
 const JOURNAL_ID = '00000000-0000-4000-8000-000000000012';
 const REQUESTED_AT = '2026-08-07T10:00:00.000Z';
+
+const mockPrincipal: AuthorizationPrincipal = {
+  type: 'PRIVILEGED',
+  principalId: 'test-principal',
+  roles: ['TRANSFER_OPERATOR'],
+  scopes: ['transfer:create', 'transfer:read'],
+  customerAccess: 'NONE',
+  assuranceLevel: 'MFA',
+  sessionId: 'test-session-id',
+};
 
 class InMemoryTransferRepository {
   readonly records = new Map<string, Transfer>();
@@ -503,6 +514,7 @@ function postCommand(idempotencyKey = 'ledger-post-1') {
   return {
     idempotencyKey,
     requestContext,
+    principal: mockPrincipal,
   };
 }
 

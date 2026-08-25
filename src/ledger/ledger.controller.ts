@@ -8,13 +8,16 @@ import {
   Param,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 
+import { AuthorizationContextInterceptor } from '../authorization/authorization-context.interceptor';
 import { CreateLedgerAccountDto } from './dto/create-ledger-account.dto';
 import { PostJournalDto, ReverseJournalDto } from './dto/post-journal.dto';
 import { LedgerService } from './ledger.service';
 
 @Controller('ledger')
+@UseInterceptors(AuthorizationContextInterceptor)
 export class LedgerController {
   constructor(private readonly ledgerService: LedgerService) {}
 
@@ -67,6 +70,7 @@ export class LedgerController {
         direction: line.direction,
         amountMinor: line.amountMinor,
       })),
+      approvalId: dto.approvalId,
     });
   }
 
@@ -86,6 +90,7 @@ export class LedgerController {
       journalId,
       dto.idempotencyKey ?? headerIdempotencyKey ?? '',
       dto.reason,
+      dto.approvalId,
     );
   }
 }

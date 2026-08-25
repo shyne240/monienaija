@@ -208,25 +208,34 @@ describe('financial invariants', () => {
       {} as Repository<LedgerJournal>,
       {} as Repository<LedgerLine>,
       { transaction } as unknown as DataSource,
+      {
+        authorize: jest.fn().mockResolvedValue({ allowed: true }),
+        consumeApproval: jest.fn(),
+        computeActionFingerprint: jest.fn(),
+      } as any,
     );
 
+    const { runWithSystemContext } = await import('../src/authorization/authorization-context');
+
     await expect(
-      service.postJournal({
-        idempotencyKey: 'unbalanced-test',
-        currency: 'NGN',
-        lines: [
-          {
-            accountId: accountId(0),
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: '100',
-          },
-          {
-            accountId: accountId(1),
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: '99',
-          },
-        ],
-      }),
+      runWithSystemContext('test:unbalanced-journal', () =>
+        service.postJournal({
+          idempotencyKey: 'unbalanced-test',
+          currency: 'NGN',
+          lines: [
+            {
+              accountId: accountId(0),
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: '100',
+            },
+            {
+              accountId: accountId(1),
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: '99',
+            },
+          ],
+        }),
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(transaction).not.toHaveBeenCalled();
   });

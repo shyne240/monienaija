@@ -29,6 +29,8 @@ import { WalletAccount } from '../src/wallet/wallet-account.entity';
 import { Withdrawal } from '../src/withdrawal/withdrawal.entity';
 import { WithdrawalFailureCode, WithdrawalStatus } from '../src/withdrawal/withdrawal.enums';
 import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
+import { CustomerWallet } from '../src/customer-wallet/customer-wallet.entity';
+import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -36,6 +38,15 @@ import {
   seedTransferParticipant,
   truncateAllTables,
 } from './support/pg-harness';
+import {
+  integrationMockCommandGate,
+  integrationMockMakerCheckerPolicy,
+  integrationMockDepositGate,
+  integrationMockWithdrawalGate,
+  integrationMockInternalTransferGate,
+  wrapLedgerForIntegration,
+  wrapFinancialService,
+} from './support/integration-mocks';
 
 /**
  * A5T05 / A5T06 — deposit, withdrawal and legacy TransferService lifecycle coverage against
@@ -63,49 +74,67 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('a5payment');
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     const audit = new AuditService(dataSource.getRepository(AuditEvent));
     const outbox = new OutboxService(dataSource.getRepository(OutboxEvent));
     const metrics = new MetricsService(dataSource);
     const references = new PaymentReferenceService();
     const settlement = new SettlementAccountService();
 
-    deposits = new DepositService(
+    deposits = wrapFinancialService(new DepositService(
       dataSource.getRepository(Deposit),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
       dataSource,
       ledger,
       references,
       settlement,
+      integrationMockCommandGate,
+      integrationMockDepositGate,
+      integrationMockMakerCheckerPolicy,
       audit,
       outbox,
       metrics,
-    );
-    withdrawals = new WithdrawalService(
+    ), ['createDeposit', 'completeDeposit', 'failDeposit', 'cancelDeposit', 'getDeposit', 'listDeposits']);
+    withdrawals = wrapFinancialService(new WithdrawalService(
       dataSource.getRepository(Withdrawal),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
       dataSource,
       ledger,
       references,
       settlement,
+      integrationMockCommandGate,
+      integrationMockWithdrawalGate,
+      integrationMockMakerCheckerPolicy,
       audit,
       outbox,
       metrics,
-    );
-    transfers = new TransferService(
+    ), ['createWithdrawal', 'processWithdrawal', 'completeWithdrawal', 'failWithdrawal', 'cancelWithdrawal', 'getWithdrawal', 'listWithdrawals']);
+    transfers = wrapFinancialService(new TransferService(
       dataSource.getRepository(Transfer),
       dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
       dataSource.getRepository(LedgerJournal),
       dataSource,
       ledger,
+      integrationMockInternalTransferGate,
+      integrationMockCommandGate,
+      integrationMockMakerCheckerPolicy,
       references,
       audit,
       outbox,
       metrics,
-    );
+    ), ['createTransfer', 'getTransfer', 'getWalletTransactions']);
   }, 180000);
 
   afterAll(async () => {

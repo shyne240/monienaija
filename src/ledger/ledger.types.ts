@@ -10,6 +10,7 @@ export interface CreateLedgerAccountCommand {
   currency: string;
   accountingUnit?: string;
   allowNegativeBalance?: boolean;
+  // principal is obtained from authorization context, not passed explicitly
 }
 
 export interface PostJournalLineCommand {
@@ -28,6 +29,8 @@ export interface PostJournalCommand {
   metadata?: Record<string, unknown>;
   lines: PostJournalLineCommand[];
   reversalOfJournalId?: string;
+  approvalId?: string;
+  // principal is obtained from authorization context, not passed explicitly
 }
 
 export interface LedgerLineView {

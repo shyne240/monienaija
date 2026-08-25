@@ -10,6 +10,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import { runWithSystemContext } from '../authorization/authorization-context';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import {
   normalizeAccountingUnit,
   normalizeCurrency,
@@ -106,6 +108,7 @@ interface NormalizedTransitionTransferLifecycleCommand
 interface NormalizedPostTransferToLedgerCommand {
   idempotencyKey: string;
   requestContext: TransferLifecycleRequestContext;
+  principal: AuthorizationPrincipal;
 }
 
 @Injectable()
@@ -473,32 +476,38 @@ export class TransferLifecycleService {
         transfer.destinationLedgerAccountId,
       ]);
       this.assertTransferLedgerAccounts(transfer, accounts);
-      journalId = await this.ledgerService.postJournalInTransaction(manager, {
-        idempotencyKey: `transfer:${transfer.id}:ledger-post`,
-        currency: transfer.currency,
-        accountingUnit: transfer.accountingUnit,
-        reference: transfer.reference ?? transfer.paymentReference ?? undefined,
-        description: transfer.narration ?? `Transfer ${transfer.id}`,
-        correlationId: transfer.correlationId ?? `transfer:${transfer.id}`,
-        metadata: {
-          transferId: transfer.id,
-          commandId: transfer.commandId,
-          sourceLedgerAccountId: transfer.sourceLedgerAccountId,
-          destinationLedgerAccountId: transfer.destinationLedgerAccountId,
-        },
-        lines: [
-          {
-            accountId: transfer.sourceLedgerAccountId,
-            direction: LedgerEntryDirection.DEBIT,
-            amountMinor: transfer.amountMinor,
+      
+      // Call LedgerService with system context (already authorized at transfer lifecycle level)
+      journalId = await runWithSystemContext(
+        `transfer:${transfer.id}:ledger-post`,
+        () => this.ledgerService.postJournalInTransaction(manager, {
+          idempotencyKey: `transfer:${transfer.id}:ledger-post`,
+          currency: transfer.currency,
+          accountingUnit: transfer.accountingUnit ?? 'CUSTOMER_FUNDS',
+          reference: transfer.reference ?? transfer.paymentReference ?? undefined,
+          description: transfer.narration ?? `Transfer ${transfer.id}`,
+          correlationId: transfer.correlationId ?? `transfer:${transfer.id}`,
+          metadata: {
+            transferId: transfer.id,
+            commandId: transfer.commandId,
+            sourceLedgerAccountId: transfer.sourceLedgerAccountId ?? undefined,
+            destinationLedgerAccountId: transfer.destinationLedgerAccountId ?? undefined,
           },
-          {
-            accountId: transfer.destinationLedgerAccountId,
-            direction: LedgerEntryDirection.CREDIT,
-            amountMinor: transfer.amountMinor,
-          },
-        ],
-      });
+          lines: [
+            {
+              accountId: transfer.sourceLedgerAccountId ?? '',
+              direction: LedgerEntryDirection.DEBIT,
+              amountMinor: transfer.amountMinor,
+            },
+            {
+              accountId: transfer.destinationLedgerAccountId ?? '',
+              direction: LedgerEntryDirection.CREDIT,
+              amountMinor: transfer.amountMinor,
+            },
+          ],
+        }),
+        command.principal, // Preserve original principal for audit trail
+      );
     } catch (error) {
       if (!(error instanceof HttpException) || error.getStatus() >= 500) {
         throw error;
@@ -667,6 +676,7 @@ export class TransferLifecycleService {
     return {
       idempotencyKey,
       requestContext: this.normalizeRequestContext(command.requestContext),
+      principal: command.principal,
     };
   }
 

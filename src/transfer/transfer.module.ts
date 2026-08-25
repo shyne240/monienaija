@@ -9,6 +9,8 @@ import { PaymentModule } from '../payment/payment.module';
 import { PilotControlModule } from '../pilot/pilot-control.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { CustomerWallet } from '../customer-wallet/customer-wallet.entity';
+import { CustomerFinancialAccountBinding } from '../wallet/customer-financial-account-binding.entity';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { Transfer } from './transfer.entity';
 import { TransferController } from './transfer.controller';
@@ -36,7 +38,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     PaymentModule,
     PilotControlModule,
     WalletModule,
-    TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
+    TypeOrmModule.forFeature([Transfer, WalletAccount, CustomerWallet, CustomerFinancialAccountBinding, LedgerJournal]),
   ],
   controllers: [TransferController, WalletTransactionController],
   providers: [

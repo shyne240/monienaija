@@ -10,6 +10,8 @@ import type {
   Repository,
 } from 'typeorm';
 
+import { runWithAuthorizationContext } from '../src/authorization/authorization-context';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { Deposit } from '../src/deposit/deposit.entity';
 import { DepositService } from '../src/deposit/deposit.service';
 import { DepositStatus } from '../src/deposit/deposit.enums';
@@ -28,6 +30,76 @@ import type { CreateWithdrawalCommand } from '../src/withdrawal/withdrawal.types
 const WALLET_ID = '00000000-0000-4000-8000-000000000001';
 const WALLET_LEDGER_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
 const SETTLEMENT_ACCOUNT_ID = '00000000-0000-4000-8000-000000000201';
+
+const mockPrincipal: AuthorizationPrincipal = {
+  type: 'PRIVILEGED',
+  principalId: 'test-principal',
+  roles: ['TRANSFER_OPERATOR'],
+  scopes: ['transfer:create', 'transfer:read'],
+  customerAccess: 'NONE',
+  assuranceLevel: 'MFA',
+  sessionId: 'test-session-id',
+};
+
+class FakeCustomerWalletRepository {
+  readonly wallets = new Map<string, any>();
+  
+  findOne(options: FindOneOptions<any>): Promise<any | null> {
+    const where = options.where;
+    if (!where || Array.isArray(where)) {
+      return Promise.resolve(null);
+    }
+    // Support lookup by id or customerId
+    if (typeof where.id === 'string') {
+      return Promise.resolve(this.wallets.get(where.id) ?? null);
+    }
+    if (typeof where.customerId === 'string') {
+      // Find wallet by customerId
+      for (const wallet of this.wallets.values()) {
+        if (wallet.customerId === where.customerId) {
+          return Promise.resolve(wallet);
+        }
+      }
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(null);
+  }
+}
+
+class FakeBindingRepository {
+  readonly bindings = new Map<string, any>();
+  
+  findOne(options: FindOneOptions<any>): Promise<any | null> {
+    const where = options.where;
+    if (!where || Array.isArray(where)) {
+      return Promise.resolve(null);
+    }
+    
+    if (typeof where.walletAccountId === 'string') {
+      return Promise.resolve(this.bindings.get(where.walletAccountId) ?? null);
+    }
+    
+    return Promise.resolve(null);
+  }
+}
+
+class FakeDepositGate {
+  async validate() {
+    return { status: 'ALLOWED' };
+  }
+}
+
+class FakeWithdrawalGate {
+  async validate() {
+    return { status: 'ALLOWED' };
+  }
+}
+
+class FakeCommandGate {
+  async authorize() {
+    return { allowed: true };
+  }
+}
 
 class MemoryRepository<T extends ObjectLiteral> {
   readonly records = new Map<string, T>();
@@ -201,19 +273,48 @@ function makeFixture(): Fixture {
   const ledger = new FakeLedgerService();
   const references = new FakePaymentReferenceService();
   const settlement = new FakeSettlementAccountService();
+  const customerWallets = new FakeCustomerWalletRepository();
+  customerWallets.wallets.set('payment-test-customer', {
+    id: 'payment-test-customer',
+    customerId: 'payment-test-customer',
+  });
+  const bindings = new FakeBindingRepository();
+  bindings.bindings.set(WALLET_ID, {
+    id: 'test-binding-id',
+    walletAccountId: WALLET_ID,
+    state: 'ACTIVE',
+    version: 1,
+  });
+  const commandGate = new FakeCommandGate();
+  const depositGate = new FakeDepositGate();
+  const withdrawalGate = new FakeWithdrawalGate();
+  const makerCheckerPolicy = { checkRequirement: async () => ({ required: false, reason: 'POLICY_ALLOWS_SINGLE_PARTY' }) };
+  
   const depositService = new DepositService(
     deposits as unknown as Repository<Deposit>,
+    wallets as unknown as Repository<WalletAccount>,
+    customerWallets as unknown as Repository<any>,
+    bindings as unknown as Repository<any>,
     dataSource as unknown as DataSource,
     ledger as unknown as LedgerService,
     references as unknown as PaymentReferenceService,
     settlement as unknown as SettlementAccountService,
+    commandGate as any,
+    depositGate as any,
+    makerCheckerPolicy as any,
   );
   const withdrawalService = new WithdrawalService(
     withdrawals as unknown as Repository<Withdrawal>,
+    wallets as unknown as Repository<WalletAccount>,
+    customerWallets as unknown as Repository<any>,
+    bindings as unknown as Repository<any>,
     dataSource as unknown as DataSource,
     ledger as unknown as LedgerService,
     references as unknown as PaymentReferenceService,
     settlement as unknown as SettlementAccountService,
+    commandGate as any,
+    withdrawalGate as any,
+    makerCheckerPolicy as any,
   );
   return { depositService, withdrawalService, deposits, withdrawals, ledger, dataSource };
 }
@@ -245,16 +346,24 @@ function withdrawalCommand(
 describe('controlled payment services', () => {
   it('creates an idempotent pending deposit and completes it once', async () => {
     const fixture = makeFixture();
-    const created = await fixture.depositService.createDeposit(depositCommand());
-    const retry = await fixture.depositService.createDeposit(depositCommand());
+    const created = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.depositService.createDeposit(depositCommand());
+    });
+    const retry = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.depositService.createDeposit(depositCommand());
+    });
 
     expect(created.status).toBe(DepositStatus.PENDING);
     expect(created.paymentReference).toBe('MN000000000001');
     expect(retry.id).toBe(created.id);
     expect(fixture.deposits.records.size).toBe(1);
 
-    const completed = await fixture.depositService.completeDeposit(created.id);
-    const duplicateCallback = await fixture.depositService.completeDeposit(created.id);
+    const completed = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.depositService.completeDeposit(created.id);
+    });
+    const duplicateCallback = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.depositService.completeDeposit(created.id);
+    });
 
     expect(completed.status).toBe(DepositStatus.COMPLETED);
     expect(duplicateCallback.journalId).toBe(completed.journalId);
@@ -263,26 +372,40 @@ describe('controlled payment services', () => {
 
   it('rejects a changed deposit payload with the same idempotency key', async () => {
     const fixture = makeFixture();
-    await fixture.depositService.createDeposit(depositCommand());
+    await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.depositService.createDeposit(depositCommand());
+    });
 
     await expect(
-      fixture.depositService.createDeposit(depositCommand({ amountMinor: '100001' })),
+      runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+        return fixture.depositService.createDeposit(depositCommand({ amountMinor: '100001' }));
+      })
     ).rejects.toMatchObject({ status: 409 });
     expect(fixture.deposits.records.size).toBe(1);
   });
 
   it('moves withdrawals through processing and completes repeated callbacks safely', async () => {
     const fixture = makeFixture();
-    const withdrawal = await fixture.withdrawalService.createWithdrawal(withdrawalCommand());
-    const duplicateCreation = await fixture.withdrawalService.createWithdrawal(withdrawalCommand());
+    const withdrawal = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.createWithdrawal(withdrawalCommand());
+    });
+    const duplicateCreation = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.createWithdrawal(withdrawalCommand());
+    });
     expect(withdrawal.status).toBe(WithdrawalStatus.PENDING);
     expect(duplicateCreation.id).toBe(withdrawal.id);
     expect(fixture.withdrawals.records.size).toBe(1);
 
-    const processing = await fixture.withdrawalService.processWithdrawal(withdrawal.id);
+    const processing = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.processWithdrawal(withdrawal.id);
+    });
     expect(processing.status).toBe(WithdrawalStatus.PROCESSING);
-    const completed = await fixture.withdrawalService.completeWithdrawal(withdrawal.id);
-    const duplicateCompletion = await fixture.withdrawalService.completeWithdrawal(withdrawal.id);
+    const completed = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.completeWithdrawal(withdrawal.id);
+    });
+    const duplicateCompletion = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.completeWithdrawal(withdrawal.id);
+    });
 
     expect(completed.status).toBe(WithdrawalStatus.COMPLETED);
     expect(duplicateCompletion.journalId).toBe(completed.journalId);
@@ -294,11 +417,19 @@ describe('controlled payment services', () => {
 
   it('marks a failed withdrawal without creating a journal', async () => {
     const fixture = makeFixture();
-    const withdrawal = await fixture.withdrawalService.createWithdrawal(withdrawalCommand());
-    await fixture.withdrawalService.processWithdrawal(withdrawal.id);
+    const withdrawal = await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.createWithdrawal(withdrawalCommand());
+    });
+    await runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+      return fixture.withdrawalService.processWithdrawal(withdrawal.id);
+    });
     fixture.ledger.fail = true;
 
-    await expect(fixture.withdrawalService.completeWithdrawal(withdrawal.id)).rejects.toMatchObject(
+    await expect(
+      runWithAuthorizationContext({ principal: mockPrincipal, source: 'http-request' }, async () => {
+        return fixture.withdrawalService.completeWithdrawal(withdrawal.id);
+      })
+    ).rejects.toMatchObject(
       {
         status: 422,
       },

@@ -1,3 +1,4 @@
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { TransferFailureCode, TransferStatus } from './transfer.enums';
 
 export const TRANSFER_LIFECYCLE_IDEMPOTENCY_SCOPE = 'wallet.transfer.lifecycle.v1';
@@ -53,6 +54,7 @@ export interface CreateTransferLifecycleCommand {
 export interface PostTransferToLedgerCommand {
   idempotencyKey: string;
   requestContext: TransferLifecycleRequestContext;
+  principal: AuthorizationPrincipal;
 }
 
 export interface TransitionTransferLifecycleCommand {

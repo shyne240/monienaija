@@ -34,6 +34,11 @@ import { PartnerRequestSigningService } from '../src/partner/partner-request-sig
 
 import { A7ProductLifecycleService } from '../src/policy/a7-product-lifecycle.service';
 import { A7ProductLifecycleRepository } from '../src/policy/a7-product-lifecycle.repository';
+
+import {
+  integrationMockCommandGate,
+  wrapLedgerForIntegration,
+} from './support/integration-mocks';
 import type {
   A7ProductLifecycleA2AuthorizationContextView,
   A7ProductLifecycleA3BindingView,
@@ -109,12 +114,13 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
     dataSource = await createIntegrationDataSource('a7lifecycle');
     originalTransaction = dataSource.transaction;
 
-    ledger = new LedgerService(
+    ledger = wrapLedgerForIntegration(new LedgerService(
       dataSource.getRepository(LedgerAccount),
       dataSource.getRepository(LedgerJournal),
       dataSource.getRepository(LedgerLine),
       dataSource,
-    );
+      integrationMockCommandGate,
+    ));
     idempotency = new IdempotencyService(dataSource.getRepository(IdempotencyRecord), mockConfigService);
     audit = new AuditService(dataSource.getRepository(AuditEvent));
     outbox = new OutboxService(dataSource.getRepository(OutboxEvent));

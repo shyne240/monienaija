@@ -7,6 +7,7 @@ export interface CreateDepositCommand {
   idempotencyKey: string;
   reference?: string;
   narration?: string;
+  approvalId?: string;
 }
 
 export interface DepositView {

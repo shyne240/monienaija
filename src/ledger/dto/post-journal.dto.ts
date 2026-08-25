@@ -92,6 +92,13 @@ export class PostJournalDto {
   @ValidateNested({ each: true })
   @Type(() => PostJournalLineDto)
   lines!: PostJournalLineDto[];
+
+  /** Approval ID for maker/checker workflow (required if approval is needed). */
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => trimString(value))
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  approvalId?: string;
 }
 
 export class ReverseJournalDto {
@@ -106,4 +113,11 @@ export class ReverseJournalDto {
   @Transform(({ value }: { value: unknown }) => trimString(value))
   @MaxLength(255)
   reason?: string;
+
+  /** Approval ID for maker/checker workflow (required if approval is needed). */
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => trimString(value))
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  approvalId?: string;
 }

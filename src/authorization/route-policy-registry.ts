@@ -83,13 +83,252 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Ledger operations - operation-specific scopes
+    if (path.startsWith('/api/v1/ledger/')) {
+      if (path === '/api/v1/ledger/accounts' && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:read'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path === '/api/v1/ledger/accounts' && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:write'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/ledger\/accounts\/[^/]+(\/balance)?$/) && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:read'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/ledger\/journals\/[^/]+\/reversal$/) && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:reverse'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/ledger\/journals(\/[^/]+)?$/) && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:read'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path === '/api/v1/ledger/journals' && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'ledger',
+          policy: {
+            resourceType: 'ledger',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['ledger:write'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+    }
+
+    // Deposit operations
+    if (path.startsWith('/api/v1/deposits/')) {
+      if (path.match(/^\/api\/v1\/deposits\/[^/]+\/complete$/) && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'deposit',
+          policy: {
+            resourceType: 'deposit',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['deposit:complete'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/deposits\/[^/]+\/(fail|cancel)$/) && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'deposit',
+          policy: {
+            resourceType: 'deposit',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['deposit:complete'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/deposits\/[^/]+$/) && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'deposit',
+          policy: {
+            resourceType: 'deposit',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['deposit:create'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+    }
+    if (path === '/api/v1/deposits') {
+      return {
+        public: false,
+        resourceType: 'deposit',
+        policy: {
+          resourceType: 'deposit',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredScopes: method === 'POST' ? ['deposit:create'] : ['deposit:create'],
+          customerAccess: 'NONE',
+        },
+      };
+    }
+
+    // Withdrawal operations
+    if (path.startsWith('/api/v1/withdrawals/')) {
+      if (path.match(/^\/api\/v1\/withdrawals\/[^/]+\/complete$/) && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'withdrawal',
+          policy: {
+            resourceType: 'withdrawal',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['withdrawal:complete'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/withdrawals\/[^/]+\/(fail|cancel)$/) && method === 'POST') {
+        return {
+          public: false,
+          resourceType: 'withdrawal',
+          policy: {
+            resourceType: 'withdrawal',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['withdrawal:complete'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+      if (path.match(/^\/api\/v1\/withdrawals\/[^/]+$/) && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'withdrawal',
+          policy: {
+            resourceType: 'withdrawal',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['withdrawal:create'],
+            customerAccess: 'NONE',
+          },
+        };
+      }
+    }
+    if (path === '/api/v1/withdrawals') {
+      return {
+        public: false,
+        resourceType: 'withdrawal',
+        policy: {
+          resourceType: 'withdrawal',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredScopes: method === 'POST' ? ['withdrawal:create'] : ['withdrawal:create'],
+          customerAccess: 'NONE',
+        },
+      };
+    }
+
+    // Transfer operations
+    if (path.startsWith('/api/v1/transfers/')) {
+      if (path.match(/^\/api\/v1\/transfers\/[^/]+$/) && method === 'GET') {
+        return {
+          public: false,
+          resourceType: 'transfer',
+          policy: {
+            resourceType: 'transfer',
+            action: `${method}:${path}`,
+            allowedPrincipalTypes: ['CUSTOMER', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+            requiredScopes: ['transfer:create'],
+            customerAccess: 'SELF',
+          },
+        };
+      }
+    }
+    if (path === '/api/v1/transfers' && method === 'POST') {
+      return {
+        public: false,
+        resourceType: 'transfer',
+        policy: {
+          resourceType: 'transfer',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredScopes: ['transfer:create'],
+          customerAccess: 'SELF',
+        },
+      };
+    }
+
+    // Reconciliation (read-only observability)
+    if (path.startsWith('/api/v1/internal/reconciliation/')) {
+      return {
+        public: false,
+        resourceType: 'reconciliation',
+        policy: {
+          resourceType: 'reconciliation',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredScopes: ['finance:audit'],
+          customerAccess: 'NONE',
+        },
+      };
+    }
+
+    // Default internal route (fallback)
     return {
       public: false,
       resourceType: 'internal-route',
       policy: {
         resourceType: 'internal-route',
         action: `${method}:${path}`,
-        requiredScopes: ['internal:access'],
         allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
         customerAccess: 'NONE',
       },

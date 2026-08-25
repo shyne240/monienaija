@@ -8,6 +8,7 @@ export interface CreateTransferCommand {
   idempotencyKey: string;
   reference?: string;
   narration?: string;
+  approvalId?: string;
 }
 
 export interface TransferView {

@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { FinancialCommandGateService } from '../authorization/financial-command-gate.service';
 import { OperationsModule } from '../operations/operations.module';
 import { B2FFinanceControlModule } from '../policy/b2f-finance-control.module';
 import { A5ArControlAccountProvisioningService } from './ar-control-account-provisioning.service';
@@ -19,7 +20,7 @@ import { LedgerService } from './ledger.service';
     TypeOrmModule.forFeature([LedgerAccount, LedgerJournal, LedgerLine]),
   ],
   controllers: [LedgerController],
-  providers: [LedgerService, A5ArControlAccountProvisioningService],
+  providers: [LedgerService, A5ArControlAccountProvisioningService, FinancialCommandGateService],
   exports: [LedgerService, A5ArControlAccountProvisioningService, TypeOrmModule],
 })
 export class LedgerModule {}

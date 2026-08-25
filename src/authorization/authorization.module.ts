@@ -20,6 +20,8 @@ import { workforceConfiguration } from './workforce-configuration';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { AuthorizationGuard } from './authorization.guard';
 import { AuthorizationService } from './authorization.service';
+import { FinancialCommandGateService } from './financial-command-gate.service';
+import { MakerCheckerPolicyService } from './maker-checker-policy.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { RuntimeAccessGuard } from './runtime-access.guard';
@@ -86,6 +88,8 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,
+    FinancialCommandGateService,
+    MakerCheckerPolicyService,
     PrivilegedActionApprovalService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
@@ -97,6 +101,8 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,
+    FinancialCommandGateService,
+    MakerCheckerPolicyService,
     PrivilegedActionApprovalService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
