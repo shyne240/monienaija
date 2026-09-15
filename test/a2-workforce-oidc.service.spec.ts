@@ -142,3 +142,46 @@ describe('A2T11 workforce OIDC validation', () => {
     );
   });
 });
+
+describe('removed workforce development mock assertion token', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalFlag = process.env.A2_WORKFORCE_DEV_MOCK_ENABLED;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+    if (originalFlag === undefined) {
+      delete process.env.A2_WORKFORCE_DEV_MOCK_ENABLED;
+    } else {
+      process.env.A2_WORKFORCE_DEV_MOCK_ENABLED = originalFlag;
+    }
+  });
+
+  it('never mints a workforce principal from a mock token, in any environment', async () => {
+    // The development mock assertion path was removed from the authentication service, so no
+    // combination of NODE_ENV and the retired flag can produce assertion evidence.
+    for (const nodeEnv of ['development', 'test', 'staging', 'production', undefined]) {
+      process.env.A2_WORKFORCE_DEV_MOCK_ENABLED = 'true';
+      if (nodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = nodeEnv;
+      }
+      await expect(
+        new A2WorkforceOidcService(config).validate('mock-sandbox-token-ADMIN'),
+      ).rejects.toThrow('Malformed compact JWS');
+    }
+  });
+
+  it('rejects a mock token even when the retired flag is absent', async () => {
+    delete process.env.A2_WORKFORCE_DEV_MOCK_ENABLED;
+    process.env.NODE_ENV = 'test';
+
+    await expect(
+      new A2WorkforceOidcService(config).validate('mock-sandbox-token-ADMIN'),
+    ).rejects.toThrow('Malformed compact JWS');
+  });
+});

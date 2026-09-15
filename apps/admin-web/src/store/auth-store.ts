@@ -55,13 +55,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         sessionData = response;
       } catch (err) {
-        // Explicit Sandbox Development mock fallback
+        // Development-only mock fallback. `DEV_AUTH_MOCK` can only be true in a development build
+        // with an explicit opt-in (ADMIN_WEB_DEV_AUTH_MOCK=true); a production build always reports
+        // the authentication failure and never fabricates a principal.
         if (
           DEV_AUTH_MOCK &&
           err instanceof ApiError &&
           (err.status === 401 || err.status === 404 || err.status === 405 || err.status === 500)
         ) {
-          console.warn('Backend OIDC session endpoint missing or offline, using Sandbox admin mock');
+          console.warn(
+            '[dev-only] Backend workforce session endpoint unavailable; using the sandbox admin ' +
+              'mock. This path is disabled in production builds.',
+          );
           sessionData = {
             accessToken: 'mock-workforce-token-' + Math.random().toString(36).substr(2),
             tokenType: 'Bearer',

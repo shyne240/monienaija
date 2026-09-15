@@ -6,7 +6,6 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Card } from '../../components/Card';
 import { useAuthStore } from '../../store/auth-store';
-import { DEV_AUTH_MOCK } from '../../config';
 
 export const LoginScreen: React.FC = () => {
   const [customerId, setCustomerId] = useState('');
@@ -46,21 +45,13 @@ export const LoginScreen: React.FC = () => {
           <Text style={styles.subtitle}>Enter your Customer ID and Password to continue</Text>
         </View>
 
-        {DEV_AUTH_MOCK ? (
-          <Card variant="flat" style={styles.devBanner}>
-            <Text style={styles.devTitle}>🛠️ Sandbox Development Mode Active</Text>
-            <Text style={styles.devText}>
-              Standard customer sessions are currently parked under ADR-0019 as future A2 work. Mock credentials will be accepted.
-            </Text>
-          </Card>
-        ) : (
-          <Card variant="flat" style={styles.prodWarningBanner}>
-            <Text style={styles.prodWarningTitle}>⚠️ Production Mode Active</Text>
-            <Text style={styles.prodWarningText}>
-              Mock authentication is disabled. Authentication requires backend runtime capability.
-            </Text>
-          </Card>
-        )}
+        <Card variant="flat" style={styles.devBanner}>
+          <Text style={styles.devTitle}>🔐 Secure sign-in</Text>
+          <Text style={styles.devText}>
+            Sign in with the Customer ID and password registered on your MoneyNaija account. Sessions
+            are issued by the backend and stored in the device secure store.
+          </Text>
+        </Card>
 
         {(!!validationError || !!error) && (
           <View style={styles.errorBanner}>

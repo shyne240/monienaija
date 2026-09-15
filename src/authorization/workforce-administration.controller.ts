@@ -11,6 +11,13 @@ import {
 import type { FastifyRequest } from 'fastify';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { AuthorizationService } from './authorization.service';
+import { AssignWorkforceRoleDto } from './dto/assign-workforce-role.dto';
+import { ConsumeWorkforceBootstrapDto } from './dto/consume-workforce-bootstrap.dto';
+import { DecidePrivilegedApprovalDto } from './dto/decide-privileged-approval.dto';
+import { EstablishWorkforceSessionDto } from './dto/establish-workforce-session.dto';
+import { RequestPrivilegedApprovalDto } from './dto/request-privileged-approval.dto';
+import { RevokeWorkforceRoleDto } from './dto/revoke-workforce-role.dto';
+import { RevokeWorkforceSessionDto } from './dto/revoke-workforce-session.dto';
 import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
@@ -32,7 +39,7 @@ export class A2WorkforceAdministrationController {
     private readonly limits: A2SecurityRateLimitService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
   ) {}
-  @Post('sessions') async establish(@Body() b: { idToken: string }, @Req() r: R) {
+  @Post('sessions') async establish(@Body() b: EstablishWorkforceSessionDto, @Req() r: R) {
     await this.limits.consume(
       this.rateRule('workforce-authentication'),
       [r.ip, 'configured-issuer'],
@@ -42,12 +49,12 @@ export class A2WorkforceAdministrationController {
   }
   @Delete('sessions/:id') async revokeSession(
     @Param('id') id: string,
-    @Body() b: { reason: string },
+    @Body() b: RevokeWorkforceSessionDto,
     @Req() r: R,
   ) {
     return this.sessions.revoke(id, this.principal(r), b.reason);
   }
-  @Post('bootstrap') async bootstrap(@Body() b: { statement: string }, @Req() r: R) {
+  @Post('bootstrap') async bootstrap(@Body() b: ConsumeWorkforceBootstrapDto, @Req() r: R) {
     const p = this.principal(r);
     await this.limits.consume(
       this.rateRule('workforce-bootstrap'),
@@ -56,18 +63,7 @@ export class A2WorkforceAdministrationController {
     );
     return this.roles.consumeBootstrap(b.statement, p);
   }
-  @Post('roles') async assign(
-    @Body()
-    b: {
-      targetPrincipalId: string;
-      roleKey: string;
-      effectiveFrom: string;
-      effectiveTo: string;
-      approvalIds?: string[];
-      expectedVersion?: number;
-    },
-    @Req() r: R,
-  ) {
+  @Post('roles') async assign(@Body() b: AssignWorkforceRoleDto, @Req() r: R) {
     const p = this.principal(r);
     await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
     await this.limits.consume(
@@ -84,13 +80,7 @@ export class A2WorkforceAdministrationController {
   @Delete('roles/:principalId/:roleKey') async revoke(
     @Param('principalId') targetPrincipalId: string,
     @Param('roleKey') roleKey: string,
-    @Body()
-    b: {
-      effectiveFrom: string;
-      effectiveTo: string;
-      approvalIds: string[];
-      expectedVersion?: number;
-    },
+    @Body() b: RevokeWorkforceRoleDto,
     @Req() r: R,
   ) {
     const p = this.principal(r);
@@ -109,14 +99,7 @@ export class A2WorkforceAdministrationController {
     });
   }
   @Post('approvals/request') async requestApproval(
-    @Body()
-    b: {
-      action: string;
-      resource: { type: string; id?: string };
-      actionFingerprint: string;
-      reason: string;
-      approvalScope?: string;
-    },
+    @Body() b: RequestPrivilegedApprovalDto,
     @Req() r: R,
   ) {
     const principal = this.principal(r),
@@ -144,7 +127,7 @@ export class A2WorkforceAdministrationController {
   }
   @Post('approvals/:id/approve') async approve(
     @Param('id') approvalId: string,
-    @Body() b: { comment?: string },
+    @Body() b: DecidePrivilegedApprovalDto,
     @Req() r: R,
   ) {
     const principal = this.principal(r),

@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 
-import { ApiClient, ApiError } from '../services/api-client';
+import { ApiClient } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
-import { DEV_AUTH_MOCK } from '../config';
 
 export interface UserSession {
   accessToken: string;
@@ -37,47 +36,30 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Clean inputs
       const normalizedCustomerId = customerId.trim().toLowerCase();
 
-      let sessionData: UserSession;
+      // Real backend credential exchange. There is no mock or fallback session: a 401/403/404/5xx
+      // or network failure is surfaced to the caller so authentication can never silently succeed.
+      const response = await ApiClient.post<{
+        authenticated: boolean;
+        customerId: string;
+        session: {
+          accessToken: string;
+          sessionId: string;
+          expiresAt: string;
+          audience?: string;
+        };
+      }>(`/customers/${normalizedCustomerId}/authenticate`, { password: pinOrPassword });
 
-      try {
-        // Because of the identified BACKEND GAP where `CustomerAuthenticationRuntimeService`
-        // implements `authenticateCustomer()` but no NestJS controller currently exposes a POST route,
-        // we hit the logical `/customers/:id/authenticate` route.
-        const response = await ApiClient.post<{ authenticated: boolean; session: any }>(
-          `/customers/${normalizedCustomerId}/authenticate`,
-          { password: pinOrPassword },
-        );
-
-        if (response.authenticated && response.session) {
-          sessionData = {
-            accessToken: response.session.accessToken,
-            sessionId: response.session.sessionId,
-            expiresAt: response.session.expiresAt,
-            customerId: normalizedCustomerId,
-            audience: response.session.audience || 'customer-api',
-          };
-        } else {
-          throw new Error('Invalid credentials');
-        }
-      } catch (err) {
-        // Fallback for development/sandbox mode ONLY when DEV_AUTH_MOCK is explicitly active
-        if (
-          DEV_AUTH_MOCK &&
-          err instanceof ApiError &&
-          (err.status === 404 || err.status === 405 || err.status === 500)
-        ) {
-          console.warn('Backend login endpoint missing or failing, using sandbox mock session');
-          sessionData = {
-            accessToken: 'mock-session-token-' + Math.random().toString(36).substr(2),
-            sessionId: 'mock-session-id-' + Math.random().toString(36).substr(2),
-            expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-            customerId: normalizedCustomerId,
-            audience: 'customer-api',
-          };
-        } else {
-          throw err;
-        }
+      if (!response.authenticated || !response.session?.accessToken) {
+        throw new Error('Invalid credentials');
       }
+
+      const sessionData: UserSession = {
+        accessToken: response.session.accessToken,
+        sessionId: response.session.sessionId,
+        expiresAt: response.session.expiresAt,
+        customerId: response.customerId || normalizedCustomerId,
+        audience: response.session.audience || 'customer-api',
+      };
 
       await SecureStorage.set('auth_session_token', sessionData.accessToken);
       await SecureStorage.set('auth_customer_id', sessionData.customerId);
@@ -108,9 +90,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       const session = useAuthStore.getState().session;
       if (session) {
         try {
-          await ApiClient.post('/customers/logout', { token: session.accessToken });
+          // Real backend session revocation; local credentials are always cleared afterwards.
+          await ApiClient.delete(`/customers/${session.customerId}/sessions/current`);
         } catch {
-          // Ignore failures on logout API cleanup in sandbox
+          // A failed revoke must not keep the operator signed in locally.
         }
       }
     } finally {

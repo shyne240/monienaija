@@ -1,7 +1,14 @@
+import type { WalletOwnershipBinding } from '../wallet/wallet-ownership';
 import type { WithdrawalFailureCode, WithdrawalStatus } from './withdrawal.enums';
 
 export interface CreateWithdrawalCommand {
   walletId: string;
+  /**
+   * Who the withdrawal is created for. Required so that a caller-supplied `walletId` can never on
+   * its own authorise a withdrawal from a wallet that belongs to another customer. Always derived
+   * from the authenticated principal by the HTTP layer, never from request input.
+   */
+  ownership: WalletOwnershipBinding;
   amountMinor: string | number | bigint;
   currency: string;
   idempotencyKey: string;

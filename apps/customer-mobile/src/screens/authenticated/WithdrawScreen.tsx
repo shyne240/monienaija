@@ -16,7 +16,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Withdraw'>;
 
 interface Wallet {
   id: string;
-  type: string;
+  status: string;
   currency: string;
   balanceMinor: number;
 }
@@ -44,7 +44,8 @@ export const WithdrawScreen: React.FC = () => {
     const fetchWallets = async () => {
       if (!customerId) return;
       try {
-        const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
+        // Customer-scoped wallet listing: the backend only ever returns the caller's own wallets.
+        const walletList = await ApiClient.get<Wallet[]>('/wallets');
         setWallets(walletList);
       } catch (err: any) {
         setError('Failed to load your wallet information.');
@@ -53,7 +54,7 @@ export const WithdrawScreen: React.FC = () => {
     fetchWallets();
   }, [customerId]);
 
-  const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
+  const primaryWallet = wallets.find((w) => w.status === 'ACTIVE') || wallets[0];
 
   const handleWithdraw = async () => {
     if (!primaryWallet) {
@@ -88,10 +89,10 @@ export const WithdrawScreen: React.FC = () => {
         idempotencyKey,
       });
 
-      // Step 2: Since we are in sandbox mode, immediately simulate the withdrawal fulfillment:
-      // POST /withdrawals/:id/complete
-      if (withdrawalResult && withdrawalResult.id) {
-        await ApiClient.post(`/withdrawals/${withdrawalResult.id}/complete`);
+      // No client-side fulfilment step exists: processing and completion are operational
+      // transitions owned by the settlement workflow, so the request stays PENDING.
+      if (!withdrawalResult || !withdrawalResult.id) {
+        throw new Error('The withdrawal request could not be created.');
       }
 
       setSuccess(true);
@@ -110,7 +111,8 @@ export const WithdrawScreen: React.FC = () => {
           <Text style={styles.successTitle}>Withdrawal Initiated!</Text>
           <Text style={styles.successDescription}>
             ₦
-            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} has been withdrawn from your primary wallet to {bankDetails}.
+            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} is
+            being processed for payout to {bankDetails}.
           </Text>
         </View>
         <Button label="Back to Home" style={styles.button} onPress={() => navigation.navigate('Home')} />
@@ -130,9 +132,9 @@ export const WithdrawScreen: React.FC = () => {
         </View>
 
         <Card variant="flat" style={styles.sandboxCard}>
-          <Text style={styles.sandboxTitle}>⚙️ Sandbox Simulated Outflow</Text>
+          <Text style={styles.sandboxTitle}>ℹ️ Payout processing</Text>
           <Text style={styles.sandboxText}>
-            No real NIBSS or direct bank transfers exist. Initiating a withdrawal creates a ledger entry that immediately debits the primary wallet inside the sandbox environment.
+            A withdrawal request is reviewed and processed by MoneyNaija operations before payout. No bank transfer is initiated from this screen.
           </Text>
         </Card>
 

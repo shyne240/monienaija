@@ -6,16 +6,16 @@
 
 ## 1. Route classes
 
-| Route class                 | Authentication               | Authorization                                     | Current A2 treatment                             |
-| --------------------------- | ---------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| Process health              | None/process-level           | Explicit allowlist                                | `GET /api/v1/health`, `GET /api/v1/health/ready` |
-| Version metadata            | None only for approved route | Explicit allowlist                                | `GET /api/v1/internal/version`                   |
-| Customer routes             | Bearer session               | Customer self/resource scope                      | Runtime guard and authorization service          |
-| Internal operational routes | Bearer session               | `internal:access` or explicit role/scope          | Protected by default                             |
-| Security metadata routes    | Bearer session               | Customer/security role and step-up where required | Protected by default                             |
-| Financial/control routes    | Bearer session               | Financial/control authorization                   | Protected; no A2 financial execution             |
-| Governance routes           | Bearer session               | Governance/privileged scope                       | Protected by default                             |
-| Future external callbacks   | Provider adapter boundary    | A6 callback contract                              | Not implemented by A2                            |
+| Route class                 | Authentication            | Authorization                                     | Current A2 treatment                             |
+| --------------------------- | ------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| Process health              | None/process-level        | Explicit allowlist                                | `GET /api/v1/health`, `GET /api/v1/health/ready` |
+| Version metadata            | Bearer session            | `internal:access`                                 | `GET /api/v1/internal/version`                   |
+| Customer routes             | Bearer session            | Customer self/resource scope                      | Runtime guard and authorization service          |
+| Internal operational routes | Bearer session            | `internal:access` or explicit role/scope          | Protected by default                             |
+| Security metadata routes    | Bearer session            | Customer/security role and step-up where required | Protected by default                             |
+| Financial/control routes    | Bearer session            | Financial/control authorization                   | Protected; no A2 financial execution             |
+| Governance routes           | Bearer session            | Governance/privileged scope                       | Protected by default                             |
+| Future external callbacks   | Provider adapter boundary | A6 callback contract                              | Not implemented by A2                            |
 
 HTTP registration does not mean public authorization. A route is public only if it is explicitly in the approved allowlist.
 

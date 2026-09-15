@@ -34,7 +34,7 @@ describe('Withdrawal Screen Tests', () => {
   const mockWallets = [
     {
       id: 'wallet-source-uuid-666',
-      type: 'PRIMARY',
+      status: 'ACTIVE',
       currency: 'NGN',
       balanceMinor: 20000, // 200.00 Naira
     },
@@ -63,9 +63,7 @@ describe('Withdrawal Screen Tests', () => {
   });
 
   test('should withdraw successfully in sandbox environment', async () => {
-    (ApiClient.post as jest.Mock)
-      .mockResolvedValueOnce({ id: 'with-uuid-123' })
-      .mockResolvedValueOnce({ status: 'SUCCESS' });
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'with-uuid-123' });
 
     const { getByPlaceholderText, getByText } = render(<WithdrawScreen />);
 
@@ -89,10 +87,8 @@ describe('Withdrawal Screen Tests', () => {
         }),
         expect.any(Object)
       );
-      expect(ApiClient.post).toHaveBeenNthCalledWith(
-        2,
-        '/withdrawals/with-uuid-123/complete'
-      );
+      // Processing/completion are operational transitions; the request stays pending for the customer.
+      expect(ApiClient.post).toHaveBeenCalledTimes(1);
       expect(getByText('Withdrawal Initiated!')).toBeTruthy();
     });
   });

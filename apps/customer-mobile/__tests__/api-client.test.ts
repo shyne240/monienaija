@@ -23,6 +23,25 @@ describe('ApiClient tests', () => {
     (global as any).fetch = undefined;
   });
 
+  test('refuses to send requests when a production build has no configured base URL', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    jest.resetModules();
+
+    try {
+      // Fresh module instance: the config module reads NODE_ENV when it is first loaded.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const client = require('../src/services/api-client') as typeof import('../src/services/api-client');
+
+      expect(client.getBaseUrl()).toBe('');
+      await expect(client.ApiClient.get('/wallets')).rejects.toBeInstanceOf(client.NetworkError);
+      expect(globalFetchMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      jest.resetModules();
+    }
+  });
+
   test('should set and get Base URL correctly', () => {
     setBaseUrl('https://api.moneynaija.ng/');
     expect(getBaseUrl()).toBe('https://api.moneynaija.ng');

@@ -1,4 +1,4 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type {
   DataSource,
   DeepPartial,
@@ -20,6 +20,7 @@ import { TransferDirection, TransferStatus } from '../src/transfer/transfer.enum
 import type { LedgerService } from '../src/ledger/ledger.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import type { CreateTransferCommand } from '../src/transfer/transfer.types';
+import type { WalletOwnershipBinding } from '../src/wallet/wallet-ownership';
 
 const SOURCE_WALLET_ID = '00000000-0000-4000-8000-000000000001';
 const DESTINATION_WALLET_ID = '00000000-0000-4000-8000-000000000002';
@@ -99,11 +100,21 @@ class InMemoryWalletRepository {
 
   findOne(options: FindOneOptions<WalletAccount>): Promise<WalletAccount | null> {
     const where = options.where;
-    if (!where || Array.isArray(where) || typeof where.id !== 'string') {
+    const conditions = Array.isArray(where) ? where : where ? [where] : [];
+    if (conditions.length === 0) {
       return Promise.resolve(null);
     }
 
-    return Promise.resolve(this.wallets.get(where.id) ?? null);
+    const match = [...this.wallets.values()].find((wallet) =>
+      conditions.some((condition) => {
+        const expected = condition as { id?: string; customerId?: string };
+        return (
+          (expected.id === undefined || wallet.id === expected.id) &&
+          (expected.customerId === undefined || wallet.customerId === expected.customerId)
+        );
+      }),
+    );
+    return Promise.resolve(match ?? null);
   }
 
   createQueryBuilder(): WalletQueryBuilder {
@@ -332,9 +343,16 @@ function makeFixture(sourceBalance = 125000n, destinationCurrency = 'NGN'): Fixt
   return { service, transfers, wallets, journals, ledger, dataSource };
 }
 
+const TEST_OWNERSHIP: WalletOwnershipBinding = {
+  kind: 'INTERNAL',
+  principalId: 'transfer-test-principal',
+  principalType: 'SERVICE',
+};
+
 function transferCommand(overrides: Partial<CreateTransferCommand> = {}): CreateTransferCommand {
   return {
     sourceWalletId: SOURCE_WALLET_ID,
+    ownership: TEST_OWNERSHIP,
     destinationWalletId: DESTINATION_WALLET_ID,
     amountMinor: '50000',
     currency: 'NGN',
@@ -535,5 +553,73 @@ describe('TransferService', () => {
       direction: TransferDirection.RECEIVED,
       amountMinor: '50000',
     });
+  });
+});
+
+describe('customer source-wallet ownership enforcement', () => {
+  const SOURCE_OWNER = `customer-${SOURCE_WALLET_ID}`;
+
+  it('refuses to debit a source wallet that belongs to another customer', async () => {
+    const fixture = makeFixture();
+    const sourceBefore = fixture.ledger.balances.get(SOURCE_LEDGER_ACCOUNT_ID);
+
+    await expect(
+      fixture.service.createTransfer(
+        transferCommand({
+          ownership: { kind: 'CUSTOMER_SELF', customerId: `customer-${DESTINATION_WALLET_ID}` },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(fixture.transfers.records.size).toBe(0);
+    expect(fixture.journals.records.size).toBe(0);
+    expect(fixture.ledger.balances.get(SOURCE_LEDGER_ACCOUNT_ID)).toBe(sourceBefore);
+  });
+
+  it('allows the authenticated source-wallet owner to transfer, including to another customer', async () => {
+    const fixture = makeFixture();
+    const view = await fixture.service.createTransfer(
+      transferCommand({ ownership: { kind: 'CUSTOMER_SELF', customerId: SOURCE_OWNER } }),
+    );
+
+    expect(view.status).toBe(TransferStatus.COMPLETED);
+    expect(view.destinationWalletId).toBe(DESTINATION_WALLET_ID);
+    expect(fixture.transfers.records.size).toBe(1);
+  });
+
+  it("hides another customer's transfer from the customer-scoped read", async () => {
+    const fixture = makeFixture();
+    const view = await fixture.service.createTransfer(
+      transferCommand({ ownership: { kind: 'CUSTOMER_SELF', customerId: SOURCE_OWNER } }),
+    );
+
+    await expect(
+      fixture.service.getTransferForCustomer(view.id, `customer-${DESTINATION_WALLET_ID}`),
+    ).resolves.toMatchObject({ id: view.id });
+
+    await expect(
+      fixture.service.getTransferForCustomer(view.id, 'customer-unrelated'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("refuses to read another customer's transaction history", async () => {
+    const fixture = makeFixture();
+    await fixture.service.createTransfer(
+      transferCommand({ ownership: { kind: 'CUSTOMER_SELF', customerId: SOURCE_OWNER } }),
+    );
+
+    await expect(
+      fixture.service.getWalletTransactionsForCustomer(SOURCE_WALLET_ID, SOURCE_OWNER),
+    ).resolves.toMatchObject({ pagination: { total: 1 } });
+
+    await expect(
+      fixture.service.getWalletTransactionsForCustomer(SOURCE_WALLET_ID, 'customer-unrelated'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('keeps internal principals on the existing wallet-trust path', async () => {
+    const fixture = makeFixture();
+    const view = await fixture.service.createTransfer(transferCommand());
+    expect(view.status).toBe(TransferStatus.COMPLETED);
   });
 });

@@ -34,7 +34,7 @@ describe('Fund Wallet Screen Tests', () => {
   const mockWallets = [
     {
       id: 'wallet-uuid-444',
-      type: 'PRIMARY',
+      status: 'ACTIVE',
       currency: 'NGN',
       balanceMinor: 10000,
     },
@@ -60,10 +60,8 @@ describe('Fund Wallet Screen Tests', () => {
     });
   });
 
-  test('should execute deposit and complete it immediately in sandbox', async () => {
-    (ApiClient.post as jest.Mock)
-      .mockResolvedValueOnce({ id: 'dep-uuid-123' }) // deposit creation
-      .mockResolvedValueOnce({ status: 'SUCCESS' }); // deposit completion
+  test('should create a pending deposit without a client-side completion step', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'dep-uuid-123' });
 
     const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
 
@@ -84,11 +82,9 @@ describe('Fund Wallet Screen Tests', () => {
         }),
         expect.any(Object)
       );
-      expect(ApiClient.post).toHaveBeenNthCalledWith(
-        2,
-        '/deposits/dep-uuid-123/complete'
-      );
-      expect(getByText('Wallet Funded Successfully!')).toBeTruthy();
+      // Customers can never complete their own deposit: settlement is confirmed by the provider.
+      expect(ApiClient.post).toHaveBeenCalledTimes(1);
+      expect(getByText('Deposit Initiated')).toBeTruthy();
     });
   });
 

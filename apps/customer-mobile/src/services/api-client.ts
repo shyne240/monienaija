@@ -36,6 +36,13 @@ export const setBaseUrl = (url: string) => {
 export const getBaseUrl = () => currentBaseUrl;
 
 export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
+  if (!currentBaseUrl) {
+    // No silent fallback: a build without EXPO_PUBLIC_API_BASE_URL must fail loudly instead of
+    // sending credentials or money movements to an unintended host.
+    throw new NetworkError(
+      'API base URL is not configured. Set EXPO_PUBLIC_API_BASE_URL for this build.',
+    );
+  }
   const url = `${currentBaseUrl}/${endpoint.replace(/^\//, '')}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

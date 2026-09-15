@@ -27,6 +27,11 @@ export class NetworkError extends Error {
 }
 
 export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new NetworkError(
+      'Admin API base URL is not configured. Set ADMIN_WEB_API_BASE_URL for this build.',
+    );
+  }
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

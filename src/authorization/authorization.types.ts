@@ -32,6 +32,15 @@ export interface AuthorizationPolicy {
   resourceType: string;
   action: string;
   requiredScopes?: readonly string[];
+  /**
+   * Scopes required from non-customer principals in addition to `requiredScopes`.
+   *
+   * Used by customer self-service routes: an authenticated customer reaches their own resource
+   * without holding an internal scope, while workforce/service principals must still present the
+   * existing internal scope (for example `internal:access`) exactly as they did before the route
+   * became customer-reachable.
+   */
+  internalScopes?: readonly string[];
   requiredRoles?: readonly string[];
   allowedPrincipalTypes?: readonly AuthorizationPrincipalType[];
   customerAccess?: CustomerAccessScope;

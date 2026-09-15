@@ -275,6 +275,48 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
     expect(validated.assuranceLevel).toBe('MFA');
   });
 
+  it('grants no roles or scopes while no finance role assignment exists', async () => {
+    const evidence = await oidc.validate(signJwt(assertionPayload()));
+    const session = await sessions.establish(evidence);
+    const validated = await sessions.validate(session.accessToken, config.internalAudience);
+    expect(validated.roles).toEqual([]);
+    expect(validated.scopes).toEqual([]);
+    expect(validated.type).toBe('OPERATOR');
+  });
+
+  it('never escalates a principal resembling the removed development mock subject', async () => {
+    // Regression for the removed development mock path, which used to grant every enabled
+    // configured role (FINANCE_ADMIN included) to any principal named `mock-sandbox-subject`.
+    const evidence = await oidc.validate(
+      signJwt(assertionPayload({ sub: 'mock-sandbox-subject' })),
+    );
+    expect(evidence.principalId).toContain('mock-sandbox-subject');
+    const session = await sessions.establish(evidence);
+    const validated = await sessions.validate(session.accessToken, config.internalAudience);
+    expect(validated.roles).toEqual([]);
+    expect(validated.scopes).toEqual([]);
+    expect(validated.type).toBe('OPERATOR');
+  });
+
+  it('resolves roles and scopes from an active finance role assignment instead', async () => {
+    const evidence = await oidc.validate(signJwt(assertionPayload()));
+    const session = await sessions.establish(evidence);
+    await dataSource.query(
+      `INSERT INTO a2_finance_role_assignments
+         (id, assignment_reference, assignment_version, principal_id, role_key, scopes, status,
+          interim, effective_from, effective_to, assigned_by, assigned_at, approval_ids,
+          audit_references)
+       VALUES (gen_random_uuid(), $1, 1, $2, 'FINANCE_AUDITOR', '["finance:audit"]'::jsonb, 'ACTIVE',
+               false, now() - interval '1 minute', now() + interval '1 hour', 'integration-test',
+               now(), '[]'::jsonb, '[]'::jsonb)`,
+      [`integration-${randomUUID()}`, evidence.principalId],
+    );
+    const validated = await sessions.validate(session.accessToken, config.internalAudience);
+    expect(validated.roles).toEqual(['FINANCE_AUDITOR']);
+    expect(validated.scopes).toEqual(['finance:audit']);
+    expect(validated.type).toBe('OPERATOR');
+  });
+
   it('revokes a session and refuses it afterwards', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
     const session = await sessions.establish(evidence);

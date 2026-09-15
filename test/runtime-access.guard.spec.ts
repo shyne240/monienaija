@@ -19,13 +19,19 @@ function context(request: Record<string, unknown>) {
 }
 
 describe('RoutePolicyRegistry', () => {
-  it('allows only the explicit health/version public route allowlist', () => {
+  it('allows only the explicit health, registration and credential-exchange public routes', () => {
     const registry = new RoutePolicyRegistry();
     expect(registry.isPublic('GET', '/api/v1/health')).toBe(true);
     expect(registry.isPublic('GET', '/api/v1/health/ready')).toBe(true);
-    expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(true);
-    expect(registry.isPublic('GET', '/api/v1/customers/1')).toBe(false);
+    expect(registry.isPublic('POST', '/api/v1/customers')).toBe(true);
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(true);
+
+    // Operational routes are never public.
+    expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(false);
     expect(registry.isPublic('GET', '/api/v1/internal/diagnostics')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/internal/readiness')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/customers/1')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/customers')).toBe(false);
     expect(registry.isPublic('POST', '/api/v1/internal/partner-callbacks/nibss-nip')).toBe(false);
     expect(
       registry.resolve({
@@ -33,6 +39,83 @@ describe('RoutePolicyRegistry', () => {
         url: '/api/v1/internal/partner-callbacks/nibss-nip',
       }).authenticationMode,
     ).toBe('PROVIDER_CALLBACK');
+  });
+
+  it('does not broaden the public credential exchange to other customer routes', () => {
+    const registry = new RoutePolicyRegistry();
+    expect(registry.isPublic('GET', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(false);
+    expect(registry.isPublic('POST', '/api/v1/customers/1/authenticate')).toBe(false);
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/sessions/rotate`)).toBe(
+      false,
+    );
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/mfa-enrollments`)).toBe(
+      false,
+    );
+  });
+
+  it('keeps operational routes behind internal:access for workforce principals only', () => {
+    const registry = new RoutePolicyRegistry();
+    for (const path of [
+      '/api/v1/internal/version',
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/audit',
+      '/api/v1/internal/outbox',
+    ]) {
+      const resolution = registry.resolve({ method: 'GET', url: path });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.requiredScopes).toEqual(['internal:access']);
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+      expect(resolution.policy?.customerAccess).toBe('NONE');
+    }
+  });
+
+  it('exposes only money-movement self-service routes to customers and keeps internal scopes for workforce', () => {
+    const registry = new RoutePolicyRegistry();
+
+    const customerRoutes: Array<[string, string]> = [
+      ['POST', '/api/v1/deposits'],
+      ['GET', '/api/v1/deposits'],
+      ['GET', `/api/v1/deposits/${CUSTOMER_ID}`],
+      ['POST', '/api/v1/withdrawals'],
+      ['GET', '/api/v1/withdrawals'],
+      ['GET', `/api/v1/withdrawals/${CUSTOMER_ID}`],
+      ['POST', '/api/v1/transfers'],
+      ['GET', `/api/v1/transfers/${CUSTOMER_ID}`],
+      ['GET', '/api/v1/wallets'],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}`],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}/balance`],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}/transactions`],
+    ];
+    for (const [method, url] of customerRoutes) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).toContain('CUSTOMER');
+      // The pre-existing internal gate is unchanged for non-customer principals.
+      expect(resolution.policy?.internalScopes).toEqual(['internal:access']);
+      expect(resolution.policy?.requiredScopes).toBeUndefined();
+    }
+
+    // Settlement and state-transition routes stay internal-only.
+    for (const [method, url] of [
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/complete`],
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/fail`],
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/cancel`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/process`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/complete`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/fail`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/cancel`],
+      ['POST', '/api/v1/wallets'],
+      ['GET', '/api/v1/ledger/accounts'],
+    ] as Array<[string, string]>) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+      expect(resolution.policy?.requiredScopes).toEqual(['internal:access']);
+    }
   });
 });
 

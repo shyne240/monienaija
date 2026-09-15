@@ -37,6 +37,14 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 
+import type { WalletOwnershipBinding } from '../src/wallet/wallet-ownership';
+
+const TEST_OWNERSHIP: WalletOwnershipBinding = {
+  kind: 'INTERNAL',
+  principalId: 'integration-test-principal',
+  principalType: 'SERVICE',
+};
+
 /**
  * A5T05 / A5T06 — deposit, withdrawal and legacy TransferService lifecycle coverage against
  * real PostgreSQL.
@@ -260,6 +268,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const before = await balanceOf(wallet.ledgerAccountId);
 
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '25000',
         currency: 'NGN',
@@ -291,6 +300,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('persists the payment reference row and audit/outbox effects', async () => {
       const wallet = await seedWallet('dep-effects');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -321,6 +331,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('replays an identical create idempotently without a second deposit', async () => {
       const wallet = await seedWallet('dep-replay');
       const command = {
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '5000',
         currency: 'NGN',
@@ -338,6 +349,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('is idempotent on completion and posts no second journal', async () => {
       const wallet = await seedWallet('dep-complete-replay');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '7000',
         currency: 'NGN',
@@ -357,6 +369,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const wallet = await seedWallet('dep-conflict');
       const key = `dep-${randomUUID()}`;
       await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1200',
         currency: 'NGN',
@@ -365,6 +378,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
 
       await expect(
         deposits.createDeposit({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '9999',
           currency: 'NGN',
@@ -379,6 +393,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('fails a deposit into a suspended wallet without posting a journal', async () => {
       const wallet = await seedWallet('dep-suspended');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '3000',
         currency: 'NGN',
@@ -406,6 +421,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('rolls the whole completion back when the transaction aborts', async () => {
       const wallet = await seedWallet('dep-rollback');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '4000',
         currency: 'NGN',
@@ -437,6 +453,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('rolls audit, outbox and ledger back together with an aborted completion', async () => {
       const wallet = await seedWallet('dep-atomic');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '4500',
         currency: 'NGN',
@@ -487,6 +504,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('rejects an unknown wallet', async () => {
       await expect(
         deposits.createDeposit({
+          ownership: TEST_OWNERSHIP,
           walletId: randomUUID(),
           amountMinor: '100',
           currency: 'NGN',
@@ -500,6 +518,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       it('enforces uq_deposits_idempotency_key', async () => {
         const wallet = await seedWallet('dep-uq-key');
         const created = await deposits.createDeposit({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '1000',
           currency: 'NGN',
@@ -529,6 +548,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       it('enforces uq_deposits_payment_reference', async () => {
         const wallet = await seedWallet('dep-uq-ref');
         const created = await deposits.createDeposit({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '1000',
           currency: 'NGN',
@@ -580,6 +600,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('converges under genuine concurrent creates on one idempotency key', async () => {
       const wallet = await seedWallet('dep-concurrent');
       const command = {
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '800',
         currency: 'NGN',
@@ -601,6 +622,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('never double-credits under genuine concurrent completions', async () => {
       const wallet = await seedWallet('dep-concurrent-complete');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '2500',
         currency: 'NGN',
@@ -646,6 +668,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const settlementBefore = await balanceOf(settlementAssetAccountId);
 
       const created = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '15000',
         currency: 'NGN',
@@ -677,6 +700,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('writes audit and outbox effects for a completed withdrawal', async () => {
       const wallet = await fundedWallet('wd-effects');
       const created = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -702,6 +726,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       // and the service records a terminal FAILED state rather than leaving the row pending.
       const wallet = await fundedWallet('wd-insufficient', '1000');
       const created = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '999999',
         currency: 'NGN',
@@ -731,6 +756,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('replays an identical create idempotently without a double debit', async () => {
       const wallet = await fundedWallet('wd-replay');
       const command = {
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '2000',
         currency: 'NGN',
@@ -755,6 +781,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const wallet = await fundedWallet('wd-conflict');
       const key = `wd-${randomUUID()}`;
       await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '500',
         currency: 'NGN',
@@ -762,6 +789,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       });
       await expect(
         withdrawals.createWithdrawal({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '600',
           currency: 'NGN',
@@ -774,6 +802,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('rolls an aborted withdrawal completion back atomically', async () => {
       const wallet = await fundedWallet('wd-rollback');
       const created = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '3000',
         currency: 'NGN',
@@ -823,6 +852,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       it('enforces uq_withdrawals_idempotency_key and the completion CHECK', async () => {
         const wallet = await fundedWallet('wd-constraints');
         const created = await withdrawals.createWithdrawal({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '900',
           currency: 'NGN',
@@ -864,6 +894,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const created = [];
       for (let i = 0; i < 2; i += 1) {
         const w = await withdrawals.createWithdrawal({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '4000',
           currency: 'NGN',
@@ -889,6 +920,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const created = [];
       for (let i = 0; i < 4; i += 1) {
         const w = await withdrawals.createWithdrawal({
+          ownership: TEST_OWNERSHIP,
           walletId: wallet.walletId,
           amountMinor: '4000',
           currency: 'NGN',
@@ -935,6 +967,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const dstBefore = await balanceOf(destination.ledgerAccountId);
 
       const view = await transfers.createTransfer({
+        ownership: TEST_OWNERSHIP,
         sourceWalletId: source.walletId,
         destinationWalletId: destination.walletId,
         amountMinor: '12000',
@@ -963,6 +996,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const totalBefore =
         (await balanceOf(source.ledgerAccountId)) + (await balanceOf(destination.ledgerAccountId));
       await transfers.createTransfer({
+        ownership: TEST_OWNERSHIP,
         sourceWalletId: source.walletId,
         destinationWalletId: destination.walletId,
         amountMinor: '7500',
@@ -977,6 +1011,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('persists audit and outbox effects', async () => {
       const { source, destination } = await pair('tr-effects');
       const view = await transfers.createTransfer({
+        ownership: TEST_OWNERSHIP,
         sourceWalletId: source.walletId,
         destinationWalletId: destination.walletId,
         amountMinor: '1000',
@@ -998,6 +1033,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('replays an identical transfer idempotently without a second journal', async () => {
       const { source, destination } = await pair('tr-replay');
       const command = {
+        ownership: TEST_OWNERSHIP,
         sourceWalletId: source.walletId,
         destinationWalletId: destination.walletId,
         amountMinor: '3000',
@@ -1019,6 +1055,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const { source, destination } = await pair('tr-conflict');
       const key = `tr-${randomUUID()}`;
       await transfers.createTransfer({
+        ownership: TEST_OWNERSHIP,
         sourceWalletId: source.walletId,
         destinationWalletId: destination.walletId,
         amountMinor: '1000',
@@ -1027,6 +1064,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       });
       await expect(
         transfers.createTransfer({
+          ownership: TEST_OWNERSHIP,
           sourceWalletId: source.walletId,
           destinationWalletId: destination.walletId,
           amountMinor: '2000',
@@ -1045,6 +1083,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
 
       await expect(
         transfers.createTransfer({
+          ownership: TEST_OWNERSHIP,
           sourceWalletId: source.walletId,
           destinationWalletId: destination.walletId,
           amountMinor: '500000',
@@ -1062,6 +1101,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const { source } = await pair('tr-self');
       await expect(
         transfers.createTransfer({
+          ownership: TEST_OWNERSHIP,
           sourceWalletId: source.walletId,
           destinationWalletId: source.walletId,
           amountMinor: '100',
@@ -1121,6 +1161,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       it('enforces uq_transfers_idempotency_key', async () => {
         const { source, destination } = await pair('tr-chk-uq');
         const view = await transfers.createTransfer({
+          ownership: TEST_OWNERSHIP,
           sourceWalletId: source.walletId,
           destinationWalletId: destination.walletId,
           amountMinor: '100',
@@ -1156,6 +1197,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const settled = await Promise.allSettled(
         Array.from({ length: 2 }, () =>
           transfers.createTransfer({
+            ownership: TEST_OWNERSHIP,
             sourceWalletId: source.walletId,
             destinationWalletId: destination.walletId,
             amountMinor: '4000',
@@ -1182,6 +1224,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const settled = await Promise.allSettled(
         Array.from({ length: 6 }, () =>
           transfers.createTransfer({
+            ownership: TEST_OWNERSHIP,
             sourceWalletId: source.walletId,
             destinationWalletId: destination.walletId,
             amountMinor: '4000',
@@ -1211,6 +1254,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
       const settled = await Promise.allSettled(
         Array.from({ length: 4 }, () =>
           transfers.createTransfer({
+            ownership: TEST_OWNERSHIP,
             sourceWalletId: source.walletId,
             destinationWalletId: destination.walletId,
             amountMinor: '4000',
@@ -1241,6 +1285,7 @@ describe('A5 payment lifecycle (real PostgreSQL)', () => {
     it('refuses to mutate a posted journal line or header', async () => {
       const wallet = await seedWallet('immutable');
       const created = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1500',
         currency: 'NGN',

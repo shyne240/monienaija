@@ -39,6 +39,13 @@ export class AuthorizationService {
   ): AuthorizationDecision {
     const evaluatedAt = new Date();
     const requiredScopes = policy?.requiredScopes ?? [];
+    // Customer principals never hold internal scopes, so `internalScopes` only applies to the
+    // workforce/service principals that were able to reach the route before it became
+    // customer-reachable. This keeps internal access unchanged (no broadening, no regression).
+    const enforcementScopes =
+      principal && principal.type !== 'CUSTOMER'
+        ? [...requiredScopes, ...(policy?.internalScopes ?? [])]
+        : requiredScopes;
     const requiredRoles = policy?.requiredRoles ?? [];
     const base = {
       resourceType: resource.type,
@@ -46,7 +53,7 @@ export class AuthorizationService {
       customerId: resource.customerId,
       action: policy?.action ?? 'UNKNOWN',
       evaluatedAt,
-      requiredScopes,
+      requiredScopes: enforcementScopes,
       requiredRoles,
     };
 
@@ -95,7 +102,7 @@ export class AuthorizationService {
         principalId: principal.principalId,
       };
     }
-    if (!requiredScopes.every((scope) => principal.scopes.includes(scope))) {
+    if (!enforcementScopes.every((scope) => principal.scopes.includes(scope))) {
       return {
         ...base,
         allowed: false,
