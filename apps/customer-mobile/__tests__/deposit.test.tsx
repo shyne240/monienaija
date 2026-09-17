@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { FundWalletScreen } from '../src/screens/authenticated/FundWalletScreen';
 import { ApiClient, ApiError } from '../src/services/api-client';
@@ -41,9 +41,21 @@ describe('Fund Wallet Screen Tests', () => {
   ];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Reset (not just clear) so leftover implementations and unconsumed
+    // mockResolvedValueOnce queues cannot leak between tests.
+    jest.resetAllMocks();
     (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
   });
+
+  // The Fund Wallet screen has no wallet-gated UI, so the wallet fetch must be
+  // flushed explicitly: wait for it to fire, then let React commit the update
+  // before any submit handler can run against an empty wallet list.
+  const waitForWalletsLoaded = async () => {
+    await waitFor(() => {
+      expect(ApiClient.get).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {});
+  };
 
   test('should validate zero/negative amounts', async () => {
     const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
@@ -51,13 +63,14 @@ describe('Fund Wallet Screen Tests', () => {
     await waitFor(() => {
       expect(getByPlaceholderText('0.00')).toBeTruthy();
     });
+    await waitForWalletsLoaded();
 
     fireEvent.changeText(getByPlaceholderText('0.00'), '0');
     fireEvent.press(getByText('Fund Wallet Now'));
 
     await waitFor(() => {
       expect(getByText('Amount must be greater than zero.')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
   });
 
   test('should create a pending deposit without a client-side completion step', async () => {
@@ -68,6 +81,7 @@ describe('Fund Wallet Screen Tests', () => {
     await waitFor(() => {
       expect(getByPlaceholderText('0.00')).toBeTruthy();
     });
+    await waitForWalletsLoaded();
 
     fireEvent.changeText(getByPlaceholderText('0.00'), '150'); // 150 NGN = 15000 kobo
     fireEvent.press(getByText('Fund Wallet Now'));
@@ -85,7 +99,7 @@ describe('Fund Wallet Screen Tests', () => {
       // Customers can never complete their own deposit: settlement is confirmed by the provider.
       expect(ApiClient.post).toHaveBeenCalledTimes(1);
       expect(getByText('Deposit Initiated')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
   });
 
   test('should retain the same idempotency key across retries on failure', async () => {
@@ -99,6 +113,7 @@ describe('Fund Wallet Screen Tests', () => {
     await waitFor(() => {
       expect(getByPlaceholderText('0.00')).toBeTruthy();
     });
+    await waitForWalletsLoaded();
 
     fireEvent.changeText(getByPlaceholderText('0.00'), '50');
     
@@ -111,7 +126,7 @@ describe('Fund Wallet Screen Tests', () => {
       originalKey = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey;
       expect(originalKey).toBeTruthy();
       expect(getByText('Temporary database failure')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
 
     // Second submit click (retry)
     fireEvent.press(getByText('Fund Wallet Now'));
@@ -121,6 +136,6 @@ describe('Fund Wallet Screen Tests', () => {
       const retryKey = (ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey;
       // Retained key across manual retry of the same form!
       expect(retryKey).toBe(originalKey);
-    });
+    }, { timeout: 5000 });
   });
 });

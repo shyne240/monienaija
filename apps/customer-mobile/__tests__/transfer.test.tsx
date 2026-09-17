@@ -41,7 +41,9 @@ describe('Send Money (Transfer) Screen Tests', () => {
   ];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Reset (not just clear) so leftover implementations and unconsumed
+    // mockResolvedValueOnce queues cannot leak between tests.
+    jest.resetAllMocks();
     (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
   });
 
@@ -52,6 +54,13 @@ describe('Send Money (Transfer) Screen Tests', () => {
       expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
     });
 
+    // The form renders immediately, but the wallet fetch resolves after mount.
+    // Wait for committed wallet state (the balance block only renders once a
+    // wallet exists) so validation never runs against an empty wallet list.
+    await waitFor(() => {
+      expect(getByText('AVAILABLE BALANCE')).toBeTruthy();
+    }, { timeout: 5000 });
+
     fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
     fireEvent.changeText(getByPlaceholderText('0.00'), '600'); // More than available 500 Naira
     
@@ -59,7 +68,7 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
     await waitFor(() => {
       expect(getByText('Insufficient wallet balance.')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
   });
 
   test('should execute transfer successfully after confirmation', async () => {
@@ -71,6 +80,11 @@ describe('Send Money (Transfer) Screen Tests', () => {
       expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
     });
 
+    // Ensure the wallet fetch has resolved and committed before submitting.
+    await waitFor(() => {
+      expect(getByText('AVAILABLE BALANCE')).toBeTruthy();
+    }, { timeout: 5000 });
+
     fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
     fireEvent.changeText(getByPlaceholderText('0.00'), '100'); // 100 Naira
     
@@ -79,7 +93,7 @@ describe('Send Money (Transfer) Screen Tests', () => {
     // Confirmation dialog should be displayed
     await waitFor(() => {
       expect(getByText('Confirm Money Transfer')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
 
     // Confirm it
     fireEvent.press(getByText('Confirm'));
@@ -95,7 +109,7 @@ describe('Send Money (Transfer) Screen Tests', () => {
         expect.any(Object)
       );
       expect(mockNavigate).toHaveBeenCalledWith('Home');
-    });
+    }, { timeout: 5000 });
   });
 
   test('should explain 409 idempotency conflict clearly in error banner', async () => {
@@ -109,6 +123,11 @@ describe('Send Money (Transfer) Screen Tests', () => {
       expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
     });
 
+    // Ensure the wallet fetch has resolved and committed before submitting.
+    await waitFor(() => {
+      expect(getByText('AVAILABLE BALANCE')).toBeTruthy();
+    }, { timeout: 5000 });
+
     fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
     fireEvent.changeText(getByPlaceholderText('0.00'), '10');
     
@@ -116,13 +135,13 @@ describe('Send Money (Transfer) Screen Tests', () => {
 
     await waitFor(() => {
       expect(getByText('Confirm')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
 
     fireEvent.press(getByText('Confirm'));
 
     await waitFor(() => {
       // Explains conflict clearly
       expect(getByText('Transfer attempt carrying a different payload')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
   });
 });
