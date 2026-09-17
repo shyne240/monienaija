@@ -1,7 +1,20 @@
-import React from 'react';
+import React, { act } from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { SendMoneyScreen } from '../src/screens/authenticated/SendMoneyScreen';
 import { ApiClient, ApiError } from '../src/services/api-client';
+
+// The first React render in a fresh jest worker pays a one-time synchronous
+// initialization cost (React Native host components, StyleSheet, jest-expo
+// native mocks, V8 lazy compilation). Under the cold-cache + CPU-contention
+// conditions of a CI runner this single section can exceed Jest's default 5 s
+// per-test budget, so the FIRST test of the file is aborted with
+// "Exceeded timeout of 5000 ms for a test" before it can make an assertion.
+// jest.setTimeout raises the outer budget for tests AND hooks (worst measured
+// warm-up: ~23 s on a 2-core box under 300% contention); the beforeAll warm-up
+// performs that first render inside the hook, so every assertion test runs in
+// an already-warm worker. Assertion sensitivity is unchanged: each waitFor
+// keeps its own 5 s budget and real assertion failures still report at ~5 s.
+jest.setTimeout(30000);
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -39,6 +52,17 @@ describe('Send Money (Transfer) Screen Tests', () => {
       balanceMinor: 50000, // 500.00 Naira
     },
   ];
+
+
+  // One-time worker warm-up: render (and unmount) the screen before the first
+  // test so the cold React Native / jest-expo initialization cost is paid here
+  // (hook budget: see jest.setTimeout above) instead of inside the first test.
+  beforeAll(async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
+    const warm = render(<SendMoneyScreen />);
+    await act(async () => {});
+    warm.unmount();
+  });
 
   beforeEach(() => {
     // Reset (not just clear) so leftover implementations and unconsumed
