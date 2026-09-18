@@ -9,12 +9,13 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 
 import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { assertPaymentTransition } from '../payment/payment-lifecycle';
 import { PaymentLifecycleState } from '../payment/payment.enums';
@@ -106,6 +107,35 @@ export class DepositService {
     return deposits.map((deposit) => this.toView(deposit));
   }
 
+  /**
+   * Customer-scoped read: the deposit is only visible to a customer who owns the credited wallet.
+   * Cross-customer reads report "not found" so deposits cannot be enumerated by id.
+   */
+  async getDepositForCustomer(depositId: string, customerId: string): Promise<DepositView> {
+    assertPaymentUuid(depositId, 'depositId');
+    const deposit = await this.depositRepository.findOne({ where: { id: depositId } });
+    if (!deposit || !(await this.walletBelongsToCustomer(deposit.walletId, customerId))) {
+      throw new NotFoundException(`Deposit ${depositId} was not found`);
+    }
+    return this.toView(deposit);
+  }
+
+  /**
+   * Customer-scoped list: without an explicit wallet this returns only the customer's own deposits
+   * (never the whole table), and an explicit wallet must belong to the customer.
+   */
+  async listDepositsForCustomer(customerId: string, walletId?: string): Promise<DepositView[]> {
+    const walletIds = await this.customerWalletIds(customerId, walletId);
+    if (walletIds.length === 0) {
+      return [];
+    }
+    const deposits = await this.depositRepository.find({
+      where: { walletId: In(walletIds) },
+      order: { createdAt: 'DESC', id: 'DESC' },
+    });
+    return deposits.map((deposit) => this.toView(deposit));
+  }
+
   async completeDeposit(depositId: string): Promise<DepositView> {
     assertPaymentUuid(depositId, 'depositId');
     const id = await this.runWithSerializationRetry((manager) =>
@@ -150,11 +180,18 @@ export class DepositService {
       if (existing.requestHash !== command.requestHash) {
         throw new ConflictException('The idempotency key was already used for another deposit');
       }
+      // The ownership check must also guard the idempotency shortcut: replaying another customer's
+      // key must never return (or reveal) a deposit that belongs to that customer.
+      const ownedWallet = await manager
+        .getRepository(WalletAccount)
+        .findOne({ where: { id: existing.walletId } });
+      assertWalletOwnership(command.ownership, ownedWallet?.customerId);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return existing.id;
     }
 
     const wallet = await this.lockWallet(manager, command.walletId);
+    assertWalletOwnership(command.ownership, wallet?.customerId);
     this.assertWalletForPayment(wallet, command.currency);
 
     const depositId = randomUUID();
@@ -390,6 +427,27 @@ export class DepositService {
       .getOne();
   }
 
+  private async walletBelongsToCustomer(walletId: string, customerId: string): Promise<boolean> {
+    const wallet = await this.dataSource
+      .getRepository(WalletAccount)
+      .findOne({ where: { id: walletId, customerId } });
+    return wallet !== null;
+  }
+
+  private async customerWalletIds(customerId: string, walletId?: string): Promise<string[]> {
+    const repository = this.dataSource.getRepository(WalletAccount);
+    if (walletId !== undefined) {
+      assertPaymentUuid(walletId, 'walletId');
+      const wallet = await repository.findOne({ where: { id: walletId, customerId } });
+      if (!wallet) {
+        throw new NotFoundException('Wallet was not found');
+      }
+      return [wallet.id];
+    }
+    const wallets = await repository.find({ where: { customerId }, select: { id: true } });
+    return wallets.map((wallet) => wallet.id);
+  }
+
   private assertWalletForPayment(wallet: WalletAccount | null, currency: string): void {
     if (!wallet) {
       throw new NotFoundException('Wallet was not found');
@@ -417,6 +475,7 @@ export class DepositService {
     const narration = normalizePaymentText(command.narration, 'narration');
     return {
       walletId,
+      ownership: command.ownership,
       amountMinor,
       currency,
       idempotencyKey,

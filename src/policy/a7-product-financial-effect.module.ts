@@ -1,0 +1,133 @@
+/**
+ * A7T08 — A7 product financial effect, settlement, and Ledger
+ * integration NestJS module.
+ *
+ * The A7 product financial effect module wires the A7 product
+ * financial effect service to the canonical upstream authorities
+ * (reused) without modification. The A7 product financial effect
+ * module:
+ *
+ *  - reuses the A2 `AuthorizationService` (the only A2 authorization
+ *    authority) consumed through the A7 product financial effect
+ *    consumer port;
+ *  - reuses the A3 `CustomerFinancialAccountBindingService.validateActiveBinding()`
+ *    (the only A3 binding authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the A4 product-policy service (A7T03; the only A4
+ *    product-policy authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the A6T05 `ExternalOperationService` (the only A6T05
+ *    external-operation authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the A6T05 `ExternalOperationLifecycleService` (the only
+ *    A6 lifecycle authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the A6T07 `ExternalOperationStatusVerifier` (the only
+ *    A6 status-verification authority) consumed through the A7
+ *    product financial effect consumer port;
+ *  - reuses the A6 `PartnerCircuitBreakerService` (the only A6
+ *    circuit-breaker authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the A6T08 `ExternalSettlementService` (the only
+ *    settlement / suspense / compensating-entry authority) consumed
+ *    through the A7 product financial effect consumer port;
+ *  - reuses the A5 `LedgerService` (the only financial value
+ *    authority) consumed through the A7 product financial effect
+ *    consumer port;
+ *  - reuses the A7T04 `A7ProductCustomerBindingService` (the only
+ *    A7T04 product customer-binding authority) consumed through the
+ *    A7 product financial effect consumer port;
+ *  - reuses the A7T05 `A7ProductCommandService` (the only A7T05
+ *    product command/operation authority) consumed through the A7
+ *    product financial effect consumer port;
+ *  - reuses the A7T07 `A7ProductLifecycleService` (the only A7T07
+ *    product lifecycle authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the shared `IdempotencyService` (the only internal
+ *    idempotency authority) consumed through the A7 product
+ *    financial effect consumer port;
+ *  - reuses the shared `AuditService` (the only audit authority)
+ *    consumed through the A7 product financial effect consumer
+ *    port;
+ *  - reuses the shared `OutboxService` (the only outbox authority)
+ *    consumed through the A7 product financial effect consumer
+ *    port;
+ *  - reuses the shared `MetricsService` (the only metrics authority)
+ *    consumed through the A7 product financial effect consumer
+ *    port.
+ *
+ * No new A2 authorization, A3 binding, A4 product-policy, A6
+ * lifecycle, A6 circuit-breaker, A6T05 external-operation, A6
+ * partner, A5 transfer command, A7 product catalog, A7 product-
+ * policy profile, A7T04 product customer-binding map, A7T05
+ * product command/operation, A7T06 product notification delivery,
+ * A7T07 product lifecycle, A6T08 settlement, A5 Ledger, Wallet,
+ * Operations, Outbox, Idempotency, Metrics, Diagnostics,
+ * Reconciliation, or `CustomerPreference` authority is introduced.
+ * The A7 product financial effect module does not create a second
+ * customer-binding system, a second policy engine, a second
+ * authorization system, a second settlement authority, a second
+ * suspense authority, a second compensating-entry authority, a
+ * second reconciliation engine, a second audit authority, a second
+ * idempotency authority, a second outbox authority, a second
+ * metrics authority, a second diagnostics authority, a second A6
+ * lifecycle authority, a second A6 status-verification authority,
+ * a second A6 circuit-breaker authority, a second A5 Ledger
+ * authority, or a new product financial effect identity.
+ */
+
+import { Module, Provider } from '@nestjs/common';
+
+import { LedgerModule } from '../ledger/ledger.module';
+import { OperationsModule } from '../operations/operations.module';
+import { PartnerModule } from '../partner/partner.module';
+import { WalletModule } from '../wallet/wallet.module';
+
+import { A7ProductCommandModule } from './a7-product-command.module';
+import { A7ProductCustomerBindingModule } from './a7-product-customer-binding.module';
+import { A7ProductFinancialEffectRepository } from './a7-product-financial-effect.repository';
+import { A7ProductFinancialEffectService } from './a7-product-financial-effect.service';
+import { A7ProductLifecycleModule } from './a7-product-lifecycle.module';
+import { A7ProductPolicyModule } from './a7-product-policy.module';
+
+/**
+ * Provider list for the A7 product financial effect module. The
+ * A7 product financial effect module reuses the A2 authorization,
+ * A3 binding, A4 product-policy, A6 lifecycle, A6 status-
+ * verification, A6 circuit-breaker, A6T05 external-operation,
+ * A6T08 settlement / suspense / compensating-entry, A5 Ledger,
+ * A7T04 product customer-binding, A7T05 product command/operation,
+ * A7T07 product lifecycle, and the shared Operations audit,
+ * idempotency, outbox, and metrics services. The A7 product
+ * financial effect service is the single A7-side entry point for
+ * the A7 first product's runtime financial integration and control.
+ */
+export const A7_PRODUCT_FINANCIAL_EFFECT_PROVIDERS: readonly Provider[] = Object.freeze([
+  A7ProductFinancialEffectRepository,
+  A7ProductFinancialEffectService,
+]);
+
+/**
+ * The A7 product financial effect NestJS module class. The A7
+ * product financial effect module imports the canonical upstream
+ * modules (reused) and registers the A7 product financial effect
+ * providers. The canonical upstream modules already import
+ * `TypeOrmModule.forFeature` for their entities; the A7 product
+ * financial effect module does not need to re-import those
+ * entities.
+ */
+@Module({
+  imports: [
+    OperationsModule,
+    PartnerModule,
+    WalletModule,
+    LedgerModule,
+    A7ProductPolicyModule,
+    A7ProductCustomerBindingModule,
+    A7ProductCommandModule,
+    A7ProductLifecycleModule,
+  ],
+  providers: A7_PRODUCT_FINANCIAL_EFFECT_PROVIDERS as Provider[],
+  exports: [A7ProductFinancialEffectService, A7ProductFinancialEffectRepository],
+})
+export class A7ProductFinancialEffectModule {}

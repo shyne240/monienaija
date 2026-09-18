@@ -8,23 +8,48 @@ import { ApiVersionService } from '../src/production/api-version.service';
 import { ProductionConfigurationService } from '../src/production/production-configuration.service';
 import { ProductionReadinessService } from '../src/production/production-readiness.service';
 import { RequestTrackerService } from '../src/production/request-tracker.service';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+interface MigrationHead {
+  timestamp: string;
+  name: string;
+}
+
+/**
+ * Derives the migration head from the repository itself instead of hardcoding it, so this test
+ * keeps asserting the intended contract (the deployed head of this repository is accepted) without
+ * needing a manual edit for every new migration. The production check is unchanged: anything other
+ * than the newest repository migration is still rejected, which the incompatible case below proves.
+ *
+ * TypeORM stores the class name, and this repository names migration classes
+ * `<Name><Timestamp>` for files `<Timestamp>-<Name>.ts`.
+ */
+function repositoryMigrations(): MigrationHead[] {
+  return readdirSync(join(__dirname, '..', 'src', 'migrations'))
+    .filter((file) => file.endsWith('.ts'))
+    .map((file) => {
+      const base = file.replace(/\.ts$/, '');
+      const separator = base.indexOf('-');
+      const timestamp = base.slice(0, separator);
+      const name = base.slice(separator + 1);
+      return { timestamp, name: `${name}${timestamp}` };
+    })
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+}
+
+const migrationHead = repositoryMigrations().at(-1)!;
+const previousMigrationHead = repositoryMigrations().at(-2)!;
 
 class ReadinessDataSource {
-  constructor(readonly compatible: boolean) {}
+  constructor(readonly head: MigrationHead = migrationHead) {}
 
   query(sql: string): Promise<unknown[]> {
     if (sql === 'SELECT 1') {
       return Promise.resolve([{ '?column?': 1 }]);
     }
     if (sql.includes('LIMIT 1')) {
-      return Promise.resolve([
-        {
-          timestamp: this.compatible ? '1785753600021' : '1785753600004',
-          name: this.compatible
-            ? 'CreateCustomerFinancialAccountBindings1785753600021'
-            : 'RepairM6UuidDefaults1785753600004',
-        },
-      ]);
+      return Promise.resolve([{ timestamp: this.head.timestamp, name: this.head.name }]);
     }
     if (sql.includes('applied_count')) {
       return Promise.resolve([{ applied_count: '18' }]);
@@ -46,8 +71,10 @@ class ReconciliationStub {
 
 describe('M8 production readiness', () => {
   it('accepts the expected migration head and rejects an incompatible schema', async () => {
+    expect(migrationHead.name).toBe('CreateA2WorkforceAuthenticationTables1785753600052');
+
     const compatible = new ProductionReadinessService(
-      new ReadinessDataSource(true) as unknown as DataSource,
+      new ReadinessDataSource() as unknown as DataSource,
       new ReconciliationStub() as never,
     );
     await expect(compatible.verifyStartup()).resolves.toBeUndefined();
@@ -57,7 +84,7 @@ describe('M8 production readiness', () => {
     });
 
     const warning = new ProductionReadinessService(
-      new ReadinessDataSource(true) as unknown as DataSource,
+      new ReadinessDataSource() as unknown as DataSource,
       new ReconciliationStub('WARNING') as never,
     );
     await expect(warning.verifyStartup()).resolves.toBeUndefined();
@@ -67,13 +94,13 @@ describe('M8 production readiness', () => {
     });
 
     const reconciliationError = new ProductionReadinessService(
-      new ReadinessDataSource(true) as unknown as DataSource,
+      new ReadinessDataSource() as unknown as DataSource,
       new ReconciliationStub('ERROR') as never,
     );
     await expect(reconciliationError.verifyStartup()).rejects.toThrow('reconciliation_not_ready');
 
     const incompatible = new ProductionReadinessService(
-      new ReadinessDataSource(false) as unknown as DataSource,
+      new ReadinessDataSource(previousMigrationHead) as unknown as DataSource,
       new ReconciliationStub() as never,
     );
     await expect(incompatible.verifyStartup()).rejects.toThrow('schema_incompatible');

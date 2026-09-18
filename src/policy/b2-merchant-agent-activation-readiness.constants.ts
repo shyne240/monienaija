@@ -1,0 +1,129 @@
+/**
+ * B2T04 — B2 merchant and agent onboarding-readiness frozen constants.
+ *
+ * The B2 merchant and agent onboarding-readiness is the merchant/agent-
+ * facing activation readiness attestation for the bounded first cohort
+ * `b2.activation.cohort.inbound-funding` v1 restricted to the frozen B1
+ * first scope `commercial.virtual-account.inbound-funding` v1 under
+ * `VIRTUAL_ACCOUNT` v1, partner `NIBSS_NIP`, currency `NGN`, accounting
+ * unit `CUSTOMER_FUNDS`, region `NG`. At B2T04 the merchant and agent
+ * cohorts are registered but remain `Prohibited` at T01 and become
+ * `DRAFT`→`PENDING_VERIFICATION`→`VERIFIED`→`SUSPENDED`→`REVOKED`
+ * through B2T04 only. The attestation never activates a merchant or
+ * agent, never creates a public API, never creates a credential, never
+ * dispatches a notification, never posts a ledger entry, never executes
+ * a settlement, and never mutates an A1-A7/B1 authority.
+ */
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_CONTRACT_NAME =
+  'B2-MERCHANT-AGENT-ACTIVATION-READINESS' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_CONTRACT_VERSION = 1 as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_CONTRACT_DOCUMENT =
+  'docs/B2-MERCHANT-AGENT-ONBOARDING-CONTRACT.md' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_IDEMPOTENCY_SCOPE_MERCHANT =
+  'b2.merchant-activation-readiness.idempotency.v1' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_IDEMPOTENCY_SCOPE_AGENT =
+  'b2.agent-activation-readiness.idempotency.v1' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_IDEMPOTENCY_RETENTION_SECONDS = 86_400 as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_AUDIT_ACTOR =
+  'b2-merchant-agent-activation-readiness' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_AUDIT_ENTITY_TYPE_MERCHANT =
+  'b2_merchant_activation_readiness' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_AUDIT_ENTITY_TYPE_AGENT =
+  'b2_agent_activation_readiness' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_OUTBOX_EVENT_TYPE_MERCHANT =
+  'b2.merchant-activation-readiness.decided.v1' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_OUTBOX_EVENT_TYPE_AGENT =
+  'b2.agent-activation-readiness.decided.v1' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_OUTBOX_CLASSIFICATION = 'INTERNAL' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_OUTBOX_RETENTION_CLASS =
+  'OPERATIONS_DEFAULT' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_REFERENCE_PREFIX_MERCHANT =
+  'b2-merchant-readiness' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_REFERENCE_PREFIX_AGENT =
+  'b2-agent-readiness' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_COHORT_KEY =
+  'b2.activation.cohort.inbound-funding' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_COHORT_VERSION = 1 as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_CURRENCY = 'NGN' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_ACCOUNTING_UNIT = 'CUSTOMER_FUNDS' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_REGION = 'NG' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_B1_SCOPE_KEY =
+  'commercial.virtual-account.inbound-funding' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_B1_SCOPE_VERSION = 1 as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_A7_PRODUCT_KEY = 'VIRTUAL_ACCOUNT' as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_A7_PRODUCT_VERSION = 1 as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_A6_PARTNER_KEY = 'NIBSS_NIP' as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_VERIFICATION_STATES = [
+  'DRAFT',
+  'PENDING_VERIFICATION',
+  'VERIFIED',
+  'SUSPENDED',
+  'REVOKED',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_ELIGIBILITIES = [
+  'ELIGIBLE',
+  'INELIGIBLE',
+  'REQUIRES_CONSENT',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_OUTCOMES = [
+  'ATTESTED_READY',
+  'ATTESTED_NOT_READY',
+  'ATTESTED_REQUIRES_CONSENT',
+  'REJECTED',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_FAILURE_CODES = [
+  'B2_MERCHANT_AGENT_READINESS_INVALID_COMMAND',
+  'B2_MERCHANT_AGENT_READINESS_INCOMPATIBLE',
+  'B2_MERCHANT_AGENT_READINESS_QUERY_UNAVAILABLE',
+  'B2_MERCHANT_AGENT_READINESS_PROHIBITED',
+  'B2_MERCHANT_AGENT_READINESS_MERCHANT_NOT_FOUND',
+  'B2_MERCHANT_AGENT_READINESS_AGENT_NOT_FOUND',
+  'B2_MERCHANT_AGENT_READINESS_BENEFICIAL_OWNER_NOT_VERIFIED',
+  'B2_MERCHANT_AGENT_READINESS_BUSINESS_IDENTITY_NOT_VERIFIED',
+  'B2_MERCHANT_AGENT_READINESS_SETTLEMENT_NOT_ELIGIBLE',
+  'B2_MERCHANT_AGENT_READINESS_COMMERCIAL_NOT_ELIGIBLE',
+  'B2_MERCHANT_AGENT_READINESS_A4_NOT_ELIGIBLE',
+  'B2_MERCHANT_AGENT_READINESS_CONSENT_NOT_GRANTED',
+  'B2_MERCHANT_AGENT_READINESS_REPLAY_CONFLICT',
+  'B2_MERCHANT_AGENT_READINESS_REPLAY_EXPIRED',
+  'B2_MERCHANT_AGENT_READINESS_IN_PROGRESS',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_RULE_KINDS = [
+  'BUSINESS_IDENTITY_VERIFICATION',
+  'BENEFICIAL_OWNER_LINKAGE',
+  'SETTLEMENT_ELIGIBILITY',
+  'COMMERCIAL_ELIGIBILITY',
+  'A4_POLICY_ELIGIBILITY',
+  'CUSTOMER_CONSENT',
+  'MERCHANT_IDENTITY',
+  'AGENT_IDENTITY',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_RULE_OUTCOMES = [
+  'PASS',
+  'FAIL',
+  'SKIP',
+  'NOT_APPLICABLE',
+] as const;
+
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_RETENTION_DAYS = 365 as const;
+export const B2_MERCHANT_AGENT_ACTIVATION_READINESS_DATA_CLASSIFICATION = 'INTERNAL' as const;

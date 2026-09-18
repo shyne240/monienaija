@@ -20,6 +20,35 @@ import { CustomerRiskProfileModule } from './customer-risk-profile/customer-risk
 import { CustomerWalletModule } from './customer-wallet/customer-wallet.module';
 import { CustomerOnboardingModule } from './customer-onboarding/customer-onboarding.module';
 import { CapabilityPolicyModule } from './policy/capability-policy.module';
+import { A7ProductPolicyModule } from './policy/a7-product-policy.module';
+import { A7ProductCustomerBindingModule } from './policy/a7-product-customer-binding.module';
+import { A7ProductCommandModule } from './policy/a7-product-command.module';
+import { A7ProductNotificationDeliveryModule } from './policy/a7-product-notification-delivery.module';
+import { A7ProductLifecycleModule } from './policy/a7-product-lifecycle.module';
+import { A7ProductFinancialEffectModule } from './policy/a7-product-financial-effect.module';
+import { A7ProductReconciliationModule } from './policy/a7-product-reconciliation.module';
+import { A7ProductDataMinimizationModule } from './policy/a7-product-data-minimization.module';
+import { B1BillingEngineModule } from './policy/b1-billing-engine.module';
+import { B1PaymentTermModule } from './policy/b1-payment-term.module';
+import { B1CampaignEngineModule } from './policy/b1-campaign-engine.module';
+import { B1CommercialAnalyticsEngineModule } from './policy/b1-commercial-analytics-engine.module';
+import { B1CommercialCatalogModule } from './policy/b1-commercial-catalog.module';
+import { B1CommercialGovernanceEngineModule } from './policy/b1-commercial-governance-engine.module';
+import { B1ReferralEngineModule } from './policy/b1-referral-engine.module';
+import { B1RevenueRecognitionEngineModule } from './policy/b1-revenue-recognition-engine.module';
+import { B1FeeEngineModule } from './policy/b1-fee-engine.module';
+import { B2CustomerActivationReadinessModule } from './policy/b2-customer-activation-readiness.module';
+import { B2MerchantAgentActivationReadinessModule } from './policy/b2-merchant-agent-activation-readiness.module';
+import { B2ActivationWorkflowModule } from './policy/b2-activation-workflow.module';
+import { B2ConsentModule } from './policy/b2-consent.module';
+import { B2ApiConsumerModule } from './policy/b2-api-consumer.module';
+import { B2WebhookModule } from './policy/b2-webhook.module';
+import { B2PublicApiAuthenticationModule } from './policy/b2-public-api-authentication.module';
+import { B2FAccountMappingModule } from './policy/b2f-account-mapping.module';
+import { B2FAccountingTreatmentModule } from './policy/b2f-accounting-treatment.module';
+import { B2FFinanceControlModule } from './policy/b2f-finance-control.module';
+import { B2FFiscalPeriodModule } from './policy/b2f-fiscal-period.module';
+import { B2FJournalGovernanceModule } from './policy/b2f-journal-governance.module';
 import { getRequestContext } from './production/request-context';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
@@ -88,6 +117,35 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerComplianceModule,
     CustomerOnboardingModule,
     CapabilityPolicyModule,
+    A7ProductPolicyModule,
+    A7ProductCustomerBindingModule,
+    A7ProductCommandModule,
+    A7ProductNotificationDeliveryModule,
+    A7ProductLifecycleModule,
+    A7ProductFinancialEffectModule,
+    A7ProductReconciliationModule,
+    A7ProductDataMinimizationModule,
+    B1BillingEngineModule,
+    B1PaymentTermModule,
+    B1CampaignEngineModule,
+    B1CommercialAnalyticsEngineModule,
+    B1CommercialCatalogModule,
+    B1CommercialGovernanceEngineModule,
+    B1FeeEngineModule,
+    B1ReferralEngineModule,
+    B1RevenueRecognitionEngineModule,
+    B2CustomerActivationReadinessModule,
+    B2MerchantAgentActivationReadinessModule,
+    B2ActivationWorkflowModule,
+    B2ConsentModule,
+    B2ApiConsumerModule,
+    B2WebhookModule,
+    B2PublicApiAuthenticationModule,
+    B2FAccountMappingModule,
+    B2FAccountingTreatmentModule,
+    B2FFinanceControlModule,
+    B2FFiscalPeriodModule,
+    B2FJournalGovernanceModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
     CustomerFundingInstrumentModule,

@@ -182,7 +182,7 @@ export class CustomerFinancialAccountBindingRepairService {
       }
     }
 
-    const approval = await this.privilegedApprovalService.consume({
+    const approval = await this.privilegedApprovalService.consumeInTransaction(manager, {
       principal: command.principal,
       approvalId: command.approvalId,
       actionType: CUSTOMER_FINANCIAL_ACCOUNT_BINDING_REPAIR_POLICY.action,

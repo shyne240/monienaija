@@ -1,6 +1,6 @@
 # MonieNaija Wallet and Ledger Backend
 
-Production-oriented NestJS backend for MonieNaija. The verified backend foundation now includes customer wallet accounts, a double-entry ledger, internal wallet-to-wallet transfers, controlled internal deposits and withdrawals, non-money-moving expanded financial product tooling, and database-backed operational resilience. Identity, authentication, KYC, external payment rails, external synchronization, settlement, and later financial products remain outside this milestone.
+Production-oriented NestJS backend for MonieNaija. The verified backend foundation now includes customer wallet accounts, a double-entry ledger, wallet-to-wallet transfers, deposits and withdrawals, customer authentication with session lifecycle, a runtime route authorization guard, non-money-moving expanded financial product tooling, and database-backed operational resilience. Workforce identity provisioning, KYC, external payment rails, external synchronization, settlement, and later financial products remain outside this milestone.
 
 ## Architecture
 
@@ -69,7 +69,7 @@ Use `.env.example` as the complete local reference. These database values are re
 
 ## Wallet and ledger API
 
-All routes below are prefixed with `/api/v1`. These routes are the domain contract for this milestone. Authentication and privileged-operation authorisation are intentionally not implemented until the identity/access domain exists; the ledger posting and chart-of-accounts routes must therefore be treated as internal development operations, not a public production surface.
+All routes below are prefixed with `/api/v1`. Every request is evaluated by the runtime route authorization guard (`src/authorization/route-policy-registry.ts`), which resolves each route to an explicit policy. Customers authenticate with `POST /api/v1/customers/:id/authenticate` and receive an opaque session bearer token (session read/rotate/logout under `/api/v1/customers/:id/sessions`). Customer deposits, withdrawals, transfers, and wallet reads are bound to the authenticated customer: the customer id used for an operation always comes from the session, and every wallet referenced must belong to that customer. Deposit/withdrawal/transfer completion and settlement transitions, the ledger posting and chart-of-accounts routes, and the `/api/v1/internal/*` operational routes remain workforce/internal-only and are never customer-reachable or public.
 
 ### Create a customer wallet
 
@@ -226,6 +226,11 @@ Internal routes are available at `/api/v1/internal/product-governance/records`, 
 | -------------------------- | ------------------------------------------------------------------- | ------------------------------------------ |
 | `GET /api/v1/health`       | Liveness: the HTTP process is running. Does not query dependencies. | `200 { "status": "ok", "timestamp": "…" }` |
 | `GET /api/v1/health/ready` | Readiness: PostgreSQL can be queried.                               | `200` when ready; `503` when unavailable.  |
+
+Both endpoints are public and report state only. Operational detail (migration head, reconciliation
+status, outbox backlog, diagnostics, metrics) is never returned by them; it is available to an
+authenticated workforce session with `internal:access` at `GET /api/v1/internal/readiness`,
+`/diagnostics`, `/deployment`, `/configuration` and `/metrics`.
 
 ## Quality commands
 

@@ -73,8 +73,11 @@ export class CreateExternalSettlementTables1785753600029 implements MigrationInt
           CHECK (owner_principal ~ '^[\\x20-\\x7E]{1,160}$'),
         CONSTRAINT chk_external_settlements_lifecycle_state
           CHECK (lifecycle_state IN ('PENDING_VERIFICATION', 'SETTLED', 'FAILED', 'CANCELLED', 'REJECTED', 'COMPENSATED')),
+        -- A posted SETTLE must carry its journal and must not yet reference a reversal; once
+        -- the contractual compensation path runs, status becomes REVERSED and the reversal
+        -- reference becomes mandatory.
         CONSTRAINT chk_external_settlements_posted_journal
-          CHECK (decision <> 'SETTLE' OR (journal_id IS NOT NULL AND posted_at IS NOT NULL AND reversal_journal_id IS NULL)),
+          CHECK (decision <> 'SETTLE' OR (journal_id IS NOT NULL AND posted_at IS NOT NULL AND ((status = 'POSTED' AND reversal_journal_id IS NULL) OR (status = 'REVERSED' AND reversal_journal_id IS NOT NULL)))),
         CONSTRAINT chk_external_settlements_reversal_metadata
           CHECK (reversal_journal_id IS NULL OR reversal_posted_at IS NOT NULL)
       )
@@ -139,7 +142,12 @@ export class CreateExternalSettlementTables1785753600029 implements MigrationInt
             'INVALID_SETTLEMENT_STATE',
             'PARTNER_DISABLED',
             'EXTERNAL_OPERATION_NOT_FOUND',
-            'COMPENSATING_NOT_PERMITTED'
+            'COMPENSATING_NOT_PERMITTED',
+            'PROVIDER_REJECTION',
+            'PROVIDER_SUSPENSE',
+            'PROVIDER_UNKNOWN',
+            'MANUAL_REVIEW',
+            'PROVIDER_FAILURE'
           )),
         CONSTRAINT chk_external_suspense_evidence_hash
           CHECK (evidence_hash ~ '^[a-f0-9]{64}$'),

@@ -50,10 +50,12 @@ export interface PrivilegedActionApprovalView {
   resourceType: string;
   resourceId: string | null;
   customerId: string | null;
+  actionFingerprint: string;
   requesterPrincipalId: string;
   approvedBy: string | null;
   approvalScope: string;
   requiredAssurance: string;
+  policy: Readonly<Record<string, unknown>>;
   status: PrivilegedActionApprovalStatus;
   isEmergency: boolean;
   requestedAt: Date;

@@ -1,8 +1,8 @@
 # A2 Runtime Identity & Access — Implementation Plan
 
 - **Phase:** A2 Runtime Identity & Access
-- **Status:** Planned
-- **Scope:** Runtime authentication, session/access context, authorization, privileged access, and protected internal APIs
+- **Status:** Historical A2T01–A2T10 preserved; bounded A2T11 extension implemented
+- **Scope:** Runtime authentication, session/access context, authorization, privileged access, protected internal APIs, and bounded workforce authentication extension
 - **Implementation order:** First Architecture implementation phase after the completed A1 Foundation Consolidation
 - **Source planning documents:** [`ROADMAP.md`](ROADMAP.md), [`ARCHITECTURE-PHASE-PLAN.md`](ARCHITECTURE-PHASE-PLAN.md), [`IMPLEMENTATION-ORDER.md`](IMPLEMENTATION-ORDER.md)
 - **A1 prerequisites:** A1 ownership, identifier, privacy, retention, ADR, dependency, and exit artifacts
@@ -453,6 +453,17 @@ Validate the complete A2 trust boundary and prepare the phase exit package witho
 - A2 Runtime Identity & Access is approved as a protected runtime boundary.
 - A3 and A4 may begin only through their approved dependencies and contracts.
 - No A3-A8 implementation is included in the A2 exit commit.
+
+### A2T11 — A2 Bounded Workforce and Privileged Authentication Extension
+
+- **Type:** Authorized bounded runtime extension
+- **ADR:** ADR-0092
+- **Owner:** A2 Runtime Identity & Access
+- **Permanent administration owner:** B9 Identity & Access Administration
+
+A2T11 adds provider-agnostic OIDC workforce assertion validation, separate A2 workforce sessions, externally signed one-time `FINANCE_ADMIN` bootstrap, configurable interim Finance roles/maker-checker rules, bounded assignment/revocation, internal operator ingress, PostgreSQL-backed security token buckets, JWKS refresh protection, audit, and deterministic B9 handoff evidence. Production identity-provider/bootstrap/role configuration is not seeded. Historical A2T01–A2T10 remain unchanged.
+
+A2T11 does not implement B9, B2F06 policy activation, A5T11, B2F03, B1 production activation, B2F07–B2F09, or public Finance APIs.
 
 ## 6. A2 critical path
 

@@ -6,6 +6,7 @@ import type { FastifyRequest } from 'fastify';
 
 import { AppModule } from './app.module';
 import { validateEnvironment } from './config/environment';
+import { applyHttpSecurity, fastifyAdapterOptions } from './production/http-security';
 import { GlobalExceptionFilter } from './http-exception.filter';
 import {
   createRequestContext,
@@ -18,9 +19,13 @@ import { GovernanceService } from './maturity/governance.service';
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
-    bufferLogs: true,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(fastifyAdapterOptions(environment)),
+    {
+      bufferLogs: true,
+    },
+  );
   const logger = app.get(Logger);
   const requestTracker = app.get(RequestTrackerService);
   const readinessService = app.get(ProductionReadinessService);
@@ -38,6 +43,9 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new GlobalExceptionFilter(logger));
   app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
+
+  // Security headers on every response, plus an explicit-origin CORS allowlist when configured.
+  applyHttpSecurity(app, environment);
 
   http.addHook('onRequest', (request, reply, done) => {
     const context = createRequestContext(

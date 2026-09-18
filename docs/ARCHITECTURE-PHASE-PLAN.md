@@ -1,5 +1,7 @@
 # Architecture Phase Plan — A1-A8
 
+> **Roadmap reconciliation notice (2026-08-09):** This is the historical A1–A8 architecture plan and remains evidence for work performed under it. Future platform ownership and order are governed by [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md). A8 Scale & Selective Extraction is superseded by D1; B2 is Finance, B3 is Treasury, and C2 is Observability.
+
 ## 1. Architecture-phase objective
 
 The A1-A8 Architecture phases are the engineering execution track after Customer Foundation. They connect customer identity and lifecycle to protected operational and financial capabilities without weakening the ledger, audit, idempotency, outbox, or reconciliation boundaries. They enable the unchanged Product Roadmap P1.0-P1.15; they do not replace it.

@@ -1,7 +1,15 @@
+import type { WalletOwnershipBinding } from '../wallet/wallet-ownership';
 import type { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 
 export interface CreateTransferCommand {
   sourceWalletId: string;
+  /**
+   * Who the transfer is executed for. Required so that a caller-supplied `sourceWalletId` can never
+   * on its own debit a wallet that belongs to another customer. The destination wallet may still
+   * belong to a different customer (existing product rules); only the source wallet is bound.
+   * Always derived from the authenticated principal by the HTTP layer, never from request input.
+   */
+  ownership: WalletOwnershipBinding;
   destinationWalletId: string;
   amountMinor: string | number | bigint;
   currency: string;

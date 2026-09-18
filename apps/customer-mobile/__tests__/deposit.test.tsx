@@ -1,0 +1,165 @@
+import React, { act } from 'react';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { FundWalletScreen } from '../src/screens/authenticated/FundWalletScreen';
+import { ApiClient, ApiError } from '../src/services/api-client';
+
+// The first React render in a fresh jest worker pays a one-time synchronous
+// initialization cost (React Native host components, StyleSheet, jest-expo
+// native mocks, V8 lazy compilation). Under the cold-cache + CPU-contention
+// conditions of a CI runner this single section can exceed Jest's default 5 s
+// per-test budget, so the FIRST test of the file is aborted with
+// "Exceeded timeout of 5000 ms for a test" before it can make an assertion.
+// jest.setTimeout raises the outer budget for tests AND hooks (worst measured
+// warm-up: ~23 s on a 2-core box under 300% contention); the beforeAll warm-up
+// performs that first render inside the hook, so every assertion test runs in
+// an already-warm worker. Assertion sensitivity is unchanged: each waitFor
+// keeps its own 5 s budget and real assertion failures still report at ~5 s.
+jest.setTimeout(30000);
+
+jest.mock('../src/services/api-client', () => ({
+  ApiClient: {
+    get: jest.fn(),
+    post: jest.fn(),
+  },
+  ApiError: class extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+}));
+
+jest.mock('../src/store/auth-store', () => ({
+  useAuthStore: () => ({
+    customerId: 'cust-uuid-444',
+  }),
+}));
+
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({
+    navigate: mockNavigate,
+  }),
+}));
+
+describe('Fund Wallet Screen Tests', () => {
+  const mockWallets = [
+    {
+      id: 'wallet-uuid-444',
+      status: 'ACTIVE',
+      currency: 'NGN',
+      balanceMinor: 10000,
+    },
+  ];
+
+
+  // One-time worker warm-up: render (and unmount) the screen before the first
+  // test so the cold React Native / jest-expo initialization cost is paid here
+  // (hook budget: see jest.setTimeout above) instead of inside the first test.
+  beforeAll(async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
+    const warm = render(<FundWalletScreen />);
+    await act(async () => {});
+    warm.unmount();
+  });
+
+  beforeEach(() => {
+    // Reset (not just clear) so leftover implementations and unconsumed
+    // mockResolvedValueOnce queues cannot leak between tests.
+    jest.resetAllMocks();
+    (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
+  });
+
+  // The Fund Wallet screen has no wallet-gated UI, so the wallet fetch must be
+  // flushed explicitly: wait for it to fire, then let React commit the update
+  // before any submit handler can run against an empty wallet list.
+  const waitForWalletsLoaded = async () => {
+    await waitFor(() => {
+      expect(ApiClient.get).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {});
+  };
+
+  test('should validate zero/negative amounts', async () => {
+    const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
+
+    await waitFor(() => {
+      expect(getByPlaceholderText('0.00')).toBeTruthy();
+    });
+    await waitForWalletsLoaded();
+
+    fireEvent.changeText(getByPlaceholderText('0.00'), '0');
+    fireEvent.press(getByText('Fund Wallet Now'));
+
+    await waitFor(() => {
+      expect(getByText('Amount must be greater than zero.')).toBeTruthy();
+    }, { timeout: 5000 });
+  });
+
+  test('should create a pending deposit without a client-side completion step', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id: 'dep-uuid-123' });
+
+    const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
+
+    await waitFor(() => {
+      expect(getByPlaceholderText('0.00')).toBeTruthy();
+    });
+    await waitForWalletsLoaded();
+
+    fireEvent.changeText(getByPlaceholderText('0.00'), '150'); // 150 NGN = 15000 kobo
+    fireEvent.press(getByText('Fund Wallet Now'));
+
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenNthCalledWith(
+        1,
+        '/deposits',
+        expect.objectContaining({
+          walletId: 'wallet-uuid-444',
+          amountMinor: '15000',
+        }),
+        expect.any(Object)
+      );
+      // Customers can never complete their own deposit: settlement is confirmed by the provider.
+      expect(ApiClient.post).toHaveBeenCalledTimes(1);
+      expect(getByText('Deposit Initiated')).toBeTruthy();
+    }, { timeout: 5000 });
+  });
+
+  test('should retain the same idempotency key across retries on failure', async () => {
+    // Mock deposit creation failure
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new ApiError('Temporary database failure', 500)
+    );
+
+    const { getByPlaceholderText, getByText } = render(<FundWalletScreen />);
+
+    await waitFor(() => {
+      expect(getByPlaceholderText('0.00')).toBeTruthy();
+    });
+    await waitForWalletsLoaded();
+
+    fireEvent.changeText(getByPlaceholderText('0.00'), '50');
+    
+    // First submit click
+    fireEvent.press(getByText('Fund Wallet Now'));
+
+    let originalKey = '';
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalledTimes(1);
+      originalKey = (ApiClient.post as jest.Mock).mock.calls[0][2].idempotencyKey;
+      expect(originalKey).toBeTruthy();
+      expect(getByText('Temporary database failure')).toBeTruthy();
+    }, { timeout: 5000 });
+
+    // Second submit click (retry)
+    fireEvent.press(getByText('Fund Wallet Now'));
+
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalledTimes(2);
+      const retryKey = (ApiClient.post as jest.Mock).mock.calls[1][2].idempotencyKey;
+      // Retained key across manual retry of the same form!
+      expect(retryKey).toBe(originalKey);
+    }, { timeout: 5000 });
+  });
+});

@@ -3,13 +3,17 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Inject,
   UnauthorizedException,
 } from '@nestjs/common';
 
 import { AuthenticationSessionService } from '../customer-authentication/authentication-session.service';
 import { AuthorizationService } from './authorization.service';
+import { A2WorkforceSessionService } from './workforce-session.service';
+import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
+import type { A2WorkforceConfigurationV1 } from './workforce-authentication.types';
 import type { AuthorizationRequest, AuthorizationPrincipal } from './authorization.types';
-import { RoutePolicyRegistry } from './route-policy-registry';
+import { RoutePolicyRegistry, type RoutePolicyResolution } from './route-policy-registry';
 
 interface RuntimeRequest extends AuthorizationRequest {
   method: string;
@@ -24,6 +28,8 @@ export class RuntimeAccessGuard implements CanActivate {
     private readonly sessionService: AuthenticationSessionService,
     private readonly authorizationService: AuthorizationService,
     private readonly routePolicyRegistry: RoutePolicyRegistry,
+    private readonly workforceSessions: A2WorkforceSessionService,
+    @Inject(A2_WORKFORCE_CONFIG) private readonly workforceConfig: A2WorkforceConfigurationV1,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -34,6 +40,37 @@ export class RuntimeAccessGuard implements CanActivate {
       params: request.params,
     });
     if (route.public) {
+      return true;
+    }
+
+    if (route.authenticationMode === 'WORKFORCE_ASSERTION') {
+      if (!this.workforceConfig.enabled)
+        throw new UnauthorizedException('Workforce authentication disabled');
+      return true;
+    }
+    if (route.authenticationMode === 'WORKFORCE_SESSION') {
+      const token = this.bearerToken(request.headers.authorization);
+      try {
+        request.authorizationPrincipal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
+      } catch (error) {
+        // A workforce-only route is never reachable with a customer session. Resolve the customer
+        // session only to answer 403 for an authenticated customer instead of 401, which keeps
+        // "customer is denied" observable without widening access: the customer principal is not
+        // attached to the request and the route remains denied either way.
+        const customerToken = this.bearerToken(request.headers.authorization);
+        const customerSession = await this.sessionService.validate({ token: customerToken });
+        if (customerSession.valid && customerSession.principal) {
+          throw new ForbiddenException('Authorization denied');
+        }
+        throw error;
+      }
+      // Routes that declare a policy (for example the read-only operational routes, which require
+      // `internal:access`) are authorized here. Routes without a policy keep authorizing inside
+      // their own controllers, exactly as before.
+      await this.enforceDeclaredPolicy(request, route);
       return true;
     }
 
@@ -72,6 +109,26 @@ export class RuntimeAccessGuard implements CanActivate {
       throw new ForbiddenException('Authorization denied');
     }
     return true;
+  }
+
+  private async enforceDeclaredPolicy(
+    request: RuntimeRequest,
+    route: RoutePolicyResolution,
+  ): Promise<void> {
+    if (!route.policy || !request.authorizationPrincipal) return;
+    const decision = await this.authorizationService.authorize(
+      request.authorizationPrincipal,
+      route.policy,
+      {
+        type: route.resourceType,
+        id: route.resourceId,
+        customerId: route.customerId,
+      },
+    );
+    request.authorizationDecision = decision;
+    if (!decision.allowed) {
+      throw new ForbiddenException('Authorization denied');
+    }
   }
 
   private bearerToken(header: string | string[] | undefined): string {

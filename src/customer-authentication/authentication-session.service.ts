@@ -5,7 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import type { AuthenticationExecutionResult } from './authentication-execution.service';
-import type { AuditService } from '../operations/audit.service';
+import { AuditService } from '../operations/audit.service';
 import { AuthenticationSession } from './authentication-session.entity';
 import { AuthenticationSessionStatus } from './authentication-session.enums';
 import type {

@@ -1,5 +1,7 @@
 # Post-Customer-Foundation Implementation Order
 
+> **Roadmap reconciliation notice (2026-08-09):** This file preserves the historical A1–A8 implementation order. [`AUTHORITATIVE-PLATFORM-ROADMAP.md`](AUTHORITATIVE-PLATFORM-ROADMAP.md) governs future work as A1–A7 → B1–B10 → C1–C7 → Frontend → D1 → E1–E6. Historical A8 references below map to D1 for future sequencing and do not create an A8 platform.
+
 - **Task:** A1T08 — Canonical Ownership, Roadmap, and Dependency Package
 - **Classification:** Documentation-only architecture synthesis
 - **Application code, API, entity, migration, and configuration changes:** None
