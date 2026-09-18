@@ -9,18 +9,30 @@ import type {
 } from 'typeorm';
 import { QueryFailedError } from 'typeorm';
 
-import type { AuditService } from '../src/operations/audit.service';
+import { CustomerEligibility } from '../src/customer-eligibility/customer-eligibility.entity';
+import { CustomerOnboarding } from '../src/customer-onboarding/customer-onboarding.entity';
+import { CustomerWallet } from '../src/customer-wallet/customer-wallet.entity';
+import { WalletOwnership } from '../src/customer-wallet/wallet-ownership.entity';
+import { CustomerAuthenticationCredential } from '../src/customer-authentication/customer-authentication-credential.entity';
 import { Customer } from '../src/customer/customer.entity';
 import { CustomerAddress } from '../src/customer/customer-address.entity';
 import { CustomerContactMethod } from '../src/customer/customer-contact-method.entity';
 import { CustomerIdentityDocument } from '../src/customer/customer-identity-document.entity';
 import { CustomerKycAssessment } from '../src/customer/customer-kyc-assessment.entity';
 import { CustomerProfile } from '../src/customer/customer-profile.entity';
+import { Deposit } from '../src/deposit/deposit.entity';
+import { LedgerAccount } from '../src/ledger/ledger-account.entity';
+import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
+import { LedgerLine } from '../src/ledger/ledger-line.entity';
+import type { AuditService } from '../src/operations/audit.service';
+import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
+import { WalletAccount } from '../src/wallet/wallet-account.entity';
 import {
   AddressType,
   ContactMethodType,
   CustomerKycLevel,
   CustomerKycStatus,
+  CustomerStatus,
   CustomerType,
   IdentityDocumentType,
 } from '../src/customer/customer.enums';
@@ -157,6 +169,17 @@ describe('CustomerService', () => {
     const kycRepository = new MemoryRepository<CustomerKycAssessment>(
       duplicateBy(['customerId', 'isCurrent']),
     );
+    const onboardingRepository = new MemoryRepository<CustomerOnboarding>();
+    const eligibilityRepository = new MemoryRepository<CustomerEligibility>();
+    const customerWalletRepository = new MemoryRepository<CustomerWallet>();
+    const credentialRepository = new MemoryRepository<CustomerAuthenticationCredential>();
+    const walletOwnershipRepository = new MemoryRepository<WalletOwnership>();
+    const financialWalletRepository = new MemoryRepository<WalletAccount>();
+    const financialBindingRepository = new MemoryRepository<CustomerFinancialAccountBinding>();
+    const ledgerAccountRepository = new MemoryRepository<LedgerAccount>();
+    const ledgerJournalRepository = new MemoryRepository<LedgerJournal>();
+    const ledgerLineRepository = new MemoryRepository<LedgerLine>();
+    const depositRepository = new MemoryRepository<Deposit>();
     const repositories = new Map<unknown, MemoryRepository<ObjectLiteral>>([
       [Customer, customerRepository as unknown as MemoryRepository<ObjectLiteral>],
       [CustomerProfile, profileRepository as unknown as MemoryRepository<ObjectLiteral>],
@@ -164,6 +187,23 @@ describe('CustomerService', () => {
       [CustomerContactMethod, contactRepository as unknown as MemoryRepository<ObjectLiteral>],
       [CustomerIdentityDocument, documentRepository as unknown as MemoryRepository<ObjectLiteral>],
       [CustomerKycAssessment, kycRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [CustomerOnboarding, onboardingRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [CustomerEligibility, eligibilityRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [CustomerWallet, customerWalletRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [
+        CustomerAuthenticationCredential,
+        credentialRepository as unknown as MemoryRepository<ObjectLiteral>,
+      ],
+      [WalletOwnership, walletOwnershipRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [WalletAccount, financialWalletRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [
+        CustomerFinancialAccountBinding,
+        financialBindingRepository as unknown as MemoryRepository<ObjectLiteral>,
+      ],
+      [LedgerAccount, ledgerAccountRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [LedgerJournal, ledgerJournalRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [LedgerLine, ledgerLineRepository as unknown as MemoryRepository<ObjectLiteral>],
+      [Deposit, depositRepository as unknown as MemoryRepository<ObjectLiteral>],
     ]);
     const manager = new MemoryManager(repositories);
     const audit = { record: jest.fn().mockResolvedValue({}) };
@@ -177,7 +217,24 @@ describe('CustomerService', () => {
       new MemoryDataSource(manager) as unknown as DataSource,
       audit as unknown as AuditService,
     );
-    return { service, audit, repositories };
+    return {
+      service,
+      audit,
+      repositories,
+      lifecycleRepositories: {
+        onboardingRepository,
+        eligibilityRepository,
+        customerWalletRepository,
+        credentialRepository,
+        walletOwnershipRepository,
+        financialWalletRepository,
+        financialBindingRepository,
+        ledgerAccountRepository,
+        ledgerJournalRepository,
+        ledgerLineRepository,
+        depositRepository,
+      },
+    };
   }
 
   async function createCustomer(service: CustomerService) {
@@ -198,6 +255,36 @@ describe('CustomerService', () => {
         actor: 'customer-ops',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('creates only the canonical customer record without activation or financial side effects', async () => {
+    const { service, lifecycleRepositories } = fixture();
+
+    const customer = await service.create({
+      reference: 'public-registration-customer',
+      type: CustomerType.INDIVIDUAL,
+      status: CustomerStatus.ACTIVE,
+      actor: 'public-registration',
+    });
+
+    expect(customer).toMatchObject({
+      reference: 'public-registration-customer',
+      type: CustomerType.INDIVIDUAL,
+      status: CustomerStatus.ACTIVE,
+      kycLevel: CustomerKycLevel.NONE,
+      kycStatus: CustomerKycStatus.NOT_STARTED,
+    });
+    expect(lifecycleRepositories.onboardingRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.eligibilityRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.customerWalletRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.credentialRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.walletOwnershipRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.financialWalletRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.financialBindingRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.ledgerAccountRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.ledgerJournalRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.ledgerLineRepository.records.size).toBe(0);
+    expect(lifecycleRepositories.depositRepository.records.size).toBe(0);
   });
 
   it('creates and audits profile, address, contact, and identity records', async () => {

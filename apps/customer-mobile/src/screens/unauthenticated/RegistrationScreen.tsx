@@ -16,7 +16,10 @@ export const RegistrationScreen: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [registeredUser, setRegisteredUser] = useState<{ id: string; reference: string } | null>(null);
+  const [registeredCustomer, setRegisteredCustomer] = useState<{
+    id: string;
+    reference: string;
+  } | null>(null);
   const [error, setError] = useState('');
 
   const handleRegister = async () => {
@@ -41,41 +44,45 @@ export const RegistrationScreen: React.FC = () => {
         actor: name.trim(),
       });
 
-      setRegisteredUser(result);
+      setRegisteredCustomer(result);
     } catch (err: any) {
-      setError(err?.message || 'Onboarding registration failed. Please try again.');
+      setError(err?.message || 'Customer registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (registeredUser) {
+  if (registeredCustomer) {
     return (
       <View style={styles.successContainer}>
         <View style={styles.successContent}>
           <Text style={styles.successIcon}>🎉</Text>
-          <Text style={styles.successTitle}>Wallet Created Successfully!</Text>
+          <Text style={styles.successTitle}>Customer Registration Complete</Text>
           <Text style={styles.successDescription}>
-            Your MoneyNaija wallet has been provisioned under the sandbox environment.
+            Your customer record has been created. Onboarding must be completed and eligibility
+            confirmed before a customer wallet can be provisioned.
           </Text>
 
           <View style={styles.detailsCard}>
             <Text style={styles.detailLabel}>CUSTOMER REFERENCE</Text>
-            <Text style={styles.detailValue}>{registeredUser.reference}</Text>
+            <Text style={styles.detailValue}>{registeredCustomer.reference}</Text>
 
-            <Text style={[styles.detailLabel, { marginTop: theme.spacing.md }]}>CUSTOMER ID (UUID)</Text>
-            <Text style={styles.detailValueSelectable}>{registeredUser.id}</Text>
+            <Text style={[styles.detailLabel, { marginTop: theme.spacing.md }]}>
+              CUSTOMER ID (UUID)
+            </Text>
+            <Text style={styles.detailValueSelectable}>{registeredCustomer.id}</Text>
           </View>
 
           <Text style={styles.copyWarning}>
-            Copy the Customer ID above. You will use it as your Username to Log In.
+            No financial wallet or sign-in credential has been created by registration. Keep these
+            details for the controlled onboarding process.
           </Text>
         </View>
 
         <Button
-          label="Proceed to Log In"
+          label="Return to Welcome"
           style={styles.button}
-          onPress={() => navigation.navigate('Login')}
+          onPress={() => navigation.navigate('Welcome')}
         />
       </View>
     );
@@ -88,8 +95,10 @@ export const RegistrationScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Text style={styles.title}>Create Wallet</Text>
-          <Text style={styles.subtitle}>Get started with a secure individual mobile money wallet</Text>
+          <Text style={styles.title}>Register Customer</Text>
+          <Text style={styles.subtitle}>
+            Create a customer record to begin the controlled onboarding process.
+          </Text>
         </View>
 
         {!!error && (

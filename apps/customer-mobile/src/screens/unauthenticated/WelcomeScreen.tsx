@@ -30,7 +30,7 @@ export const WelcomeScreen: React.FC = () => {
           onPress={() => navigation.navigate('Login')}
         />
         <Button
-          label="Create New Wallet"
+          label="Register Customer"
           style={styles.button}
           variant="outline"
           onPress={() => navigation.navigate('Registration')}

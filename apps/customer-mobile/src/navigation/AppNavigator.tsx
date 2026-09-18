@@ -62,7 +62,7 @@ export const AppNavigator: React.FC = () => {
           <Stack.Screen
             name="Registration"
             component={RegistrationScreen}
-            options={{ title: 'Create Wallet' }}
+            options={{ title: 'Register Customer' }}
           />
         </>
       ) : (

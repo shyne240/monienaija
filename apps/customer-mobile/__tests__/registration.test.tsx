@@ -23,7 +23,7 @@ jest.mock('@react-navigation/native', () => ({
   }),
 }));
 
-describe('Onboarding Registration Screen Tests', () => {
+describe('Customer Registration Screen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -37,7 +37,7 @@ describe('Onboarding Registration Screen Tests', () => {
     expect(getByText('Phone number is required')).toBeTruthy();
   });
 
-  test('should register successfully and display generated Customer ID', async () => {
+  test('creates a canonical customer and communicates the staged activation boundary', async () => {
     const mockApiResponse = {
       id: 'cust-uuid-1111-2222',
       reference: 'MN-08012345678',
@@ -45,7 +45,7 @@ describe('Onboarding Registration Screen Tests', () => {
 
     (ApiClient.post as jest.Mock).mockResolvedValue(mockApiResponse);
 
-    const { getByPlaceholderText, getByText } = render(<RegistrationScreen />);
+    const { getByPlaceholderText, getByText, queryByText } = render(<RegistrationScreen />);
 
     fireEvent.changeText(getByPlaceholderText('e.g. 08012345678'), '08012345678');
     fireEvent.changeText(getByPlaceholderText('e.g. Babajide Alao'), 'Babajide Alao');
@@ -53,19 +53,35 @@ describe('Onboarding Registration Screen Tests', () => {
     fireEvent.press(getByText('Register Account'));
 
     await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalledTimes(1);
       expect(ApiClient.post).toHaveBeenCalledWith('/customers', {
         reference: 'MN-08012345678',
         type: 'INDIVIDUAL',
         status: 'ACTIVE',
         actor: 'Babajide Alao',
       });
-      expect(getByText('Wallet Created Successfully!')).toBeTruthy();
+      expect(getByText('Customer Registration Complete')).toBeTruthy();
+      expect(
+        getByText(
+          'Your customer record has been created. Onboarding must be completed and eligibility confirmed before a customer wallet can be provisioned.',
+        ),
+      ).toBeTruthy();
+      expect(
+        getByText(
+          'No financial wallet or sign-in credential has been created by registration. Keep these details for the controlled onboarding process.',
+        ),
+      ).toBeTruthy();
       expect(getByText('cust-uuid-1111-2222')).toBeTruthy();
     });
 
-    // Tap navigate to login
-    fireEvent.press(getByText('Proceed to Log In'));
-    expect(mockNavigate).toHaveBeenCalledWith('Login');
+    // Registration issues exactly one canonical-customer request. It does not request a wallet,
+    // financial account, deposit, eligibility decision, binding, or credential.
+    expect((ApiClient.post as jest.Mock).mock.calls.map(([path]) => path)).toEqual(['/customers']);
+    expect(queryByText('Wallet Created Successfully!')).toBeNull();
+    expect(queryByText('Proceed to Log In')).toBeNull();
+
+    fireEvent.press(getByText('Return to Welcome'));
+    expect(mockNavigate).toHaveBeenCalledWith('Welcome');
   });
 
   test('should handle duplicate customer reference / 409 conflict correctly', async () => {
