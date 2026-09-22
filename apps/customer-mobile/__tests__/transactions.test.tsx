@@ -28,17 +28,20 @@ describe('Transactions Screen History Tests', () => {
   });
 
   test('should load and render paginated transactions list correctly', async () => {
+    // Server-side wallet transaction view; the screen maps it to the UI model.
     const mockTxResponse = {
       items: [
         {
-          id: 'tx-uuid-1',
-          narration: 'Grocery funding',
-          reference: 'ref-grocery-001',
-          amountMinor: 4500,
+          transferId: 'tx-uuid-1',
+          direction: 'SENT',
+          counterpartyWalletId: 'wallet-account-uuid-2',
+          amountMinor: '4500',
           currency: 'NGN',
-          type: 'TRANSFER_OUT',
-          status: 'SUCCESS',
+          status: 'COMPLETED',
+          reference: 'ref-grocery-001',
+          narration: 'Grocery funding',
           createdAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
         },
       ],
     };
@@ -51,7 +54,10 @@ describe('Transactions Screen History Tests', () => {
 
     await waitFor(() => {
       expect(ApiClient.get).toHaveBeenNthCalledWith(1, '/customers/cust-uuid-777/wallets');
-      expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/wallets/wallet-uuid-777/transactions?page=1&limit=15');
+      expect(ApiClient.get).toHaveBeenNthCalledWith(
+        2,
+        '/customers/cust-uuid-777/wallets/wallet-uuid-777/transactions?page=1&limit=15'
+      );
       expect(getByText('Grocery funding')).toBeTruthy();
       expect(getByText('-₦45.00')).toBeTruthy();
     });

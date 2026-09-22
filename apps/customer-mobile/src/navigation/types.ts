@@ -12,6 +12,9 @@ export type RootStackParamList = {
   Withdraw: undefined;
   Transactions: undefined;
   Profile: undefined;
+  CreatePin: undefined;
+  ChangePin: undefined;
+  ResetPin: undefined;
 };
 
 declare global {

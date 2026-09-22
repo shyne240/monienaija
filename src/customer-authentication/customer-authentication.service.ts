@@ -1103,8 +1103,9 @@ export class CustomerAuthenticationService {
   private async findActiveCredential(
     repository: Repository<CustomerAuthenticationCredential>,
     customerId: string,
+    type: AuthenticationCredentialType = AuthenticationCredentialType.PASSWORD,
   ): Promise<CustomerAuthenticationCredential | null> {
-    const records = await repository.find({ where: { customerId } });
+    const records = await repository.find({ where: { customerId, type } });
     return records.find((record) => this.isNotDeleted(record.deletedAt)) ?? null;
   }
 

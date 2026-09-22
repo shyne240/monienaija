@@ -33,12 +33,19 @@ export const RegistrationScreen: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // Calls actual NestJS customer endpoint: POST /customers
+      // The canonical Nigerian phone is submitted through the phone field so
+      // the server stores it via the CustomerContactMethod architecture
+      // (canonical +234########## with provenance and uniqueness rules).
+      // `reference` remains a registry lookup key only — never the phone
+      // identity. It is deterministically derived so repeated submissions of
+      // the same draft collide safely server-side instead of duplicating.
+      const phoneDigits = phone.replace(/\D/g, '');
       const result = await ApiClient.post<{ id: string; reference: string }>('/customers', {
-        reference: `MN-${phone.trim()}`,
+        reference: `mn-${phoneDigits}`,
         type: 'INDIVIDUAL',
         status: 'ACTIVE',
         actor: name.trim(),
+        phone: phone.trim(),
       });
 
       setRegisteredUser(result);

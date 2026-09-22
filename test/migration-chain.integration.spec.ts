@@ -16,7 +16,7 @@ import {
  */
 describe('migration chain (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  const expectedMigrations = 53;
+  const expectedMigrations = 55;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('migchain');

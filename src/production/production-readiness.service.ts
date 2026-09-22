@@ -3,8 +3,8 @@ import { DataSource } from 'typeorm';
 
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600052';
-const EXPECTED_MIGRATION_NAME = 'CreateA2WorkforceAuthenticationTables1785753600052';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600053';
+const EXPECTED_MIGRATION_NAME = 'CreateCustomerReceivingNumbers1785753600053';
 
 type Row = Record<string, unknown>;
 

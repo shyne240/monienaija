@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+import {
+  DEFAULT_TRANSACTION_PIN_SECURITY_POLICY,
+  PIN_POLICY_BOUNDS,
+} from '../customer-authentication/transaction-pin-policy';
+
 const booleanFromEnvironment = z.enum(['true', 'false']).transform((value) => value === 'true');
 const optionalEnvironmentString = z.preprocess(
   (value) => (value === '' ? undefined : value),
@@ -81,6 +86,30 @@ export const environmentSchema = z
     A6_PARTNER_CIRCUIT_OPEN_SECONDS: z.coerce.number().int().min(1).max(86_400).default(60),
     A6_PARTNER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
     A6_PARTNER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(50).max(30_000).default(3_000),
+    // Customer Transaction PIN security policy — internal MonieNaija V1
+    // configuration parameters (NOT CBN-mandated values). See
+    // src/customer-authentication/transaction-pin-policy.ts; bounds come from
+    // PIN_POLICY_BOUNDS, defaults come from
+    // DEFAULT_TRANSACTION_PIN_SECURITY_POLICY. maxPinLength >= minPinLength is
+    // cross-checked in superRefine below.
+    PIN_MAX_FAILED_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .min(PIN_POLICY_BOUNDS.maxFailedAttempts.min)
+      .max(PIN_POLICY_BOUNDS.maxFailedAttempts.max)
+      .default(DEFAULT_TRANSACTION_PIN_SECURITY_POLICY.maxFailedAttempts),
+    PIN_MIN_LENGTH: z.coerce
+      .number()
+      .int()
+      .min(PIN_POLICY_BOUNDS.pinLength.min)
+      .max(PIN_POLICY_BOUNDS.pinLength.max)
+      .default(DEFAULT_TRANSACTION_PIN_SECURITY_POLICY.minPinLength),
+    PIN_MAX_LENGTH: z.coerce
+      .number()
+      .int()
+      .min(PIN_POLICY_BOUNDS.pinLength.min)
+      .max(PIN_POLICY_BOUNDS.pinLength.max)
+      .default(DEFAULT_TRANSACTION_PIN_SECURITY_POLICY.maxPinLength),
     DB_HOST: z.string().trim().min(1),
     DB_PORT: z.coerce.number().int().min(1).max(65535).default(5432),
     DB_NAME: z.string().trim().min(1),
@@ -90,6 +119,14 @@ export const environmentSchema = z
     DB_SSL_REJECT_UNAUTHORIZED: booleanFromEnvironment.default(true),
   })
   .superRefine((config, context) => {
+    if (config.PIN_MAX_LENGTH < config.PIN_MIN_LENGTH) {
+      context.addIssue({
+        code: 'custom',
+        path: ['PIN_MAX_LENGTH'],
+        message: 'PIN_MAX_LENGTH must be greater than or equal to PIN_MIN_LENGTH',
+      });
+    }
+
     if (
       config.A6_PARTNER_SANDBOX_BASE_URL &&
       config.A6_PARTNER_PRODUCTION_BASE_URL &&

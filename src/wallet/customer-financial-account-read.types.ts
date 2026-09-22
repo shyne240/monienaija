@@ -27,6 +27,12 @@ export interface CustomerFinancialAccountView {
   currency: string | null;
   accountingUnit: string | null;
   balanceMinor: string | null;
+  /**
+   * The wallet's system-issued primary MonieNaija receiving number (exactly
+   * 10 digits), or null when none is active (e.g. PENDING wallet, no
+   * canonical phone). Lookup-only; never a financial-account identifier.
+   */
+  receivingNumber: string | null;
   warnings: string[];
 }
 

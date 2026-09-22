@@ -19,6 +19,7 @@ import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import type { LedgerAccountBalance } from '../src/ledger/ledger.types';
 import type { LedgerService } from '../src/ledger/ledger.service';
+import type { CustomerReceivingNumber } from '../src/customer-wallet/customer-receiving-number.entity';
 import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
 import { CustomerFinancialAccountBindingState } from '../src/wallet/customer-financial-account-binding.enums';
 import { CustomerFinancialAccountReadService } from '../src/wallet/customer-financial-account-read.service';
@@ -120,6 +121,7 @@ interface Fixture {
     bindings: MemoryRepository<CustomerFinancialAccountBinding>;
     wallets: MemoryRepository<WalletAccount>;
     ledgers: MemoryRepository<LedgerAccount>;
+    receivingNumbers: MemoryRepository<CustomerReceivingNumber>;
   };
   authorization: FakeAuthorizationService;
   ledger: FakeLedgerService;
@@ -141,6 +143,7 @@ function makeFixture(): Fixture {
     bindings: new MemoryRepository<CustomerFinancialAccountBinding>(),
     wallets: new MemoryRepository<WalletAccount>(),
     ledgers: new MemoryRepository<LedgerAccount>(),
+    receivingNumbers: new MemoryRepository<CustomerReceivingNumber>(),
   };
   const authorization = new FakeAuthorizationService();
   const ledger = new FakeLedgerService();
@@ -150,6 +153,7 @@ function makeFixture(): Fixture {
     repositories.customerWallets as unknown as Repository<CustomerWallet>,
     repositories.wallets as unknown as Repository<WalletAccount>,
     repositories.ledgers as unknown as Repository<LedgerAccount>,
+    repositories.receivingNumbers as unknown as Repository<CustomerReceivingNumber>,
     ledger as unknown as LedgerService,
     authorization as unknown as AuthorizationService,
   );

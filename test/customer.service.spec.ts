@@ -24,6 +24,7 @@ import {
   CustomerType,
   IdentityDocumentType,
 } from '../src/customer/customer.enums';
+import type { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
 import { CustomerService } from '../src/customer/customer.service';
 
 class MemoryRepository<T extends ObjectLiteral> {
@@ -176,6 +177,9 @@ describe('CustomerService', () => {
       kycRepository as unknown as Repository<CustomerKycAssessment>,
       new MemoryDataSource(manager) as unknown as DataSource,
       audit as unknown as AuditService,
+      {
+        issueForPrimaryWalletIfEligible: jest.fn().mockResolvedValue(null),
+      } as unknown as CustomerReceivingNumberService,
     );
     return { service, audit, repositories };
   }

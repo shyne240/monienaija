@@ -36,7 +36,6 @@ describe('Fund Wallet Screen Tests', () => {
       id: 'wallet-uuid-444',
       type: 'PRIMARY',
       currency: 'NGN',
-      balanceMinor: 10000,
     },
   ];
 
@@ -77,16 +76,17 @@ describe('Fund Wallet Screen Tests', () => {
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenNthCalledWith(
         1,
-        '/deposits',
+        '/customers/cust-uuid-444/deposits',
         expect.objectContaining({
-          walletId: 'wallet-uuid-444',
           amountMinor: '15000',
         }),
         expect.any(Object)
       );
+      // The target WalletAccount is resolved server-side through the binding.
+      expect((ApiClient.post as jest.Mock).mock.calls[0][1].walletId).toBeUndefined();
       expect(ApiClient.post).toHaveBeenNthCalledWith(
         2,
-        '/deposits/dep-uuid-123/complete'
+        '/customers/cust-uuid-444/deposits/dep-uuid-123/complete'
       );
       expect(getByText('Wallet Funded Successfully!')).toBeTruthy();
     });

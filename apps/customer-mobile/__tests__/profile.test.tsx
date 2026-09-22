@@ -23,6 +23,14 @@ jest.mock('../src/store/auth-store', () => ({
   }),
 }));
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    goBack: jest.fn(),
+  }),
+}));
+
 describe('Profile Screen Account Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();

@@ -21,6 +21,18 @@ export class CreateCustomerDto {
   @IsOptional()
   status?: CustomerStatus;
 
+  /**
+   * Optional primary Nigerian phone (local 0NN…, 234…, or +234… forms are all
+   * accepted). Stored canonically through the CustomerContactMethod
+   * architecture; never treated as the customer registry reference.
+   */
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => trim(value))
+  @MinLength(8)
+  @MaxLength(32)
+  phone?: string;
+
   @IsString()
   @Transform(({ value }: { value: unknown }) => trim(value))
   @MinLength(1)

@@ -285,6 +285,50 @@ export class CustomerFinancialAccountBindingService {
     };
   }
 
+  /**
+   * Returns the current binding for a CustomerWallet, regardless of state, or
+   * null when no binding row exists. Read-only lookup used by provisioning
+   * callers that must not create a duplicate binding for the same wallet.
+   */
+  async findByCustomerWalletId(
+    customerWalletId: string,
+  ): Promise<CustomerFinancialAccountBinding | null> {
+    const normalized = customerWalletId.trim().toLowerCase();
+    if (!UUID_PATTERN.test(normalized)) {
+      throw new BadRequestException('customerWalletId must be a UUID');
+    }
+    return this.bindingRepository.findOne({ where: { customerWalletId: normalized } });
+  }
+
+  /**
+   * Binding-establishment entrypoint for callers that already run inside an
+   * outer database transaction (for example the CustomerWallet provisioning
+   * lifecycle). It performs the same normalization, A2 authorization, and
+   * idempotent execution as {@link bind} but writes through the supplied
+   * EntityManager so the binding commits or rolls back atomically with the
+   * caller's unit of work.
+   */
+  async bindInTransaction(
+    manager: EntityManager,
+    command: CustomerFinancialAccountBindingCommand,
+  ): Promise<CustomerFinancialAccountBindingResult> {
+    const normalized = this.normalizeCommand(command);
+    const authorization = await this.authorizationService.authorize(
+      command.principal,
+      CUSTOMER_FINANCIAL_ACCOUNT_BINDING_POLICY,
+      {
+        type: 'customer-financial-account-binding',
+        id: normalized.customerWalletId,
+        customerId: normalized.customerId,
+      },
+    );
+    if (!authorization.allowed) {
+      throw new ForbiddenException(`Authorization denied: ${authorization.reason}`);
+    }
+
+    return this.executeInTransaction(manager, normalized, this.requestHash(normalized));
+  }
+
   async bind(
     command: CustomerFinancialAccountBindingCommand,
   ): Promise<CustomerFinancialAccountBindingResult> {

@@ -14,6 +14,7 @@ import { CustomerAuthenticationModule } from './customer-authentication/customer
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
 import { CustomerComplianceModule } from './customer-compliance/customer-compliance.module';
 import { CustomerEligibilityModule } from './customer-eligibility/customer-eligibility.module';
+import { CustomerFinancialOperationsModule } from './customer-financial-operations/customer-financial-operations.module';
 import { CustomerFundingInstrumentModule } from './customer-funding-instrument/customer-funding-instrument.module';
 import { CustomerPreferenceModule } from './customer-preference/customer-preference.module';
 import { CustomerRiskProfileModule } from './customer-risk-profile/customer-risk-profile.module';
@@ -148,6 +149,7 @@ import { WalletModule } from './wallet/wallet.module';
     B2FJournalGovernanceModule,
     CustomerEligibilityModule,
     CustomerWalletModule,
+    CustomerFinancialOperationsModule,
     CustomerFundingInstrumentModule,
     CustomerPreferenceModule,
     CustomerRiskProfileModule,

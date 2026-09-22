@@ -17,6 +17,9 @@ import { FundWalletScreen } from '../screens/authenticated/FundWalletScreen';
 import { WithdrawScreen } from '../screens/authenticated/WithdrawScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
+import { CreatePinScreen } from '../screens/authenticated/CreatePinScreen';
+import { ChangePinScreen } from '../screens/authenticated/ChangePinScreen';
+import { ResetPinScreen } from '../screens/authenticated/ResetPinScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -97,6 +100,21 @@ export const AppNavigator: React.FC = () => {
             name="Profile"
             component={ProfileScreen}
             options={{ title: 'Profile' }}
+          />
+          <Stack.Screen
+            name="CreatePin"
+            component={CreatePinScreen}
+            options={{ title: 'Create PIN' }}
+          />
+          <Stack.Screen
+            name="ChangePin"
+            component={ChangePinScreen}
+            options={{ title: 'Change PIN' }}
+          />
+          <Stack.Screen
+            name="ResetPin"
+            component={ResetPinScreen}
+            options={{ title: 'Reset PIN' }}
           />
         </>
       )}

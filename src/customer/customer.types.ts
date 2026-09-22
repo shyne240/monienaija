@@ -13,6 +13,12 @@ export interface CreateCustomerCommand {
   type: CustomerType;
   status?: CustomerStatus;
   actor: string;
+  /**
+   * Optional primary Nigerian phone. When present, the customer's primary
+   * PHONE contact method is created atomically with the customer using the
+   * canonical +234########## representation.
+   */
+  phone?: string;
 }
 
 export interface UpdateCustomerCommand {

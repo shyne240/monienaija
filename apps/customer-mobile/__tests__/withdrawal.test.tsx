@@ -36,13 +36,35 @@ describe('Withdrawal Screen Tests', () => {
       id: 'wallet-source-uuid-666',
       type: 'PRIMARY',
       currency: 'NGN',
-      balanceMinor: 20000, // 200.00 Naira
     },
   ];
 
+  // Available balance is read through the financial binding read model.
+  const mockFinancialAccounts = {
+    customerId: 'cust-uuid-666',
+    generatedAt: new Date().toISOString(),
+    accounts: [
+      {
+        bindingId: 'binding-uuid-666',
+        customerWalletId: 'wallet-source-uuid-666',
+        walletAccountId: 'wallet-account-source-uuid-666',
+        bindingState: 'ACTIVE',
+        readState: 'ACTIVE',
+        currency: 'NGN',
+        balanceMinor: '20000', // 200.00 Naira
+        warnings: [],
+      },
+    ],
+    warnings: [],
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
-    (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/financial-accounts')) return Promise.resolve(mockFinancialAccounts);
+      if (url.endsWith('/wallets')) return Promise.resolve(mockWallets);
+      return Promise.resolve([]);
+    });
   });
 
   test('should validate empty bank account details or insufficient balance', async () => {
@@ -75,23 +97,36 @@ describe('Withdrawal Screen Tests', () => {
 
     fireEvent.changeText(getByPlaceholderText('0.00'), '50'); // 50 NGN
     fireEvent.changeText(getByPlaceholderText('e.g. Zenith Bank - 1012345678'), 'Zenith Bank - 1012345678');
-    
+
     fireEvent.press(getByText('Confirm Withdrawal'));
+
+    // Step-up: the withdrawal executes only after transaction-PIN authorization.
+    await waitFor(() => {
+      expect(getByText('Authorize Withdrawal')).toBeTruthy();
+    });
+    fireEvent.changeText(getByPlaceholderText('••••'), '1357');
+    fireEvent.press(getByText('Authorize'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenNthCalledWith(
         1,
-        '/withdrawals',
+        '/customers/cust-uuid-666/withdrawals',
         expect.objectContaining({
-          walletId: 'wallet-source-uuid-666',
           amountMinor: '5000',
           narration: 'Withdraw to Zenith Bank - 1012345678',
+          transactionPin: '1357',
         }),
         expect.any(Object)
       );
+      // The target WalletAccount is resolved server-side through the binding.
+      expect((ApiClient.post as jest.Mock).mock.calls[0][1].walletId).toBeUndefined();
       expect(ApiClient.post).toHaveBeenNthCalledWith(
         2,
-        '/withdrawals/with-uuid-123/complete'
+        '/customers/cust-uuid-666/withdrawals/with-uuid-123/process'
+      );
+      expect(ApiClient.post).toHaveBeenNthCalledWith(
+        3,
+        '/customers/cust-uuid-666/withdrawals/with-uuid-123/complete'
       );
       expect(getByText('Withdrawal Initiated!')).toBeTruthy();
     });

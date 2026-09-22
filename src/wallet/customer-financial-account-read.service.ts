@@ -12,6 +12,8 @@ import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { CustomerFinancialAccountBinding } from './customer-financial-account-binding.entity';
+import { CustomerReceivingNumber } from '../customer-wallet/customer-receiving-number.entity';
+import { CustomerReceivingNumberStatus } from '../customer-wallet/customer-receiving-number.enums';
 import { CustomerFinancialAccountBindingState } from './customer-financial-account-binding.enums';
 import type {
   CustomerFinancialAccountReadCommand,
@@ -42,6 +44,8 @@ export class CustomerFinancialAccountReadService {
     private readonly walletRepository: Repository<WalletAccount>,
     @InjectRepository(LedgerAccount)
     private readonly ledgerAccountRepository: Repository<LedgerAccount>,
+    @InjectRepository(CustomerReceivingNumber)
+    private readonly receivingNumberRepository: Repository<CustomerReceivingNumber>,
     private readonly ledgerService: LedgerService,
     private readonly authorizationService: AuthorizationService,
   ) {}
@@ -86,7 +90,7 @@ export class CustomerFinancialAccountReadService {
 
     for (const customerWallet of customerWallets) {
       if (!boundWalletIds.has(customerWallet.id)) {
-        accounts.push(this.missingBindingView(customerId, customerWallet));
+        accounts.push(await this.missingBindingView(customerId, customerWallet));
         warnings.push(`Customer wallet ${customerWallet.id} has no financial account binding`);
       }
     }
@@ -125,6 +129,14 @@ export class CustomerFinancialAccountReadService {
     customer: Customer,
     binding: CustomerFinancialAccountBinding,
   ): Promise<CustomerFinancialAccountView> {
+    const receivingNumberRow = await this.receivingNumberRepository.findOne({
+      where: {
+        walletId: binding.customerWalletId,
+        status: CustomerReceivingNumberStatus.ACTIVE,
+      },
+    });
+    const receivingNumber = receivingNumberRow?.number ?? null;
+
     const base = {
       bindingId: binding.id,
       customerId: customer.id,
@@ -134,6 +146,7 @@ export class CustomerFinancialAccountReadService {
       bindingState: binding.state,
       currency: binding.currency,
       accountingUnit: binding.accountingUnit,
+      receivingNumber,
     };
 
     if (binding.state !== CustomerFinancialAccountBindingState.ACTIVE) {
@@ -248,16 +261,23 @@ export class CustomerFinancialAccountReadService {
     return reasons;
   }
 
-  private missingBindingView(
+  private async missingBindingView(
     customerId: string,
     customerWallet: CustomerWallet,
-  ): CustomerFinancialAccountView {
+  ): Promise<CustomerFinancialAccountView> {
     const warning = `Customer wallet ${customerWallet.id} has no financial account binding`;
+    const receivingNumberRow = await this.receivingNumberRepository.findOne({
+      where: {
+        walletId: customerWallet.id,
+        status: CustomerReceivingNumberStatus.ACTIVE,
+      },
+    });
     return {
       bindingId: null,
       customerId,
       customerWalletId: customerWallet.id,
       walletAccountId: null,
+      receivingNumber: receivingNumberRow?.number ?? null,
       ledgerAccountId: null,
       bindingState: null,
       readState: 'MISSING_BINDING',

@@ -10,6 +10,13 @@ import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import {
+  balanceForCustomerWallet,
+  fetchFinancialAccounts,
+  fetchWalletTransactions,
+  receivingNumberForCustomerWallet,
+  type CustomerTransaction,
+} from '../../services/financial-accounts';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -20,18 +27,6 @@ interface Wallet {
   type: string;
   currency: string;
   status: string;
-  balanceMinor: number;
-}
-
-interface Transaction {
-  id: string;
-  narration: string;
-  reference: string;
-  amountMinor: number;
-  currency: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED';
-  createdAt: string;
 }
 
 export const HomeScreen: React.FC = () => {
@@ -39,7 +34,9 @@ export const HomeScreen: React.FC = () => {
   const { customerId, logout } = useAuthStore();
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [balanceMinor, setBalanceMinor] = useState(0);
+  const [receivingNumber, setReceivingNumber] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<CustomerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
@@ -49,21 +46,34 @@ export const HomeScreen: React.FC = () => {
     if (!customerId) return;
     try {
       setError('');
-      // Fetch user's wallets: GET /customers/:id/wallets
+      // Fetch user's wallets: GET /customers/:id/wallets (registry records)
       const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
       setWallets(walletList);
 
-      if (walletList.length > 0 && walletList[0]?.id) {
-        // Fetch recent transactions for the primary wallet: GET /wallets/:walletId/transactions
+      const primary = walletList.find((wallet) => wallet.type === 'PRIMARY') || walletList[0];
+      if (primary?.id) {
+        // Balances and transaction history resolve through the customer's
+        // financial binding, using the CustomerWallet registry id only as the
+        // customer-scoped key. The server binds it to the real financial
+        // WalletAccount.
         try {
-          const txHistory = await ApiClient.get<{ items: Transaction[] }>(
-            `/wallets/${walletList[0].id}/transactions?page=1&limit=5`,
-          );
-          setTransactions(txHistory.items || []);
+          const accounts = await fetchFinancialAccounts(customerId);
+          setBalanceMinor(balanceForCustomerWallet(accounts, primary.id));
+          setReceivingNumber(receivingNumberForCustomerWallet(accounts, primary.id));
+        } catch {
+          setBalanceMinor(0);
+          setReceivingNumber(null);
+        }
+        try {
+          const txHistory = await fetchWalletTransactions(customerId, primary.id, 1, 5);
+          setTransactions(txHistory.items);
         } catch {
           // If transaction history fails/empty, fallback gracefully
           setTransactions([]);
         }
+      } else {
+        setBalanceMinor(0);
+        setTransactions([]);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to fetch wallet information.');
@@ -107,7 +117,7 @@ export const HomeScreen: React.FC = () => {
   }
 
   const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
-  const balance = primaryWallet ? primaryWallet.balanceMinor / 100 : 0;
+  const balance = balanceMinor / 100;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -155,6 +165,11 @@ export const HomeScreen: React.FC = () => {
                     maximumFractionDigits: 2,
                   })}
                 </Text>
+                {receivingNumber ? (
+                  <Text style={styles.receivingNumberLabel}>
+                    Your MonieNaija Number: {receivingNumber}
+                  </Text>
+                ) : null}
                 <Text style={styles.walletIdLabel}>Wallet ID: {primaryWallet.id}</Text>
               </Card>
             )}
@@ -261,6 +276,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.neutral.white,
     marginBottom: theme.spacing.md,
+  },
+  receivingNumberLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.primary.main,
+    fontWeight: theme.typography.weights.semibold,
+    marginTop: theme.spacing.xs,
   },
   walletIdLabel: {
     fontSize: theme.typography.sizes.xs,

@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
 
+import { CustomerReceivingNumberService } from '../customer-wallet/customer-receiving-number.service';
 import { AuditService } from '../operations/audit.service';
 import { ContactMethodType, CustomerKycStatus, CustomerStatus } from './customer.enums';
 import { Customer } from './customer.entity';
@@ -17,6 +18,7 @@ import { CustomerContactMethod } from './customer-contact-method.entity';
 import { CustomerIdentityDocument } from './customer-identity-document.entity';
 import { CustomerKycAssessment } from './customer-kyc-assessment.entity';
 import { CustomerProfile } from './customer-profile.entity';
+import { canonicalizeNigerianPhone, isNigerianShaped } from './nigerian-phone';
 import type {
   CreateAddressCommand,
   CreateContactCommand,
@@ -44,6 +46,7 @@ export class CustomerService {
     private readonly kycRepository: Repository<CustomerKycAssessment>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly receivingNumberService: CustomerReceivingNumberService,
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
@@ -73,12 +76,40 @@ export class CustomerService {
           undefined,
           this.auditCustomer(saved),
         );
+        if (command.phone !== undefined) {
+          // Canonical phone identity lives in customer_contact_methods; the
+          // customer.reference registry string is never the phone identity.
+          const canonical = this.normalizeContact(ContactMethodType.PHONE, command.phone);
+          const contact = await manager.getRepository(CustomerContactMethod).save(
+            manager.getRepository(CustomerContactMethod).create({
+              id: randomUUID(),
+              customerId: saved.id,
+              type: ContactMethodType.PHONE,
+              value: canonical,
+              normalizedValue: canonical,
+              isPrimary: true,
+              verifiedAt: null,
+              deletedAt: null,
+            }),
+          );
+          await this.audit(
+            manager,
+            'CUSTOMER_CONTACT_METHOD',
+            contact.id,
+            'CREATED',
+            actor,
+            undefined,
+            this.serializableValues(contact),
+          );
+        }
         return saved;
       });
       return customer;
     } catch (error) {
       if (this.isUniqueViolation(error)) {
-        throw new ConflictException('Customer reference already exists');
+        throw new ConflictException(
+          'Customer reference or phone contact already exists for another customer',
+        );
       }
       throw error;
     }
@@ -259,6 +290,16 @@ export class CustomerService {
           undefined,
           this.serializableValues(contact),
         );
+        // When this is the customer's first canonical Nigerian phone, the
+        // primary ACTIVE wallet now becomes eligible for its system-issued
+        // receiving number. Collisions surface as explicit conflicts.
+        if (command.type === ContactMethodType.PHONE) {
+          await this.receivingNumberService.issueForPrimaryWalletIfEligible(
+            manager,
+            customerId,
+            actor,
+          );
+        }
         return contact;
       });
     } catch (error) {
@@ -498,6 +539,14 @@ export class CustomerService {
         throw new BadRequestException('Email contact method is invalid');
       }
       return normalized;
+    }
+    // V1: Nigerian-shaped phone inputs (07065111760, 2347065111760,
+    // +2347065111760) resolve to ONE canonical representation (+234 + NSN).
+    // Invalid Nigerian shapes are rejected explicitly rather than silently
+    // stored under a different spelling, which would break identity
+    // uniqueness (and downstream receiving-number derivation).
+    if (isNigerianShaped(value)) {
+      return canonicalizeNigerianPhone(value);
     }
     const normalized = value.replace(/[\s()-]/g, '');
     if (!/^\+?[1-9]\d{7,14}$/.test(normalized)) {

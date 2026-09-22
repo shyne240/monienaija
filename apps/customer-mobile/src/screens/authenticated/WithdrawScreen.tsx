@@ -8,8 +8,14 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { AmountInput } from '../../components/AmountInput';
 import { Card } from '../../components/Card';
+import { TransactionPinDialog } from '../../components/TransactionPinDialog';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { classifyPinError } from '../../services/transaction-pin';
+import {
+  balanceForCustomerWallet,
+  fetchFinancialAccounts,
+} from '../../services/financial-accounts';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Withdraw'>;
@@ -18,7 +24,6 @@ interface Wallet {
   id: string;
   type: string;
   currency: string;
-  balanceMinor: number;
 }
 
 export const WithdrawScreen: React.FC = () => {
@@ -26,6 +31,7 @@ export const WithdrawScreen: React.FC = () => {
   const { customerId } = useAuthStore();
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [availableBalanceMinor, setAvailableBalanceMinor] = useState(0);
   const [amountStr, setAmountStr] = useState('');
   const [amountMinor, setAmountMinor] = useState(0);
   const [bankDetails, setBankDetails] = useState('');
@@ -33,6 +39,11 @@ export const WithdrawScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState('');
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  // Transaction PIN lives only in component state, is attached to the
+  // withdrawal payload, and is cleared after every submission attempt.
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
 
   useEffect(() => {
     if (customerId) {
@@ -46,6 +57,15 @@ export const WithdrawScreen: React.FC = () => {
       try {
         const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
         setWallets(walletList);
+        const primary = walletList.find((w) => w.type === 'PRIMARY') || walletList[0];
+        if (primary?.id) {
+          try {
+            const accounts = await fetchFinancialAccounts(customerId);
+            setAvailableBalanceMinor(balanceForCustomerWallet(accounts, primary.id));
+          } catch {
+            setAvailableBalanceMinor(0);
+          }
+        }
       } catch (err: any) {
         setError('Failed to load your wallet information.');
       }
@@ -55,7 +75,7 @@ export const WithdrawScreen: React.FC = () => {
 
   const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
 
-  const handleWithdraw = async () => {
+  const handleWithdraw = () => {
     if (!primaryWallet) {
       setError('No active primary wallet found to withdraw from.');
       return;
@@ -64,7 +84,7 @@ export const WithdrawScreen: React.FC = () => {
       setError('Amount must be greater than zero.');
       return;
     }
-    if (primaryWallet.balanceMinor < amountMinor) {
+    if (availableBalanceMinor < amountMinor) {
       setError('Insufficient funds in wallet.');
       return;
     }
@@ -73,31 +93,60 @@ export const WithdrawScreen: React.FC = () => {
       return;
     }
 
+    setError('');
+    setPinError('');
+    // Step-up authorization: the withdrawal itself executes only after the
+    // customer authorizes it with their transaction PIN.
+    setShowPinDialog(true);
+  };
+
+  const handleAuthorizeWithdrawal = async () => {
     setIsLoading(true);
     setError('');
+    setPinError('');
 
     try {
-      // Step 1: Create the withdrawal request: POST /withdrawals
-      const withdrawalResult = await ApiClient.post<{ id: string }>('/withdrawals', {
-        walletId: primaryWallet.id,
-        amountMinor: String(amountMinor),
-        currency: 'NGN',
-        reference: idempotencyKey,
-        narration: `Withdraw to ${bankDetails.trim()}`,
-      }, {
-        idempotencyKey,
-      });
+      // Step 1: Create the withdrawal request against the customer's bound
+      // financial wallet (resolved server-side through the financial binding).
+      const withdrawalResult = await ApiClient.post<{ id: string }>(
+        `/customers/${customerId}/withdrawals`,
+        {
+          amountMinor: String(amountMinor),
+          currency: 'NGN',
+          transactionPin: pin,
+          reference: idempotencyKey,
+          narration: `Withdraw to ${bankDetails.trim()}`,
+        },
+        {
+          idempotencyKey,
+        },
+      );
 
-      // Step 2: Since we are in sandbox mode, immediately simulate the withdrawal fulfillment:
-      // POST /withdrawals/:id/complete
+      // Step 2: Since we are in sandbox mode, immediately simulate the withdrawal fulfillment
+      // through the generic lifecycle: PENDING -> PROCESSING -> COMPLETED. The
+      // downstream lifecycle is provider-side and never re-prompts the PIN.
       if (withdrawalResult && withdrawalResult.id) {
-        await ApiClient.post(`/withdrawals/${withdrawalResult.id}/complete`);
+        await ApiClient.post(
+          `/customers/${customerId}/withdrawals/${withdrawalResult.id}/process`,
+        );
+        await ApiClient.post(
+          `/customers/${customerId}/withdrawals/${withdrawalResult.id}/complete`,
+        );
       }
 
+      setShowPinDialog(false);
       setSuccess(true);
     } catch (err: any) {
-      setError(err?.message || 'Withdrawal failed. Please try again.');
+      const classified = classifyPinError(err);
+      if (classified.kind !== 'UNKNOWN') {
+        setPinError(classified.message);
+      } else {
+        setShowPinDialog(false);
+        setError(err?.message || 'Withdrawal failed. Please try again.');
+      }
     } finally {
+      // The plaintext PIN never survives a submission attempt.
+      setPin('');
       setIsLoading(false);
     }
   };
@@ -146,14 +195,14 @@ export const WithdrawScreen: React.FC = () => {
           <View style={styles.balanceContainer}>
             <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
             <Text style={styles.balanceValue}>
-              ₦{(primaryWallet.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              ₦{(availableBalanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         )}
 
         <View style={styles.form}>
           <AmountInput
-            error={amountMinor > 0 && primaryWallet && primaryWallet.balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
+            error={amountMinor > 0 && primaryWallet && availableBalanceMinor < amountMinor ? 'Insufficient funds' : undefined}
             label="Amount to Withdraw"
             value={amountStr}
             onChangeValue={(str, minor) => {
@@ -180,6 +229,25 @@ export const WithdrawScreen: React.FC = () => {
             onPress={handleWithdraw}
           />
         </View>
+
+        <TransactionPinDialog
+          errorMessage={pinError}
+          isLoading={isLoading}
+          message={`Withdraw ₦${parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} to ${bankDetails.trim() || 'your bank account'}?`}
+          pin={pin}
+          title="Authorize Withdrawal"
+          visible={showPinDialog}
+          onAuthorize={handleAuthorizeWithdrawal}
+          onCancel={() => {
+            setShowPinDialog(false);
+            setPin('');
+            setPinError('');
+          }}
+          onPinChange={(next) => {
+            setPin(next);
+            if (pinError) setPinError('');
+          }}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );

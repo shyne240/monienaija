@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
@@ -7,6 +9,10 @@ import { Card } from '../../components/Card';
 import { LoadingState } from '../../components/LoadingState';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { getPinStatus } from '../../services/transaction-pin';
+import type { RootStackParamList } from '../../navigation/types';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
 
 interface CustomerProfile {
   id: string;
@@ -18,10 +24,12 @@ interface CustomerProfile {
 }
 
 export const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation<NavigationProp>();
   const { customerId, logout } = useAuthStore();
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pinConfigured, setPinConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -33,6 +41,13 @@ export const ProfileScreen: React.FC = () => {
         setError('Failed to load profile details.');
       } finally {
         setIsLoading(false);
+      }
+      // PIN status is posture metadata only (configured/locked), never the PIN.
+      try {
+        const status = await getPinStatus(customerId);
+        setPinConfigured(status.configured);
+      } catch {
+        setPinConfigured(null);
       }
     };
     fetchProfile();
@@ -93,6 +108,37 @@ export const ProfileScreen: React.FC = () => {
               {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-NG') : 'N/A'}
             </Text>
           </View>
+        </Card>
+
+        <Card variant="flat" style={styles.securityCard}>
+          <Text style={styles.sectionTitle}>Security</Text>
+          <Text style={styles.securityHint}>
+            {pinConfigured === null
+              ? 'Transaction PIN status unavailable.'
+              : pinConfigured
+                ? 'Transaction PIN is active for transfers and withdrawals.'
+                : 'No transaction PIN yet. Create one to authorize transfers and withdrawals.'}
+          </Text>
+          {pinConfigured === false ? (
+            <Button
+              label="Create Transaction PIN"
+              style={styles.securityButton}
+              onPress={() => navigation.navigate('CreatePin')}
+            />
+          ) : (
+            <Button
+              label="Change Transaction PIN"
+              style={styles.securityButton}
+              onPress={() => navigation.navigate('ChangePin')}
+            />
+          )}
+          <Button
+            label="Reset Transaction PIN"
+            size="small"
+            style={styles.securityButton}
+            variant="outline"
+            onPress={() => navigation.navigate('ResetPin')}
+          />
         </Card>
 
         <Button
@@ -176,6 +222,19 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: theme.colors.neutral.lightGray,
     marginVertical: theme.spacing.xs,
+  },
+  securityCard: {
+    width: '100%',
+    marginBottom: theme.spacing.lg,
+    padding: theme.spacing.md,
+  },
+  securityHint: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.slate,
+    marginBottom: theme.spacing.md,
+  },
+  securityButton: {
+    marginTop: theme.spacing.xs,
   },
   logoutBtn: {
     width: '100%',

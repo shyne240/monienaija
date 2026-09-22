@@ -17,12 +17,19 @@ import {
 } from './customer-authentication.enums';
 
 @Entity({ name: 'customer_authentication_credentials' })
-@Index('uq_customer_authentication_credentials_active_customer', ['customerId'], {
-  unique: true,
-  where: 'deleted_at IS NULL',
-})
+@Index(
+  'uq_customer_authentication_credentials_active_customer',
+  ['customerId', 'type'],
+  {
+    unique: true,
+    where: 'deleted_at IS NULL',
+  },
+)
 @Index('idx_customer_authentication_credentials_customer_status', ['customerId', 'status'])
-@Check('chk_customer_authentication_credentials_type', "credential_type IN ('PASSWORD')")
+@Check(
+  'chk_customer_authentication_credentials_type',
+  "credential_type IN ('PASSWORD', 'PIN')",
+)
 @Check(
   'chk_customer_authentication_credentials_status',
   "status IN ('PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED')",

@@ -27,6 +27,7 @@ import {
   CustomerWalletType,
   WalletProvisioningHistoryAction,
 } from '../src/customer-wallet/customer-wallet.enums';
+import type { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
 import { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
 import { CreateCustomerWalletDto } from '../src/customer-wallet/dto/create-customer-wallet.dto';
 import { CreateWalletAliasDto } from '../src/customer-wallet/dto/create-wallet-alias.dto';
@@ -34,6 +35,12 @@ import { WalletAlias } from '../src/customer-wallet/wallet-alias.entity';
 import { WalletOwnership } from '../src/customer-wallet/wallet-ownership.entity';
 import { WalletProvisioningHistory } from '../src/customer-wallet/wallet-provisioning-history.entity';
 import type { AuditService } from '../src/operations/audit.service';
+import { CustomerFinancialAccountBindingMode } from '../src/wallet/customer-financial-account-binding.enums';
+import type { CustomerFinancialAccountBindingService } from '../src/wallet/customer-financial-account-binding.service';
+import type {
+  CustomerFinancialAccountBindingCommand,
+  CustomerFinancialAccountBindingResult,
+} from '../src/wallet/customer-financial-account-binding.types';
 
 class MemoryRepository<T extends ObjectLiteral> {
   readonly records = new Map<string, T>();
@@ -132,6 +139,27 @@ describe('CustomerWalletService', () => {
     ]);
     const dataSource = new MemoryDataSource(new MemoryManager(repositories));
     const audit = { record: jest.fn().mockResolvedValue({}) };
+    const bindingRows = new Map<string, { id: string; customerWalletId: string }>();
+    const bindingService = {
+      findByCustomerWalletId: jest.fn((customerWalletId: string) => {
+        const row = bindingRows.get(customerWalletId.trim().toLowerCase());
+        return Promise.resolve(row ?? null);
+      }),
+      bindInTransaction: jest.fn(
+        (_manager: unknown, command: CustomerFinancialAccountBindingCommand) => {
+          const row = {
+            id: `binding-${command.customerWalletId}`,
+            customerWalletId: command.customerWalletId,
+          };
+          bindingRows.set(command.customerWalletId, row);
+          const result: Partial<CustomerFinancialAccountBindingResult> = {
+            bindingId: row.id,
+            outcome: 'PROVISIONED_AND_BOUND',
+          };
+          return Promise.resolve(result as CustomerFinancialAccountBindingResult);
+        },
+      ),
+    };
     const service = new CustomerWalletService(
       walletRepository as unknown as Repository<CustomerWallet>,
       historyRepository as unknown as Repository<WalletProvisioningHistory>,
@@ -142,10 +170,17 @@ describe('CustomerWalletService', () => {
       eligibilityRepository as unknown as Repository<CustomerEligibility>,
       dataSource as unknown as DataSource,
       audit as unknown as AuditService,
+      bindingService as unknown as CustomerFinancialAccountBindingService,
+      {
+        issueInTransaction: jest.fn().mockResolvedValue(null),
+        issueForPrimaryWalletIfEligible: jest.fn().mockResolvedValue(null),
+      } as unknown as CustomerReceivingNumberService,
     );
     return {
       service,
       audit,
+      bindingService,
+      bindingRows,
       repositories: {
         customerRepository,
         onboardingRepository,
@@ -346,5 +381,102 @@ describe('CustomerWalletService', () => {
       }),
     );
     expect(aliasErrors.some((error) => error.property === 'alias')).toBe(true);
+  });
+
+  it('restricts the customer-facing wallet DTO to PRIMARY NGN wallets (V1)', async () => {
+    const nonPrimaryErrors = await validate(
+      plainToInstance(CreateCustomerWalletDto, {
+        type: CustomerWalletType.BUSINESS,
+        currency: 'NGN',
+        actor: 'wallet-ops',
+      }),
+    );
+    expect(nonPrimaryErrors.some((error) => error.property === 'type')).toBe(true);
+
+    const nonNgnErrors = await validate(
+      plainToInstance(CreateCustomerWalletDto, {
+        type: CustomerWalletType.PRIMARY,
+        currency: 'USD',
+        actor: 'wallet-ops',
+      }),
+    );
+    expect(nonNgnErrors.some((error) => error.property === 'currency')).toBe(true);
+
+    const validErrors = await validate(
+      plainToInstance(CreateCustomerWalletDto, {
+        type: CustomerWalletType.PRIMARY,
+        currency: 'ngn',
+        actor: 'wallet-ops',
+      }),
+    );
+    expect(validErrors).toHaveLength(0);
+  });
+
+  it('establishes the financial binding atomically when provisioning an ACTIVE wallet', async () => {
+    const testFixture = fixture();
+    const customer = await createCustomer(testFixture);
+    await makeEligible(testFixture, customer.id);
+
+    const wallet = await testFixture.service.createWallet(customer.id, {
+      type: CustomerWalletType.PRIMARY,
+      currency: 'NGN',
+      status: CustomerWalletStatus.ACTIVE,
+      actor: 'wallet-ops',
+    });
+
+    expect(testFixture.bindingService.bindInTransaction).toHaveBeenCalledTimes(1);
+    const [managerArg, commandArg] = testFixture.bindingService.bindInTransaction.mock.calls[0]!;
+    expect(managerArg).toBeDefined();
+    expect(commandArg.mode).toBe(CustomerFinancialAccountBindingMode.PROVISION_NEW);
+    expect(commandArg.customerId).toBe(customer.id);
+    expect(commandArg.customerWalletId).toBe(wallet.id);
+    expect(commandArg.currency).toBe('NGN');
+    expect(commandArg.principal.type).toBe('SERVICE');
+    expect(commandArg.principal.scopes).toContain('wallet:account-binding:write');
+    expect(commandArg.idempotencyKey).toBe(`A3-CW-BIND-V1:${wallet.id}`);
+
+    const history = await testFixture.service.listHistory(customer.id, wallet.id);
+    const provisioned = history.find(
+      (entry) => entry.action === WalletProvisioningHistoryAction.PROVISIONED,
+    );
+    expect(provisioned?.metadata).toMatchObject({
+      financialAccountBindingId: `binding-${wallet.id}`,
+    });
+  });
+
+  it('establishes the financial binding exactly once across activation and re-activation', async () => {
+    const testFixture = fixture();
+    const customer = await createCustomer(testFixture);
+    await makeEligible(testFixture, customer.id);
+    const wallet = await testFixture.service.createWallet(customer.id, {
+      type: CustomerWalletType.PRIMARY,
+      currency: 'NGN',
+      actor: 'wallet-ops',
+    });
+    expect(testFixture.bindingService.bindInTransaction).not.toHaveBeenCalled();
+
+    await testFixture.service.updateWallet(customer.id, wallet.id, {
+      status: CustomerWalletStatus.ACTIVE,
+      actor: 'wallet-ops',
+    });
+    expect(testFixture.bindingService.bindInTransaction).toHaveBeenCalledTimes(1);
+
+    await testFixture.service.updateWallet(customer.id, wallet.id, {
+      status: CustomerWalletStatus.SUSPENDED,
+      actor: 'wallet-ops',
+    });
+    await testFixture.service.updateWallet(customer.id, wallet.id, {
+      status: CustomerWalletStatus.ACTIVE,
+      actor: 'wallet-ops',
+    });
+    expect(testFixture.bindingService.bindInTransaction).toHaveBeenCalledTimes(1);
+
+    const history = await testFixture.service.listHistory(customer.id, wallet.id);
+    const firstActivation = history
+      .filter((entry) => entry.action === WalletProvisioningHistoryAction.STATUS_CHANGED)
+      .find((entry) => entry.newStatus === CustomerWalletStatus.ACTIVE);
+    expect(firstActivation?.metadata).toMatchObject({
+      financialAccountBindingId: `binding-${wallet.id}`,
+    });
   });
 });

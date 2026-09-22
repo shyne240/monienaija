@@ -37,17 +37,37 @@ describe('HomeScreen Dashboard Tests', () => {
         type: 'PRIMARY',
         currency: 'NGN',
         status: 'ACTIVE',
-        balanceMinor: 250000, // 2500.00 Naira
       },
     ];
+
+    // Balance comes from the financial binding read model, not the wallet registry.
+    const mockFinancialAccounts = {
+      customerId: 'test-customer-uuid',
+      generatedAt: new Date().toISOString(),
+      accounts: [
+        {
+          bindingId: 'binding-uuid-999',
+          customerWalletId: 'wallet-uuid-999',
+          walletAccountId: 'wallet-account-uuid-999',
+          bindingState: 'ACTIVE',
+          readState: 'ACTIVE',
+          currency: 'NGN',
+          balanceMinor: '250000', // 2500.00 Naira
+          receivingNumber: '7065111760', // system-issued primary MonieNaija number
+          warnings: [],
+        },
+      ],
+      warnings: [],
+    };
 
     const mockTxHistory = {
       items: [],
     };
 
     (ApiClient.get as jest.Mock).mockImplementation((url) => {
-      if (url.includes('/wallets?')) return Promise.resolve(mockTxHistory);
-      if (url.includes('/wallets')) return Promise.resolve(mockWallets);
+      if (url.includes('/financial-accounts')) return Promise.resolve(mockFinancialAccounts);
+      if (url.includes('/transactions')) return Promise.resolve(mockTxHistory);
+      if (url.endsWith('/wallets')) return Promise.resolve(mockWallets);
       return Promise.resolve([]);
     });
 
@@ -57,6 +77,8 @@ describe('HomeScreen Dashboard Tests', () => {
       // 2,500.00 Naira
       expect(getByText('₦2,500.00')).toBeTruthy();
       expect(getByText('Wallet ID: wallet-uuid-999')).toBeTruthy();
+      // System-issued primary MonieNaija receiving number for the ACTIVE wallet
+      expect(getByText('Your MonieNaija Number: 7065111760')).toBeTruthy();
     });
   });
 

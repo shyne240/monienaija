@@ -3,6 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { Customer } from '../customer/customer.entity';
+import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
+import { CustomerProfile } from '../customer/customer-profile.entity';
+import { CustomerReceivingNumber } from '../customer-wallet/customer-receiving-number.entity';
 import { CustomerWallet } from '../customer-wallet/customer-wallet.entity';
 import { WalletOwnership } from '../customer-wallet/wallet-ownership.entity';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
@@ -13,6 +16,8 @@ import { CustomerFinancialAccountBinding } from './customer-financial-account-bi
 import { CustomerFinancialAccountBindingRepairService } from './customer-financial-account-binding-repair.service';
 import { CustomerFinancialAccountBindingService } from './customer-financial-account-binding.service';
 import { CustomerFinancialAccountReadService } from './customer-financial-account-read.service';
+import { CustomerFinancialAccountResolutionService } from './customer-financial-account-resolution.service';
+import { CustomerRecipientResolutionService } from './customer-recipient-resolution.service';
 import { WalletAccount } from './wallet-account.entity';
 import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
@@ -24,7 +29,10 @@ import { WalletService } from './wallet.service';
     forwardRef(() => ReconciliationModule),
     TypeOrmModule.forFeature([
       Customer,
+      CustomerContactMethod,
+      CustomerProfile,
       CustomerWallet,
+      CustomerReceivingNumber,
       WalletOwnership,
       LedgerAccount,
       LedgerLine,
@@ -37,12 +45,16 @@ import { WalletService } from './wallet.service';
     WalletService,
     CustomerFinancialAccountBindingService,
     CustomerFinancialAccountReadService,
+    CustomerFinancialAccountResolutionService,
+    CustomerRecipientResolutionService,
     CustomerFinancialAccountBindingRepairService,
   ],
   exports: [
     WalletService,
     CustomerFinancialAccountBindingService,
     CustomerFinancialAccountReadService,
+    CustomerFinancialAccountResolutionService,
+    CustomerRecipientResolutionService,
     CustomerFinancialAccountBindingRepairService,
   ],
 })

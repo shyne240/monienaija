@@ -18,7 +18,6 @@ interface Wallet {
   id: string;
   type: string;
   currency: string;
-  balanceMinor: number;
 }
 
 export const FundWalletScreen: React.FC = () => {
@@ -69,21 +68,25 @@ export const FundWalletScreen: React.FC = () => {
     setError('');
 
     try {
-      // Step 1: Create the deposit: POST /deposits
-      const depositResult = await ApiClient.post<{ id: string }>('/deposits', {
-        walletId: primaryWallet.id,
-        amountMinor: String(amountMinor),
-        currency: 'NGN',
-        reference: idempotencyKey,
-        narration: narration.trim() || 'Wallet Funding',
-      }, {
-        idempotencyKey,
-      });
+      // Step 1: Create the deposit against the customer's bound financial
+      // wallet (resolved server-side through the financial binding).
+      const depositResult = await ApiClient.post<{ id: string }>(
+        `/customers/${customerId}/deposits`,
+        {
+          amountMinor: String(amountMinor),
+          currency: 'NGN',
+          reference: idempotencyKey,
+          narration: narration.trim() || 'Wallet Funding',
+        },
+        {
+          idempotencyKey,
+        },
+      );
 
       // Step 2: Since we are in sandbox/mock mode and do not wait for payment provider rails,
-      // simulate/execute the sandbox payment completion immediately: POST /deposits/:id/complete
+      // simulate/execute the sandbox payment completion immediately.
       if (depositResult && depositResult.id) {
-        await ApiClient.post(`/deposits/${depositResult.id}/complete`);
+        await ApiClient.post(`/customers/${customerId}/deposits/${depositResult.id}/complete`);
       }
 
       setSuccess(true);

@@ -40,7 +40,7 @@ describe('Onboarding Registration Screen Tests', () => {
   test('should register successfully and display generated Customer ID', async () => {
     const mockApiResponse = {
       id: 'cust-uuid-1111-2222',
-      reference: 'MN-08012345678',
+      reference: 'mn-08012345678',
     };
 
     (ApiClient.post as jest.Mock).mockResolvedValue(mockApiResponse);
@@ -54,10 +54,11 @@ describe('Onboarding Registration Screen Tests', () => {
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/customers', {
-        reference: 'MN-08012345678',
+        reference: 'mn-08012345678',
         type: 'INDIVIDUAL',
         status: 'ACTIVE',
         actor: 'Babajide Alao',
+        phone: '08012345678', // canonical phone identity goes through CustomerContactMethod
       });
       expect(getByText('Wallet Created Successfully!')).toBeTruthy();
       expect(getByText('cust-uuid-1111-2222')).toBeTruthy();

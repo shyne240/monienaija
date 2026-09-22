@@ -7,27 +7,20 @@ import { LoadingState } from '../../components/LoadingState';
 import { Button } from '../../components/Button';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import {
+  fetchWalletTransactions,
+  type CustomerTransaction,
+} from '../../services/financial-accounts';
 
 interface Wallet {
   id: string;
   type: string;
 }
 
-interface Transaction {
-  id: string;
-  narration: string;
-  reference: string;
-  amountMinor: number;
-  currency: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED';
-  createdAt: string;
-}
-
 export const TransactionsScreen: React.FC = () => {
   const { customerId } = useAuthStore();
   const [walletId, setWalletId] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<CustomerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -53,10 +46,9 @@ export const TransactionsScreen: React.FC = () => {
   };
 
   const fetchTransactions = async (wId: string, pageNum: number, reset = false) => {
+    if (!customerId) return;
     try {
-      const result = await ApiClient.get<{ items: Transaction[] }>(
-        `/wallets/${wId}/transactions?page=${pageNum}&limit=15`,
-      );
+      const result = await fetchWalletTransactions(customerId, wId, pageNum, 15);
       const items = result.items || [];
       if (reset) {
         setTransactions(items);

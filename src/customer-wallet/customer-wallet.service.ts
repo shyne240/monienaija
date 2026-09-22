@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { normalizeCurrency } from '../common/money';
 import { Customer } from '../customer/customer.entity';
 import { CustomerEligibilityStatus } from '../customer-eligibility/customer-eligibility.enums';
@@ -16,6 +17,9 @@ import { CustomerEligibility } from '../customer-eligibility/customer-eligibilit
 import { CustomerOnboardingStatus } from '../customer-onboarding/customer-onboarding.enums';
 import { CustomerOnboarding } from '../customer-onboarding/customer-onboarding.entity';
 import { AuditService } from '../operations/audit.service';
+import { CustomerFinancialAccountBindingService } from '../wallet/customer-financial-account-binding.service';
+import { CustomerFinancialAccountBindingMode } from '../wallet/customer-financial-account-binding.enums';
+import type { CustomerFinancialAccountBindingResult } from '../wallet/customer-financial-account-binding.types';
 import { CustomerWallet } from './customer-wallet.entity';
 import {
   CustomerWalletStatus,
@@ -28,9 +32,25 @@ import type {
   CustomerWalletView,
   UpdateCustomerWalletCommand,
 } from './customer-wallet.types';
+import { CustomerReceivingNumberService } from './customer-receiving-number.service';
 import { WalletAlias } from './wallet-alias.entity';
 import { WalletOwnership } from './wallet-ownership.entity';
 import { WalletProvisioningHistory } from './wallet-provisioning-history.entity';
+
+/**
+ * Internal principal used when the CustomerWallet provisioning lifecycle
+ * establishes the financial binding. The customer never calls the binding
+ * command directly: activation of a CustomerWallet is the approved lifecycle
+ * event, and the system performs the binding on behalf of that event with the
+ * narrow wallet:account-binding:write scope.
+ */
+const CUSTOMER_WALLET_BINDING_PRINCIPAL: AuthorizationPrincipal = {
+  type: 'SERVICE',
+  principalId: 'customer-wallet-provisioning',
+  roles: [],
+  scopes: ['wallet:account-binding:write'],
+  customerAccess: 'ANY',
+};
 
 @Injectable()
 export class CustomerWalletService {
@@ -51,6 +71,8 @@ export class CustomerWalletService {
     private readonly eligibilityRepository: Repository<CustomerEligibility>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly bindingService: CustomerFinancialAccountBindingService,
+    private readonly receivingNumberService: CustomerReceivingNumberService,
   ) {}
 
   async createWallet(
@@ -115,6 +137,22 @@ export class CustomerWalletService {
           undefined,
           this.ownershipValues(ownership),
         );
+        let financialAccountBindingId: string | null = null;
+        let receivingNumber: string | null = null;
+        if (wallet.status === CustomerWalletStatus.ACTIVE) {
+          const binding = await this.establishFinancialAccountBinding(manager, {
+            customerId,
+            customerWalletId: wallet.id,
+            currency: wallet.currency,
+          });
+          financialAccountBindingId = binding.bindingId;
+          const issued = await this.receivingNumberService.issueInTransaction(manager, {
+            customerId,
+            walletId: wallet.id,
+            actor,
+          });
+          receivingNumber = issued?.number ?? null;
+        }
         await this.appendHistory(
           manager,
           wallet.id,
@@ -122,7 +160,12 @@ export class CustomerWalletService {
           actor,
           null,
           wallet.status,
-          { type: wallet.type, currency: wallet.currency },
+          {
+            type: wallet.type,
+            currency: wallet.currency,
+            ...(financialAccountBindingId ? { financialAccountBindingId } : {}),
+            ...(receivingNumber ? { receivingNumber } : {}),
+          },
         );
         await this.appendHistory(
           manager,
@@ -136,6 +179,11 @@ export class CustomerWalletService {
         return wallet.id;
       });
     } catch (error) {
+      if (this.isBindingUniqueViolation(error)) {
+        throw new ConflictException(
+          'A financial account binding already exists for this customer and currency',
+        );
+      }
       if (this.isUniqueViolation(error)) {
         if (command.type === CustomerWalletType.PRIMARY) {
           throw new ConflictException('Customer already has a PRIMARY wallet');
@@ -209,6 +257,21 @@ export class CustomerWalletService {
         previous,
         this.walletValues(saved),
       );
+      let financialAccountBindingId: string | null = null;
+      let receivingNumber: string | null = null;
+      if (command.status === CustomerWalletStatus.ACTIVE) {
+        financialAccountBindingId = await this.ensureFinancialAccountBinding(manager, {
+          customerId,
+          customerWalletId: saved.id,
+          currency: saved.currency,
+        });
+        const issued = await this.receivingNumberService.issueInTransaction(manager, {
+          customerId,
+          walletId: saved.id,
+          actor,
+        });
+        receivingNumber = issued?.number ?? null;
+      }
       await this.appendHistory(
         manager,
         saved.id,
@@ -216,7 +279,12 @@ export class CustomerWalletService {
         actor,
         previousStatus,
         saved.status,
-        {},
+        financialAccountBindingId
+          ? {
+              financialAccountBindingId,
+              ...(receivingNumber ? { receivingNumber } : {}),
+            }
+          : {},
       );
       return this.toView(saved);
     });
@@ -300,6 +368,69 @@ export class CustomerWalletService {
       throw new NotFoundException(`Ownership for wallet ${walletId} was not found`);
     }
     return ownership;
+  }
+
+  /**
+   * Returns the binding id for the wallet's financial account, establishing
+   * the binding when the wallet is activated for the first time. A wallet
+   * that already has a binding (for example a re-activated wallet) reuses it;
+   * the binding never duplicates because customer_wallet_id is unique.
+   */
+  private async ensureFinancialAccountBinding(
+    manager: EntityManager,
+    source: { customerId: string; customerWalletId: string; currency: string },
+  ): Promise<string> {
+    const bound = await this.bindingService.findByCustomerWalletId(source.customerWalletId);
+    if (bound) {
+      return bound.id;
+    }
+    const binding = await this.establishFinancialAccountBinding(manager, source);
+    return binding.bindingId;
+  }
+
+  /**
+   * Establishes Customer -> CustomerWallet -> WalletAccount -> LedgerAccount
+   * through the A3 binding command, inside the provisioning transaction so
+   * the chain is atomic with the wallet activation itself.
+   */
+  private async establishFinancialAccountBinding(
+    manager: EntityManager,
+    source: { customerId: string; customerWalletId: string; currency: string },
+  ): Promise<CustomerFinancialAccountBindingResult> {
+    try {
+      return await this.bindingService.bindInTransaction(manager, {
+        mode: CustomerFinancialAccountBindingMode.PROVISION_NEW,
+        customerId: source.customerId,
+        customerWalletId: source.customerWalletId,
+        currency: source.currency,
+        idempotencyKey: `A3-CW-BIND-V1:${source.customerWalletId}`,
+        principal: CUSTOMER_WALLET_BINDING_PRINCIPAL,
+        requestContext: {
+          requestId: `cw-bind-${randomUUID()}`,
+          correlationId: `customer-wallet:${source.customerWalletId}`,
+          traceId: `customer-wallet:${source.customerWalletId}`,
+        },
+      });
+    } catch (error) {
+      if (this.isBindingUniqueViolation(error)) {
+        throw new ConflictException(
+          'A financial account binding already exists for this customer and currency',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private isBindingUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const driverError = error.driverError as { code?: string; constraint?: string };
+    return (
+      driverError.code === '23505' &&
+      typeof driverError.constraint === 'string' &&
+      driverError.constraint.includes('financial_account_bindings')
+    );
   }
 
   private async requireEligibleProvisioning(

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CustomerWalletModule } from '../customer-wallet/customer-wallet.module';
 import { OperationsModule } from '../operations/operations.module';
 import { Customer } from './customer.entity';
 import { CustomerAddress } from './customer-address.entity';
@@ -14,6 +15,7 @@ import { CustomerService } from './customer.service';
 @Module({
   imports: [
     OperationsModule,
+    CustomerWalletModule,
     TypeOrmModule.forFeature([
       Customer,
       CustomerProfile,

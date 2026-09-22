@@ -7,9 +7,18 @@ import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { AmountInput } from '../../components/AmountInput';
-import { ConfirmationDialog } from '../../components/ConfirmationDialog';
+import { TransactionPinDialog } from '../../components/TransactionPinDialog';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { classifyPinError } from '../../services/transaction-pin';
+import {
+  balanceForCustomerWallet,
+  fetchFinancialAccounts,
+  MONIENAIJA_NUMBER_PATTERN,
+  resolveRecipient,
+  type CustomerRecipientView,
+  type RecipientMode,
+} from '../../services/financial-accounts';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'SendMoney'>;
@@ -18,7 +27,6 @@ interface Wallet {
   id: string;
   type: string;
   currency: string;
-  balanceMinor: number;
 }
 
 export const SendMoneyScreen: React.FC = () => {
@@ -26,7 +34,11 @@ export const SendMoneyScreen: React.FC = () => {
   const { customerId } = useAuthStore();
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [destinationWalletId, setDestinationWalletId] = useState('');
+  const [availableBalanceMinor, setAvailableBalanceMinor] = useState(0);
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>('MONIENAIJA_NUMBER');
+  const [recipientInput, setRecipientInput] = useState('');
+  const [recipient, setRecipient] = useState<CustomerRecipientView | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
   const [amountStr, setAmountStr] = useState('');
   const [amountMinor, setAmountMinor] = useState(0);
   const [narration, setNarration] = useState('');
@@ -34,6 +46,10 @@ export const SendMoneyScreen: React.FC = () => {
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
+  // The transaction PIN lives ONLY here, is sent with the transfer payload,
+  // and is cleared after every submission attempt. Never persisted anywhere.
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
 
   // Logical operation persistent idempotency key
   const [idempotencyKey, setIdempotencyKey] = useState('');
@@ -55,6 +71,15 @@ export const SendMoneyScreen: React.FC = () => {
       try {
         const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
         setWallets(walletList);
+        const primary = walletList.find((w) => w.type === 'PRIMARY') || walletList[0];
+        if (primary?.id) {
+          try {
+            const accounts = await fetchFinancialAccounts(customerId);
+            setAvailableBalanceMinor(balanceForCustomerWallet(accounts, primary.id));
+          } catch {
+            setAvailableBalanceMinor(0);
+          }
+        }
       } catch (err: any) {
         setError('Failed to load your source wallets.');
       }
@@ -64,59 +89,91 @@ export const SendMoneyScreen: React.FC = () => {
 
   const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
 
-  const handleValidateForm = () => {
-    if (!primaryWallet) {
+  const handleValidateForm = async () => {
+    if (!primaryWallet || !customerId) {
       setValidationError('You do not have a wallet to send money from.');
       return;
     }
-    if (!destinationWalletId.trim()) {
-      setValidationError('Destination Wallet ID is required.');
+    const trimmed = recipientInput.trim();
+    if (!trimmed) {
+      setValidationError(
+        recipientMode === 'MONIENAIJA_NUMBER'
+          ? "Recipient's MonieNaija number is required."
+          : "Recipient's phone number is required.",
+      );
       return;
     }
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(destinationWalletId.trim())) {
-      setValidationError('Destination Wallet ID must be a valid UUID.');
+    if (recipientMode === 'MONIENAIJA_NUMBER' && !MONIENAIJA_NUMBER_PATTERN.test(trimmed)) {
+      setValidationError('A MonieNaija receiving number is exactly 10 digits.');
       return;
     }
     if (amountMinor <= 0) {
       setValidationError('Amount must be greater than zero.');
       return;
     }
-    if (primaryWallet.balanceMinor < amountMinor) {
+    if (availableBalanceMinor < amountMinor) {
       setValidationError('Insufficient wallet balance.');
       return;
     }
 
     setValidationError('');
-    setShowConfirm(true);
+    setIsResolving(true);
+    try {
+      // Server-authoritative recipient confirmation before any money moves.
+      const resolved = await resolveRecipient(customerId, recipientMode, trimmed);
+      setRecipient(resolved);
+      setShowConfirm(true);
+    } catch (err: any) {
+      setRecipient(null);
+      setValidationError(err?.message || 'Recipient could not be found.');
+    } finally {
+      setIsResolving(false);
+    }
   };
 
-  const handleConfirmTransfer = async () => {
-    setShowConfirm(false);
+  const handleAuthorizeTransfer = async () => {
     setIsLoading(true);
     setError('');
+    setPinError('');
 
     try {
-      // Must submit amountMinor as a positive integer string to bypass matches/regex checking in NestJS
+      // The source WalletAccount is resolved server-side through the
+      // authenticated customer's financial binding; the destination is the
+      // typed recipient identifier the customer already confirmed. The server
+      // re-resolves it authoritatively; no UUID is ever entered by hand. The
+      // transaction PIN is the step-up authorization factor for this transfer.
       const payload = {
-        sourceWalletId: primaryWallet!.id,
-        destinationWalletId: destinationWalletId.trim(),
+        destination: {
+          type: recipientMode,
+          value: recipientInput.trim(),
+        },
         amountMinor: String(amountMinor),
         currency: 'NGN',
+        transactionPin: pin,
         reference: idempotencyKey,
         narration: narration.trim() || 'Wallet Transfer',
       };
 
-      await ApiClient.post('/transfers', payload, {
+      await ApiClient.post(`/customers/${customerId}/transfers`, payload, {
         idempotencyKey, // logical persistent key passed down to the network headers
       });
 
+      setShowConfirm(false);
       // Navigate back to Home on success
       navigation.navigate('Home');
     } catch (err: any) {
-      // Keep same idempotencyKey for potential retries (satisfying the persistent retry constraints)
-      setError(err?.message || 'Transfer failed. Check connection or try again.');
+      const classified = classifyPinError(err);
+      if (classified.kind !== 'UNKNOWN') {
+        // PIN-specific failures stay in the authorization dialog.
+        setPinError(classified.message);
+      } else {
+        setShowConfirm(false);
+        // Keep same idempotencyKey for potential retries (satisfying the persistent retry constraints)
+        setError(err?.message || 'Transfer failed. Check connection or try again.');
+      }
     } finally {
+      // The plaintext PIN never survives a submission attempt.
+      setPin('');
       setIsLoading(false);
     }
   };
@@ -129,7 +186,7 @@ export const SendMoneyScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Send Money</Text>
-          <Text style={styles.subtitle}>Instantly transfer funds to another MoneyNaija wallet</Text>
+          <Text style={styles.subtitle}>Instantly transfer funds to another MonieNaija customer</Text>
         </View>
 
         {(!!validationError || !!error) && (
@@ -151,26 +208,59 @@ export const SendMoneyScreen: React.FC = () => {
           <View style={styles.balanceContainer}>
             <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
             <Text style={styles.balanceValue}>
-              ₦{(primaryWallet.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              ₦{(availableBalanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         )}
 
         <View style={styles.form}>
+          <View style={styles.modeRow}>
+            <Button
+              label="MonieNaija Number"
+              size="small"
+              style={styles.modeButton}
+              variant={recipientMode === 'MONIENAIJA_NUMBER' ? 'primary' : 'outline'}
+              onPress={() => {
+                setRecipientMode('MONIENAIJA_NUMBER');
+                setRecipient(null);
+                setValidationError('');
+              }}
+            />
+            <Button
+              label="Phone Number"
+              size="small"
+              style={styles.modeButton}
+              variant={recipientMode === 'PHONE' ? 'primary' : 'outline'}
+              onPress={() => {
+                setRecipientMode('PHONE');
+                setRecipient(null);
+                setValidationError('');
+              }}
+            />
+          </View>
+
           <Input
             autoCapitalize="none"
             autoCorrect={false}
-            label="Recipient Wallet ID (UUID)"
-            placeholder="e.g. 5e6f7g8h-..."
-            value={destinationWalletId}
+            keyboardType={recipientMode === 'MONIENAIJA_NUMBER' ? 'number-pad' : 'phone-pad'}
+            label={
+              recipientMode === 'MONIENAIJA_NUMBER'
+                ? "Recipient's MonieNaija Number (10 digits)"
+                : "Recipient's Phone Number"
+            }
+            placeholder={
+              recipientMode === 'MONIENAIJA_NUMBER' ? 'e.g. 7065111760' : 'e.g. 07065111760'
+            }
+            value={recipientInput}
             onChangeText={(text) => {
-              setDestinationWalletId(text);
+              setRecipientInput(text);
+              setRecipient(null);
               if (validationError) setValidationError('');
             }}
           />
 
           <AmountInput
-            error={amountMinor > 0 && primaryWallet && primaryWallet.balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
+            error={amountMinor > 0 && primaryWallet && availableBalanceMinor < amountMinor ? 'Insufficient funds' : undefined}
             label="Amount (NGN)"
             value={amountStr}
             onChangeValue={(str, minor) => {
@@ -188,20 +278,37 @@ export const SendMoneyScreen: React.FC = () => {
           />
 
           <Button
-            loading={isLoading}
+            loading={isLoading || isResolving}
             label="Send Funds"
             style={styles.button}
             onPress={handleValidateForm}
           />
         </View>
 
-        <ConfirmationDialog
+        <TransactionPinDialog
+          errorMessage={pinError}
           isLoading={isLoading}
-          message={`Are you sure you want to transfer ₦${parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} to wallet ${destinationWalletId}?`}
+          message={
+            recipient
+              ? `Send ₦${parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} to ${recipient.displayName}${
+                  recipient.receivingNumber ? ` (MonieNaija Number: ${recipient.receivingNumber})` : ''
+                }?`
+              : `Send ₦${parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} to ${recipientInput.trim()}?`
+          }
+          pin={pin}
           title="Confirm Money Transfer"
           visible={showConfirm}
-          onCancel={() => setShowConfirm(false)}
-          onConfirm={handleConfirmTransfer}
+          onAuthorize={handleAuthorizeTransfer}
+          onCancel={() => {
+            setRecipient(null);
+            setShowConfirm(false);
+            setPin('');
+            setPinError('');
+          }}
+          onPinChange={(next) => {
+            setPin(next);
+            if (pinError) setPinError('');
+          }}
         />
       </ScrollView>
     </KeyboardAvoidingView>
@@ -237,6 +344,14 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
     borderWidth: 1,
     borderColor: theme.colors.neutral.lightGray,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    marginBottom: theme.spacing.md,
+  },
+  modeButton: {
+    flex: 1,
+    marginRight: theme.spacing.sm,
   },
   balanceLabel: {
     fontSize: theme.typography.sizes.xs,

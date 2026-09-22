@@ -5,7 +5,10 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Customer } from '../customer/customer.entity';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
-import { AuthenticationCredentialStatus } from './customer-authentication.enums';
+import {
+  AuthenticationCredentialStatus,
+  AuthenticationCredentialType,
+} from './customer-authentication.enums';
 import { CustomerAuthenticationService } from './customer-authentication.service';
 import { PasswordHashVerificationService } from './password-hash-verification.service';
 
@@ -62,7 +65,9 @@ export class AuthenticationExecutionService {
       return this.invalidCredentials(customerId);
     }
 
-    const credential = await this.credentialRepository.findOne({ where: { customerId } });
+    const credential = await this.credentialRepository.findOne({
+      where: { customerId, type: AuthenticationCredentialType.PASSWORD },
+    });
     if (!credential || credential.deletedAt !== null) {
       return this.invalidCredentials(customerId);
     }
