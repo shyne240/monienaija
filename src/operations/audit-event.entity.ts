@@ -10,7 +10,7 @@ export class AuditEvent {
   @Column({ name: 'entity_type', type: 'varchar', length: 80 })
   entityType!: string;
 
-  @Column({ name: 'entity_id', type: 'uuid' })
+  @Column({ name: 'entity_id', type: 'varchar', length: 255 })
   entityId!: string;
 
   @Column({ type: 'varchar', length: 80 })

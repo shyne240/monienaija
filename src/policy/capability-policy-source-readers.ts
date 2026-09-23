@@ -124,23 +124,34 @@ export class CustomerRestrictionsSourceEvidenceReader implements PolicyEvidenceR
     const observedAt = new Date().toISOString();
     try {
       const restrictions = await this.eligibilityService.listRestrictions(context.customerId);
-      return complete(
-        'CustomerRestriction',
-        observedAt,
-        restrictions.map((restriction) =>
+      const items = restrictions.map((restriction) =>
+        record({
+          sourceId: restriction.id,
+          sourceVersion: restriction.version,
+          sourceUpdatedAt: restriction.updatedAt.toISOString(),
+          normalizedValue: {
+            type: restriction.type,
+            active: restriction.isActive,
+            version: restriction.version,
+          },
+        }),
+      );
+      // An empty restriction list is not "no evidence": the durable domain
+      // fact is that the customer has NO restrictions. The evaluator contract
+      // requires an explicit NONE item for that state so that a restriction-
+      // free customer is evaluable instead of being parked at PENDING_REVIEW.
+      if (items.length === 0) {
+        items.push(
           record({
-            sourceId: restriction.id,
-            sourceVersion: restriction.version,
-            sourceUpdatedAt: restriction.updatedAt.toISOString(),
+            sourceId: null,
             normalizedValue: {
-              type: restriction.type,
-              active: restriction.isActive,
-              version: restriction.version,
+              type: 'NONE',
+              active: false,
             },
           }),
-        ),
-        'Restricted',
-      );
+        );
+      }
+      return complete('CustomerRestriction', observedAt, items, 'Restricted');
     } catch {
       return unavailable('CustomerRestriction', observedAt, 'RESTRICTION_READ_FAILED');
     }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { DepositModule } from '../deposit/deposit.module';
+import { OperationsModule } from '../operations/operations.module';
 import { TransferModule } from '../transfer/transfer.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { WithdrawalModule } from '../withdrawal/withdrawal.module';
@@ -13,6 +14,7 @@ import { CustomerTransactionAuthorizationService } from './customer-transaction-
   imports: [
     CustomerAuthenticationModule,
     DepositModule,
+    OperationsModule,
     TransferModule,
     WalletModule,
     WithdrawalModule,

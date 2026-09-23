@@ -37,7 +37,7 @@ export class IdempotencyRecord {
   @Column({ name: 'resource_type', type: 'varchar', length: 80, nullable: true })
   resourceType!: string | null;
 
-  @Column({ name: 'resource_id', type: 'uuid', nullable: true })
+  @Column({ name: 'resource_id', type: 'varchar', length: 255, nullable: true })
   resourceId!: string | null;
 
   @Column({ name: 'hit_count', type: 'integer', default: 0 })

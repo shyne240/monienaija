@@ -49,10 +49,16 @@ export class CustomerFinancialOperationsController {
   createTransfer(
     @Param('id') id: string,
     @Body() dto: CreateCustomerTransferDto,
+    @Req() request: AuthorizationRequest,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    const principal = request.authorizationPrincipal;
+    if (!principal) {
+      throw new UnauthorizedException('Authentication required');
+    }
     return this.operations.createTransfer({
       customerId: id,
+      principal,
       destinationWalletId: dto.destinationWalletId,
       destination: dto.destination,
       amountMinor: dto.amountMinor,

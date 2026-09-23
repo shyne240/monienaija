@@ -65,6 +65,14 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 import {
+  createCustomerTransferStack,
+  enableTransferPilot,
+  seedFullyEligibleCustomer,
+  admitToTransferPilot,
+  selfPrincipal,
+  type CustomerTransferStack,
+} from './support/customer-transfer-stack';
+import {
   createTransactionPinStack,
   seedTransactionPin,
   TEST_TRANSACTION_PIN,
@@ -83,6 +91,7 @@ import {
  */
 describe('CustomerWallet financial binding (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  let stack: CustomerTransferStack;
   let ledger: LedgerService;
   let walletAccounts: WalletService;
   let binding: CustomerFinancialAccountBindingService;
@@ -114,112 +123,26 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('cfabinding');
-
-    const repository = <T extends object>(entity: new () => T) => dataSource.getRepository(entity);
-    const audit = new AuditService(repository(AuditEvent));
-    const outbox = new OutboxService(repository(OutboxEvent));
-    const metrics = new MetricsService(dataSource);
-    const idempotency = new IdempotencyService(repository(IdempotencyRecord));
-    const authorization = new AuthorizationService(dataSource, audit);
-
-    ledger = new LedgerService(
-      repository(LedgerAccount),
-      repository(LedgerJournal),
-      repository(LedgerLine),
-      dataSource,
-    );
-    walletAccounts = new WalletService(repository(WalletAccount), dataSource, ledger);
-    binding = new CustomerFinancialAccountBindingService(
-      repository(CustomerFinancialAccountBinding),
-      repository(Customer),
-      repository(CustomerWallet),
-      repository(WalletOwnership),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-      repository(LedgerLine),
-      dataSource,
-      walletAccounts,
-      authorization,
-      audit,
-      idempotency,
-    );
-    customerWallets = new CustomerWalletService(
-      repository(CustomerWallet),
-      repository(WalletProvisioningHistory),
-      repository(WalletAlias),
-      repository(WalletOwnership),
-      repository(Customer),
-      repository(CustomerOnboarding),
-      repository(CustomerEligibility),
-      dataSource,
-      audit,
-      binding,
-      new CustomerReceivingNumberService(dataSource, audit),
-    );
-    const references = new PaymentReferenceService();
-    const settlement = new SettlementAccountService();
-    transfers = new TransferService(
-      repository(Transfer),
-      repository(WalletAccount),
-      repository(LedgerJournal),
-      dataSource,
-      ledger,
-      references,
-      audit,
-      outbox,
-      metrics,
-    );
-    deposits = new DepositService(
-      repository(Deposit),
-      dataSource,
-      ledger,
-      references,
-      settlement,
-      audit,
-      outbox,
-      metrics,
-    );
-    withdrawals = new WithdrawalService(
-      repository(Withdrawal),
-      dataSource,
-      ledger,
-      references,
-      settlement,
-      audit,
-      outbox,
-      metrics,
-    );
-    resolution = new CustomerFinancialAccountResolutionService(
-      repository(CustomerFinancialAccountBinding),
-      repository(WalletAccount),
-    );
+    stack = createCustomerTransferStack(dataSource);
+    ledger = stack.ledger;
+    walletAccounts = new WalletService(dataSource.getRepository(WalletAccount), dataSource, ledger);
+    binding = stack.bindingService;
+    customerWallets = stack.customerWallets;
+    transfers = stack.transfers;
+    deposits = stack.deposits;
+    withdrawals = stack.withdrawals;
+    resolution = stack.resolution;
+    pinStack = stack.pinStack;
+    operations = stack.operations;
     financialAccountRead = new CustomerFinancialAccountReadService(
-      repository(CustomerFinancialAccountBinding),
-      repository(Customer),
-      repository(CustomerWallet),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-      repository(CustomerReceivingNumber),
+      dataSource.getRepository(CustomerFinancialAccountBinding),
+      dataSource.getRepository(Customer),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(LedgerAccount),
+      dataSource.getRepository(CustomerReceivingNumber),
       ledger,
-      authorization,
-    );
-    pinStack = createTransactionPinStack(dataSource, audit);
-    operations = new CustomerFinancialOperationsService(
-      resolution,
-      transfers,
-      deposits,
-      withdrawals,
-      new CustomerRecipientResolutionService(
-        repository(CustomerContactMethod),
-        repository(Customer),
-        repository(CustomerProfile),
-        repository(CustomerWallet),
-        repository(CustomerReceivingNumber),
-        repository(CustomerFinancialAccountBinding),
-        repository(WalletAccount),
-        repository(LedgerAccount),
-      ),
-      pinStack.authorization,
+      stack.authorization,
     );
   }, 180000);
 
@@ -229,6 +152,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await enableTransferPilot(stack);
     // Settlement account resolved by SettlementAccountService via code.
     await ledger.createAccount({
       code: 'PAYMENT-SETTLEMENT_ASSET-NGN',
@@ -243,22 +167,10 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
 
   /** Seeds an ACTIVE individual customer with completed onboarding and eligibility. */
   async function seedEligibleCustomer(label: string): Promise<string> {
-    const customerId = randomUUID();
-    await dataSource.query(
-      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
-       VALUES ($1, $2, 'INDIVIDUAL', 'ACTIVE', 'LEVEL_1', 'APPROVED')`,
-      [customerId, `it.${label}.${randomUUID().slice(0, 8)}`],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_onboardings (id, customer_id, status, completed_at)
-       VALUES ($1, $2, 'COMPLETED', NOW())`,
-      [randomUUID(), customerId],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_eligibilities (id, customer_id, status, reviewed_by, status_changed_at)
-       VALUES ($1, $2, 'ELIGIBLE', 'integration-harness', NOW())`,
-      [randomUUID(), customerId],
-    );
+    const customerId = await seedFullyEligibleCustomer(stack, { label });
+    // The A5 pilot control is deny-by-default per customer; the live gated
+    // route requires cohort membership for every transacting customer.
+    await admitToTransferPilot(stack, customerId);
     return customerId;
   }
 
@@ -422,6 +334,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
 
     const transfer = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destinationWalletId: recipientBinding.walletAccountId,
       amountMinor: '40000',
       currency: 'NGN',
@@ -467,6 +380,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     await expect(
       operations.createTransfer({
         customerId: customerA,
+        principal: selfPrincipal(customerA),
         destinationWalletId: bindingB.customerWalletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -498,6 +412,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     await expect(
       operations.createTransfer({
         customerId: customerA,
+        principal: selfPrincipal(customerA),
         destinationWalletId: bindingB.walletAccountId,
         amountMinor: '1000',
         currency: 'USD',
@@ -607,6 +522,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     const idempotencyKey = `transfer-idem-${randomUUID()}`;
     const first = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destinationWalletId: recipient.walletAccountId,
       amountMinor: '12000',
       currency: 'NGN',
@@ -615,6 +531,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     });
     const replay = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destinationWalletId: recipient.walletAccountId,
       amountMinor: '12000',
       currency: 'NGN',
@@ -699,6 +616,7 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destinationWalletId: recipient.walletAccountId,
         amountMinor: '99999999',
         currency: 'NGN',

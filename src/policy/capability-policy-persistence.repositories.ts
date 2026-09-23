@@ -1,5 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -239,7 +239,9 @@ export class TypeOrmPolicyDecisionRecordRepository implements PolicyDecisionReco
     private readonly repository: Repository<PolicyDecisionRecord>,
     private readonly profileRepository: TypeOrmPolicyProfileVersionRepository,
     private readonly snapshotRepository: TypeOrmPolicyEvidenceSnapshotAttachmentRepository,
+    @InjectDataSource()
     private readonly dataSource?: DataSource,
+    @Inject(AuditService)
     private readonly auditService?: AuditService,
   ) {}
 

@@ -75,6 +75,14 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 import {
+  createCustomerTransferStack,
+  enableTransferPilot,
+  seedFullyEligibleCustomer,
+  admitToTransferPilot,
+  selfPrincipal,
+  type CustomerTransferStack,
+} from './support/customer-transfer-stack';
+import {
   createTransactionPinStack,
   seedTransactionPin,
   TEST_TRANSACTION_PIN,
@@ -91,6 +99,7 @@ import {
  */
 describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  let stack: CustomerTransferStack;
   let ledger: LedgerService;
   let customerWallets: CustomerWalletService;
   let customers: CustomerService;
@@ -114,115 +123,36 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('mnnumber');
-
-    const repository = <T extends object>(entity: new () => T) => dataSource.getRepository(entity);
-    const audit = new AuditService(repository(AuditEvent));
-    const outbox = new OutboxService(repository(OutboxEvent));
-    const metrics = new MetricsService(dataSource);
-    const idempotency = new IdempotencyService(repository(IdempotencyRecord));
-    const authorization = new AuthorizationService(dataSource, audit);
-
-    ledger = new LedgerService(
-      repository(LedgerAccount),
-      repository(LedgerJournal),
-      repository(LedgerLine),
-      dataSource,
-    );
-    const walletAccounts = new WalletService(repository(WalletAccount), dataSource, ledger);
-    const binding = new CustomerFinancialAccountBindingService(
-      repository(CustomerFinancialAccountBinding),
-      repository(Customer),
-      repository(CustomerWallet),
-      repository(WalletOwnership),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-      repository(LedgerLine),
-      dataSource,
-      walletAccounts,
-      authorization,
-      audit,
-      idempotency,
-    );
-    receivingNumbers = new CustomerReceivingNumberService(dataSource, audit);
-    customerWallets = new CustomerWalletService(
-      repository(CustomerWallet),
-      repository(WalletProvisioningHistory),
-      repository(WalletAlias),
-      repository(WalletOwnership),
-      repository(Customer),
-      repository(CustomerOnboarding),
-      repository(CustomerEligibility),
-      dataSource,
-      audit,
-      binding,
-      receivingNumbers,
+    stack = createCustomerTransferStack(dataSource);
+    ledger = stack.ledger;
+    customerWallets = stack.customerWallets;
+    receivingNumbers = stack.receivingNumbers;
+    transfers = stack.transfers;
+    deposits = stack.deposits;
+    resolution = stack.resolution;
+    recipientResolution = stack.recipientResolution;
+    pinStack = stack.pinStack;
+    operations = stack.operations;
+    financialAccountRead = new CustomerFinancialAccountReadService(
+      dataSource.getRepository(CustomerFinancialAccountBinding),
+      dataSource.getRepository(Customer),
+      dataSource.getRepository(CustomerWallet),
+      dataSource.getRepository(WalletAccount),
+      dataSource.getRepository(LedgerAccount),
+      dataSource.getRepository(CustomerReceivingNumber),
+      ledger,
+      stack.authorization,
     );
     customers = new CustomerService(
-      repository(Customer),
-      repository(CustomerProfile),
-      repository(CustomerAddress),
-      repository(CustomerContactMethod),
-      repository(CustomerIdentityDocument),
-      repository(CustomerKycAssessment),
+      dataSource.getRepository(Customer),
+      dataSource.getRepository(CustomerProfile),
+      dataSource.getRepository(CustomerAddress),
+      dataSource.getRepository(CustomerContactMethod),
+      dataSource.getRepository(CustomerIdentityDocument),
+      dataSource.getRepository(CustomerKycAssessment),
       dataSource,
-      audit,
+      stack.audit,
       receivingNumbers,
-    );
-    const references = new PaymentReferenceService();
-    const settlement = new SettlementAccountService();
-    transfers = new TransferService(
-      repository(Transfer),
-      repository(WalletAccount),
-      repository(LedgerJournal),
-      dataSource,
-      ledger,
-      references,
-      audit,
-      outbox,
-      metrics,
-    );
-    deposits = new DepositService(
-      repository(Deposit),
-      dataSource,
-      ledger,
-      references,
-      settlement,
-      audit,
-      outbox,
-      metrics,
-    );
-    resolution = new CustomerFinancialAccountResolutionService(
-      repository(CustomerFinancialAccountBinding),
-      repository(WalletAccount),
-    );
-    recipientResolution = new CustomerRecipientResolutionService(
-      repository(CustomerContactMethod),
-      repository(Customer),
-      repository(CustomerProfile),
-      repository(CustomerWallet),
-      repository(CustomerReceivingNumber),
-      repository(CustomerFinancialAccountBinding),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-    );
-    financialAccountRead = new CustomerFinancialAccountReadService(
-      repository(CustomerFinancialAccountBinding),
-      repository(Customer),
-      repository(CustomerWallet),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-      repository(CustomerReceivingNumber),
-      ledger,
-      authorization,
-    );
-    pinStack = createTransactionPinStack(dataSource, audit);
-    operations = new CustomerFinancialOperationsService(
-      resolution,
-      transfers,
-      deposits,
-      {} as never,
-      recipientResolution,
-      pinStack.authorization,
     );
   }, 180000);
 
@@ -232,6 +162,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await enableTransferPilot(stack);
     await ledger.createAccount({
       code: 'PAYMENT-SETTLEMENT_ASSET-NGN',
       name: 'Settlement asset',
@@ -245,22 +176,10 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
 
   /** Seeds an ACTIVE individual customer with completed onboarding + eligibility. */
   async function seedEligibleCustomer(label: string): Promise<string> {
-    const customerId = randomUUID();
-    await dataSource.query(
-      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
-       VALUES ($1, $2, 'INDIVIDUAL', 'ACTIVE', 'LEVEL_1', 'APPROVED')`,
-      [customerId, `it.${label}.${randomUUID().slice(0, 8)}`],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_onboardings (id, customer_id, status, completed_at)
-       VALUES ($1, $2, 'COMPLETED', NOW())`,
-      [randomUUID(), customerId],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_eligibilities (id, customer_id, status, reviewed_by, status_changed_at)
-       VALUES ($1, $2, 'ELIGIBLE', 'integration-harness', NOW())`,
-      [randomUUID(), customerId],
-    );
+    const customerId = await seedFullyEligibleCustomer(stack, { label });
+    // The A5 pilot control is deny-by-default per customer; the live gated
+    // route requires cohort membership for every transacting customer.
+    await admitToTransferPilot(stack, customerId);
     return customerId;
   }
 
@@ -588,6 +507,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destination: {
           type: CustomerTransferDestinationType.MONIENAIJA_NUMBER,
           value: '7033001122',
@@ -603,6 +523,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destinationWalletId: randomUUID(),
         destination: {
           type: CustomerTransferDestinationType.MONIENAIJA_NUMBER,
@@ -617,6 +538,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         amountMinor: '1000',
         currency: 'NGN',
         idempotencyKey: `none-${randomUUID()}`,
@@ -629,6 +551,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destination: {
           type: CustomerTransferDestinationType.MONIENAIJA_NUMBER,
           value: receiverWallet.id,
@@ -642,6 +565,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destination: {
           type: CustomerTransferDestinationType.MONIENAIJA_NUMBER,
           value: receiverBinding!.walletAccountId,
@@ -657,6 +581,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     const key = `tx-${randomUUID()}`;
     const transfer = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destination: { type: CustomerTransferDestinationType.MONIENAIJA_NUMBER, value: '7065111760' },
       amountMinor: '12000',
       currency: 'NGN',
@@ -689,6 +614,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     // 32: idempotency replay returns the identical transfer.
     const replay = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destination: { type: CustomerTransferDestinationType.MONIENAIJA_NUMBER, value: '7065111760' },
       amountMinor: '12000',
       currency: 'NGN',
@@ -702,6 +628,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     // PHONE destination resolves the SAME wallet (distinct lookup mechanism).
     const phoneTransfer = await operations.createTransfer({
       customerId: senderId,
+      principal: selfPrincipal(senderId),
       destination: { type: CustomerTransferDestinationType.PHONE, value: '07065111760' },
       amountMinor: '3000',
       currency: 'NGN',
@@ -715,6 +642,7 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     await expect(
       operations.createTransfer({
         customerId: senderId,
+        principal: selfPrincipal(senderId),
         destination: {
           type: CustomerTransferDestinationType.MONIENAIJA_NUMBER,
           value: '7065111760',

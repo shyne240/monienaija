@@ -1,3 +1,5 @@
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+
 /** Explicit, unambiguous transfer destination mechanisms for customer transfers. */
 export enum CustomerTransferDestinationType {
   /** Raw WalletAccount UUID (legacy/direct; still server-validated + not-selon). */
@@ -15,6 +17,12 @@ export interface CustomerTransferDestination {
 
 export interface CustomerTransferCommand {
   customerId: string;
+  /**
+   * Authenticated CUSTOMER principal from the runtime access guard. The A5T03
+   * gate re-authorizes this principal (A2, SELF scope) before money movement;
+   * a command without a principal is rejected as 401 before anything else.
+   */
+  principal: AuthorizationPrincipal;
   /** Legacy direct-WalletAccount destination; mutually exclusive with `destination`. */
   destinationWalletId?: string;
   /** Discriminated destination; mutually exclusive with `destinationWalletId`. */

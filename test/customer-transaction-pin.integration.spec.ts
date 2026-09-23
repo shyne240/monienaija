@@ -28,7 +28,10 @@ import { CustomerTransferDestinationType } from '../src/customer-financial-opera
 import { CustomerReceivingNumber } from '../src/customer-wallet/customer-receiving-number.entity';
 import { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
 import { CustomerWallet } from '../src/customer-wallet/customer-wallet.entity';
-import { CustomerWalletStatus, CustomerWalletType } from '../src/customer-wallet/customer-wallet.enums';
+import {
+  CustomerWalletStatus,
+  CustomerWalletType,
+} from '../src/customer-wallet/customer-wallet.enums';
 import { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
 import { WalletAlias } from '../src/customer-wallet/wallet-alias.entity';
 import { WalletOwnership } from '../src/customer-wallet/wallet-ownership.entity';
@@ -38,10 +41,7 @@ import { DepositService } from '../src/deposit/deposit.service';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
 import { LedgerLine } from '../src/ledger/ledger-line.entity';
-import {
-  LedgerAccountType,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { AuditEvent } from '../src/operations/audit-event.entity';
 import { AuditService } from '../src/operations/audit.service';
@@ -68,6 +68,14 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 import {
+  createCustomerTransferStack,
+  enableTransferPilot,
+  seedFullyEligibleCustomer,
+  admitToTransferPilot,
+  selfPrincipal,
+  type CustomerTransferStack,
+} from './support/customer-transfer-stack';
+import {
   createTransactionPinStack,
   seedPasswordCredential,
   seedTransactionPin,
@@ -88,6 +96,7 @@ const ACTOR = 'integration-harness';
  */
 describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', () => {
   let dataSource: DataSource;
+  let stack: CustomerTransferStack;
   let ledger: LedgerService;
   let customerWallets: CustomerWalletService;
   let transfers: TransferService;
@@ -100,106 +109,16 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
 
   beforeAll(async () => {
     dataSource = await createIntegrationDataSource('txpin');
-
-    const repository = <T extends object>(entity: new () => T) => dataSource.getRepository(entity);
-    const audit = new AuditService(repository(AuditEvent));
-    const outbox = new OutboxService(repository(OutboxEvent));
-    const metrics = new MetricsService(dataSource);
-    const idempotency = new IdempotencyService(repository(IdempotencyRecord));
-
-    ledger = new LedgerService(
-      repository(LedgerAccount),
-      repository(LedgerJournal),
-      repository(LedgerLine),
-      dataSource,
-    );
-    const walletAccounts = new WalletService(repository(WalletAccount), dataSource, ledger);
-    const authorization = new AuthorizationService(dataSource, audit);
-    const binding = new CustomerFinancialAccountBindingService(
-      repository(CustomerFinancialAccountBinding),
-      repository(Customer),
-      repository(CustomerWallet),
-      repository(WalletOwnership),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-      repository(LedgerLine),
-      dataSource,
-      walletAccounts,
-      authorization,
-      audit,
-      idempotency,
-    );
-    const receivingNumbers = new CustomerReceivingNumberService(dataSource, audit);
-    customerWallets = new CustomerWalletService(
-      repository(CustomerWallet),
-      repository(WalletProvisioningHistory),
-      repository(WalletAlias),
-      repository(WalletOwnership),
-      repository(Customer),
-      repository(CustomerOnboarding),
-      repository(CustomerEligibility),
-      dataSource,
-      audit,
-      binding,
-      receivingNumbers,
-    );
-    const references = new PaymentReferenceService();
-    const settlement = new SettlementAccountService();
-    transfers = new TransferService(
-      repository(Transfer),
-      repository(WalletAccount),
-      repository(LedgerJournal),
-      dataSource,
-      ledger,
-      references,
-      audit,
-      outbox,
-      metrics,
-    );
-    deposits = new DepositService(
-      repository(Deposit),
-      dataSource,
-      ledger,
-      references,
-      settlement,
-      audit,
-      outbox,
-      metrics,
-    );
-    withdrawals = new WithdrawalService(
-      repository(Withdrawal),
-      dataSource,
-      ledger,
-      references,
-      settlement,
-      audit,
-      outbox,
-      metrics,
-    );
-    resolution = new CustomerFinancialAccountResolutionService(
-      repository(CustomerFinancialAccountBinding),
-      repository(WalletAccount),
-    );
-    const recipientResolution = new CustomerRecipientResolutionService(
-      repository(CustomerContactMethod),
-      repository(Customer),
-      repository(CustomerProfile),
-      repository(CustomerWallet),
-      repository(CustomerReceivingNumber),
-      repository(CustomerFinancialAccountBinding),
-      repository(WalletAccount),
-      repository(LedgerAccount),
-    );
-    pinStack = createTransactionPinStack(dataSource, audit);
-    pins = pinStack.pinService;
-    operations = new CustomerFinancialOperationsService(
-      resolution,
-      transfers,
-      deposits,
-      withdrawals,
-      recipientResolution,
-      pinStack.authorization,
-    );
+    stack = createCustomerTransferStack(dataSource);
+    ledger = stack.ledger;
+    customerWallets = stack.customerWallets;
+    transfers = stack.transfers;
+    deposits = stack.deposits;
+    withdrawals = stack.withdrawals;
+    resolution = stack.resolution;
+    pinStack = stack.pinStack;
+    pins = stack.pinStack.pinService;
+    operations = stack.operations;
   }, 180000);
 
   afterAll(async () => {
@@ -208,6 +127,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    await enableTransferPilot(stack);
     await ledger.createAccount({
       code: 'PAYMENT-SETTLEMENT_ASSET-NGN',
       name: 'Settlement asset',
@@ -220,22 +140,10 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
   });
 
   async function seedEligibleCustomer(label: string): Promise<string> {
-    const customerId = randomUUID();
-    await dataSource.query(
-      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
-       VALUES ($1, $2, 'INDIVIDUAL', 'ACTIVE', 'LEVEL_1', 'APPROVED')`,
-      [customerId, `it.pin.${label}.${randomUUID().slice(0, 8)}`],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_onboardings (id, customer_id, status, completed_at)
-       VALUES ($1, $2, 'COMPLETED', NOW())`,
-      [randomUUID(), customerId],
-    );
-    await dataSource.query(
-      `INSERT INTO customer_eligibilities (id, customer_id, status, reviewed_by, status_changed_at)
-       VALUES ($1, $2, 'ELIGIBLE', $3, NOW())`,
-      [randomUUID(), customerId, ACTOR],
-    );
+    const customerId = await seedFullyEligibleCustomer(stack, { label });
+    // The A5 pilot control is deny-by-default per customer; the live gated
+    // route requires cohort membership for every transacting customer.
+    await admitToTransferPilot(stack, customerId);
     return customerId;
   }
 
@@ -319,7 +227,10 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     const customerId = await seedEligibleCustomer('verify');
     await seedTransactionPin(pinStack, customerId, PIN);
 
-    const ok = await pins.verifyTransactionPin(customerId, { pin: PIN, actor: `customer:${customerId}` });
+    const ok = await pins.verifyTransactionPin(customerId, {
+      pin: PIN,
+      actor: `customer:${customerId}`,
+    });
     expect(ok.configured).toBe(true);
     expect(ok.failedPinAttemptCount).toBe(0);
 
@@ -378,6 +289,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     await expect(
       operations.createTransfer({
         customerId,
+        principal: selfPrincipal(customerId),
         destinationWalletId: recipient!.walletAccountId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -400,7 +312,10 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     }
     expect((await pins.getPinStatus(customerId)).accountLocked).toBe(true);
 
-    const unlocked = await pins.unlockPin(customerId, { actor: 'security-ops', reason: 'verified' });
+    const unlocked = await pins.unlockPin(customerId, {
+      actor: 'security-ops',
+      reason: 'verified',
+    });
     expect(unlocked.accountLocked).toBe(false);
     await expect(
       pins.verifyTransactionPin(customerId, { pin: PIN, actor: ACTOR }),
@@ -448,9 +363,9 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     ).resolves.toMatchObject({ configured: true });
 
     // Password history rows are password-only; PIN history never lands there.
-    expect(
-      await dataSource.query(`SELECT count(*)::int AS count FROM password_histories`),
-    ).toEqual([{ count: 0 }]);
+    expect(await dataSource.query(`SELECT count(*)::int AS count FROM password_histories`)).toEqual(
+      [{ count: 0 }],
+    );
   });
 
   it('9: PIN reset flows through authorized recovery (password), never off the customer ID alone', async () => {
@@ -503,6 +418,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     await expect(
       operations.createTransfer({
         customerId,
+        principal: selfPrincipal(customerId),
         destinationWalletId: recipient!.walletAccountId,
         amountMinor: '4000',
         currency: 'NGN',
@@ -513,6 +429,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     await expect(
       operations.createTransfer({
         customerId,
+        principal: selfPrincipal(customerId),
         destinationWalletId: recipient!.walletAccountId,
         amountMinor: '4000',
         currency: 'NGN',
@@ -523,6 +440,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     await expect(
       operations.createTransfer({
         customerId,
+        principal: selfPrincipal(customerId),
         destinationWalletId: recipient!.walletAccountId,
         amountMinor: '4000',
         currency: 'NGN',
@@ -539,6 +457,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     // 10: the correct PIN authorizes the transfer through the audited service.
     const transfer = await operations.createTransfer({
       customerId,
+      principal: selfPrincipal(customerId),
       destinationWalletId: recipient!.walletAccountId,
       amountMinor: '4000',
       currency: 'NGN',
@@ -649,6 +568,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     const transferKey = `idem-tx-${randomUUID()}`;
     const firstTransfer = await operations.createTransfer({
       customerId,
+      principal: selfPrincipal(customerId),
       destinationWalletId: recipient!.walletAccountId,
       amountMinor: '6000',
       currency: 'NGN',
@@ -657,6 +577,7 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     });
     const replayTransfer = await operations.createTransfer({
       customerId,
+      principal: selfPrincipal(customerId),
       destinationWalletId: recipient!.walletAccountId,
       amountMinor: '6000',
       currency: 'NGN',
@@ -707,7 +628,11 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     const recipient = await bindingFor(recipientId);
     const transfer = await operations.createTransfer({
       customerId,
-      destination: { type: CustomerTransferDestinationType.WALLET_ACCOUNT, value: recipient!.walletAccountId },
+      principal: selfPrincipal(customerId),
+      destination: {
+        type: CustomerTransferDestinationType.WALLET_ACCOUNT,
+        value: recipient!.walletAccountId,
+      },
       amountMinor: '1500',
       currency: 'NGN',
       idempotencyKey: `view-${randomUUID()}`,
@@ -719,7 +644,9 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
   it('18: PIN material never lands in audit events or security-event metadata', async () => {
     const customerId = await seedEligibleCustomer('noaudit');
     await seedTransactionPin(pinStack, customerId, PIN);
-    await pins.verifyTransactionPin(customerId, { pin: WRONG_PIN, actor: ACTOR }).catch(() => undefined);
+    await pins
+      .verifyTransactionPin(customerId, { pin: WRONG_PIN, actor: ACTOR })
+      .catch(() => undefined);
     await pins.verifyTransactionPin(customerId, { pin: PIN, actor: ACTOR });
     await pins.changePin(customerId, { currentPin: PIN, newPin: '27513', actor: ACTOR });
 
@@ -749,9 +676,9 @@ describe('Customer transaction PIN + step-up authorization (real PostgreSQL)', (
     expect(pinEventTypes.has(SecurityEventType.PIN_CHANGED)).toBe(true);
 
     // PIN management never fabricates password-history rows.
-    expect(
-      await dataSource.query(`SELECT count(*)::int AS count FROM password_histories`),
-    ).toEqual([{ count: 0 }]);
+    expect(await dataSource.query(`SELECT count(*)::int AS count FROM password_histories`)).toEqual(
+      [{ count: 0 }],
+    );
   });
 
   it('management API errors map to explicit statuses without credential enumeration', async () => {
