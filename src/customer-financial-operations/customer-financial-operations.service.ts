@@ -121,6 +121,24 @@ export class CustomerFinancialOperationsService {
     // Customer-application idempotency: a NEW logical request reserves the
     // key first; every retry of that logical request replays the stored
     // result instead of re-executing the gate or the lifecycle.
+    //
+    // Why replaying BEFORE the A5T03 gate is safe (V1-W2W-REPLAY-SECURITY-AUDIT):
+    //   1. `requireSelfCustomerPrincipal` has already established that the
+    //      caller is an authenticated CUSTOMER principal whose identity equals
+    //      the addressed `/customers/:id` context, so a replay is only ever
+    //      served to the customer who owns the command context.
+    //   2. `resolveOwnActiveFinancialAccount` has already resolved the source
+    //      strictly from THIS customer's own ACTIVE binding.
+    //   3. `authorizeStepUp` has already verified the transaction PIN, so a
+    //      stolen or guessed idempotency key alone never unseals a result.
+    //   4. `requestHash` commits to `sourceWalletAccountId`, which is unique
+    //      per binding (uq_customer_financial_account_bindings_wallet_account)
+    //      and therefore per customer. A different customer replaying the same
+    //      key can never match the stored hash, so the reservation resolves to
+    //      a 409 conflict instead of another customer's transfer.
+    // The gate is skipped on replay precisely because no new financial effect
+    // is produced: the replay returns the stored result and touches neither
+    // the lifecycle nor the ledger.
     const requestHash = this.customerRequestHash(
       command,
       source.binding.walletAccountId,
