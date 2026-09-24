@@ -7,7 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, QueryFailedError, Repository } from 'typeorm';
+import type { FindOptionsWhere } from 'typeorm';
 
 import { CustomerReceivingNumberService } from '../customer-wallet/customer-receiving-number.service';
 import { AuditService } from '../operations/audit.service';
@@ -20,6 +21,7 @@ import { CustomerKycAssessment } from './customer-kyc-assessment.entity';
 import { CustomerProfile } from './customer-profile.entity';
 import { canonicalizeNigerianPhone, isNigerianShaped } from './nigerian-phone';
 import type {
+  ListCustomersQuery,
   CreateAddressCommand,
   CreateContactCommand,
   CreateCustomerCommand,
@@ -115,17 +117,47 @@ export class CustomerService {
     }
   }
 
-  async list(status?: CustomerStatus, type?: string, page = 1, limit = 50): Promise<Customer[]> {
-    const customers = await this.customerRepository.find({
+  /**
+   * A1T28 — multi-status customer listing.
+   *
+   * Each supplied dimension is applied INDEPENDENTLY: multiple values within a
+   * dimension are OR-ed, and separate dimensions are AND-ed. Lifecycle
+   * `status`, `kycStatus` and `kycLevel` remain distinct concepts; none is
+   * derived from, or collapsed into, another.
+   *
+   * Read-only: this performs a `find` and mutates no customer, wallet,
+   * lifecycle or financial state. Soft-deleted customers stay excluded by the
+   * entity's `@DeleteDateColumn`, exactly as before.
+   */
+  async list(query: ListCustomersQuery = {}): Promise<Customer[]> {
+    const page = Math.max(query.page ?? 1, 1);
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+
+    return this.customerRepository.find({
       where: {
-        ...(status ? { status } : {}),
-        ...(type ? { type: type as Customer['type'] } : {}),
+        ...this.dimensionFilter('status', query.status),
+        ...this.dimensionFilter('kycStatus', query.kycStatus),
+        ...this.dimensionFilter('kycLevel', query.kycLevel),
+        ...this.dimensionFilter('type', query.type),
       },
       order: { createdAt: 'DESC', id: 'DESC' },
-      skip: (Math.max(page, 1) - 1) * Math.min(Math.max(limit, 1), 100),
-      take: Math.min(Math.max(limit, 1), 100),
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return customers;
+  }
+
+  /**
+   * Builds a single status-dimension filter. An absent or empty dimension adds
+   * no constraint; one value matches exactly; several are OR-ed via `In`.
+   */
+  private dimensionFilter<K extends keyof Customer>(
+    field: K,
+    values: readonly Customer[K][] | undefined,
+  ): FindOptionsWhere<Customer> {
+    if (!values || values.length === 0) return {};
+    return {
+      [field]: values.length === 1 ? values[0] : In([...values]),
+    } as FindOptionsWhere<Customer>;
   }
 
   async get(id: string): Promise<Customer> {

@@ -19,9 +19,19 @@ export class CustomerController {
     return this.customerService.create(dto);
   }
 
+  /**
+   * A1T28 — multi-status customer listing.
+   *
+   * Authorization is inherited, not invented: `/api/v1/customers` (no trailing
+   * segment) resolves to the route policy registry's default `internal-route`
+   * policy, which requires the `internal:access` scope and admits only
+   * SUPPORT/OPERATOR/SERVICE/PRIVILEGED with `customerAccess: 'NONE'`. CUSTOMER
+   * principals are excluded, so this operational surface is not customer
+   * reachable; a customer reads itself through `/customers/:id` (SELF).
+   */
   @Get()
   list(@Query() query: CustomerQueryDto) {
-    return this.customerService.list(query.status, query.type, query.page, query.limit);
+    return this.customerService.list(query);
   }
 
   @Get(':id')

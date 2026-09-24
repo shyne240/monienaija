@@ -69,3 +69,28 @@ export interface CreateKycAssessmentCommand {
   assessedBy: string;
   expiresAt?: string;
 }
+
+/**
+ * A1T28 — multi-status customer query.
+ *
+ * Each field is an INDEPENDENT status dimension already owned and persisted by
+ * the `customers` aggregate. They are deliberately kept separate rather than
+ * collapsed into a single status field: lifecycle `status`, `kycStatus` and
+ * `kycLevel` are distinct concepts and one never implies another.
+ *
+ * Each dimension accepts MULTIPLE values (OR within a dimension); supplying
+ * several dimensions narrows the result (AND across dimensions).
+ *
+ * Status dimensions owned by other domains (onboarding, eligibility,
+ * authentication, wallet) are intentionally NOT included here: they live in
+ * their own tables and are served by their own modules, and merging them would
+ * collapse distinct lifecycle concepts into the A1 read model.
+ */
+export interface ListCustomersQuery {
+  status?: readonly CustomerStatus[];
+  kycStatus?: readonly CustomerKycStatus[];
+  kycLevel?: readonly CustomerKycLevel[];
+  type?: readonly CustomerType[];
+  page?: number;
+  limit?: number;
+}
