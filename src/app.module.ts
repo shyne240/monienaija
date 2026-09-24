@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import type { FastifyRequest } from 'fastify';
 
+import { AgentModule } from './agent/agent.module';
 import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
@@ -112,6 +113,7 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     HealthModule,
     AuthorizationModule,
+    AgentModule,
     CustomerModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,
