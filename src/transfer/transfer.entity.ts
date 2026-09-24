@@ -122,6 +122,20 @@ export class Transfer {
   @Column({ name: 'policy_input_hash', type: 'char', length: 64, nullable: true })
   policyInputHash!: string | null;
 
+  /**
+   * F-3 owner-type discriminators. They describe WHO owns each side of the
+   * movement, so one transfer record can represent customer->customer,
+   * customer->agent, agent->customer or agent->agent. Both default to
+   * CUSTOMER, so every pre-F-3 row is correct without backfill.
+   *
+   * Representation only: this task enables no agent transfer execution.
+   */
+  @Column({ name: 'source_owner_type', type: 'varchar', length: 16, default: 'CUSTOMER' })
+  sourceOwnerType!: string;
+
+  @Column({ name: 'destination_owner_type', type: 'varchar', length: 16, default: 'CUSTOMER' })
+  destinationOwnerType!: string;
+
   @Column({ name: 'source_wallet_id', type: 'uuid' })
   sourceWalletId!: string;
 

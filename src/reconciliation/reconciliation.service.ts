@@ -94,16 +94,31 @@ export class ReconciliationService {
             SELECT COUNT(*)::text AS wallets_checked,
                    COUNT(*) FILTER (
                      WHERE la.id IS NULL
+                        -- Structural requirements shared by every owner type.
                         OR la.account_type <> 'LIABILITY'
                         OR la.normal_balance <> 'CREDIT'
                         OR la.currency <> w.currency
-                        OR la.accounting_unit <> 'CUSTOMER_FUNDS'
                         OR la.allow_negative_balance
+                        -- Owner-aware classification, mirroring the F-1/F-2
+                        -- database trigger assert_wallet_ledger_account.
+                        OR (w.owner_type = 'CUSTOMER' AND la.accounting_unit <> 'CUSTOMER_FUNDS')
+                        OR (
+                          w.owner_type = 'AGENT'
+                          AND NOT EXISTS (
+                            SELECT 1
+                              FROM agent_float_accounting_classifications c
+                             WHERE c.is_active
+                               AND c.accounting_unit = la.accounting_unit
+                               AND c.account_type = la.account_type
+                               AND c.normal_balance = la.normal_balance
+                          )
+                        )
+                        OR w.owner_type NOT IN ('CUSTOMER', 'AGENT')
                    )::text AS violations
               FROM wallet_accounts w
               LEFT JOIN ledger_accounts la ON la.id = w.ledger_account_id
           `,
-          'Every wallet has exactly one compatible non-negative liability account.',
+          'Every wallet has exactly one compatible non-negative liability account for its owner type.',
         ),
       );
       checks.push(
@@ -250,10 +265,58 @@ export class ReconciliationService {
               + (SELECT COUNT(*)
                    FROM wallet_accounts w
                    JOIN ledger_accounts a ON a.id = w.ledger_account_id
-                  WHERE a.accounting_unit <> 'CUSTOMER_FUNDS')
+                  WHERE (w.owner_type = 'CUSTOMER' AND a.accounting_unit <> 'CUSTOMER_FUNDS')
+                     OR (
+                       w.owner_type = 'AGENT'
+                       AND NOT EXISTS (
+                         SELECT 1
+                           FROM agent_float_accounting_classifications c
+                          WHERE c.is_active
+                            AND c.accounting_unit = a.accounting_unit
+                            AND c.account_type = a.account_type
+                            AND c.normal_balance = a.normal_balance
+                       )
+                     )
+                     OR w.owner_type NOT IN ('CUSTOMER', 'AGENT'))
             )::text AS violations
           `,
-          'Wallet and ledger records use consistent accounting units.',
+          'Wallet and ledger records use consistent accounting units for their owner type.',
+        ),
+      );
+
+      checks.push(
+        await this.executeCheck(
+          manager,
+          'wallet_owner_binding_integrity',
+          `
+            SELECT COUNT(*)::text AS wallets_checked,
+                   COUNT(*) FILTER (
+                     -- An AGENT-owned financial account must be reachable
+                     -- through an ACTIVE agent financial binding.
+                     WHERE (
+                       w.owner_type = 'AGENT'
+                       AND NOT EXISTS (
+                         SELECT 1
+                           FROM agent_financial_account_bindings b
+                          WHERE b.wallet_account_id = w.id
+                            AND b.state = 'ACTIVE'
+                            AND b.ledger_account_id = w.ledger_account_id
+                       )
+                     )
+                     -- A CUSTOMER-owned financial account must never be
+                     -- claimed by an agent binding.
+                     OR (
+                       w.owner_type = 'CUSTOMER'
+                       AND EXISTS (
+                         SELECT 1
+                           FROM agent_financial_account_bindings b
+                          WHERE b.wallet_account_id = w.id
+                       )
+                     )
+                   )::text AS violations
+              FROM wallet_accounts w
+          `,
+          'Every wallet account is reachable only through a binding matching its owner type.',
         ),
       );
 

@@ -129,7 +129,10 @@ describe('ReconciliationService', () => {
     const report = await service.runReconciliation();
 
     expect(report.status).toBe(VerificationStatus.PASS);
-    expect(report.checks).toHaveLength(10);
+    // F-3 added the owner-aware `wallet_owner_binding_integrity` check, so the
+    // independent reconciliation now runs 11 checks rather than 10. Every check
+    // still returns PASS, asserted on the next line.
+    expect(report.checks).toHaveLength(11);
     expect(report.checks.every((check) => check.status === VerificationStatus.PASS)).toBe(true);
     expect(fixture.queries.some((query) => query.includes('ledger_journals'))).toBe(true);
     expect(fixture.queries.some((query) => query.includes('transfers'))).toBe(true);

@@ -21,6 +21,13 @@ export interface CreateTransferLifecycleCommand {
   scope: 'INTERNAL_CUSTOMER_TO_CUSTOMER';
   sourceCustomerId: string;
   destinationCustomerId: string;
+  /**
+   * F-3 owner types. Optional and defaulted to CUSTOMER so every existing
+   * caller is unaffected. Supplying AGENT records WHO owns a side; it does not
+   * authorize or execute an agent transfer, which remains unimplemented.
+   */
+  sourceOwnerType?: string;
+  destinationOwnerType?: string;
   sourceCustomerWalletId: string;
   destinationCustomerWalletId: string;
   sourceBindingId: string;
@@ -79,6 +86,9 @@ export interface TransferLifecycleView {
   scope: string | null;
   sourceCustomerId: string | null;
   destinationCustomerId: string | null;
+  /** F-3: owner type of each side of the movement. */
+  sourceOwnerType: string;
+  destinationOwnerType: string;
   sourceCustomerWalletId: string | null;
   destinationCustomerWalletId: string | null;
   sourceBindingId: string | null;
