@@ -16,6 +16,8 @@ import type {
   ConsumePrivilegedActionCommand,
   DecidePrivilegedActionCommand,
   EmergencyAccessCommand,
+  ListPrivilegedActionApprovalsQuery,
+  PrivilegedActionApprovalListView,
   PrivilegedActionApprovalView,
   PrivilegedActionDecision,
   RequestPrivilegedActionCommand,
@@ -27,6 +29,12 @@ const MIN_APPROVAL_TTL_SECONDS = 60;
 const MAX_APPROVAL_TTL_SECONDS = 86_400;
 const MIN_EMERGENCY_TTL_SECONDS = 60;
 const MAX_EMERGENCY_TTL_SECONDS = 900;
+/** A2T12 read-surface pagination bounds. */
+const DEFAULT_APPROVAL_PAGE_SIZE = 50;
+const MAX_APPROVAL_PAGE_SIZE = 100;
+const APPROVAL_STATUSES: readonly PrivilegedActionApprovalStatus[] = Object.values(
+  PrivilegedActionApprovalStatus,
+);
 
 @Injectable()
 export class PrivilegedActionApprovalService {
@@ -43,6 +51,62 @@ export class PrivilegedActionApprovalService {
   async getApproval(approvalId: string): Promise<PrivilegedActionApprovalView | null> {
     const approval = await this.findApproval(approvalId);
     return approval ? this.toView(approval) : null;
+  }
+
+  /**
+   * A2T12 — read-only privileged-approval listing.
+   *
+   * STRICTLY READ-ONLY. It performs a `findAndCount` and maps through the same
+   * `toView` projection the rest of the service uses; it never creates,
+   * approves, rejects, cancels, consumes, expires or otherwise mutates an
+   * approval, and it never touches maker/checker state. Authorization is
+   * enforced by the caller (the A2 workforce controller) before this runs.
+   *
+   * Pagination mirrors the existing repository convention.
+   */
+  async listApprovals(
+    query: ListPrivilegedActionApprovalsQuery = {},
+  ): Promise<PrivilegedActionApprovalListView> {
+    const page = this.normalizePage(query.page ?? 1);
+    const limit = this.normalizeListLimit(query.limit ?? DEFAULT_APPROVAL_PAGE_SIZE);
+    const status = this.normalizeStatusFilter(query.status);
+
+    const [approvals, total] = await this.approvalRepository.findAndCount({
+      where: status ? { status } : {},
+      order: { requestedAt: 'DESC', id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return {
+      items: approvals.map((approval) => this.toView(approval)),
+      pagination: { page, limit, total, totalPages, hasNextPage: page < totalPages },
+    };
+  }
+
+  private normalizePage(page: number): number {
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    return page;
+  }
+
+  private normalizeListLimit(limit: number): number {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_APPROVAL_PAGE_SIZE) {
+      throw new BadRequestException(`limit must be between 1 and ${MAX_APPROVAL_PAGE_SIZE}`);
+    }
+    return limit;
+  }
+
+  private normalizeStatusFilter(
+    status?: PrivilegedActionApprovalStatus,
+  ): PrivilegedActionApprovalStatus | undefined {
+    if (status === undefined) return undefined;
+    if (!APPROVAL_STATUSES.includes(status)) {
+      throw new BadRequestException('status is not a known privileged-approval status');
+    }
+    return status;
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {

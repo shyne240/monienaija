@@ -3,9 +3,12 @@ import {
   Controller,
   Delete,
   ForbiddenException,
+  Get,
   Inject,
+  NotFoundException,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
@@ -13,6 +16,7 @@ import type { AuthorizationPrincipal } from './authorization.types';
 import { AuthorizationService } from './authorization.service';
 import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
+import { PrivilegedApprovalQueryDto } from './dto/privileged-approval-query.dto';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from './workforce-authentication.types';
@@ -172,6 +176,54 @@ export class A2WorkforceAdministrationController {
     );
     return this.approvals.approve({ approvalId, principal, ...b });
   }
+  /**
+   * A2T12 — read-only privileged-approval listing.
+   *
+   * Authentication: the route policy registry classifies every
+   * `/internal/a2/workforce/` path as `WORKFORCE_SESSION`, so the runtime
+   * guard already requires a valid A2 workforce session before this runs.
+   * Authorization: OPERATOR/PRIVILEGED only, via the existing
+   * AuthorizationService. Read-only — no approval state is touched.
+   */
+  @Get('approvals') async listApprovals(
+    @Query() query: PrivilegedApprovalQueryDto,
+    @Req() r: R,
+  ) {
+    await this.authorizeApprovalRead(this.principal(r));
+    return this.approvals.listApprovals(query);
+  }
+
+  /** A2T12 — read-only single privileged-approval read. */
+  @Get('approvals/:id') async readApproval(@Param('id') approvalId: string, @Req() r: R) {
+    await this.authorizeApprovalRead(this.principal(r), approvalId);
+    const approval = await this.approvals.getApproval(approvalId);
+    if (!approval) throw new NotFoundException(`Privileged approval ${approvalId} was not found`);
+    return approval;
+  }
+
+  /**
+   * Read authorization for A2T12. Deliberately does NOT consult
+   * `this.rule(...)`: maker/checker rules govern mutations, and inventing a
+   * read rule would change privileged-authorization semantics. This reuses the
+   * existing AuthorizationService with the same principal-type boundary the
+   * approval mutation endpoints already apply, and records the decision
+   * through the existing authorization-decision audit path.
+   */
+  private async authorizeApprovalRead(p: AuthorizationPrincipal, approvalId?: string) {
+    const decision = await this.auth.authorize(
+      p,
+      {
+        resourceType: 'A2_PRIVILEGED_ACTION_APPROVAL',
+        action: 'PRIVILEGED_APPROVAL_READ',
+        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+        customerAccess: 'NONE',
+      },
+      { type: 'A2_PRIVILEGED_ACTION_APPROVAL', id: approvalId },
+    );
+    if (!decision.allowed)
+      throw new ForbiddenException(`Approval read authorization denied: ${decision.reason}`);
+  }
+
   private principal(r: R) {
     if (!r.authorizationPrincipal) throw new ForbiddenException('Workforce principal missing');
     return r.authorizationPrincipal;

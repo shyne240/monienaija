@@ -67,6 +67,31 @@ export interface PrivilegedActionApprovalView {
   version: number;
 }
 
+/**
+ * A2T12 read-surface query. Read-only: it can never change approval state.
+ * `status` is optional; omitting it lists every status.
+ */
+export interface ListPrivilegedActionApprovalsQuery {
+  status?: PrivilegedActionApprovalStatus;
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * A2T12 paginated listing envelope. Mirrors the existing repository pagination
+ * convention (`WalletTransactionHistoryView`) rather than inventing a shape.
+ */
+export interface PrivilegedActionApprovalListView {
+  items: PrivilegedActionApprovalView[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+}
+
 export interface PrivilegedActionDecision {
   approved: boolean;
   approval?: PrivilegedActionApprovalView;
