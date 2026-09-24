@@ -1,5 +1,7 @@
 # MoneyNaija Roadmap & Governance Register
 
+> **V1 Agent conflict notice (2026-09-24):** A conflict has been registered between the current authoritative V1 product scope ([`docs/AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](docs/AUTHORITATIVE-V1-PRODUCT-SCOPE.md)) and the Agent statements in this file — specifically the human-acceptance gate covering "Agent … work", and "Agent App: NOT STARTED (Requires `B5` backend)" in §2.D. The conflict is registered in [`docs/V1-AGENT-ROADMAP-RECONCILIATION.md`](docs/V1-AGENT-ROADMAP-RECONCILIATION.md), which is **PROPOSED and NOT APPROVED**. **No statement in this file is superseded, amended, waived or reinterpreted by that record.** The governance rules below — including the fail-closed stop (rule 11), the unique-task-code requirement (rule 8) and the human acceptance testing gate — remain in force, and the registered conflict is itself a matter requiring operator resolution.
+
 This file is the authoritative engineering execution, prioritization, and sequencing map for the MoneyNaija platform. Every future implementation task must consult this file first to verify boundary rules, expected deliverables, predecessor tasks, and forbidden scopes.
 
 ---

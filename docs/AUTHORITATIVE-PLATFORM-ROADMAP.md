@@ -1,5 +1,7 @@
 # Authoritative Platform Roadmap
 
+> **V1 Agent conflict notice (2026-09-24):** A conflict has been registered between the current authoritative V1 product scope ([`AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](AUTHORITATIVE-V1-PRODUCT-SCOPE.md)) and this document's assignment of "Merchant and agent lifecycle" to B5 (§4) and its frontend sequencing of the Agent App (§6). The conflict is registered in [`V1-AGENT-ROADMAP-RECONCILIATION.md`](V1-AGENT-ROADMAP-RECONCILIATION.md), which is **PROPOSED and NOT APPROVED**. **No statement in this document is superseded, amended or reinterpreted by that record**; B5 ownership and the frontend maturity gate stand as written until a reconciliation authority decides otherwise.
+
 - **Task:** B2R01 — Authoritative Platform Roadmap and B2 Finance Reconciliation
 - **Status:** Authoritative for all work sequenced after the completed legacy B2T01–B2T10 implementation
 - **Effective date:** 2026-08-09
