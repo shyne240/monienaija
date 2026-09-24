@@ -59,6 +59,31 @@ export interface LedgerJournalView {
   lines: LedgerLineView[];
 }
 
+/**
+ * A5T12 read-surface query. Read-only: listing can never post, modify,
+ * reverse or delete a journal, and never touches balances.
+ */
+export interface ListLedgerJournalsQuery {
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * A5T12 paginated journal listing. Reuses the existing `LedgerJournalView`
+ * projection and mirrors the repository's established pagination envelope
+ * (`WalletTransactionHistoryView`) rather than introducing a new shape.
+ */
+export interface LedgerJournalListView {
+  items: LedgerJournalView[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+}
+
 export interface LedgerAccountView {
   id: string;
   code: string;

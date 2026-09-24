@@ -33,14 +33,19 @@ import type {
   JournalAndLines,
   LedgerAccountBalance,
   LedgerAccountView,
+  LedgerJournalListView,
   LedgerJournalView,
   LedgerLineView,
+  ListLedgerJournalsQuery,
   PostJournalCommand,
   PostJournalLineCommand,
 } from './ledger.types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_ACCOUNTING_UNIT = 'CUSTOMER_FUNDS';
+/** A5T12 read-surface pagination bounds. */
+const DEFAULT_JOURNAL_PAGE_SIZE = 50;
+const MAX_JOURNAL_PAGE_SIZE = 100;
 
 type NormalizedJournalLine = Omit<PostJournalLineCommand, 'amountMinor'> & {
   amountMinor: bigint;
@@ -276,6 +281,70 @@ export class LedgerService {
   async getJournal(journalId: string): Promise<LedgerJournalView> {
     const journalAndLines = await this.findJournalAndLines(journalId);
     return this.toJournalView(journalAndLines);
+  }
+
+  /**
+   * A5T12 — read-only ledger journal listing.
+   *
+   * STRICTLY READ-ONLY. It performs `findAndCount` over `ledger_journals`,
+   * batch-loads the corresponding `ledger_lines` in a single query to avoid an
+   * N+1, and maps through the SAME `toJournalView` projection that
+   * `getJournal` uses. It never posts, reverses, modifies or deletes a
+   * journal, never writes a line, and never recalculates or mutates an account
+   * balance. The ledger remains the sole financial source of truth and its
+   * accounting semantics are untouched.
+   *
+   * Ordering is `postedAt DESC, id DESC` so pagination is deterministic and
+   * pages neither overlap nor omit records.
+   */
+  async listJournals(query: ListLedgerJournalsQuery = {}): Promise<LedgerJournalListView> {
+    const page = this.normalizeJournalPage(query.page ?? 1);
+    const limit = this.normalizeJournalLimit(query.limit ?? DEFAULT_JOURNAL_PAGE_SIZE);
+
+    const [journals, total] = await this.journalRepository.findAndCount({
+      order: { postedAt: 'DESC', id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const journalIds = journals.map((journal) => journal.id);
+    const lines = journalIds.length
+      ? await this.lineRepository.find({
+          where: { journalId: In(journalIds) },
+          order: { lineNumber: 'ASC' },
+        })
+      : [];
+
+    const linesByJournal = new Map<string, LedgerLine[]>();
+    for (const line of lines) {
+      const bucket = linesByJournal.get(line.journalId);
+      if (bucket) bucket.push(line);
+      else linesByJournal.set(line.journalId, [line]);
+    }
+
+    const items = journals.map((journal) =>
+      this.toJournalView({ journal, lines: linesByJournal.get(journal.id) ?? [] }),
+    );
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return {
+      items,
+      pagination: { page, limit, total, totalPages, hasNextPage: page < totalPages },
+    };
+  }
+
+  private normalizeJournalPage(page: number): number {
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    return page;
+  }
+
+  private normalizeJournalLimit(limit: number): number {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_JOURNAL_PAGE_SIZE) {
+      throw new BadRequestException(`limit must be between 1 and ${MAX_JOURNAL_PAGE_SIZE}`);
+    }
+    return limit;
   }
 
   private async postWithinTransaction(

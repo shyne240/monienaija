@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateLedgerAccountDto } from './dto/create-ledger-account.dto';
+import { ListJournalsDto } from './dto/list-journals.dto';
 import { PostJournalDto, ReverseJournalDto } from './dto/post-journal.dto';
 import { LedgerService } from './ledger.service';
 
@@ -68,6 +69,23 @@ export class LedgerController {
         amountMinor: line.amountMinor,
       })),
     });
+  }
+
+  /**
+   * A5T12 — read-only paginated ledger journal listing.
+   *
+   * Authorization is inherited, not invented: `/api/v1/ledger/*` resolves to
+   * the route policy registry's default `internal-route` policy, which already
+   * requires an authenticated principal holding the `internal:access` scope and
+   * restricts callers to SUPPORT/OPERATOR/SERVICE/PRIVILEGED with
+   * `customerAccess: 'NONE'`. This is exactly the boundary the existing
+   * `GET journals/:journalId` read already enforces.
+   *
+   * Declared before `journals/:journalId` so the static path is unambiguous.
+   */
+  @Get('journals')
+  listJournals(@Query() query: ListJournalsDto) {
+    return this.ledgerService.listJournals(query);
   }
 
   @Get('journals/:journalId')
