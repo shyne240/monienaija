@@ -3,11 +3,11 @@
 - **Originating task:** GOV-V1-SCOPE-AND-AGENT-ROADMAP-RECONCILIATION
 - **Roadmap task code:** **V1A01** — assigned by the project owner on 2026-09-24 (GA-1). See §6.
 - **Type:** Documentation-only reconciliation record, following the precedent of [`B2-ROADMAP-RECONCILIATION-HANDOFF.md`](B2-ROADMAP-RECONCILIATION-HANDOFF.md) (task code B2R01).
-- **Status:** **APPROVED for the governance decisions GA-1, GA-2 and GA-3** by the project owner on 2026-09-24 (§1A). **Finance/B2F decisions remain UNRESOLVED** (§1B). AGR-02 (Agent App sequencing) and AGR-05 (Aggregator ownership) remain unresolved.
+- **Status:** **APPROVED for the governance decisions GA-1, GA-2 and GA-3** by the project owner on 2026-09-24 (§1A). **Stage 1 (Agent canonical identity) is DELIVERED and VERIFIED** (§9A). **Finance/B2F decisions remain UNRESOLVED** (§1B), so Stages 2-4 remain blocked. AGR-02 (Agent App sequencing) and AGR-05 (Aggregator ownership) remain unresolved.
 - **Prepared:** 2026-09-24
 - **Scope:** The conflict between the current authoritative V1 product scope and existing roadmap ownership and governance statements concerning Agent.
 - **Companion records:** [`AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](AUTHORITATIVE-V1-PRODUCT-SCOPE.md), [`ADR/ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md`](ADR/ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md), [`ADR/ADR-0093-V1-AGENT-IDENTITY-DECISION-RESOLUTION.md`](ADR/ADR-0093-V1-AGENT-IDENTITY-DECISION-RESOLUTION.md)
-- **Implementation status:** No source, test, app, migration, schema, enum, configuration or runtime behaviour is created or modified.
+- **Implementation status of this record:** documentation only. This record itself creates no source, test, app, migration, schema, enum, configuration or runtime behaviour. Stage 1 implementation was delivered separately under roadmap code `V1A01` in commit `322b3e6753b1d8a612bcd9e7a0f0806282cda58c`; see §9A.
 
 ---
 
@@ -299,7 +299,7 @@ Modelled on B2R01 §6. §1 and §7 were approved on 2026-09-24, so these rules a
 
 Carried forward from `ADR-0093-V1-AGENT-IDENTITY-DECISION-RESOLUTION.md` §9. Each stage requires **all** of its own prerequisites **and** those of every earlier stage.
 
-### Stage 1 — Agent identity — **UNBLOCKED (2026-09-24)**
+### Stage 1 — Agent identity — **DELIVERED / VERIFIED (2026-09-24)**
 
 Deliverable: Agent canonical identity only. No financial account, no ledger object, nothing immutable.
 
@@ -310,9 +310,9 @@ Requires:
 - AGR-03 answered — **SATISFIED** (GA-2, §1A);
 - roadmap code allocated — **SATISFIED**, `V1A01` (GA-1, §1A).
 
-**All Stage 1 prerequisites are met. Stage 1 is UNBLOCKED and may proceed under roadmap code `V1A01`.**
+**All Stage 1 prerequisites were met, Stage 1 proceeded under roadmap code `V1A01`, and it is now DELIVERED and VERIFIED.** Delivery evidence is recorded in §9A.
 
-Stage 1 must not create a `wallet_accounts` row, a `ledger_accounts` row, an Agent financial binding, or any Agent MonieNaija number, because those belong to Stages 2 and 4 and depend on decisions that remain unresolved.
+Stage 1 must not create a `wallet_accounts` row, a `ledger_accounts` row, an Agent financial binding, or any Agent MonieNaija number, because those belong to Stages 2 and 4 and depend on decisions that remain unresolved. **This constraint was honoured and is machine-verified** (§9A).
 
 ### Stage 2 — Agent wallet and financial binding — **BLOCKED**
 
@@ -340,6 +340,49 @@ Blocked until the number allocation strategy is approved. Requires:
 
 ---
 
+## 9A. Stage 1 delivery record
+
+| Field | Value |
+| --- | --- |
+| **Stage** | Stage 1 — Agent canonical identity |
+| **Status** | **DELIVERED / VERIFIED** |
+| **Roadmap code** | **`V1A01`** |
+| **Delivery commit** | `322b3e6753b1d8a612bcd9e7a0f0806282cda58c` |
+| **Delivered** | 2026-09-24 |
+| **Governing architecture** | [`ADR-0093`](ADR/ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md) §8 |
+| **Working tree at delivery** | Clean |
+
+### What was delivered
+
+Agent canonical identity exists as a first-class aggregate and is **persistent and auditable**:
+
+- a dedicated `agents` table with a domain-generated UUID identity, created by additive migration `1785753600056-CreateAgentIdentity`;
+- a globally unique caller-supplied `reference`, the V1 status vocabulary from [`AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](AUTHORITATIVE-V1-PRODUCT-SCOPE.md) §11.2 defaulting to `PENDING`, and the optional non-authoritative `operator_customer_id` Customer trace of ADR-0093 §8.5 — nullable, non-unique, `ON DELETE RESTRICT`;
+- Agent identity is never derived from a `Customer.id`, and an Agent is never a row in `customers`;
+- creation is transactional and writes an immutable `AGENT` / `CREATED` event through the **existing** audit infrastructure, rolling back with the Agent if the transaction fails.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Agent real-PostgreSQL integration tests | **18 / 18 passed** |
+| Full real-PostgreSQL integration suite | **18 suites / 269 tests passed** |
+| Unit suite | **176 suites / 1856 tests**, with the same **2 known pre-existing `ExternalReconciliationService` failures** (reproduced at the parent commit without the Stage 1 change; not introduced by V1A01) |
+| TypeScript compilation | **Passed** (`tsc --noEmit`, 0 errors) |
+| Working tree at delivery | **Clean** |
+
+### Boundary honoured — Stage 1 stopped before financial ownership
+
+Stage 1 created **no** financial ownership or financial identity of any kind. Specifically, none of the following was created or modified: `wallet_accounts` (including no `owner_type` discriminator), `ledger_accounts`, Agent wallet, Agent financial-account binding, Agent balance, Agent MonieNaija number or receiving-number allocation, Agent transaction PIN, Agent authentication, Agent transaction authorization, or an `AGENT` value in `AuthorizationPrincipalType`. No Agent status transition, Agent class, or onboarding/approval workflow was implemented, and no customer identity, wallet, W→W, PIN or ledger behaviour was changed.
+
+Five of the eighteen Agent integration tests assert the boundary itself rather than the feature, so the boundary is **machine-verified on real PostgreSQL**, not merely asserted in prose: the `agents` table carries exactly its eight non-financial columns; `agent%` matches only `agents`; `wallet_accounts` has no `owner_type`; no non-`b2_` table gained an agent column; and creating an Agent leaves `wallet_accounts`, `ledger_accounts`, `ledger_journals`, `customer_wallets`, `customer_financial_account_bindings`, `customer_receiving_numbers` and `customer_authentication_credentials` all at zero rows.
+
+### Unchanged by this delivery
+
+Stage 1 delivery resolves **no** Finance decision and changes **no** approved governance decision. GA-1, GA-2 and GA-3 stand exactly as approved in §1A. **Stage 2 remains BLOCKED on Finance F-1 and F-2; Stage 3 remains BLOCKED on F-3 and F-4; Stage 4 remains BLOCKED on the Agent number-allocation strategy.** None of those has been inferred, defaulted or partially anticipated.
+
+---
+
 ## 10. Approval status
 
 | # | Action | Owner | Status |
@@ -360,9 +403,9 @@ GA-1, GA-2 and GA-3 gated Stage 1 and are now satisfied. F-1 and F-2 gate Stage 
 
 ## 11. Exact next step
 
-1. **Stage 1 (Agent identity) may begin** as task **`V1A01`**, under [`ADR-0093`](ADR/ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md). It must stop at the boundary defined in §9 Stage 1 and create no financial account, ledger object, binding or number.
-2. **Finance proceeds with F-1 → F-2, then F-3/F-4**, in that order and in parallel with Stage 1. F-3 cannot be drafted before F-2, and F-2 cannot be settled without F-1's unit.
-3. **Roadmap owner addresses GA-4 and GA-5** when convenient; neither blocks Stages 1–4.
+1. **Stage 1 (Agent identity) is DELIVERED and VERIFIED** as task **`V1A01`**, commit `322b3e6753b1d8a612bcd9e7a0f0806282cda58c`, under [`ADR-0093`](ADR/ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md). It stopped at the boundary defined in §9 Stage 1 and created no financial account, ledger object, binding or number. Evidence: §9A. **No further Agent work is authorized by this record.**
+2. **Finance proceeds with F-1 → F-2, then F-3/F-4**, in that order. F-3 cannot be drafted before F-2, and F-2 cannot be settled without F-1's unit. **This is now the critical path**: with Stage 1 delivered, F-1 and F-2 are the only things standing between the platform and Stage 2.
+3. **Roadmap owner addresses GA-4 and GA-5** when convenient; neither blocks Stages 2–4.
 4. **The number allocation strategy** is decided before Stage 4.
 
 The fail-closed stop in `roadmap.md` governance rule 11 is **not waived** and continues to apply to any future task that conflicts with `roadmap.md` or an accepted ADR.
@@ -386,4 +429,7 @@ Do **not** begin Stage 2, 3 or 4 from this record.
 - [x] Finance/B2F decisions F-1 to F-4 left unresolved and assigned.
 - [x] Staged gate preserved; Stage 1 unblocked, Stages 2–4 remain blocked.
 - [x] Primary roadmap files carry pointer notices only; no historical statement deleted, reworded or reinterpreted in place.
-- [x] No source, test, app, migration, schema, enum, configuration, runtime behaviour or ADR renumbering introduced.
+- [x] Stage 1 recorded as DELIVERED/VERIFIED against real implementation and test evidence (§9A), not against intent.
+- [x] Stage 1 financial boundary machine-verified on real PostgreSQL; Stages 2-4 left BLOCKED and no Finance decision resolved, inferred or defaulted.
+- [x] Approved decisions GA-1, GA-2 and GA-3 unchanged by the delivery record.
+- [x] This record introduces no source, test, app, migration, schema, enum, configuration, runtime behaviour or ADR renumbering.

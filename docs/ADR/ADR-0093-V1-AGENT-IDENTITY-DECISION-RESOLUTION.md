@@ -5,7 +5,7 @@
 - **Parent decision:** [ADR-0093 — V1 Agent Identity and Financial Ownership Architecture](ADR-0093-V1-Agent-Identity-and-Financial-Ownership-Architecture.md)
 - **Status:** Prepared. No decision in this document is resolved by Arena; each unresolved item is assigned to a named owner class.
 - **Baseline:** branch `arena/01a0b942-monienaija`, HEAD `d05ebeb2e760f450475bc7791b9d8e1b394c738e`
-- **Governance update (2026-09-24):** G1/GA-3 (ownership), GA-2 (gate interpretation) and GA-1 (roadmap code `V1A01`) are **APPROVED** — see [`../V1-AGENT-ROADMAP-RECONCILIATION.md`](../V1-AGENT-ROADMAP-RECONCILIATION.md) §1A. G2 is satisfied by [`../AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](../AUTHORITATIVE-V1-PRODUCT-SCOPE.md). **Stage 1 is unblocked; F1–F3 (Finance) remain open and Stages 2–4 remain blocked.** The gate in §9 below is superseded by that record.
+- **Governance update (2026-09-24):** G1/GA-3 (ownership), GA-2 (gate interpretation) and GA-1 (roadmap code `V1A01`) are **APPROVED** — see [`../V1-AGENT-ROADMAP-RECONCILIATION.md`](../V1-AGENT-ROADMAP-RECONCILIATION.md) §1A. G2 is satisfied by [`../AUTHORITATIVE-V1-PRODUCT-SCOPE.md`](../AUTHORITATIVE-V1-PRODUCT-SCOPE.md). **Stage 1 (Agent canonical identity) is DELIVERED and VERIFIED** — roadmap code `V1A01`, commit `322b3e6753b1d8a612bcd9e7a0f0806282cda58c`; see that record §9A. **F1–F3 (Finance) remain open and Stages 2–4 remain blocked.** The gate in §9 below is superseded by that record.
 - **Implementation status:** No source, test, migration, schema, enum or runtime behaviour is created or modified.
 
 ---
