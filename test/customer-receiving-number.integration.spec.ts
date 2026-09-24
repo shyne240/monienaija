@@ -9,14 +9,11 @@ import {
 import type { DataSource } from 'typeorm';
 
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
-import { AuthorizationService } from '../src/authorization/authorization.service';
-import { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
-import { CustomerFinancialOperationsService } from '../src/customer-financial-operations/customer-financial-operations.service';
+import type { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
+import type { CustomerFinancialOperationsService } from '../src/customer-financial-operations/customer-financial-operations.service';
 import { CustomerTransferDestinationType } from '../src/customer-financial-operations/customer-financial-operations.types';
 import { CustomerReceivingNumber } from '../src/customer-wallet/customer-receiving-number.entity';
 import { CustomerReceivingNumberStatus } from '../src/customer-wallet/customer-receiving-number.enums';
-import { CustomerEligibility } from '../src/customer-eligibility/customer-eligibility.entity';
-import { CustomerOnboarding } from '../src/customer-onboarding/customer-onboarding.entity';
 import { Customer } from '../src/customer/customer.entity';
 import { CustomerAddress } from '../src/customer/customer-address.entity';
 import { CustomerContactMethod } from '../src/customer/customer-contact-method.entity';
@@ -31,44 +28,25 @@ import {
   CustomerWalletType,
   WalletProvisioningHistoryAction,
 } from '../src/customer-wallet/customer-wallet.enums';
-import { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
-import { WalletAlias } from '../src/customer-wallet/wallet-alias.entity';
-import { WalletOwnership } from '../src/customer-wallet/wallet-ownership.entity';
+import type { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
 import { WalletProvisioningHistory } from '../src/customer-wallet/wallet-provisioning-history.entity';
-import { DepositService } from '../src/deposit/deposit.service';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
-import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
-import { Deposit } from '../src/deposit/deposit.entity';
 import {
   LedgerAccountType,
   LedgerEntryDirection,
   LedgerNormalBalance,
 } from '../src/ledger/ledger.enums';
 import { LedgerLine } from '../src/ledger/ledger-line.entity';
-import { LedgerService } from '../src/ledger/ledger.service';
-import { AuditEvent } from '../src/operations/audit-event.entity';
-import { AuditService } from '../src/operations/audit.service';
-import { IdempotencyRecord } from '../src/operations/idempotency-record.entity';
-import { IdempotencyService } from '../src/operations/idempotency.service';
-import { MetricsService } from '../src/operations/metrics.service';
-import { OutboxEvent } from '../src/operations/outbox-event.entity';
-import { OutboxService } from '../src/operations/outbox.service';
-import { PaymentReferenceService } from '../src/payment/payment-reference.service';
-import { SettlementAccountService } from '../src/payment/settlement-account.service';
-import { Transfer } from '../src/transfer/transfer.entity';
+import type { LedgerService } from '../src/ledger/ledger.service';
 import { TransferStatus } from '../src/transfer/transfer.enums';
-import { TransferService } from '../src/transfer/transfer.service';
 import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
 import { CustomerFinancialAccountReadService } from '../src/wallet/customer-financial-account-read.service';
-import { CustomerFinancialAccountResolutionService } from '../src/wallet/customer-financial-account-resolution.service';
-import { CustomerFinancialAccountBindingService } from '../src/wallet/customer-financial-account-binding.service';
 import {
   CustomerRecipientLookupMode,
   toPublicRecipientView,
 } from '../src/wallet/customer-recipient-resolution.types';
-import { CustomerRecipientResolutionService } from '../src/wallet/customer-recipient-resolution.service';
+import type { CustomerRecipientResolutionService } from '../src/wallet/customer-recipient-resolution.service';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
-import { WalletService } from '../src/wallet/wallet.service';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -83,7 +61,6 @@ import {
   type CustomerTransferStack,
 } from './support/customer-transfer-stack';
 import {
-  createTransactionPinStack,
   seedTransactionPin,
   TEST_TRANSACTION_PIN,
   type TransactionPinStack,
@@ -103,9 +80,6 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
   let ledger: LedgerService;
   let customerWallets: CustomerWalletService;
   let customers: CustomerService;
-  let transfers: TransferService;
-  let deposits: DepositService;
-  let resolution: CustomerFinancialAccountResolutionService;
   let recipientResolution: CustomerRecipientResolutionService;
   let financialAccountRead: CustomerFinancialAccountReadService;
   let receivingNumbers: CustomerReceivingNumberService;
@@ -127,9 +101,6 @@ describe('Canonical phone + MonieNaija receiving number (real PostgreSQL)', () =
     ledger = stack.ledger;
     customerWallets = stack.customerWallets;
     receivingNumbers = stack.receivingNumbers;
-    transfers = stack.transfers;
-    deposits = stack.deposits;
-    resolution = stack.resolution;
     recipientResolution = stack.recipientResolution;
     pinStack = stack.pinStack;
     operations = stack.operations;

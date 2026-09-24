@@ -10,54 +10,30 @@ import {
 import type { DataSource } from 'typeorm';
 
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
-import { AuthorizationService } from '../src/authorization/authorization.service';
-import { CustomerFinancialOperationsService } from '../src/customer-financial-operations/customer-financial-operations.service';
-import { CustomerEligibility } from '../src/customer-eligibility/customer-eligibility.entity';
-import { CustomerOnboarding } from '../src/customer-onboarding/customer-onboarding.entity';
+import type { CustomerFinancialOperationsService } from '../src/customer-financial-operations/customer-financial-operations.service';
 import { CustomerWallet } from '../src/customer-wallet/customer-wallet.entity';
 import { CustomerWalletStatus } from '../src/customer-wallet/customer-wallet.enums';
 import { CustomerReceivingNumber } from '../src/customer-wallet/customer-receiving-number.entity';
-import { CustomerReceivingNumberService } from '../src/customer-wallet/customer-receiving-number.service';
-import { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
+import type { CustomerWalletService } from '../src/customer-wallet/customer-wallet.service';
 import { WalletProvisioningHistoryAction } from '../src/customer-wallet/customer-wallet.enums';
 import { CustomerWalletType } from '../src/customer-wallet/customer-wallet.enums';
-import { WalletAlias } from '../src/customer-wallet/wallet-alias.entity';
-import { WalletOwnership } from '../src/customer-wallet/wallet-ownership.entity';
 import { WalletProvisioningHistory } from '../src/customer-wallet/wallet-provisioning-history.entity';
 import { Customer } from '../src/customer/customer.entity';
-import { CustomerContactMethod } from '../src/customer/customer-contact-method.entity';
-import { CustomerProfile } from '../src/customer/customer-profile.entity';
-import { Deposit } from '../src/deposit/deposit.entity';
-import { DepositService } from '../src/deposit/deposit.service';
 import { DepositStatus } from '../src/deposit/deposit.enums';
 import { LedgerAccount } from '../src/ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
-import { LedgerJournal } from '../src/ledger/ledger-journal.entity';
 import { LedgerLine } from '../src/ledger/ledger-line.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
-import { LedgerService } from '../src/ledger/ledger.service';
-import { AuditEvent } from '../src/operations/audit-event.entity';
-import { AuditService } from '../src/operations/audit.service';
-import { IdempotencyRecord } from '../src/operations/idempotency-record.entity';
-import { IdempotencyService } from '../src/operations/idempotency.service';
-import { MetricsService } from '../src/operations/metrics.service';
-import { OutboxEvent } from '../src/operations/outbox-event.entity';
-import { OutboxService } from '../src/operations/outbox.service';
-import { PaymentReferenceService } from '../src/payment/payment-reference.service';
-import { SettlementAccountService } from '../src/payment/settlement-account.service';
+import type { LedgerService } from '../src/ledger/ledger.service';
 import { Transfer } from '../src/transfer/transfer.entity';
 import { TransferStatus } from '../src/transfer/transfer.enums';
-import { TransferService } from '../src/transfer/transfer.service';
+import type { TransferService } from '../src/transfer/transfer.service';
 import { CustomerFinancialAccountBinding } from '../src/wallet/customer-financial-account-binding.entity';
 import { CustomerFinancialAccountBindingState } from '../src/wallet/customer-financial-account-binding.enums';
-import { CustomerFinancialAccountBindingService } from '../src/wallet/customer-financial-account-binding.service';
+import type { CustomerFinancialAccountBindingService } from '../src/wallet/customer-financial-account-binding.service';
 import { CustomerFinancialAccountReadService } from '../src/wallet/customer-financial-account-read.service';
-import { CustomerFinancialAccountResolutionService } from '../src/wallet/customer-financial-account-resolution.service';
-import { CustomerRecipientResolutionService } from '../src/wallet/customer-recipient-resolution.service';
+import type { CustomerFinancialAccountResolutionService } from '../src/wallet/customer-financial-account-resolution.service';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
-import { WalletService } from '../src/wallet/wallet.service';
-import { Withdrawal } from '../src/withdrawal/withdrawal.entity';
-import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
 import { WithdrawalStatus } from '../src/withdrawal/withdrawal.enums';
 import {
   createIntegrationDataSource,
@@ -73,7 +49,6 @@ import {
   type CustomerTransferStack,
 } from './support/customer-transfer-stack';
 import {
-  createTransactionPinStack,
   seedTransactionPin,
   TEST_TRANSACTION_PIN,
   type TransactionPinStack,
@@ -93,12 +68,9 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let stack: CustomerTransferStack;
   let ledger: LedgerService;
-  let walletAccounts: WalletService;
   let binding: CustomerFinancialAccountBindingService;
   let customerWallets: CustomerWalletService;
   let transfers: TransferService;
-  let deposits: DepositService;
-  let withdrawals: WithdrawalService;
   let resolution: CustomerFinancialAccountResolutionService;
   let financialAccountRead: CustomerFinancialAccountReadService;
   let operations: CustomerFinancialOperationsService;
@@ -125,12 +97,9 @@ describe('CustomerWallet financial binding (real PostgreSQL)', () => {
     dataSource = await createIntegrationDataSource('cfabinding');
     stack = createCustomerTransferStack(dataSource);
     ledger = stack.ledger;
-    walletAccounts = new WalletService(dataSource.getRepository(WalletAccount), dataSource, ledger);
     binding = stack.bindingService;
     customerWallets = stack.customerWallets;
     transfers = stack.transfers;
-    deposits = stack.deposits;
-    withdrawals = stack.withdrawals;
     resolution = stack.resolution;
     pinStack = stack.pinStack;
     operations = stack.operations;

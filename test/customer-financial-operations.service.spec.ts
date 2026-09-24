@@ -192,14 +192,12 @@ describe('CustomerFinancialOperationsService', () => {
     };
     const dataSource = {
       transaction: jest.fn((fn: (manager: object) => Promise<unknown>) => fn({})),
-      query: jest
-        .fn()
-        .mockImplementation((sql: string): Promise<Array<Record<string, string>>> => {
-          if (sql.includes('FROM transfers')) {
-            return Promise.resolve([{ day_count: '0', day_amount: '0', month_amount: '0' }]);
-          }
-          return Promise.resolve([]);
-        }),
+      query: jest.fn().mockImplementation((sql: string): Promise<Array<Record<string, string>>> => {
+        if (sql.includes('FROM transfers')) {
+          return Promise.resolve([{ day_count: '0', day_amount: '0', month_amount: '0' }]);
+        }
+        return Promise.resolve([]);
+      }),
     };
     const service = new CustomerFinancialOperationsService(
       resolution as unknown as CustomerFinancialAccountResolutionService,
