@@ -5,6 +5,7 @@
 - **Contributing owners:** A2 Runtime Identity & Access, A3 Binding, A5 Ledger, B2F Finance, B1 Commercial, B5 Merchant Platform
 - **Status:** Proposed — technical decisions ready for review; blocked on Finance/B2F accounting approval, Commercial/B1 commission scope, and a roadmap-ownership amendment (see §20)
 - **Supersedes:** None
+- **Addendum:** [ADR-0093 Addendum — V1 Agent Identity Decision Resolution Package](ADR-0093-V1-AGENT-IDENTITY-DECISION-RESOLUTION.md) — owner assignment and implementation gate for the decisions left unresolved here
 - **Related decisions:** [ADR-0021](ADR-0021-Customer-Domain-Canonical-Model-and-Ownership-Rules.md), [ADR-0023](ADR-0023-Customer-Identifier-and-Reference-Conventions.md), [ADR-0031](ADR-0031-Customer-to-Financial-Account-Identity-Binding.md), [ADR-0032](ADR-0032-Wallet-Provisioning-to-Ledger-Account-Mapping.md), [ADR-0033](ADR-0033-Financial-Account-Ownership-and-Lifecycle-Authority.md), [ADR-0075](ADR-0075-B2-Merchant-Agent-Activation-Readiness.md), [ADR-0084](ADR-0084-B2-Finance-Chart-Classification-and-A5-Account-Mapping.md), [ADR-0092](ADR-0092-A2-Workforce-and-Privileged-Authentication.md)
 - **Implementation status:** Documentation-only decision. No entity, migration, table, service, controller, API, enum, or runtime behaviour is introduced or modified by this ADR.
 
