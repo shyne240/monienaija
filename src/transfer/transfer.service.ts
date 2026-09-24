@@ -9,7 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 
 import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
@@ -25,6 +25,8 @@ import { WalletStatus } from '../wallet/wallet.enums';
 import { Transfer } from './transfer.entity';
 import { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
+  GlobalTransferListItemView,
+  GlobalTransferListView,
   CreateTransferCommand,
   TransferFailure,
   TransferTransactionResult,
@@ -135,6 +137,63 @@ export class TransferService {
       ? await this.journalRepository.findOne({ where: { id: transfer.journalId } })
       : null;
     return this.toView(transfer, journal?.reference ?? null);
+  }
+
+  /**
+   * A5T13 — read-only GLOBAL operational transfer listing.
+   *
+   * STRICTLY READ-ONLY. It performs `findAndCount` over `transfers`,
+   * batch-loads the referenced ledger journals in a single query to resolve
+   * journal references without an N+1, and projects through
+   * `toGlobalListItemView`. It never creates, executes, approves, cancels or
+   * reverses a transfer, never changes status, amount, fees or destination,
+   * never touches an idempotency record, and never posts or alters a journal
+   * or balance. The A5 transfer lifecycle remains authoritative.
+   *
+   * Ordering is `createdAt DESC, id DESC` so pagination is deterministic and
+   * pages neither overlap nor omit records.
+   */
+  async listTransfers(
+    page = DEFAULT_HISTORY_PAGE,
+    limit = DEFAULT_HISTORY_LIMIT,
+  ): Promise<GlobalTransferListView> {
+    const normalizedPage = this.normalizePage(page);
+    const normalizedLimit = this.normalizeLimit(limit);
+
+    const [transfers, total] = await this.transferRepository.findAndCount({
+      order: { createdAt: 'DESC', id: 'DESC' },
+      skip: (normalizedPage - 1) * normalizedLimit,
+      take: normalizedLimit,
+    });
+
+    const journalIds = [
+      ...new Set(transfers.map((transfer) => transfer.journalId).filter((id): id is string => !!id)),
+    ];
+    const journals = journalIds.length
+      ? await this.journalRepository.find({ where: { id: In(journalIds) } })
+      : [];
+    const journalReferenceById = new Map(
+      journals.map((journal) => [journal.id, journal.reference ?? null]),
+    );
+
+    const items = transfers.map((transfer) =>
+      this.toGlobalListItemView(
+        transfer,
+        transfer.journalId ? (journalReferenceById.get(transfer.journalId) ?? null) : null,
+      ),
+    );
+    const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
+
+    return {
+      items,
+      pagination: {
+        page: normalizedPage,
+        limit: normalizedLimit,
+        total,
+        totalPages,
+        hasNextPage: normalizedPage < totalPages,
+      },
+    };
   }
 
   async getWalletTransactions(
@@ -529,6 +588,22 @@ export class TransferService {
       createdAt: transfer.createdAt,
       completedAt: transfer.completedAt,
     };
+  }
+
+  /**
+   * A5T13 projection: the existing `toView` shape with `idempotencyKey`
+   * removed. Built by delegating to `toView` and destructuring the key away,
+   * so the two projections cannot silently drift apart.
+   */
+  private toGlobalListItemView(
+    transfer: Transfer,
+    journalReference: string | null,
+  ): GlobalTransferListItemView {
+    const full: GlobalTransferListItemView & { idempotencyKey?: string } = {
+      ...this.toView(transfer, journalReference),
+    };
+    delete full.idempotencyKey;
+    return full;
   }
 
   private toTransactionView(transfer: Transfer, walletId: string): WalletTransactionView {

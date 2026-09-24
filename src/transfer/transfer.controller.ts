@@ -1,5 +1,15 @@
-import { Controller, Get, GoneException, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  GoneException,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 
+import { TransferHistoryQueryDto } from './dto/transfer-history-query.dto';
 import { TransferService } from './transfer.service';
 
 /**
@@ -21,6 +31,24 @@ export class TransferController {
         'POST /customers/:id/transfers, which enforces customer authentication, ownership ' +
         'binding, transaction PIN, and the A5 gate/lifecycle control path.',
     );
+  }
+
+  /**
+   * A5T13 — read-only GLOBAL operational transfer listing.
+   *
+   * Authorization is inherited, not invented: `/api/v1/transfers` resolves to
+   * the route policy registry's default `internal-route` policy, which already
+   * requires an authenticated principal holding the `internal:access` scope and
+   * admits only SUPPORT/OPERATOR/SERVICE/PRIVILEGED with
+   * `customerAccess: 'NONE'`. CUSTOMER principals are excluded, so this global
+   * surface is not customer-reachable. Customers read their own transfers
+   * through the wallet-scoped and customer-scoped surfaces instead.
+   *
+   * Declared before `:transferId` so the collection path is unambiguous.
+   */
+  @Get()
+  listTransfers(@Query() query: TransferHistoryQueryDto) {
+    return this.transferService.listTransfers(query.page, query.limit);
   }
 
   @Get(':transferId')
