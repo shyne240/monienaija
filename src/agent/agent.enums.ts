@@ -16,3 +16,17 @@ export enum AgentStatus {
   SUSPENDED = 'SUSPENDED',
   TERMINATED = 'TERMINATED',
 }
+
+/** F-2 — lifecycle of the Agent's dedicated e-float wallet registry record. */
+export enum AgentWalletStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  CLOSED = 'CLOSED',
+}
+
+/** F-2 — lifecycle of the Agent financial-account binding. */
+export enum AgentFinancialAccountBindingState {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  CLOSED = 'CLOSED',
+}

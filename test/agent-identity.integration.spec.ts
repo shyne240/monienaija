@@ -272,19 +272,40 @@ describe('V1A01 Stage 1 canonical Agent identity (real PostgreSQL)', () => {
       }
     });
 
-    it('creates no agent wallet, binding, number, credential or principal table', async () => {
+    it('creates no agent number, credential or principal table', async () => {
       const tables = await rows<{ tablename: string }>(
         `SELECT tablename FROM pg_tables
           WHERE schemaname = 'public' AND tablename LIKE 'agent%'`,
       );
-      expect(tables.map((r) => r.tablename).sort()).toEqual(['agents']);
+      // Superseded by F-1/F-2, which legitimately added the Agent financial
+      // ownership tables. Stage 1 itself still contributes only `agents`, and
+      // the behavioural guarantee above remains: creating an Agent populates
+      // none of the financial tables.
+      expect(tables.map((r) => r.tablename).sort()).toEqual([
+        'agent_financial_account_bindings',
+        'agent_float_accounting_classifications',
+        'agent_wallets',
+        'agents',
+      ]);
+      for (const forbidden of [
+        'agent_receiving_numbers',
+        'agent_authentication_credentials',
+        'agent_sessions',
+      ]) {
+        expect(tables.map((r) => r.tablename)).not.toContain(forbidden);
+      }
     });
 
-    it('leaves wallet_accounts without an owner_type discriminator (Stage 2 work)', async () => {
-      const columns = await rows<{ column_name: string }>(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = 'wallet_accounts'`,
+    it('has the owner_type discriminator added by F-1, defaulting to CUSTOMER', async () => {
+      // Superseded Stage 1 expectation: Stage 1 deliberately deferred this
+      // column and F-1 added it additively. What still matters is that it
+      // defaults to CUSTOMER, so every pre-existing account stays correct.
+      const columns = await rows<{ column_name: string; column_default: string | null }>(
+        `SELECT column_name, column_default FROM information_schema.columns
+          WHERE table_name = 'wallet_accounts' AND column_name = 'owner_type'`,
       );
-      expect(columns.map((c) => c.column_name)).not.toContain('owner_type');
+      expect(columns).toHaveLength(1);
+      expect(String(columns[0]?.column_default)).toContain('CUSTOMER');
     });
 
     it('adds no agent column to any customer financial table', async () => {
@@ -294,8 +315,17 @@ describe('V1A01 Stage 1 canonical Agent identity (real PostgreSQL)', () => {
             AND column_name LIKE '%agent%'
             AND table_name <> 'agents'`,
       );
-      // Only the pre-existing B2 readiness attestation may mention an agent.
-      expect(columns.filter((r) => !r.table_name.startsWith('b2_'))).toEqual([]);
+      // Intent: no agent column may leak into a CUSTOMER-owned table. The
+      // pre-existing B2 readiness attestation and the Agent-owned tables added
+      // by F-1/F-2 are legitimately allowed to carry one.
+      const agentOwned = new Set([
+        'agent_wallets',
+        'agent_financial_account_bindings',
+        'agent_float_accounting_classifications',
+      ]);
+      expect(
+        columns.filter((r) => !r.table_name.startsWith('b2_') && !agentOwned.has(r.table_name)),
+      ).toEqual([]);
     });
 
     it('keeps the agents table free of any financial or credential column', async () => {

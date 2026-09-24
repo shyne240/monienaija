@@ -11,7 +11,7 @@ import {
 } from 'typeorm';
 
 import { LedgerAccount } from '../ledger/ledger-account.entity';
-import { WalletStatus } from './wallet.enums';
+import { WalletOwnerType, WalletStatus } from './wallet.enums';
 
 @Entity({ name: 'wallet_accounts' })
 @Unique('uq_wallet_accounts_id_ledger_account', ['id', 'ledgerAccountId'])
@@ -25,9 +25,18 @@ export class WalletAccount {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  /** Opaque reference owned by the future identity/customer bounded context. */
+  /**
+   * Opaque owner reference, interpreted according to `ownerType`: a Customer id
+   * when CUSTOMER, an Agent id when AGENT. The column name is historical and is
+   * deliberately not renamed (ADR-0093 §6.4), to avoid rewriting a live
+   * financial table for cosmetic gain.
+   */
   @Column({ name: 'customer_id', type: 'varchar', length: 160 })
   customerId!: string;
+
+  /** F-1 typed ownership. Defaults to CUSTOMER for every pre-existing row. */
+  @Column({ name: 'owner_type', type: 'varchar', length: 16, default: WalletOwnerType.CUSTOMER })
+  ownerType!: WalletOwnerType;
 
   @Column({ type: 'varchar', length: 3 })
   currency!: string;

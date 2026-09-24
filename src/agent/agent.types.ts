@@ -36,3 +36,29 @@ export interface AgentView {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** F-2 — command to provision an Agent's dedicated e-float account. */
+export interface ProvisionAgentFloatAccountCommand {
+  agentId: string;
+  actor: string;
+  idempotencyKey?: string;
+  correlationId?: string;
+  requestId?: string;
+}
+
+/**
+ * F-1 — the deterministic financial identity of an Agent's e-float.
+ *
+ * Carries no balance: balance is read through the existing ledger authority
+ * and is never cached here.
+ */
+export interface AgentFloatAccountView {
+  agentId: string;
+  agentWalletId: string;
+  walletAccountId: string;
+  ledgerAccountId: string;
+  currency: string;
+  accountingUnit: string;
+  state: string;
+  bindingId: string;
+}

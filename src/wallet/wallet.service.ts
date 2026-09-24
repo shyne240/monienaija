@@ -14,7 +14,7 @@ import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from './wallet-account.entity';
-import { WalletStatus } from './wallet.enums';
+import { WalletOwnerType, WalletStatus } from './wallet.enums';
 import type { CreateWalletCommand, WalletBalanceView, WalletView } from './wallet.types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -105,17 +105,31 @@ export class WalletService {
     }
 
     const id = randomUUID();
+    const ownerType = (command.ownerType as WalletOwnerType) ?? WalletOwnerType.CUSTOMER;
+    // The default classification is the historical customer one, byte-for-byte.
+    // A caller whose general-ledger classification is owned elsewhere (Agent
+    // e-float, owned by Finance configuration) passes it explicitly; nothing is
+    // inferred and no accounting value is invented here.
+    const spec = command.ledgerAccountSpec ?? {
+      code: `WALLET-${id}`,
+      name: `Customer wallet ${id}`,
+      accountType: LedgerAccountType.LIABILITY,
+      normalBalance: LedgerNormalBalance.CREDIT,
+      accountingUnit: 'CUSTOMER_FUNDS',
+      allowNegativeBalance: false,
+    };
+
     const ledgerAccountRepository = manager.getRepository(LedgerAccount);
     const ledgerAccount = await ledgerAccountRepository.save(
       ledgerAccountRepository.create({
         id: randomUUID(),
-        code: `WALLET-${id}`,
-        name: `Customer wallet ${id}`,
-        accountType: LedgerAccountType.LIABILITY,
-        normalBalance: LedgerNormalBalance.CREDIT,
+        code: spec.code,
+        name: spec.name,
+        accountType: spec.accountType as LedgerAccountType,
+        normalBalance: spec.normalBalance as LedgerNormalBalance,
         currency,
-        accountingUnit: 'CUSTOMER_FUNDS',
-        allowNegativeBalance: false,
+        accountingUnit: spec.accountingUnit,
+        allowNegativeBalance: spec.allowNegativeBalance,
         isActive: true,
       }),
     );
@@ -123,6 +137,7 @@ export class WalletService {
       repository.create({
         id,
         customerId,
+        ownerType,
         currency,
         status: WalletStatus.ACTIVE,
         ledgerAccountId: ledgerAccount.id,
