@@ -8,6 +8,8 @@ import {
   type CustomerFinancialAccountDiscrepancy,
   type CustomerFinancialAccountDiscrepancyOwner,
   type CustomerFinancialAccountReconciliationReport,
+  type ListReconciliationBreaksQuery,
+  type ReconciliationBreakListView,
 } from './customer-financial-account-reconciliation.types';
 import { VerificationStatus } from './reconciliation.types';
 import type {
@@ -27,6 +29,10 @@ type SqlExecutor = DataSource | EntityManager;
 type SqlRow = Record<string, unknown>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A5T14 read-surface pagination bounds. */
+const DEFAULT_BREAK_PAGE_SIZE = 50;
+const MAX_BREAK_PAGE_SIZE = 100;
 
 @Injectable()
 export class ReconciliationService {
@@ -266,6 +272,58 @@ export class ReconciliationService {
 
   async getBindingReconciliation(): Promise<CustomerFinancialAccountReconciliationReport> {
     return this.withReadOnlyTransaction((manager) => this.collectBindingReconciliation(manager));
+  }
+
+  /**
+   * A5T14 — read-only, paginated reconciliation BREAK detail.
+   *
+   * A "break" here is the repository's existing
+   * `CustomerFinancialAccountDiscrepancy`: the binding-reconciliation
+   * discrepancy already produced by `collectBindingReconciliation`. No new
+   * break concept, entity or table is introduced.
+   *
+   * STRICTLY READ-ONLY, and structurally so: the underlying pass runs inside
+   * `withReadOnlyTransaction`, which issues `SET TRANSACTION READ ONLY` on a
+   * REPEATABLE READ transaction, so PostgreSQL itself rejects any write on
+   * this path. It never executes remediation, never resolves a break, and the
+   * carried `repairPerformed` is the literal `false` the report guarantees.
+   *
+   * Breaks are DERIVED from current state rather than stored, so the pass is
+   * whole-report: `summary` always describes the complete scan and `items`
+   * carries one page of the derived detail.
+   */
+  async listBindingReconciliationBreaks(
+    query: ListReconciliationBreaksQuery = {},
+  ): Promise<ReconciliationBreakListView> {
+    const page = this.normalizeBreakPage(query.page ?? 1);
+    const limit = this.normalizeBreakLimit(query.limit ?? DEFAULT_BREAK_PAGE_SIZE);
+
+    const report = await this.getBindingReconciliation();
+    const total = report.discrepancies.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return {
+      status: report.status,
+      generatedAt: report.generatedAt,
+      summary: report.summary,
+      repairPerformed: false,
+      items: report.discrepancies.slice((page - 1) * limit, (page - 1) * limit + limit),
+      pagination: { page, limit, total, totalPages, hasNextPage: page < totalPages },
+    };
+  }
+
+  private normalizeBreakPage(page: number): number {
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    return page;
+  }
+
+  private normalizeBreakLimit(limit: number): number {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BREAK_PAGE_SIZE) {
+      throw new BadRequestException(`limit must be between 1 and ${MAX_BREAK_PAGE_SIZE}`);
+    }
+    return limit;
   }
 
   async getTrialBalance(): Promise<TrialBalanceReport> {

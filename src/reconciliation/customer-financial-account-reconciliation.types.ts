@@ -72,3 +72,41 @@ export interface CustomerFinancialAccountReconciliationReport {
   discrepancies: CustomerFinancialAccountDiscrepancy[];
   repairPerformed: false;
 }
+
+/**
+ * A5T14 — query for the read-only reconciliation break detail surface.
+ *
+ * Pagination only. The existing reconciliation architecture defines no
+ * approved filter vocabulary for breaks, so none is invented here, even though
+ * the discrepancy model carries `type`, `severity` and `owner` fields.
+ */
+export interface ListReconciliationBreaksQuery {
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * A5T14 — paginated reconciliation break detail.
+ *
+ * Reuses the existing `CustomerFinancialAccountDiscrepancy` items and the
+ * existing report `status`/`summary`/`generatedAt` context verbatim, so no
+ * second reconciliation model is created. The `summary` always describes the
+ * COMPLETE reconciliation pass; `items` carries one page of the detail.
+ *
+ * `repairPerformed` is carried through as the literal `false` the underlying
+ * report guarantees: this surface observes breaks and never resolves them.
+ */
+export interface ReconciliationBreakListView {
+  status: VerificationStatus;
+  generatedAt: string;
+  summary: CustomerFinancialAccountReconciliationSummary;
+  repairPerformed: false;
+  items: CustomerFinancialAccountDiscrepancy[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+}
