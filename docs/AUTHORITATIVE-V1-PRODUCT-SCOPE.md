@@ -38,6 +38,8 @@ Rules of interpretation:
 4. Where this scope and a governance statement conflict, the conflict must be **registered and resolved explicitly** through the repository's reconciliation pattern. The first such record is the companion document for Agent.
 5. This document invents nothing. Items the owner marked "do not invent" are preserved as prohibitions, not filled in.
 
+> **Approval status (2026-09-24):** the Agent ownership conflict registered as V1C-01 has been resolved by project-owner decision; see [`V1-AGENT-ROADMAP-RECONCILIATION.md`](V1-AGENT-ROADMAP-RECONCILIATION.md) §1A. Finance/B2F dependencies in §18.1 remain unresolved.
+
 ---
 
 ## 3. V1 product
@@ -327,11 +329,11 @@ Commission rates and structures (§14), and configurable fee values (§6), are C
 
 | # | V1 scope item | Conflicting governance statement | Status |
 | --- | --- | --- | --- |
-| **V1C-01** | Agent is a first-class V1 participant (§11) | `AUTHORITATIVE-PLATFORM-ROADMAP.md:93` assigns "Merchant and agent lifecycle" to B5; `roadmap.md` §2.D "Agent App: **NOT STARTED** (Requires `B5` backend)"; `B2-ROADMAP-RECONCILIATION-HANDOFF.md` §1 item 6; `roadmap.md:44` human-acceptance gate covering "Agent … work". | **Registered and proposed for resolution** in [`V1-AGENT-ROADMAP-RECONCILIATION.md`](V1-AGENT-ROADMAP-RECONCILIATION.md). |
+| **V1C-01** | Agent is a first-class V1 participant (§11) | `AUTHORITATIVE-PLATFORM-ROADMAP.md:93` assigns "Merchant and agent lifecycle" to B5; `roadmap.md` §2.D "Agent App: **NOT STARTED** (Requires `B5` backend)"; `B2-ROADMAP-RECONCILIATION-HANDOFF.md` §1 item 6; `roadmap.md:44` human-acceptance gate covering "Agent … work". | **RESOLVED 2026-09-24.** Owner approved GA-2 and GA-3 in [`V1-AGENT-ROADMAP-RECONCILIATION.md`](V1-AGENT-ROADMAP-RECONCILIATION.md) §1A: the gate applies to Agent client applications only, and V1 owns Agent identity/wallet/authentication/transaction authorization while B5 retains Agent lifecycle and servicing. |
 | **V1C-02** | Agent App is in V1 (§3) | `AUTHORITATIVE-PLATFORM-ROADMAP.md` §6 lists Agent App as frontend #2 behind "Frontend development follows backend platform maturity"; `roadmap.md:44` and governance rule 12 gate the next client application behind human acceptance testing. | **Registered.** Not resolved. Frontend sequencing is outside the Agent identity/wallet reconciliation. |
 | **V1C-03** | Wallet → Bank is a V1 money flow (§4, §7) | `roadmap.md` governance rule 4: "All NIBSS NIP, external payment processors, bank adapters, and virtual account provider integrations remain **strictly frozen and bypassed**." | **Registered.** Not resolved. Note §7 already forbids inventing provider/NIBSS details, so the freeze and the scope are compatible in the interim: the lifecycle may be provider-neutral while integrations stay bypassed. |
 | **V1C-04** | Aggregator is a V1 corporate participant (§13) | No Aggregator entity, table, principal type or owner exists in the repository, and no phase currently owns Aggregator. | **Registered.** Not resolved. Ownership must be assigned before Aggregator work. |
-| **V1C-05** | Any V1 implementation task | `roadmap.md` governance rule 8 requires a unique explicit roadmap code; no V1 code namespace exists. | **Registered.** Resolution path recorded in the companion reconciliation, §6. |
+| **V1C-05** | Any V1 implementation task | `roadmap.md` governance rule 8 requires a unique explicit roadmap code; no V1 code namespace existed. | **RESOLVED 2026-09-24** for Agent identity/wallet. Owner created the `V1*` namespace and allocated **`V1A01`** (GA-1). Other V1 tasks still require their own codes. |
 
 Registration means the conflict is visible and owned. It does **not** mean it is resolved, and it does **not** authorize proceeding.
 
