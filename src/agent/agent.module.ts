@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentModule } from '../payment/payment.module';
 import { OperationsModule } from '../operations/operations.module';
@@ -9,7 +10,10 @@ import { WalletModule } from '../wallet/wallet.module';
 import { Agent } from './agent.entity';
 import { AgentFinancialAccountBinding } from './agent-financial-account-binding.entity';
 import { AgentFinancialAccountService } from './agent-financial-account.service';
+import { AgentAuthenticationCredential } from './agent-authentication.entity';
+import { AgentAuthenticationService } from './agent-authentication.service';
 import { AgentFloatMovementService } from './agent-float-movement.service';
+import { AgentSession } from './agent-session.entity';
 import { AgentWallet } from './agent-wallet.entity';
 import {
   AGENT_FLOAT_ACCOUNTING,
@@ -33,15 +37,25 @@ import { AgentService } from './agent.service';
 @Module({
   imports: [
     OperationsModule,
+    // Reuses the mature PIN/password security primitives only. Agent
+    // credentials remain Agent-owned; no customer row is ever created.
+    forwardRef(() => CustomerAuthenticationModule),
     LedgerModule,
     PaymentModule,
     WalletModule,
-    TypeOrmModule.forFeature([Agent, AgentWallet, AgentFinancialAccountBinding]),
+    TypeOrmModule.forFeature([
+      Agent,
+      AgentWallet,
+      AgentFinancialAccountBinding,
+      AgentAuthenticationCredential,
+      AgentSession,
+    ]),
   ],
   providers: [
     AgentService,
     AgentFinancialAccountService,
     AgentFloatMovementService,
+    AgentAuthenticationService,
     {
       // Finance-owned classification. Absent configuration keeps Agent float
       // provisioning fail-closed rather than defaulting a GL classification.
@@ -58,6 +72,11 @@ import { AgentService } from './agent.service';
         }),
     },
   ],
-  exports: [AgentService, AgentFinancialAccountService, AgentFloatMovementService],
+  exports: [
+    AgentService,
+    AgentFinancialAccountService,
+    AgentFloatMovementService,
+    AgentAuthenticationService,
+  ],
 })
 export class AgentModule {}

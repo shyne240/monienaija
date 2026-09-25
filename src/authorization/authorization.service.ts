@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import type {
+  AgentAccessScope,
   AuthorizationDecision,
   AuthorizationDenialReason,
   AuthorizationPolicy,
@@ -114,6 +115,17 @@ export class AuthorizationService {
       };
     }
 
+    const agentReason = this.checkAgentScope(principal, policy.agentAccess, resource);
+    if (agentReason) {
+      return {
+        ...base,
+        allowed: false,
+        reason: agentReason,
+        principalType: principal.type,
+        principalId: principal.principalId,
+      };
+    }
+
     const customerReason = this.checkCustomerScope(principal, policy.customerAccess, resource);
     if (customerReason) {
       return {
@@ -131,6 +143,36 @@ export class AuthorizationService {
       principalType: principal.type,
       principalId: principal.principalId,
     };
+  }
+
+  /**
+   * A6 — agent-owned resource access.
+   *
+   * Only an AGENT principal may reach an agent-owned resource, and only its
+   * OWN: one agent can never authorize against another agent's resource. This
+   * is deliberately independent of `customerAccess`, so no customer-scoped
+   * policy can be satisfied by an agent and no agent-scoped policy can be
+   * satisfied by a customer.
+   */
+  private checkAgentScope(
+    principal: AuthorizationPrincipal,
+    policyScope: AgentAccessScope | undefined,
+    resource: AuthorizationResource,
+  ): AuthorizationDenialReason | undefined {
+    if (!resource.agentId) {
+      return undefined;
+    }
+    if (policyScope !== 'SELF') {
+      return 'AGENT_SCOPE_MISMATCH';
+    }
+    if (
+      principal.type !== 'AGENT' ||
+      principal.agentAccess !== 'SELF' ||
+      principal.agentId !== resource.agentId
+    ) {
+      return 'AGENT_SCOPE_MISMATCH';
+    }
+    return undefined;
   }
 
   private checkCustomerScope(
@@ -183,6 +225,16 @@ export class AuthorizationService {
     }
     if (principal.type === 'CUSTOMER') {
       return Boolean(principal.customerId && UUID_PATTERN.test(principal.customerId));
+    }
+    if (principal.type === 'AGENT') {
+      // An agent principal must carry a canonical Agent id and must never
+      // carry a customer identity or customer access.
+      return Boolean(
+        principal.agentId &&
+          UUID_PATTERN.test(principal.agentId) &&
+          !principal.customerId &&
+          principal.customerAccess === 'NONE',
+      );
     }
     if (principal.customerId && !UUID_PATTERN.test(principal.customerId)) {
       return false;

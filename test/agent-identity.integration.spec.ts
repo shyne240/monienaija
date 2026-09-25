@@ -281,19 +281,20 @@ describe('V1A01 Stage 1 canonical Agent identity (real PostgreSQL)', () => {
       // ownership tables. Stage 1 itself still contributes only `agents`, and
       // the behavioural guarantee above remains: creating an Agent populates
       // none of the financial tables.
+      // Superseded progressively: F-1/F-2 added the financial ownership tables
+      // and A6 added the authentication tables. Stage 1 itself still
+      // contributes only `agents`, and the behavioural guarantee above remains:
+      // creating an Agent populates none of the financial tables.
       expect(tables.map((r) => r.tablename).sort()).toEqual([
+        'agent_authentication_credentials',
         'agent_financial_account_bindings',
         'agent_float_accounting_classifications',
+        'agent_sessions',
         'agent_wallets',
         'agents',
       ]);
-      for (const forbidden of [
-        'agent_receiving_numbers',
-        'agent_authentication_credentials',
-        'agent_sessions',
-      ]) {
-        expect(tables.map((r) => r.tablename)).not.toContain(forbidden);
-      }
+      // Still no Agent MonieNaija number registry (Stage 4, unbuilt).
+      expect(tables.map((r) => r.tablename)).not.toContain('agent_receiving_numbers');
     });
 
     it('has the owner_type discriminator added by F-1, defaulting to CUSTOMER', async () => {
@@ -322,6 +323,8 @@ describe('V1A01 Stage 1 canonical Agent identity (real PostgreSQL)', () => {
         'agent_wallets',
         'agent_financial_account_bindings',
         'agent_float_accounting_classifications',
+        'agent_authentication_credentials',
+        'agent_sessions',
       ]);
       expect(
         columns.filter((r) => !r.table_name.startsWith('b2_') && !agentOwned.has(r.table_name)),

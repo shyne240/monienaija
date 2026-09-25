@@ -30,3 +30,24 @@ export enum AgentFinancialAccountBindingState {
   SUSPENDED = 'SUSPENDED',
   CLOSED = 'CLOSED',
 }
+
+/** A6 — Agent credential kinds. Login secret and transaction PIN are separate. */
+export enum AgentCredentialType {
+  PASSWORD = 'PASSWORD',
+  PIN = 'PIN',
+}
+
+/** A6 — Agent credential lifecycle. */
+export enum AgentCredentialStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  REVOKED = 'REVOKED',
+}
+
+/** A6 — Agent session lifecycle. */
+export enum AgentSessionStatus {
+  ACTIVE = 'ACTIVE',
+  REVOKED = 'REVOKED',
+  EXPIRED = 'EXPIRED',
+}
