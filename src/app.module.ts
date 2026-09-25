@@ -10,6 +10,7 @@ import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
 import { AgentModule } from './agent/agent.module';
+import { AggregatorModule } from './aggregator/aggregator.module';
 import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
@@ -117,6 +118,7 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     HealthModule,
     AgentModule,
+    AggregatorModule,
     AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,

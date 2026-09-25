@@ -129,6 +129,28 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Aggregator management — internal privileged (A18 foundation). No public aggregator creation.
+    // Inactive/terminated aggregators cannot perform restricted operations (checked in service layer).
+    // Aggregator as a principal type is distinct from Agent/Customer; do not grant AGENT SELF.
+    if (path.startsWith('/api/v1/internal/aggregators')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'aggregator',
+        policy: {
+          resourceType: 'aggregator',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Aggregator self routes (if later authentication is introduced) would be handled here.
+    // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
+
     // All other /api/v1/agents/* routes require an AGENT principal
     if (path.startsWith('/api/v1/agents/')) {
       // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess
@@ -155,6 +177,8 @@ export class RoutePolicyRegistry {
         requiredScopes: ['internal:access'],
         allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
         customerAccess: 'NONE',
+        agentAccess: 'NONE',
+        aggregatorAccess: 'NONE',
       },
     };
   }

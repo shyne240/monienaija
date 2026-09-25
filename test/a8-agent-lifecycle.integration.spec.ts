@@ -436,11 +436,11 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
 
   it('AB. Migration chain remains green', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(60);
+    expect(Number(rows[0]!.count)).toBe(61);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect(latest[0]!.timestamp).toBe('1785753600059');
-    expect(latest[0]!.name).toBe('AddExpiryToCashToCash1785753600059');
+    expect(latest[0]!.timestamp).toBe('1785753600060');
+    expect(latest[0]!.name).toBe('CreateAggregators1785753600060');
   });
 });

@@ -19,9 +19,9 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600059' : '1785753600004',
+          timestamp: this.compatible ? '1785753600060' : '1785753600004',
           name: this.compatible
-            ? 'AddExpiryToCashToCash1785753600059'
+            ? 'CreateAggregators1785753600060'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);

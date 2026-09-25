@@ -113,6 +113,7 @@ export class RuntimeAccessGuard implements CanActivate {
       id: route.resourceId,
       customerId: route.customerId,
       agentId: principal.agentId ?? route.agentId,
+      aggregatorId: (principal as any).aggregatorId ?? (route as any).aggregatorId,
     });
     request.authorizationDecision = decision;
     if (!decision.allowed) {
