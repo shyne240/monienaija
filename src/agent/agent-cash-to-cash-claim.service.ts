@@ -213,6 +213,9 @@ export class AgentCashToCashClaimService {
       throw new BadRequestException(`OTP invalid: ${reason}`);
     }
 
+    // Ensure beneficiary wallet exists before SERIALIZABLE so its ledger account is visible to the transaction
+    await this.ensureBeneficiaryWalletExists(customerId);
+
     const scope = `${CLAIM_IDEMPOTENCY_PREFIX}${transferId}`;
 
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
@@ -525,32 +528,30 @@ export class AgentCashToCashClaimService {
     return this.dataSource.getRepository(LedgerAccount).findOne({ where: { code: UNCLAIMED_CODE } });
   }
 
+  private async ensureBeneficiaryWalletExists(customerId: string): Promise<void> {
+    const existing = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
+    if (existing) return;
+    try {
+      await this.walletService.createWallet({
+        customerId,
+        currency: 'NGN',
+        idempotencyKey: `claim-wallet-${customerId}-NGN-${randomUUID()}`,
+      });
+    } catch (e) {
+      const still = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
+      if (still) return;
+      throw e;
+    }
+  }
+
   private async resolveBeneficiaryWallet(manager: any, customerId: string): Promise<WalletAccount> {
     const repo = manager.getRepository(WalletAccount);
-    let wallet: WalletAccount | null = await repo.findOne({ where: { customerId, currency: 'NGN' } });
+    const wallet: WalletAccount | null = await repo.findOne({ where: { customerId, currency: 'NGN' } });
     if (wallet) return wallet;
-    // Try to create via WalletService (outside manager? But need to be inside same transaction for atomicity with ledger)
-    // WalletService.createWallet uses its own transaction, but we can try to create via direct repository insert if needed
-    // For now, try to create wallet via walletService with idempotency
-    try {
-      const idem = `claim-wallet-${customerId}-NGN-${randomUUID()}`;
-      const view = await this.walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: idem });
-      wallet = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
-      if (wallet) return wallet;
-      if (view) {
-        const byId = await this.dataSource.getRepository(WalletAccount).findOne({ where: { id: view.id } });
-        if (byId) return byId;
-      }
-    } catch (e) {
-      // If conflict, retry fetch
-      wallet = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
-      if (wallet) return wallet;
-    }
-    // Last resort: direct insert of wallet account + ledger account
-    // But WalletService should have created ledger account; if still not found, throw
-    wallet = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
-    if (wallet) return wallet;
-    throw new NotFoundException(`Wallet for beneficiary ${customerId} not found and could not be created`);
+    // Fallback to dataSource if not visible in this transaction snapshot (should have been ensured before)
+    const fallback = await this.dataSource.getRepository(WalletAccount).findOne({ where: { customerId, currency: 'NGN' } });
+    if (fallback) return fallback;
+    throw new NotFoundException(`Wallet for beneficiary ${customerId} not found`);
   }
 
   private computeRequestHash(value: unknown): string {

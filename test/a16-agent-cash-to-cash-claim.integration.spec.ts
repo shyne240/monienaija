@@ -280,37 +280,40 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   // 2. phone exact canonical success with variants
   it('2. phone canonical variants succeed', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('1500');
-    const { customerId } = await createBeneficiaryCustomer(phone, true);
-    const variants = [`0${phone}`, `+234${phone}`, `234${phone}`];
-    for (const variant of variants) {
-      // Create new transfer for each variant to avoid already claimed
-      const { phone: p2, transferId: tid2, transferCode: code2 } = await initiateTransfer('1200');
-      const { customerId: cid2 } = await createBeneficiaryCustomer(p2, true);
-      const { challengeId } = await createMfaChallenge(cid2, 'variant-otp');
-      const res = await claimService.execute({
-        transferId: tid2,
-        beneficiaryPhone: variant.replace(/^\+234/, '').replace(/^234/, '').replace(/^0/, '').length === 10 ? variant : p2,
-        transferCode: code2,
-        customerId: cid2,
-        mfaChallengeId: challengeId,
-        otp: 'variant-otp',
-        idempotencyKey: `claim-2-${randomUUID()}`,
-      });
-      // Actually we need to use p2 for phone compare, but variant is p2's variant
-      expect(res.status).toBe('COMPLETED');
-    }
-    // Wrong phone fails
-    const { customerId: cidWrong } = await createBeneficiaryCustomer(phone, true);
+    // Wrong phone fails for this transfer (new customer for wrong phone case, avoid duplicate)
+    const wrongPhone = `81${Math.floor(10000000 + Math.random()*89999999)}`;
+    const { customerId: cidWrong } = await createBeneficiaryCustomer(wrongPhone, true);
     const { challengeId: chWrong } = await createMfaChallenge(cidWrong, 'wrong-phone-otp');
     await expect(claimService.execute({
       transferId,
-      beneficiaryPhone: `81${Math.floor(10000000 + Math.random()*89999999)}`,
+      beneficiaryPhone: wrongPhone,
       transferCode,
       customerId: cidWrong,
       mfaChallengeId: chWrong,
       otp: 'wrong-phone-otp',
       idempotencyKey: `claim-2-wrong-${randomUUID()}`,
     })).rejects.toThrow(/Beneficiary phone/i);
+
+    // Canonical variants succeed: 0, +234, 234 should all resolve to same 10-digit
+    for (let i = 0; i < 3; i++) {
+      const { phone: p2, transferId: tid2, transferCode: code2 } = await initiateTransfer('1200');
+      const { customerId: cid2 } = await createBeneficiaryCustomer(p2, true);
+      const otp = `variant-otp-${i}-${randomUUID().slice(0,4)}`;
+      const { challengeId } = await createMfaChallenge(cid2, otp);
+      const variants = [`0${p2}`, `+234${p2}`, `234${p2}`];
+      const variant = variants[i]!;
+      const res = await claimService.execute({
+        transferId: tid2,
+        beneficiaryPhone: variant,
+        transferCode: code2,
+        customerId: cid2,
+        mfaChallengeId: challengeId,
+        otp,
+        idempotencyKey: `claim-2-${randomUUID()}`,
+      });
+      expect(res.status).toBe('COMPLETED');
+      expect(res.beneficiaryPhone).toBe(p2);
+    }
   });
 
   // 3. transfer code correct succeeds
@@ -376,10 +379,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       otp: 'hash-resp-otp',
       idempotencyKey: `claim-6-${randomUUID()}`,
     });
+    // Response must not contain PBKDF2 hash or transfer_code_hash, but requestHash field is allowed to contain 'hash' substring
     expect(JSON.stringify(res).toLowerCase()).not.toContain('pbkdf2');
-    expect(JSON.stringify(res).toLowerCase()).not.toContain('hash');
+    expect(JSON.stringify(res).toLowerCase()).not.toContain('transfer_code_hash');
+    expect(JSON.stringify(res)).not.toContain(transferCode);
     // Create new challenge for replay with same idempotency
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'hash-resp-otp2');
     // Reset challenge to ACTIVE for replay (since previous is VERIFIED)
     await dataSource.query(`UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`, [challengeId]);
     const replay = await claimService.execute({
@@ -393,6 +397,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     });
     expect(replay.status).toBe('REPLAYED');
     expect(JSON.stringify(replay).toLowerCase()).not.toContain('pbkdf2');
+    expect(JSON.stringify(replay).toLowerCase()).not.toContain('transfer_code_hash');
   });
 
   // 7. failed attempts counter increments
@@ -836,10 +841,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   // 27. concurrent claims → exactly one success, one journal
   it('27. concurrent claims converge to one success', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('3600');
-    const { customerId: c1 } = await createBeneficiaryCustomer(phone, true);
-    const { customerId: c2 } = await createBeneficiaryCustomer(`82${Math.floor(10000000 + Math.random()*89999999)}`, true);
-    // Both claimants will try to claim same transfer, but only beneficiary phone matches, so second with different customerId but same phone should be allowed? Actually both use same phone and code, but different customerIds — second should fail due to already claimed, not due to phone.
-    // For concurrent test with same claimant:
+    // Use single claimant to avoid unique phone constraint duplicate
     const { customerId } = await createBeneficiaryCustomer(phone, true);
     const { challengeId: ch1 } = await createMfaChallenge(customerId, 'concurrent-otp-1');
     const { challengeId: ch2 } = await createMfaChallenge(customerId, 'concurrent-otp-2');
@@ -920,14 +922,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       otp: 'mismatch-otp',
       idempotencyKey: key,
     });
+    // Try same key but different claimant (different customer with different phone) -> hash differs due to claimantCustomerId, should be rejected as already claimed
     const otherPhone = `82${Math.floor(10000000 + Math.random()*89999999)}`;
-    await dataSource.query(`UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`, [challengeId]);
-    // Try same key but different transfer? Actually same transfer, but we cannot change amount. We'll try same key with same transfer but different OTP challenge that is different customer - should still be considered mismatch? But our hash doesn't include OTP, so it would be same hash and would be considered replay, not mismatch.
-    // To test mismatch, we need same transferId + same key but different reference? We'll use different reference metadata
-    await dataSource.query(`UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`, [challengeId]);
-    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'mismatch-otp2');
-    // Use same key but different transferId would be different scope, so not comparable. Instead test same key same transfer but different claimant (different customer) -> hash differs due to claimantCustomerId
-    const { customerId: otherId } = await createBeneficiaryCustomer(phone, true);
+    const { customerId: otherId } = await createBeneficiaryCustomer(otherPhone, true);
     const { challengeId: chOther } = await createMfaChallenge(otherId, 'other-mismatch-otp');
     await expect(claimService.execute({
       transferId,
