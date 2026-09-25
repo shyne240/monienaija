@@ -62,3 +62,29 @@ export interface AgentFloatAccountView {
   state: string;
   bindingId: string;
 }
+
+/**
+ * F-4C — read-only Agent settlement position.
+ *
+ * Answers "for Agent X, what is the current electronic e-float balance?" using
+ * the EXISTING ledger authority. There is no balance column and no second
+ * source of truth: `balanceMinor` is read from LedgerService at query time.
+ *
+ * Transaction history is intentionally not duplicated here; it is served by the
+ * existing owner-agnostic wallet transaction history keyed on
+ * `walletAccountId`, which is returned below so the caller can reach it.
+ */
+export interface AgentSettlementPositionView {
+  agentId: string;
+  agentReference: string;
+  agentStatus: string;
+  agentWalletId: string;
+  walletAccountId: string;
+  ledgerAccountId: string;
+  currency: string;
+  accountingUnit: string;
+  bindingState: string;
+  /** Electronic e-float, read from the ledger. Physical cash is NOT included. */
+  balanceMinor: string;
+  asOf: string;
+}

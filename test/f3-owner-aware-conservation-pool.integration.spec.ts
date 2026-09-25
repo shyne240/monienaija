@@ -83,6 +83,7 @@ describe('F-3 owner-aware shared conservation pool (real PostgreSQL)', () => {
       dataSource.getRepository(AgentFinancialAccountBinding),
       dataSource,
       wallets,
+      ledger,
       new AuditService(dataSource.getRepository(AuditEvent)),
       FINANCE_CONFIG,
     );

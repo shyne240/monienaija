@@ -12,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 
+import { LedgerService } from '../ledger/ledger.service';
 import { AuditService } from '../operations/audit.service';
 import { WalletOwnerType } from '../wallet/wallet.enums';
 import { WalletService } from '../wallet/wallet.service';
@@ -24,7 +25,11 @@ import {
   type AgentFloatAccountingConfiguration,
   type EnabledAgentFloatAccounting,
 } from './agent-float-accounting';
-import type { AgentFloatAccountView, ProvisionAgentFloatAccountCommand } from './agent.types';
+import type {
+  AgentFloatAccountView,
+  AgentSettlementPositionView,
+  ProvisionAgentFloatAccountCommand,
+} from './agent.types';
 
 const V1_AGENT_CURRENCY = 'NGN';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -62,6 +67,7 @@ export class AgentFinancialAccountService {
     private readonly bindingRepository: Repository<AgentFinancialAccountBinding>,
     private readonly dataSource: DataSource,
     private readonly walletService: WalletService,
+    private readonly ledgerService: LedgerService,
     private readonly auditService: AuditService,
     @Inject(AGENT_FLOAT_ACCOUNTING)
     private readonly floatAccounting: AgentFloatAccountingConfiguration,
@@ -120,6 +126,46 @@ export class AgentFinancialAccountService {
     const binding = await this.findOpenBinding(id);
     if (!binding) throw new NotFoundException(`Agent ${id} has no dedicated float account`);
     return this.toView(binding);
+  }
+
+  /**
+   * F-4C — read-only Agent settlement position.
+   *
+   * Reads the electronic e-float balance through the EXISTING ledger authority
+   * (`LedgerService.getAccountBalance`). It stores nothing, caches nothing and
+   * creates no second source of truth.
+   *
+   * Physical cash held by the Agent is NOT part of this figure and is not
+   * represented anywhere in the ledger.
+   *
+   * Transaction history is served by the existing owner-agnostic wallet
+   * transaction history keyed on the returned `walletAccountId`; it is not
+   * duplicated here.
+   */
+  async getSettlementPosition(agentId: string): Promise<AgentSettlementPositionView> {
+    const id = this.requireUuid(agentId, 'agentId');
+    const binding = await this.findOpenBinding(id);
+    if (!binding) {
+      throw new NotFoundException(`Agent ${id} has no dedicated float account`);
+    }
+    const agent = await this.agentRepository.findOne({ where: { id } });
+    if (!agent) throw new NotFoundException(`Agent ${id} was not found`);
+
+    const balance = await this.ledgerService.getAccountBalance(binding.ledgerAccountId);
+
+    return {
+      agentId: agent.id,
+      agentReference: agent.reference,
+      agentStatus: agent.status,
+      agentWalletId: binding.agentWalletId,
+      walletAccountId: binding.walletAccountId,
+      ledgerAccountId: binding.ledgerAccountId,
+      currency: binding.currency,
+      accountingUnit: binding.accountingUnit,
+      bindingState: binding.state,
+      balanceMinor: balance.balanceMinor,
+      asOf: new Date().toISOString(),
+    };
   }
 
   private async provisionInTransaction(

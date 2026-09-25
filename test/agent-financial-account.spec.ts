@@ -64,6 +64,7 @@ describe('F-1/F-2 Agent financial account (unit)', () => {
           return Promise.resolve({ id: 'wallet-account-1', ledgerAccountId: 'ledger-account-1' });
         },
       } as never,
+      { getAccountBalance: () => Promise.resolve({ balanceMinor: '0' }) } as never,
       {
         record: (_m: unknown, c: unknown) => {
           auditCommands.push(c);

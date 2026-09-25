@@ -73,6 +73,7 @@ describe('F-1/F-2 Agent financial account (real PostgreSQL)', () => {
       dataSource.getRepository(AgentFinancialAccountBinding),
       dataSource,
       new WalletService(dataSource.getRepository(WalletAccount), dataSource, ledger),
+      ledger,
       new AuditService(dataSource.getRepository(AuditEvent)),
       accounting,
     );

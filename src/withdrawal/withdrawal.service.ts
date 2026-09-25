@@ -15,7 +15,7 @@ import { minorUnitsToString, normalizeCurrency, parsePositiveMinorUnits } from '
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
-import { WalletStatus } from '../wallet/wallet.enums';
+import { WalletOwnerType, WalletStatus } from '../wallet/wallet.enums';
 import { assertPaymentTransition } from '../payment/payment-lifecycle';
 import { PaymentLifecycleState } from '../payment/payment.enums';
 import {
@@ -457,12 +457,35 @@ export class WithdrawalService {
     manager: EntityManager,
     walletId: string,
   ): Promise<WalletAccount | null> {
-    return manager
+    const wallet = await manager
       .getRepository(WalletAccount)
       .createQueryBuilder('wallet')
       .where('wallet.id = :walletId', { walletId })
       .setLock('pessimistic_write')
       .getOne();
+    // Not-found stays null so existing NotFound handling is unchanged.
+    if (wallet) this.assertCustomerOwnedWallet(wallet);
+    return wallet;
+  }
+
+  /**
+   * F-4C CUSTOMER/AGENT FINANCIAL BOUNDARY.
+   *
+   * Enforced at the single wallet-load choke point so every path through this
+   * service is covered. The check is on the canonical `owner_type` established
+   * by F-1/F-2 - never on customer_id, account naming, wallet UUID shape or
+   * caller behaviour.
+   *
+   * Agent e-float is an independently owned balance. It is funded and settled
+   * through the Agent financial boundary, not through the customer payment
+   * path, so an AGENT-owned wallet account must never be reachable here.
+   */
+  private assertCustomerOwnedWallet(wallet: WalletAccount): void {
+    if (wallet.ownerType !== WalletOwnerType.CUSTOMER) {
+      throw new ConflictException(
+        `Wallet ${wallet.id} is ${wallet.ownerType}-owned; customer payment operations accept only CUSTOMER-owned wallets`,
+      );
+    }
   }
 
   private normalizeCreate(command: CreateWithdrawalCommand): NormalizedWithdrawal {

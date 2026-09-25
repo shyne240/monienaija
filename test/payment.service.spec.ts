@@ -19,7 +19,7 @@ import type { PostJournalCommand } from '../src/ledger/ledger.types';
 import type { PaymentReferenceService } from '../src/payment/payment-reference.service';
 import type { SettlementAccountService } from '../src/payment/settlement-account.service';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
-import { WalletStatus } from '../src/wallet/wallet.enums';
+import { WalletOwnerType, WalletStatus } from '../src/wallet/wallet.enums';
 import { Withdrawal } from '../src/withdrawal/withdrawal.entity';
 import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
 import { WithdrawalStatus } from '../src/withdrawal/withdrawal.enums';
@@ -192,6 +192,10 @@ function makeFixture(): Fixture {
       id: WALLET_ID,
       ledgerAccountId: WALLET_LEDGER_ACCOUNT_ID,
       customerId: 'payment-test-customer',
+      // F-4C: the customer payment paths now require an explicit owner type.
+      // In PostgreSQL `owner_type` is NOT NULL DEFAULT 'CUSTOMER', so it can
+      // never be absent at runtime; this fixture makes that explicit.
+      ownerType: WalletOwnerType.CUSTOMER,
       currency: 'NGN',
       status: WalletStatus.ACTIVE,
     }),

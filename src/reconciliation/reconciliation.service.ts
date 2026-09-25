@@ -23,6 +23,7 @@ import type {
   TrialBalanceDimension,
   TrialBalanceReport,
   TrialBalanceRow,
+  WalletOwnerPositionDimension,
 } from './reconciliation.types';
 
 type SqlExecutor = DataSource | EntityManager;
@@ -402,12 +403,14 @@ export class ReconciliationService {
         journalIntegrity,
         balanceConservation,
         accountActivity,
+        walletOwnerPositions,
       ] = await Promise.all([
         this.collectAccountTypeTotals(manager, 'ASSET'),
         this.collectAccountTypeTotals(manager, 'LIABILITY'),
         this.collectJournalIntegrity(manager),
         this.collectBalanceConservation(manager),
         this.collectAccountActivity(manager),
+        this.collectWalletOwnerPositions(manager),
       ]);
 
       return {
@@ -418,6 +421,7 @@ export class ReconciliationService {
         journalIntegrity,
         balanceConservation,
         accountActivity,
+        walletOwnerPositions,
       };
     });
   }
@@ -556,6 +560,53 @@ export class ReconciliationService {
       orphanLines,
       balanced: invalidJournals === 0 && orphanLines === 0,
     };
+  }
+
+  /**
+   * F-4C — wallet liability split by financial owner type.
+   *
+   * Derived from the SAME ledger lines the conservation check uses, joined to
+   * the owning wallet account, so the per-owner totals always reconcile to the
+   * underlying ledger rather than being tracked separately. Reports no new
+   * balance: there is no balance column and no second source of truth.
+   *
+   * The accounting pool is unchanged — both owner types report the same
+   * `accountingUnit`. This separates OWNERSHIP, not pools.
+   */
+  private async collectWalletOwnerPositions(
+    manager: EntityManager,
+  ): Promise<WalletOwnerPositionDimension[]> {
+    const rows = await this.queryRows(
+      manager,
+      `
+        SELECT w.owner_type,
+               a.currency,
+               a.accounting_unit,
+               COUNT(DISTINCT w.id)::text AS wallet_count,
+               COALESCE(
+                 SUM(
+                   CASE
+                     WHEN l.direction = a.normal_balance THEN l.amount_minor
+                     ELSE -l.amount_minor
+                   END
+                 ),
+                 0
+               )::text AS balance_minor
+          FROM wallet_accounts w
+          JOIN ledger_accounts a ON a.id = w.ledger_account_id
+          LEFT JOIN ledger_lines l ON l.ledger_account_id = a.id
+         GROUP BY w.owner_type, a.currency, a.accounting_unit
+         ORDER BY w.owner_type ASC, a.currency ASC, a.accounting_unit ASC
+      `,
+    );
+
+    return rows.map((row) => ({
+      ownerType: this.stringValue(row.owner_type),
+      currency: this.stringValue(row.currency),
+      accountingUnit: this.stringValue(row.accounting_unit),
+      walletCount: Number(this.integerValue(row.wallet_count)),
+      balanceMinor: this.integerValue(row.balance_minor).toString(),
+    }));
   }
 
   private async collectBalanceConservation(

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { LedgerModule } from '../ledger/ledger.module';
 import { OperationsModule } from '../operations/operations.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { Agent } from './agent.entity';
@@ -30,6 +31,7 @@ import { AgentService } from './agent.service';
 @Module({
   imports: [
     OperationsModule,
+    LedgerModule,
     WalletModule,
     TypeOrmModule.forFeature([Agent, AgentWallet, AgentFinancialAccountBinding]),
   ],

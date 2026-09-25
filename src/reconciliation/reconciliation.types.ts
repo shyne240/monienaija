@@ -56,6 +56,23 @@ export interface BalanceConservationDimension {
   balanced: boolean;
 }
 
+/**
+ * F-4C — wallet liability split by financial owner type.
+ *
+ * Customer wallet liability and Agent e-float are INDEPENDENTLY OWNED balances
+ * that share one conservation pool. This dimension reports them separately
+ * without implying separate pools: `accountingUnit` is the same for both, and
+ * the per-owner totals sum to the combined wallet liability, which in turn is
+ * derived from the same ledger lines the conservation check uses.
+ */
+export interface WalletOwnerPositionDimension {
+  ownerType: string;
+  currency: string;
+  accountingUnit: string;
+  walletCount: number;
+  balanceMinor: string;
+}
+
 export interface JournalIntegrityReport {
   generatedAt: string;
   totalJournals: number;
@@ -94,5 +111,7 @@ export interface FinanceVerificationReport {
   totalLiabilities: AccountTypeTotal[];
   journalIntegrity: JournalIntegrityReport;
   balanceConservation: BalanceConservationDimension[];
+  /** F-4C: wallet liability split by owner type within the shared pool. */
+  walletOwnerPositions: WalletOwnerPositionDimension[];
   accountActivity: AccountActivitySummary[];
 }
