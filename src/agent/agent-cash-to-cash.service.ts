@@ -7,8 +7,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -31,6 +33,9 @@ const IDEMPOTENCY_SCOPE_PREFIX = 'agent-financial.v1:';
 const RETENTION_SECONDS = 86400;
 const UNCLAIMED_CODE = 'CASH_TO_CASH-UNCLAIMED-NGN';
 const TRANSFER_CODE_ITERATIONS = 10000;
+const DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS = 604800;
+const MIN_CASH_TO_CASH_EXPIRY_SECONDS = 60;
+const MAX_CASH_TO_CASH_EXPIRY_SECONDS = 31_536_000;
 
 @Injectable()
 export class AgentCashToCashService {
@@ -40,6 +45,7 @@ export class AgentCashToCashService {
     private readonly ledgerService: LedgerService,
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async execute(input: AgentCashToCashInput): Promise<AgentCashToCashResult> {
@@ -320,13 +326,17 @@ export class AgentCashToCashService {
           });
 
           // Create cash_to_cash_transfers record atomically with journal
+          // Expiry is configurable via CASH_TO_CASH_EXPIRY_SECONDS; persisted expires_at is stable once created.
+          // Default 604800 (7 days) is an implementation assumption, NOT a regulatory requirement, and is documented.
+          // Changing configuration after creation does NOT mutate already-persisted expires_at.
           const idForTransfer = randomUUID();
+          const expiresAt = this.computeExpiresAt();
           await manager.query(
             `INSERT INTO cash_to_cash_transfers (
               id, agent_id, beneficiary_phone, principal_minor, fee_minor, vat_minor, total_minor, currency, status,
-              transfer_code_hash, hash_algorithm, transfer_code_version, failed_attempts, is_locked, journal_id, reference, idempotency_key, correlation_id
+              transfer_code_hash, hash_algorithm, transfer_code_version, failed_attempts, is_locked, journal_id, reference, idempotency_key, correlation_id, expires_at
             ) VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8, 'UNCLAIMED', $9, $10, 1, 0, FALSE, $11, $12, $13, $14
+              $1, $2, $3, $4, $5, $6, $7, $8, 'UNCLAIMED', $9, $10, 1, 0, FALSE, $11, $12, $13, $14, $15
             )`,
             [
               idForTransfer,
@@ -343,6 +353,7 @@ export class AgentCashToCashService {
               reference,
               idempotencyKey,
               correlationId ?? null,
+              expiresAt.toISOString(),
             ],
           );
 
@@ -398,6 +409,7 @@ export class AgentCashToCashService {
               reference,
               correlationId: correlationId ?? null,
               status: 'UNCLAIMED',
+              expiresAt: expiresAt.toISOString(),
             },
           });
 
@@ -425,6 +437,27 @@ export class AgentCashToCashService {
     const derived = pbkdf2Sync(code, salt, iterations, 32, 'sha256');
     const hash = `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
     return { hash, algorithm: 'PBKDF2' };
+  }
+
+  private computeExpiresAt(now = new Date()): Date {
+    const seconds = this.resolveExpirySeconds();
+    return new Date(now.getTime() + seconds * 1000);
+  }
+
+  private resolveExpirySeconds(): number {
+    const raw = this.configService?.get<number | string>('CASH_TO_CASH_EXPIRY_SECONDS');
+    if (raw === undefined || raw === null || raw === '') {
+      return DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS;
+    }
+    const parsed = typeof raw === 'string' ? Number(raw) : Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed < MIN_CASH_TO_CASH_EXPIRY_SECONDS || parsed > MAX_CASH_TO_CASH_EXPIRY_SECONDS) {
+      // Fail closed: invalid configuration is rejected per existing conventions (zod would reject at startup,
+      // but runtime mutation or test harness with invalid value must not silently fallback to an arbitrary value).
+      throw new BadRequestException(
+        `CASH_TO_CASH_EXPIRY_SECONDS must be an integer between ${MIN_CASH_TO_CASH_EXPIRY_SECONDS} and ${MAX_CASH_TO_CASH_EXPIRY_SECONDS}`,
+      );
+    }
+    return parsed;
   }
 
   private async getUnclaimedAccount(): Promise<LedgerAccount | null> {

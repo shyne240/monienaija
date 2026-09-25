@@ -12,6 +12,8 @@ import {
 @Index('uq_cash_to_cash_journal', ['journalId'], { unique: true })
 @Index('idx_cash_to_cash_beneficiary', ['beneficiaryPhone'])
 @Index('idx_cash_to_cash_agent', ['agentId'])
+@Index('idx_cash_to_cash_status', ['status'])
+@Index('idx_cash_to_cash_expiry', ['status', 'expiresAt'])
 export class CashToCashTransfer {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -87,6 +89,12 @@ export class CashToCashTransfer {
 
   @Column({ name: 'claim_reference', type: 'varchar', length: 255, nullable: true })
   claimReference!: string | null;
+
+  @Column({ name: 'expires_at', type: 'timestamptz' })
+  expiresAt!: Date;
+
+  @Column({ name: 'expired_at', type: 'timestamptz', nullable: true })
+  expiredAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

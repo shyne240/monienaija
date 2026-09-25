@@ -99,6 +99,9 @@ export class AgentCashToCashClaimService {
     }> = await this.dataSource.query(`SELECT id, beneficiary_phone, principal_minor, currency, status, transfer_code_hash, failed_attempts, is_locked FROM cash_to_cash_transfers WHERE id=$1 LIMIT 1`, [transferId]);
     const preTransfer = preTransferRows[0];
     if (!preTransfer) throw new NotFoundException(`Cash→Cash transfer ${transferId} not found`);
+    if (preTransfer.status === 'EXPIRED') {
+      throw new ConflictException('Transfer has expired and cannot be claimed');
+    }
     if (preTransfer.status === 'CLAIMED') {
       // For already claimed, we still need to handle idempotency properly inside transaction (replay vs conflict).
       // We will let the transaction handle it, but we can early return if this is a replay with same key? We'll just continue to OTP+transaction.
@@ -248,6 +251,10 @@ export class AgentCashToCashClaimService {
           if (!transfer) throw new NotFoundException(`Cash→Cash transfer ${transferId} not found`);
 
           // If already CLAIMED, handle idempotency
+          if (transfer.status === 'EXPIRED') {
+            throw new ConflictException('Transfer has expired and cannot be claimed');
+          }
+
           if (transfer.status === 'CLAIMED') {
             if (transfer.claim_idempotency_key === idempotencyKey && transfer.claim_journal_id) {
               const beneficiaryWalletForHash = await this.resolveBeneficiaryWallet(manager, customerId);
