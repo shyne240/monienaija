@@ -1,22 +1,26 @@
 export type AuthorizationPrincipalType =
   | 'CUSTOMER'
+  | 'AGENT'
   | 'SUPPORT'
   | 'OPERATOR'
   | 'SERVICE'
   | 'PRIVILEGED';
 
 export type CustomerAccessScope = 'NONE' | 'SELF' | 'ASSIGNED' | 'ANY';
+export type AgentAccessScope = 'NONE' | 'SELF' | 'ASSIGNED' | 'ANY';
 export type AssuranceLevel = 'PASSWORD' | 'MFA';
 
 export interface AuthorizationPrincipal {
   type: AuthorizationPrincipalType;
   principalId: string;
   customerId?: string;
+  agentId?: string;
   sessionId?: string;
   audience?: string;
   roles: readonly string[];
   scopes: readonly string[];
   customerAccess: CustomerAccessScope;
+  agentAccess?: AgentAccessScope;
   assignedCustomerIds?: readonly string[];
   assuranceLevel?: AssuranceLevel;
 }
@@ -25,6 +29,7 @@ export interface AuthorizationResource {
   type: string;
   id?: string;
   customerId?: string;
+  agentId?: string;
   scope?: string;
 }
 
@@ -35,6 +40,7 @@ export interface AuthorizationPolicy {
   requiredRoles?: readonly string[];
   allowedPrincipalTypes?: readonly AuthorizationPrincipalType[];
   customerAccess?: CustomerAccessScope;
+  agentAccess?: AgentAccessScope;
   audience?: string;
   minimumAssurance?: AssuranceLevel;
 }

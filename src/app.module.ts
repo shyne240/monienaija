@@ -9,6 +9,8 @@ import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { AgentModule } from './agent/agent.module';
+import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
@@ -88,6 +90,8 @@ import { WalletModule } from './wallet/wallet.module';
             'req.headers.x-api-key',
             'req.body.password',
             'req.body.passwordHash',
+            'req.body.pin',
+            'req.body.pinHash',
             'req.body.token',
             'req.body.tokenHash',
             'req.body.accessToken',
@@ -96,6 +100,8 @@ import { WalletModule } from './wallet/wallet.module';
             'req.body.code',
             'req.body.codeHash',
             'req.body.challengeHash',
+            'req.body.transferCode',
+            'req.body.transferCodeHash',
             'req.body.providedHash',
             'req.body.deviceFingerprintHash',
             'req.body.fingerprintHash',
@@ -110,6 +116,8 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    AgentModule,
+    AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
     CustomerAuthenticationModule,

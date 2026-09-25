@@ -6,7 +6,8 @@ export type RouteAuthenticationMode =
   | 'PRINCIPAL'
   | 'WORKFORCE_ASSERTION'
   | 'WORKFORCE_SESSION'
-  | 'PROVIDER_CALLBACK';
+  | 'PROVIDER_CALLBACK'
+  | 'AGENT_LOGIN';
 
 export interface RoutePolicyInput {
   method: string;
@@ -21,6 +22,7 @@ export interface RoutePolicyResolution {
   resourceType: string;
   resourceId?: string;
   customerId?: string;
+  agentId?: string;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -79,6 +81,67 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['CUSTOMER', 'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'SELF',
+        },
+      };
+    }
+
+    // Agent authentication HTTP surface (A7) — Agent-owned routes
+    // Login is unauthenticated (AGENT_LOGIN) and must not require a bearer token.
+    if (method === 'POST' && path === '/api/v1/agents/sessions') {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-session',
+      };
+    }
+    if (method === 'POST' && path === '/api/v1/agents/login') {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-session',
+      };
+    }
+
+    // Recipient resolution — A9: typed CUSTOMER vs AGENT resolution by receiving number / phone
+    // Preserve Customer phone + MonieNaija resolution; block PENDING/rejected/deleted/terminated at service layer.
+    if (path.startsWith('/api/v1/recipients/')) {
+      return {
+        public: false,
+        resourceType: 'recipient-resolution',
+        policy: {
+          resourceType: 'recipient-resolution',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER', 'AGENT', 'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'ANY',
+          agentAccess: 'ANY',
+        },
+      };
+    }
+
+    // Agent application — applicant surface (A8). Applicants are not yet Agents, so these
+    // are unauthenticated (AGENT_LOGIN) and do not require a bearer token. Ownership is
+    // enforced via applicantReference, not via agentId param.
+    if (path === '/api/v1/agents/applications' || path.startsWith('/api/v1/agents/applications/')) {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-application',
+      };
+    }
+
+    // All other /api/v1/agents/* routes require an AGENT principal
+    if (path.startsWith('/api/v1/agents/')) {
+      // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess
+      // No arbitrary agentId param is trusted; identity comes from session.
+      return {
+        public: false,
+        resourceType: 'agent',
+        policy: {
+          resourceType: 'agent',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['AGENT'],
+          customerAccess: 'NONE',
+          agentAccess: 'SELF',
         },
       };
     }

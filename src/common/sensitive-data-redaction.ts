@@ -3,6 +3,8 @@ export const REDACTED_VALUE = '[REDACTED]';
 const SENSITIVE_KEY_NAMES = new Set([
   'password',
   'passwordhash',
+  'pin',
+  'pinhash',
   'token',
   'tokenhash',
   'accesstoken',
@@ -22,6 +24,8 @@ const SENSITIVE_KEY_NAMES = new Set([
   'fingerprinthash',
   'identifierhash',
   'privatekey',
+  'transfercode',
+  'transfercodehash',
 ]);
 
 export function redactSensitiveData(value: unknown): unknown {
@@ -35,7 +39,7 @@ export function redactRecord(value: Record<string, unknown>): Record<string, unk
 
 export function redactSensitiveText(value: string): string {
   return value.replace(
-    /(passwordHash|tokenHash|accessToken|refreshToken|secret|apiKey|authorization|cookie|codeHash|challengeHash|providedHash|fingerprintHash)\s*[:=]\s*([^,\s}]+)/gi,
+    /(passwordHash|pin|pinHash|tokenHash|accessToken|refreshToken|secret|apiKey|authorization|cookie|codeHash|challengeHash|providedHash|fingerprintHash|transferCode|transferCodeHash)\s*[:=]\s*([^,\s}]+)/gi,
     (_match, key: string) => `${key}=${REDACTED_VALUE}`,
   );
 }
