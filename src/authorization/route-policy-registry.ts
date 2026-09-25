@@ -151,6 +151,30 @@ export class RoutePolicyRegistry {
     // Aggregator self routes (if later authentication is introduced) would be handled here.
     // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
 
+    // Agent funding — internal privileged (A19). Source is platform pool, destination is Agent wallet.
+    // No Aggregator ledger account in V1; Aggregator involvement is relationship authorization only.
+    // Inactive/terminated/suspended checks are enforced in service layer.
+    if (
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund)$/.test(path)) ||
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-funding',
+        policy: {
+          resourceType: 'agent-funding',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // All other /api/v1/agents/* routes require an AGENT principal
     if (path.startsWith('/api/v1/agents/')) {
       // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess

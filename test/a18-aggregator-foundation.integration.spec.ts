@@ -413,10 +413,10 @@ describe('A18 Aggregator Foundation (real PostgreSQL)', () => {
   // 21. migration chain
   it('21. migration chain', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(61);
+    expect(Number(rows[0]!.count)).toBe(62);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600060');
-    expect(latest[0]!.name).toBe('CreateAggregators1785753600060');
+    expect(latest[0]!.timestamp).toBe('1785753600061');
+    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
     const aggCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregators'::regclass AND conname='chk_aggregators_status'`);
     expect(aggCheck.length).toBe(1);
     const relCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregator_agent_assignments'::regclass AND conname='chk_aggregator_agent_status'`);
@@ -426,7 +426,7 @@ describe('A18 Aggregator Foundation (real PostgreSQL)', () => {
   // 22. production readiness
   it('22. production readiness', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600060');
-    expect(latest[0]!.name).toBe('CreateAggregators1785753600060');
+    expect(latest[0]!.timestamp).toBe('1785753600061');
+    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
   });
 });

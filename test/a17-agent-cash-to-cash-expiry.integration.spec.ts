@@ -718,10 +718,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 23. migration chain remains valid
   it('23. migration chain remains valid', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(61);
+    expect(Number(rows[0]!.count)).toBe(62);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600060');
-    expect(latest[0]!.name).toBe('CreateAggregators1785753600060');
+    expect(latest[0]!.timestamp).toBe('1785753600061');
+    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
     // Check constraints exist
     const chk: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='cash_to_cash_transfers'::regclass AND conname='chk_cash_to_cash_status'`);
     expect(chk.length).toBe(1);
@@ -732,8 +732,8 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 24. production readiness remains valid
   it('24. production readiness remains valid', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600060');
-    expect(latest[0]!.name).toBe('CreateAggregators1785753600060');
+    expect(latest[0]!.timestamp).toBe('1785753600061');
+    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
   });
 
   // 25. A15 remains green (initiation still works)

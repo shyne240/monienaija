@@ -38,6 +38,8 @@ import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service'
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
 import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.service';
 import { CashToCashTransfer } from './cash-to-cash.entity';
+import { AgentFundingService } from './agent-funding.service';
+import { AgentFundingController } from './agent-funding.controller';
 
 @Module({
   imports: [
@@ -61,6 +63,7 @@ import { CashToCashTransfer } from './cash-to-cash.entity';
     AgentCashOutController,
     AgentCashToCashController,
     AgentCashToCashClaimController,
+    AgentFundingController,
   ],
   providers: [
     AgentClassService,
@@ -76,6 +79,7 @@ import { CashToCashTransfer } from './cash-to-cash.entity';
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
     AgentLifecycleService,
+    AgentFundingService,
   ],
   exports: [
     AgentClassService,
@@ -91,6 +95,7 @@ import { CashToCashTransfer } from './cash-to-cash.entity';
     AgentCashToCashService,
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
+    AgentFundingService,
   ],
 })
 export class AgentModule {}
