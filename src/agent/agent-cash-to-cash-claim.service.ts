@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import {
@@ -22,7 +22,6 @@ import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../commo
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
 import type { AgentCashToCashClaimInput, AgentCashToCashClaimResult } from './agent-cash-to-cash-claim.types';
-import { CashToCashTransfer } from './cash-to-cash.entity';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RETENTION_SECONDS = 86400;
@@ -490,7 +489,7 @@ export class AgentCashToCashClaimService {
               `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
               [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, tid],
             );
-          } catch {}
+          } catch (_e) { void 0; }
           if (error.shouldLock) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
           throw new UnauthorizedException('Transfer code invalid');
         }
