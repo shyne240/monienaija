@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { LedgerModule } from '../ledger/ledger.module';
+import { PaymentModule } from '../payment/payment.module';
 import { OperationsModule } from '../operations/operations.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { Agent } from './agent.entity';
 import { AgentFinancialAccountBinding } from './agent-financial-account-binding.entity';
 import { AgentFinancialAccountService } from './agent-financial-account.service';
+import { AgentFloatMovementService } from './agent-float-movement.service';
 import { AgentWallet } from './agent-wallet.entity';
 import {
   AGENT_FLOAT_ACCOUNTING,
@@ -32,12 +34,14 @@ import { AgentService } from './agent.service';
   imports: [
     OperationsModule,
     LedgerModule,
+    PaymentModule,
     WalletModule,
     TypeOrmModule.forFeature([Agent, AgentWallet, AgentFinancialAccountBinding]),
   ],
   providers: [
     AgentService,
     AgentFinancialAccountService,
+    AgentFloatMovementService,
     {
       // Finance-owned classification. Absent configuration keeps Agent float
       // provisioning fail-closed rather than defaulting a GL classification.
@@ -54,6 +58,6 @@ import { AgentService } from './agent.service';
         }),
     },
   ],
-  exports: [AgentService, AgentFinancialAccountService],
+  exports: [AgentService, AgentFinancialAccountService, AgentFloatMovementService],
 })
 export class AgentModule {}

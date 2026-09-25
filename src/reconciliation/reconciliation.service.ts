@@ -733,7 +733,8 @@ export class ReconciliationService {
             (SELECT COUNT(*)::text
                FROM customer_wallets
               WHERE deleted_at IS NULL) AS customer_wallets_checked,
-            (SELECT COUNT(*)::text FROM wallet_accounts) AS financial_wallets_checked
+            (SELECT COUNT(*)::text FROM wallet_accounts WHERE owner_type = 'CUSTOMER')
+              AS financial_wallets_checked
         `,
       );
       const counts = countRows[0] ?? {};
@@ -946,6 +947,10 @@ export class ReconciliationService {
               ON b.wallet_account_id = wa.id
             LEFT JOIN ledger_accounts la ON la.id = wa.ledger_account_id
            WHERE b.id IS NULL
+             -- This census audits CUSTOMER-owned financial wallets. An
+             -- AGENT-owned account legitimately has no CUSTOMER binding; its
+             -- own binding is audited by wallet_owner_binding_integrity.
+             AND wa.owner_type = 'CUSTOMER'
              AND wa.status IN ('ACTIVE', 'SUSPENDED')
            ORDER BY wa.id
         `,
