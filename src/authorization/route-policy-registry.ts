@@ -235,6 +235,26 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Generic internal admin surface — workforce only (A22). Covers list/get for
+    // agents, customers, aggregators (when not caught above), reconciliation,
+    // audit, metrics, diagnostics, outbox, version (non-public), configuration,
+    // readiness, deployment etc. Must be before the generic agents check.
+    if (path.startsWith('/api/v1/internal/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'internal-route',
+        policy: {
+          resourceType: 'internal-route',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // All other /api/v1/agents/* routes require an AGENT principal
     if (path.startsWith('/api/v1/agents/')) {
       // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess

@@ -72,6 +72,7 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
+import { AdminModule } from './admin/admin.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -181,6 +182,7 @@ import { WalletModule } from './wallet/wallet.module';
     VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
+    AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })

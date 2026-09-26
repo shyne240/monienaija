@@ -52,11 +52,35 @@ export class RuntimeAccessGuard implements CanActivate {
     }
     if (route.authenticationMode === 'WORKFORCE_SESSION') {
       const token = this.bearerToken(request.headers.authorization);
-      request.authorizationPrincipal = await this.workforceSessions.validate(
-        token,
-        this.workforceConfig.internalAudience,
-      );
-      return true;
+      try {
+        if (!this.workforceConfig.enabled)
+          throw new UnauthorizedException('Workforce authentication disabled');
+        request.authorizationPrincipal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
+        return true;
+      } catch (e) {
+        // For workforce routes, an Agent or Customer token should be rejected as Forbidden (403) not Unauthorized (401)
+        try {
+          const agentValidation = await this.agentSessionService.validate({ token });
+          if (agentValidation.valid && agentValidation.principal) {
+            throw new ForbiddenException('Agent not allowed on workforce route');
+          }
+        } catch (inner) {
+          if (inner instanceof ForbiddenException) throw inner;
+        }
+        try {
+          const custValidation = await this.sessionService.validate({ token });
+          if (custValidation.valid && (custValidation as any).principal) {
+            throw new ForbiddenException('Customer not allowed on workforce route');
+          }
+        } catch (inner) {
+          if (inner instanceof ForbiddenException) throw inner;
+        }
+        if (e instanceof ForbiddenException || e instanceof UnauthorizedException) throw e;
+        throw new UnauthorizedException('Authentication required');
+      }
     }
 
     if (route.authenticationMode === 'AGENT_LOGIN') {
