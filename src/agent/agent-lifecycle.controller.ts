@@ -77,7 +77,17 @@ export class AgentLifecycleController {
   private requirePrivileged(req: AuthenticatedRequest): string {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'AGENT' || principal.type === 'CUSTOMER') {
+    // V1-003 tightened: SUPPORT may not perform lifecycle control (OPERATOR/SERVICE/PRIVILEGED only)
+    // Preserve backward compatibility for unauthenticated vs forbidden distinction
+    if (
+      principal.type === 'AGENT' ||
+      principal.type === 'CUSTOMER' ||
+      (principal.type as string) === 'AGGREGATOR' ||
+      principal.type === 'SUPPORT'
+    ) {
+      throw new UnauthorizedException('Privileged access required');
+    }
+    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type as string)) {
       throw new UnauthorizedException('Privileged access required');
     }
     return principal.principalId;

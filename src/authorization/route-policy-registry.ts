@@ -262,6 +262,54 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // V1-003 Admin operational control plane — agent lifecycle (suspend/terminate/reactivate/activate)
+    // Legacy routes /internal/agents/:id/{suspend,terminate,reactivate,activate} remain for compatibility but now restricted
+    // New consolidated routes /internal/admin/agents/:id/{...} are authoritative admin surface
+    // Both require OPERATOR/SERVICE/PRIVILEGED (SUPPORT denied) — documented V1-003 decision
+    if (
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(path)) ||
+      (method === 'POST' && /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/activate$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-lifecycle',
+        policy: {
+          resourceType: 'agent-lifecycle',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+    if (
+      path.startsWith('/api/v1/internal/admin/agents/') &&
+      (method === 'POST' &&
+        (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(path) ||
+          /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path) ||
+          path.endsWith('/suspend') ||
+          path.endsWith('/terminate') ||
+          path.endsWith('/reactivate') ||
+          path.endsWith('/activate')))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'admin-agent-lifecycle',
+        policy: {
+          resourceType: 'admin-agent-lifecycle',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Generic internal admin surface — workforce only (A22). Covers list/get for
     // agents, customers, aggregators (when not caught above), reconciliation,
     // audit, metrics, diagnostics, outbox, version (non-public), configuration,
