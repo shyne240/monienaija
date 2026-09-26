@@ -73,6 +73,7 @@ import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { AdminModule } from './admin/admin.module';
+import { CustomerAppModule } from './customer-app/customer-app.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -183,6 +184,7 @@ import { WalletModule } from './wallet/wallet.module';
     WalletModule,
     WithdrawalModule,
     AdminModule,
+    CustomerAppModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })

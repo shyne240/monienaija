@@ -87,6 +87,10 @@ export class RuntimeAccessGuard implements CanActivate {
       return true;
     }
 
+    if (route.authenticationMode === 'CUSTOMER_LOGIN') {
+      return true;
+    }
+
     if (route.authenticationMode === 'PROVIDER_CALLBACK') {
       // Provider callbacks use their signed partner envelope. The callback
       // boundary performs authentication and replay checks before ingestion;

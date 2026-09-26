@@ -7,7 +7,8 @@ export type RouteAuthenticationMode =
   | 'WORKFORCE_ASSERTION'
   | 'WORKFORCE_SESSION'
   | 'PROVIDER_CALLBACK'
-  | 'AGENT_LOGIN';
+  | 'AGENT_LOGIN'
+  | 'CUSTOMER_LOGIN';
 
 export interface RoutePolicyInput {
   method: string;
@@ -69,6 +70,32 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Customer App — login is unauthenticated (CUSTOMER_LOGIN)
+    if (
+      method === 'POST' &&
+      (path === '/api/v1/customers/sessions' || path === '/api/v1/customers/login')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'CUSTOMER_LOGIN',
+        resourceType: 'customer-session',
+      };
+    }
+    // Customer App — self routes are strictly CUSTOMER SELF (A23). Must be before generic customers check.
+    if (path === '/api/v1/customers/me' || path.startsWith('/api/v1/customers/me/')) {
+      return {
+        public: false,
+        resourceType: 'customer',
+        policy: {
+          resourceType: 'customer',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER'],
+          customerAccess: 'SELF',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {
