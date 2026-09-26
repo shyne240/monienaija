@@ -13,7 +13,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { Customer } from '../customer/customer.entity';
@@ -415,6 +415,49 @@ export class CustomerAppController {
       .take(normalizedLimit);
     const [transfers, total] = await qb.getManyAndCount();
     const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
+    // ── A25: batch counterparty resolution (avoid N+1) ──
+    const counterpartyWalletIds = [
+      ...new Set(
+        transfers
+          .map((t) => {
+            const isSource = walletIds.includes(t.sourceWalletId);
+            const isDest = walletIds.includes(t.destinationWalletId);
+            if (isSource && !isDest) return t.destinationWalletId;
+            if (!isSource && isDest) return t.sourceWalletId;
+            if (isSource && isDest) return t.destinationWalletId;
+            return null;
+          })
+          .filter((v): v is string => !!v),
+      ),
+    ];
+    const walletMap = new Map<string, WalletAccount>();
+    if (counterpartyWalletIds.length > 0) {
+      const cpWallets = await this.walletRepository.find({ where: { id: In(counterpartyWalletIds) } });
+      for (const w of cpWallets) walletMap.set(w.id, w);
+    }
+    const customerIds = [...new Set([...walletMap.values()].map((w) => w.customerId))];
+    const profileMap = new Map<string, CustomerProfile>();
+    const contactMap = new Map<string, CustomerContactMethod>();
+    if (customerIds.length > 0) {
+      const profiles = await this.profileRepository.find({ where: { customerId: In(customerIds) } });
+      for (const p of profiles) {
+        if (p.isActive && p.deletedAt === null) profileMap.set(p.customerId, p);
+      }
+      const contacts = await this.contactRepository.find({ where: { customerId: In(customerIds) } });
+      for (const c of contacts) {
+        if (c.type === 'PHONE' && !contactMap.has(c.customerId)) {
+          // prefer primary, else first
+          if (c.isPrimary || !contactMap.has(c.customerId)) contactMap.set(c.customerId, c);
+          // if we already have a primary, don't overwrite with non-primary
+          const existing = contactMap.get(c.customerId);
+          if (existing && !existing.isPrimary && c.isPrimary) contactMap.set(c.customerId, c);
+        }
+      }
+      // ensure primary preference: re-scan for primary if we stored non-primary first
+      for (const c of contacts) {
+        if (c.type === 'PHONE' && c.isPrimary) contactMap.set(c.customerId, c);
+      }
+    }
     const items = transfers.map((t) => {
       const isSource = walletIds.includes(t.sourceWalletId);
       const isDest = walletIds.includes(t.destinationWalletId);
@@ -427,26 +470,43 @@ export class CustomerAppController {
         direction = 'RECEIVED';
         counterpartyWalletId = t.sourceWalletId;
       } else if (isSource && isDest) {
-        // internal transfer between own wallets
         direction = 'INTERNAL';
         counterpartyWalletId = t.destinationWalletId;
       }
+      const cpWallet = counterpartyWalletId ? walletMap.get(counterpartyWalletId) ?? null : null;
+      const cpCustomerId = cpWallet?.customerId ?? null;
+      const cpProfile = cpCustomerId ? profileMap.get(cpCustomerId) ?? null : null;
+      const cpContact = cpCustomerId ? contactMap.get(cpCustomerId) ?? null : null;
+      const counterparty = counterpartyWalletId
+        ? {
+            walletId: counterpartyWalletId,
+            customerId: cpCustomerId,
+            displayName: cpProfile?.displayName ?? null,
+            receivingNumber: cpContact?.normalizedValue ?? cpContact?.value ?? null,
+          }
+        : null;
+      // expose only customer-facing fields; hide journalId/ledgerAccountId/idempotency/requestHash/audit/PIN/OTP
       return {
         transferId: t.id,
         id: t.id,
-        sourceWalletId: t.sourceWalletId,
-        destinationWalletId: t.destinationWalletId,
-        counterpartyWalletId,
+        transactionType: 'WALLET_TRANSFER',
+        type: 'WALLET_TRANSFER',
         direction,
         amountMinor: t.amountMinor,
         currency: t.currency,
+        feeMinor: '0',
         status: t.status,
-        journalId: t.journalId,
-        paymentReference: t.paymentReference,
         reference: t.reference,
         narration: t.narration,
+        paymentReference: t.paymentReference,
+        counterparty,
+        counterpartyWalletId,
+        sourceWalletId: t.sourceWalletId,
+        destinationWalletId: t.destinationWalletId,
         createdAt: t.createdAt,
         completedAt: t.completedAt,
+        failureCode: t.failureCode,
+        failureMessage: t.failureMessage,
       };
     });
     return {
@@ -473,30 +533,65 @@ export class CustomerAppController {
     const wallets = await this.walletRepository.find({ where: { customerId: principal.customerId } });
     const walletIds = new Set(wallets.map((w) => w.id));
     const transfer = await this.transferService.getTransfer(transferId);
-    // SELF check: transfer must involve one of customer's wallets, otherwise 404 (no leakage)
+    // SELF check: transfer must involve one of customer's wallets, otherwise 404 (no leakage, generic not-found)
     if (!walletIds.has(transfer.sourceWalletId) && !walletIds.has(transfer.destinationWalletId)) {
       throw new NotFoundException('Transfer not found');
     }
-    // Return safe projection - exclude no ledger/PIN/OTP/session/audit
-    const isSource = transfer.sourceWalletId && walletIds.has(transfer.sourceWalletId);
-    const direction = isSource ? 'SENT' : 'RECEIVED';
+    const isSource = walletIds.has(transfer.sourceWalletId);
+    const isDest = walletIds.has(transfer.destinationWalletId);
+    let direction: string = 'UNKNOWN';
+    let counterpartyWalletId: string | null = null;
+    if (isSource && !isDest) {
+      direction = 'SENT';
+      counterpartyWalletId = transfer.destinationWalletId;
+    } else if (!isSource && isDest) {
+      direction = 'RECEIVED';
+      counterpartyWalletId = transfer.sourceWalletId;
+    } else if (isSource && isDest) {
+      direction = 'INTERNAL';
+      counterpartyWalletId = transfer.destinationWalletId;
+    }
+    // batch counterparty (single) — reuse same logic as list, but single query path for determinism
+    let counterparty: { walletId: string; customerId: string | null; displayName: string | null; receivingNumber: string | null } | null = null;
+    if (counterpartyWalletId) {
+      const cpWallet = await this.walletRepository.findOne({ where: { id: counterpartyWalletId } });
+      if (cpWallet) {
+        const cpCustomerId = cpWallet.customerId;
+        const cpProfile = await this.profileRepository.findOne({ where: { customerId: cpCustomerId, isActive: true } });
+        const cpContacts = await this.contactRepository.find({ where: { customerId: cpCustomerId } });
+        const primary = cpContacts.find((c) => c.type === 'PHONE' && c.isPrimary) ?? cpContacts.find((c) => c.type === 'PHONE') ?? null;
+        counterparty = {
+          walletId: counterpartyWalletId,
+          customerId: cpCustomerId,
+          displayName: cpProfile?.displayName ?? null,
+          receivingNumber: primary?.normalizedValue ?? primary?.value ?? null,
+        };
+      } else {
+        counterparty = { walletId: counterpartyWalletId, customerId: null, displayName: null, receivingNumber: null };
+      }
+    }
+    // Return safe projection — consistent with history, hide ledger internals (journalId, ledgerAccountId, audit, requestHash, idempotency, PIN/OTP)
     return {
       id: transfer.id,
       transferId: transfer.id,
-      sourceWalletId: transfer.sourceWalletId,
-      destinationWalletId: transfer.destinationWalletId,
+      transactionType: 'WALLET_TRANSFER',
+      type: 'WALLET_TRANSFER',
       direction,
       amountMinor: transfer.amountMinor,
       currency: transfer.currency,
+      feeMinor: '0',
       status: transfer.status,
       reference: transfer.reference,
       narration: transfer.narration,
       paymentReference: transfer.paymentReference,
-      journalReference: (transfer as any).journalReference ?? null,
-      failureCode: transfer.failureCode,
-      failureMessage: transfer.failureMessage,
+      counterparty,
+      counterpartyWalletId,
+      sourceWalletId: transfer.sourceWalletId,
+      destinationWalletId: transfer.destinationWalletId,
       createdAt: transfer.createdAt,
       completedAt: transfer.completedAt,
+      failureCode: transfer.failureCode,
+      failureMessage: transfer.failureMessage,
     };
   }
 
