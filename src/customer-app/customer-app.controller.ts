@@ -323,18 +323,62 @@ export class CustomerAppController {
   @HttpCode(201)
   async createTransfer(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: { sourceWalletId: string; destinationWalletId: string; amountMinor: string; currency: string; reference?: string; narration?: string },
+    @Body() dto: { sourceWalletId: string; destinationWalletId: string; amountMinor: string; currency: string; reference?: string; narration?: string; pin?: string },
   ) {
     const principal = this.requireCustomerPrincipal(req);
     const rawHeaders = req.headers as Record<string, unknown>;
     const idempotencyKey = (rawHeaders['idempotency-key'] as string | undefined) ?? (rawHeaders['Idempotency-Key'] as string | undefined);
     const key = (idempotencyKey ?? '').trim();
     if (!key) throw new BadRequestException('Idempotency-Key header is required');
-    // Ensure source wallet belongs to SELF
+    // Ensure source wallet belongs to SELF (fail-closed ownership binding)
     const source = await this.walletService.getWallet(dto.sourceWalletId);
     if (source.customerId !== principal.customerId) throw new NotFoundException('Source wallet not found');
+    // ── A24 Customer Transaction PIN authorization (reuse PBKDF2 service, keep controller thin) ──
+    // PIN is bound to authenticated CUSTOMER principal (do not trust body customerId), verified immediately before financial execution.
+    // PIN is never persisted in requestHash/transfer metadata/journal/audit/response/logs (pinoHttp redacts req.body.pin, requestHash is business params only).
+    const rawPin = (dto as any).pin;
+    if (rawPin === undefined || rawPin === null || (typeof rawPin === 'string' && rawPin.trim().length === 0)) {
+      throw new UnauthorizedException('Transaction PIN required');
+    }
+    if (typeof rawPin !== 'string' || !/^\d{4,12}$/.test(rawPin.trim())) {
+      throw new UnauthorizedException('Invalid PIN format');
+    }
+    const pin = rawPin.trim();
+    const verifier = {
+      verify: (candidate: string, _alg: string, hash: string) => {
+        try {
+          const parts = hash.split('$');
+          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2') return { verified: false };
+          const digest = (parts[1]?.toLowerCase() as 'sha256' | 'sha512') ?? 'sha256';
+          const iter = Number(parts[2]);
+          const salt = Buffer.from(parts[3] ?? '', 'base64url');
+          const expected = Buffer.from(parts[4] ?? '', 'base64url');
+          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0) return { verified: false };
+          const derived = pbkdf2Sync(candidate, salt, iter, expected.length, digest);
+          if (derived.length !== expected.length) return { verified: false };
+          return { verified: timingSafeEqual(derived, expected) };
+        } catch {
+          return { verified: false };
+        }
+      },
+    };
+    const outcome = await this.pinService.verifyTransactionPin(
+      principal.customerId!,
+      { pin, actor: principal.customerId! },
+      verifier as any,
+    );
+    if (!outcome.verified) {
+      if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
+        throw new UnauthorizedException('Customer PIN is locked');
+      }
+      if (outcome.failureReason === 'PIN_NOT_FOUND') {
+        throw new UnauthorizedException('Transaction PIN not set');
+      }
+      throw new UnauthorizedException('Invalid PIN');
+    }
+    // PIN verified — do not pass PIN to TransferService (keeps requestHash = sha256(business params only), idempotent for same op)
     // Note: destination wallet ownership is not restricted — can be any customer/agent wallet
-    // Do not perform direct ledger mutation; delegate to TransferService (preserves PIN/MFA/idempotency/concurrency/double-entry)
+    // Do not perform direct ledger mutation; delegate to TransferService (preserves SERIALIZABLE/wallet-locking/double-entry)
     return this.transferService.createTransfer({
       sourceWalletId: dto.sourceWalletId,
       destinationWalletId: dto.destinationWalletId,

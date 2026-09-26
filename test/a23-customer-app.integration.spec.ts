@@ -208,24 +208,26 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const ls = app.get(LS);
     const wa = await ws.createWallet({ customerId: custA, currency: 'NGN', idempotencyKey: `a23wa-${custA}` });
     const wb = await ws.createWallet({ customerId: custB, currency: 'NGN', idempotencyKey: `a23wb-${custB}` });
+    // A24: set PIN for source customer before transfer
+    await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${token}`).send({ pin: '1234' }).expect(200);
     // Fund wa
     const plat = await ls.createAccount({ code: `PLAT_${randomUUID().slice(0,6)}`, name: 'Plat', accountType: 'ASSET' as any, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS' });
     await ls.postJournal({ idempotencyKey: `fund-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [ { accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '50000' }, { accountId: wa.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '50000' } ] });
     const beforeWa = await ws.getWalletBalance(wa.id);
     expect(beforeWa.balanceMinor).toBe('50000');
     const idem = `idem-a23-${randomUUID()}`;
-    const create = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '10000', currency: 'NGN', reference: `ref-${randomUUID()}` }).expect(201);
+    const create = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '10000', currency: 'NGN', reference: `ref-${randomUUID()}`, pin: '1234' }).expect(201);
     expect(create.body.id).toBeDefined();
     const transferId = create.body.id as string;
-    // Idempotency: same key returns same transferId, no double debit
-    const again = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '10000', currency: 'NGN', reference: `ref-${randomUUID()}` }).expect((r)=>expect([201, 409].includes(r.status)).toBe(true));
+    // Idempotency: same key returns same transferId, no double debit (A24: PIN still required on idempotent retry)
+    const again = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '10000', currency: 'NGN', reference: `ref-${randomUUID()}`, pin: '1234' }).expect((r)=>expect([201, 409].includes(r.status)).toBe(true));
     if (again.status === 201) expect(again.body.id).toBe(transferId);
     const afterWa = await ws.getWalletBalance(wa.id);
     const afterWb = await ws.getWalletBalance(wb.id);
     expect(afterWa.balanceMinor).toBe('40000');
     expect(afterWb.balanceMinor).toBe('10000');
-    // Source wallet must belong to SELF else 404
-    const bad = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-${randomUUID()}`).send({ sourceWalletId: wb.id, destinationWalletId: wa.id, amountMinor: '1000', currency: 'NGN' }).expect(404);
+    // Source wallet must belong to SELF else 404 (A24: still 404 even with valid PIN)
+    const bad = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-${randomUUID()}`).send({ sourceWalletId: wb.id, destinationWalletId: wa.id, amountMinor: '1000', currency: 'NGN', pin: '1234' }).expect(404);
     // Also test existing TransferService still works via /transfers endpoint for compatibility
     await request(app.getHttpServer()).get(`/api/v1/transfers/${transferId}`).set('Authorization', `Bearer ${token}`).expect((r)=>expect([200,401,403].includes(r.status)).toBe(true));
   });
@@ -238,10 +240,11 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const ws = app.get(WS); const ls = app.get(LS);
     const wa = await ws.createWallet({ customerId: custA, currency: 'NGN', idempotencyKey: `hwa-${custA}` });
     const wb = await ws.createWallet({ customerId: custB, currency: 'NGN', idempotencyKey: `hwb-${custB}` });
+    await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${token}`).send({ pin: '1234' }).expect(200);
     const plat = await ls.createAccount({ code: `PLAH_${randomUUID().slice(0,6)}`, name: 'PlatH', accountType: 'ASSET' as any, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS' });
     await ls.postJournal({ idempotencyKey: `fh-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [ { accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '20000' }, { accountId: wa.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '20000' } ] });
     const idem = `idem-h-${randomUUID()}`;
-    const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '5000', currency: 'NGN' }).expect(201);
+    const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '5000', currency: 'NGN', pin: '1234' }).expect(201);
     const tid = tr.body.id as string;
     const history = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers?page=1&limit=20').set('Authorization', `Bearer ${token}`).expect(200);
     expect(history.body.items).toBeDefined();
@@ -267,9 +270,10 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const ws = app.get(WS); const ls = app.get(LS);
     const wa = await ws.createWallet({ customerId: custA, currency: 'NGN', idempotencyKey: `dwa-${custA}` });
     const wb = await ws.createWallet({ customerId: custB, currency: 'NGN', idempotencyKey: `dwb-${custB}` });
+    await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${token}`).send({ pin: '1234' }).expect(200);
     const plat = await ls.createAccount({ code: `PLAD_${randomUUID().slice(0,6)}`, name: 'PlatD', accountType: 'ASSET' as any, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS' });
     await ls.postJournal({ idempotencyKey: `fd-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [ { accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '30000' }, { accountId: wa.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '30000' } ] });
-    const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-d-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '7000', currency: 'NGN' }).expect(201);
+    const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-d-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '7000', currency: 'NGN', pin: '1234' }).expect(201);
     const tid = tr.body.id as string;
     const detail = await request(app.getHttpServer()).get(`/api/v1/customers/me/transfers/${tid}`).set('Authorization', `Bearer ${token}`).expect(200);
     expect(detail.body.id).toBe(tid);
@@ -307,7 +311,9 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     const ls = app.get(LS);
     const plat = await ls.createAccount({ code: `PLACR_${randomUUID().slice(0,6)}`, name: 'PlatC', accountType: 'ASSET' as any, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS' });
     await ls.postJournal({ idempotencyKey: `fc-cross-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [ { accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '10000' }, { accountId: wb.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '10000' } ] });
-    const trBC = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenB}`).set('Idempotency-Key', `cross-bc-${randomUUID()}`).send({ sourceWalletId: wb.id, destinationWalletId: wc.id, amountMinor: '1000', currency: 'NGN' }).expect(201);
+    // A24: set PIN for B before B->C transfer
+    await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${tokenB}`).send({ pin: '4321' }).expect(200);
+    const trBC = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenB}`).set('Idempotency-Key', `cross-bc-${randomUUID()}`).send({ sourceWalletId: wb.id, destinationWalletId: wc.id, amountMinor: '1000', currency: 'NGN', pin: '4321' }).expect(201);
     const tidBC = trBC.body.id as string;
     // A should not see B->C detail
     await request(app.getHttpServer()).get(`/api/v1/customers/me/transfers/${tidBC}`).set('Authorization', `Bearer ${tokenA}`).expect(404);
