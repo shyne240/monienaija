@@ -2,7 +2,7 @@
 
 **Date (Lagos):** 2026-09-26  
 **Branch:** `arena/01a0d883-monienaija`  
-**HEAD:** `__HEAD__` (`feat(customer-app): A25 Customer Transaction History & Detail Hardening`)  
+**HEAD:** `28c4f1f79de9f70da6dbda8bdb550cc34e9c3ee2` (`feat(customer-app): A25 Customer Transaction History & Detail Hardening`)  
 **Parent:** `48b556ef9f97dc776c9c7d016ca28b50f2bd2d4d` (`feat(customer-app): A24 Customer Wallet→Wallet Transaction PIN Hardening`)  
 **Working tree:** after reset to `48b556e`, hardened `src/customer-app/customer-app.controller.ts` + `test/a25-customer-history-hardening.integration.spec.ts` (see Files)  
 **Migrations:** **63** (zero new migrations — `SELECT count(*) FROM typeorm_migrations` =63 in every suite)  
@@ -233,7 +233,7 @@ Focused 17/17 + regression A23 15/15 + A24 19/19 + A21 13/13 + A22 15/15 + `tsc 
 
 - **Branch:** `arena/01a0d883-monienaija` (session-fixed)
 - **Parent HEAD:** `48b556ef9f97dc776c9c7d016ca28b50f2bd2d4d` (A24 VERIFIED)
-- **This HEAD:** `__HEAD__` (to be committed as `feat(customer-app): A25 Customer Transaction History & Detail Hardening`)
+- **This HEAD:** `28c4f1f79de9f70da6dbda8bdb550cc34e9c3ee2` (`feat(customer-app): A25 Customer Transaction History & Detail Hardening`)
 - **Files to commit:** `src/customer-app/customer-app.controller.ts`, `test/a25-customer-history-hardening.integration.spec.ts`, `docs/A25-VERIFICATION-REPORT.md`
 - **Migrations:** 63 (no new)
 - **Reproduction:** `DB_HOST=127.0.0.1 DB_PORT=5432 DB_NAME=monienaija DB_USER=monienaija DB_PASSWORD=monienaija-pw DB_SSL=false ./node_modules/.bin/jest --config jest.integration.config.js test/a23-customer-app.integration.spec.ts test/a24-customer-transaction-pin-hardening.integration.spec.ts test/a25-customer-history-hardening.integration.spec.ts --runInBand --testTimeout=120000` → 51/51
