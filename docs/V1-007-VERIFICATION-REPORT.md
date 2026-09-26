@@ -3,21 +3,18 @@
 **Date (Lagos):** 2026-09-26  
 **Branch:** `arena/01a0d883-monienaija`  
 **HEAD (preserved baseline before V1-007):** `ea38ea09a17563546034b672ec7d69bedcbf0c1f` (`chore: preserve A21-A26 + V1-001 verified baseline before V1-007` — contains `37aa315` A21-A26, `8669c07` V1-001 working-tree equivalent, 64 migrations, `src/customer-funding/*`, `docs/V1-001-VERIFICATION-REPORT.md`, `docs/A21-A26`, `test/v1-001*`) — parent `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` (`fix(production): update expected migration constraints…`)  
-**HEAD after V1-007 (working tree, to be committed):** `ea38ea0` + uncommitted V1-007 support feature (`src/support/*`, `src/migrations/1785753600064-*`, `src/app.module.ts`, `src/production/production-readiness.service.ts`, test expectation updates 64→65) — **working tree dirty** (see §3)  
+**HEAD after V1-007:** `b3cffa455129517ef790c1d37ab5e49af131ce88` (`merge: integrate remote A22-A26 (245fc9a) into V1-007 work — keep 65 migrations V1-007 support`, parents `7b9eaba` `245fc9a`) -> `7b9eaba` (`feat(support): V1-007 Support ticket lifecycle…` 30 files, `src/support/*`, `src/migrations/1785753600064-*`, `src/app.module.ts`, `src/production/production-readiness.service.ts`, test expectation updates 64→65) — **clean** (`git status --porcelain` 0)  
+**HEAD before V1-007:** `ea38ea0` already pushed; merged with `245fc9a` (A26) to reconcile divergent history; both lineages preserved  
 **Verified V1-001 HEAD:** `8669c073af4ee75c9e902a1ec006e54b1cd07736` (`feat(funding): V1-001 Operations Customer Funding with maker/checker`, parent `37aa315` preserve, 26/26) — content byte-identical to preservation commit  
-**A26 verified baseline HEAD:** `245fc9a`/`6036b7c` (A26 19/19) captured in `37aa315` (155 files, 26868 insertions)  
+**A26 verified baseline HEAD:** `245fc9a`/`6036b7c` (A26 19/19) captured in `37aa315` (155 files, 26868 insertions) — now merged as second parent  
 
 ---
 
 ## 1. Exact HEAD
+- **Final HEAD:** `b3cffa455129517ef790c1d37ab5e49af131ce88` (`merge: integrate remote A22-A26 (245fc9a) into V1-007 work — keep 65 migrations V1-007 support`, parents `7b9eaba` + `245fc9a`, `git status --porcelain` clean)
 - **Before V1-007:** `ea38ea09a17563546034b672ec7d69bedcbf0c1f` (preserve commit 2026-09-26, 167 files, includes all A21-A26 + V1-001)
-- **Working tree V1-007:** dirty — `git status --porcelain` shows:
-  - `M src/app.module.ts` (import `SupportModule`)
-  - `M src/production/production-readiness.service.ts` (`EXPECTED_MIGRATION_TIMESTAMP` `1785753600064`, `CreateSupportTickets`)
-  - `M test/a17..a26,migration-chain,production-readiness,v1-001` (expected count `65`, timestamp `0064`)
-  - `?? src/support/` (`support-ticket.entity.ts`, `support-ticket-message.entity.ts`, `support.enums.ts`, `support.service.ts`, `support.module.ts`, 3 controllers, 4 DTOs)
-  - `?? src/migrations/1785753600064-CreateSupportTickets.ts`
-  - `?? test/v1-007-support-ticket.integration.spec.ts` (28 tests)
+- **Feature commit:** `7b9eabac3eb8272d9eda910341c44d3b460f170b` (`feat(support): V1-007…` 30 files, 2998 insertions) — contains all working-tree changes above, now merged
+- **Remote integrated:** `245fc9a` (`docs: A26…` ) merged via `b3cffa4` to resolve non-fast-forward; no content lost (ours kept for 65-migration files)
 
 ## 2. Preserved Baseline
 - **Before implementation:** `37aa315e84a60cfae0f61b6ce8be26019383a158` (A21-A26 verified, `docs/V1-PRODUCT-COMPLETION-AUDIT.md`, `docs/A21-A26` contracts) — parent `3d05aae`
