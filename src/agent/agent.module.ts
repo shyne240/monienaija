@@ -40,6 +40,8 @@ import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.servic
 import { CashToCashTransfer } from './cash-to-cash.entity';
 import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
+import { AgentAppController } from './agent-app.controller';
+import { OutletModule } from '../outlet/outlet.module';
 
 @Module({
   imports: [
@@ -48,10 +50,12 @@ import { AgentFundingController } from './agent-funding.controller';
     WalletModule,
     CustomerModule,
     CustomerAuthenticationModule,
+    OutletModule,
     TypeOrmModule.forFeature([Agent, AgentClass, AgentApplication, AgentReceivingNumber, CashToCashTransfer]),
     forwardRef(() => AgentAuthenticationModule),
   ],
   controllers: [
+    AgentAppController,
     AgentApplicationPublicController,
     AgentApplicationAdminController,
     AgentClassController,
