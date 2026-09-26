@@ -129,6 +129,27 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Outlets & Terminals via Aggregator — internal privileged (A20)
+    // Must be checked before generic aggregator block; Aggregator context is via A18 relationship
+    if (
+      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
+      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Aggregator management — internal privileged (A18 foundation). No public aggregator creation.
     // Inactive/terminated aggregators cannot perform restricted operations (checked in service layer).
     // Aggregator as a principal type is distinct from Agent/Customer; do not grant AGENT SELF.
@@ -166,6 +187,45 @@ export class RoutePolicyRegistry {
         resourceType: 'agent-funding',
         policy: {
           resourceType: 'agent-funding',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Agent outlets & terminals — internal privileged (A20)
+    if (
+      path.startsWith('/api/v1/internal/agents/') &&
+      (path.includes('/outlets') || path.includes('/terminals'))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+    if (path.startsWith('/api/v1/internal/outlets/') || path.startsWith('/api/v1/internal/terminals/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+          ? 'agent-terminal'
+          : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+            ? 'agent-terminal'
+            : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'NONE',

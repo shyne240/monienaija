@@ -452,10 +452,10 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 20. migration chain
   it('20. migration chain', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(62);
+    expect(Number(rows[0]!.count)).toBe(63);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600061');
-    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
+    expect(latest[0]!.timestamp).toBe('1785753600062');
+    expect(latest[0]!.name).toBe('CreateAgentOutletsAndTerminals1785753600062');
     const pool: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
     expect(pool.length).toBe(1);
   });
@@ -463,7 +463,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 21. production readiness
   it('21. production readiness', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600061');
-    expect(latest[0]!.name).toBe('CreateAgentFundingPool1785753600061');
+    expect(latest[0]!.timestamp).toBe('1785753600062');
+    expect(latest[0]!.name).toBe('CreateAgentOutletsAndTerminals1785753600062');
   });
 });
