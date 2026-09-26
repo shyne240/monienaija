@@ -9,6 +9,10 @@ import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { AgentModule } from './agent/agent.module';
+import { AggregatorModule } from './aggregator/aggregator.module';
+import { OutletModule } from './outlet/outlet.module';
+import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
@@ -68,6 +72,9 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
+import { AdminModule } from './admin/admin.module';
+import { CustomerAppModule } from './customer-app/customer-app.module';
+import { CustomerFundingModule } from './customer-funding/customer-funding.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -87,7 +94,11 @@ import { WalletModule } from './wallet/wallet.module';
             'req.headers.cookie',
             'req.headers.x-api-key',
             'req.body.password',
+            'req.body.currentPassword',
+            'req.body.newPassword',
             'req.body.passwordHash',
+            'req.body.pin',
+            'req.body.pinHash',
             'req.body.token',
             'req.body.tokenHash',
             'req.body.accessToken',
@@ -96,6 +107,8 @@ import { WalletModule } from './wallet/wallet.module';
             'req.body.code',
             'req.body.codeHash',
             'req.body.challengeHash',
+            'req.body.transferCode',
+            'req.body.transferCodeHash',
             'req.body.providedHash',
             'req.body.deviceFingerprintHash',
             'req.body.fingerprintHash',
@@ -110,6 +123,10 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    AgentModule,
+    AggregatorModule,
+    OutletModule,
+    AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
     CustomerAuthenticationModule,
@@ -169,6 +186,9 @@ import { WalletModule } from './wallet/wallet.module';
     VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
+    AdminModule,
+    CustomerAppModule,
+    CustomerFundingModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })

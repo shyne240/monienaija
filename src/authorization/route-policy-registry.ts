@@ -6,7 +6,9 @@ export type RouteAuthenticationMode =
   | 'PRINCIPAL'
   | 'WORKFORCE_ASSERTION'
   | 'WORKFORCE_SESSION'
-  | 'PROVIDER_CALLBACK';
+  | 'PROVIDER_CALLBACK'
+  | 'AGENT_LOGIN'
+  | 'CUSTOMER_LOGIN';
 
 export interface RoutePolicyInput {
   method: string;
@@ -21,6 +23,7 @@ export interface RoutePolicyResolution {
   resourceType: string;
   resourceId?: string;
   customerId?: string;
+  agentId?: string;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -67,6 +70,32 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Customer App — login is unauthenticated (CUSTOMER_LOGIN)
+    if (
+      method === 'POST' &&
+      (path === '/api/v1/customers/sessions' || path === '/api/v1/customers/login')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'CUSTOMER_LOGIN',
+        resourceType: 'customer-session',
+      };
+    }
+    // Customer App — self routes are strictly CUSTOMER SELF (A23). Must be before generic customers check.
+    if (path === '/api/v1/customers/me' || path.startsWith('/api/v1/customers/me/')) {
+      return {
+        public: false,
+        resourceType: 'customer',
+        policy: {
+          resourceType: 'customer',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER'],
+          customerAccess: 'SELF',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {
@@ -83,6 +112,193 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Agent authentication HTTP surface (A7) — Agent-owned routes
+    // Login is unauthenticated (AGENT_LOGIN) and must not require a bearer token.
+    if (method === 'POST' && path === '/api/v1/agents/sessions') {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-session',
+      };
+    }
+    if (method === 'POST' && path === '/api/v1/agents/login') {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-session',
+      };
+    }
+
+    // Recipient resolution — A9: typed CUSTOMER vs AGENT resolution by receiving number / phone
+    // Preserve Customer phone + MonieNaija resolution; block PENDING/rejected/deleted/terminated at service layer.
+    if (path.startsWith('/api/v1/recipients/')) {
+      return {
+        public: false,
+        resourceType: 'recipient-resolution',
+        policy: {
+          resourceType: 'recipient-resolution',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER', 'AGENT', 'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'ANY',
+          agentAccess: 'ANY',
+        },
+      };
+    }
+
+    // Agent application — applicant surface (A8). Applicants are not yet Agents, so these
+    // are unauthenticated (AGENT_LOGIN) and do not require a bearer token. Ownership is
+    // enforced via applicantReference, not via agentId param.
+    if (path === '/api/v1/agents/applications' || path.startsWith('/api/v1/agents/applications/')) {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-application',
+      };
+    }
+
+    // Outlets & Terminals via Aggregator — internal privileged (A20)
+    // Must be checked before generic aggregator block; Aggregator context is via A18 relationship
+    if (
+      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
+      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Aggregator management — internal privileged (A18 foundation). No public aggregator creation.
+    // Inactive/terminated aggregators cannot perform restricted operations (checked in service layer).
+    // Aggregator as a principal type is distinct from Agent/Customer; do not grant AGENT SELF.
+    if (path.startsWith('/api/v1/internal/aggregators')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'aggregator',
+        policy: {
+          resourceType: 'aggregator',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Aggregator self routes (if later authentication is introduced) would be handled here.
+    // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
+
+    // Agent funding — internal privileged (A19). Source is platform pool, destination is Agent wallet.
+    // No Aggregator ledger account in V1; Aggregator involvement is relationship authorization only.
+    // Inactive/terminated/suspended checks are enforced in service layer.
+    if (
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund)$/.test(path)) ||
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-funding',
+        policy: {
+          resourceType: 'agent-funding',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Agent outlets & terminals — internal privileged (A20)
+    if (
+      path.startsWith('/api/v1/internal/agents/') &&
+      (path.includes('/outlets') || path.includes('/terminals'))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+    if (path.startsWith('/api/v1/internal/outlets/') || path.startsWith('/api/v1/internal/terminals/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+          ? 'agent-terminal'
+          : 'agent-outlet',
+        policy: {
+          resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+            ? 'agent-terminal'
+            : 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Generic internal admin surface — workforce only (A22). Covers list/get for
+    // agents, customers, aggregators (when not caught above), reconciliation,
+    // audit, metrics, diagnostics, outbox, version (non-public), configuration,
+    // readiness, deployment etc. Must be before the generic agents check.
+    if (path.startsWith('/api/v1/internal/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'internal-route',
+        policy: {
+          resourceType: 'internal-route',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // All other /api/v1/agents/* routes require an AGENT principal
+    if (path.startsWith('/api/v1/agents/')) {
+      // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess
+      // No arbitrary agentId param is trusted; identity comes from session.
+      return {
+        public: false,
+        resourceType: 'agent',
+        policy: {
+          resourceType: 'agent',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['AGENT'],
+          customerAccess: 'NONE',
+          agentAccess: 'SELF',
+        },
+      };
+    }
+
     return {
       public: false,
       resourceType: 'internal-route',
@@ -92,6 +308,8 @@ export class RoutePolicyRegistry {
         requiredScopes: ['internal:access'],
         allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
         customerAccess: 'NONE',
+        agentAccess: 'NONE',
+        aggregatorAccess: 'NONE',
       },
     };
   }

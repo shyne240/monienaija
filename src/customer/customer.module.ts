@@ -10,6 +10,8 @@ import { CustomerIdentityDocument } from './customer-identity-document.entity';
 import { CustomerKycAssessment } from './customer-kyc-assessment.entity';
 import { CustomerProfile } from './customer-profile.entity';
 import { CustomerService } from './customer.service';
+import { CustomerTransactionPin } from './customer-transaction-pin.entity';
+import { CustomerTransactionPinService } from './customer-transaction-pin.service';
 
 @Module({
   imports: [
@@ -21,10 +23,11 @@ import { CustomerService } from './customer.service';
       CustomerContactMethod,
       CustomerIdentityDocument,
       CustomerKycAssessment,
+      CustomerTransactionPin,
     ]),
   ],
   controllers: [CustomerController],
-  providers: [CustomerService],
-  exports: [CustomerService],
+  providers: [CustomerService, CustomerTransactionPinService],
+  exports: [CustomerService, CustomerTransactionPinService],
 })
 export class CustomerModule {}

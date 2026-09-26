@@ -14,6 +14,7 @@ import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from './workforce-authentication.types';
 import type { AuthorizationRequest, AuthorizationPrincipal } from './authorization.types';
 import { RoutePolicyRegistry } from './route-policy-registry';
+import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
 
 interface RuntimeRequest extends AuthorizationRequest {
   method: string;
@@ -30,6 +31,7 @@ export class RuntimeAccessGuard implements CanActivate {
     private readonly routePolicyRegistry: RoutePolicyRegistry,
     private readonly workforceSessions: A2WorkforceSessionService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly workforceConfig: A2WorkforceConfigurationV1,
+    private readonly agentSessionService: AgentAuthenticationSessionService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -50,10 +52,42 @@ export class RuntimeAccessGuard implements CanActivate {
     }
     if (route.authenticationMode === 'WORKFORCE_SESSION') {
       const token = this.bearerToken(request.headers.authorization);
-      request.authorizationPrincipal = await this.workforceSessions.validate(
-        token,
-        this.workforceConfig.internalAudience,
-      );
+      try {
+        if (!this.workforceConfig.enabled)
+          throw new UnauthorizedException('Workforce authentication disabled');
+        request.authorizationPrincipal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
+        return true;
+      } catch (e) {
+        // For workforce routes, an Agent or Customer token should be rejected as Forbidden (403) not Unauthorized (401)
+        try {
+          const agentValidation = await this.agentSessionService.validate({ token });
+          if (agentValidation.valid && agentValidation.principal) {
+            throw new ForbiddenException('Agent not allowed on workforce route');
+          }
+        } catch (inner) {
+          if (inner instanceof ForbiddenException) throw inner;
+        }
+        try {
+          const custValidation = await this.sessionService.validate({ token });
+          if (custValidation.valid && (custValidation as any).principal) {
+            throw new ForbiddenException('Customer not allowed on workforce route');
+          }
+        } catch (inner) {
+          if (inner instanceof ForbiddenException) throw inner;
+        }
+        if (e instanceof ForbiddenException || e instanceof UnauthorizedException) throw e;
+        throw new UnauthorizedException('Authentication required');
+      }
+    }
+
+    if (route.authenticationMode === 'AGENT_LOGIN') {
+      return true;
+    }
+
+    if (route.authenticationMode === 'CUSTOMER_LOGIN') {
       return true;
     }
 
@@ -65,27 +99,49 @@ export class RuntimeAccessGuard implements CanActivate {
     }
 
     const token = this.bearerToken(request.headers.authorization);
-    const validation = await this.sessionService.validate({ token });
-    if (!validation.valid || !validation.principal) {
-      throw new UnauthorizedException('Authentication required');
+
+    // Attempt Agent session first, then Customer session. Sessions are Agent-owned vs Customer-owned
+    // and stored in separate tables; a token is valid in exactly one table.
+    const agentValidation = await this.agentSessionService.validate({ token });
+    let principal: AuthorizationPrincipal | undefined;
+    if (agentValidation.valid && agentValidation.principal) {
+      principal = {
+        type: 'AGENT',
+        principalId: agentValidation.principal.agentId,
+        agentId: agentValidation.principal.agentId,
+        sessionId: agentValidation.principal.sessionId,
+        audience: agentValidation.principal.audience,
+        roles: [],
+        scopes: [],
+        customerAccess: 'NONE',
+        agentAccess: 'SELF',
+        assuranceLevel: 'PASSWORD',
+      };
+    } else {
+      const validation = await this.sessionService.validate({ token });
+      if (!validation.valid || !validation.principal) {
+        throw new UnauthorizedException('Authentication required');
+      }
+      principal = {
+        type: 'CUSTOMER',
+        principalId: validation.principal.customerId,
+        customerId: validation.principal.customerId,
+        sessionId: validation.principal.sessionId,
+        audience: validation.principal.audience,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+        assuranceLevel: 'PASSWORD',
+      };
     }
 
-    const principal: AuthorizationPrincipal = {
-      type: 'CUSTOMER',
-      principalId: validation.principal.customerId,
-      customerId: validation.principal.customerId,
-      sessionId: validation.principal.sessionId,
-      audience: validation.principal.audience,
-      roles: [],
-      scopes: [],
-      customerAccess: 'SELF',
-      assuranceLevel: 'PASSWORD',
-    };
     request.authorizationPrincipal = principal;
     const decision = await this.authorizationService.authorize(principal, route.policy, {
       type: route.resourceType,
       id: route.resourceId,
       customerId: route.customerId,
+      agentId: principal.agentId ?? route.agentId,
+      aggregatorId: (principal as any).aggregatorId ?? (route as any).aggregatorId,
     });
     request.authorizationDecision = decision;
     if (!decision.allowed) {

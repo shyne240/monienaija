@@ -125,6 +125,28 @@ export class AuthorizationService {
       };
     }
 
+    const agentReason = this.checkAgentScope(principal, policy.agentAccess, resource);
+    if (agentReason) {
+      return {
+        ...base,
+        allowed: false,
+        reason: agentReason,
+        principalType: principal.type,
+        principalId: principal.principalId,
+      };
+    }
+
+    const aggregatorReason = this.checkAggregatorScope(principal, policy.aggregatorAccess, resource);
+    if (aggregatorReason) {
+      return {
+        ...base,
+        allowed: false,
+        reason: aggregatorReason,
+        principalType: principal.type,
+        principalId: principal.principalId,
+      };
+    }
+
     return {
       ...base,
       allowed: true,
@@ -171,6 +193,60 @@ export class AuthorizationService {
     return undefined;
   }
 
+  private checkAgentScope(
+    principal: AuthorizationPrincipal,
+    policyScope: string | undefined,
+    resource: AuthorizationResource,
+  ): AuthorizationDenialReason | undefined {
+    if (!resource.agentId) {
+      return undefined;
+    }
+    // Agent resources require explicit AGENT principal with matching agentId when SELF is required
+    const access = policyScope ?? (principal.type === 'AGENT' ? 'SELF' : undefined);
+    if (!access) {
+      return 'RESOURCE_SCOPE_MISSING';
+    }
+    if (access === 'NONE') {
+      return 'CUSTOMER_SCOPE_MISMATCH';
+    }
+    if (access === 'SELF') {
+      return principal.type === 'AGENT' && principal.agentId === resource.agentId
+        ? undefined
+        : 'CUSTOMER_SCOPE_MISMATCH';
+    }
+    if (access === 'ASSIGNED' || access === 'ANY') {
+      // No assigned agent model yet; require explicit match or fail closed
+      return 'RESOURCE_SCOPE_MISSING';
+    }
+    return undefined;
+  }
+
+  private checkAggregatorScope(
+    principal: AuthorizationPrincipal,
+    policyScope: string | undefined,
+    resource: AuthorizationResource,
+  ): AuthorizationDenialReason | undefined {
+    if (!resource.aggregatorId) {
+      return undefined;
+    }
+    const access = policyScope ?? (principal.type === 'AGGREGATOR' ? 'SELF' : undefined);
+    if (!access) {
+      return 'RESOURCE_SCOPE_MISSING';
+    }
+    if (access === 'NONE') {
+      return 'CUSTOMER_SCOPE_MISMATCH';
+    }
+    if (access === 'SELF') {
+      return principal.type === 'AGGREGATOR' && principal.aggregatorId === resource.aggregatorId
+        ? undefined
+        : 'CUSTOMER_SCOPE_MISMATCH';
+    }
+    if (access === 'ASSIGNED' || access === 'ANY') {
+      return 'RESOURCE_SCOPE_MISSING';
+    }
+    return undefined;
+  }
+
   private validPrincipal(principal: AuthorizationPrincipal): boolean {
     if (!principal.principalId || principal.principalId.length > MAX_TEXT_LENGTH) {
       return false;
@@ -181,10 +257,37 @@ export class AuthorizationService {
     if (!['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.customerAccess)) {
       return false;
     }
+    if (principal.agentAccess && !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.agentAccess)) {
+      return false;
+    }
+    if (principal.aggregatorAccess && !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.aggregatorAccess)) {
+      return false;
+    }
     if (principal.type === 'CUSTOMER') {
-      return Boolean(principal.customerId && UUID_PATTERN.test(principal.customerId));
+      return Boolean(
+        principal.customerId &&
+          UUID_PATTERN.test(principal.customerId) &&
+          !principal.agentId &&
+          !principal.aggregatorId,
+      );
+    }
+    if (principal.type === 'AGENT') {
+      return Boolean(
+        principal.agentId && UUID_PATTERN.test(principal.agentId) && !principal.customerId && !principal.aggregatorId,
+      );
+    }
+    if (principal.type === 'AGGREGATOR') {
+      return Boolean(
+        principal.aggregatorId && UUID_PATTERN.test(principal.aggregatorId) && !principal.customerId && !principal.agentId,
+      );
     }
     if (principal.customerId && !UUID_PATTERN.test(principal.customerId)) {
+      return false;
+    }
+    if (principal.agentId && !UUID_PATTERN.test(principal.agentId)) {
+      return false;
+    }
+    if (principal.aggregatorId && !UUID_PATTERN.test(principal.aggregatorId)) {
       return false;
     }
     return true;
