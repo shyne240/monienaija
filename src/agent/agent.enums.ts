@@ -1,0 +1,6 @@
+export enum AgentStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  TERMINATED = 'TERMINATED',
+}

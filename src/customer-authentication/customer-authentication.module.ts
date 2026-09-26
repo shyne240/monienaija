@@ -55,6 +55,7 @@ import { TrustedDevice } from './trusted-device.entity';
     AuthenticationSessionService,
     CustomerAuthenticationRuntimeService,
     MfaExecutionService,
+    PasswordHashVerificationService,
   ],
 })
 export class CustomerAuthenticationModule {}

@@ -1,22 +1,30 @@
 export type AuthorizationPrincipalType =
   | 'CUSTOMER'
+  | 'AGENT'
+  | 'AGGREGATOR'
   | 'SUPPORT'
   | 'OPERATOR'
   | 'SERVICE'
   | 'PRIVILEGED';
 
 export type CustomerAccessScope = 'NONE' | 'SELF' | 'ASSIGNED' | 'ANY';
+export type AgentAccessScope = 'NONE' | 'SELF' | 'ASSIGNED' | 'ANY';
+export type AggregatorAccessScope = 'NONE' | 'SELF' | 'ASSIGNED' | 'ANY';
 export type AssuranceLevel = 'PASSWORD' | 'MFA';
 
 export interface AuthorizationPrincipal {
   type: AuthorizationPrincipalType;
   principalId: string;
   customerId?: string;
+  agentId?: string;
+  aggregatorId?: string;
   sessionId?: string;
   audience?: string;
   roles: readonly string[];
   scopes: readonly string[];
   customerAccess: CustomerAccessScope;
+  agentAccess?: AgentAccessScope;
+  aggregatorAccess?: AggregatorAccessScope;
   assignedCustomerIds?: readonly string[];
   assuranceLevel?: AssuranceLevel;
 }
@@ -25,6 +33,8 @@ export interface AuthorizationResource {
   type: string;
   id?: string;
   customerId?: string;
+  agentId?: string;
+  aggregatorId?: string;
   scope?: string;
 }
 
@@ -35,6 +45,8 @@ export interface AuthorizationPolicy {
   requiredRoles?: readonly string[];
   allowedPrincipalTypes?: readonly AuthorizationPrincipalType[];
   customerAccess?: CustomerAccessScope;
+  agentAccess?: AgentAccessScope;
+  aggregatorAccess?: AggregatorAccessScope;
   audience?: string;
   minimumAssurance?: AssuranceLevel;
 }

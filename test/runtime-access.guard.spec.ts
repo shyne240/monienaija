@@ -41,6 +41,7 @@ describe('RuntimeAccessGuard', () => {
     const sessionService = { validate: jest.fn() };
     const authorizationService = { authorize: jest.fn() };
     const workforceSessions = { validate: jest.fn() };
+    const agentSessionService = { validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }) };
     const workforceConfig = {
       enabled: true,
       internalAudience: 'workforce-admin',
@@ -51,8 +52,9 @@ describe('RuntimeAccessGuard', () => {
       new RoutePolicyRegistry(),
       workforceSessions as unknown as A2WorkforceSessionService,
       workforceConfig,
+      agentSessionService as unknown as import('../src/agent-authentication/agent-authentication-session.service').AgentAuthenticationSessionService,
     );
-    return { guard, sessionService, authorizationService, workforceSessions };
+    return { guard, sessionService, authorizationService, workforceSessions, agentSessionService };
   }
 
   it('allows explicit public routes without a session', async () => {

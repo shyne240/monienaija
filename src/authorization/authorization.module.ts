@@ -21,6 +21,7 @@ import { PrivilegedActionApprovalService } from './privileged-action-approval.se
 import { AuthorizationGuard } from './authorization.guard';
 import { AuthorizationService } from './authorization.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
+import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { RuntimeAccessGuard } from './runtime-access.guard';
 
@@ -30,6 +31,7 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     // exported by CustomerAuthenticationModule. That module reaches back to this one through
     // OperationsModule, so the edge must be lazy.
     forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(() => AgentAuthenticationModule),
     forwardRef(() => OperationsModule),
     TypeOrmModule.forFeature([
       PrivilegedActionApproval,

@@ -39,6 +39,7 @@ export const environmentSchema = z
     OUTBOX_RETENTION_SECONDS: z.coerce.number().int().min(3_600).max(31_536_000).default(2_592_000),
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
+    CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
     A2_WORKFORCE_ENABLED: booleanFromEnvironment.default(false),
     A2_WORKFORCE_OIDC_ISSUER: optionalEnvironmentUrl,
     A2_WORKFORCE_OIDC_JWKS_URI: optionalEnvironmentUrl,
