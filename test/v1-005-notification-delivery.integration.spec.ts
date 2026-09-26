@@ -606,18 +606,19 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(notifExists[0]!.exists).toBe(true);
     const suppExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets') as exists`);
     expect(suppExists[0]!.exists).toBe(true);
-    // Ensure no customer inbox table (V1-006 separate)
+    // V1-006: inbox reuses notification_deliveries, no second table customer_notifications
     const inboxExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='customer_notifications') as exists`);
     expect(inboxExists[0]!.exists).toBe(false);
-    // No GET /customers/me/notifications route
+    // V1-006: GET /customers/me/notifications now exists (CUSTOMER SELF, empty inbox returns 200)
     const custId = await createCustomerWithPhone('8090909090');
     const pwd = 'InboxTest1!';
     const hash = encodePbkdf2(pwd, 'inbox-salt');
     await dataSource.query(`INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`, [custId, hash]);
     const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId: custId, password: pwd });
     const token = login.body.accessToken as string;
-    const inboxRes = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`);
-    expect([404,405].includes(inboxRes.status)).toBe(true);
+    const inboxRes = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(Array.isArray(inboxRes.body.items)).toBe(true);
+    expect(inboxRes.body.pagination).toBeDefined();
   });
 
   it('21. NO FAKE DELIVERY — no invented provider credentials stored, console/test adapter only', async () => {
