@@ -735,10 +735,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
 
   it('migration count is 65 and settlement account exists', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(65);
+    expect(Number(rows[0]!.count)).toBe(66);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600064');
-    expect(latest[0]!.name).toBe('CreateSupportTickets1785753600064');
+    expect(latest[0]!.timestamp).toBe('1785753600065');
+    expect(latest[0]!.name).toBe('CreateNotificationDeliveries1785753600065');
     const settlement: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN'`);
     expect(settlement.length).toBe(1);
     const fundingTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='customer_funding_requests'`);

@@ -546,7 +546,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(ctrl).toContain('pinService.verifyTransactionPin');
     expect(ctrl).toContain('transferService.createTransfer');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBe(65);
+    expect(Number(rows[0].count)).toBe(66);
     // verify no new bank/NIBSS tables used via transfer path
     const via = JSON.stringify(ctrl).toLowerCase();
     expect(via).not.toContain('nibss');
