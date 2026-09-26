@@ -15,6 +15,7 @@ import { CustomerAuthenticationModule } from '../customer-authentication/custome
 import { AgentModule } from '../agent/agent.module';
 import { OperationsModule } from '../operations/operations.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
+import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
 
 @Module({
   imports: [
@@ -28,5 +29,6 @@ import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-bene
     CustomerBeneficiaryModule,
   ],
   controllers: [CustomerAppController, CustomerBeneficiaryMeController],
+  providers: [CustomerTransactionHistoryService],
 })
 export class CustomerAppModule {}

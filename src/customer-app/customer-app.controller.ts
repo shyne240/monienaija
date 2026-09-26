@@ -36,6 +36,7 @@ import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-ben
 import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerLoginDto } from './dto/customer-login.dto';
+import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -67,6 +68,7 @@ export class CustomerAppController {
     private readonly recipientService: RecipientResolutionService,
     private readonly beneficiaryService: CustomerBeneficiaryService,
     private readonly dataSource: DataSource,
+    private readonly transactionHistoryService: CustomerTransactionHistoryService,
   ) {}
 
   // ──────────────────────────────────────────────
@@ -775,10 +777,22 @@ export class CustomerAppController {
     };
   }
 
-  // Alias for history read-only list
+  // Unified customer transaction history — read-model projection over transfers, funding, cash-to-cash, ledger CASH_IN/OUT
+  // Financial isolation: ZERO mutations (read-only DataSource.query, no journal/transfer/funding mutation, no ledger post)
   @Get('customers/me/transactions')
-  async listTransactions(@Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.listTransfers(req, page, limit);
+  async listTransactions(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+  ) {
+    const principal = this.requireCustomerPrincipal(req);
+    return this.transactionHistoryService.listUnified({
+      customerId: principal.customerId!,
+      page,
+      limit,
+      type,
+    });
   }
 
   @Get('customers/me/transfers/:transferId')
