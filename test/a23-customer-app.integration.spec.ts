@@ -416,6 +416,6 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
 
   it('15. Migration count unchanged (no new migration for A23)', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(64);
+    expect(Number(rows[0]!.count)).toBe(65);
   });
 });

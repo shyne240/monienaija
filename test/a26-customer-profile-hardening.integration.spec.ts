@@ -401,6 +401,6 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     expect(ctrl).toContain('patchProfile');
     expect(ctrl).toContain('changePassword');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBe(64);
+    expect(Number(rows[0].count)).toBe(65);
   });
 });

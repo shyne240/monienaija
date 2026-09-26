@@ -284,6 +284,6 @@ describe('A21 Agent App Backend Foundation (real PostgreSQL)', () => {
   it('13. Migration count unchanged (no new migration for A21)', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     // A21 is contract-only, no new migration
-    expect(Number(rows[0]!.count)).toBe(64);
+    expect(Number(rows[0]!.count)).toBe(65);
   });
 });

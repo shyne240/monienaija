@@ -533,7 +533,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
   });
 
   // Bonus: V1 boundary checks — no second engine, no bank/NIBSS, no provider, no notifications
-  it('19. V1 boundary — no second ledger/bank/NIBSS/provider, controller still thin, migration count 63', async () => {
+  it('19. V1 boundary — no second ledger/bank/NIBSS/provider, controller still thin, migration count 65', async () => {
     const fs = await import('node:fs');
     const ctrl = fs.readFileSync('src/customer-app/customer-app.controller.ts', 'utf8');
     expect(ctrl).not.toContain('postJournalInTransaction');
@@ -546,7 +546,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(ctrl).toContain('pinService.verifyTransactionPin');
     expect(ctrl).toContain('transferService.createTransfer');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBe(64);
+    expect(Number(rows[0].count)).toBe(65);
     // verify no new bank/NIBSS tables used via transfer path
     const via = JSON.stringify(ctrl).toLowerCase();
     expect(via).not.toContain('nibss');

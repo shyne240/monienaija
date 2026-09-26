@@ -505,7 +505,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
   });
 
   // Extra: V1 boundary + migration count
-  it('Q. V1 boundary and migration count (no new ledger/bank etc, 63 migrations)', async () => {
+  it('Q. V1 boundary and migration count (no new ledger/bank etc, 65 migrations)', async () => {
     const fs = await import('node:fs');
     const ctrl = fs.readFileSync('src/customer-app/customer-app.controller.ts', 'utf8');
     expect(ctrl).not.toContain('postJournalInTransaction');
@@ -515,6 +515,6 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     expect(ctrl).toContain('listTransfers');
     expect(ctrl).toContain('getTransferDetail');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBe(64);
+    expect(Number(rows[0].count)).toBe(65);
   });
 });

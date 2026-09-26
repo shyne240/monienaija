@@ -75,6 +75,7 @@ import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { AdminModule } from './admin/admin.module';
 import { CustomerAppModule } from './customer-app/customer-app.module';
 import { CustomerFundingModule } from './customer-funding/customer-funding.module';
+import { SupportModule } from './support/support.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -189,6 +190,7 @@ import { WalletModule } from './wallet/wallet.module';
     AdminModule,
     CustomerAppModule,
     CustomerFundingModule,
+    SupportModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })
