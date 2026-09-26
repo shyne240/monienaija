@@ -4,7 +4,7 @@
 **Branch:** `arena/01a0d883-monienaija`
 **Baseline parent:** `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` (`fix(production): update expected migration constraints to W5 standard CreateA2WorkforceAuthenticationTables`)
 **HEAD before hardening:** `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` (66 migrations `1785753600000`–`1785753600065-CreateNotificationDeliveries.ts`, `ProductionReadiness` expects `1785753600065`)
-**HEAD after hardening:** pending commit `V1-HARDENING-01 Customer Beneficiary Customer-App Exposure & Wallet→Wallet Transfer Integration` (same 66 migrations, no new file)
+**HEAD after hardening:** `28667b8fd7a726cdf5cf8113edb873a7c91047aa` (`feat(hardening-01): Customer Beneficiary Customer-App Exposure + Wallet→Wallet Transfer Integration (66 migrations, 30 PG tests, idempotency CASE A/B, security 10, zero ledger CRUD / one journal, no agent route)`)
 **Migrations before/after:** `66 → 66` (`ls src/migrations | wc -l` = 66, last = `1785753600065-CreateNotificationDeliveries.ts`, `src/production/production-readiness.service.ts` expects `CreateNotificationDeliveries1785753600065`)
 **DO NOT reset/rebase/recreate:** preserved, no deletion, no infra change.
 
