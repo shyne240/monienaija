@@ -93,6 +93,8 @@ import { WalletModule } from './wallet/wallet.module';
             'req.headers.cookie',
             'req.headers.x-api-key',
             'req.body.password',
+            'req.body.currentPassword',
+            'req.body.newPassword',
             'req.body.passwordHash',
             'req.body.pin',
             'req.body.pinHash',

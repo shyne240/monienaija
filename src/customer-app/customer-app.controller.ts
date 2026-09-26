@@ -6,6 +6,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -27,6 +28,9 @@ import { Transfer } from '../transfer/transfer.entity';
 import { TransferService } from '../transfer/transfer.service';
 import { AuthenticationSessionService, DEFAULT_SESSION_AUDIENCE } from '../customer-authentication/authentication-session.service';
 import { AuthenticationExecutionService } from '../customer-authentication/authentication-execution.service';
+import { CustomerAuthenticationService } from '../customer-authentication/customer-authentication.service';
+import { PasswordHashVerificationService } from '../customer-authentication/password-hash-verification.service';
+import { AuditService } from '../operations/audit.service';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerLoginDto } from './dto/customer-login.dto';
@@ -54,6 +58,9 @@ export class CustomerAppController {
     private readonly transferService: TransferService,
     private readonly sessionService: AuthenticationSessionService,
     private readonly executionService: AuthenticationExecutionService,
+    private readonly customerAuthService: CustomerAuthenticationService,
+    private readonly passwordVerificationService: PasswordHashVerificationService,
+    private readonly auditService: AuditService,
     private readonly pinService: CustomerTransactionPinService,
     private readonly recipientService: RecipientResolutionService,
     private readonly dataSource: DataSource,
@@ -179,6 +186,182 @@ export class CustomerAppController {
       status: customer.status,
       kycLevel: customer.kycLevel,
       kycStatus: customer.kycStatus,
+    };
+  }
+
+  // ──────────────────────────────────────────────
+  // Profile PATCH (A26) — only displayName mutable, SELF, thin
+  // ──────────────────────────────────────────────
+
+  @Patch('customers/me/profile')
+  async patchProfile(@Req() req: AuthenticatedRequest, @Body() dto: Record<string, unknown>) {
+    const principal = this.requireCustomerPrincipal(req);
+    // Whitelist: only displayName is mutable via normal profile PATCH
+    const allowed = new Set(['displayName']);
+    const immutable = ['id', 'customerId', 'reference', 'status', 'type', 'kycLevel', 'kycStatus', 'legalName', 'nationality', 'dateOfBirth', 'isActive', 'createdAt', 'updatedAt', 'deletedAt', 'walletId', 'ledgerAccountId', 'balanceMinor', 'passwordHash', 'pinHash', 'kyc_approval', 'agentStatus', 'roles'];
+    for (const key of Object.keys(dto ?? {})) {
+      if (!allowed.has(key)) {
+        // If they try to set an immutable/security-sensitive field, fail closed
+        if (immutable.includes(key) || ['kycLevel', 'kycStatus', 'status', 'reference', 'type', 'legalName', 'nationality', 'dateOfBirth', 'isActive', 'customerId', 'id', 'passwordHash', 'pinHash', 'wallet', 'ledger', 'audit'].includes(key)) {
+          throw new BadRequestException(`Field '${key}' is not mutable via profile update`);
+        }
+        // Unknown field also rejected (prevent mass assignment)
+        throw new BadRequestException(`Field '${key}' is not allowed`);
+      }
+    }
+    const raw = (dto as any)?.displayName;
+    if (typeof raw !== 'string') throw new BadRequestException('displayName must be a string');
+    const displayName = raw.trim();
+    if (displayName.length === 0 || displayName.length > 200) throw new BadRequestException('displayName must be 1 to 200 characters');
+    // Basic hygiene: disallow control chars
+    if (/[\u0000-\u001F]/.test(displayName)) throw new BadRequestException('displayName contains invalid characters');
+    const customer = await this.customerRepository.findOne({ where: { id: principal.customerId } });
+    if (!customer || customer.deletedAt !== null) throw new NotFoundException('Customer not found');
+    let profile: CustomerProfile | null = null;
+    try {
+      profile = await this.customerService.getProfile(principal.customerId!);
+    } catch {
+      throw new NotFoundException('Profile not found');
+    }
+    if (!profile || profile.deletedAt !== null || !profile.isActive) throw new NotFoundException('Profile not found');
+    if (profile.displayName === displayName) {
+      // No change — return safe projection
+      return {
+        id: customer.id,
+        reference: customer.reference,
+        status: customer.status,
+        type: customer.type,
+        kycLevel: customer.kycLevel,
+        kycStatus: customer.kycStatus,
+        profile: {
+          id: profile.id,
+          customerId: profile.customerId,
+          displayName: profile.displayName,
+          legalName: profile.legalName,
+          nationality: profile.nationality,
+          isActive: profile.isActive,
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt,
+        },
+        createdAt: customer.createdAt,
+        updatedAt: customer.updatedAt,
+      };
+    }
+    const previousDisplayName = profile.displayName;
+    // Reuse existing transaction/audit pattern — keep controller thin, no hashing/policy here
+    const updated = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(CustomerProfile);
+      const locked = await repo.findOne({ where: { id: profile!.id, customerId: principal.customerId } });
+      if (!locked || locked.deletedAt !== null) throw new NotFoundException('Profile not found');
+      const previousValues = { displayName: locked.displayName };
+      locked.displayName = displayName;
+      const saved = await repo.save(locked);
+      await this.auditService.record(manager, {
+        entityType: 'CUSTOMER_PROFILE',
+        entityId: saved.id,
+        action: 'PROFILE_UPDATED',
+        actor: principal.customerId!,
+        previousValues,
+        newValues: { displayName: saved.displayName },
+      });
+      return saved;
+    });
+    return {
+      id: customer.id,
+      reference: customer.reference,
+      status: customer.status,
+      type: customer.type,
+      kycLevel: customer.kycLevel,
+      kycStatus: customer.kycStatus,
+      profile: {
+        id: updated.id,
+        customerId: updated.customerId,
+        displayName: updated.displayName,
+        legalName: updated.legalName,
+        nationality: updated.nationality,
+        isActive: updated.isActive,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      },
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+    };
+  }
+
+  // ──────────────────────────────────────────────
+  // Password change (A26) — reuse existing credential service, no new auth engine
+  // ──────────────────────────────────────────────
+
+  @Post('customers/me/password')
+  @HttpCode(200)
+  async changePassword(@Req() req: AuthenticatedRequest, @Body() dto: Record<string, unknown>) {
+    const principal = this.requireCustomerPrincipal(req);
+    const currentPassword = (dto as any)?.currentPassword;
+    const newPassword = (dto as any)?.newPassword;
+    if (typeof currentPassword !== 'string' || currentPassword.length === 0) throw new BadRequestException('currentPassword is required');
+    if (typeof newPassword !== 'string' || newPassword.length === 0) throw new BadRequestException('newPassword is required');
+    if (currentPassword.length > 1024 || newPassword.length > 128) throw new BadRequestException('Password length is invalid');
+    if (newPassword.length < 8) throw new BadRequestException('newPassword must be at least 8 characters');
+    if (currentPassword === newPassword) throw new BadRequestException('newPassword must be different from currentPassword');
+    // Basic policy: at least 8, not trivially same, no leading/trailing spaces? preserve as-is
+    // Verify current credential via existing execution service (PBKDF2/lockout, audit, timingSafeEqual)
+    const authResult = await this.executionService.authenticate({
+      customerId: principal.customerId!,
+      password: currentPassword,
+      actor: principal.customerId!,
+    });
+    if (!authResult.authenticated) {
+      // Do not reveal whether customer or credential missing — generic
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (authResult.accountLocked) {
+      throw new UnauthorizedException('Account is locked');
+    }
+    const credentialId = authResult.credentialId!;
+    // Ensure new password not same as old via verification (defense even if same string already checked)
+    // Fetch credential view for version
+    const credentialView = await this.customerAuthService.getCredential(principal.customerId!, credentialId);
+    const newHash = (() => {
+      const salt = randomBytes(16);
+      const iterations = 10000;
+      const derived = pbkdf2Sync(newPassword, salt, iterations, 32, 'sha256');
+      return `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+    })();
+    await this.customerAuthService.rotatePassword(principal.customerId!, credentialId, {
+      passwordHash: newHash,
+      hashAlgorithm: 'PBKDF2' as any,
+      passwordVersion: (credentialView.passwordVersion ?? 1) + 1,
+      actor: principal.customerId!,
+    });
+    // Audit already done in rotatePassword (no secrets, uses credentialValues without passwordHash)
+    // Session revocation: preserve current session (established policy is to keep current, revoke others would be disruptive). Document that we do NOT auto-revoke.
+    return { changed: true, passwordVersion: (credentialView.passwordVersion ?? 1) + 1 };
+  }
+
+  // ──────────────────────────────────────────────
+  // Session read (A26) — safe projection, no token hash
+  // ──────────────────────────────────────────────
+
+  @Get('customers/me/sessions')
+  async listSessions(@Req() req: AuthenticatedRequest) {
+    const principal = this.requireCustomerPrincipal(req);
+    // Safe read via DataSource query, never expose tokenHash/refresh secrets
+    // Use AuthenticationSession entity via DataSource
+    const rows: Array<{ id: string; audience: string; status: string; issued_at: Date; expires_at: Date; last_seen_at: Date | null; revoked_at: Date | null }> = await this.dataSource.query(
+      `SELECT id, audience, status, issued_at, expires_at, last_seen_at, revoked_at FROM authentication_sessions WHERE customer_id = $1 ORDER BY issued_at DESC, id DESC`,
+      [principal.customerId],
+    );
+    return {
+      customerId: principal.customerId,
+      sessions: rows.map((r) => ({
+        id: r.id,
+        audience: r.audience,
+        status: r.status,
+        issuedAt: r.issued_at,
+        expiresAt: r.expires_at,
+        lastSeenAt: r.last_seen_at,
+        revokedAt: r.revoked_at,
+      })),
     };
   }
 

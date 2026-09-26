@@ -3,6 +3,8 @@ export const REDACTED_VALUE = '[REDACTED]';
 const SENSITIVE_KEY_NAMES = new Set([
   'password',
   'passwordhash',
+  'currentpassword',
+  'newpassword',
   'pin',
   'pinhash',
   'token',

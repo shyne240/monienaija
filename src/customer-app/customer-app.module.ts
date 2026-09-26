@@ -12,6 +12,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { TransferModule } from '../transfer/transfer.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { AgentModule } from '../agent/agent.module';
+import { OperationsModule } from '../operations/operations.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AgentModule } from '../agent/agent.module';
     TransferModule,
     CustomerAuthenticationModule,
     AgentModule,
+    OperationsModule,
   ],
   controllers: [CustomerAppController],
 })
