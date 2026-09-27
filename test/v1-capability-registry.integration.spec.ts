@@ -270,10 +270,13 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(agentLimits.lifecycle).toBe('FULLY_ENABLED');
     expect(agentLimits.enabled).toBe(true);
     const snapshot = await capabilityService.findByCode('COMMERCIAL_DECISION_SNAPSHOT');
-    // V1-COMMERCIAL-DECISION-01: foundation implemented; runtime wiring stays future work — NOT enabled
+    // V1-COMMERCIAL-DECISION-02: pilot runtime capture live for WALLET_TRANSFER only —
+    // atomic in-flow snapshot recording with fee NOT_CONFIGURED and zero charging.
+    // NOT full commercial pricing: 7 other flows remain future work.
     expect(snapshot.backendStatus).toBe('BACKEND_IMPLEMENTED');
-    expect(snapshot.lifecycle).toBe('BACKEND_IMPLEMENTED');
-    expect(snapshot.enabled).toBe(false);
+    expect(snapshot.lifecycle).toBe('API_READY');
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.configurationStatus).toBe('NOT_CONFIGURED');
   });
 
   it('08. V2 blocked — WALLET_TO_BANK and AIR followed', async () => {

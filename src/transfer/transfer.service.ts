@@ -22,7 +22,16 @@ import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletStatus } from '../wallet/wallet.enums';
-import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
+import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import {
+  commissionNone,
+  feeNotConfigured,
+  limitApproved,
+  limitNotEvaluated,
+  rewardNone,
+} from '../commercial-decision/commercial-decision.defaults';
 import { Transfer } from './transfer.entity';
 import { limitCodeToTransferFailureCode, TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
@@ -71,6 +80,12 @@ export class TransferService {
     private readonly metricsService?: MetricsService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
+    // V1-COMMERCIAL-DECISION-02 — pilot snapshot wiring (WALLET_TRANSFER only). Both optional so
+    // unit tests constructing TransferService directly keep compiling; absent → no snapshot.
+    @Optional()
+    private readonly feeRuleResolverService?: FeeRuleResolverService,
+    @Optional()
+    private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -278,13 +293,17 @@ export class TransferService {
 
     // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
     let limitIdempotencyKey: string | null = null;
+    // V1-COMMERCIAL-DECISION-02: capture the AUTHORITATIVE enforcement result (profile, rules,
+    // reservations, usages) so the commercial snapshot records what actually governed this
+    // transfer — no second evaluation is ever performed.
+    let limitOutcome: EnforceResult | null = null;
     if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
       const limitProduct = 'WALLET_TRANSFER';
       const limitDirection = 'OUTGOING';
       const amountMinorStr = command.amountMinor.toString();
       limitIdempotencyKey = command.idempotencyKey;
       try {
-        await this.limitEnforcementService.enforceWithManager(manager, {
+        limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
           principalType: 'CUSTOMER',
           principalId: sourceWallet.customerId,
           product: limitProduct,
@@ -367,6 +386,20 @@ export class TransferService {
       }
     }
 
+    // — V1-COMMERCIAL-DECISION-02 (pilot): record the immutable commercial decision snapshot
+    // INSIDE this same SERIALIZABLE transaction, after the ledger posted and limits committed,
+    // and only for transfers that reach COMPLETED. It commits atomically with the financial
+    // state on success and rolls back with it on any downstream failure. NO fee is charged:
+    // the fee decision stays NOT_CONFIGURED (zero production rules; ruleRefs merely capture the
+    // resolved registry evidence when a rule exists).
+    await this.recordCommercialDecisionSnapshot(manager, {
+      transfer,
+      command,
+      sourceCustomerId: sourceWallet.customerId,
+      journalId,
+      limitOutcome,
+    });
+
     transfer.status = TransferStatus.COMPLETED;
     transfer.journalId = journalId;
     transfer.completedAt = new Date();
@@ -399,6 +432,105 @@ export class TransferService {
     await this.metricsService?.increment(manager, 'transfers.completed');
 
     return { transferId: transfer.id };
+  }
+
+  /**
+   * V1-COMMERCIAL-DECISION-02 — pilot commercial snapshot capture for WALLET_TRANSFER.
+   *
+   * Runs inside the existing SERIALIZABLE transfer transaction via
+   * `recordDecisionWithManager` (never `recordDecision`, which would open a second
+   * transaction). Read-only fee resolution via `FeeRuleResolverService.resolveWithManager`
+   * participates in the same transaction; its result is EVIDENCE ONLY — no fee is calculated
+   * or charged and the ledger is untouched by this method.
+   *
+   * Fee decision semantics (DECISION-01 precedent): status stays NOT_CONFIGURED while V1 is
+   * fee-free; when a fee rule exists its ruleId/version/effective parameters are captured in
+   * fee_decision.ruleRefs for future APPLIED decisions; an AMBIGUOUS resolution is recorded
+   * honestly without selecting a rule. Limit evidence comes from the authoritative
+   * EnforceResult captured during this same transfer — never re-evaluated.
+   */
+  private async recordCommercialDecisionSnapshot(
+    manager: EntityManager,
+    ctx: {
+      transfer: Transfer;
+      command: NormalizedTransfer;
+      sourceCustomerId: string;
+      journalId: string;
+      limitOutcome: EnforceResult | null;
+    },
+  ): Promise<void> {
+    if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
+    if (!UUID_PATTERN.test(ctx.sourceCustomerId)) return;
+
+    const productCode = 'WALLET_TRANSFER';
+    const decisionAt = new Date();
+    const amountMinor = ctx.command.amountMinor.toString();
+
+    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+      productCode,
+      currency: ctx.command.currency,
+      at: decisionAt,
+    });
+
+    const feeDecision: Record<string, unknown> = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
+    if (resolution.status === 'RESOLVED' && resolution.rule) {
+      feeDecision.ruleRefs = [
+        {
+          ruleId: resolution.rule.ruleId,
+          ruleVersion: resolution.rule.ruleVersion,
+          flatFeeMinor: resolution.rule.flatFeeMinor,
+          percentageBps: resolution.rule.percentageBps,
+          minimumFeeMinor: resolution.rule.minimumFeeMinor,
+          maximumFeeMinor: resolution.rule.maximumFeeMinor,
+          vatBps: resolution.rule.vatBps,
+          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+          priority: resolution.rule.priority,
+        },
+      ];
+    } else if (resolution.status === 'AMBIGUOUS') {
+      feeDecision.resolutionStatus = 'AMBIGUOUS';
+      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+    }
+
+    const limitDecision = ctx.limitOutcome
+      ? limitApproved({
+          profileCode: ctx.limitOutcome.limitProfileCode ?? null,
+          assignmentId: ctx.limitOutcome.assignmentId ?? null,
+          ruleRefs: (ctx.limitOutcome.ruleRefs ?? []).map((r) => ({
+            ruleId: r.ruleId,
+            dimension: r.dimension,
+            limitValueMinor: r.limitValueMinor,
+            limitValueCount: r.limitValueCount,
+          })),
+          reservationIds: ctx.limitOutcome.reservationIds ?? [],
+          usageIds: ctx.limitOutcome.usageIds ?? [],
+        })
+      : limitNotEvaluated();
+
+    await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
+      idempotencyKey: `transfer:${ctx.transfer.id}`,
+      product: productCode,
+      direction: 'OUTGOING',
+      channel: null,
+      principalType: 'CUSTOMER',
+      principalId: ctx.sourceCustomerId,
+      currency: ctx.command.currency,
+      principalAmountMinor: amountMinor,
+      transactionReference: ctx.transfer.id,
+      correlationId: `transfer:${ctx.transfer.id}`,
+      journalId: ctx.journalId,
+      decisionStatus: 'FINAL',
+      decidedAt: decisionAt,
+      finalizedAt: decisionAt,
+      feeDecision: feeDecision as never,
+      commissionDecision: commissionNone(),
+      rewardDecision: rewardNone(),
+      limitDecision,
+      revenueDecision: null,
+      configurationVersion: null,
+      createdBy: 'transfer-service',
+    });
   }
 
   private async lockWallets(manager: EntityManager, walletIds: string[]): Promise<WalletAccount[]> {

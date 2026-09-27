@@ -30,11 +30,27 @@ export interface EnforceInput {
   principalWalletCustomerId?: string; // customerId for wallet lookup if ledgerAccountId not provided
 }
 
+export interface LimitRuleEvidence {
+  ruleId: string;
+  dimension: string;
+  limitValueMinor: string | null;
+  limitValueCount: number | null;
+}
+
 export interface EnforceResult {
   allowed: boolean;
   limitProfileCode: string | null;
   evaluatedDimensions: string[];
   reserved?: { kind: 'NEW' | 'REPLAY' };
+  /**
+   * V1-COMMERCIAL-DECISION-02 (additive): evidence of the rules THIS enforcement actually
+   * evaluated — exposed so flows can record the authoritative limit decision in the Commercial
+   * Decision Snapshot without re-evaluating limits. No behavior change.
+   */
+  assignmentId?: string | null;
+  ruleRefs?: LimitRuleEvidence[];
+  reservationIds?: string[];
+  usageIds?: string[];
 }
 
 @Injectable()
@@ -127,8 +143,16 @@ export class LimitEnforcementService {
     });
 
     if (applicable.length === 0) {
-      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions: [] };
+      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions: [], assignmentId: resolved.assignmentId, ruleRefs: [] };
     }
+
+    // V1-COMMERCIAL-DECISION-02: evidence of the rules this enforcement evaluates (additive).
+    const ruleRefs: LimitRuleEvidence[] = applicable.map((r) => ({
+      ruleId: r.id,
+      dimension: r.dimension.trim().toUpperCase(),
+      limitValueMinor: r.limit_value_minor,
+      limitValueCount: r.limit_value_count,
+    }));
 
     const evaluatedDimensions: string[] = [];
 
@@ -228,7 +252,7 @@ export class LimitEnforcementService {
     });
 
     if (windowed.length === 0) {
-      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions };
+      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, assignmentId: resolved.assignmentId, ruleRefs };
     }
 
     // Prepare reservations with limit enforcement: we will check used+reserved+delta > limit before increment inside same manager loop
@@ -266,7 +290,10 @@ export class LimitEnforcementService {
         throw new BadRequestException('Idempotency key already used for different request');
       }
       // Replay — treat as allowed without double increment; caller will handle idempotent replay via outer financial idempotency
-      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' } };
+      {
+        const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
+        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
+      }
     }
 
     // Also check idempotency_records for scope limit:usage:reserve if exists
@@ -283,12 +310,18 @@ export class LimitEnforcementService {
       }
       if (row.status === 'COMPLETED') {
         // Already completed — replay
-        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' } };
+        {
+        const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
+        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
+      }
       }
       if (row.status === 'IN_PROGRESS') {
         // Someone else is in progress — concurrent duplicate? Treat as replay? But we should let usageService handle.
         // For simplicity, return replay (outer financial idempotency will handle)
-        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' } };
+        {
+        const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
+        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
+      }
       }
       idemId = row.id;
     } else {
@@ -312,6 +345,8 @@ export class LimitEnforcementService {
 
     // For each windowed rule, ensure usage row exists, lock, validate, then increment reserved
     const reservations: Array<{ dimension: string; product: string; currency: string; windowKey: string; amountMinor: string | null; count: number | null; ruleId: string }> = [];
+    const usageIds: string[] = [];
+    const newReservationIds: string[] = [];
 
     for (const rule of windowed) {
       const dim = rule.dimension.trim().toUpperCase();
@@ -396,9 +431,10 @@ export class LimitEnforcementService {
       // Insert reservation row
       const windowType = window.windowType;
       try {
-        await manager.query(
+        const insertedReservation: Array<{ id: string }> = await manager.query(
           `INSERT INTO limit_reservations (id, idempotency_key, request_hash, correlation_id, principal_type, principal_id, limit_profile_code, limit_rule_id, product, direction, channel, dimension, currency, window_type, window_key, window_start, window_end, amount_minor, count, status, limit_usage_id, created_at, updated_at)
-           VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'RESERVED',$19,NOW(),NOW())`,
+           VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'RESERVED',$19,NOW(),NOW())
+           RETURNING id`,
           [
             input.idempotencyKey,
             input.requestHash,
@@ -421,6 +457,7 @@ export class LimitEnforcementService {
             usage.id,
           ],
         );
+        if (insertedReservation[0]?.id) newReservationIds.push(insertedReservation[0].id);
       } catch (e: any) {
         if (e?.code === '23505') {
           // Unique violation — concurrent reserve for same window/idempotencyKey, treat as already reserved (should be replay)
@@ -429,6 +466,7 @@ export class LimitEnforcementService {
       }
 
       reservations.push({ dimension: dim, product: productForRule, currency: currencyForRule, windowKey: window.windowKey, amountMinor: deltaAmt, count: deltaCnt, ruleId: rule.id });
+      usageIds.push(usage.id);
     }
 
     // Mark idempotency completed
@@ -449,7 +487,19 @@ export class LimitEnforcementService {
     // But for convenience, if outer already includes ledger success in same manager, we could move reserved→used now.
     // We'll let outer handle.
 
-    return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'NEW' } };
+    return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'NEW' }, assignmentId: resolved.assignmentId, ruleRefs, reservationIds: newReservationIds, usageIds };
+  }
+
+  /** V1-COMMERCIAL-DECISION-02 (additive): authoritative reservation evidence for replays. */
+  private async replayEvidence(manager: EntityManager, idempotencyKey: string): Promise<{ reservationIds: string[]; usageIds: string[] }> {
+    const rows: Array<{ id: string; limit_usage_id: string | null }> = await manager.query(
+      `SELECT id, limit_usage_id FROM limit_reservations WHERE idempotency_key = $1 ORDER BY created_at ASC, id ASC`,
+      [idempotencyKey],
+    );
+    return {
+      reservationIds: rows.map((r) => r.id),
+      usageIds: rows.map((r) => r.limit_usage_id).filter((v): v is string => v !== null),
+    };
   }
 
   private limitException(code: LimitFailureCode, message: string): HttpException {

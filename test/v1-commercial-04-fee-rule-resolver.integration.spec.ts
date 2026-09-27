@@ -419,7 +419,7 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     expect(after).toEqual(before);
   });
 
-  it('19. production seed proof + no flow wiring (source-level)', async () => {
+  it('19. production seed proof + resolver wiring boundary (source-level)', async () => {
     // zero seeded fee rules after a full application bootstrap
     expect(await registry.countRules()).toBe(0);
     const products: Array<{ configuration_status: string }> = await dataSource.query(
@@ -427,9 +427,9 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     );
     expect(products.length).toBe(7);
     for (const p of products) expect(p.configuration_status).toBe('NOT_CONFIGURED');
-    // no financial flow consumes the resolver — schema/resolution foundation only
+    // V1-COMMERCIAL-DECISION-02 pilot: the ONLY flow consuming the resolver is WALLET_TRANSFER
+    // (read-only evidence capture). The other six flows stay completely unwired.
     for (const flow of [
-      '../src/transfer/transfer.service.ts',
       '../src/agent/agent-cash-in.service.ts',
       '../src/agent/agent-cash-out.service.ts',
       '../src/agent/agent-cash-to-cash.service.ts',
@@ -441,6 +441,13 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       expect(source).not.toContain('FeeRuleResolverService');
       expect(source).not.toContain('resolveWithManager');
     }
+    // the pilot wiring is evidence-only: no fee calculation/charging anywhere in TransferService
+    const transferSource = readFileSync(join(__dirname, '../src/transfer/transfer.service.ts'), 'utf8');
+    expect(transferSource).toContain('resolveWithManager'); // read-only resolution inside the tx
+    expect(transferSource).toContain('recordDecisionWithManager'); // snapshot joins the SAME tx
+    expect(transferSource).not.toMatch(/\.recordDecision\(/); // never the second-transaction variant
+    expect(transferSource).not.toContain('feeEngine'); // no FeeEngine participation
+    expect(transferSource).not.toContain('calculate('); // no fee calculation
     // the resolver itself never writes: no INSERT/UPDATE/DELETE anywhere in the service
     const resolverSource = readFileSync(join(__dirname, '../src/fee-rules/fee-rule-resolver.service.ts'), 'utf8');
     expect(resolverSource).not.toContain('INSERT INTO');
