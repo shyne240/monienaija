@@ -92,9 +92,10 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(migs.length).toBeGreaterThanOrEqual(68);
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     const last = migs[migs.length - 1];
-    // after V1-COMMERCIAL-DECISION-01 the head is 0070; earlier heads remain accepted for backward compatibility
-    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    // after V1-COMMERCIAL-02 the head is 0071; earlier heads remain accepted for backward compatibility
+    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600071') expect(last.name).toBe('CreateProductCatalogue1785753600071');
+    else if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
     else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
     else if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
     else expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');

@@ -95,10 +95,12 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const usage = migs.find((m) => m.timestamp === '1785753600069');
     expect(usage).toBeDefined();
     expect(usage!.name).toBe('CreateLimitUsages1785753600069');
-    // head moved forward with the commercial decision snapshot foundation (0070)
+    // commercial decision snapshot foundation (0070) also remains in the chain
+    expect(migs.some((m) => m.timestamp === '1785753600070')).toBe(true);
+    // head moved forward with the product catalogue foundation (0071)
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600070');
-    expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    expect(last.timestamp).toBe('1785753600071');
+    expect(last.name).toBe('CreateProductCatalogue1785753600071');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);

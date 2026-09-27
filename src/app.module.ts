@@ -76,6 +76,7 @@ import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
 import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
 import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from './product-catalog/product-catalog.module';
 import { CustomerAppModule } from './customer-app/customer-app.module';
 import { CustomerFundingModule } from './customer-funding/customer-funding.module';
 import { NotificationModule } from './notification/notification.module';
@@ -195,6 +196,7 @@ import { WalletModule } from './wallet/wallet.module';
     CapabilityRegistryModule,
     CommercialDecisionModule,
     LimitCatalogModule,
+    ProductCatalogModule,
     CustomerAppModule,
     CustomerFundingModule,
     NotificationModule,

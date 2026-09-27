@@ -345,6 +345,24 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Product catalogue — workforce configuration surface (V1-COMMERCIAL-02).
+    // Strict subset of generic internal; the catalogue is the authoritative product identity.
+    if (path.startsWith('/api/v1/internal/products')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'product-catalogue',
+        policy: {
+          resourceType: 'product-catalogue',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
     if (path.startsWith('/api/v1/internal/capabilities')) {
       return {

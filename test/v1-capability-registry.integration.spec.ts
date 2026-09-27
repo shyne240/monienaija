@@ -133,11 +133,12 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   }
 
   // ── Migration & chain ──
-  it('01. Migration count is 71 and chain intact (06→70 additive)', async () => {
+  it('01. Migration count is 72 and chain intact (06→71 additive)', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(71);
+    expect(Number(rows[0]!.cnt)).toBe(72);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(71);
+    expect(files.length).toBe(72);
+    expect(files.some((f) => f.name.includes('1785753600071'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600070'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600069'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600068'))).toBe(true);
@@ -146,8 +147,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600070');
-    expect(latest[0]!.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    expect(latest[0]!.timestamp).toBe('1785753600071');
+    expect(latest[0]!.name).toBe('CreateProductCatalogue1785753600071');
   });
 
   // ── Seed counts V1/V2 ──
@@ -246,8 +247,12 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
 
   it('07. Commercial statuses accurate', async () => {
     const product = await capabilityService.findByCode('PRODUCT_CATALOGUE');
-    expect(product.lifecycle).toBe('DESIGNED');
-    expect(product.backendStatus).toBe('DESIGNED');
+    // V1-COMMERCIAL-02: catalogue foundation implemented + seeded; NOT runtime-enabled (no commercial
+    // rule system references it yet), and fee/commission/reward engines stay untouched
+    expect(product.lifecycle).toBe('BACKEND_IMPLEMENTED');
+    expect(product.backendStatus).toBe('BACKEND_IMPLEMENTED');
+    expect(product.apiStatus).toBe('API_READY');
+    expect(product.configurationStatus).toBe('CONFIGURED');
     expect(product.enabled).toBe(false);
     // V1-LIMIT-04: runtime limit enforcement wired into financial flows
     const limit = await capabilityService.findByCode('LIMIT_ENGINE');

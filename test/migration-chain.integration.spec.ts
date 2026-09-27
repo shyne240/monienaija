@@ -18,7 +18,7 @@ describe('migration chain (real PostgreSQL)', () => {
   let dataSource: DataSource;
   // 000→069 inclusive: V1-LIMIT-01/02/03 added CreateLimitProfileCatalogue (067),
   // CreateLimitAssignments (068), CreateLimitUsages (069) on top of the 67-migration chain.
-  const expectedMigrations = 71;
+  const expectedMigrations = 72;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('migchain');
