@@ -433,11 +433,12 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     //    AgentFinancialExecutionService (the cash-in/cash-out ORCHESTRATORS stay unwired)
     //  - V1-COMMERCIAL-DECISION-03C: CASH_TO_CASH initiation + claim via their own services
     //  - V1-COMMERCIAL-DECISION-03D: CUSTOMER_FUNDING via the approve boundary
-    // AGENT_FUNDING remains completely unwired.
+    //  - V1-COMMERCIAL-DECISION-03E: AGENT_FUNDING + AGENT_DEFUNDING via AgentFundingService
+    // All seven V1 products are now covered; only orchestrators without their own money path
+    // (cash-in/cash-out) remain resolver-free.
     for (const flow of [
       '../src/agent/agent-cash-in.service.ts',
       '../src/agent/agent-cash-out.service.ts',
-      '../src/agent/agent-funding.service.ts',
     ]) {
       const source = readFileSync(join(__dirname, flow), 'utf8');
       expect(source).not.toContain('FeeRuleResolverService');
@@ -449,6 +450,7 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       '../src/agent/agent-cash-to-cash.service.ts',
       '../src/agent/agent-cash-to-cash-claim.service.ts',
       '../src/customer-funding/customer-funding.service.ts',
+      '../src/agent/agent-funding.service.ts',
     ]) {
       const source = readFileSync(join(__dirname, flow), 'utf8');
       expect(source).toContain('resolveWithManager'); // read-only resolution inside the tx

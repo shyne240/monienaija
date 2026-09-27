@@ -452,7 +452,7 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
 
   // ── 10. immutability + wiring boundary ──
 
-  it('10. snapshot immutable + exact wiring boundary (only the approve boundary wired; AGENT_FUNDING untouched)', async () => {
+  it('10. snapshot immutable + exact wiring boundary (approve boundary wired; agent funding same pattern since 03E)', async () => {
     const { customerId } = await createCustomerWithWallet();
     const created = await createPendingRequest(customerId, '8000');
     const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
@@ -473,10 +473,13 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     expect(fundingSource).not.toMatch(/\.recordDecision\(/); // never the second-transaction variant
     expect(fundingSource).not.toContain('feeEngine'); // no FeeEngine participation
     expect(fundingSource).toContain(`productCode = 'CUSTOMER_FUNDING'`); // canonical product identity
-    // AGENT_FUNDING/DEFUNDING remain unwired by this task
+    // 03D left AGENT_FUNDING/DEFUNDING unwired; V1-COMMERCIAL-DECISION-03E subsequently wired them
+    // with the SAME pattern (justified guard update, not a weakening — see the 03E suite):
     const agentFundingSource = readFileSync(join(__dirname, '../src/agent/agent-funding.service.ts'), 'utf8');
-    expect(agentFundingSource).not.toContain('CommercialDecisionSnapshotService');
-    expect(agentFundingSource).not.toContain('FeeRuleResolverService');
+    expect(agentFundingSource).toContain('resolveWithManager');
+    expect(agentFundingSource).toContain('recordDecisionWithManager');
+    expect(agentFundingSource).not.toMatch(/\.recordDecision\(/);
+    expect(agentFundingSource).not.toContain('feeEngine');
     // no duplicate product identities invented
     const products: Array<{ code: string }> = await dataSource.query(`SELECT code FROM products WHERE code LIKE 'CUSTOMER_FUNDING%'`);
     expect(products.map((p) => p.code)).toEqual(['CUSTOMER_FUNDING']);

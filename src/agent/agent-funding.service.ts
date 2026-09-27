@@ -11,9 +11,19 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
+import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import {
+  commissionNone,
+  feeNotConfigured,
+  limitApproved,
+  limitNotEvaluated,
+  rewardNone,
+} from '../commercial-decision/commercial-decision.defaults';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -46,6 +56,13 @@ export interface FundingInput {
   metadata?: Record<string, unknown>;
   principal: AuthorizationPrincipal;
   actor: string;
+  /**
+   * V1-COMMERCIAL-DECISION-03E — TEST-ONLY hook. When true, the SERIALIZABLE transaction
+   * throws AFTER the commercial snapshot is recorded but BEFORE commit, proving that the
+   * snapshot rolls back atomically with the journal + limits + idempotency state. Never
+   * used in production code paths.
+   */
+  _simulateFailureAfterJournal?: boolean;
 }
 
 export interface FundingResult {
@@ -74,6 +91,12 @@ export class AgentFundingService {
     private readonly capabilityService: AgentServiceCapabilityService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
+    // V1-COMMERCIAL-DECISION-03E — AGENT_FUNDING / AGENT_DEFUNDING commercial snapshot wiring.
+    // Both optional: absent → no snapshot (unit tests constructing directly keep working).
+    @Optional()
+    private readonly feeRuleResolverService?: FeeRuleResolverService,
+    @Optional()
+    private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
   ) {}
 
   async fund(input: FundingInput): Promise<FundingResult> {
@@ -247,6 +270,9 @@ export class AgentFundingService {
 
           // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
           let limitIdempotencyKey: string | null = null;
+          // V1-COMMERCIAL-DECISION-03E: capture the AUTHORITATIVE enforcement result so the
+          // commercial snapshot records what actually governed this execution — never re-evaluated.
+          let limitOutcome: EnforceResult | null = null;
           if (this.limitEnforcementService) {
             const agentRows: Array<{ agent_class_id: string | null }> = await manager.query(
               `SELECT agent_class_id FROM agents WHERE id = $1 LIMIT 1`,
@@ -257,7 +283,7 @@ export class AgentFundingService {
             const product = direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING';
             const dir = direction === 'FUND' ? 'INCOMING' : 'OUTGOING';
             try {
-              await this.limitEnforcementService.enforceWithManager(manager, {
+              limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
                 principalType: 'AGENT',
                 principalId: agentId,
                 agentClassId,
@@ -328,6 +354,29 @@ export class AgentFundingService {
             } catch {}
           }
 
+          // — V1-COMMERCIAL-DECISION-03E: record the immutable commercial decision snapshot inside
+          // this same SERIALIZABLE transaction, after the journal posted and limits committed,
+          // before idempotency completion + audit. Commits/rolls back atomically with the funding
+          // movement. NO fee is charged: NOT_CONFIGURED. The existing pool/wallet accounting is
+          // untouched — this adds no journal, no account, no second balance.
+          await this.recordCommercialDecisionSnapshot(manager, {
+            direction,
+            agentId,
+            aggregatorId: aggregatorId ?? null,
+            amountMinor: amountString,
+            currency,
+            journalId,
+            idempotencyKey,
+            correlationId: correlationId ?? null,
+            limitOutcome,
+          });
+
+          // Simulate failure after journal for rollback test (inside same transaction, so journal,
+          // limits, snapshot, and idempotency state all roll back)
+          if (input._simulateFailureAfterJournal) {
+            throw new BadRequestException('Simulated failure after journal');
+          }
+
           const result: FundingResult = {
             status: 'COMPLETED',
             journalId,
@@ -384,6 +433,115 @@ export class AgentFundingService {
       }
     }
     throw new ConflictException('Funding execution could not complete after concurrent retries');
+  }
+
+  /**
+   * V1-COMMERCIAL-DECISION-03E — AGENT_FUNDING / AGENT_DEFUNDING commercial snapshot capture.
+   *
+   * Runs inside the existing SERIALIZABLE funding transaction via
+   * `recordDecisionWithManager` (never `recordDecision`, which opens its own transaction).
+   * Read-only fee resolution via `FeeRuleResolverService.resolveWithManager` participates in the
+   * same transaction; its result is EVIDENCE ONLY — no fee is calculated or charged and the
+   * ledger is untouched by this method. Mirrors the proven pilot semantics:
+   *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
+   *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
+   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - limit evidence comes from the authoritative EnforceResult of THIS execution
+   *    (AGENT_FUNDING = AGENT INCOMING; AGENT_DEFUNDING = AGENT OUTGOING — never re-evaluated)
+   *  - the Agent is the financial principal for both directions; the pool/wallet accounting
+   *    and single-journal structure are preserved exactly
+   */
+  private async recordCommercialDecisionSnapshot(
+    manager: EntityManager,
+    ctx: {
+      direction: 'FUND' | 'DEFUND';
+      agentId: string;
+      aggregatorId: string | null;
+      amountMinor: string;
+      currency: string;
+      journalId: string;
+      idempotencyKey: string;
+      correlationId: string | null;
+      limitOutcome: EnforceResult | null;
+    },
+  ): Promise<void> {
+    if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
+    if (!UUID_PATTERN.test(ctx.agentId)) return;
+
+    const isFund = ctx.direction === 'FUND';
+    const productCode = isFund ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING';
+    const decisionAt = new Date();
+
+    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+      productCode,
+      currency: ctx.currency,
+      at: decisionAt,
+    });
+
+    const feeDecision: Record<string, unknown> = {
+      ...feeNotConfigured(ctx.currency, ctx.amountMinor),
+      // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
+      agentId: ctx.agentId,
+      aggregatorId: ctx.aggregatorId,
+    };
+    if (resolution.status === 'RESOLVED' && resolution.rule) {
+      feeDecision.ruleRefs = [
+        {
+          ruleId: resolution.rule.ruleId,
+          ruleVersion: resolution.rule.ruleVersion,
+          flatFeeMinor: resolution.rule.flatFeeMinor,
+          percentageBps: resolution.rule.percentageBps,
+          minimumFeeMinor: resolution.rule.minimumFeeMinor,
+          maximumFeeMinor: resolution.rule.maximumFeeMinor,
+          vatBps: resolution.rule.vatBps,
+          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+          priority: resolution.rule.priority,
+        },
+      ];
+    } else if (resolution.status === 'AMBIGUOUS') {
+      feeDecision.resolutionStatus = 'AMBIGUOUS';
+      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+    }
+
+    const limitDecision = ctx.limitOutcome
+      ? limitApproved({
+          profileCode: ctx.limitOutcome.limitProfileCode ?? null,
+          assignmentId: ctx.limitOutcome.assignmentId ?? null,
+          ruleRefs: (ctx.limitOutcome.ruleRefs ?? []).map((r) => ({
+            ruleId: r.ruleId,
+            dimension: r.dimension,
+            limitValueMinor: r.limitValueMinor,
+            limitValueCount: r.limitValueCount,
+          })),
+          reservationIds: ctx.limitOutcome.reservationIds ?? [],
+          usageIds: ctx.limitOutcome.usageIds ?? [],
+        })
+      : limitNotEvaluated();
+
+    await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
+      idempotencyKey: `${isFund ? 'agent-funding' : 'agent-defunding'}:${ctx.agentId}:${ctx.idempotencyKey}`,
+      product: productCode,
+      direction: isFund ? 'INCOMING' : 'OUTGOING',
+      channel: null,
+      principalType: 'AGENT',
+      principalId: ctx.agentId,
+      currency: ctx.currency,
+      principalAmountMinor: ctx.amountMinor,
+      transactionReference: ctx.journalId,
+      correlationId: ctx.correlationId,
+      journalId: ctx.journalId,
+      decisionStatus: 'FINAL',
+      decidedAt: decisionAt,
+      finalizedAt: decisionAt,
+      feeDecision: feeDecision as never,
+      commissionDecision: commissionNone(),
+      rewardDecision: rewardNone(),
+      limitDecision,
+      revenueDecision: null,
+      configurationVersion: null,
+      createdBy: isFund ? 'agent-funding' : 'agent-defunding',
+    });
   }
 
   private async ensureWalletAccount(customerId: string, currency: string): Promise<WalletAccount> {
