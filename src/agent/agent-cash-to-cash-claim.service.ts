@@ -11,9 +11,19 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
+import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import {
+  commissionNone,
+  feeNotConfigured,
+  limitApproved,
+  limitNotEvaluated,
+  rewardNone,
+} from '../commercial-decision/commercial-decision.defaults';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -44,6 +54,12 @@ export class AgentCashToCashClaimService {
     private readonly mfaExecutionService: MfaExecutionService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
+    // V1-COMMERCIAL-DECISION-03C — CASH_TO_CASH CLAIM commercial snapshot wiring.
+    // Both optional: absent → no snapshot (unit tests constructing directly keep working).
+    @Optional()
+    private readonly feeRuleResolverService?: FeeRuleResolverService,
+    @Optional()
+    private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
   ) {}
 
   async execute(input: AgentCashToCashClaimInput): Promise<AgentCashToCashClaimResult> {
@@ -356,6 +372,9 @@ export class AgentCashToCashClaimService {
           // V1-LIMIT-04: enforce limits for CUSTOMER INCOMING CASH_TO_CASH claim
           let limitIdempotencyKeyForClaim: string | null = null;
           let claimRequestHashForLimit: string | null = null;
+          // V1-COMMERCIAL-DECISION-03C: capture the AUTHORITATIVE enforcement result so the
+          // commercial snapshot records what actually governed this claim — never re-evaluated.
+          let limitOutcome: EnforceResult | null = null;
           // Compute requestHash early for limit (same as claim's requestHash)
           const claimRequestHashEarly = this.computeRequestHash({
             transferId,
@@ -373,7 +392,7 @@ export class AgentCashToCashClaimService {
             limitIdempotencyKeyForClaim = idempotencyKey;
             claimRequestHashForLimit = claimRequestHashEarly;
             try {
-              await this.limitEnforcementService.enforceWithManager(manager, {
+              limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
                 principalType: 'CUSTOMER',
                 principalId: customerId,
                 product: 'CASH_TO_CASH',
@@ -509,6 +528,29 @@ export class AgentCashToCashClaimService {
             [customerId, journalId, idempotencyKey, reference, transferId],
           );
 
+          // — V1-COMMERCIAL-DECISION-03C: record the immutable commercial decision snapshot for
+          // the CLAIM operation inside this same SERIALIZABLE transaction, after the claim journal
+          // posted, limits committed, and the transfer flipped to CLAIMED — before idempotency
+          // completion. Commits/rolls back atomically with the claim financial movement.
+          // NO fee is charged: NOT_CONFIGURED. Distinct from the initiation snapshot (AGENT
+          // OUTGOING identity) — both keep the canonical CASH_TO_CASH product code.
+          await this.recordCommercialDecisionSnapshot(manager, {
+            customerId,
+            transferId,
+            amountMinor: principal,
+            currency: transfer.currency,
+            journalId,
+            idempotencyKey,
+            correlationId: correlationId ?? null,
+            limitOutcome,
+          });
+
+          // Simulate failure after journal for rollback test (inside same transaction, so claim
+          // journal, limits, transfer status, and snapshot all roll back)
+          if (input._simulateFailureAfterJournal) {
+            throw new BadRequestException('Simulated failure after journal');
+          }
+
           const result: AgentCashToCashClaimResult = {
             status: 'COMPLETED',
             transferId,
@@ -577,6 +619,112 @@ export class AgentCashToCashClaimService {
       }
     }
     throw new ConflictException('Cash→Cash claim could not complete after concurrent retries');
+  }
+
+  /**
+   * V1-COMMERCIAL-DECISION-03C — CASH_TO_CASH CLAIM commercial snapshot capture.
+   *
+   * Runs inside the existing SERIALIZABLE claim transaction via
+   * `recordDecisionWithManager` (never `recordDecision`, which opens its own transaction).
+   * Read-only fee resolution via `FeeRuleResolverService.resolveWithManager` participates in the
+   * same transaction; its result is EVIDENCE ONLY — no fee is calculated or charged and the
+   * ledger is untouched by this method. Mirrors the proven pilot semantics:
+   *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
+   *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
+   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - limit evidence comes from the authoritative EnforceResult of THIS claim
+   *    (CUSTOMER INCOMING — never re-evaluated)
+   *  - describes the CLAIM operation only; the earlier initiation keeps its own snapshot
+   *    (AGENT OUTGOING identity) under the same canonical CASH_TO_CASH product code
+   */
+  private async recordCommercialDecisionSnapshot(
+    manager: EntityManager,
+    ctx: {
+      customerId: string;
+      transferId: string;
+      amountMinor: string;
+      currency: string;
+      journalId: string;
+      idempotencyKey: string;
+      correlationId: string | null;
+      limitOutcome: EnforceResult | null;
+    },
+  ): Promise<void> {
+    if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
+    if (!UUID_PATTERN.test(ctx.customerId)) return;
+
+    const productCode = 'CASH_TO_CASH';
+    const decisionAt = new Date();
+
+    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+      productCode,
+      currency: ctx.currency,
+      at: decisionAt,
+    });
+
+    const feeDecision: Record<string, unknown> = {
+      ...feeNotConfigured(ctx.currency, ctx.amountMinor),
+      // flow evidence (allowed by the snapshot's jsonb contract) — transfer identity of the claim
+      transferId: ctx.transferId,
+    };
+    if (resolution.status === 'RESOLVED' && resolution.rule) {
+      feeDecision.ruleRefs = [
+        {
+          ruleId: resolution.rule.ruleId,
+          ruleVersion: resolution.rule.ruleVersion,
+          flatFeeMinor: resolution.rule.flatFeeMinor,
+          percentageBps: resolution.rule.percentageBps,
+          minimumFeeMinor: resolution.rule.minimumFeeMinor,
+          maximumFeeMinor: resolution.rule.maximumFeeMinor,
+          vatBps: resolution.rule.vatBps,
+          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+          priority: resolution.rule.priority,
+        },
+      ];
+    } else if (resolution.status === 'AMBIGUOUS') {
+      feeDecision.resolutionStatus = 'AMBIGUOUS';
+      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+    }
+
+    const limitDecision = ctx.limitOutcome
+      ? limitApproved({
+          profileCode: ctx.limitOutcome.limitProfileCode ?? null,
+          assignmentId: ctx.limitOutcome.assignmentId ?? null,
+          ruleRefs: (ctx.limitOutcome.ruleRefs ?? []).map((r) => ({
+            ruleId: r.ruleId,
+            dimension: r.dimension,
+            limitValueMinor: r.limitValueMinor,
+            limitValueCount: r.limitValueCount,
+          })),
+          reservationIds: ctx.limitOutcome.reservationIds ?? [],
+          usageIds: ctx.limitOutcome.usageIds ?? [],
+        })
+      : limitNotEvaluated();
+
+    await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
+      idempotencyKey: `cash-to-cash-claim:${ctx.transferId}:${ctx.idempotencyKey}`,
+      product: productCode,
+      direction: 'INCOMING',
+      channel: null,
+      principalType: 'CUSTOMER',
+      principalId: ctx.customerId,
+      currency: ctx.currency,
+      principalAmountMinor: ctx.amountMinor,
+      transactionReference: ctx.journalId,
+      correlationId: ctx.correlationId,
+      journalId: ctx.journalId,
+      decisionStatus: 'FINAL',
+      decidedAt: decisionAt,
+      finalizedAt: decisionAt,
+      feeDecision: feeDecision as never,
+      commissionDecision: commissionNone(),
+      rewardDecision: rewardNone(),
+      limitDecision,
+      revenueDecision: null,
+      configurationVersion: null,
+      createdBy: 'agent-cash-to-cash-claim',
+    });
   }
 
   private verifyTransferCode(provided: string, storedHash: string): boolean {
