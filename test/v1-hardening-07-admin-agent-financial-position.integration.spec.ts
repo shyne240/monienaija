@@ -314,6 +314,6 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
     const rows: Array<{count:string}> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{name:string, timestamp:string}> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069']).toContain(latest[0]!.timestamp);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070']).toContain(latest[0]!.timestamp);
   });
 });

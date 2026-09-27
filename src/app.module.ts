@@ -74,6 +74,7 @@ import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
+import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
 import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
 import { CustomerAppModule } from './customer-app/customer-app.module';
 import { CustomerFundingModule } from './customer-funding/customer-funding.module';
@@ -192,6 +193,7 @@ import { WalletModule } from './wallet/wallet.module';
     WithdrawalModule,
     AdminModule,
     CapabilityRegistryModule,
+    CommercialDecisionModule,
     LimitCatalogModule,
     CustomerAppModule,
     CustomerFundingModule,

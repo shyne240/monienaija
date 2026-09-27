@@ -133,11 +133,12 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   }
 
   // ── Migration & chain ──
-  it('01. Migration count is 67 and chain intact (06→69 additive)', async () => {
+  it('01. Migration count is 71 and chain intact (06→70 additive)', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(70);
+    expect(Number(rows[0]!.cnt)).toBe(71);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(70);
+    expect(files.length).toBe(71);
+    expect(files.some((f) => f.name.includes('1785753600070'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600069'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600068'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600067'))).toBe(true);
@@ -145,8 +146,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600069');
-    expect(latest[0]!.name).toBe('CreateLimitUsages1785753600069');
+    expect(latest[0]!.timestamp).toBe('1785753600070');
+    expect(latest[0]!.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
   });
 
   // ── Seed counts V1/V2 ──
@@ -263,8 +264,10 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(agentLimits.lifecycle).toBe('FULLY_ENABLED');
     expect(agentLimits.enabled).toBe(true);
     const snapshot = await capabilityService.findByCode('COMMERCIAL_DECISION_SNAPSHOT');
-    expect(snapshot.backendStatus).toBe('PLANNED');
-    expect(snapshot.lifecycle).toBe('PLANNED');
+    // V1-COMMERCIAL-DECISION-01: foundation implemented; runtime wiring stays future work — NOT enabled
+    expect(snapshot.backendStatus).toBe('BACKEND_IMPLEMENTED');
+    expect(snapshot.lifecycle).toBe('BACKEND_IMPLEMENTED');
+    expect(snapshot.enabled).toBe(false);
   });
 
   it('08. V2 blocked — WALLET_TO_BANK and AIR followed', async () => {

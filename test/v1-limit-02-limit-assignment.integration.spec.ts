@@ -129,8 +129,9 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(migs.some(m=>m.timestamp==='1785753600067')).toBe(true);
     expect(migs.some(m=>m.timestamp==='1785753600068')).toBe(true);
     const last = migs[migs.length - 1];
-    expect(['1785753600068','1785753600069']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
+    expect(['1785753600068','1785753600069','1785753600070']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
     else expect(last.name).toBe('CreateLimitAssignments1785753600068');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename).sort()).toEqual(['limit_assignments','limit_profiles','limit_rules']);

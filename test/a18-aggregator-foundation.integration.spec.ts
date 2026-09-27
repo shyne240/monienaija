@@ -415,8 +415,8 @@ describe('A18 Aggregator Foundation (real PostgreSQL)', () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]$/);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070']).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070)$/);
     const aggCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregators'::regclass AND conname='chk_aggregators_status'`);
     expect(aggCheck.length).toBe(1);
     const relCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregator_agent_assignments'::regclass AND conname='chk_aggregator_agent_status'`);
@@ -426,7 +426,7 @@ describe('A18 Aggregator Foundation (real PostgreSQL)', () => {
   // 22. production readiness
   it('22. production readiness', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]$/);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070']).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070)$/);
   });
 });

@@ -92,9 +92,10 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(migs.length).toBeGreaterThanOrEqual(68);
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     const last = migs[migs.length - 1];
-    // after V1-LIMIT-03, latest is 0069; before, it was 0067/0068 — accept for backward compatibility
-    expect(['1785753600067', '1785753600068', '1785753600069']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
+    // after V1-COMMERCIAL-DECISION-01 the head is 0070; earlier heads remain accepted for backward compatibility
+    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
     else if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
     else expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_profiles','limit_rules') ORDER BY tablename`);

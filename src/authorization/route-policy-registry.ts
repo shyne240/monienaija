@@ -327,6 +327,24 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Commercial decision snapshots — workforce read-only evidence surface (V1-COMMERCIAL-DECISION-01).
+    // Strict subset of generic internal; snapshots are immutable and written only internally.
+    if (path.startsWith('/api/v1/internal/commercial-decision')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'commercial-decision-snapshot',
+        policy: {
+          resourceType: 'commercial-decision-snapshot',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
     if (path.startsWith('/api/v1/internal/capabilities')) {
       return {
