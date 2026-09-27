@@ -310,8 +310,8 @@ export class RoutePolicyRegistry {
       };
     }
 
-    // Limit catalogue — workforce-only OPERATOR/SERVICE/PRIVILEGED (V1-LIMIT-01). Strict subset of generic internal.
-    if (path.startsWith('/api/v1/internal/limit-profiles') || path.startsWith('/api/v1/internal/limit-rules')) {
+    // Limit catalogue & assignment — workforce-only OPERATOR/SERVICE/PRIVILEGED (V1-LIMIT-01/02). Strict subset of generic internal.
+    if (path.startsWith('/api/v1/internal/limit-')) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',

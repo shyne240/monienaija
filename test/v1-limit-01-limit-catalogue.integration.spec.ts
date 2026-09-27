@@ -87,12 +87,15 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       .send({ code, name: `Profile ${code}`, kind: 'CUSTOMER', ...overrides });
   }
 
-  it('1. migration chain exposes limit_profiles + limit_rules (68 migrations, 0067)', async () => {
+  it('1. migration chain exposes limit_profiles + limit_rules (68 migrations, 0067) — additive to 69 with assignments', async () => {
     const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
-    expect(migs.length).toBe(68);
+    expect(migs.length).toBeGreaterThanOrEqual(68);
+    expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600067');
-    expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');
+    // after V1-LIMIT-02, latest is 0068; before, it was 0067 — accept both for backward compatibility
+    expect(['1785753600067', '1785753600068']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
+    else expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(['limit_profiles','limit_rules']);
     // checks constraints exist — named chk_* per audit spec where justified

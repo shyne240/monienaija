@@ -87,3 +87,45 @@ export interface LimitRuleSafeProjection {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface LimitAssignmentCreateInput {
+  limitProfileCode: string;
+  subjectType: string;
+  subjectId?: string | null;
+  segmentCode?: string | null;
+  precedence?: number;
+  effectiveFrom?: Date | string | null;
+  effectiveTo?: Date | string | null;
+  isActive?: boolean;
+  createdBy: string;
+}
+
+export interface LimitAssignmentUpdateInput {
+  limitProfileCode?: string;
+  subjectType?: string;
+  subjectId?: string | null;
+  segmentCode?: string | null;
+  precedence?: number;
+  effectiveFrom?: Date | string | null;
+  effectiveTo?: Date | string | null;
+  isActive?: boolean;
+  updatedBy: string;
+  version: number;
+}
+
+export interface LimitAssignmentSafeProjection {
+  id: string;
+  limitProfileCode: string;
+  subjectType: string;
+  subjectId: string | null;
+  segmentCode: string | null;
+  precedence: number;
+  version: number;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+  isActive: boolean;
+  createdBy: string;
+  updatedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

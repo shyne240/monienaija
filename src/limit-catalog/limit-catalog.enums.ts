@@ -53,3 +53,19 @@ export enum LimitDirection {
   OUTGOING = 'OUTGOING',
   BOTH = 'BOTH',
 }
+
+export enum LimitAssignmentSubjectType {
+  GLOBAL = 'GLOBAL',
+  SEGMENT = 'SEGMENT',
+  AGENT_CLASS = 'AGENT_CLASS',
+  CUSTOMER = 'CUSTOMER',
+  AGENT = 'AGENT',
+}
+
+export enum LimitAssignmentScope {
+  GLOBAL = 'GLOBAL',
+  SEGMENT = 'SEGMENT',
+  CLASSIFICATION = 'CLASSIFICATION',
+  CUSTOMER = 'CUSTOMER',
+  AGENT = 'AGENT',
+}

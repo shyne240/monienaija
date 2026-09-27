@@ -19,9 +19,9 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600067' : '1785753600004',
+          timestamp: this.compatible ? '1785753600068' : '1785753600004',
           name: this.compatible
-            ? 'CreateLimitProfileCatalogue1785753600067'
+            ? 'CreateLimitAssignments1785753600068'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);
