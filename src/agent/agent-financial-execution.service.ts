@@ -257,11 +257,12 @@ export class AgentFinancialExecutionService {
             } catch {}
           }
 
-          // — V1-COMMERCIAL-DECISION-03A (pilot extension): record the immutable commercial
+          // — V1-COMMERCIAL-DECISION-03A/03B (pilot extension): record the immutable commercial
           // decision snapshot INSIDE this same SERIALIZABLE transaction, after the ledger posted
-          // and limits committed, for CASH_TO_WALLET executions only (WALLET_TRANSFER is wired in
-          // TransferService; all other flows stay untouched). Commits/rolls back atomically with
-          // the money movement. NO fee is charged: fee decision stays NOT_CONFIGURED.
+          // and limits committed, for CASH_TO_WALLET and WALLET_TO_CASH executions only
+          // (WALLET_TRANSFER is wired in TransferService; all other flows stay untouched).
+          // Commits/rolls back atomically with the money movement. NO fee is charged: the fee
+          // decision stays NOT_CONFIGURED.
           await this.recordCommercialDecisionSnapshot(manager, {
             input,
             agentId,
@@ -332,7 +333,7 @@ export class AgentFinancialExecutionService {
   }
 
   /**
-   * V1-COMMERCIAL-DECISION-03A — CASH_TO_WALLET commercial snapshot capture.
+   * V1-COMMERCIAL-DECISION-03A/03B — CASH_TO_WALLET + WALLET_TO_CASH commercial snapshot capture.
    *
    * Runs inside the existing SERIALIZABLE execution transaction via
    * `recordDecisionWithManager` (never `recordDecision`, which opens its own transaction).
@@ -358,14 +359,16 @@ export class AgentFinancialExecutionService {
     },
   ): Promise<void> {
     const limitInput = ctx.input.limit;
-    // Pilot gate: ONLY CASH_TO_WALLET is wired in this task; other flows keep existing behavior.
-    if (!limitInput || limitInput.product !== 'CASH_TO_WALLET') return;
+    // Pilot gate: ONLY CASH_TO_WALLET (03A) and WALLET_TO_CASH (03B) are wired here;
+    // every other flow keeps its existing behavior.
+    if (!limitInput || !['CASH_TO_WALLET', 'WALLET_TO_CASH'].includes(limitInput.product)) return;
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
     const principalType = limitInput.principalType?.trim().toUpperCase();
     if (principalType !== 'CUSTOMER' && principalType !== 'AGENT') return;
     if (!UUID_PATTERN.test(limitInput.principalId?.trim() ?? '')) return;
 
-    const productCode = 'CASH_TO_WALLET';
+    const productCode = limitInput.product as 'CASH_TO_WALLET' | 'WALLET_TO_CASH';
+    const isCashIn = productCode === 'CASH_TO_WALLET';
     const decisionAt = new Date();
     const amountMinor = limitInput.amountMinor;
 
@@ -416,9 +419,9 @@ export class AgentFinancialExecutionService {
       : limitNotEvaluated();
 
     await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
-      idempotencyKey: `cash-in:${ctx.agentId}:${ctx.idempotencyKey}`,
+      idempotencyKey: `${isCashIn ? 'cash-in' : 'cash-out'}:${ctx.agentId}:${ctx.idempotencyKey}`,
       product: productCode,
-      direction: (limitInput.direction as 'INCOMING' | 'OUTGOING' | 'BOTH') ?? 'INCOMING',
+      direction: (limitInput.direction as 'INCOMING' | 'OUTGOING' | 'BOTH') ?? (isCashIn ? 'INCOMING' : 'OUTGOING'),
       channel: limitInput.channel ?? null,
       principalType: principalType as 'CUSTOMER' | 'AGENT',
       principalId: limitInput.principalId.trim(),
@@ -436,7 +439,7 @@ export class AgentFinancialExecutionService {
       limitDecision,
       revenueDecision: null,
       configurationVersion: null,
-      createdBy: 'agent-cash-in',
+      createdBy: isCashIn ? 'agent-cash-in' : 'agent-cash-out',
     });
   }
 
