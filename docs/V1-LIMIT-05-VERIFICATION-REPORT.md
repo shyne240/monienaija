@@ -12,8 +12,8 @@
 |---|---|
 | Verified HEAD before | `86b654f` (docs(limit-04): update verification report HEAD after hash) |
 | Parent implementation | `1932dde` (feat(limit-04): runtime limit resolution/evaluation & financial-flow wiring) |
-| HEAD after (feat) | `<FEAT_COMMIT>` (V1-LIMIT-05 implementation) |
-| HEAD after (docs) | `<DOCS_COMMIT>` (this report) |
+| HEAD after (feat) | `4f37aea` (V1-LIMIT-05 implementation) |
+| HEAD after (docs) | `204c02e` (this report) |
 
 Work started from a clean tree on `86b654f`; the V1-LIMIT-04 implementation (8 wired flows, 28-case W→W matrix, SERIALIZABLE + FOR UPDATE reservation-before-posting) is unchanged in its financial semantics.
 
