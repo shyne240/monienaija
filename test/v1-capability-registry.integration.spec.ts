@@ -133,19 +133,20 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   }
 
   // ── Migration & chain ──
-  it('01. Migration count is 67 and chain intact (06→68 additive)', async () => {
+  it('01. Migration count is 67 and chain intact (06→69 additive)', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(69);
+    expect(Number(rows[0]!.cnt)).toBe(70);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(69);
+    expect(files.length).toBe(70);
+    expect(files.some((f) => f.name.includes('1785753600069'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600068'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600067'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600066'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600068');
-    expect(latest[0]!.name).toBe('CreateLimitAssignments1785753600068');
+    expect(latest[0]!.timestamp).toBe('1785753600069');
+    expect(latest[0]!.name).toBe('CreateLimitUsages1785753600069');
   });
 
   // ── Seed counts V1/V2 ──

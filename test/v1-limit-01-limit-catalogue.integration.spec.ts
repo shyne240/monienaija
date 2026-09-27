@@ -87,14 +87,15 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
       .send({ code, name: `Profile ${code}`, kind: 'CUSTOMER', ...overrides });
   }
 
-  it('1. migration chain exposes limit_profiles + limit_rules (68 migrations, 0067) — additive to 69 with assignments', async () => {
+  it('1. migration chain exposes limit_profiles + limit_rules (68 migrations, 0067) — additive to 70 with usages', async () => {
     const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
     expect(migs.length).toBeGreaterThanOrEqual(68);
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     const last = migs[migs.length - 1];
-    // after V1-LIMIT-02, latest is 0068; before, it was 0067 — accept both for backward compatibility
-    expect(['1785753600067', '1785753600068']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
+    // after V1-LIMIT-03, latest is 0069; before, it was 0067/0068 — accept for backward compatibility
+    expect(['1785753600067', '1785753600068', '1785753600069']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
+    else if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
     else expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(['limit_profiles','limit_rules']);
@@ -437,9 +438,13 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(afterWallets[0].count).toBe(beforeWallets[0].count);
     expect(afterEntries[0].count).toBe(beforeEntries[0].count);
     expect(afterJournals[0].count).toBe(beforeJournals[0].count);
-    // also ensure no limit_usages table exists yet (runtime not implemented)
+    // V1-LIMIT-03 additive: limit_usages table now exists but catalogue must not auto-create usages/ledger side effects
     const hasLimitUsages = await dataSource.query(`SELECT to_regclass('public.limit_usages') as reg`);
-    expect(hasLimitUsages[0].reg).toBeNull();
+    expect(hasLimitUsages[0].reg).toBe('limit_usages');
+    const usagesCount: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM limit_usages`);
+    expect(usagesCount[0].count).toBe('0');
+    const reservationCount: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM limit_reservations`);
+    expect(reservationCount[0].count).toBe('0');
   });
 
   it('11. list filters, deterministic ordering, pagination for rules', async () => {

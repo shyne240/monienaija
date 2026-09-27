@@ -123,13 +123,15 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   }
 
   // ── 1. migration & schema ──
-  it('01. migration chain exposes limit_assignments (69 migrations, 0068)', async () => {
+  it('01. migration chain exposes limit_assignments (69 migrations, 0068) — additive to 70', async () => {
     const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
-    expect(migs.length).toBe(69);
-    const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600068');
-    expect(last.name).toBe('CreateLimitAssignments1785753600068');
+    expect(migs.length).toBeGreaterThanOrEqual(69);
     expect(migs.some(m=>m.timestamp==='1785753600067')).toBe(true);
+    expect(migs.some(m=>m.timestamp==='1785753600068')).toBe(true);
+    const last = migs[migs.length - 1];
+    expect(['1785753600068','1785753600069']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
+    else expect(last.name).toBe('CreateLimitAssignments1785753600068');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename).sort()).toEqual(['limit_assignments','limit_profiles','limit_rules']);
     // CHECK constraints
@@ -510,12 +512,18 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(afterWallets[0].count).toBe(beforeWallets[0].count);
     expect(afterLines[0].count).toBe(beforeLines[0].count);
     expect(afterJournals[0].count).toBe(beforeJournals[0].count);
-    // limit_usages must not exist (runtime not implemented in V1-LIMIT-02)
+    // V1-LIMIT-03 additive: limit_usages + limit_reservations now exist but assignment must not auto-create them
     const hasUsages = await dataSource.query(`SELECT to_regclass('public.limit_usages') as reg`);
-    expect(hasUsages[0].reg).toBeNull();
-    // also no commercial decision tables mutated via assignment
+    expect(hasUsages[0].reg).toBe('limit_usages');
+    const hasReservations = await dataSource.query(`SELECT to_regclass('public.limit_reservations') as reg`);
+    expect(hasReservations[0].reg).toBe('limit_reservations');
+    const usagesCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_usages`);
+    expect(usagesCnt[0].cnt).toBe('0');
+    const resCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_reservations`);
+    expect(resCnt[0].cnt).toBe('0');
+    // also no commercial decision tables mutated via assignment — now 3 limit migrations
     const hasDecisions: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`);
-    expect(Number(hasDecisions[0].cnt)).toBe(2); // profile catalogue + assignments, no usages
+    expect(Number(hasDecisions[0].cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
   });
 
   it('12. legacy preservation — customer_limit_profiles & AgentClass.applicableLimits untouched', async () => {
