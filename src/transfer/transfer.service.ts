@@ -24,7 +24,7 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import { Transfer } from './transfer.entity';
-import { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
+import { limitCodeToTransferFailureCode, TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
   CreateTransferCommand,
   TransferFailure,
@@ -302,13 +302,14 @@ export class TransferService {
       } catch (error) {
         if (error instanceof HttpException) {
           const resp: any = error.getResponse();
-          const code = (resp && (resp.error || resp.code)) as string | undefined;
-          const isLimit = !!code && String(code).startsWith('LIMIT_');
-          if (isLimit) {
+          const rawCode = (resp && (resp.error || resp.code)) as string | undefined;
+          // V1-LIMIT-05: type-safe mapping of the stable LIMIT_* union onto TransferFailureCode
+          const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
+          if (limitCode) {
             return this.markFailed(manager, transfer, {
-              code: code as any,
+              code: limitCode,
               statusCode: error.getStatus(),
-              message: (resp.message as string) ?? String(code),
+              message: (resp.message as string) ?? String(limitCode),
             });
           }
         }
