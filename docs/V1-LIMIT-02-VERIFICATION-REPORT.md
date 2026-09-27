@@ -2,8 +2,8 @@
 
 **Task:** V1-LIMIT-02 — Generic assignment of Limit Profile → subject (migration `1785753600068`, no runtime enforcement)
 **Baseline HEAD (before):** `88af2f5` — feat(limit-01): generic Limit Profile & Rule catalogue — 68 migrations, workforce CRUD, 11 dims, amount/count exclusive, effective/version, no runtime — VERIFIED
-**HEAD (after):** `6c9a995` — feat(limit-02): generic Limit Profile Assignment — 69 migrations, 5 subjects, precedence/effective/version, workforce CRUD, no runtime
-**Branch:** `arena/01a0d883-monienaija` (tracks `origin/arena/01a0d883-monienaija` at `88af2f5` before, now `6c9a995`)
+**HEAD (after):** `9a53252` (+ `docs` amend) — feat(limit-02): generic Limit Profile Assignment — 69 migrations, 5 subjects, precedence/effective/version, workforce CRUD, no runtime (final HEAD after push will be this commit or its successor)
+**Branch:** `arena/01a0d883-monienaija` (tracks `origin/arena/01a0d883-monienaija` at `88af2f5` before, now `9a53252`+)
 **Date:** 2026-09-27 (Africa/Lagos)
 **Migration count before:** 68 (`1785753600067-CreateLimitProfileCatalogue`)
 **Migration count after:** 69 (`1785753600068-CreateLimitAssignments` additive)
