@@ -2,7 +2,7 @@
 
 **Task:** V1-LIMIT-04 — Integrate V1-LIMIT-01/02/03 into 8 V1 financial flows (Wallet→Wallet, Wallet→Cash, Cash→Wallet, Cash→Cash initiation, Cash→Cash claim, Customer Funding, Agent Funding, Agent Defunding)
 **Baseline HEAD (before):** `0e47fda` — V1-LIMIT-03 limit-usage windows + reservation primitive — 70 migrations `1785753600069 CreateLimitUsages`, branch `arena/01a0d883-monienaija` at `97cf0be..0e47fda` (remote `cbfdc02` before, 66 migrations)
-**HEAD (after):** `arena/01a0d883-monienaija` at current working tree — feat(limit-04): runtime limit resolution/evaluation & financial-flow wiring — 70 migrations (no new DDL), 8 flows wired, Lagos windows, SERIALIZABLE+FOR UPDATE+idempotency, reservation-before-posting (final HEAD after push will be this commit)
+**HEAD (after):** `1932dde` — feat(limit-04): runtime limit resolution/evaluation & financial-flow wiring — 8 flows, Lagos windows, SERIALIZABLE FOR UPDATE reservation-before-posting, idempotent, no new migration, 70 migrations (this doc-commit `docs(limit-04)` lands on top as `97cf0be` did for V1-LIMIT-02)
 **Branch:** `arena/01a0d883-monienaija` (tracks `origin/arena/01a0d883-monienaija`)
 **Date:** 2026-09-27 (Africa/Lagos, UTC+1)
 **Migration count before:** 70 (`1785753600069 CreateLimitUsages`)
@@ -402,7 +402,7 @@ Embedded PG: `node scripts/embedded-pg.js` → `PostgreSQL 18.4 ready 127.0.0.1:
 ```
 Branch: arena/01a0d883-monienaija
 Before: 0e47fda (V1-LIMIT-03) — 70 migrations 1785753600069 CreateLimitUsages
-After:  70 migrations head still 1785753600069 (no new DDL) — feat(limit-04): runtime wiring
+After:  1932dde feat(limit-04) — 70 migrations head still 1785753600069 (no new DDL)
   - src/limit-catalog/limit-error.codes.ts (15 codes)
   - src/limit-catalog/limit-profile-resolver.service.ts (resolver with precedence/effective)
   - src/limit-catalog/limit-enforcement.service.ts (enforceWithManager + WALLET_BALANCE_MAX + Lagos windows + reservation commit/release)
