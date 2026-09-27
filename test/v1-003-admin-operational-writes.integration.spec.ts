@@ -425,10 +425,10 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
 
   it('20. migration count is 65 and support tables exist, no new migration added for V1-003', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(66);
+    expect(Number(rows[0]!.count)).toBe(67);
     const latest: Array<{ name: string; timestamp: string }> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600065');
-    expect(latest[0]!.name).toBe('CreateNotificationDeliveries1785753600065');
+    expect(latest[0]!.timestamp).toBe('1785753600066');
+    expect(latest[0]!.name).toBe('CreateCapabilityRegistry1785753600066');
     const supportExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets') as exists`);
     expect(supportExists[0]!.exists).toBe(true);
   });

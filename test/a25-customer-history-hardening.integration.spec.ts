@@ -515,6 +515,6 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     expect(ctrl).toContain('listTransfers');
     expect(ctrl).toContain('getTransferDetail');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBe(66);
+    expect(Number(rows[0].count)).toBe(67);
   });
 });

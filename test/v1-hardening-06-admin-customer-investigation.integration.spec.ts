@@ -480,10 +480,10 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
     expect(tns).not.toContain('admin_ledger');
     expect(tns).not.toContain('customer_ledger_copy');
     const mig: Array<{count:string}> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(mig[0]!.count)).toBe(66);
+    expect(Number(mig[0]!.count)).toBe(67);
     const latest: Array<{name:string, timestamp:string}> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600065');
-    expect(latest[0]!.name).toBe('CreateNotificationDeliveries1785753600065');
+    expect(latest[0]!.timestamp).toBe('1785753600066');
+    expect(latest[0]!.name).toBe('CreateCapabilityRegistry1785753600066');
 
     const { customerId } = await createCustomerWithPhone('8888888888');
     const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `hard06-nomut-${randomUUID()}` });

@@ -559,11 +559,12 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
     expect(combined).not.toContain('token');
   });
 
-  it('28. Migration count is 66 and chain intact', async () => {
+  it('28. Migration count is 67 and chain intact', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(66);
+    expect(Number(rows[0]!.cnt)).toBe(67);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(66);
+    expect(files.length).toBe(67);
+    expect(files.some((f) => f.name.includes('1785753600066'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
   });

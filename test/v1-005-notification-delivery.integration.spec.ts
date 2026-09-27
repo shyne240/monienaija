@@ -598,10 +598,10 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
 
   it('20. migration count is 66 and notification_deliveries exists, baggage checks', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(66);
+    expect(Number(rows[0]!.count)).toBe(67);
     const latest: Array<{ name: string; timestamp: string }> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600065');
-    expect(latest[0]!.name).toBe('CreateNotificationDeliveries1785753600065');
+    expect(latest[0]!.timestamp).toBe('1785753600066');
+    expect(latest[0]!.name).toBe('CreateCapabilityRegistry1785753600066');
     const notifExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='notification_deliveries') as exists`);
     expect(notifExists[0]!.exists).toBe(true);
     const suppExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets') as exists`);

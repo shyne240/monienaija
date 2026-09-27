@@ -310,6 +310,23 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
+    if (path.startsWith('/api/v1/internal/capabilities')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'capability-registry',
+        policy: {
+          resourceType: 'capability-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Generic internal admin surface — workforce only (A22). Covers list/get for
     // agents, customers, aggregators (when not caught above), reconciliation,
     // audit, metrics, diagnostics, outbox, version (non-public), configuration,

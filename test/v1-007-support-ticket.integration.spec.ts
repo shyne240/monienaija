@@ -860,10 +860,10 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
 
   it('migration count is 65 and support tables exist', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
-    expect(Number(rows[0]!.count)).toBe(66);
+    expect(Number(rows[0]!.count)).toBe(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600065');
-    expect(latest[0]!.name).toBe('CreateNotificationDeliveries1785753600065');
+    expect(latest[0]!.timestamp).toBe('1785753600066');
+    expect(latest[0]!.name).toBe('CreateCapabilityRegistry1785753600066');
     const supportTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_tickets'`);
     expect(supportTable.length).toBe(1);
     const messageTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_ticket_messages'`);
