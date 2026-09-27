@@ -43,6 +43,8 @@ import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
 import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
 
 @Module({
   imports: [
@@ -53,6 +55,11 @@ import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
     CustomerAuthenticationModule,
     OutletModule,
     LimitCatalogModule,
+    // V1-COMMERCIAL-DECISION-03A — CASH_TO_WALLET commercial snapshot wiring (pilot extension):
+    // read-only fee resolution + immutable snapshot inside the existing SERIALIZABLE agent
+    // financial execution boundary. No charging, no fee engine wiring.
+    CommercialDecisionModule,
+    FeeRulesModule,
     TypeOrmModule.forFeature([Agent, AgentClass, AgentApplication, AgentReceivingNumber, CashToCashTransfer]),
     forwardRef(() => AgentAuthenticationModule),
   ],

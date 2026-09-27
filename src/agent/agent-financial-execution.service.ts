@@ -9,7 +9,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
@@ -20,6 +20,16 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { normalizeCurrency } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import {
+  commissionNone,
+  feeNotConfigured,
+  limitApproved,
+  limitNotEvaluated,
+  rewardNone,
+} from '../commercial-decision/commercial-decision.defaults';
+import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import type {
   AgentFinancialExecutionInput,
   AgentFinancialExecutionResult,
@@ -38,6 +48,12 @@ export class AgentFinancialExecutionService {
     private readonly auditService: AuditService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
+    // V1-COMMERCIAL-DECISION-03A — CASH_TO_WALLET commercial snapshot wiring (pilot extension).
+    // Both optional: absent → no snapshot (unit tests constructing directly keep working).
+    @Optional()
+    private readonly feeRuleResolverService?: FeeRuleResolverService,
+    @Optional()
+    private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
   ) {}
 
   /**
@@ -167,10 +183,13 @@ export class AgentFinancialExecutionService {
 
           // V1-LIMIT-04: enforce limits before ledger (same SERIALIZABLE manager)
           let limitIdempotencyKey: string | null = null;
+          // V1-COMMERCIAL-DECISION-03A: capture the AUTHORITATIVE enforcement result so the
+          // commercial snapshot records what actually governed this execution — never re-evaluated.
+          let limitOutcome: EnforceResult | null = null;
           if (this.limitEnforcementService && input.limit) {
             limitIdempotencyKey = idempotencyKey;
             try {
-              await this.limitEnforcementService.enforceWithManager(manager, {
+              limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
                 principalType: input.limit.principalType,
                 principalId: input.limit.principalId,
                 agentClassId: input.limit.agentClassId ?? null,
@@ -238,6 +257,20 @@ export class AgentFinancialExecutionService {
             } catch {}
           }
 
+          // — V1-COMMERCIAL-DECISION-03A (pilot extension): record the immutable commercial
+          // decision snapshot INSIDE this same SERIALIZABLE transaction, after the ledger posted
+          // and limits committed, for CASH_TO_WALLET executions only (WALLET_TRANSFER is wired in
+          // TransferService; all other flows stay untouched). Commits/rolls back atomically with
+          // the money movement. NO fee is charged: fee decision stays NOT_CONFIGURED.
+          await this.recordCommercialDecisionSnapshot(manager, {
+            input,
+            agentId,
+            currency,
+            journalId,
+            idempotencyKey,
+            limitOutcome,
+          });
+
           // Simulate failure after journal for rollback test (inside same transaction, so both journal and idempotency will rollback)
           if (input._simulateFailureAfterJournal) {
             throw new BadRequestException('Simulated failure after journal');
@@ -296,6 +329,115 @@ export class AgentFinancialExecutionService {
       }
     }
     throw new ConflictException('Agent financial execution could not complete after concurrent retries');
+  }
+
+  /**
+   * V1-COMMERCIAL-DECISION-03A — CASH_TO_WALLET commercial snapshot capture.
+   *
+   * Runs inside the existing SERIALIZABLE execution transaction via
+   * `recordDecisionWithManager` (never `recordDecision`, which opens its own transaction).
+   * Read-only fee resolution via `FeeRuleResolverService.resolveWithManager` participates in the
+   * same transaction; its result is EVIDENCE ONLY — no fee is calculated or charged and the
+   * ledger is untouched by this method. Mirrors the proven WALLET_TRANSFER pilot semantics:
+   *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
+   *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
+   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - limit evidence comes from the authoritative EnforceResult of THIS execution
+   *  - only successful (COMPLETED-path) executions record a snapshot; replays return early at
+   *    the idempotency step and failures roll back (or never reach this point)
+   */
+  private async recordCommercialDecisionSnapshot(
+    manager: EntityManager,
+    ctx: {
+      input: AgentFinancialExecutionInput;
+      agentId: string;
+      currency: string;
+      journalId: string;
+      idempotencyKey: string;
+      limitOutcome: EnforceResult | null;
+    },
+  ): Promise<void> {
+    const limitInput = ctx.input.limit;
+    // Pilot gate: ONLY CASH_TO_WALLET is wired in this task; other flows keep existing behavior.
+    if (!limitInput || limitInput.product !== 'CASH_TO_WALLET') return;
+    if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
+    const principalType = limitInput.principalType?.trim().toUpperCase();
+    if (principalType !== 'CUSTOMER' && principalType !== 'AGENT') return;
+    if (!UUID_PATTERN.test(limitInput.principalId?.trim() ?? '')) return;
+
+    const productCode = 'CASH_TO_WALLET';
+    const decisionAt = new Date();
+    const amountMinor = limitInput.amountMinor;
+
+    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+      productCode,
+      currency: ctx.currency,
+      at: decisionAt,
+    });
+
+    const feeDecision: Record<string, unknown> = {
+      ...feeNotConfigured(ctx.currency, amountMinor),
+      // flow context evidence (allowed by the snapshot's jsonb contract) — the acting Agent
+      agentId: ctx.agentId,
+    };
+    if (resolution.status === 'RESOLVED' && resolution.rule) {
+      feeDecision.ruleRefs = [
+        {
+          ruleId: resolution.rule.ruleId,
+          ruleVersion: resolution.rule.ruleVersion,
+          flatFeeMinor: resolution.rule.flatFeeMinor,
+          percentageBps: resolution.rule.percentageBps,
+          minimumFeeMinor: resolution.rule.minimumFeeMinor,
+          maximumFeeMinor: resolution.rule.maximumFeeMinor,
+          vatBps: resolution.rule.vatBps,
+          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+          priority: resolution.rule.priority,
+        },
+      ];
+    } else if (resolution.status === 'AMBIGUOUS') {
+      feeDecision.resolutionStatus = 'AMBIGUOUS';
+      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+    }
+
+    const limitDecision = ctx.limitOutcome
+      ? limitApproved({
+          profileCode: ctx.limitOutcome.limitProfileCode ?? null,
+          assignmentId: ctx.limitOutcome.assignmentId ?? null,
+          ruleRefs: (ctx.limitOutcome.ruleRefs ?? []).map((r) => ({
+            ruleId: r.ruleId,
+            dimension: r.dimension,
+            limitValueMinor: r.limitValueMinor,
+            limitValueCount: r.limitValueCount,
+          })),
+          reservationIds: ctx.limitOutcome.reservationIds ?? [],
+          usageIds: ctx.limitOutcome.usageIds ?? [],
+        })
+      : limitNotEvaluated();
+
+    await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
+      idempotencyKey: `cash-in:${ctx.agentId}:${ctx.idempotencyKey}`,
+      product: productCode,
+      direction: (limitInput.direction as 'INCOMING' | 'OUTGOING' | 'BOTH') ?? 'INCOMING',
+      channel: limitInput.channel ?? null,
+      principalType: principalType as 'CUSTOMER' | 'AGENT',
+      principalId: limitInput.principalId.trim(),
+      currency: ctx.currency,
+      principalAmountMinor: amountMinor,
+      transactionReference: ctx.journalId,
+      correlationId: ctx.input.correlationId ?? null,
+      journalId: ctx.journalId,
+      decisionStatus: 'FINAL',
+      decidedAt: decisionAt,
+      finalizedAt: decisionAt,
+      feeDecision: feeDecision as never,
+      commissionDecision: commissionNone(),
+      rewardDecision: rewardNone(),
+      limitDecision,
+      revenueDecision: null,
+      configurationVersion: null,
+      createdBy: 'agent-cash-in',
+    });
   }
 
   private computeRequestHash(value: unknown): string {
