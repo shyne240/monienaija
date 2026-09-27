@@ -363,6 +363,24 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Fee rule registry — workforce configuration surface (V1-COMMERCIAL-03). Schema foundation:
+    // manages fee rule DEFINITIONS only; no runtime charging exists.
+    if (path.startsWith('/api/v1/internal/fee-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'fee-rule-registry',
+        policy: {
+          resourceType: 'fee-rule-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
     if (path.startsWith('/api/v1/internal/capabilities')) {
       return {

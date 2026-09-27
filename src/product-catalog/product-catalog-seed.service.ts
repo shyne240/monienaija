@@ -45,7 +45,9 @@ export class ProductCatalogSeedService implements OnApplicationBootstrap {
   }
 
   async reseed(): Promise<number> {
-    await this.repo.clear();
+    // TRUNCATE ... CASCADE: products is referenced by fee_rules (V1-COMMERCIAL-03); a plain
+    // TRUNCATE would fail even when the referencing tables are empty. Test helper only.
+    await this.repo.query(`TRUNCATE products CASCADE`);
     for (const item of PRODUCT_CATALOG_SEED) {
       await this.repo.save(this.repo.create(item as never) as never);
     }

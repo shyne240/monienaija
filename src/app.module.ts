@@ -75,6 +75,7 @@ import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
 import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
+import { FeeRulesModule } from './fee-rules/fee-rules.module';
 import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
 import { ProductCatalogModule } from './product-catalog/product-catalog.module';
 import { CustomerAppModule } from './customer-app/customer-app.module';
@@ -195,6 +196,7 @@ import { WalletModule } from './wallet/wallet.module';
     AdminModule,
     CapabilityRegistryModule,
     CommercialDecisionModule,
+    FeeRulesModule,
     LimitCatalogModule,
     ProductCatalogModule,
     CustomerAppModule,
