@@ -248,13 +248,20 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(product.lifecycle).toBe('DESIGNED');
     expect(product.backendStatus).toBe('DESIGNED');
     expect(product.enabled).toBe(false);
+    // V1-LIMIT-04: runtime limit enforcement wired into financial flows
     const limit = await capabilityService.findByCode('LIMIT_ENGINE');
     expect(limit.backendStatus).toBe('BACKEND_IMPLEMENTED');
-    expect(limit.enabled).toBe(false);
-    expect(limit.configurationStatus).toBe('NOT_CONFIGURED');
+    expect(limit.enabled).toBe(true);
+    expect(limit.lifecycle).toBe('FULLY_ENABLED');
+    expect(limit.configurationStatus).toBe('CONFIGURED');
     const customerLimits = await capabilityService.findByCode('CUSTOMER_RUNTIME_LIMITS');
-    expect(customerLimits.backendStatus).toBe('BLOCKED');
-    expect(customerLimits.lifecycle).toBe('BLOCKED');
+    expect(customerLimits.backendStatus).toBe('BACKEND_IMPLEMENTED');
+    expect(customerLimits.lifecycle).toBe('FULLY_ENABLED');
+    expect(customerLimits.enabled).toBe(true);
+    const agentLimits = await capabilityService.findByCode('AGENT_RUNTIME_LIMITS');
+    expect(agentLimits.backendStatus).toBe('BACKEND_IMPLEMENTED');
+    expect(agentLimits.lifecycle).toBe('FULLY_ENABLED');
+    expect(agentLimits.enabled).toBe(true);
     const snapshot = await capabilityService.findByCode('COMMERCIAL_DECISION_SNAPSHOT');
     expect(snapshot.backendStatus).toBe('PLANNED');
     expect(snapshot.lifecycle).toBe('PLANNED');

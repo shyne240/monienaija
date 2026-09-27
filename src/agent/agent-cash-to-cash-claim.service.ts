@@ -5,11 +5,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -38,6 +42,8 @@ export class AgentCashToCashClaimService {
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
     private readonly mfaExecutionService: MfaExecutionService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   async execute(input: AgentCashToCashClaimInput): Promise<AgentCashToCashClaimResult> {
@@ -347,6 +353,51 @@ export class AgentCashToCashClaimService {
           // Ensure beneficiary wallet exists (for hash & ledger)
           const beneficiaryWallet = await this.resolveBeneficiaryWallet(manager, customerId);
 
+          // V1-LIMIT-04: enforce limits for CUSTOMER INCOMING CASH_TO_CASH claim
+          let limitIdempotencyKeyForClaim: string | null = null;
+          let claimRequestHashForLimit: string | null = null;
+          // Compute requestHash early for limit (same as claim's requestHash)
+          const claimRequestHashEarly = this.computeRequestHash({
+            transferId,
+            beneficiaryPhone: canonicalPhone,
+            claimantCustomerId: customerId,
+            principalMinor: transfer.principal_minor,
+            currency: transfer.currency,
+            unclaimedAccountId: unclaimedAccount.id,
+            beneficiaryWalletLedgerId: beneficiaryWallet.ledgerAccountId,
+            reference,
+            correlationId: correlationId ?? null,
+            metadata: input.metadata ?? {},
+          });
+          if (this.limitEnforcementService) {
+            limitIdempotencyKeyForClaim = idempotencyKey;
+            claimRequestHashForLimit = claimRequestHashEarly;
+            try {
+              await this.limitEnforcementService.enforceWithManager(manager, {
+                principalType: 'CUSTOMER',
+                principalId: customerId,
+                product: 'CASH_TO_CASH',
+                currency: transfer.currency,
+                direction: 'INCOMING',
+                channel: null,
+                amountMinor: transfer.principal_minor,
+                idempotencyKey: limitIdempotencyKeyForClaim,
+                requestHash: claimRequestHashForLimit,
+                correlationId: correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: beneficiaryWallet.ledgerAccountId,
+                principalWalletCustomerId: customerId,
+              });
+            } catch (error) {
+              if (error instanceof HttpException) {
+                const resp: any = error.getResponse();
+                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                if (code && String(code).startsWith('LIMIT_')) throw error;
+              }
+              throw error;
+            }
+          }
+
           // Compute requestHash for claim idempotency (binds financial fields NOT secrets)
           const requestHash = this.computeRequestHash({
             transferId,
@@ -411,30 +462,46 @@ export class AgentCashToCashClaimService {
           ];
 
           const ledgerIdempotencyKey = `claim:${transferId}:${idempotencyKey}`;
-          const journalId = await this.ledgerService.postJournalInTransaction(manager, {
-            idempotencyKey: ledgerIdempotencyKey,
-            currency: transfer.currency,
-            accountingUnit: 'CUSTOMER_FUNDS',
-            reference,
-            description,
-            correlationId,
-            metadata: {
-              ...(input.metadata ?? {}),
-              operation: 'CASH_TO_CASH_CLAIM',
-              transferId,
-              beneficiaryPhone: canonicalPhone,
-              claimantCustomerId: customerId,
-              principalMinor: principal,
+          let journalId: string;
+          try {
+            journalId = await this.ledgerService.postJournalInTransaction(manager, {
+              idempotencyKey: ledgerIdempotencyKey,
               currency: transfer.currency,
-              idempotencyKey,
-              requestHash,
-            },
-            lines: lines.map((l) => ({
-              accountId: l.accountId,
-              direction: l.direction as LedgerEntryDirection,
-              amountMinor: l.amountMinor,
-            })),
-          });
+              accountingUnit: 'CUSTOMER_FUNDS',
+              reference,
+              description,
+              correlationId,
+              metadata: {
+                ...(input.metadata ?? {}),
+                operation: 'CASH_TO_CASH_CLAIM',
+                transferId,
+                beneficiaryPhone: canonicalPhone,
+                claimantCustomerId: customerId,
+                principalMinor: principal,
+                currency: transfer.currency,
+                idempotencyKey,
+                requestHash,
+              },
+              lines: lines.map((l) => ({
+                accountId: l.accountId,
+                direction: l.direction as LedgerEntryDirection,
+                amountMinor: l.amountMinor,
+              })),
+            });
+          } catch (error) {
+            if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
+              try {
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKeyForClaim);
+              } catch {}
+            }
+            throw error;
+          }
+
+          if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
+            try {
+              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKeyForClaim);
+            } catch {}
+          }
 
           // Update transfer to CLAIMED
           await manager.query(

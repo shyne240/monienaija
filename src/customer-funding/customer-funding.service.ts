@@ -4,11 +4,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, QueryFailedError } from 'typeorm';
+
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 import { normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
 import { AuditService } from '../operations/audit.service';
@@ -86,6 +90,8 @@ export class CustomerFundingService {
     private readonly settlementAccountService: SettlementAccountService,
     private readonly auditService: AuditService,
     private readonly outboxService: OutboxService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   async createRequest(input: CreateFundingRequestInput): Promise<CustomerFundingView> {
@@ -285,6 +291,48 @@ export class CustomerFundingService {
             SettlementAccountRole.SETTLEMENT_ASSET,
           );
 
+          // V1-LIMIT-04: enforce limits for CUSTOMER_FUNDING (CUSTOMER INCOMING)
+          let limitIdempotencyKey: string | null = null;
+          let limitRequestHash: string | null = null;
+          if (this.limitEnforcementService) {
+            limitIdempotencyKey = `customer-funding-approve:${fundingRequestId}`;
+            limitRequestHash = createHash('sha256')
+              .update(
+                this.canonicalJson({
+                  fundingRequestId,
+                  customerId,
+                  amountMinor,
+                  currency,
+                  walletLedgerAccountId: wallet.ledger_account_id,
+                }),
+              )
+              .digest('hex');
+            try {
+              await this.limitEnforcementService.enforceWithManager(manager, {
+                principalType: 'CUSTOMER',
+                principalId: customerId,
+                product: 'CUSTOMER_FUNDING',
+                currency,
+                direction: 'INCOMING',
+                channel: null,
+                amountMinor,
+                idempotencyKey: limitIdempotencyKey,
+                requestHash: limitRequestHash,
+                correlationId: correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: wallet.ledger_account_id,
+                principalWalletCustomerId: customerId,
+              });
+            } catch (error) {
+              if (error instanceof HttpException) {
+                const resp: any = error.getResponse();
+                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                if (code && String(code).startsWith('LIMIT_')) throw error;
+              }
+              throw error;
+            }
+          }
+
           const reference: string = request.reference;
           const ledgerIdempotencyKey = `customer-funding:${fundingRequestId}`;
           const ledgerRequestHash = createHash('sha256')
@@ -344,12 +392,33 @@ export class CustomerFundingService {
               const existing = jRows[0];
               if (existing && existing.request_hash === ledgerRequestHash) {
                 journalId = existing.id;
+                if (limitIdempotencyKey && this.limitEnforcementService) {
+                  try {
+                    await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+                  } catch {}
+                }
               } else {
+                if (limitIdempotencyKey && this.limitEnforcementService) {
+                  try {
+                    await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                  } catch {}
+                }
                 throw error;
               }
             } else {
+              if (limitIdempotencyKey && this.limitEnforcementService) {
+                try {
+                  await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                } catch {}
+              }
               throw error;
             }
+          }
+
+          if (limitIdempotencyKey && this.limitEnforcementService) {
+            try {
+              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            } catch {}
           }
 
           const now = new Date();

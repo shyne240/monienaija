@@ -5,11 +5,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -68,6 +72,8 @@ export class AgentFundingService {
     private readonly auditService: AuditService,
     private readonly walletService: WalletService,
     private readonly capabilityService: AgentServiceCapabilityService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   async fund(input: FundingInput): Promise<FundingResult> {
@@ -239,6 +245,44 @@ export class AgentFundingService {
           const walletInTx = await manager.getRepository(WalletAccount).findOne({ where: { customerId: agentId, currency: 'NGN' } });
           if (!walletInTx) throw new NotFoundException(`Agent wallet for ${agentId} not found in transaction`);
 
+          // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
+          let limitIdempotencyKey: string | null = null;
+          if (this.limitEnforcementService) {
+            const agentRows: Array<{ agent_class_id: string | null }> = await manager.query(
+              `SELECT agent_class_id FROM agents WHERE id = $1 LIMIT 1`,
+              [agentId],
+            );
+            const agentClassId = agentRows[0]?.agent_class_id ?? null;
+            limitIdempotencyKey = idempotencyKey;
+            const product = direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING';
+            const dir = direction === 'FUND' ? 'INCOMING' : 'OUTGOING';
+            try {
+              await this.limitEnforcementService.enforceWithManager(manager, {
+                principalType: 'AGENT',
+                principalId: agentId,
+                agentClassId,
+                product,
+                currency: 'NGN',
+                direction: dir,
+                channel: null,
+                amountMinor: amountString,
+                idempotencyKey: limitIdempotencyKey,
+                requestHash,
+                correlationId: correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: walletInTx.ledgerAccountId,
+                principalWalletCustomerId: agentId,
+              });
+            } catch (error) {
+              if (error instanceof HttpException) {
+                const resp: any = error.getResponse();
+                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                if (code && String(code).startsWith('LIMIT_')) throw error;
+              }
+              throw error;
+            }
+          }
+
           // For defunding, ledger trigger will enforce no overdraft, but we can pre-check balance for clearer error
           // Let ledger handle insufficient funds as 422 via trigger.
 
@@ -270,9 +314,18 @@ export class AgentFundingService {
               })),
             });
           } catch (e) {
-            // Ledger insufficient funds throws BadRequest? In our ledger trigger, negative balance raises 23514, which LedgerService maps to BadRequest with message about balance.
-            // For funding, we want insufficient funds to be caught on defunding (Agent wallet negative). For funding, pool allow_negative true so no error.
+            if (limitIdempotencyKey && this.limitEnforcementService) {
+              try {
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+              } catch {}
+            }
             throw e;
+          }
+
+          if (limitIdempotencyKey && this.limitEnforcementService) {
+            try {
+              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            } catch {}
           }
 
           const result: FundingResult = {

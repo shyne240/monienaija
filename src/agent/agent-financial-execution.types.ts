@@ -23,6 +23,19 @@ export interface AgentFinancialExecutionInput {
   metadata?: Record<string, unknown>;
   /** Test-only hook to simulate failure after journal for rollback verification */
   _simulateFailureAfterJournal?: boolean;
+  /** V1-LIMIT-04: optional limit enforcement — if present, limits are enforced inside same SERIALIZABLE transaction */
+  limit?: {
+    product: string;
+    principalType: string;
+    principalId: string;
+    agentClassId?: string | null;
+    direction: string;
+    channel?: string | null;
+    amountMinor: string;
+    currency?: string;
+    walletLedgerAccountId?: string | null;
+    principalWalletCustomerId?: string;
+  };
 }
 
 export interface AgentFinancialExecutionResult {

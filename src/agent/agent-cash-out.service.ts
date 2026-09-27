@@ -289,6 +289,17 @@ export class AgentCashOutService {
         currency: 'NGN',
         ...(input.metadata ?? {}),
       },
+      limit: {
+        product: 'WALLET_TO_CASH',
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'OUTGOING',
+        channel: null,
+        amountMinor: amountString,
+        currency: 'NGN',
+        walletLedgerAccountId: customerWallet.ledgerAccountId,
+        principalWalletCustomerId: customerId,
+      },
     });
 
     // 8. Audit business flow — transactional if possible, but financial audit is already inside A12

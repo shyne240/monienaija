@@ -4,10 +4,14 @@ import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
@@ -32,6 +36,8 @@ export class AgentFinancialExecutionService {
     private readonly ledgerService: LedgerService,
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   /**
@@ -159,12 +165,45 @@ export class AgentFinancialExecutionService {
             }
           }
 
+          // V1-LIMIT-04: enforce limits before ledger (same SERIALIZABLE manager)
+          let limitIdempotencyKey: string | null = null;
+          if (this.limitEnforcementService && input.limit) {
+            limitIdempotencyKey = idempotencyKey;
+            try {
+              await this.limitEnforcementService.enforceWithManager(manager, {
+                principalType: input.limit.principalType,
+                principalId: input.limit.principalId,
+                agentClassId: input.limit.agentClassId ?? null,
+                product: input.limit.product,
+                currency: input.limit.currency ?? currency,
+                direction: input.limit.direction,
+                channel: input.limit.channel ?? null,
+                amountMinor: input.limit.amountMinor,
+                idempotencyKey: limitIdempotencyKey,
+                requestHash,
+                correlationId: input.correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: input.limit.walletLedgerAccountId ?? null,
+                principalWalletCustomerId: input.limit.principalWalletCustomerId ?? input.limit.principalId,
+              });
+            } catch (error) {
+              if (error instanceof HttpException) {
+                const resp: any = error.getResponse();
+                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                if (code && String(code).startsWith('LIMIT_')) throw error;
+              }
+              throw error;
+            }
+          }
+
           // 2. Ledger posting (atomic, with its own pessimistic_write on accounts, balance checks, no negative)
           // Use a derived idempotencyKey for ledger to keep it unique per Agent+key and avoid cross-Agent collision.
           // Ledger errors (e.g., insufficient funds 422) propagate and rollback the transaction; idempotency reservation
           // is also rolled back so next call with same key retries deterministically (no journal created).
           const ledgerIdempotencyKey = `agent:${agentId}:${idempotencyKey}`;
-          const journalId = await this.ledgerService.postJournalInTransaction(manager, {
+          let journalId: string;
+          try {
+            journalId = await this.ledgerService.postJournalInTransaction(manager, {
             idempotencyKey: ledgerIdempotencyKey,
             currency,
             accountingUnit,
@@ -184,6 +223,20 @@ export class AgentFinancialExecutionService {
               amountMinor: l.amountMinor,
             })),
           });
+          } catch (error) {
+            if (limitIdempotencyKey && this.limitEnforcementService) {
+              try {
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey!);
+              } catch {}
+            }
+            throw error;
+          }
+
+          if (limitIdempotencyKey && this.limitEnforcementService) {
+            try {
+              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            } catch {}
+          }
 
           // Simulate failure after journal for rollback test (inside same transaction, so both journal and idempotency will rollback)
           if (input._simulateFailureAfterJournal) {

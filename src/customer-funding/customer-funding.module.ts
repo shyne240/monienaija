@@ -8,9 +8,10 @@ import { CustomerFundingRequest } from './customer-funding-request.entity';
 import { CustomerFundingService } from './customer-funding.service';
 import { CustomerFundingInternalController } from './customer-funding-internal.controller';
 import { CustomerFundingCustomerController } from './customer-funding-customer.controller';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CustomerFundingRequest]), LedgerModule, PaymentModule, OperationsModule],
+  imports: [TypeOrmModule.forFeature([CustomerFundingRequest]), LedgerModule, PaymentModule, OperationsModule, LimitCatalogModule],
   controllers: [CustomerFundingInternalController, CustomerFundingCustomerController],
   providers: [CustomerFundingService],
   exports: [CustomerFundingService],

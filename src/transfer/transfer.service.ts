@@ -22,6 +22,7 @@ import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletStatus } from '../wallet/wallet.enums';
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import { Transfer } from './transfer.entity';
 import { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
@@ -68,6 +69,8 @@ export class TransferService {
     private readonly outboxService?: OutboxService,
     @Optional()
     private readonly metricsService?: MetricsService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -273,6 +276,46 @@ export class TransferService {
       });
     }
 
+    // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
+    let limitIdempotencyKey: string | null = null;
+    if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
+      const limitProduct = 'WALLET_TRANSFER';
+      const limitDirection = 'OUTGOING';
+      const amountMinorStr = command.amountMinor.toString();
+      limitIdempotencyKey = command.idempotencyKey;
+      try {
+        await this.limitEnforcementService.enforceWithManager(manager, {
+          principalType: 'CUSTOMER',
+          principalId: sourceWallet.customerId,
+          product: limitProduct,
+          currency: command.currency,
+          direction: limitDirection,
+          channel: null,
+          amountMinor: amountMinorStr,
+          idempotencyKey: limitIdempotencyKey,
+          requestHash: command.requestHash,
+          correlationId: `transfer:${transfer.id}`,
+          now: new Date(),
+          walletLedgerAccountId: sourceWallet.ledgerAccountId,
+          principalWalletCustomerId: sourceWallet.customerId,
+        });
+      } catch (error) {
+        if (error instanceof HttpException) {
+          const resp: any = error.getResponse();
+          const code = (resp && (resp.error || resp.code)) as string | undefined;
+          const isLimit = !!code && String(code).startsWith('LIMIT_');
+          if (isLimit) {
+            return this.markFailed(manager, transfer, {
+              code: code as any,
+              statusCode: error.getStatus(),
+              message: (resp.message as string) ?? String(code),
+            });
+          }
+        }
+        throw error;
+      }
+    }
+
     let journalId: string;
     try {
       journalId = await this.ledgerService.postJournalInTransaction(manager, {
@@ -305,7 +348,22 @@ export class TransferService {
         throw error;
       }
 
+      if (limitIdempotencyKey && this.limitEnforcementService) {
+        try {
+          await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+        } catch {
+          // best-effort release; if no reservations exist this is a no-op
+        }
+      }
       return this.markFailed(manager, transfer, this.failureFromLedgerException(error));
+    }
+
+    if (limitIdempotencyKey && this.limitEnforcementService) {
+      try {
+        await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+      } catch {
+        // best-effort commit; if no reservations exist this is a no-op
+      }
     }
 
     transfer.status = TransferStatus.COMPLETED;

@@ -174,6 +174,17 @@ export class AgentCashInService {
         currency: 'NGN',
         ...(input.metadata ?? {}),
       },
+      limit: {
+        product: 'CASH_TO_WALLET',
+        principalType: 'CUSTOMER',
+        principalId: customerId,
+        direction: 'INCOMING',
+        channel: null,
+        amountMinor: amountString,
+        currency: 'NGN',
+        walletLedgerAccountId: customerWallet.ledgerAccountId,
+        principalWalletCustomerId: customerId,
+      },
     });
 
     // 6. Audit business flow (separate transaction, best-effort, never with PIN)

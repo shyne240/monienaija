@@ -42,6 +42,7 @@ import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
 import { OutletModule } from '../outlet/outlet.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { OutletModule } from '../outlet/outlet.module';
     CustomerModule,
     CustomerAuthenticationModule,
     OutletModule,
+    LimitCatalogModule,
     TypeOrmModule.forFeature([Agent, AgentClass, AgentApplication, AgentReceivingNumber, CashToCashTransfer]),
     forwardRef(() => AgentAuthenticationModule),
   ],

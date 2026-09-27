@@ -8,6 +8,7 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentModule } from '../payment/payment.module';
 import { PilotControlModule } from '../pilot/pilot-control.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { Transfer } from './transfer.entity';
@@ -36,6 +37,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     PaymentModule,
     PilotControlModule,
     WalletModule,
+    LimitCatalogModule,
     TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
   ],
   controllers: [TransferController, WalletTransactionController],

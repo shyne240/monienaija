@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
   Optional,
@@ -27,6 +28,7 @@ import { AgentService } from './agent-service.enum';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { AgentCashToCashInput, AgentCashToCashResult } from './agent-cash-to-cash.types';
 import { CashToCashTransfer } from './cash-to-cash.entity';
+import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDEMPOTENCY_SCOPE_PREFIX = 'agent-financial.v1:';
@@ -46,6 +48,8 @@ export class AgentCashToCashService {
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
   ) {}
 
   async execute(input: AgentCashToCashInput): Promise<AgentCashToCashResult> {
@@ -289,6 +293,43 @@ export class AgentCashToCashService {
             throw new BadRequestException('Agent financial execution must involve the Agent wallet ledger account');
           }
 
+          // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
+          let limitIdempotencyKey: string | null = null;
+          let agentClassIdForLimit: string | null = null;
+          if (this.limitEnforcementService) {
+            const agentRows: Array<{ agent_class_id: string | null }> = await manager.query(
+              `SELECT agent_class_id FROM agents WHERE id = $1 LIMIT 1`,
+              [agentId],
+            );
+            agentClassIdForLimit = agentRows[0]?.agent_class_id ?? null;
+            limitIdempotencyKey = idempotencyKey;
+            try {
+              await this.limitEnforcementService.enforceWithManager(manager, {
+                principalType: 'AGENT',
+                principalId: agentId,
+                agentClassId: agentClassIdForLimit,
+                product: 'CASH_TO_CASH',
+                currency: 'NGN',
+                direction: 'OUTGOING',
+                channel: null,
+                amountMinor: amountString,
+                idempotencyKey: limitIdempotencyKey,
+                requestHash,
+                correlationId: correlationId ?? null,
+                now: new Date(),
+                walletLedgerAccountId: walletInTx.ledgerAccountId,
+                principalWalletCustomerId: agentId,
+              });
+            } catch (error) {
+              if (error instanceof HttpException) {
+                const resp: any = error.getResponse();
+                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                if (code && String(code).startsWith('LIMIT_')) throw error;
+              }
+              throw error;
+            }
+          }
+
           // Lock unclaimed account as well (via ledger lines lock)
           // Generate transfer code (8-digit numeric) and hash
           // Assumption: No approved format exists; using 8-digit numeric (10000000-99999999) with PBKDF2.
@@ -296,34 +337,50 @@ export class AgentCashToCashService {
           const transferCode = this.generateTransferCode();
           const { hash: transferCodeHash, algorithm } = this.hashTransferCode(transferCode);
 
-          // Post journal via ledger (inside same transaction)
+          // Post journal via ledger (inside same transaction) + commit limit
           const ledgerIdempotencyKey = `agent:${agentId}:${idempotencyKey}`;
-          const journalId = await this.ledgerService.postJournalInTransaction(manager, {
-            idempotencyKey: ledgerIdempotencyKey,
-            currency: 'NGN',
-            accountingUnit: 'CUSTOMER_FUNDS',
-            reference,
-            description,
-            correlationId,
-            metadata: {
-              ...(input.metadata ?? {}),
-              operation: 'CASH_TO_CASH',
-              agentId,
-              beneficiaryPhone: canonicalPhone,
-              principalMinor: amountString,
-              feeMinor: feeMinor.toString(),
-              vatMinor: vatMinor.toString(),
-              totalMinor: totalString,
+          let journalId: string;
+          try {
+            journalId = await this.ledgerService.postJournalInTransaction(manager, {
+              idempotencyKey: ledgerIdempotencyKey,
               currency: 'NGN',
-              idempotencyKey,
-              requestHash,
-            },
-            lines: lines.map((l) => ({
-              accountId: l.accountId,
-              direction: l.direction as LedgerEntryDirection,
-              amountMinor: l.amountMinor,
-            })),
-          });
+              accountingUnit: 'CUSTOMER_FUNDS',
+              reference,
+              description,
+              correlationId,
+              metadata: {
+                ...(input.metadata ?? {}),
+                operation: 'CASH_TO_CASH',
+                agentId,
+                beneficiaryPhone: canonicalPhone,
+                principalMinor: amountString,
+                feeMinor: feeMinor.toString(),
+                vatMinor: vatMinor.toString(),
+                totalMinor: totalString,
+                currency: 'NGN',
+                idempotencyKey,
+                requestHash,
+              },
+              lines: lines.map((l) => ({
+                accountId: l.accountId,
+                direction: l.direction as LedgerEntryDirection,
+                amountMinor: l.amountMinor,
+              })),
+            });
+          } catch (error) {
+            if (limitIdempotencyKey && this.limitEnforcementService) {
+              try {
+                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+              } catch {}
+            }
+            throw error;
+          }
+
+          if (limitIdempotencyKey && this.limitEnforcementService) {
+            try {
+              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            } catch {}
+          }
 
           // Create cash_to_cash_transfers record atomically with journal
           // Expiry is configurable via CASH_TO_CASH_EXPIRY_SECONDS; persisted expires_at is stable once created.
