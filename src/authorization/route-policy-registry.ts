@@ -310,6 +310,23 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Limit catalogue — workforce-only OPERATOR/SERVICE/PRIVILEGED (V1-LIMIT-01). Strict subset of generic internal.
+    if (path.startsWith('/api/v1/internal/limit-profiles') || path.startsWith('/api/v1/internal/limit-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'limit-catalogue',
+        policy: {
+          resourceType: 'limit-catalogue',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
     if (path.startsWith('/api/v1/internal/capabilities')) {
       return {
