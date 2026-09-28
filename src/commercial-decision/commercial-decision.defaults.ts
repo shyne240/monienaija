@@ -35,6 +35,23 @@ export function commissionNone(): CommissionDecisionSnapshot {
   return { status: 'NONE', allocations: [], ruleRefs: [] };
 }
 
+/**
+ * V1-COMMISSION-01 — pure builder for the ALLOCATED commission decision shape the
+ * (future) wired flows will capture. Mirrors commissionNone()'s shape exactly; the
+ * provided allocations must be non-empty (ALLOCATED without allocations is incoherent
+ * and the snapshot service rejects it). This builder is mechanics only — deciding
+ * whether/how allocations apply to a flow remains the future integration task.
+ */
+export function commissionAllocated(
+  allocations: NonNullable<CommissionDecisionSnapshot['allocations']>,
+  ruleRefs: NonNullable<CommissionDecisionSnapshot['ruleRefs']>,
+): CommissionDecisionSnapshot {
+  if (!Array.isArray(allocations) || allocations.length === 0) {
+    throw new Error('commissionAllocated requires at least one allocation — use commissionNone() for empty');
+  }
+  return { status: 'ALLOCATED', allocations, ruleRefs: ruleRefs ?? [] };
+}
+
 export function rewardNone(): RewardDecisionSnapshot {
   return { status: 'NONE', grants: [], ruleRefs: [] };
 }

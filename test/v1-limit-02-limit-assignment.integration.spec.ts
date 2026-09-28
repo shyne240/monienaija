@@ -129,8 +129,9 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(migs.some(m=>m.timestamp==='1785753600067')).toBe(true);
     expect(migs.some(m=>m.timestamp==='1785753600068')).toBe(true);
     const last = migs[migs.length - 1];
-    expect(['1785753600068','1785753600069','1785753600070','1785753600071','1785753600072']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');
+    expect(['1785753600068','1785753600069','1785753600070','1785753600071','1785753600072','1785753600073']).toContain(last.timestamp);
+    if (last.timestamp === '1785753600073') expect(last.name).toBe('CreateCommissionRules1785753600073');
+    else if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');
     else if (last.timestamp === '1785753600071') expect(last.name).toBe('CreateProductCatalogue1785753600071');
     else if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
     else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');

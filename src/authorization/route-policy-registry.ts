@@ -381,6 +381,44 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Commission rule registry — workforce configuration surface (V1-COMMISSION-01). Schema
+    // foundation: manages commission rule DEFINITIONS and read-only resolution diagnostics only;
+    // no runtime commission charging or posting exists and zero production rules are seeded.
+    if (path.startsWith('/api/v1/internal/commission-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'commission-rule-registry',
+        policy: {
+          resourceType: 'commission-rule-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Commission rule registry — workforce configuration surface (V1-COMMISSION-01). Schema
+    // foundation: manages commission rule DEFINITIONS + read-only resolution diagnostics only;
+    // no runtime commission charging exists and no production rules are seeded.
+    if (path.startsWith('/api/v1/internal/commission-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'commission-rule-registry',
+        policy: {
+          resourceType: 'commission-rule-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Capability registry — internal workforce only (V1-CAPABILITY-REGISTRY-01), read-only
     if (path.startsWith('/api/v1/internal/capabilities')) {
       return {

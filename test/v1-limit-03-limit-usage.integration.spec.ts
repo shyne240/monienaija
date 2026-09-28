@@ -97,10 +97,10 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(usage!.name).toBe('CreateLimitUsages1785753600069');
     // product catalogue (0071) also remains in the chain
     expect(migs.some((m) => m.timestamp === '1785753600071')).toBe(true);
-    // head moved forward with the fee rule schema foundation (0072)
+    // head moved forward with the commission rule schema foundation (0073)
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600072');
-    expect(last.name).toBe('CreateFeeRules1785753600072');
+    expect(last.timestamp).toBe('1785753600073');
+    expect(last.name).toBe('CreateCommissionRules1785753600073');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);
