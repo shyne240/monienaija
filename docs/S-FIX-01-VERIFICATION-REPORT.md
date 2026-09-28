@@ -16,7 +16,7 @@ All work was built on top of exactly that commit.)
 
 ### 2. Final HEAD
 
-Implementation commit: **`IMPLEMENTATION_HEAD_PLACEHOLDER`** (contains every code, test,
+Implementation commit: **`c44085d8fa1cc5fdc4d0f10d5ab5b787c2b0a541`** (contains every code, test,
 and audit-addendum change listed §3 except this report). This report is committed as the
 next commit on the same branch; the final branch HEAD is that report commit — recorded in
 the session's final report and verifiable via `git log`. Both commits were pushed to
