@@ -13,8 +13,10 @@ import type {
  * that reality, so snapshot recording never has to fabricate percentages, rates or tiers:
  *
  *  - FEE        → NOT_CONFIGURED, feeMinor 0 (mirrors the hardcoded feeMinor="0" in the flows)
- *  - COMMISSION → NONE, no allocations (no commission engine exists in the codebase)
- *  - REWARD     → NONE, no grants (no reward/cashback engine exists in the codebase)
+ *  - COMMISSION → NONE, no allocations (commission machinery exists (V1-COMMISSION-01) but
+ *                 ZERO rules are configured and no flow calls it)
+ *  - REWARD     → NONE, no grants (reward machinery exists (V1-REWARD-01) but ZERO rules
+ *                 are configured and no flow calls it)
  *  - LIMIT      → use limitApproved()/limitRejected()/limitNotEvaluated() to capture the
  *                 authoritative limit decision evidence without duplicating limit_usage.
  */
@@ -54,6 +56,23 @@ export function commissionAllocated(
 
 export function rewardNone(): RewardDecisionSnapshot {
   return { status: 'NONE', grants: [], ruleRefs: [] };
+}
+
+/**
+ * V1-REWARD-01 — pure builder for the GRANTED reward decision shape the (future) wired
+ * flows will capture. Mirrors rewardNone()'s shape exactly; the provided grants must be
+ * non-empty (GRANTED without grants is incoherent and the snapshot service rejects it).
+ * This builder is mechanics only — deciding whether/how grants apply to a flow remains
+ * the future integration task.
+ */
+export function rewardGranted(
+  grants: NonNullable<RewardDecisionSnapshot['grants']>,
+  ruleRefs: NonNullable<RewardDecisionSnapshot['ruleRefs']>,
+): RewardDecisionSnapshot {
+  if (!Array.isArray(grants) || grants.length === 0) {
+    throw new Error('rewardGranted requires at least one grant — use rewardNone() for empty');
+  }
+  return { status: 'GRANTED', grants, ruleRefs: ruleRefs ?? [] };
 }
 
 export function limitNotEvaluated(): LimitDecisionSnapshot {

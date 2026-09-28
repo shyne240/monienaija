@@ -135,10 +135,10 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   // ── Migration & chain ──
   it('01. Migration count is 73 and chain intact (06→72 additive)', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(74);
+    expect(Number(rows[0]!.cnt)).toBe(75);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(74);
-    expect(files.some((f) => f.name.includes('1785753600073'))).toBe(true);
+    expect(files.length).toBe(75);
+    expect(files.some((f) => f.name.includes('1785753600074'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600072'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600071'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600070'))).toBe(true);
@@ -149,8 +149,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600073');
-    expect(latest[0]!.name).toBe('CreateCommissionRules1785753600073');
+    expect(latest[0]!.timestamp).toBe('1785753600074');
+    expect(latest[0]!.name).toBe('CreateRewardRules1785753600074');
   });
 
   // ── Seed counts V1/V2 ──

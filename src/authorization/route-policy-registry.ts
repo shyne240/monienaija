@@ -400,6 +400,25 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Reward rule registry — workforce configuration surface (V1-REWARD-01). Schema
+    // foundation: manages reward rule DEFINITIONS and read-only resolution diagnostics only;
+    // no runtime reward crediting or posting exists and zero production rules are seeded.
+    if (path.startsWith('/api/v1/internal/reward-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'reward-rule-registry',
+        policy: {
+          resourceType: 'reward-rule-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Commission rule registry — workforce configuration surface (V1-COMMISSION-01). Schema
     // foundation: manages commission rule DEFINITIONS + read-only resolution diagnostics only;
     // no runtime commission charging exists and no production rules are seeded.
@@ -410,6 +429,25 @@ export class RoutePolicyRegistry {
         resourceType: 'commission-rule-registry',
         policy: {
           resourceType: 'commission-rule-registry',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Reward rule registry — workforce configuration surface (V1-REWARD-01). Schema
+    // foundation: manages reward rule DEFINITIONS + read-only resolution diagnostics only;
+    // no runtime reward crediting exists and no production rules are seeded.
+    if (path.startsWith('/api/v1/internal/reward-rules')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'reward-rule-registry',
+        policy: {
+          resourceType: 'reward-rule-registry',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'NONE',
