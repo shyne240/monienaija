@@ -22,8 +22,12 @@ import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
+  commissionAllocatedAtAccountingBoundary,
+  commissionFeeBasisMinor,
+  commissionFeeCollectionStateOf,
   commissionNone,
   feeNotConfigured,
   limitApproved,
@@ -59,6 +63,10 @@ export class AgentFinancialExecutionService {
     // legacy evidence shape for manual-construction unit tests).
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — single commission decision authority (optional; absent →
+    // legacy commissionNone() shape for manual-construction unit tests).
+    @Optional()
+    private readonly commissionEngine?: CommissionEngine,
   ) {}
 
   /**
@@ -347,11 +355,28 @@ export class AgentFinancialExecutionService {
    * ledger is untouched by this method. Mirrors the proven WALLET_TRANSFER pilot semantics:
    *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
    *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
-   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - commission: engine-evaluated via the CommissionEngine (V1-COMMERCIAL-IMPLEMENTATION-02);
+   *    recorded ALLOCATED with evidence-only accounting-boundary annotations when a configured
+   *    rule applies, otherwise the identical byte-shape NONE as the pre-wiring snapshot; reward
+   *    NONE, revenue null, configurationVersion null — nothing invented
    *  - limit evidence comes from the authoritative EnforceResult of THIS execution
    *  - only successful (COMPLETED-path) executions record a snapshot; replays return early at
    *    the idempotency step and failures roll back (or never reach this point)
    */
+  /**
+   * V1-COMMERCIAL-IMPLEMENTATION-02 — acting-agent class resolution for commission rule targeting,
+   * read INSIDE the caller's SERIALIZABLE transaction (fresh, never a stale class inference).
+   * Absent class row (or no class assigned) → null: untargeted rules still apply, class-targeted
+   * rules correctly do not match.
+   */
+  private async agentClassIdFor(manager: EntityManager, agentId: string): Promise<string | null> {
+    const rows: Array<{ agent_class_id: string | null }> = await manager.query(
+      `SELECT agent_class_id::text AS agent_class_id FROM agents WHERE id = $1`,
+      [agentId],
+    );
+    return rows[0]?.agent_class_id ?? null;
+  }
+
   private async recordCommercialDecisionSnapshot(
     manager: EntityManager,
     ctx: {
@@ -422,6 +447,49 @@ export class AgentFinancialExecutionService {
         feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
       }
     }
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — authoritative commission decision from the single engine
+    // authority, evaluated IN this same SERIALIZABLE transaction. For CASH_IN/CASH_OUT the acting
+    // Agent IS the commission subject: the engine context carries the acting agentId + agentClassId
+    // (for class-targeted rule resolution) and the recorded allocation fills its AGENT beneficiaryId
+    // from the acting agent (never an aggregator — aggregator commission is disabled; individual
+    // agent overrides are disabled for V1). Empty registry → identical byte-shape NONE. Fail-closed:
+    // ambiguity/base-unavailable aborts here, BEFORE money commits.
+    let commissionDecision: Record<string, unknown> = commissionNone();
+    if (this.commissionEngine) {
+      const engineDecision = await this.commissionEngine.decideWithManager(
+        manager,
+        {
+          productCode,
+          currency: ctx.currency,
+          agentId: ctx.agentId,
+          agentClassId: await this.agentClassIdFor(manager, ctx.agentId),
+          aggregatorId: null,
+          at: decisionAt,
+        },
+        {
+          principalMinor: amountMinor,
+          feeMinor: commissionFeeBasisMinor(feeDecision),
+        },
+      );
+      if (engineDecision.status === 'ALLOCATED') {
+        commissionDecision = {
+          ...commissionAllocatedAtAccountingBoundary(
+            {
+              ...engineDecision,
+              allocations: (engineDecision.allocations ?? []).map((a) =>
+                a.beneficiaryType === 'AGENT' && (a.beneficiaryId === null || a.beneficiaryId === undefined)
+                  ? { ...a, beneficiaryId: ctx.agentId }
+                  : a,
+              ),
+            },
+            {
+              feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+              commissionEvent: 'TRANSACTION_COMPLETION',
+            },
+          ),
+        };
+      }
+    }
 
     const limitDecision = ctx.limitOutcome
       ? limitApproved({
@@ -454,7 +522,7 @@ export class AgentFinancialExecutionService {
       decidedAt: decisionAt,
       finalizedAt: decisionAt,
       feeDecision: feeDecision as never,
-      commissionDecision: commissionNone(),
+      commissionDecision: commissionDecision as never,
       rewardDecision: rewardNone(),
       limitDecision,
       revenueDecision: null,

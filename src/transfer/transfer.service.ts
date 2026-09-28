@@ -25,8 +25,12 @@ import { WalletStatus } from '../wallet/wallet.enums';
 import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
+  commissionAllocatedAtAccountingBoundary,
+  commissionFeeBasisMinor,
+  commissionFeeCollectionStateOf,
   commissionNone,
   feeNotConfigured,
   limitApproved,
@@ -91,6 +95,10 @@ export class TransferService {
     // legacy evidence shape for manual-construction unit tests).
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — single commission decision authority (optional; absent →
+    // legacy commissionNone() shape for manual-construction unit tests).
+    @Optional()
+    private readonly commissionEngine?: CommissionEngine,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -512,6 +520,41 @@ export class TransferService {
       }
     }
 
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — authoritative commission decision evaluated by the single
+    // commission engine authority (rule resolver + calculator + decision facade) INSIDE this same
+    // SERIALIZABLE transaction. The flow never computes commission itself; an empty rule registry
+    // yields the identical byte-shape NONE as before, so an unwired/empty configuration cannot
+    // change behavior by accident. Fail-closed: AMBIGUOUS rules or an unavailable FEE base throw
+    // (409/400) and abort BEFORE money commits — no silent rule pick, no partial snapshot.
+    // WALLET_TRANSFER has no acting agent, so no agentId/agentClassId context is supplied;
+    // aggregator commission is disabled (aggregatorId never supplied).
+    let commissionDecision: Record<string, unknown> = commissionNone();
+    if (this.commissionEngine) {
+      const engineDecision = await this.commissionEngine.decideWithManager(
+        manager,
+        {
+          productCode,
+          currency: ctx.command.currency,
+          agentId: null,
+          agentClassId: null,
+          aggregatorId: null,
+          at: decisionAt,
+        },
+        {
+          principalMinor: amountMinor,
+          feeMinor: commissionFeeBasisMinor(feeDecision),
+        },
+      );
+      if (engineDecision.status === 'ALLOCATED') {
+        commissionDecision = {
+          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
+            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+            commissionEvent: 'TRANSACTION_COMPLETION',
+          }),
+        };
+      }
+    }
+
     const limitDecision = ctx.limitOutcome
       ? limitApproved({
           profileCode: ctx.limitOutcome.limitProfileCode ?? null,
@@ -543,7 +586,7 @@ export class TransferService {
       decidedAt: decisionAt,
       finalizedAt: decisionAt,
       feeDecision: feeDecision as never,
-      commissionDecision: commissionNone(),
+      commissionDecision: commissionDecision as never,
       rewardDecision: rewardNone(),
       limitDecision,
       revenueDecision: null,

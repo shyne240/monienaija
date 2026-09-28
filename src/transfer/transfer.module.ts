@@ -11,6 +11,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { CommissionModule } from '../commission/commission.module';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { Transfer } from './transfer.entity';
@@ -45,6 +46,7 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     // existing SERIALIZABLE transfer transaction. No charging, no fee engine wiring.
     CommercialDecisionModule,
     FeeRulesModule,
+    CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
     TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
   ],
   controllers: [TransferController, WalletTransactionController],

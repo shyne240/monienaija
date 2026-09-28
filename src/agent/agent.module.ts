@@ -45,6 +45,7 @@ import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { CommissionModule } from '../commission/commission.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { FeeRulesModule } from '../fee-rules/fee-rules.module';
     // financial execution boundary. No charging, no fee engine wiring.
     CommercialDecisionModule,
     FeeRulesModule,
+    CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
     TypeOrmModule.forFeature([Agent, AgentClass, AgentApplication, AgentReceivingNumber, CashToCashTransfer]),
     forwardRef(() => AgentAuthenticationModule),
   ],

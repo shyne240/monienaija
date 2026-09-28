@@ -11,6 +11,7 @@ import { CustomerFundingCustomerController } from './customer-funding-customer.c
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { CommissionModule } from '../commission/commission.module';
 
 // V1-COMMERCIAL-DECISION-03D — CUSTOMER_FUNDING commercial snapshot wiring (pilot extension):
 // read-only fee resolution + immutable snapshot inside the existing SERIALIZABLE approve
@@ -24,6 +25,7 @@ import { FeeRulesModule } from '../fee-rules/fee-rules.module';
     LimitCatalogModule,
     CommercialDecisionModule,
     FeeRulesModule,
+    CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
   ],
   controllers: [CustomerFundingInternalController, CustomerFundingCustomerController],
   providers: [CustomerFundingService],

@@ -738,6 +738,16 @@ export class AgentCashToCashClaimService {
       decidedAt: decisionAt,
       finalizedAt: decisionAt,
       feeDecision: feeDecision as never,
+      // V1-COMMERCIAL-IMPLEMENTATION-02 — the CLAIM is deliberately NOT a commission event. One
+      // CASH_TO_CASH transfer = ONE economic commission decision, recorded at INITIATION (the only
+      // agent-participating stage; see agent-cash-to-cash.service.ts, commissionEvent
+      // 'CASH_TO_CASH_INITIATION'). The claimant here is a CUSTOMER — no acting agent exists, so the
+      // CommissionRuleResolver/CommissionEngine is intentionally NOT imported, injected or invoked
+      // in this service, and no empty-registry evaluation (which a static rule could otherwise
+      // satisfy) is performed. This prevents the double-pay class (a second allocation for the same
+      // transfer) structurally: there is no second commissioner invocation on the claim path. The
+      // static guarantee is asserted by test 02 of v1-commission-01 and the product-lifecycle test
+      // 22 of v1-commission-runtime-wiring (exactly one allocation across initiation+claim).
       commissionDecision: commissionNone(),
       rewardDecision: rewardNone(),
       limitDecision,

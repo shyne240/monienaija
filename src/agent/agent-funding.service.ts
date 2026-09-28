@@ -17,8 +17,12 @@ import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.serv
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
+  commissionAllocatedAtAccountingBoundary,
+  commissionFeeBasisMinor,
+  commissionFeeCollectionStateOf,
   commissionNone,
   feeNotConfigured,
   limitApproved,
@@ -102,6 +106,10 @@ export class AgentFundingService {
     // legacy evidence shape for manual-construction unit tests).
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — single commission decision authority (optional; absent →
+    // legacy commissionNone() shape for manual-construction unit tests).
+    @Optional()
+    private readonly commissionEngine?: CommissionEngine,
   ) {}
 
   async fund(input: FundingInput): Promise<FundingResult> {
@@ -450,7 +458,10 @@ export class AgentFundingService {
    * ledger is untouched by this method. Mirrors the proven pilot semantics:
    *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
    *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
-   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - commission: engine-evaluated via the CommissionEngine (V1-COMMERCIAL-IMPLEMENTATION-02);
+   *    recorded ALLOCATED with evidence-only accounting-boundary annotations when a configured
+   *    rule applies, otherwise the identical byte-shape NONE as the pre-wiring snapshot; reward
+   *    NONE, revenue null, configurationVersion null — nothing invented
    *  - limit evidence comes from the authoritative EnforceResult of THIS execution
    *    (AGENT_FUNDING = AGENT INCOMING; AGENT_DEFUNDING = AGENT OUTGOING — never re-evaluated)
    *  - the Agent is the financial principal for both directions; the pool/wallet accounting
@@ -525,6 +536,41 @@ export class AgentFundingService {
       }
     }
 
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — authoritative commission decision from the single engine
+    // authority, evaluated IN this same SERIALIZABLE transaction. The funded/defunded Agent is the
+    // SUBJECT of this float movement (their own wallet is being credited/debited) — they are NOT a
+    // commission beneficiary of it: no commission-earning participant exists, so no agentId/
+    // agentClassId context is supplied to the engine even though this service knows the agent, and
+    // aggregatorId is never supplied (aggregator commission disabled; individual agent overrides
+    // disabled). An engine-evaluated NONE is recorded. Empty registry → identical byte-shape NONE.
+    // Fail-closed: ambiguity/base-unavailable aborts BEFORE money commits.
+    let commissionDecision: Record<string, unknown> = commissionNone();
+    if (this.commissionEngine) {
+      const engineDecision = await this.commissionEngine.decideWithManager(
+        manager,
+        {
+          productCode,
+          currency: ctx.currency,
+          agentId: null,
+          agentClassId: null,
+          aggregatorId: null,
+          at: decisionAt,
+        },
+        {
+          principalMinor: ctx.amountMinor,
+          feeMinor: commissionFeeBasisMinor(feeDecision),
+        },
+      );
+      if (engineDecision.status === 'ALLOCATED') {
+        commissionDecision = {
+          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
+            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+            commissionEvent: 'TRANSACTION_COMPLETION',
+          }),
+        };
+      }
+    }
+
     const limitDecision = ctx.limitOutcome
       ? limitApproved({
           profileCode: ctx.limitOutcome.limitProfileCode ?? null,
@@ -556,7 +602,7 @@ export class AgentFundingService {
       decidedAt: decisionAt,
       finalizedAt: decisionAt,
       feeDecision: feeDecision as never,
-      commissionDecision: commissionNone(),
+      commissionDecision: commissionDecision as never,
       rewardDecision: rewardNone(),
       limitDecision,
       revenueDecision: null,

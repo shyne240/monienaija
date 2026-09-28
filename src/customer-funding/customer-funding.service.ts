@@ -16,8 +16,12 @@ import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.serv
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
+  commissionAllocatedAtAccountingBoundary,
+  commissionFeeBasisMinor,
+  commissionFeeCollectionStateOf,
   commissionNone,
   feeNotConfigured,
   limitApproved,
@@ -120,6 +124,10 @@ export class CustomerFundingService {
     // legacy evidence shape for manual-construction unit tests).
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — single commission decision authority (optional; absent →
+    // legacy commissionNone() shape for manual-construction unit tests).
+    @Optional()
+    private readonly commissionEngine?: CommissionEngine,
   ) {}
 
   async createRequest(input: CreateFundingRequestInput): Promise<CustomerFundingView> {
@@ -675,7 +683,10 @@ export class CustomerFundingService {
    * ledger is untouched by this method. Mirrors the proven pilot semantics:
    *  - fee decision stays NOT_CONFIGURED while V1 is fee-free (never ZERO); resolved rule
    *    evidence (ruleId/ruleVersion/effective parameters) is captured in fee_decision.ruleRefs
-   *  - commission/reward NONE, revenue null, configurationVersion null — nothing invented
+   *  - commission: engine-evaluated via the CommissionEngine (V1-COMMERCIAL-IMPLEMENTATION-02);
+   *    recorded ALLOCATED with evidence-only accounting-boundary annotations when a configured
+   *    rule applies, otherwise the identical byte-shape NONE as the pre-wiring snapshot; reward
+   *    NONE, revenue null, configurationVersion null — nothing invented
    *  - limit evidence comes from the authoritative EnforceResult of THIS approval
    *    (CUSTOMER INCOMING — never re-evaluated)
    *  - the snapshot represents the APPROVAL financial execution (the funded Customer is the
@@ -752,6 +763,39 @@ export class CustomerFundingService {
         feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
       }
     }
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — authoritative commission decision from the single engine
+    // authority, evaluated IN this same SERIALIZABLE transaction. CUSTOMER_FUNDING is a privileged
+    // maker/checker approval with NO acting Agent and the Customer as economic principal — no agent
+    // commission context exists, no agentId/agentClassId/aggregatorId is ever supplied (aggregator
+    // commission disabled; individual agent overrides disabled), so an engine-evaluated NONE is
+    // recorded. Empty registry → identical byte-shape NONE. Fail-closed: ambiguity/base-unavailable
+    // aborts BEFORE money commits.
+    let commissionDecision: Record<string, unknown> = commissionNone();
+    if (this.commissionEngine) {
+      const engineDecision = await this.commissionEngine.decideWithManager(
+        manager,
+        {
+          productCode,
+          currency: ctx.currency,
+          agentId: null,
+          agentClassId: null,
+          aggregatorId: null,
+          at: decisionAt,
+        },
+        {
+          principalMinor: ctx.amountMinor,
+          feeMinor: commissionFeeBasisMinor(feeDecision),
+        },
+      );
+      if (engineDecision.status === 'ALLOCATED') {
+        commissionDecision = {
+          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
+            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+            commissionEvent: 'TRANSACTION_COMPLETION',
+          }),
+        };
+      }
+    }
 
     const limitDecision = ctx.limitOutcome
       ? limitApproved({
@@ -784,7 +828,7 @@ export class CustomerFundingService {
       decidedAt: decisionAt,
       finalizedAt: decisionAt,
       feeDecision: feeDecision as never,
-      commissionDecision: commissionNone(),
+      commissionDecision: commissionDecision as never,
       rewardDecision: rewardNone(),
       limitDecision,
       revenueDecision: null,

@@ -54,6 +54,73 @@ export function commissionAllocated(
   return { status: 'ALLOCATED', allocations, ruleRefs: ruleRefs ?? [] };
 }
 
+/**
+ * V1-COMMERCIAL-IMPLEMENTATION-02 — fee-basis evidence for `CommissionEngine.decideWithManager`.
+ * The FEE calculation basis consumes the transaction's AUTHORITATIVE FEE DECISION amount — never
+ * the principal. Returns `'0'` when the fee decision is NOT_CONFIGURED or has no concrete amount
+ * (explicit zero commission must still resolve and be recorded as ZERO-amount ALLOCATED when a
+ * configured commission rule applies — zero fee ⇒ zero commission, never "unavailable"), and
+ * returns `null` ONLY when the fee decision is AMBIGUOUS, in which case the engine must fail closed
+ * (COMMISSION_BASE_UNAVAILABLE) rather than compute on a guessed base.
+ */
+export function commissionFeeBasisMinor(feeDecision: Record<string, unknown>): string | null {
+  const status = typeof feeDecision.status === 'string' ? feeDecision.status : null;
+  if (status === 'AMBIGUOUS' || (feeDecision as { resolutionStatus?: unknown }).resolutionStatus === 'AMBIGUOUS') {
+    return null;
+  }
+  const feeMinor = (feeDecision as { feeMinor?: unknown }).feeMinor;
+  return typeof feeMinor === 'string' ? feeMinor : '0';
+}
+
+/**
+ * V1-COMMERCIAL-IMPLEMENTATION-02 — truthful fee-collection state annotation for an ALLOCATED
+ * commission decision. The fee BASIS amount is CALCULATED, but no fee revenue account family is
+ * provisioned in V1 (FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED), so the fee itself was never
+ * collected onto the ledger. The recorded commission is therefore an evidence decision only; the
+ * annotation states exactly why the fee base is "calculated-but-not-collected" — the unposted fee
+ * is never silently called "collected".
+ */
+export function commissionFeeCollectionStateOf(feeDecision: Record<string, unknown>): string {
+  const status = typeof feeDecision.status === 'string' ? feeDecision.status : 'NOT_CONFIGURED';
+  if (status === 'NOT_CONFIGURED') return 'FEE_NOT_CONFIGURED';
+  if (status === 'ZERO') return 'FEE_ZERO';
+  return 'FEE_CALCULATED_NOT_COLLECTED';
+}
+
+/**
+ * V1-COMMERCIAL-IMPLEMENTATION-02 — wraps an engine-produced ALLOCATED commission decision with the
+ * accounting-boundary annotations required because no COMMISSION accounting family (no
+ * COMMISSION-PAYABLE / COMMISSION-EXPENSE ledger accounts) is provisioned in V1:
+ *  - `payable: false` and explicit blockers — the decision is EVIDENCE, not a liability; nothing is
+ *    owed or owed-to-be-settled by the platform, and no journal legs are posted;
+ *  - `posting.journalLegsPosted: false` with the machine-readable blocker
+ *    `COMMISSION_ACCOUNTING_FAMILY_NOT_PROVISIONED` — no journal mutation ever happens here;
+ *  - `feeCollectionState` — whether the fee basis amount was actually collected (never, in V1);
+ *  - `commissionEvent` — the lifecycle event the decision is attached to ('TRANSACTION_COMPLETION',
+ *    or 'CASH_TO_CASH_INITIATION' for the single C2C commission event at initiation).
+ * Pure shape annotation over the open JSONB decision; the engine mechanics/beneficiaries change not at all.
+ */
+export function commissionAllocatedAtAccountingBoundary(
+  decision: CommissionDecisionSnapshot,
+  evidence: { feeCollectionState: string; commissionEvent: 'TRANSACTION_COMPLETION' | 'CASH_TO_CASH_INITIATION' },
+): CommissionDecisionSnapshot {
+  if (decision.status !== 'ALLOCATED') return decision;
+  return {
+    ...decision,
+    payable: false,
+    payableBlockers: [
+      'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+      'COMMISSION_ACCOUNTING_FAMILY_NOT_PROVISIONED',
+    ],
+    feeCollectionState: evidence.feeCollectionState,
+    commissionEvent: evidence.commissionEvent,
+    posting: {
+      journalLegsPosted: false,
+      reason: 'COMMISSION_ACCOUNTING_FAMILY_NOT_PROVISIONED',
+    },
+  };
+}
+
 export function rewardNone(): RewardDecisionSnapshot {
   return { status: 'NONE', grants: [], ruleRefs: [] };
 }

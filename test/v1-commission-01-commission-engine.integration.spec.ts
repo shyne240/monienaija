@@ -6,7 +6,9 @@
  * MACHINERY ONLY, ZERO CONFIGURED POLICY. Verified here:
  *   - migration 0073: commission_rules table, product FK → products.code, targeting FKs,
  *     CHECK coherence (model⇆params, single targeting dimension, min<=max, windows), identity uniqueness
- *   - ZERO seeded production rules; V1 flows untouched (no flow references the engine)
+ *   - ZERO seeded production rules (runtime wiring status asserted in test 02; the five
+ *     financial snapshot sites consume the engine via V1-COMMERCIAL-IMPLEMENTATION-02 — the
+ *     C2C claim path is deliberately NOT a commission event and must not import the engine)
  *   - deterministic calculation mechanics: FIXED, PERCENTAGE, PCT+MIN, PCT+MAX, PCT+MIN+MAX,
  *     FLAT+PCT, TIERED marginal brackets — TEST-ONLY synthetic rules only
  *   - calculation bases: PRINCIPAL, FEE (explicit fee evidence), NET; FEE/NET without
@@ -23,7 +25,8 @@
  *   - concurrent configuration safety (identity + optimistic version under races)
  *
  * NO commission is ever charged: this spec asserts wallet/ledger/limit tables stay empty
- * of commission effects and that no flow service references CommissionEngine.
+ * of commission effects. Runtime consumption of CommissionEngine is covered by
+ * test/v1-commission-runtime-wiring.integration.spec.ts (V1-COMMERCIAL-IMPLEMENTATION-02).
  */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -243,8 +246,10 @@ describe('V1-COMMISSION-01 Commission Engine foundation (real PG)', () => {
 
   // ── 2. zero seeded rules; flows untouched ──
 
-  it('02. ZERO production commission rules seeded, no flow references CommissionEngine, V1 snapshot default stays NONE', async () => {
+  it('02. ZERO production commission rules seeded; engine wired at the five snapshot sites (claim excluded); empty-registry answer stays the identical NONE shape', async () => {
     expect(await rowCount('commission_rules')).toBe(0);
+    // V1-COMMERCIAL-IMPLEMENTATION-02: the five financial snapshot sites consume the engine IN
+    // their SERIALIZABLE transactions via decideWithManager (see the per-service wiring comments).
     for (const flow of [
       'src/agent/agent-financial-execution.service.ts',
       'src/agent/agent-cash-to-cash.service.ts',
@@ -253,10 +258,30 @@ describe('V1-COMMISSION-01 Commission Engine foundation (real PG)', () => {
       'src/transfer/transfer.service.ts',
     ]) {
       const src = readFileSync(join(__dirname, '..', flow), 'utf8');
-      expect(src.includes('CommissionEngine')).toBe(false);
+      expect(src.includes('CommissionEngine')).toBe(true);
+      expect(src.includes('decideWithManager')).toBe(true);
+    }
+    // ...but NO flow may bypass the engine by raw-SQL'ing the rule table directly:
+    for (const flow of [
+      'src/agent/agent-financial-execution.service.ts',
+      'src/agent/agent-cash-to-cash.service.ts',
+      'src/agent/agent-funding.service.ts',
+      'src/customer-funding/customer-funding.service.ts',
+      'src/transfer/transfer.service.ts',
+    ]) {
+      const src = readFileSync(join(__dirname, '..', flow), 'utf8');
       expect(src.includes('commission_rules')).toBe(false);
     }
-    // the engine with an EMPTY registry returns the identical NONE shape the flows use today
+    // The C2C CLAIM path is deliberately EXCLUDED: one Cash→Cash transfer = ONE commission event
+    // (initiation). The claim is customer-side (no acting agent) so the engine must NOT be
+    // imported, injected or invoked there (structural double-pay prevention).
+    const claimSrc = readFileSync(join(__dirname, '..', 'src/agent/agent-cash-to-cash-claim.service.ts'), 'utf8');
+    expect(claimSrc.includes("from '../commission/commission.engine'")).toBe(false);
+    expect(claimSrc.includes("from '../commission/")).toBe(false);
+    expect(claimSrc.includes('commissionEngine?')).toBe(false);
+    expect(claimSrc.includes('decideWithManager')).toBe(false);
+    // The engine with an EMPTY registry returns the identical NONE shape the flows recorded
+    // before wiring — wiring cannot change behavior when nothing is configured.
     const decision = await decide();
     expect(decision).toEqual(commissionNone());
   });
