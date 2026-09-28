@@ -89,6 +89,25 @@ export const environmentSchema = z
     DB_PASSWORD: z.string().min(1),
     DB_SSL: booleanFromEnvironment.default(false),
     DB_SSL_REJECT_UNAUTHORIZED: booleanFromEnvironment.default(true),
+    // SMS-V1-01 — provider-neutral SMS production configuration.
+    // Provider selection: 'console' (default, keeps dev/test provider-neutral) or 'robase'.
+    NOTIFICATION_SMS_PROVIDER: z.enum(['console', 'robase']).default('console'),
+    // Robase verified contract: POST {base}/v1/sms/send with Bearer robe_* key (docs.robase.dev).
+    ROBASE_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.robase.dev'),
+    ROBASE_API_KEY: optionalEnvironmentSecret,
+    ROBASE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(10_000),
+    // Background delivery worker (provider-neutral). Disabled by default; enable per environment.
+    NOTIFICATION_WORKER_ENABLED: booleanFromEnvironment.default(false),
+    NOTIFICATION_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(500)
+      .max(60_000)
+      .default(5_000),
+    NOTIFICATION_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+    // Bounded SMS retry semantics (delivery level, never reversed into finance).
+    SMS_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+    SMS_RETRY_BASE_DELAY_SECONDS: z.coerce.number().int().min(5).max(86_400).default(60),
   })
   .superRefine((config, context) => {
     if (
@@ -109,6 +128,24 @@ export const environmentSchema = z
         path: ['A6_PARTNER_ENVIRONMENT'],
         message: 'Production partner configuration requires NODE_ENV=production',
       });
+    }
+
+    // SMS-V1-01: when the Robase provider is selected, credentials must be present at startup.
+    // Safety property: fail configuration validation fast instead of silently degrading to no delivery.
+    if (config.NOTIFICATION_SMS_PROVIDER === 'robase') {
+      if (!config.ROBASE_API_KEY) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ROBASE_API_KEY'],
+          message: 'ROBASE_API_KEY is required when NOTIFICATION_SMS_PROVIDER=robase',
+        });
+      } else if (!config.ROBASE_API_KEY.startsWith('robe_')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ROBASE_API_KEY'],
+          message: 'ROBASE_API_KEY must be a Robase live key (robe_ prefix, see docs.robase.dev)',
+        });
+      }
     }
 
     if (!config.A6_PARTNER_ENABLED) return;

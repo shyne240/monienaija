@@ -1497,7 +1497,8 @@ export const CAPABILITY_SEED: CapabilityCreateInput[] = [
     capabilityCode: 'NOTIFICATION_DELIVERY_ARCHITECTURE',
     domain: CapabilityDomain.NOTIFICATION,
     name: 'Notification delivery architecture',
-    description: 'Outbox→Dispatcher→Console/Test→notification_deliveries PENDING/SENT/FAILED/SKIPPED, provider-neutral',
+    description:
+      'Outbox→Dispatcher→adapter(Console/Test/Robase)→notification_deliveries PENDING/SENT/FAILED/SKIPPED, provider-neutral, background worker + bounded SMS retry + SMS opt-out',
     productScope: CapabilityProductScope.V1,
     lifecycle: CapabilityLifecycle.FULLY_ENABLED,
     backendStatus: CapabilityBackendStatus.BACKEND_IMPLEMENTED,
@@ -1508,15 +1509,28 @@ export const CAPABILITY_SEED: CapabilityCreateInput[] = [
     enabled: true,
     configurationStatus: CapabilityConfigurationStatus.CONFIGURED,
     dependencies: ['AUDIT_OUTBOX'],
-    implementationReferences: ['src/notification/notification-dispatcher.service.ts', 'src/notification/notification-provider.interface.ts'],
+    implementationReferences: [
+      'src/notification/notification-dispatcher.service.ts',
+      'src/notification/notification-provider.interface.ts',
+      'src/notification/robase-notification-provider.ts',
+      'src/notification/notification-worker.service.ts',
+    ],
     migrationReferences: ['CreateNotificationDeliveries'],
-    testReferences: ['test/v1-005-notification-delivery.integration.spec.ts'],
-    documentationReferences: ['docs/V1-005-VERIFICATION-REPORT.md'],
-    version: 1,
+    testReferences: [
+      'test/v1-005-notification-delivery.integration.spec.ts',
+      'test/sms-v1-01.integration.spec.ts',
+      'test/robase-notification-provider.unit.spec.ts',
+    ],
+    documentationReferences: [
+      'docs/V1-005-VERIFICATION-REPORT.md',
+      'docs/SMS-V1-VERIFICATION-REPORT.md',
+    ],
+    version: 2,
     owner: 'Notification',
     blockerType: CapabilityBlockerType.NONE,
     blockerDescription: null,
-    notes: null,
+    notes:
+      'SMS-V1-01: backend implemented + worker operational. Remaining ops dependencies: Robase production credentials (ROBASE_API_KEY env), NOTIFICATION_SMS_PROVIDER=robase + NOTIFICATION_WORKER_ENABLED=true activation, workspace sender identity/registration at provider.',
   },
   {
     capabilityCode: 'NOTIFICATION_INBOX',

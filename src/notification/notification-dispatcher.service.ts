@@ -148,12 +148,14 @@ export class NotificationDispatcherService {
     const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     for (const intent of intents) {
-      // Resolve destination per recipient/channel
+      // Resolve destination per recipient/channel (SMS-V1-01: eventType drives the
+      // security-critical opt-out bypass in the channel resolver)
       const resolved = await this.channelResolver.resolve(
         intent.recipientType,
         intent.recipientId,
         intent.channel,
         queryRunner,
+        eventType,
       );
 
       const destination = resolved.destination;

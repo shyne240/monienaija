@@ -2,6 +2,8 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
+
 export interface ResolvedDestination {
   channel: 'SMS' | 'PUSH';
   destination: string | null; // null means dependency missing (e.g. Push token absent)
@@ -17,13 +19,18 @@ export class NotificationChannelResolverService {
    * Customer SMS: authoritative CustomerContactMethod PHONE normalizedValue (is_primary preferred).
    * Agent SMS: no authoritative phone — documented dependency (SKIPPED).
    * Push: requires device-token model — not present V1 — return dependency missing (SKIPPED).
-   * Preferences: notification_push_enabled respected; notification_sms_enabled currently default true (V1-016 defer).
+   * Preferences: notification_push_enabled respected; notification_sms_enabled respected as
+   *   SMS_OPT_OUT (SMS-V1-01) — except for security-critical events (OTP/authorization class),
+   *   which bypass the opt-out by design (see notification-security.constants.ts).
+   * `eventType` is optional and backward-compatible: direct resolver callers that omit it get
+   *   the preference check applied (fail-safe toward honoring opt-out).
    */
   async resolve(
     recipientType: 'CUSTOMER' | 'AGENT',
     recipientId: string,
     channel: 'SMS' | 'PUSH',
     manager?: { query: (sql: string, params: unknown[]) => Promise<unknown> },
+    eventType?: string | null,
   ): Promise<ResolvedDestination> {
     const ds = (manager as unknown as DataSource) ?? this.dataSource;
     const query = (sql: string, params: unknown[]) => (ds as any).query(sql, params) as Promise<Array<any>>;
@@ -52,6 +59,22 @@ export class NotificationChannelResolverService {
 
     // SMS
     if (recipientType === 'CUSTOMER') {
+      // SMS-V1-01: honor the authoritative per-channel SMS preference BEFORE any phone lookup.
+      // Security-critical (OTP/authorization) events bypass this check — customers must not be
+      // able to opt out of messages required to authorize their own operations.
+      if (!isSecurityCriticalNotificationEvent(eventType)) {
+        try {
+          const prefRows = await query(
+            `SELECT notification_sms_enabled AS sms_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
+            [recipientId],
+          );
+          if (prefRows[0]?.sms_enabled === false) {
+            return { channel: 'SMS', destination: null, reason: 'SMS_OPT_OUT' };
+          }
+        } catch {
+          // Preference lookup failure must not block delivery of security/transactional messages.
+        }
+      }
       // Reuse authoritative CustomerContactMethod PHONE
       const rows = await query(
         `SELECT normalized_value FROM customer_contact_methods
