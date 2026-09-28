@@ -549,9 +549,15 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const snapshots = await snapshotsFor({ journalId: result.journalId });
     expect(snapshots).toHaveLength(1);
     const fee = snapshots[0].fee_decision;
-    expect(fee.status).toBe('NOT_CONFIGURED'); // still NOT_CONFIGURED — charging not enabled
-    expect(fee.feeMinor).toBe('0');
-    expect(fee.totalMinor).toBe('18000');
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rule now computes: floor(18000·15/10000)=27 + 250
+    expect(fee.status).toBe('APPLIED');
+    expect(fee.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(fee.feeMinor).toBe('277');
+    expect(fee.totalMinor).toBe('18277');
+    expect(fee.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — journals stay principal-only (result.feeMinor '0' above)
     expect(fee.ruleRefs).toHaveLength(1);
     expect(fee.ruleRefs[0].ruleId).toBe(rule.id);
     expect(fee.ruleRefs[0].ruleVersion).toBe(1);
@@ -563,6 +569,12 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     expect(lines).toHaveLength(2);
     for (const l of lines) expect(l.amount_minor).toBe('18000');
     expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('32000');
+
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — the seeded TEST rule now has runtime effect on ALL
+    // subsequent CASH_TO_CASH operations in this suite; remove it so the remaining
+    // NOT_CONFIGURED-era assertion blocks stay in their authored world. Test 12 re-seeds its
+    // own rule locally.
+    await dataSource.query(`DELETE FROM fee_rules WHERE id=$1`, [syntheticRuleId]);
   });
 
   // ════════════════════ CLAIM ════════════════════
@@ -791,8 +803,17 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     expect(transferRows[0].status).toBe('UNCLAIMED');
   });
 
-  it('12. TEST-ONLY synthetic fee rule: claim captures the same ruleId/version/parameters without charging', async () => {
-    expect(syntheticRuleId).not.toBeNull(); // created in test 06 — single CASH_TO_CASH rule applies to both operations
+  it('12. TEST-ONLY synthetic fee rule: claim replicates the same ruleId/version/parameters (now with computed decision)', async () => {
+    const rule12 = await feeRuleRegistry.createRule(
+      {
+        productCode: 'CASH_TO_CASH', currency: 'NGN',
+        flatFeeMinor: '250', percentageBps: 15,
+        minimumFeeMinor: null, maximumFeeMinor: null, vatBps: null,
+        effectiveFrom: new Date(Date.now() - 86400000), priority: 0, isActive: true,
+      },
+      'test',
+    );
+    syntheticRuleId = rule12.id; // same shape as test 06's rule; seeded locally for isolation
     const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     await fundAgent(agentWallet.ledgerAccountId, '60000');
     const phone = newPhone();
@@ -815,9 +836,16 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     const snaps = await snapshotsFor({ journalId: claim.journalId });
     expect(snaps).toHaveLength(1);
     const fee = snaps[0].fee_decision;
-    expect(fee.status).toBe('NOT_CONFIGURED'); // nothing charged on the claim either
-    expect(fee.feeMinor).toBe('0');
-    expect(fee.totalMinor).toBe('11000');
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — claim replicates the SAME computed decision:
+    // floor(11000·15/10000)=16 + 250 = 266 (identical to initiation, rule-identity preserved)
+    expect(fee.status).toBe('APPLIED');
+    expect(fee.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(fee.feeMinor).toBe('266');
+    expect(fee.totalMinor).toBe('11266');
+    expect(fee.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — claim journal below stays principal-only
     expect(fee.ruleRefs).toHaveLength(1);
     expect(fee.ruleRefs[0].ruleId).toBe(syntheticRuleId);
     expect(fee.ruleRefs[0].ruleVersion).toBe(1);

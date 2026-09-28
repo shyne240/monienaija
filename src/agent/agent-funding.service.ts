@@ -15,6 +15,7 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
@@ -97,6 +98,10 @@ export class AgentFundingService {
     private readonly feeRuleResolverService?: FeeRuleResolverService,
     @Optional()
     private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — single fee computation authority (optional; absent →
+    // legacy evidence shape for manual-construction unit tests).
+    @Optional()
+    private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
   ) {}
 
   async fund(input: FundingInput): Promise<FundingResult> {
@@ -478,30 +483,46 @@ export class AgentFundingService {
       at: decisionAt,
     });
 
-    const feeDecision: Record<string, unknown> = {
-      ...feeNotConfigured(ctx.currency, ctx.amountMinor),
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
+    // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
+    let feeDecision: Record<string, unknown>;
+    if (this.feeRuleCalculatorService) {
+      feeDecision = {
+        ...this.feeRuleCalculatorService.compute({
+          resolution,
+          principalAmountMinor: ctx.amountMinor,
+          currency: ctx.currency,
+        }),
       // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
       agentId: ctx.agentId,
       aggregatorId: ctx.aggregatorId,
-    };
-    if (resolution.status === 'RESOLVED' && resolution.rule) {
-      feeDecision.ruleRefs = [
-        {
-          ruleId: resolution.rule.ruleId,
-          ruleVersion: resolution.rule.ruleVersion,
-          flatFeeMinor: resolution.rule.flatFeeMinor,
-          percentageBps: resolution.rule.percentageBps,
-          minimumFeeMinor: resolution.rule.minimumFeeMinor,
-          maximumFeeMinor: resolution.rule.maximumFeeMinor,
-          vatBps: resolution.rule.vatBps,
-          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
-          priority: resolution.rule.priority,
-        },
-      ];
-    } else if (resolution.status === 'AMBIGUOUS') {
-      feeDecision.resolutionStatus = 'AMBIGUOUS';
-      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      };
+    } else {
+      feeDecision = {
+        ...feeNotConfigured(ctx.currency, ctx.amountMinor),
+        // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
+        agentId: ctx.agentId,
+        aggregatorId: ctx.aggregatorId,
+      };
+      if (resolution.status === 'RESOLVED' && resolution.rule) {
+        feeDecision.ruleRefs = [
+          {
+            ruleId: resolution.rule.ruleId,
+            ruleVersion: resolution.rule.ruleVersion,
+            flatFeeMinor: resolution.rule.flatFeeMinor,
+            percentageBps: resolution.rule.percentageBps,
+            minimumFeeMinor: resolution.rule.minimumFeeMinor,
+            maximumFeeMinor: resolution.rule.maximumFeeMinor,
+            vatBps: resolution.rule.vatBps,
+            effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            priority: resolution.rule.priority,
+          },
+        ];
+      } else if (resolution.status === 'AMBIGUOUS') {
+        feeDecision.resolutionStatus = 'AMBIGUOUS';
+        feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      }
     }
 
     const limitDecision = ctx.limitOutcome

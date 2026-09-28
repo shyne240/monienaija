@@ -862,8 +862,8 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074)$/);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075']).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075)$/);
     const supportTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_tickets'`);
     expect(supportTable.length).toBe(1);
     const messageTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_ticket_messages'`);

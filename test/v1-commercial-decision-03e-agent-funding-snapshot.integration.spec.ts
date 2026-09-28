@@ -553,9 +553,17 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const fundSnaps = await snapshotsFor({ journalId: fund.journalId });
     expect(fundSnaps).toHaveLength(1);
     const ff = fundSnaps[0].fee_decision;
-    expect(ff.status).toBe('NOT_CONFIGURED'); // still NOT_CONFIGURED — charging not enabled
-    expect(ff.feeMinor).toBe('0');
-    expect(ff.totalMinor).toBe('18000');
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rules now compute (engine honors configured
+    // rules; AGENT_FUNDING/DEFUNDING stay FREE in production only because no rule is seeded):
+    // fund: floor(18000·5/10000)=9 + 100 = 109
+    expect(ff.status).toBe('APPLIED');
+    expect(ff.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(ff.feeMinor).toBe('109');
+    expect(ff.totalMinor).toBe('18109');
+    expect(ff.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — journals below stay principal-only
     expect(ff.ruleRefs).toHaveLength(1);
     expect(ff.ruleRefs[0].ruleId).toBe(fundRule.id);
     expect(ff.ruleRefs[0].ruleVersion).toBe(1);
@@ -565,9 +573,15 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const defundSnaps = await snapshotsFor({ journalId: defund.journalId });
     expect(defundSnaps).toHaveLength(1);
     const df = defundSnaps[0].fee_decision;
-    expect(df.status).toBe('NOT_CONFIGURED');
-    expect(df.feeMinor).toBe('0');
-    expect(df.totalMinor).toBe('7000');
+    // defund: floor(7000·8/10000)=5 + 150 = 155
+    expect(df.status).toBe('APPLIED');
+    expect(df.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(df.feeMinor).toBe('155');
+    expect(df.totalMinor).toBe('7155');
+    expect(df.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    });
     expect(df.ruleRefs).toHaveLength(1);
     expect(df.ruleRefs[0].ruleId).toBe(defundRule.id);
     expect(df.ruleRefs[0].flatFeeMinor).toBe('150');

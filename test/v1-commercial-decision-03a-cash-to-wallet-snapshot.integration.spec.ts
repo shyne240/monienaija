@@ -574,9 +574,15 @@ describe('V1-COMMERCIAL-DECISION-03A CASH_TO_WALLET snapshot wiring (real PG)', 
     const snapshots = await snapshotsFor({ journalId: result.journalId });
     expect(snapshots).toHaveLength(1);
     const fee = snapshots[0].fee_decision;
-    expect(fee.status).toBe('NOT_CONFIGURED'); // still NOT_CONFIGURED — charging is not enabled
-    expect(fee.feeMinor).toBe('0');
-    expect(fee.totalMinor).toBe('18000');
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rule now computes: floor(18000·5/10000)=9 + 150
+    expect(fee.status).toBe('APPLIED');
+    expect(fee.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(fee.feeMinor).toBe('159');
+    expect(fee.totalMinor).toBe('18159');
+    expect(fee.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — journal below stays principal-only
     expect(fee.ruleRefs).toHaveLength(1);
     expect(fee.ruleRefs[0].ruleId).toBe(rule.id);
     expect(fee.ruleRefs[0].ruleVersion).toBe(1);

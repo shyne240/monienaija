@@ -427,11 +427,21 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     const snapshots: Array<any> = await dataSource.query(`SELECT fee_decision FROM commercial_decision_snapshots`);
     expect(snapshots).toHaveLength(1);
     const fee = snapshots[0].fee_decision;
-    // fee is STILL not charged (V1 fee-free): status stays NOT_CONFIGURED, zero amounts
-    expect(fee.status).toBe('NOT_CONFIGURED');
-    expect(fee.feeMinor).toBe('0');
-    expect(fee.totalMinor).toBe('90000');
-    // ...but the resolved rule evidence is captured exactly
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rule is now COMPUTED authoritatively:
+    // fee = floor(90000·10bps/10000) + 250 = 90 + 250 = 340; min/max inert here
+    expect(fee.status).toBe('APPLIED');
+    expect(fee.feeMinor).toBe('340');
+    expect(fee.totalMinor).toBe('90340');
+    expect(fee.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(fee.percentageFeeComponentMinor).toBe('90');
+    expect(fee.flatFeeComponentMinor).toBe('250');
+    expect(fee.minimumApplied).toBe(false);
+    expect(fee.maximumApplied).toBe(false);
+    expect(fee.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — journal below stays principal-only
+    // ...and the resolved rule evidence is still captured exactly
     expect(fee.ruleRefs).toHaveLength(1);
     expect(fee.ruleRefs[0].ruleId).toBe(rule.id);
     expect(fee.ruleRefs[0].ruleVersion).toBe(1);
@@ -440,7 +450,8 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     expect(fee.ruleRefs[0].minimumFeeMinor).toBe('100');
     expect(fee.ruleRefs[0].maximumFeeMinor).toBe('50000');
 
-    // financial transaction UNCHANGED: exactly two lines, principal only
+    // financial transaction UNCHANGED: exactly two lines, principal only (accounting boundary —
+    // the computed fee is a decision-layer fact; no fee/vat leg was posted)
     const lines: Array<any> = await dataSource.query(
       `SELECT direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`,
       [res.view.journalId],

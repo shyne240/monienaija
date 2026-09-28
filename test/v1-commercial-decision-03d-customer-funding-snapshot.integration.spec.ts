@@ -434,9 +434,17 @@ describe('V1-COMMERCIAL-DECISION-03D CUSTOMER_FUNDING snapshot wiring (real PG)'
     const snapshots = await snapshotsFor({ journalId: approved.journalId });
     expect(snapshots).toHaveLength(1);
     const fee = snapshots[0].fee_decision;
-    expect(fee.status).toBe('NOT_CONFIGURED'); // still NOT_CONFIGURED — charging not enabled
-    expect(fee.feeMinor).toBe('0');
-    expect(fee.totalMinor).toBe('18000');
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rule now computes: floor(18000·20/10000)=36 + 300.
+    // (CUSTOMER_FUNDING stays FREE in production only because NO rule is ever seeded there;
+    // this test proves the engine honors an explicitly configured rule for the product.)
+    expect(fee.status).toBe('APPLIED');
+    expect(fee.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
+    expect(fee.feeMinor).toBe('336');
+    expect(fee.totalMinor).toBe('18336');
+    expect(fee.posting).toEqual({
+      journalLegsPosted: false,
+      reason: 'FEE_REVENUE_ACCOUNT_FAMILY_NOT_PROVISIONED',
+    }); // accounting boundary — journal below stays principal-only
     expect(fee.ruleRefs).toHaveLength(1);
     expect(fee.ruleRefs[0].ruleId).toBe(rule.id);
     expect(fee.ruleRefs[0].ruleVersion).toBe(1);

@@ -152,11 +152,12 @@ export class CustomerTransactionHistoryService {
 
     if (shouldInclude('WALLET_TRANSFER') && walletIds.length > 0) {
       const rows: Array<any> = await this.dataSource.query(
-        `SELECT id::text as id, 'WALLET_TRANSFER'::text as type, status::text as status, amount_minor::text as amount_minor, currency::text as currency, created_at, completed_at, reference::text as reference, narration::text as narration, source_wallet_id::text as source_wallet_id, destination_wallet_id::text as destination_wallet_id, failure_code::text as failure_code, failure_message::text as failure_message FROM transfers WHERE source_wallet_id = ANY($1::uuid[]) OR destination_wallet_id = ANY($1::uuid[]) ORDER BY created_at DESC, id DESC`,
+        `SELECT id::text as id, 'WALLET_TRANSFER'::text as type, status::text as status, amount_minor::text as amount_minor, currency::text as currency, fee_minor::text as fee_minor, vat_minor::text as vat_minor, created_at, completed_at, reference::text as reference, narration::text as narration, source_wallet_id::text as source_wallet_id, destination_wallet_id::text as destination_wallet_id, failure_code::text as failure_code, failure_message::text as failure_message FROM transfers WHERE source_wallet_id = ANY($1::uuid[]) OR destination_wallet_id = ANY($1::uuid[]) ORDER BY created_at DESC, id DESC`,
         [walletIds],
       );
       for (const r of rows) {
-        r.fee_minor = '0';
+        // V1-COMMERCIAL-IMPLEMENTATION-01 — real applied-fee column (stays '0' while journals
+        // remain principal-only at the accounting boundary; snapshot carries the computed fee).
         allRows.push(r);
       }
     }

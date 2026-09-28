@@ -23,6 +23,7 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
@@ -86,6 +87,10 @@ export class TransferService {
     private readonly feeRuleResolverService?: FeeRuleResolverService,
     @Optional()
     private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — single fee computation authority (optional; absent →
+    // legacy evidence shape for manual-construction unit tests).
+    @Optional()
+    private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -472,25 +477,39 @@ export class TransferService {
       at: decisionAt,
     });
 
-    const feeDecision: Record<string, unknown> = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
-    if (resolution.status === 'RESOLVED' && resolution.rule) {
-      feeDecision.ruleRefs = [
-        {
-          ruleId: resolution.rule.ruleId,
-          ruleVersion: resolution.rule.ruleVersion,
-          flatFeeMinor: resolution.rule.flatFeeMinor,
-          percentageBps: resolution.rule.percentageBps,
-          minimumFeeMinor: resolution.rule.minimumFeeMinor,
-          maximumFeeMinor: resolution.rule.maximumFeeMinor,
-          vatBps: resolution.rule.vatBps,
-          effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-          effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
-          priority: resolution.rule.priority,
-        },
-      ];
-    } else if (resolution.status === 'AMBIGUOUS') {
-      feeDecision.resolutionStatus = 'AMBIGUOUS';
-      feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
+    // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
+    let feeDecision: Record<string, unknown>;
+    if (this.feeRuleCalculatorService) {
+      feeDecision = {
+        ...this.feeRuleCalculatorService.compute({
+          resolution,
+          principalAmountMinor: amountMinor,
+          currency: ctx.command.currency,
+        }),
+
+      };
+    } else {
+      feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
+      if (resolution.status === 'RESOLVED' && resolution.rule) {
+        feeDecision.ruleRefs = [
+          {
+            ruleId: resolution.rule.ruleId,
+            ruleVersion: resolution.rule.ruleVersion,
+            flatFeeMinor: resolution.rule.flatFeeMinor,
+            percentageBps: resolution.rule.percentageBps,
+            minimumFeeMinor: resolution.rule.minimumFeeMinor,
+            maximumFeeMinor: resolution.rule.maximumFeeMinor,
+            vatBps: resolution.rule.vatBps,
+            effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            priority: resolution.rule.priority,
+          },
+        ];
+      } else if (resolution.status === 'AMBIGUOUS') {
+        feeDecision.resolutionStatus = 'AMBIGUOUS';
+        feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      }
     }
 
     const limitDecision = ctx.limitOutcome
