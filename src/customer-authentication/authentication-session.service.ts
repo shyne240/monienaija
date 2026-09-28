@@ -6,6 +6,8 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import type { AuthenticationExecutionResult } from './authentication-execution.service';
 import { AuditService } from '../operations/audit.service';
+import { Customer } from '../customer/customer.entity';
+import { CustomerStatus } from '../customer/customer.enums';
 import { AuthenticationSession } from './authentication-session.entity';
 import { AuthenticationSessionStatus } from './authentication-session.enums';
 import type {
@@ -36,6 +38,8 @@ export class AuthenticationSessionService {
     private readonly sessionRepository: Repository<AuthenticationSession>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    @InjectRepository(Customer)
+    private readonly customerRepository: Repository<Customer>,
   ) {}
 
   async issue(command: IssueAuthenticationSessionCommand): Promise<AuthenticationSessionToken> {
@@ -113,6 +117,17 @@ export class AuthenticationSessionService {
         await this.expire(session, now);
       }
       return { valid: false, reason: 'EXPIRED' };
+    }
+
+    // Session/status binding (S-FIX-01, audit contradiction C-4): the customer's CURRENT
+    // lifecycle status is authoritative at request time. A cryptographically valid session
+    // is not sufficient when the customer is no longer ACTIVE (DRAFT/SUSPENDED/CLOSED).
+    // CLOSED customers are soft-deleted (deletedAt) and therefore not found.
+    const customer = await this.customerRepository.findOne({
+      where: { id: session.customerId },
+    });
+    if (!customer || customer.status !== CustomerStatus.ACTIVE) {
+      return { valid: false, reason: 'CUSTOMER_STATUS_INELIGIBLE' };
     }
 
     session.lastSeenAt = now;

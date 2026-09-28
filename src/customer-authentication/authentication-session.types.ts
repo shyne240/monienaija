@@ -67,5 +67,6 @@ export interface AuthenticationSessionValidation {
     | 'NOT_FOUND'
     | 'REVOKED'
     | 'EXPIRED'
-    | 'WRONG_AUDIENCE';
+    | 'WRONG_AUDIENCE'
+    | 'CUSTOMER_STATUS_INELIGIBLE';
 }

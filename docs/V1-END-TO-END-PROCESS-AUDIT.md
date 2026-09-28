@@ -764,6 +764,13 @@ session-issuing surface — by prior design, not defect.
 | C-7 | Notification deliveries "SENT" semantics | §16 provider reality (Console/Test) | SENT = console/test-write, not carrier delivery | Misread as real SMS delivery | None (documented); deployment config pending |
 | C-8 | Old docs: "approve = OPERATOR / reject = PRIVILEGED" (H-10 §8 phrasing) | Controller accepts all 4 workforce types for both | Same as C-2 (consolidated) | — | covered by C-2 |
 
+**Remediation status (post-audit, 2026-09-28):** C-3 and C-4 are **RESOLVED** by
+S-FIX-01 (see `docs/S-FIX-01-VERIFICATION-REPORT.md`): `PATCH /api/v1/customers/:id` is
+now workforce-session-gated with a controller-level workforce assertion (self-activation
+closed), and customer login/session validation is bound to the current `customers.status`
+(DRAFT/SUSPENDED/CLOSED can neither log in nor hold valid sessions). C-1, C-2/C-8, C-5,
+C-6, C-7 remain as recorded above (out of S-FIX-01 scope).
+
 ---
 
 ## 23. Product Decisions Required
@@ -786,12 +793,12 @@ session-issuing surface — by prior design, not defect.
 
 ## 24. Security Decisions Required
 
-1. **Customer lifecycle actor narrowing (S)** — remove `CUSTOMER` self from lifecycle PATCH (or add controller guard); until decided, self-activation is possible. *(C-3)*
+1. **Customer lifecycle actor narrowing (S)** — remove `CUSTOMER` self from lifecycle PATCH (or add controller guard); until decided, self-activation is possible. *(C-3)* — **RESOLVED by S-FIX-01** (route gated to WORKFORCE_SESSION + controller workforce assertion; workforce is the exclusive lifecycle actor).
 2. **Role-key enforcement depth (S)** — wire `FINANCE_PREPARER/CONTROLLER` (+future roles) into funding + other financial routes, or accept principal-type-only enforcement and amend docs. *(C-2)*
 3. **Privileged-approval consumption breadth (S)** — decide which dangerous actions REQUIRE approval tickets. *(§21-62)*
 4. **MFA requirement mapping (S)** — which actors/actions require which assurance level. *(§21-63)*
 5. **Workforce suspension semantics (S)** — lifecycle API + session revocation on suspension (evidence insufficient today). *(§21-65)*
-6. **Session/customer-status binding (S)** — bind login/session validity to `customers.status`; revoke on suspension. *(C-4)*
+6. **Session/customer-status binding (S)** — bind login/session validity to `customers.status`; revoke on suspension. *(C-4)* — **RESOLVED by S-FIX-01** via request-time status binding (login denied + sessions invalid unless `status = ACTIVE`; reactivation restores unexpired sessions — see verification report §7 for the derived semantics).
 
 ## 25. Accounting Decisions Required
 

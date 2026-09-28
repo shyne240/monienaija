@@ -4,6 +4,7 @@ import type { AuthenticationExecutionResult } from '../src/customer-authenticati
 import type { AuthenticationSession } from '../src/customer-authentication/authentication-session.entity';
 import { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import { AuthenticationSessionStatus } from '../src/customer-authentication/authentication-session.enums';
+import type { Customer } from '../src/customer/customer.entity';
 import type { AuditService } from '../src/operations/audit.service';
 
 class MemoryRepository<T extends ObjectLiteral> {
@@ -64,15 +65,32 @@ const authentication: AuthenticationExecutionResult = {
   accountLocked: false,
 };
 
-function fixture() {
+function fixture(options?: { customerStatus?: string; customerMissing?: boolean }) {
   const repository = new MemoryRepository<AuthenticationSession>();
   const auditService = { record: jest.fn().mockResolvedValue({}) };
+  // S-FIX-01: validate() now binds session validity to the customer's CURRENT lifecycle
+  // status. Default fixture customer is ACTIVE; tests override the status to assert
+  // ineligibility. CLOSED customers are soft-deleted (deletedAt) → findOne returns null.
+  const customerRepository = {
+    findOne: jest.fn(() =>
+      Promise.resolve(
+        options?.customerMissing
+          ? null
+          : ({
+              id: authentication.customerId,
+              status: options?.customerStatus ?? 'ACTIVE',
+              deletedAt: null,
+            } as unknown as Customer),
+      ),
+    ),
+  };
   const service = new AuthenticationSessionService(
     repository as unknown as Repository<AuthenticationSession>,
     new MemoryDataSource(new MemoryManager(repository)) as unknown as DataSource,
     auditService as unknown as AuditService,
+    customerRepository as unknown as Repository<Customer>,
   );
-  return { service, repository, auditService };
+  return { service, repository, auditService, customerRepository };
 }
 
 describe('AuthenticationSessionService', () => {
@@ -185,5 +203,32 @@ describe('AuthenticationSessionService', () => {
     await expect(
       testFixture.service.validate({ token: rotated.accessToken }),
     ).resolves.toMatchObject({ valid: true });
+  });
+
+  // S-FIX-01 (audit C-4): current customer lifecycle status is authoritative at request
+  // time; a cryptographically valid session alone is not sufficient.
+  it('binds session validity to the current customer lifecycle status', async () => {
+    const suspended = fixture({ customerStatus: 'SUSPENDED' });
+    const suspendedIssued = await suspended.service.issue({
+      authentication,
+      actor: 'a2-session',
+    });
+    await expect(
+      suspended.service.validate({ token: suspendedIssued.accessToken }),
+    ).resolves.toEqual({ valid: false, reason: 'CUSTOMER_STATUS_INELIGIBLE' });
+
+    const draft = fixture({ customerStatus: 'DRAFT' });
+    const draftIssued = await draft.service.issue({ authentication, actor: 'a2-session' });
+    await expect(draft.service.validate({ token: draftIssued.accessToken })).resolves.toEqual({
+      valid: false,
+      reason: 'CUSTOMER_STATUS_INELIGIBLE',
+    });
+
+    const closed = fixture({ customerMissing: true }); // CLOSED customers are soft-deleted
+    const closedIssued = await closed.service.issue({ authentication, actor: 'a2-session' });
+    await expect(closed.service.validate({ token: closedIssued.accessToken })).resolves.toEqual({
+      valid: false,
+      reason: 'CUSTOMER_STATUS_INELIGIBLE',
+    });
   });
 });

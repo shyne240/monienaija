@@ -96,6 +96,27 @@ export class RoutePolicyRegistry {
         },
       };
     }
+    // Customer lifecycle transitions (PATCH /customers/:id) are privileged workforce
+    // operations (S-FIX-01, audit contradiction C-3). UpdateCustomerDto carries lifecycle
+    // status only: a CUSTOMER SELF principal must not self-activate / self-unsuspend /
+    // self-close merely by supplying its own customer id. Workforce session required;
+    // Customer/Agent bearer tokens are denied (authenticated principal cross-check).
+    // Self-service remains available under /customers/me/* (checked above).
+    if (method === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-lifecycle',
+        policy: {
+          resourceType: 'customer-lifecycle',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {

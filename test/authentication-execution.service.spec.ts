@@ -51,9 +51,15 @@ function credential(overrides: Partial<CustomerAuthenticationCredential> = {}) {
   } as CustomerAuthenticationCredential;
 }
 
-function fixture(credentialValue = credential()) {
+// S-FIX-01: authenticate() now binds session issuance to the customer's CURRENT
+// lifecycle status; tests override `customerStatus` to exercise ineligible states.
+function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
   const customerRepository = {
-    findOne: jest.fn().mockResolvedValue({ id: CUSTOMER_ID, deletedAt: null }),
+    findOne: jest.fn().mockResolvedValue({
+      id: CUSTOMER_ID,
+      status: customerStatus,
+      deletedAt: null,
+    }),
   };
   const credentialRepository = {
     findOne: jest.fn().mockResolvedValue(credentialValue),
@@ -205,5 +211,31 @@ describe('AuthenticationExecutionService', () => {
       testFixture.customerAuthenticationService.recordFailedAuthentication,
     ).not.toHaveBeenCalled();
     expect(testFixture.auditService.record).not.toHaveBeenCalled();
+  });
+
+  // S-FIX-01 (audit C-4): a verified credential must not produce a session while the
+  // customer's CURRENT lifecycle status makes the principal ineligible, and the denial
+  // must not consume failed-authentication (lockout) budget.
+  it('refuses session-bound authentication for DRAFT/SUSPENDED customers after password verification', async () => {
+    for (const status of ['DRAFT', 'SUSPENDED']) {
+      const testFixture = fixture(credential(), status);
+      const result = await testFixture.service.authenticate({
+        customerId: CUSTOMER_ID,
+        password: 'correct-password',
+        actor: 'a2-authentication',
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.failureReason).toBe('CUSTOMER_STATUS_INELIGIBLE');
+      expect(
+        testFixture.customerAuthenticationService.recordFailedAuthentication,
+      ).not.toHaveBeenCalled();
+      const auditCalls = testFixture.auditService.record.mock.calls;
+      const recorded = auditCalls.at(-1)?.[1];
+      expect(recorded).toMatchObject({
+        action: 'AUTHENTICATION_STATUS_INELIGIBLE',
+        newValues: { customerStatus: status },
+      });
+    }
   });
 });

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { CustomerStatus } from '../customer/customer.enums';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import { AuthenticationCredentialStatus } from './customer-authentication.enums';
@@ -15,7 +16,10 @@ export interface AuthenticationExecutionCommand {
   actor: string;
 }
 
-export type AuthenticationFailureReason = 'INVALID_CREDENTIALS' | 'CREDENTIAL_UNAVAILABLE';
+export type AuthenticationFailureReason =
+  | 'INVALID_CREDENTIALS'
+  | 'CREDENTIAL_UNAVAILABLE'
+  | 'CUSTOMER_STATUS_INELIGIBLE';
 
 export interface AuthenticationExecutionResult {
   authenticated: boolean;
@@ -94,6 +98,24 @@ export class AuthenticationExecutionService {
       return this.invalidCredentials(customerId);
     }
 
+    // Session/status binding at login (S-FIX-01, audit contradiction C-4): a verified
+    // credential must not produce a session while the customer's CURRENT lifecycle
+    // status makes the principal ineligible (DRAFT pre-activation, SUSPENDED, CLOSED).
+    // Evaluated after password verification so existence/status is not revealed to
+    // arbitrary callers, and recorded as a security-relevant denial without consuming
+    // failed-authentication (lockout) budget.
+    if (customer.status !== CustomerStatus.ACTIVE) {
+      await this.recordStatusIneligibleAuthentication(credential, actor, customer.status);
+      return {
+        authenticated: false,
+        customerId,
+        credentialId: credential.id,
+        passwordVersion: credential.passwordVersion,
+        failureReason: 'CUSTOMER_STATUS_INELIGIBLE',
+        accountLocked: credential.accountLocked,
+      };
+    }
+
     await this.recordSuccessfulAuthentication(credential, actor);
     return {
       authenticated: true,
@@ -134,6 +156,27 @@ export class AuthenticationExecutionService {
           hashAlgorithm: credential.hashAlgorithm,
           passwordVersion: credential.passwordVersion,
           outcome: 'AUTHENTICATED',
+        },
+      });
+    });
+  }
+
+  private async recordStatusIneligibleAuthentication(
+    credential: CustomerAuthenticationCredential,
+    actor: string,
+    status: CustomerStatus,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      await this.auditService.record(manager, {
+        entityType: 'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        entityId: credential.id,
+        action: 'AUTHENTICATION_STATUS_INELIGIBLE',
+        actor,
+        newValues: {
+          customerId: credential.customerId,
+          credentialId: credential.id,
+          outcome: 'AUTHENTICATION_STATUS_INELIGIBLE',
+          customerStatus: status,
         },
       });
     });
