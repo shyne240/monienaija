@@ -24,6 +24,11 @@ import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.servi
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import {
+  annotateCommissionDecisionWithPosting,
+  annotateFeeDecisionWithPosting,
+} from '../commercial-accounting/commercial-decision-accounting.annotators';
 import {
   commissionAllocatedAtAccountingBoundary,
   commissionFeeBasisMinor,
@@ -67,6 +72,10 @@ export class AgentFinancialExecutionService {
     // legacy commissionNone() shape for manual-construction unit tests).
     @Optional()
     private readonly commissionEngine?: CommissionEngine,
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting (optional; absent
+    // or disabled → legacy evidence-only annotations for manual-construction unit tests).
+    @Optional()
+    private readonly commercialAccountingService?: CommercialAccountingService,
   ) {}
 
   /**
@@ -489,6 +498,32 @@ export class AgentFinancialExecutionService {
           ),
         };
       }
+    }
+
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting posting INSIDE
+    // this same SERIALIZABLE transaction (DP-02=A / DP-15=A). Config-gated: disabled (the
+    // default without COMMERCIAL_ACCOUNTING_ENABLED=true) leaves every decision byte-shape
+    // unchanged. Any blocker throws here → principal journal + snapshot roll back atomically.
+    if (this.commercialAccountingService && this.commercialAccountingService.isEnabled()) {
+      const accountingOutcome = await this.commercialAccountingService.postForCompletion(manager, {
+        productCode,
+        currency: ctx.currency,
+        baseIdempotencyKey: `agent:${ctx.agentId}:${ctx.idempotencyKey}`,
+        correlationId: ctx.input.correlationId ?? null,
+        reference: null,
+        snapshotIdempotencyKey: `${isCashIn ? 'cash-in' : 'cash-out'}:${ctx.agentId}:${ctx.idempotencyKey}`,
+        metadata: {
+          flow: isCashIn ? 'CASH_TO_WALLET' : 'WALLET_TO_CASH',
+          agentId: ctx.agentId,
+        },
+        feePayerCustomerId: limitInput.principalId.trim(),
+        feeDecision,
+        commissionDecision,
+      });
+      feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
+      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
+        commissionEvent: 'TRANSACTION_COMPLETION',
+      });
     }
 
     const limitDecision = ctx.limitOutcome

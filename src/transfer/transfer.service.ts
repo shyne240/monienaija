@@ -26,6 +26,11 @@ import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/li
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
+import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import {
+  annotateCommissionDecisionWithPosting,
+  annotateFeeDecisionWithPosting,
+} from '../commercial-accounting/commercial-decision-accounting.annotators';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
   commissionAllocatedAtAccountingBoundary,
@@ -99,6 +104,10 @@ export class TransferService {
     // legacy commissionNone() shape for manual-construction unit tests).
     @Optional()
     private readonly commissionEngine?: CommissionEngine,
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — @Optional so pre-existing unit constructions
+    // (manual new TransferService(...)) keep working; absent = legacy evidence-only behavior.
+    @Optional()
+    private readonly commercialAccountingService?: CommercialAccountingService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -411,6 +420,7 @@ export class TransferService {
       sourceCustomerId: sourceWallet.customerId,
       journalId,
       limitOutcome,
+      payerLedgerAccountId: sourceWallet.ledgerAccountId,
     });
 
     transfer.status = TransferStatus.COMPLETED;
@@ -470,6 +480,8 @@ export class TransferService {
       sourceCustomerId: string;
       journalId: string;
       limitOutcome: EnforceResult | null;
+      /** Payer-side ledger account for the commercial accounting legs (source wallet in WT). */
+      payerLedgerAccountId: string;
     },
   ): Promise<void> {
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
@@ -553,6 +565,34 @@ export class TransferService {
           }),
         };
       }
+    }
+
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting posting INSIDE
+    // this same SERIALIZABLE transaction (DP-02=A / DP-15=A). Config-gated: disabled (the default
+    // without COMMERCIAL_ACCOUNTING_ENABLED=true) leaves every decision byte-shape unchanged.
+    // Any blocker throws here → the whole operation (principal journal + snapshot) rolls back.
+    if (this.commercialAccountingService && this.commercialAccountingService.isEnabled()) {
+      const accountingOutcome = await this.commercialAccountingService.postForCompletion(manager, {
+        productCode,
+        currency: ctx.command.currency,
+        baseIdempotencyKey: `transfer:${ctx.transfer.id}`,
+        correlationId: `transfer:${ctx.transfer.id}`,
+        reference: ctx.command.reference ?? null,
+        snapshotIdempotencyKey: `transfer:${ctx.transfer.id}`,
+        metadata: {
+          flow: 'WALLET_TRANSFER',
+          transferId: ctx.transfer.id,
+          sourceCustomerId: ctx.sourceCustomerId,
+        },
+        feePayerLedgerAccountId: ctx.payerLedgerAccountId,
+        feePayerCustomerId: ctx.sourceCustomerId,
+        feeDecision,
+        commissionDecision,
+      });
+      feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
+      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
+        commissionEvent: 'TRANSACTION_COMPLETION',
+      });
     }
 
     const limitDecision = ctx.limitOutcome

@@ -40,6 +40,20 @@ export const environmentSchema = z
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting configuration.
+    // All optional; absence means the commercial accounting layer is inert (legacy evidence-only
+    // posture). When enabled, treatment/timing must be explicit — the selected values are
+    // evaluated at runtime and any decision requiring an absent treatment fails closed.
+    COMMERCIAL_ACCOUNTING_ENABLED: booleanFromEnvironment.default(false),
+    COMMERCIAL_ACCOUNTING_VAT_TREATMENT: z
+      .enum(['EXCLUSIVE_ADD_ON', 'INCLUSIVE_IN_FEE'])
+      .optional(),
+    COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: z
+      .enum(['EXPENSE_PAYABLE', 'AGENT_WALLET_NETTING', 'CONTRA_REVENUE'])
+      .optional(),
+    COMMERCIAL_COMMISSION_RECOGNITION_TIMING: z
+      .enum(['AT_COMPLETION', 'ACCRUE_NOW_SETTLE_LATER'])
+      .optional(),
     A2_WORKFORCE_ENABLED: booleanFromEnvironment.default(false),
     A2_WORKFORCE_OIDC_ISSUER: optionalEnvironmentUrl,
     A2_WORKFORCE_OIDC_JWKS_URI: optionalEnvironmentUrl,

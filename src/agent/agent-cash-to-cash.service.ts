@@ -33,6 +33,11 @@ import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
+import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import {
+  annotateCommissionDecisionWithPosting,
+  annotateFeeDecisionWithPosting,
+} from '../commercial-accounting/commercial-decision-accounting.annotators';
 import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
 import {
   commissionAllocatedAtAccountingBoundary,
@@ -79,6 +84,10 @@ export class AgentCashToCashService {
     // legacy commissionNone() shape for manual-construction unit tests).
     @Optional()
     private readonly commissionEngine?: CommissionEngine,
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting (optional; absent
+    // or disabled → legacy evidence-only annotations for manual-construction unit tests).
+    @Optional()
+    private readonly commercialAccountingService?: CommercialAccountingService,
   ) {}
 
   async execute(input: AgentCashToCashInput): Promise<AgentCashToCashResult> {
@@ -460,6 +469,7 @@ export class AgentCashToCashService {
             idempotencyKey,
             correlationId: correlationId ?? null,
             limitOutcome,
+            agentWalletLedgerAccountId: walletInTx.ledgerAccountId,
           });
 
           // Simulate failure after journal for rollback test (inside same transaction, so journal,
@@ -581,6 +591,8 @@ export class AgentCashToCashService {
       idempotencyKey: string;
       correlationId: string | null;
       limitOutcome: EnforceResult | null;
+      /** Initiating agent's wallet ledger account — payer side of the accounting legs. */
+      agentWalletLedgerAccountId: string;
     },
   ): Promise<void> {
     if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
@@ -680,6 +692,35 @@ export class AgentCashToCashService {
           ),
         };
       }
+    }
+
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting posting INSIDE
+    // this same SERIALIZABLE initiation transaction (DP-02=A / DP-15=A). The commission event is
+    // the initiation itself (single event): the claim path deliberately has NO accounting wiring
+    // and cannot double-post. Config-gated: disabled leaves byte-shape unchanged; blockers throw
+    // → journal + snapshot roll back atomically.
+    if (this.commercialAccountingService && this.commercialAccountingService.isEnabled()) {
+      const accountingOutcome = await this.commercialAccountingService.postForCompletion(manager, {
+        productCode,
+        currency: ctx.currency,
+        baseIdempotencyKey: `agent:${ctx.agentId}:${ctx.idempotencyKey}`,
+        correlationId: ctx.correlationId,
+        reference: null,
+        snapshotIdempotencyKey: `cash-to-cash:${ctx.agentId}:${ctx.idempotencyKey}`,
+        metadata: {
+          flow: 'CASH_TO_CASH',
+          agentId: ctx.agentId,
+          transferId: ctx.transferId,
+        },
+        feePayerLedgerAccountId: ctx.agentWalletLedgerAccountId,
+        feePayerCustomerId: ctx.agentId,
+        feeDecision,
+        commissionDecision,
+      });
+      feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
+      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
+        commissionEvent: 'CASH_TO_CASH_INITIATION',
+      });
     }
 
     const limitDecision = ctx.limitOutcome

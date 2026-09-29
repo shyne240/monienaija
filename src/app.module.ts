@@ -76,6 +76,7 @@ import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
 import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
 import { CommissionModule } from './commission/commission.module';
+import { CommercialAccountingModule } from './commercial-accounting/commercial-accounting.module';
 import { RewardModule } from './reward/reward.module';
 import { FeeRulesModule } from './fee-rules/fee-rules.module';
 import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
@@ -199,6 +200,7 @@ import { WalletModule } from './wallet/wallet.module';
     CapabilityRegistryModule,
     CommercialDecisionModule,
     CommissionModule,
+    CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
     RewardModule,
     FeeRulesModule,
     LimitCatalogModule,
