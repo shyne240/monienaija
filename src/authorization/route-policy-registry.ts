@@ -89,6 +89,17 @@ export class RoutePolicyRegistry {
         resourceType: 'customer-session',
       };
     }
+
+    // Customer initial-credential rotation (V1-CUSTOMER-CREDENTIALS-01) — unauthenticated
+    // like login: the customer proves the temporary password and receives its first session
+    // only AFTER rotation completes inside this handler. No bearer token exists yet.
+    if (method === 'POST' && path === '/api/v1/customers/credentials/rotate') {
+      return {
+        public: false,
+        authenticationMode: 'CUSTOMER_LOGIN',
+        resourceType: 'customer-credential-rotation',
+      };
+    }
     // Customer App — self routes are strictly CUSTOMER SELF (A23). Must be before generic customers check.
     if (path === '/api/v1/customers/me' || path.startsWith('/api/v1/customers/me/')) {
       return {
@@ -344,6 +355,28 @@ export class RoutePolicyRegistry {
     // Agent credential issuance/reissuance (V1-AGENT-CREDENTIALS-01) — internal privileged
     // workforce surface mirroring the agent-lifecycle actor vocabulary (controller enforces
     // OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as with lifecycle actions).
+    // Customer credential issuance/reissuance (V1-CUSTOMER-CREDENTIALS-01) — internal
+    // privileged workforce surface mirroring the agent credential issuance vocabulary
+    // (controller enforces OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as well).
+    if (
+      method === 'POST' &&
+      /^\/api\/v1\/internal\/admin\/customers\/[^/]+\/credentials(\/reissue)?$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-credential-issuance',
+        policy: {
+          resourceType: 'customer-credential-issuance',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (
       method === 'POST' &&
       /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)

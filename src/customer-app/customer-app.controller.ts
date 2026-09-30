@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -36,6 +37,8 @@ import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-ben
 import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerLoginDto } from './dto/customer-login.dto';
+import { RotateInitialCustomerCredentialDto } from './dto/rotate-initial-customer-credential.dto';
+import { PasswordHashAlgorithm } from '../customer-authentication/customer-authentication.enums';
 import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
 
 interface AuthenticatedRequest {
@@ -86,11 +89,79 @@ export class CustomerAppController {
     if (!result.authenticated) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    // V1-CUSTOMER-CREDENTIALS-01 — workforce-issued temporary credentials must be rotated
+    // before any session exists. Verification succeeded, but NO session is issued.
+    if (result.rotationRequired === true) {
+      return {
+        rotationRequired: true,
+        customerId: result.customerId,
+      };
+    }
     const session = await this.sessionService.issue({
       authentication: result,
       actor: result.customerId,
       audience: DEFAULT_SESSION_AUDIENCE,
     });
+    return {
+      accessToken: session.accessToken,
+      tokenType: session.tokenType,
+      expiresAt: session.expiresAt,
+      customerId: session.principal.customerId,
+      sessionId: session.sessionId,
+    };
+  }
+
+  @Post('customers/credentials/rotate')
+  @HttpCode(200)
+  async rotateInitialCredential(@Body() dto: RotateInitialCustomerCredentialDto) {
+    // Unauthenticated rotate surface (registry: CUSTOMER_LOGIN mode — the customer holds no
+    // session yet). Step 1: prove the current (temporary) password through the REAL
+    // authentication execution path (lockout/failed-attempt accounting intact).
+    const auth = await this.executionService.authenticate({
+      customerId: dto.customerId,
+      password: dto.currentPassword,
+      actor: dto.customerId,
+    });
+    if (!auth.authenticated || !auth.credentialId) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (auth.rotationRequired !== true) {
+      // Rotation is only for workforce-issued temporary credentials; normal credentials
+      // are not rotated through this surface (no second password-management path invented).
+      throw new ForbiddenException('Credential rotation is not pending');
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException('newPassword must differ from currentPassword');
+    }
+    // Hash server-side with the module's established PBKDF2 convention.
+    const newHash = this.pbkdf2PasswordHash(dto.newPassword);
+    const credential = await this.customerAuthService.rotateInitialPassword(
+      dto.customerId,
+      auth.credentialId,
+      {
+        passwordHash: newHash,
+        hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
+        actor: dto.customerId,
+      },
+    );
+    // Established rotation/revocation convention: all sessions of the rotated credential die.
+    await this.sessionService.revokeAllForCredential(
+      credential.id,
+      dto.customerId,
+      'Credential rotated after first login',
+    );
+    // Post-rotation, issue the customer's first real session (login completes here).
+    const session = await this.sessionService.issue({
+      authentication: {
+        authenticated: true,
+        customerId: dto.customerId,
+        credentialId: credential.id,
+        passwordVersion: credential.passwordVersion,
+      },
+      actor: dto.customerId,
+      audience: DEFAULT_SESSION_AUDIENCE,
+    });
+    // Return the same minimal safe payload as login — no hashes, no raw credential.
     return {
       accessToken: session.accessToken,
       tokenType: session.tokenType,
@@ -1001,5 +1072,14 @@ export class CustomerAppController {
     if (typeof header !== 'string') return undefined;
     const match = /^Bearer\s+(\S+)$/i.exec(header);
     return match?.[1];
+  }
+
+  /** House PBKDF2 encoding convention (same format + parameters as the runtime verifier
+   *  and the workforce issuance controller). Plaintext arguments are never logged. */
+  private pbkdf2PasswordHash(password: string): string {
+    const salt = randomBytes(16);
+    const iterations = 10000;
+    const derived = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
+    return `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
   }
 }

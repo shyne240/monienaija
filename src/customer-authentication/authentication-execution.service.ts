@@ -28,6 +28,10 @@ export interface AuthenticationExecutionResult {
   passwordVersion?: number;
   failureReason?: AuthenticationFailureReason;
   accountLocked?: boolean;
+  /** V1-CUSTOMER-CREDENTIALS-01 — set only on successful verification of a credential that
+   *  still carries the first-login rotation flag (workforce-issued temporary credential).
+   *  Callers must NOT issue a session while this is true; rotation is required first. */
+  rotationRequired?: boolean;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -123,6 +127,7 @@ export class AuthenticationExecutionService {
       credentialId: credential.id,
       passwordVersion: credential.passwordVersion,
       accountLocked: false,
+      rotationRequired: credential.rotationRequired === true,
     };
   }
 
