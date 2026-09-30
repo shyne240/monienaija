@@ -10,9 +10,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
+import { ContactMethodType } from '../customer/customer.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -101,11 +103,17 @@ export class AdminCustomerController {
     const customer = await this.repo.findOne({ where: { id } as never });
     if (!customer) throw new NotFoundException('Customer not found');
     // Use existing wallet architecture (WalletAccount) — safe projection (no ledgerAccountId, no creationIdempotencyKey)
-    const wallets: Array<{ id: string; customer_id: string; currency: string; status: string; created_at: Date; updated_at: Date }> =
-      await this.dataSource.query(
-        `SELECT id::text as id, customer_id::text as customer_id, currency::text as currency, status::text as status, created_at, updated_at FROM wallet_accounts WHERE customer_id=$1 ORDER BY currency ASC, created_at ASC`,
-        [id],
-      );
+    const wallets: Array<{
+      id: string;
+      customer_id: string;
+      currency: string;
+      status: string;
+      created_at: Date;
+      updated_at: Date;
+    }> = await this.dataSource.query(
+      `SELECT id::text as id, customer_id::text as customer_id, currency::text as currency, status::text as status, created_at, updated_at FROM wallet_accounts WHERE customer_id=$1 ORDER BY currency ASC, created_at ASC`,
+      [id],
+    );
     // Safe projection — hide ledgerAccountId / creationIdempotencyKey, expose currency explicitly
     const items = wallets.map((w) => ({
       id: w.id,
@@ -166,7 +174,51 @@ export class AdminCustomerController {
     const p = page ? Number.parseInt(page, 10) : 1;
     const l = limit ? Number.parseInt(limit, 10) : 20;
     // Reuse existing Support ticket query — preserves authorization, status, assignment, linkage, safe projection, internal-message filtering (list does not expose messages)
-    return this.supportService.listForInternal(p, l, { customerId: id, status: status || undefined });
+    return this.supportService.listForInternal(p, l, {
+      customerId: id,
+      status: status || undefined,
+    });
+  }
+
+  /**
+   * V1-CUSTOMER-ONBOARDING-02 — minimal activation-review read (workforce, read-only).
+   * The one piece of review evidence not previously exposed to a workforce-authenticated
+   * surface is the SUB-1 gate evidence itself: whether the customer carries a verified
+   * primary Nigerian phone. Core customer/kyc fields are already covered by
+   * GET /internal/customers/:id; transactions/wallets/support-tickets by the existing
+   * investigation endpoints. Values are masked; nothing here mutates state or persists
+   * audits (GET). Activation stays on the existing PATCH /customers/:id route.
+   */
+  @Get(':id/phone-verification')
+  async getPhoneVerification(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    this.requireWorkforce(req);
+    this.assertUuid(id, 'id');
+    const customer = await this.repo.findOne({ where: { id } as never });
+    if (!customer) throw new NotFoundException('Customer not found');
+    const contacts = await this.dataSource.getRepository(CustomerContactMethod).find({
+      where: { customerId: id, type: ContactMethodType.PHONE, deletedAt: IsNull() },
+      order: { isPrimary: 'DESC', createdAt: 'DESC' } as never,
+    });
+    const primaryVerified = contacts.some(
+      (contact) => contact.isPrimary && contact.verifiedAt !== null,
+    );
+    return {
+      customerId: id,
+      customerStatus: (customer as unknown as Customer).status,
+      phones: contacts.map((contact) => ({
+        isPrimary: contact.isPrimary,
+        maskedValue: this.maskPhone(contact.normalizedValue),
+        verifiedAt: contact.verifiedAt,
+      })),
+      activationGate: { verifiedPrimaryPhone: primaryVerified },
+    };
+  }
+
+  private maskPhone(normalizedValue: string): string {
+    // Canonical 10-digit NSN → +234*****XXXX; non-canonical legacy values masked minimally.
+    if (/^\d{10}$/.test(normalizedValue)) return `+234*****${normalizedValue.slice(-4)}`;
+    if (normalizedValue.length <= 4) return '****';
+    return `****${normalizedValue.slice(-4)}`;
   }
 
   private requireWorkforce(req: AuthenticatedRequest): string {
@@ -185,9 +237,30 @@ export class AdminCustomerController {
   private toSafeCustomer(customer: any): any {
     // Safe projection — hide internal fields, expose identity only (no credential hashes)
     // Customer entity: id, reference, type, status, kycLevel, kycStatus, version, createdAt, updatedAt, deletedAt
-    const { id, reference, type, status, kycLevel, kycStatus, version, createdAt, updatedAt, deletedAt } =
-      customer as any;
-    return { id, reference, type, status, kycLevel, kycStatus, version, createdAt, updatedAt, deletedAt };
+    const {
+      id,
+      reference,
+      type,
+      status,
+      kycLevel,
+      kycStatus,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    } = customer as any;
+    return {
+      id,
+      reference,
+      type,
+      status,
+      kycLevel,
+      kycStatus,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    };
   }
 
   private assertUuid(value: string, field: string): void {

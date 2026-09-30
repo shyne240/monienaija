@@ -60,7 +60,15 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
         return Promise.reject(new UnauthorizedException('invalid workforce token'));
       }
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) return Promise.reject(new UnauthorizedException('invalid type'));
       return Promise.resolve({
         type,
@@ -119,6 +127,14 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     await dataSource.query(
       `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
       [customerId, 'S-FIX-01 Customer'],
+    );
+    // V1-CUSTOMER-ONBOARDING-02 fixture update (SUB-1 gate): activation into ACTIVE now
+    // requires a verified primary phone. The lifecycle AUTHORIZATION assertions are
+    // unchanged; the fixture carries the verified phone the decided invariant mandates.
+    const phone = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$3,true,now())`,
+      [customerId, `+234${phone}`, phone],
     );
     if (custStatus === 'CLOSED') {
       await dataSource.query(`UPDATE customers SET deleted_at = now() WHERE id = $1`, [customerId]);

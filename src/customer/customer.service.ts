@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { ContactMethodType, CustomerKycStatus, CustomerStatus } from './customer.enums';
@@ -121,11 +121,16 @@ export class CustomerService {
         return customer;
       }
       this.assertCustomerTransition(customer.status, command.status);
+      if (command.status === CustomerStatus.ACTIVE) {
+        await this.assertVerifiedPrimaryPhone(manager, id);
+      }
       const previous = this.auditCustomer(customer);
       customer.status = command.status;
       customer.deletedAt =
         command.status === CustomerStatus.CLOSED ? new Date() : customer.deletedAt;
       const saved = await manager.getRepository(Customer).save(customer);
+      const gateOutcome =
+        command.status === CustomerStatus.ACTIVE ? { verifiedPrimaryPhone: true } : undefined;
       await this.audit(
         manager,
         'CUSTOMER',
@@ -133,7 +138,9 @@ export class CustomerService {
         'STATUS_UPDATED',
         actor,
         previous,
-        this.auditCustomer(saved),
+        gateOutcome
+          ? { ...this.auditCustomer(saved), activationGate: gateOutcome }
+          : this.auditCustomer(saved),
       );
       return saved;
     });
@@ -434,6 +441,32 @@ export class CustomerService {
       newValues,
       previousValues,
     });
+  }
+
+  /**
+   * V1-CUSTOMER-ONBOARDING-02 — SUB-1 hard activation gate (docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md):
+   * a customer may transition INTO ACTIVE only when a live, verified primary PHONE contact
+   * exists. Fails closed (BadRequest before any save): on gate failure the transaction
+   * rolls back — the customer stays DRAFT/SUSPENDED, and, exactly as with the existing
+   * invalid-transition rejection, no audit row is persisted for the rule rejection.
+   * Runs after the transition table so invalid transitions keep their existing error.
+   */
+  private async assertVerifiedPrimaryPhone(
+    manager: EntityManager,
+    customerId: string,
+  ): Promise<void> {
+    const verifiedPrimaryPhone = await manager.getRepository(CustomerContactMethod).findOne({
+      where: {
+        customerId,
+        type: ContactMethodType.PHONE,
+        isPrimary: true,
+        verifiedAt: Not(IsNull()),
+        deletedAt: IsNull(),
+      },
+    });
+    if (!verifiedPrimaryPhone) {
+      throw new BadRequestException('Customer activation requires a verified primary phone');
+    }
   }
 
   private assertCustomerTransition(current: CustomerStatus, next: CustomerStatus): void {
