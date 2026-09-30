@@ -720,8 +720,8 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076)$/);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078']).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078)$/);
     // Check constraints exist
     const chk: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='cash_to_cash_transfers'::regclass AND conname='chk_cash_to_cash_status'`);
     expect(chk.length).toBe(1);
@@ -732,8 +732,8 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   // 24. production readiness remains valid
   it('24. production readiness remains valid', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076)$/);
+    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078']).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078)$/);
   });
 
   // 25. A15 remains green (initiation still works)
