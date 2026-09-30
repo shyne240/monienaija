@@ -30,6 +30,14 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/v1/health',
   'GET /api/v1/health/ready',
   'GET /api/v1/internal/version',
+  // V1-CUSTOMER-ONBOARDING-01 — customer registration front door (decided hybrid model,
+  // docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md). Unauthenticated by design: no session-
+  // bearing auth mode exists pre-registration. Abuse is bounded inside the registration
+  // service (per-phone/per-IP token buckets, OTP lockout/cooldown); the surface can only
+  // create DRAFT customers + verified phone metadata — never ACTIVE/wallets/credentials.
+  'POST /api/v1/customers/registration/otp',
+  'POST /api/v1/customers/registration/otp/verify',
+  'POST /api/v1/customers/registration',
 ]);
 
 @Injectable()
@@ -170,7 +178,14 @@ export class RoutePolicyRegistry {
         policy: {
           resourceType: 'recipient-resolution',
           action: `${method}:${path}`,
-          allowedPrincipalTypes: ['CUSTOMER', 'AGENT', 'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          allowedPrincipalTypes: [
+            'CUSTOMER',
+            'AGENT',
+            'SUPPORT',
+            'OPERATOR',
+            'SERVICE',
+            'PRIVILEGED',
+          ],
           customerAccess: 'ANY',
           agentAccess: 'ANY',
         },
@@ -191,8 +206,10 @@ export class RoutePolicyRegistry {
     // Outlets & Terminals via Aggregator — internal privileged (A20)
     // Must be checked before generic aggregator block; Aggregator context is via A18 relationship
     if (
-      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
-      (method === 'POST' && /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
     ) {
       return {
         public: false,
@@ -235,8 +252,7 @@ export class RoutePolicyRegistry {
     // No Aggregator ledger account in V1; Aggregator involvement is relationship authorization only.
     // Inactive/terminated/suspended checks are enforced in service layer.
     if (
-      (method === 'POST' &&
-        /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund)$/.test(path)) ||
+      (method === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund)$/.test(path)) ||
       (method === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
     ) {
@@ -274,17 +290,22 @@ export class RoutePolicyRegistry {
         },
       };
     }
-    if (path.startsWith('/api/v1/internal/outlets/') || path.startsWith('/api/v1/internal/terminals/')) {
+    if (
+      path.startsWith('/api/v1/internal/outlets/') ||
+      path.startsWith('/api/v1/internal/terminals/')
+    ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
-        resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
-          ? 'agent-terminal'
-          : 'agent-outlet',
-        policy: {
-          resourceType: path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+        resourceType:
+          path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
             ? 'agent-terminal'
             : 'agent-outlet',
+        policy: {
+          resourceType:
+            path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+              ? 'agent-terminal'
+              : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'NONE',
@@ -300,8 +321,11 @@ export class RoutePolicyRegistry {
     // Both require OPERATOR/SERVICE/PRIVILEGED (SUPPORT denied) — documented V1-003 decision
     if (
       (method === 'POST' &&
-        /^\/api\/v1\/internal\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(path)) ||
-      (method === 'POST' && /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/activate$/.test(path))
+        /^\/api\/v1\/internal\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
+          path,
+        )) ||
+      (method === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/activate$/.test(path))
     ) {
       return {
         public: false,
@@ -320,7 +344,10 @@ export class RoutePolicyRegistry {
     // Agent credential issuance/reissuance (V1-AGENT-CREDENTIALS-01) — internal privileged
     // workforce surface mirroring the agent-lifecycle actor vocabulary (controller enforces
     // OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as with lifecycle actions).
-    if (method === 'POST' && /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)) {
+    if (
+      method === 'POST' &&
+      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)
+    ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -337,13 +364,15 @@ export class RoutePolicyRegistry {
     }
     if (
       path.startsWith('/api/v1/internal/admin/agents/') &&
-      (method === 'POST' &&
-        (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(path) ||
-          /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path) ||
-          path.endsWith('/suspend') ||
-          path.endsWith('/terminate') ||
-          path.endsWith('/reactivate') ||
-          path.endsWith('/activate')))
+      method === 'POST' &&
+      (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
+        path,
+      ) ||
+        /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path) ||
+        path.endsWith('/suspend') ||
+        path.endsWith('/terminate') ||
+        path.endsWith('/reactivate') ||
+        path.endsWith('/activate'))
     ) {
       return {
         public: false,
