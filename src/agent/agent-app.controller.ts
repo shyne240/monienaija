@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, Req, UnauthorizedException } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +10,7 @@ import { AgentServiceCapabilityService } from './agent-service-capability.servic
 import { OutletService } from '../outlet/outlet.service';
 import { TerminalService } from '../outlet/terminal.service';
 import { WalletService } from '../wallet/wallet.service';
+import { AgentTransactionHistoryService } from './agent-transaction-history.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentStatus } from './agent.enums';
 import { AgentService } from './agent-service.enum';
@@ -31,7 +32,25 @@ export class AgentAppController {
     private readonly outletService: OutletService,
     private readonly terminalService: TerminalService,
     private readonly walletService: WalletService,
+    private readonly transactionHistoryService: AgentTransactionHistoryService,
   ) {}
+
+  // V1-AGENT-HISTORY-01 — unified read-only agent transaction history (customer-history contract).
+  @Get('transactions')
+  async listTransactions(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+  ) {
+    const principal = this.requireAgentPrincipal(req);
+    return this.transactionHistoryService.listUnified({
+      agentId: principal.agentId!,
+      page,
+      limit,
+      type,
+    });
+  }
 
   @Get('profile')
   async getProfile(@Req() req: AuthenticatedRequest) {

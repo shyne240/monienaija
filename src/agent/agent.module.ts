@@ -41,6 +41,7 @@ import { CashToCashTransfer } from './cash-to-cash.entity';
 import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
+import { AgentTransactionHistoryService } from './agent-transaction-history.service';
 import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
@@ -86,6 +87,7 @@ import { CommercialAccountingModule } from '../commercial-accounting/commercial-
     AgentClassService,
     AgentApplicationService,
     AgentReceivingNumberService,
+    AgentTransactionHistoryService, // V1-AGENT-HISTORY-01 — read-only unified history projection
     RecipientResolutionService,
     AgentServiceCapabilityService,
     AgentTransactionAuthorizationService,
