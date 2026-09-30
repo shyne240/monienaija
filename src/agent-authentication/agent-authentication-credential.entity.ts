@@ -66,6 +66,9 @@ export class AgentAuthenticationCredential {
   @Column({ name: 'lock_reason', type: 'varchar', length: 500, nullable: true })
   lockReason!: string | null;
 
+  @Column({ name: 'rotation_required', type: 'boolean', default: false })
+  rotationRequired!: boolean;
+
   @VersionColumn({ type: 'integer', default: 1 })
   version!: number;
 

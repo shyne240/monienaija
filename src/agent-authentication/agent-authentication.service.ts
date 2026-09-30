@@ -4,6 +4,7 @@ import { DataSource, type EntityManager, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { Agent } from '../agent/agent.entity';
+import { AgentStatus } from '../agent/agent.enums';
 import { AuditService } from '../operations/audit.service';
 import { AgentAuthenticationCredential } from './agent-authentication-credential.entity';
 import { AgentTransactionPin } from './agent-transaction-pin.entity';
@@ -22,6 +23,25 @@ export interface AgentCreateCredentialCommand {
   hashAlgorithm: AgentPasswordHashAlgorithm;
   passwordVersion: number;
   passwordExpiresAt?: string;
+  actor: string;
+}
+
+/** V1-AGENT-CREDENTIALS-01 — workforce issuance of a temporary first credential. The plaintext
+ *  password is generated and hashed by the CALLER (secure RNG + PBKDF2); this service never
+ *  sees and never persists plaintext. Temporary credentials MUST expire: passwordExpiresAt
+ *  is mandatory here (unlike createCredential). */
+export interface AgentIssueInitialCredentialCommand {
+  passwordHash: string;
+  hashAlgorithm: AgentPasswordHashAlgorithm;
+  /** ISO timestamp for the temporary credential's expiry (required — temporary credentials
+   *  must not remain permanently valid). */
+  passwordExpiresAt: string;
+  actor: string;
+}
+
+export interface AgentRotateInitialPasswordCommand {
+  passwordHash: string;
+  hashAlgorithm: AgentPasswordHashAlgorithm;
   actor: string;
 }
 
@@ -104,6 +124,130 @@ export class AgentAuthenticationService {
     const credential = await this.credentialRepository.findOne({ where: { agentId } });
     if (!credential || credential.deletedAt !== null) return null;
     return credential;
+  }
+
+  /**
+   * V1-AGENT-CREDENTIALS-01 — issues the Agent's FIRST credential (temporary, rotation-required).
+   * Fail-closed conventions (same vocabulary as the rest of the module):
+   *  - Agent must exist (404) and must be ACTIVE (409, mirrors AgentReceivingNumberService gate):
+   *    PENDING/SUSPENDED/TERMINATED Agents cannot receive credentials.
+   *  - One active credential per Agent (409) — reissue goes through reissueInitialCredential.
+   * Audited as CREDENTIALS_ISSUED; the hash is never written to audit/log/response.
+   */
+  async issueInitialCredential(
+    agentId: string,
+    command: AgentIssueInitialCredentialCommand,
+  ): Promise<AgentAuthenticationCredential> {
+    this.assertUuid(agentId, 'agentId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    const passwordExpiresAt = this.parseOptionalDate(command.passwordExpiresAt, 'passwordExpiresAt');
+    if (!passwordExpiresAt) {
+      throw new BadRequestException('passwordExpiresAt is required for temporary credential issuance');
+    }
+    if (passwordExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('passwordExpiresAt must be in the future');
+    }
+    if (!Object.values(AgentPasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const agent = await this.requireAgent(manager.getRepository(Agent), agentId);
+      this.requireActiveAgent(agent);
+      const credential = await this.persistIssuedCredential(manager, agentId, passwordHash, command.hashAlgorithm, passwordExpiresAt);
+      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', credential.id, 'CREDENTIALS_ISSUED', actor, undefined, this.credentialValues(credential));
+      return credential;
+    });
+  }
+
+  /**
+   * V1-AGENT-CREDENTIALS-01 — reissues a temporary credential for an Agent that already has one.
+   * The previous credential is REVOKED and soft-deleted (freeing the one-active-unique slot),
+   * and a NEW temporary rotation-required credential replaces it. Existing sessions bound to the
+   * previous credential are revoked by the CALLER (revokeAllForCredential) within the same
+   * request flow. Agent must be ACTIVE.
+   */
+  async reissueInitialCredential(
+    agentId: string,
+    command: AgentIssueInitialCredentialCommand,
+  ): Promise<{ credential: AgentAuthenticationCredential; previousCredentialId: string }> {
+    this.assertUuid(agentId, 'agentId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    const passwordExpiresAt = this.parseOptionalDate(command.passwordExpiresAt, 'passwordExpiresAt');
+    if (!passwordExpiresAt) {
+      throw new BadRequestException('passwordExpiresAt is required for temporary credential issuance');
+    }
+    if (passwordExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('passwordExpiresAt must be in the future');
+    }
+    if (!Object.values(AgentPasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const agent = await this.requireAgent(manager.getRepository(Agent), agentId);
+      this.requireActiveAgent(agent);
+      const repo = manager.getRepository(AgentAuthenticationCredential);
+      const previous = await repo.findOne({ where: { agentId } });
+      if (!previous || previous.deletedAt !== null) {
+        throw new NotFoundException('Agent has no authentication credential to reissue');
+      }
+      const previousValues = this.credentialValues(previous);
+      previous.status = AgentAuthenticationCredentialStatus.REVOKED;
+      previous.deletedAt = new Date();
+      await repo.save(previous);
+      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', previous.id, 'REVOKED', actor, previousValues, this.credentialValues(previous));
+      const credential = await this.persistIssuedCredential(manager, agentId, passwordHash, command.hashAlgorithm, passwordExpiresAt);
+      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', credential.id, 'CREDENTIALS_REISSUED', actor, undefined, this.credentialValues(credential));
+      return { credential, previousCredentialId: previous.id };
+    });
+  }
+
+  /**
+   * V1-AGENT-CREDENTIALS-01 — completes the mandatory first-login rotation. Callers MUST have
+   * already verified the current (temporary) password via AgentAuthenticationExecutionService.
+   * Sets the new hash, clears the rotation flag and the temporary expiry, resets lockout
+   * counters, and advances passwordVersion. Fails closed unless the credential is ACTIVE and
+   * rotationRequired — a normal credential cannot be rotated through this path.
+   */
+  async rotateInitialPassword(
+    agentId: string,
+    credentialId: string,
+    command: AgentRotateInitialPasswordCommand,
+  ): Promise<AgentAuthenticationCredential> {
+    this.assertUuid(agentId, 'agentId');
+    this.assertUuid(credentialId, 'credentialId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    if (!Object.values(AgentPasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const agent = await this.requireAgent(manager.getRepository(Agent), agentId);
+      this.requireActiveAgent(agent);
+      const repo = manager.getRepository(AgentAuthenticationCredential);
+      const credential = await this.requireCredential(repo, agentId, credentialId);
+      if (
+        credential.status !== AgentAuthenticationCredentialStatus.ACTIVE ||
+        credential.rotationRequired !== true
+      ) {
+        throw new ConflictException('Credential rotation is not pending');
+      }
+      const previousValues = this.credentialValues(credential);
+      credential.passwordHash = passwordHash;
+      credential.hashAlgorithm = command.hashAlgorithm;
+      credential.passwordVersion = credential.passwordVersion + 1;
+      credential.passwordChangedAt = new Date();
+      credential.passwordExpiresAt = null;
+      credential.rotationRequired = false;
+      credential.failedAuthenticationCount = 0;
+      credential.accountLocked = false;
+      credential.lockedAt = null;
+      credential.lockReason = null;
+      const saved = await repo.save(credential);
+      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', saved.id, 'PASSWORD_ROTATED', actor, previousValues, this.credentialValues(saved));
+      return saved;
+    });
   }
 
   async recordFailedAuthentication(
@@ -289,6 +433,7 @@ export class AgentAuthenticationService {
       passwordExpiresAt: credential.passwordExpiresAt,
       failedAuthenticationCount: credential.failedAuthenticationCount,
       accountLocked: credential.accountLocked,
+      rotationRequired: credential.rotationRequired,
       version: credential.version,
     };
   }
@@ -303,6 +448,44 @@ export class AgentAuthenticationService {
       version: pin.version,
       lastChangedAt: pin.lastChangedAt,
     };
+  }
+
+  private requireActiveAgent(agent: Agent): void {
+    if (agent.status !== AgentStatus.ACTIVE) {
+      throw new ConflictException('Agent is not ACTIVE');
+    }
+  }
+
+  private async persistIssuedCredential(
+    manager: EntityManager,
+    agentId: string,
+    passwordHash: string,
+    hashAlgorithm: AgentPasswordHashAlgorithm,
+    passwordExpiresAt: Date,
+  ): Promise<AgentAuthenticationCredential> {
+    const repo = manager.getRepository(AgentAuthenticationCredential);
+    const existing = await repo.findOne({ where: { agentId } });
+    if (existing && existing.deletedAt === null) {
+      throw new ConflictException('Agent already has an authentication credential');
+    }
+    return repo.save(
+      repo.create({
+        id: randomUUID(),
+        agentId,
+        passwordHash,
+        hashAlgorithm,
+        passwordVersion: 1,
+        passwordChangedAt: new Date(),
+        passwordExpiresAt,
+        status: AgentAuthenticationCredentialStatus.ACTIVE,
+        failedAuthenticationCount: 0,
+        accountLocked: false,
+        lockedAt: null,
+        lockReason: null,
+        rotationRequired: true,
+        version: 1,
+      }),
+    );
   }
 
   private async requireAgent(repository: Repository<Agent>, agentId: string): Promise<Agent> {

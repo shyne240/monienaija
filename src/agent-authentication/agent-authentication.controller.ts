@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Post,
@@ -19,6 +21,7 @@ import { AgentAuthenticationSessionService, DEFAULT_AGENT_SESSION_AUDIENCE } fro
 import { AgentPasswordHashVerificationService } from './agent-password-hash-verification.service';
 import { AgentLoginDto } from './dto/agent-login.dto';
 import { SetTransactionPinDto } from './dto/set-transaction-pin.dto';
+import { RotateInitialCredentialDto } from './dto/rotate-initial-credential.dto';
 import { VerifyTransactionPinDto } from './dto/verify-transaction-pin.dto';
 import { AgentPasswordHashAlgorithm } from './agent-authentication.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -49,6 +52,14 @@ export class AgentAuthenticationController {
     });
     if (!result.authenticated) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    // V1-AGENT-CREDENTIALS-01 — workforce-issued temporary credentials must be rotated
+    // before any session exists. Verification succeeded, but NO session is issued.
+    if (result.rotationRequired === true) {
+      return {
+        rotationRequired: true,
+        agentId: result.agentId,
+      };
     }
     const session = await this.sessionService.issue({
       authentication: result,
@@ -104,6 +115,68 @@ export class AgentAuthenticationController {
       status: agent.status,
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
+    };
+  }
+
+  @Post('credentials/rotate')
+  @HttpCode(200)
+  async rotateInitialCredential(@Body() dto: RotateInitialCredentialDto) {
+    // Unauthenticated rotate surface (registry: AGENT_LOGIN mode — the Agent holds no session
+    // yet). Step 1: prove the current (temporary) password through the REAL authentication
+    // execution path (lockout/failed-attempt accounting intact).
+    const auth = await this.executionService.authenticate({
+      agentId: dto.agentId,
+      password: dto.currentPassword,
+      actor: dto.agentId,
+    });
+    if (!auth.authenticated || !auth.credentialId) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (auth.rotationRequired !== true) {
+      // Rotation is only for workforce-issued temporary credentials; normal credentials
+      // are not rotated through this surface (no second password-management path invented).
+      throw new ForbiddenException('Credential rotation is not pending');
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException('newPassword must differ from currentPassword');
+    }
+    // Hash server-side with the module's established PBKDF2 convention (same as PIN setter).
+    const salt = randomBytes(16);
+    const iterations = 10000;
+    const derived = this.pbkdf2Hash(dto.newPassword, salt, iterations);
+    const newHash = `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+    const credential = await this.agentAuthenticationService.rotateInitialPassword(
+      dto.agentId,
+      auth.credentialId,
+      {
+        passwordHash: newHash,
+        hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+        actor: dto.agentId,
+      },
+    );
+    // Established rotation/revocation convention: all sessions of the rotated credential die.
+    await this.sessionService.revokeAllForCredential(
+      credential.id,
+      dto.agentId,
+      'Credential rotated after first login',
+    );
+    // Post-rotation, issue the Agent's first real session (login completes here).
+    const session = await this.sessionService.issue({
+      authentication: {
+        authenticated: true,
+        agentId: dto.agentId,
+        credentialId: credential.id,
+        passwordVersion: credential.passwordVersion,
+      },
+      actor: dto.agentId,
+      audience: DEFAULT_AGENT_SESSION_AUDIENCE,
+    });
+    return {
+      accessToken: session.accessToken,
+      tokenType: session.tokenType,
+      expiresAt: session.expiresAt,
+      agentId: session.principal.agentId,
+      sessionId: session.sessionId,
     };
   }
 

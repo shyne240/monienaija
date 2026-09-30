@@ -150,6 +150,17 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Agent initial-credential rotation (V1-AGENT-CREDENTIALS-01) — unauthenticated like
+    // login: the Agent proves the temporary password and receives its first session only
+    // AFTER rotation completes inside this handler. No bearer token exists yet.
+    if (method === 'POST' && path === '/api/v1/agents/credentials/rotate') {
+      return {
+        public: false,
+        authenticationMode: 'AGENT_LOGIN',
+        resourceType: 'agent-credential-rotation',
+      };
+    }
+
     // Recipient resolution — A9: typed CUSTOMER vs AGENT resolution by receiving number / phone
     // Preserve Customer phone + MonieNaija resolution; block PENDING/rejected/deleted/terminated at service layer.
     if (path.startsWith('/api/v1/recipients/')) {
@@ -298,6 +309,24 @@ export class RoutePolicyRegistry {
         resourceType: 'agent-lifecycle',
         policy: {
           resourceType: 'agent-lifecycle',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+    // Agent credential issuance/reissuance (V1-AGENT-CREDENTIALS-01) — internal privileged
+    // workforce surface mirroring the agent-lifecycle actor vocabulary (controller enforces
+    // OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as with lifecycle actions).
+    if (method === 'POST' && /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-credential-issuance',
+        policy: {
+          resourceType: 'agent-credential-issuance',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'NONE',
