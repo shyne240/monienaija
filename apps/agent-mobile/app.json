@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "MoneyNaija Agent",
+    "slug": "moneynaija-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.monienaija.agent"
+    },
+    "android": {
+      "package": "ng.monienaija.agent"
+    }
+  }
+}
