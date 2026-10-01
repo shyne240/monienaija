@@ -231,7 +231,7 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
 
   // ---------------------------------------------------------------- proofs
 
-  it('1,9,10: DRAFT + verified phone — OPERATOR and SUPPORT activate; audit records actor, previous→new, gate outcome, timestamp', async () => {
+  it('1,9,10: DRAFT + verified phone — OPERATOR activates (SUPPORT denied per UAT-DEFECT-001 boundary); audit records actor, previous→new, gate outcome, timestamp', async () => {
     const first = await registerDraft();
     const activate = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${first.customerId}`)
@@ -254,12 +254,22 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
     expect(audits[0].new_values.activationGate).toEqual({ verifiedPrimaryPhone: true });
     expect(audits[0].occurred_at).toBeTruthy();
 
-    // SUPPORT is an authorized workforce class on this surface (policy allowlist).
+    // UAT-DEFECT-001 boundary: SUPPORT is NOT an authorized workforce class on the
+    // lifecycle surface (catalogue UAT-SEC-005/UAT-ADMIN-011: SUPPORT = read +
+    // funding-maker + support-queue only; lifecycle is OPERATOR/SERVICE/PRIVILEGED).
     const second = await registerDraft();
-    await request(app.getHttpServer())
+    const deniedSupport = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${second.customerId}`)
       .set('Authorization', 'Bearer workforce-SUPPORT')
       .send({ status: 'ACTIVE', actor: 'workforce-support-activation' })
+      .expect(401);
+    expect(deniedSupport.body.message).toBe('Privileged access required');
+    expect(await dbStatus(second.customerId)).toBe('DRAFT');
+    // Authorized workforce class still activates the same DRAFT.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/${second.customerId}`)
+      .set('Authorization', 'Bearer workforce-OPERATOR')
+      .send({ status: 'ACTIVE', actor: 'workforce-activation' })
       .expect(200);
     expect(await dbStatus(second.customerId)).toBe('ACTIVE');
   });

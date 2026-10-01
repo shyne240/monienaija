@@ -205,12 +205,9 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     const registry = new RoutePolicyRegistry();
     const lifecycle = registry.resolve({ method: 'PATCH', url: '/api/v1/customers/some-uuid' });
     expect(lifecycle.authenticationMode).toBe('WORKFORCE_SESSION');
-    expect(lifecycle.policy?.allowedPrincipalTypes).toEqual([
-      'SUPPORT',
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    // UAT-DEFECT-001 boundary: SUPPORT is excluded from customer lifecycle transitions
+    // (catalogue UAT-SEC-005 / UAT-ADMIN-011: SUPPORT = read + funding-maker + support-queue).
+    expect(lifecycle.policy?.allowedPrincipalTypes).toEqual(['OPERATOR', 'SERVICE', 'PRIVILEGED']);
     expect(lifecycle.policy?.customerAccess).toBe('NONE');
     // Self-service surface explicitly unchanged (A23 contract).
     const me = registry.resolve({ method: 'GET', url: '/api/v1/customers/me/profile' });
@@ -249,13 +246,18 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
     expect(await dbCustomerStatus(customerId)).toBe('ACTIVE');
     expect(await auditCount(customerId, 'STATUS_UPDATED')).toBe(1);
 
-    // SUPPORT workforce type is also an authorized workforce principal on this surface.
-    await request(app.getHttpServer())
+    // UAT-DEFECT-001 boundary: SUPPORT is NOT an authorized workforce principal on this
+    // surface (catalogue UAT-SEC-005/UAT-ADMIN-011 + route-policy customer-lifecycle
+    // branch). Denial mirrors the V1-003 agent-lifecycle convention (401
+    // "Privileged access required") and must carry no state write and no audit row.
+    const denied = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}`)
       .set('Authorization', 'Bearer workforce-SUPPORT')
       .send({ status: 'SUSPENDED', actor: 'workforce-suspend' })
-      .expect(200);
-    expect(await dbCustomerStatus(customerId)).toBe('SUSPENDED');
+      .expect(401);
+    expect(denied.body.message).toBe('Privileged access required');
+    expect(await dbCustomerStatus(customerId)).toBe('ACTIVE');
+    expect(await auditCount(customerId, 'STATUS_UPDATED')).toBe(1); // still only the OPERATOR activation
   });
 
   it('3. Unauthorized principal types are rejected on the lifecycle route', async () => {

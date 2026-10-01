@@ -120,6 +120,11 @@ export class RoutePolicyRegistry {
     // status only: a CUSTOMER SELF principal must not self-activate / self-unsuspend /
     // self-close merely by supplying its own customer id. Workforce session required;
     // Customer/Agent bearer tokens are denied (authenticated principal cross-check).
+    // SUPPORT is excluded from this branch (UAT-DEFECT-001 fix): per the authoritative
+    // V1 UAT catalogue (UAT-SEC-005 / UAT-ADMIN-011) the SUPPORT scope is
+    // "read + funding-maker + support-queue only" — lifecycle transitions are
+    // OPERATOR/SERVICE/PRIVILEGED only, mirroring the agent-lifecycle branch's
+    // SUPPORT-exclusion recorded below (V1-003 decision).
     // Self-service remains available under /customers/me/* (checked above).
     if (method === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
       return {
@@ -129,7 +134,7 @@ export class RoutePolicyRegistry {
         policy: {
           resourceType: 'customer-lifecycle',
           action: `${method}:${path}`,
-          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

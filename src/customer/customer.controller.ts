@@ -108,10 +108,16 @@ export class CustomerController {
   private requireWorkforce(req: AuthenticatedRequest): string {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
+    // UAT-DEFECT-001 tightened: SUPPORT may not perform CUSTOMER lifecycle control
+    // (OPERATOR/SERVICE/PRIVILEGED only) — mirrors the V1-003 agent-lifecycle
+    // tightening and the route-policy-registry customer-lifecycle branch.
+    // SUPPORT scope per authoritative V1 UAT catalogue (UAT-SEC-005/UAT-ADMIN-011):
+    // read + funding-maker + support-queue only.
     if (
       principal.type === 'AGENT' ||
       principal.type === 'CUSTOMER' ||
-      (principal.type as string) === 'AGGREGATOR'
+      (principal.type as string) === 'AGGREGATOR' ||
+      principal.type === 'SUPPORT'
     ) {
       throw new UnauthorizedException('Privileged access required');
     }
