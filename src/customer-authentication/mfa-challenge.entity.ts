@@ -39,6 +39,12 @@ export class MfaChallenge {
   @Column({ type: 'varchar', length: 20, default: MfaChallengeStatus.ACTIVE })
   status!: MfaChallengeStatus;
 
+  // V1-AGENT-MFA-API-01 — nullable purpose binding. NULL = legacy/purpose-generic
+  // challenge (pre-feature issuance); non-null values are enforced at verification
+  // against the consumer's expectedPurpose (cross-flow reuse fails WRONG_PURPOSE).
+  @Column({ name: 'purpose', type: 'varchar', length: 64, nullable: true })
+  purpose!: string | null;
+
   @Column({ name: 'issued_at', type: 'timestamptz' })
   issuedAt!: Date;
 

@@ -99,8 +99,8 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(migs.some((m) => m.timestamp === '1785753600071')).toBe(true);
     // head moved forward with the reward rule schema foundation (0074)
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600079');
-    expect(last.name).toBe('AddCustomerCredentialRotation1785753600079');
+    expect(last.timestamp).toBe('1785753600080');
+    expect(last.name).toBe('AddMfaChallengePurpose1785753600080');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);

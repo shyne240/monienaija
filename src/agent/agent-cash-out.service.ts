@@ -12,6 +12,7 @@ import {
 import { DataSource } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH } from './agent-desk-otp.constants';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
@@ -182,6 +183,7 @@ export class AgentCashOutService {
     };
 
     const verifyResult = await this.mfaExecutionService.verifyChallenge({
+      expectedPurpose: AGENT_DESK_OTP_PURPOSE_WALLET_TO_CASH,
       principal: principalForMfa,
       challengeId,
       providedHash: otp,

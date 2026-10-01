@@ -43,6 +43,13 @@ export const SECURITY_CRITICAL_NOTIFICATION_EVENT_TYPES: ReadonlySet<string> = n
   // would persist the credential). Sent to the customer's verified primary phone — the
   // same fail-closed class as the registration OTP.
   CUSTOMER_TEMPORARY_CREDENTIAL_EVENT_TYPE,
+  // V1-AGENT-MFA-API-01 — customer OTP SMS for agent-desk money flows (Wallet→Cash,
+  // Cash→Cash claim). Delivered DIRECTLY through the provider-neutral SMS abstraction
+  // (never dispatcher/outbox — an outbox record would persist the rendered OTP) to the
+  // customer's verified primary phone. This is the previously-unwired "MFA challenge
+  // delivery" class referenced above; issuance is AGENT-session-only and the OTP itself
+  // is delivered to the customer, never to the agent.
+  'agent.desk.customer_otp',
 ]);
 
 export function isSecurityCriticalNotificationEvent(eventType: string | null | undefined): boolean {

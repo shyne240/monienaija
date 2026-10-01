@@ -42,6 +42,9 @@ import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
 import { AgentTransactionHistoryService } from './agent-transaction-history.service';
+import { AgentDeskOtpController } from './agent-desk-otp.controller';
+import { AgentDeskOtpService } from './agent-desk-otp.service';
+import { NotificationModule } from '../notification/notification.module';
 import { OutletModule } from '../outlet/outlet.module';
 import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
@@ -56,6 +59,7 @@ import { CommercialAccountingModule } from '../commercial-accounting/commercial-
     WalletModule,
     CustomerModule,
     CustomerAuthenticationModule,
+    NotificationModule, // V1-AGENT-MFA-API-01 — provider-neutral direct SMS for desk OTP
     OutletModule,
     LimitCatalogModule,
     // V1-COMMERCIAL-DECISION-03A — CASH_TO_WALLET commercial snapshot wiring (pilot extension):
@@ -82,6 +86,7 @@ import { CommercialAccountingModule } from '../commercial-accounting/commercial-
     AgentCashToCashController,
     AgentCashToCashClaimController,
     AgentFundingController,
+    AgentDeskOtpController, // V1-AGENT-MFA-API-01 — issue-only desk OTP challenge surface
   ],
   providers: [
     AgentClassService,
@@ -99,6 +104,7 @@ import { CommercialAccountingModule } from '../commercial-accounting/commercial-
     AgentCashToCashExpiryService,
     AgentLifecycleService,
     AgentFundingService,
+    AgentDeskOtpService, // V1-AGENT-MFA-API-01 — canonical-challenge issuance for desk flows
   ],
   exports: [
     AgentClassService,

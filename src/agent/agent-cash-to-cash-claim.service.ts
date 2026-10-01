@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM } from './agent-desk-otp.constants';
+
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
@@ -198,6 +200,7 @@ export class AgentCashToCashClaimService {
       challengeId: mfaChallengeId,
       providedHash: otp,
       actor: customerId,
+      expectedPurpose: AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM,
     } as any);
     if (!verifyResultPre.verified) {
       const reason = verifyResultPre.failureReason;

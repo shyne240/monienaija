@@ -135,9 +135,9 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   // ── Migration & chain ──
   it('01. Migration count and chain intact (additive chain)', async () => {
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(80);
+    expect(Number(rows[0]!.cnt)).toBe(81);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(80);
+    expect(files.length).toBe(81);
     expect(files.some((f) => f.name.includes('1785753600075'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600074'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600072'))).toBe(true);
@@ -150,8 +150,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600079');
-    expect(latest[0]!.name).toBe('AddCustomerCredentialRotation1785753600079');
+    expect(latest[0]!.timestamp).toBe('1785753600080');
+    expect(latest[0]!.name).toBe('AddMfaChallengePurpose1785753600080');
   });
 
   // ── Seed counts V1/V2 ──
