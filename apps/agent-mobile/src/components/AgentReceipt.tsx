@@ -7,6 +7,7 @@ import { Button } from './Button';
 import type {
   AgentCashInResult,
   AgentCashOutResult,
+  AgentCashToCashClaimResult,
   AgentCashToCashResult,
   AgentHistoryItem,
   SafeCashToCashResult,
@@ -182,6 +183,55 @@ export function receiptFromCashOutResult(
     footerNote: note,
     shareText: buildShareText(
       'Wallet→Cash Receipt',
+      replayed ? 'REPLAYED' : result.status,
+      lines,
+      note,
+    ),
+  };
+}
+
+
+/** Cash→Cash Claim result → receipt (V1-AGENT-MOBILE-09 / CLM-6). transferCode and OTP are NEVER included. */
+export function receiptFromCashToCashClaimResult(
+  result: AgentCashToCashClaimResult,
+  customerDisplay?: string,
+  customerReceivingNumber?: string,
+): AgentReceiptViewModel {
+  const replayed = result.replayed === true || result.status === 'REPLAYED';
+  const lines: AgentReceiptLine[] = [
+    {
+      label: 'Amount claimed',
+      value: `${formatNairaFromMinor(result.principalMinor || result.amountMinor)} ${result.currency}`,
+    },
+    ...(customerDisplay ? [{ label: 'Beneficiary', value: customerDisplay }] : []),
+    {
+      label: 'Beneficiary phone',
+      value: customerReceivingNumber || result.beneficiaryPhone,
+      selectable: true,
+    },
+  ];
+  if (result.reference) {
+    lines.push({ label: 'Transaction reference', value: result.reference, selectable: true });
+  }
+  if (result.claimedAt) {
+    lines.push({ label: 'Time', value: formatHistoryTimestamp(String(result.claimedAt)) });
+  }
+  if (result.correlationId) {
+    lines.push({ label: 'Operation id', value: result.correlationId, selectable: true });
+  }
+
+  const note = replayed
+    ? 'Idempotent replay — this matched an earlier successful claim; no new credit was created.'
+    : 'The transfer was claimed to the customer wallet. Physical cash was handed over outside the ledger.';
+
+  return {
+    heading: 'Cash→Cash Claim Receipt',
+    stateLabel: replayed ? 'REPLAYED' : result.status,
+    stateTone: replayed ? 'info' : 'success',
+    lines,
+    footerNote: note,
+    shareText: buildShareText(
+      'Cash→Cash Claim Receipt',
       replayed ? 'REPLAYED' : result.status,
       lines,
       note,

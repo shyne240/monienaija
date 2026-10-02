@@ -2,8 +2,10 @@ import { ApiClient, ApiError, NetworkError } from '../src/services/api-client';
 import {
   agentCashIn,
   agentCashToCash,
+  agentCashToCashClaim,
   describeApiError,
   describeCashToCashError,
+  describeCashToCashClaimError,
   getAgentReceivingNumber,
   getAgentOutlets,
   getAgentTerminals,
@@ -225,6 +227,86 @@ describe('Agent operating-context API bindings', () => {
     });
     test('4xx preserving backend message (safe, agent-facing)', () => {
       expect(describeApiError(new ApiError('No receiving number', 404))).toBe('No receiving number');
+    });
+  });
+
+  describe('POST /agents/cash-to-cash/claim binding (Cash→Cash Claim Assist)', () => {
+    test('sends exact contract body with credentials and preserveSessionOn401', async () => {
+      const claimRes = {
+        status: 'COMPLETED',
+        transferId: 'c2c-transfer-uuid',
+        journalId: 'journal-uuid',
+        beneficiaryPhone: '8012345678',
+        principalMinor: '450000',
+        currency: 'NGN',
+        amountMinor: '450000',
+        claimantCustomerId: 'cust-claimant-uuid',
+        idempotencyKey: 'c2c-claim-key-1',
+        requestHash: 'hash-claim-1',
+        replayed: false,
+        reference: 'CASH_TO_CASH_CLAIM-c2c-claim-key-1',
+        claimedAt: '2026-10-02T12:00:00.000Z',
+      };
+      mockClient.post.mockResolvedValue(claimRes);
+
+      const out = await agentCashToCashClaim({
+        transferId: 'c2c-transfer-uuid',
+        beneficiaryPhone: '8012345678',
+        transferCode: '87654321',
+        customerId: 'cust-claimant-uuid',
+        mfaChallengeId: 'mfa-challenge-uuid',
+        otp: '123456',
+        idempotencyKey: 'c2c-claim-key-1',
+      });
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/cash-to-cash/claim',
+        {
+          transferId: 'c2c-transfer-uuid',
+          beneficiaryPhone: '8012345678',
+          transferCode: '87654321',
+          customerId: 'cust-claimant-uuid',
+          mfaChallengeId: 'mfa-challenge-uuid',
+          otp: '123456',
+          idempotencyKey: 'c2c-claim-key-1',
+        },
+        { idempotencyKey: 'c2c-claim-key-1', preserveSessionOn401: true },
+      );
+      expect(out.status).toBe('COMPLETED');
+      expect(out.principalMinor).toBe('450000');
+    });
+
+    test('describeCashToCashClaimError maps all server responses correctly', () => {
+      expect(describeCashToCashClaimError(new ApiError('Transfer code invalid', 401))).toBe(
+        'Transfer code is invalid. Check the code and try again.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Transfer code locked', 403))).toBe(
+        'Transfer code is locked due to too many failed attempts.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Claimant identity not verified', 403))).toBe(
+        'Beneficiary identity is not verified. KYC approval or identity document is required.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Transfer has expired', 409))).toBe(
+        'This Cash→Cash transfer has expired and cannot be claimed.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Transfer already claimed', 409))).toBe(
+        'This Cash→Cash transfer has already been claimed.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('OTP invalid: MISMATCH', 400))).toBe(
+        'Customer verification code (OTP) is invalid. Check the code and try again.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('OTP expired', 400))).toBe(
+        'Customer verification code has expired. Request a new code.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Beneficiary phone does not match', 400))).toBe(
+        'Beneficiary phone number does not match this transfer.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Transfer not found', 404))).toBe(
+        'Cash→Cash transfer not found. Check the transfer ID and beneficiary phone.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Generic 400 error', 400))).toBe(
+        'Generic 400 error',
+      );
     });
   });
 });

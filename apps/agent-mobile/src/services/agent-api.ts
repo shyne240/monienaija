@@ -515,6 +515,117 @@ export function describeCashOutError(error: unknown): string {
   return describeApiError(error);
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Cash→Cash Claim Assist (V1-AGENT-MOBILE-09) — exact backend contract
+ * (src/agent/agent-cash-to-cash-claim.controller.ts + agent-cash-to-cash-claim.service.ts).
+ * Beneficiary customer arrives at outlet to claim cash with transferId + transferCode + OTP.
+ * ------------------------------------------------------------------------- */
+
+export interface AgentCashToCashClaimRequest {
+  transferId: string;
+  beneficiaryPhone: string;
+  transferCode: string;
+  customerId: string;
+  mfaChallengeId: string;
+  otp: string;
+  idempotencyKey: string;
+  reference?: string;
+  description?: string;
+  correlationId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentCashToCashClaimResult {
+  status: 'COMPLETED' | 'REPLAYED';
+  transferId: string;
+  journalId: string;
+  beneficiaryPhone: string;
+  principalMinor: string;
+  currency: string;
+  amountMinor: string;
+  claimantCustomerId: string;
+  idempotencyKey: string;
+  requestHash: string;
+  replayed: boolean;
+  correlationId?: string;
+  reference?: string;
+  claimedAt: string;
+}
+
+/** POST /agents/cash-to-cash/claim (200). Claimant customer wallet credited, unclaimed debited. */
+export async function agentCashToCashClaim(
+  request: AgentCashToCashClaimRequest,
+): Promise<AgentCashToCashClaimResult> {
+  return ApiClient.post<AgentCashToCashClaimResult>(
+    'api/v1/agents/cash-to-cash/claim',
+    { ...request },
+    { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
+  );
+}
+
+export function describeCashToCashClaimError(error: unknown): string {
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    const msg = error.message;
+    if (status === 404) {
+      if (/Customer/i.test(msg)) {
+        return 'Beneficiary customer not found. An active customer account is required to claim.';
+      }
+      return 'Cash→Cash transfer not found. Check the transfer ID and beneficiary phone.';
+    }
+    if (status === 409) {
+      if (/expired/i.test(msg)) {
+        return 'This Cash→Cash transfer has expired and cannot be claimed.';
+      }
+      if (/already claimed/i.test(msg)) {
+        return 'This Cash→Cash transfer has already been claimed.';
+      }
+      if (/Idempotency key/i.test(msg)) {
+        return 'Idempotency conflict. Retry with a new attempt.';
+      }
+      return error.message;
+    }
+    if (status === 403) {
+      if (/locked/i.test(msg)) {
+        return 'Transfer code is locked due to too many failed attempts.';
+      }
+      if (/identity not verified|KYC/i.test(msg)) {
+        return 'Beneficiary identity is not verified. KYC approval or identity document is required.';
+      }
+      return 'You are not permitted to claim this transfer.';
+    }
+    if (status === 401) {
+      if (/Transfer code/i.test(msg)) {
+        return 'Transfer code is invalid. Check the code and try again.';
+      }
+      return 'Authentication required. Try again.';
+    }
+    if (status === 400) {
+      if (/OTP expired|expired/i.test(msg)) {
+        return 'Customer verification code has expired. Request a new code.';
+      }
+      if (/OTP invalid|OTP verification failed|MISMATCH/i.test(msg)) {
+        return 'Customer verification code (OTP) is invalid. Check the code and try again.';
+      }
+      if (/OTP already used/i.test(msg)) {
+        return 'Customer verification code (OTP) has already been used. Request a new code.';
+      }
+      if (/Beneficiary phone/i.test(msg)) {
+        return 'Beneficiary phone number does not match this transfer.';
+      }
+      if (/transferId/i.test(msg)) {
+        return 'Invalid transfer ID format.';
+      }
+      if (/transferCode/i.test(msg)) {
+        return 'Invalid transfer code format.';
+      }
+      return error.message;
+    }
+  }
+  return describeApiError(error);
+}
+
 /* ---------------------------------------------------------------------------
  * Unified Agent transaction history (V1-AGENT-MOBILE-06).
  * GET /agents/me/transactions — verified against

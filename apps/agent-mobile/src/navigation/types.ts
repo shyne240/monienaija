@@ -4,6 +4,7 @@ import type {
   AgentCashInResult,
   AgentCashOutResult,
   SafeCashToCashResult,
+  AgentCashToCashClaimResult,
 } from '../services/agent-api';
 
 export type RootStackParamList = {
@@ -64,6 +65,19 @@ export type RootStackParamList = {
   WalletToCashSuccess: {
     result: AgentCashOutResult;
     amountMinor: string;
+    customerDisplay?: string;
+    customerReceivingNumber?: string;
+  };
+
+  // Agent Cash→Cash Claim Assist (V1-AGENT-MOBILE-09). transferCode and OTP NEVER travel in params.
+  CashToCashClaim: undefined;
+  CashToCashClaimConfirm: {
+    customer: ResolvedCustomerRecipientView;
+    transferId: string;
+    beneficiaryPhone: string;
+  };
+  CashToCashClaimSuccess: {
+    result: AgentCashToCashClaimResult;
     customerDisplay?: string;
     customerReceivingNumber?: string;
   };
