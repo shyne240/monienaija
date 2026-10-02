@@ -19,6 +19,12 @@ export type RootStackParamList = {
   Transactions: undefined;
   History: undefined;
 
+  // Agent Transaction PIN Management (V1-AGENT-MOBILE-10). PINs NEVER travel in params.
+  TransactionPinManage: undefined;
+  SetTransactionPin: {
+    mode: 'CREATE' | 'ROTATE';
+  };
+
   // Agent Cash→Wallet (V1-AGENT-MOBILE-04). PIN NEVER travels in params.
   CashToWallet: undefined;
   CashToWalletAmount: {

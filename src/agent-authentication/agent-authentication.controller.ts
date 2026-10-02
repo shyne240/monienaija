@@ -180,6 +180,29 @@ export class AgentAuthenticationController {
     };
   }
 
+  @Get('me/transaction-pin')
+  async getTransactionPinStatus(@Req() req: AuthenticatedRequest) {
+    const principal = this.requireAgentPrincipal(req);
+    const pin = await this.agentAuthenticationService.getTransactionPin(principal.agentId!);
+    if (!pin) {
+      return {
+        status: 'NOT_SET' as const,
+        exists: false,
+        accountLocked: false,
+      };
+    }
+    return {
+      status: pin.accountLocked ? ('LOCKED' as const) : ('ACTIVE' as const),
+      exists: true,
+      accountLocked: pin.accountLocked,
+      pinVersion: pin.pinVersion,
+      lastChangedAt: pin.lastChangedAt,
+      failedCount: pin.failedCount,
+      lockedAt: pin.lockedAt,
+      lockReason: pin.lockReason,
+    };
+  }
+
   @Post('me/transaction-pin')
   @HttpCode(200)
   async setTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: SetTransactionPinDto) {

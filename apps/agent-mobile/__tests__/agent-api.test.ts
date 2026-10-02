@@ -6,9 +6,13 @@ import {
   describeApiError,
   describeCashToCashError,
   describeCashToCashClaimError,
+  describeTransactionPinError,
   getAgentReceivingNumber,
   getAgentOutlets,
   getAgentTerminals,
+  getAgentTransactionPinStatus,
+  setAgentTransactionPin,
+  verifyAgentTransactionPin,
   requestAgentMfaChallenge,
   resolveAgentRecipient,
   setPendingTransferCode,
@@ -306,6 +310,84 @@ describe('Agent operating-context API bindings', () => {
       );
       expect(describeCashToCashClaimError(new ApiError('Generic 400 error', 400))).toBe(
         'Generic 400 error',
+      );
+    });
+  });
+
+  describe('Agent Transaction PIN Management API bindings (V1-AGENT-MOBILE-10)', () => {
+    test('getAgentTransactionPinStatus: calls GET /agents/me/transaction-pin', async () => {
+      const statusFixture = {
+        status: 'ACTIVE',
+        exists: true,
+        accountLocked: false,
+        pinVersion: 1,
+        lastChangedAt: '2026-09-01T00:00:00.000Z',
+      };
+      mockClient.get.mockResolvedValue(statusFixture);
+
+      const out = await getAgentTransactionPinStatus();
+
+      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/transaction-pin');
+      expect(out.status).toBe('ACTIVE');
+      expect(out.exists).toBe(true);
+    });
+
+    test('setAgentTransactionPin: calls POST /agents/me/transaction-pin with preserveSessionOn401', async () => {
+      const setResult = {
+        agentId: 'a-1',
+        pinVersion: 1,
+        updatedAt: '2026-09-01T00:00:00.000Z',
+      };
+      mockClient.post.mockResolvedValue(setResult);
+
+      const out = await setAgentTransactionPin('1234', '1234');
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/me/transaction-pin',
+        { pin: '1234', pinConfirmation: '1234' },
+        { preserveSessionOn401: true },
+      );
+      expect(out.pinVersion).toBe(1);
+    });
+
+    test('verifyAgentTransactionPin: calls POST /agents/me/transaction-pin/verify with preserveSessionOn401', async () => {
+      const verifyResult = { verified: true };
+      mockClient.post.mockResolvedValue(verifyResult);
+
+      const out = await verifyAgentTransactionPin('1234');
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/me/transaction-pin/verify',
+        { pin: '1234' },
+        { preserveSessionOn401: true },
+      );
+      expect(out.verified).toBe(true);
+    });
+
+    test('describeTransactionPinError: maps errors to safe user-friendly messages', () => {
+      expect(describeTransactionPinError(new ApiError('Invalid PIN format', 401))).toBe(
+        'Invalid PIN format. PIN must be 4 to 12 numeric digits.',
+      );
+      expect(describeTransactionPinError(new ApiError('Unauthorized', 401))).toBe(
+        'Incorrect transaction PIN. Check the PIN and try again.',
+      );
+      expect(describeTransactionPinError(new ApiError('PIN is locked', 403))).toBe(
+        'Transaction PIN is locked due to too many failed attempts.',
+      );
+      expect(describeTransactionPinError(new ApiError('Forbidden', 403))).toBe(
+        'You are not permitted to manage transaction PIN on this account.',
+      );
+      expect(describeTransactionPinError(new ApiError('Custom 400 error', 400))).toBe(
+        'Custom 400 error',
+      );
+      expect(describeTransactionPinError(new ApiError('Internal Error', 500))).toBe(
+        'The service is temporarily unavailable. Please retry.',
+      );
+      expect(describeTransactionPinError(new NetworkError('failed'))).toBe(
+        'No network connection. Check your connection and retry.',
+      );
+      expect(describeTransactionPinError(new Error('Local error message'))).toBe(
+        'Local error message',
       );
     });
   });

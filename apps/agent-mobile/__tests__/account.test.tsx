@@ -5,12 +5,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AccountScreen } from '../src/screens/authenticated/AccountScreen';
 import { useAuthStore } from '../src/store/auth-store';
 
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
+}));
+
 jest.mock('../src/services/agent-api', () => ({
   getAgentProfile: jest.fn(),
   getAgentReceivingNumber: jest.fn(),
   getAgentCapabilities: jest.fn(),
   getAgentOutlets: jest.fn(),
   getAgentTerminals: jest.fn(),
+  getAgentTransactionPinStatus: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
 }));
 
@@ -20,6 +26,7 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   getAgentCapabilities: jest.Mock;
   getAgentOutlets: jest.Mock;
   getAgentTerminals: jest.Mock;
+  getAgentTransactionPinStatus: jest.Mock;
 };
 
 const profileFixture = {
@@ -40,6 +47,13 @@ const capabilitiesFixture = {
     { service: 'CASH_OUT', canonicalService: 'CASH_OUT', allowed: true, reason: null },
     { service: 'CASH_TO_CASH', canonicalService: 'CASH_TO_CASH', allowed: false, reason: 'Requires upgraded class' },
   ],
+};
+
+const pinStatusFixture = {
+  status: 'ACTIVE' as const,
+  exists: true,
+  accountLocked: false,
+  pinVersion: 1,
 };
 
 const outletsFixture = [
@@ -95,9 +109,10 @@ describe('AccountScreen (real Agent information)', () => {
     mockApi.getAgentCapabilities.mockResolvedValue(capabilitiesFixture);
     mockApi.getAgentOutlets.mockResolvedValue(outletsFixture);
     mockApi.getAgentTerminals.mockResolvedValue(terminalsFixture);
+    mockApi.getAgentTransactionPinStatus.mockResolvedValue(pinStatusFixture);
   });
 
-  test('renders profile, class, receiving number, outlets, terminals from backend data', async () => {
+  test('renders profile, class, receiving number, PIN status, outlets, terminals from backend data', async () => {
     const { getAllByText, getByText, getByTestId, queryByText } = wrap(<AccountScreen />);
 
     await waitFor(() => expect(getByTestId('account-reference')).toBeTruthy());
@@ -106,18 +121,25 @@ describe('AccountScreen (real Agent information)', () => {
     expect(getByText('Gold Agent (GOLD)')).toBeTruthy();
     expect(getByText('2348000009')).toBeTruthy();
 
+    // PIN status card (V1-AGENT-MOBILE-10)
+    expect(getByTestId('account-pin-card')).toBeTruthy();
+    expect(getByTestId('account-pin-status').props.children).toBe('ACTIVE');
+    expect(getByTestId('nav-transaction-pin')).toBeTruthy();
+
+    fireEvent.press(getByTestId('nav-transaction-pin'));
+    expect(mockNavigate).toHaveBeenCalledWith('TransactionPinManage');
+
     // Outlets
     expect(getByText('HQ — Wuse 2')).toBeTruthy();
     expect(getByText(/12 Aminu Kano Cres/)).toBeTruthy();
     expect(getByText('Branch Outlet')).toBeTruthy();
     // Terminal joined to outlet presentation
     expect(getByText('Counter POS')).toBeTruthy();
-    expect(getAllByText(/HQ — Wuse 2/).length).toBeGreaterThan(1); // terminal shows its outlet too
+    expect(getAllByText(/HQ — Wuse 2/).length).toBeGreaterThan(1);
     expect(getByText(/SN-9981/)).toBeTruthy();
 
-    // No credentials/PIN surfaces anywhere.
+    // Raw secrets/passwords are never displayed.
     expect(queryByText(/password/i)).toBeNull();
-    expect(queryByText(/PIN/)).toBeNull();
   });
 
   test('capability summary is fail-closed (requires upgraded class never shown as enabled)', async () => {

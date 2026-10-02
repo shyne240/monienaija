@@ -1,5 +1,7 @@
 import React from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 
 import { theme } from '../../theme';
@@ -13,20 +15,20 @@ import {
   getAgentProfile,
   getAgentReceivingNumber,
   getAgentTerminals,
+  getAgentTransactionPinStatus,
   type AgentOutlet,
   type AgentTerminal,
 } from '../../services/agent-api';
 import { useAuthStore } from '../../store/auth-store';
+import type { RootStackParamList } from '../../navigation/types';
 
 /**
- * Agent Account (V1-AGENT-MOBILE-02): profile, class, receiving number, and
- * the minimal V1 outlets/terminals presentation supported by the backend
- * read surface (spec §3). No internal security material, no credentials, no
- * PIN. Outlets/terminals belong here (not a dedicated operational screen)
- * because the backend exposes read-only lists only — no management
- * operations exist to warrant an operations surface (task §6).
+ * Agent Account (V1-AGENT-MOBILE-02 / V1-AGENT-MOBILE-10): profile, class,
+ * receiving number, transaction PIN status & management entry, and outlets/terminals.
+ * No raw credentials, secrets, or PIN values are ever displayed.
  */
 export const AccountScreen: React.FC = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { agentId, logout, isLoading: isLoggingOut } = useAuthStore();
 
   const profileQuery = useQuery({
@@ -34,6 +36,12 @@ export const AccountScreen: React.FC = () => {
     queryFn: getAgentProfile,
     enabled: !!agentId,
     staleTime: 30_000,
+  });
+  const pinStatusQuery = useQuery({
+    queryKey: ['agent-transaction-pin-status', agentId],
+    queryFn: getAgentTransactionPinStatus,
+    enabled: !!agentId,
+    staleTime: 10_000,
   });
   const receivingQuery = useQuery({
     queryKey: ['agent-receiving-number', agentId],
@@ -61,6 +69,7 @@ export const AccountScreen: React.FC = () => {
   });
 
   const profile = profileQuery.data;
+  const pinStatus = pinStatusQuery.data;
   const receiving = receivingQuery.data;
 
   const outletLabelById = React.useMemo(() => {
@@ -71,6 +80,7 @@ export const AccountScreen: React.FC = () => {
 
   const isRefreshing =
     profileQuery.isRefetching ||
+    pinStatusQuery.isRefetching ||
     receivingQuery.isRefetching ||
     capabilitiesQuery.isRefetching ||
     outletsQuery.isRefetching ||
@@ -78,6 +88,7 @@ export const AccountScreen: React.FC = () => {
 
   const refreshAll = () => {
     void profileQuery.refetch();
+    void pinStatusQuery.refetch();
     void receivingQuery.refetch();
     void capabilitiesQuery.refetch();
     void outletsQuery.refetch();
@@ -114,6 +125,50 @@ export const AccountScreen: React.FC = () => {
               />
             )}
             <InfoRow label="Agent since" value={formatDate(profile?.createdAt)} />
+          </>
+        )}
+      </Card>
+
+      {/* Transaction PIN (V1-AGENT-MOBILE-10) */}
+      <Card style={styles.card} testID="account-pin-card">
+        <Text style={styles.sectionTitle}>Agent Transaction PIN</Text>
+        {pinStatusQuery.isLoading ? (
+          <Text style={styles.muted} testID="account-pin-loading">Loading PIN status...</Text>
+        ) : pinStatusQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="account-pin-error">
+              {describeApiError(pinStatusQuery.error)}
+            </Text>
+            <Button label="Retry" variant="outline" onPress={() => pinStatusQuery.refetch()} testID="account-pin-retry" />
+          </View>
+        ) : (
+          <>
+            <View style={styles.pinStatusRow}>
+              <Text style={styles.infoLabel}>PIN Status</Text>
+              <View
+                style={[
+                  styles.pinBadge,
+                  pinStatus?.status === 'ACTIVE'
+                    ? styles.pinBadgeActive
+                    : pinStatus?.status === 'LOCKED'
+                      ? styles.pinBadgeLocked
+                      : styles.pinBadgeNotSet,
+                ]}
+              >
+                <Text style={styles.pinBadgeText} testID="account-pin-status">
+                  {pinStatus?.status ?? 'NOT_SET'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.helper}>
+              Required to authorize Cash→Wallet and Cash→Cash transactions.
+            </Text>
+            <Button
+              label="Manage Transaction PIN"
+              variant="outline"
+              onPress={() => navigation.navigate('TransactionPinManage')}
+              testID="nav-transaction-pin"
+            />
           </>
         )}
       </Card>
@@ -304,6 +359,36 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral.charcoal,
     flexShrink: 1,
     textAlign: 'right',
+  },
+  pinStatusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.xs,
+  },
+  pinBadge: {
+    borderRadius: 12,
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+  },
+  pinBadgeActive: {
+    backgroundColor: theme.colors.feedback.successLight,
+  },
+  pinBadgeNotSet: {
+    backgroundColor: theme.colors.feedback.warningLight,
+  },
+  pinBadgeLocked: {
+    backgroundColor: theme.colors.feedback.errorLight,
+  },
+  pinBadgeText: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary.main,
+  },
+  helper: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.slate,
+    marginVertical: theme.spacing.xs,
   },
   receivingNumber: {
     fontSize: theme.typography.sizes.xl,

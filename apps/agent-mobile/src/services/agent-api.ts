@@ -721,5 +721,98 @@ export function describeApiError(error: unknown): string {
   if (error instanceof Error && error.name === 'NetworkError') {
     return 'No network connection. Check your connection and retry.';
   }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Something went wrong. Please retry.';
+}
+
+// ──────────────────────────────────────────────
+// Agent Transaction PIN Management (V1-AGENT-MOBILE-10)
+// ──────────────────────────────────────────────
+
+export interface AgentTransactionPinStatus {
+  status: 'NOT_SET' | 'ACTIVE' | 'LOCKED';
+  exists: boolean;
+  accountLocked: boolean;
+  pinVersion?: number;
+  lastChangedAt?: string;
+  failedCount?: number;
+  lockedAt?: string;
+  lockReason?: string;
+}
+
+export interface AgentSetPinResult {
+  agentId: string;
+  pinVersion: number;
+  updatedAt: string;
+}
+
+export interface AgentVerifyPinResult {
+  verified: boolean;
+  reason?: string;
+  locked?: boolean;
+}
+
+/** GET /agents/me/transaction-pin (V1-AGENT-MOBILE-10 / PIN-1). */
+export async function getAgentTransactionPinStatus(): Promise<AgentTransactionPinStatus> {
+  return ApiClient.get<AgentTransactionPinStatus>('api/v1/agents/me/transaction-pin');
+}
+
+/** POST /agents/me/transaction-pin (V1-AGENT-MOBILE-10 / PIN-2..3). PIN is NEVER persisted. */
+export async function setAgentTransactionPin(
+  pin: string,
+  pinConfirmation?: string,
+): Promise<AgentSetPinResult> {
+  return ApiClient.post<AgentSetPinResult>(
+    'api/v1/agents/me/transaction-pin',
+    { pin, pinConfirmation },
+    { preserveSessionOn401: true },
+  );
+}
+
+/** POST /agents/me/transaction-pin/verify (V1-AGENT-MOBILE-10 / PIN-4). PIN is NEVER persisted. */
+export async function verifyAgentTransactionPin(pin: string): Promise<AgentVerifyPinResult> {
+  return ApiClient.post<AgentVerifyPinResult>(
+    'api/v1/agents/me/transaction-pin/verify',
+    { pin },
+    { preserveSessionOn401: true },
+  );
+}
+
+/**
+ * Safe translation of PIN management errors (V1-AGENT-MOBILE-10 / PIN-5).
+ * Never exposes hashes, SQL traces, or internal server errors.
+ */
+export function describeTransactionPinError(error: unknown): string {
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    const msg = error.message || '';
+    if (status === 401) {
+      if (/format/i.test(msg) || /invalid pin/i.test(msg)) {
+        return 'Invalid PIN format. PIN must be 4 to 12 numeric digits.';
+      }
+      return 'Incorrect transaction PIN. Check the PIN and try again.';
+    }
+    if (status === 403) {
+      if (/locked/i.test(msg)) {
+        return 'Transaction PIN is locked due to too many failed attempts.';
+      }
+      return 'You are not permitted to manage transaction PIN on this account.';
+    }
+    if (status === 400) {
+      return msg || 'Invalid PIN request. Please check your input and try again.';
+    }
+    if (typeof status === 'number' && status >= 500) {
+      return 'The service is temporarily unavailable. Please retry.';
+    }
+    return error.message;
+  }
+  if (error instanceof Error && error.name === 'NetworkError') {
+    return 'No network connection. Check your connection and retry.';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
   return 'Something went wrong. Please retry.';
 }
