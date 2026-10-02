@@ -3,6 +3,7 @@ import { pbkdf2Sync, scryptSync } from 'node:crypto';
 import type { DataSource, EntityManager, Repository } from 'typeorm';
 
 import type { Customer } from '../src/customer/customer.entity';
+import type { CustomerContactMethod } from '../src/customer/customer-contact-method.entity';
 import {
   AuthenticationCredentialStatus,
   PasswordHashAlgorithm,
@@ -15,6 +16,8 @@ import type { AuditService } from '../src/operations/audit.service';
 
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000001';
 const CREDENTIAL_ID = '00000000-0000-4000-8000-000000000002';
+const CANONICAL_PHONE = '8012345678';
+const CUSTOMER_REF = 'mn-8012345678';
 
 function encodePbkdf2(password: string): string {
   const salt = Buffer.from('a2-salt');
@@ -51,14 +54,41 @@ function credential(overrides: Partial<CustomerAuthenticationCredential> = {}) {
   } as CustomerAuthenticationCredential;
 }
 
-// S-FIX-01: authenticate() now binds session issuance to the customer's CURRENT
-// lifecycle status; tests override `customerStatus` to exercise ineligible states.
+// S-FIX-01: authenticate() binds session issuance to the customer's CURRENT lifecycle status
 function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
   const customerRepository = {
-    findOne: jest.fn().mockResolvedValue({
-      id: CUSTOMER_ID,
-      status: customerStatus,
-      deletedAt: null,
+    findOne: jest.fn().mockImplementation(({ where }: any) => {
+      if (where.id === CUSTOMER_ID) {
+        return Promise.resolve({
+          id: CUSTOMER_ID,
+          reference: CUSTOMER_REF,
+          status: customerStatus,
+          deletedAt: null,
+        });
+      }
+      if (where.reference === CUSTOMER_REF) {
+        return Promise.resolve({
+          id: CUSTOMER_ID,
+          reference: CUSTOMER_REF,
+          status: customerStatus,
+          deletedAt: null,
+        });
+      }
+      return Promise.resolve(null);
+    }),
+  };
+  const contactRepository = {
+    findOne: jest.fn().mockImplementation(({ where }: any) => {
+      if (where.normalizedValue === CANONICAL_PHONE && where.type === 'PHONE') {
+        return Promise.resolve({
+          id: 'contact-01',
+          customerId: CUSTOMER_ID,
+          normalizedValue: CANONICAL_PHONE,
+          type: 'PHONE',
+          deletedAt: null,
+        });
+      }
+      return Promise.resolve(null);
     }),
   };
   const credentialRepository = {
@@ -86,8 +116,9 @@ function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
     auditService as unknown as AuditService,
     customerAuthenticationService as unknown as CustomerAuthenticationService,
     new PasswordHashVerificationService(),
+    contactRepository as unknown as Repository<CustomerContactMethod>,
   );
-  return { service, auditService, customerAuthenticationService };
+  return { service, auditService, customerAuthenticationService, customerRepository, contactRepository };
 }
 
 describe('PasswordHashVerificationService', () => {
@@ -129,7 +160,7 @@ describe('PasswordHashVerificationService', () => {
 });
 
 describe('AuthenticationExecutionService', () => {
-  it('authenticates an active credential and records a safe audit event', async () => {
+  it('authenticates an active credential by UUID and records a safe audit event', async () => {
     const testFixture = fixture();
     const result = await testFixture.service.authenticate({
       customerId: CUSTOMER_ID,
@@ -162,6 +193,57 @@ describe('AuthenticationExecutionService', () => {
     const auditCommand = testFixture.auditService.record.mock.calls[0]?.[1];
     expect(JSON.stringify(auditCommand)).not.toContain('correct-password');
     expect(JSON.stringify(auditCommand)).not.toContain('PBKDF2$');
+  });
+
+  it('authenticates by customer reference (mn-8012345678)', async () => {
+    const testFixture = fixture();
+    const result = await testFixture.service.authenticate({
+      customerId: CUSTOMER_REF,
+      password: 'correct-password',
+      actor: CUSTOMER_REF,
+    });
+
+    expect(result).toEqual({
+      authenticated: true,
+      customerId: CUSTOMER_ID,
+      credentialId: CREDENTIAL_ID,
+      passwordVersion: 1,
+      accountLocked: false,
+    });
+  });
+
+  it('authenticates by Nigerian phone number in local format (08012345678)', async () => {
+    const testFixture = fixture();
+    const result = await testFixture.service.authenticate({
+      customerId: '08012345678',
+      password: 'correct-password',
+      actor: '08012345678',
+    });
+
+    expect(result).toEqual({
+      authenticated: true,
+      customerId: CUSTOMER_ID,
+      credentialId: CREDENTIAL_ID,
+      passwordVersion: 1,
+      accountLocked: false,
+    });
+  });
+
+  it('authenticates by Nigerian phone number in E.164 format (+2348012345678)', async () => {
+    const testFixture = fixture();
+    const result = await testFixture.service.authenticate({
+      customerId: '+2348012345678',
+      password: 'correct-password',
+      actor: '+2348012345678',
+    });
+
+    expect(result).toEqual({
+      authenticated: true,
+      customerId: CUSTOMER_ID,
+      credentialId: CREDENTIAL_ID,
+      passwordVersion: 1,
+      accountLocked: false,
+    });
   });
 
   it('records a failed authentication without exposing the password or hash', async () => {
@@ -213,9 +295,6 @@ describe('AuthenticationExecutionService', () => {
     expect(testFixture.auditService.record).not.toHaveBeenCalled();
   });
 
-  // S-FIX-01 (audit C-4): a verified credential must not produce a session while the
-  // customer's CURRENT lifecycle status makes the principal ineligible, and the denial
-  // must not consume failed-authentication (lockout) budget.
   it('refuses session-bound authentication for DRAFT/SUSPENDED customers after password verification', async () => {
     for (const status of ['DRAFT', 'SUSPENDED']) {
       const testFixture = fixture(credential(), status);

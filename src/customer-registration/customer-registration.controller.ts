@@ -6,16 +6,13 @@ import { VerifyRegistrationOtpDto } from './dto/verify-registration-otp.dto';
 import { CustomerRegistrationService } from './customer-registration.service';
 
 /**
- * V1-CUSTOMER-ONBOARDING-01 — public customer registration front door (unauthenticated).
+ * V1-CUSTOMER-01 — public customer registration front door (unauthenticated).
  *
- * These three routes are explicitly listed in RoutePolicyRegistry PUBLIC_ROUTES — the same
- * convention as the existing unauthenticated health endpoints (there is no session-bearing
- * auth mode applicable pre-registration; CUSTOMER_LOGIN covers only session issuance for
- * existing customers). They deliberately do NOT live on the internal fail-closed
- * /customers POST route, which remains unchanged.
- *
- * Scope boundary: this controller can only create DRAFT customers and verify phones. It
- * cannot activate, create wallets, create credentials, or mint sessions.
+ * Provides:
+ * - Phone OTP request (bounded by cooldown and rate limits).
+ * - Phone OTP verification -> one-time registration token.
+ * - Customer registration completion (creates active customer with verified phone,
+ *   provisions primary NGN wallet, sets password credential, or creates draft).
  */
 @Controller('customers/registration')
 export class CustomerRegistrationController {
@@ -36,8 +33,10 @@ export class CustomerRegistrationController {
   }
 
   /**
-   * Complete registration: consumes the verification token, creates a DRAFT customer with
-   * a verified primary PHONE contact method. Creates nothing else.
+   * Complete registration: consumes the verification token.
+   * If password is provided: creates an ACTIVE customer, hashes password with PBKDF2,
+   * provisions primary NGN wallet atomically, and creates verified phone contact record.
+   * If password is not provided: creates a DRAFT customer with verified phone.
    */
   @Post()
   @HttpCode(201)
@@ -46,6 +45,9 @@ export class CustomerRegistrationController {
       dto.phone,
       dto.verificationToken,
       this.sourceIp(req),
+      dto.password,
+      dto.displayName,
+      dto.idempotencyKey,
     );
   }
 

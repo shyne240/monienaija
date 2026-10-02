@@ -81,10 +81,14 @@ export class CustomerAppController {
   @Post('customers/sessions')
   @HttpCode(200)
   async login(@Body() dto: CustomerLoginDto) {
+    const identifier = dto.customerId || dto.identifier || dto.phone;
+    if (!identifier) {
+      throw new BadRequestException('customerId, identifier, or phone is required');
+    }
     const result = await this.executionService.authenticate({
-      customerId: dto.customerId,
+      customerId: identifier,
       password: dto.password,
-      actor: dto.customerId,
+      actor: identifier,
     });
     if (!result.authenticated) {
       throw new UnauthorizedException('Invalid credentials');

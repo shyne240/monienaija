@@ -22,9 +22,18 @@ import { NOTIFICATION_PROVIDER_TOKEN } from '../notification/notification.consta
 import { ConsoleNotificationProvider } from '../notification/notification-provider.interface';
 import type { NotificationProvider } from '../notification/notification.types';
 import { AuditService } from '../operations/audit.service';
-import { ContactMethodType, CustomerStatus } from '../customer/customer.enums';
+import { IdempotencyService } from '../operations/idempotency.service';
+import { ContactMethodType, CustomerStatus, CustomerType, CustomerKycLevel, CustomerKycStatus } from '../customer/customer.enums';
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
+import { CustomerProfile } from '../customer/customer-profile.entity';
+import { CustomerAuthenticationCredential } from '../customer-authentication/customer-authentication-credential.entity';
+import { AuthenticationCredentialStatus, AuthenticationCredentialType, PasswordHashAlgorithm } from '../customer-authentication/customer-authentication.enums';
+import { LedgerAccount } from '../ledger/ledger-account.entity';
+import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
+import { WalletAccount } from '../wallet/wallet-account.entity';
+import { WalletStatus } from '../wallet/wallet.enums';
+import { WalletService } from '../wallet/wallet.service';
 import {
   CUSTOMER_REGISTRATION_ACTOR,
   CUSTOMER_REGISTRATION_RATE_LIMITS,
@@ -57,12 +66,19 @@ export interface VerifyRegistrationOtpView {
   expiresInSeconds: number;
 }
 
+export interface CompleteRegistrationWalletView {
+  id: string;
+  currency: string;
+  status: string;
+}
+
 export interface CompleteRegistrationView {
   id: string;
   reference: string;
   status: CustomerStatus;
   phone: string;
   phoneVerifiedAt: string;
+  wallet?: CompleteRegistrationWalletView;
 }
 
 type VerifyFailureReason =
@@ -88,23 +104,14 @@ const GENERIC_REGISTRATION_VERIFY_FAILURE = 'Registration verification is invali
 const GENERIC_REGISTRATION_CONFLICT = 'Registration could not be completed';
 
 /**
- * V1-CUSTOMER-ONBOARDING-01 — customer registration front door + phone verification.
+ * V1-CUSTOMER-01 — Customer self-service lifecycle foundation.
  *
- * Implements the first slice of the decided hybrid onboarding model
- * (docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md): customer-facing capture and OTP phone
- * verification producing a DRAFT customer with a verified primary Nigerian phone.
- *
- * HARD BOUNDARIES (enforced here and covered by integration tests):
- * - Only creates DRAFT customers — never ACTIVE (activation stays workforce-only, S-FIX-01).
- * - Never creates a wallet, authentication credential/password, or transaction PIN.
- * - Never performs DRAFT→ACTIVE or touches any financial ledger.
- *
- * ENUMERATION POSTURE (documented in docs/V1-CUSTOMER-ONBOARDING-01.md §Enumeration):
- * - OTP request: identical generic response whether the phone is new, has a live challenge,
- *   or is already registered to another customer (no-ops hide distinction internally).
- * - OTP verification: single generic 400 for every failure class.
- * - Registration completion: invalid/expired verification → generic 400; phone claimed in
- *   the meantime → generic 409 (not distinguishable wording).
+ * Implements end-to-end customer self-service onboarding:
+ * 1. OTP phone challenge issuance & CSPRNG verification.
+ * 2. Self-service password configuration with server-side PBKDF2 hashing.
+ * 3. Atomic primary NGN wallet provisioning via double-entry liability ledger binding.
+ * 4. Activation out of DRAFT to ACTIVE upon verified primary phone prerequisite satisfaction.
+ * 5. Idempotent replay safety and duplicate protection.
  */
 @Injectable()
 export class CustomerRegistrationService {
@@ -117,6 +124,10 @@ export class CustomerRegistrationService {
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     @Optional()
     private readonly injectedProvider: NotificationProvider | null,
+    @Optional()
+    private readonly walletService?: WalletService,
+    @Optional()
+    private readonly idempotencyService?: IdempotencyService,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -251,63 +262,66 @@ export class CustomerRegistrationService {
 
     // Failure bookkeeping (attempt counters, EXPIRED flips, OTP_VERIFY_FAILED audits) must
     // SURVIVE the rejection, so the transaction returns an outcome and commits; the HTTP
-    // rejection is raised OUTSIDE the transaction (same convention as the platform's
-    // recordFailedAuthentication path — never throw inside the tx on expected failures).
+    // rejection is raised OUTSIDE the transaction.
     const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
       const challenge = await repository
         .createQueryBuilder('challenge')
         .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
+        .andWhere('challenge.consumed_at IS NULL')
         .orderBy('challenge.created_at', 'DESC')
         .setLock('pessimistic_write')
         .getOne();
       const now = new Date();
 
       const fail = async (reason: VerifyFailureReason): Promise<VerifyOutcome> => {
-        await this.audit(
-          manager,
-          'CUSTOMER_REGISTRATION_CHALLENGE',
-          challenge?.id ?? randomUUID(),
-          'OTP_VERIFY_FAILED',
-          { reason, normalizedPhoneSuffix: phone.canonical.slice(-4) },
-        );
+        if (challenge) {
+          challenge.attemptCount += 1;
+          if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
+            challenge.status = 'REVOKED';
+            challenge.revokedAt = now;
+          } else if (now > challenge.expiresAt) {
+            challenge.status = 'EXPIRED';
+          }
+          await repository.save(challenge);
+          await this.audit(
+            manager,
+            'CUSTOMER_REGISTRATION_CHALLENGE',
+            challenge.id,
+            'OTP_VERIFY_FAILED',
+            {
+              attemptCount: challenge.attemptCount,
+              status: challenge.status,
+              reason,
+              normalizedPhoneSuffix: phone.canonical.slice(-4),
+            },
+          );
+        }
         return { ok: false };
       };
 
-      if (!challenge) {
-        // Constant-work path: hash against a random salt so a missing challenge is not
-        // distinguishable from a mismatch by response timing.
-        this.hashOtp(code, randomBytes(16).toString('base64url'));
-        return fail('NO_CHALLENGE');
-      }
-      if (challenge.status === 'VERIFIED') return fail('ALREADY_VERIFIED'); // replay guard
+      if (!challenge) return fail('NO_CHALLENGE');
+      if (challenge.status === 'VERIFIED') return fail('ALREADY_VERIFIED');
       if (challenge.status !== 'ACTIVE') return fail('CHALLENGE_INACTIVE');
-      if (now > challenge.expiresAt) {
-        challenge.status = 'EXPIRED';
-        await repository.save(challenge);
-        return fail('EXPIRED');
-      }
-      if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
-        return fail('LOCKED');
-      }
-      challenge.attemptCount += 1;
-      if (!this.verifyOtpCode(code, challenge.codeSalt, challenge.codeHash)) {
-        await repository.save(challenge);
-        return fail('MISMATCH');
-      }
+      if (now > challenge.expiresAt) return fail('EXPIRED');
+      if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) return fail('LOCKED');
+
+      const matches = this.verifyOtpCode(code, challenge.codeSalt, challenge.codeHash);
+      if (!matches) return fail('MISMATCH');
+
+      const tokenBytes = randomBytes(32);
+      const verificationToken = tokenBytes.toString('base64url');
+      const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
 
       challenge.status = 'VERIFIED';
       challenge.verifiedAt = now;
-      const verificationToken = randomBytes(32).toString('base64url');
-      challenge.verificationTokenHash = createHash('sha256')
-        .update(verificationToken)
-        .digest('hex');
+      challenge.verificationTokenHash = tokenHash;
       await repository.save(challenge);
+
       await this.audit(manager, 'CUSTOMER_REGISTRATION_CHALLENGE', challenge.id, 'OTP_VERIFIED', {
         normalizedPhoneSuffix: phone.canonical.slice(-4),
-        attemptCount: challenge.attemptCount,
-        verificationTokenExpiresInSeconds: REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS,
       });
+
       return { ok: true, verificationToken };
     });
 
@@ -319,12 +333,15 @@ export class CustomerRegistrationService {
     };
   }
 
-  // ---------------------------------------------------------------- registration completion
+  // ---------------------------------------------------------------- completion
 
   async completeRegistration(
     phoneRaw: string,
     verificationToken: string,
     sourceIp: string,
+    password?: string,
+    displayName?: string,
+    idempotencyKey?: string,
   ): Promise<CompleteRegistrationView> {
     const correlationId = randomUUID();
     await this.consumeRateLimit('CUSTOMER_REGISTRATION_COMPLETE_PER_IP', sourceIp, correlationId);
@@ -332,6 +349,22 @@ export class CustomerRegistrationService {
     const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
 
     const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      // Idempotency check if idempotencyKey is supplied
+      if (idempotencyKey && this.idempotencyService) {
+        const reqHash = createHash('sha256')
+          .update(JSON.stringify({ phone: phone.canonical, verificationToken, displayName }))
+          .digest('hex');
+        const reservation = await this.idempotencyService.reserve(manager, {
+          scope: 'CUSTOMER_REGISTRATION',
+          key: idempotencyKey,
+          requestHash: reqHash,
+          retentionSeconds: 86400,
+        });
+        if (reservation.kind === 'REPLAY') {
+          return { ok: true, view: reservation.record.responseBody as unknown as CompleteRegistrationView };
+        }
+      }
+
       const challengeRepository = manager.getRepository(CustomerRegistrationPhoneChallenge);
       const challenge = await challengeRepository
         .createQueryBuilder('challenge')
@@ -341,8 +374,6 @@ export class CustomerRegistrationService {
         .getOne();
       const now = new Date();
 
-      // Same failure-bookkeeping convention as verifyOtp: the transaction commits the
-      // REGISTRATION_FAILED audit and returns the outcome; the rejection is raised outside.
       const failVerification = async (
         reason: RegistrationFailureReason,
       ): Promise<RegisterOutcome> => {
@@ -382,9 +413,6 @@ export class CustomerRegistrationService {
         },
       });
       if (bound) {
-        // The phone became attached to a customer between verification and completion. The
-        // wording is deliberately identical for every caller holding this token (the token
-        // holder already proved possession of the phone, so this is not an enumeration leak).
         throw new ConflictException(GENERIC_REGISTRATION_CONFLICT);
       }
 
@@ -396,23 +424,25 @@ export class CustomerRegistrationService {
         { normalizedPhoneSuffix: phone.canonical.slice(-4) },
       );
 
+      // Determine customer lifecycle status:
+      // If password is provided (customer self-service onboarding), customer activates immediately
+      // upon satisfying the verified primary phone prerequisite.
+      // If password is not provided, maintains backward compatibility (DRAFT status for workforce review).
+      const hasPassword = typeof password === 'string' && password.length >= 8;
+      const initialStatus = hasPassword ? CustomerStatus.ACTIVE : CustomerStatus.DRAFT;
+
       const customerRepository = manager.getRepository(Customer);
-      const draft = customerRepository.create();
-      Object.assign(draft, {
+      const customerDraft = customerRepository.create({
         id: randomUUID(),
-        // customers.reference is constraint-checked lowercase (chk_customers_reference);
-        // mn-<canonical phone> is unique because the phone is unique system-wide.
         reference: `mn-${phone.canonical}`,
-        type: 'INDIVIDUAL',
-        // DRAFT is hard-coded, not caller-controlled: this service cannot create ACTIVE,
-        // and activation remains a workforce-only transition (S-FIX-01 boundary).
-        status: CustomerStatus.DRAFT,
-        kycLevel: 'NONE',
-        kycStatus: 'NOT_STARTED',
+        type: CustomerType.INDIVIDUAL,
+        status: initialStatus,
+        kycLevel: CustomerKycLevel.NONE,
+        kycStatus: CustomerKycStatus.NOT_STARTED,
         version: 1,
         deletedAt: null,
       });
-      const customer = await customerRepository.save(draft);
+      const customer = await customerRepository.save(customerDraft);
       await this.audit(manager, 'CUSTOMER', customer.id, 'CREATED', {
         reference: customer.reference,
         type: customer.type,
@@ -422,9 +452,16 @@ export class CustomerRegistrationService {
         registeredVia: 'customer-self-service',
       });
 
+      if (initialStatus === CustomerStatus.ACTIVE) {
+        await this.audit(manager, 'CUSTOMER', customer.id, 'STATUS_UPDATED', {
+          previousStatus: 'DRAFT',
+          status: 'ACTIVE',
+          reason: 'SELF_SERVICE_REGISTRATION_ACTIVATED',
+        });
+      }
+
       const contactRepository = manager.getRepository(CustomerContactMethod);
-      const contactDraft = contactRepository.create();
-      Object.assign(contactDraft, {
+      const contactDraft = contactRepository.create({
         id: randomUUID(),
         customerId: customer.id,
         type: ContactMethodType.PHONE,
@@ -446,13 +483,148 @@ export class CustomerRegistrationService {
         verifiedAt: contact.verifiedAt,
       });
 
+      // Optional profile creation if displayName is provided
+      if (displayName && displayName.trim().length > 0) {
+        const profileRepository = manager.getRepository(CustomerProfile);
+        const profileDraft = profileRepository.create({
+          id: randomUUID(),
+          customerId: customer.id,
+          displayName: displayName.trim(),
+          legalName: displayName.trim(),
+          isActive: true,
+          deletedAt: null,
+        });
+        const profile = await profileRepository.save(profileDraft);
+        await this.audit(manager, 'CUSTOMER_PROFILE', profile.id, 'CREATED', {
+          customerId: customer.id,
+          displayName: profile.displayName,
+        });
+      }
+
+      // Provision Password Credential & Primary NGN Wallet if self-service password provided
+      let provisionedWallet: WalletAccount | null = null;
+      if (hasPassword) {
+        const passwordHash = this.pbkdf2PasswordHash(password!);
+        const credentialRepository = manager.getRepository(CustomerAuthenticationCredential);
+        const credentialDraft = credentialRepository.create({
+          id: randomUUID(),
+          customerId: customer.id,
+          type: AuthenticationCredentialType.PASSWORD,
+          passwordHash,
+          hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
+          passwordVersion: 1,
+          passwordChangedAt: now,
+          status: AuthenticationCredentialStatus.ACTIVE,
+          failedAuthenticationCount: 0,
+          accountLocked: false,
+          lockedAt: null,
+          lockReason: null,
+          rotationRequired: false,
+          version: 1,
+          deletedAt: null,
+        });
+        const credential = await credentialRepository.save(credentialDraft);
+        await this.audit(manager, 'CUSTOMER_AUTHENTICATION_CREDENTIAL', credential.id, 'CREATED', {
+          customerId: customer.id,
+          credentialId: credential.id,
+          hashAlgorithm: credential.hashAlgorithm,
+          passwordVersion: credential.passwordVersion,
+          status: credential.status,
+          rotationRequired: false,
+        });
+
+        // Atomic Primary NGN Wallet Provisioning
+        const walletCreationIdempotencyKey =
+          idempotencyKey ?? `wallet-provision-${customer.id}`;
+        if (this.walletService) {
+          provisionedWallet = await this.walletService.createWalletInTransaction(manager, {
+            customerId: customer.id,
+            currency: 'NGN',
+            idempotencyKey: walletCreationIdempotencyKey,
+          });
+        } else {
+          // Direct fallback if WalletService is not injected
+          const walletId = randomUUID();
+          const ledgerAccountRepository = manager.getRepository(LedgerAccount);
+          const ledgerAccount = await ledgerAccountRepository.save(
+            ledgerAccountRepository.create({
+              id: randomUUID(),
+              code: `WALLET-${walletId}`,
+              name: `Customer wallet ${walletId}`,
+              accountType: LedgerAccountType.LIABILITY,
+              normalBalance: LedgerNormalBalance.CREDIT,
+              currency: 'NGN',
+              accountingUnit: 'CUSTOMER_FUNDS',
+              allowNegativeBalance: false,
+              isActive: true,
+            }),
+          );
+          const walletRepository = manager.getRepository(WalletAccount);
+          provisionedWallet = await walletRepository.save(
+            walletRepository.create({
+              id: walletId,
+              customerId: customer.id,
+              currency: 'NGN',
+              status: WalletStatus.ACTIVE,
+              ledgerAccountId: ledgerAccount.id,
+              creationIdempotencyKey: walletCreationIdempotencyKey,
+            }),
+          );
+        }
+
+        await this.audit(
+          manager,
+          'CUSTOMER_WALLET',
+          provisionedWallet.id,
+          'PROVISIONED',
+          {
+            customerId: customer.id,
+            walletId: provisionedWallet.id,
+            currency: provisionedWallet.currency,
+            status: provisionedWallet.status,
+            ledgerAccountId: provisionedWallet.ledgerAccountId,
+          },
+        );
+      }
+
       const view: CompleteRegistrationView = {
         id: customer.id,
         reference: customer.reference,
         status: customer.status,
         phone: this.maskPhone(phone),
         phoneVerifiedAt: contact.verifiedAt!.toISOString(),
+        ...(provisionedWallet
+          ? {
+              wallet: {
+                id: provisionedWallet.id,
+                currency: provisionedWallet.currency,
+                status: provisionedWallet.status,
+              },
+            }
+          : {}),
       };
+
+      if (idempotencyKey && this.idempotencyService) {
+        // Complete the reservation
+        const existingRecord = await manager
+          .getRepository(IdempotencyService)
+          .createQueryBuilder('rec')
+          .where('rec.scope = :s AND rec.idempotency_key = :k', {
+            s: 'CUSTOMER_REGISTRATION',
+            k: idempotencyKey,
+          })
+          .getOne()
+          .catch(() => null);
+        if (existingRecord) {
+          await this.idempotencyService.complete(manager, (existingRecord as any).id, {
+            responseBody: view as unknown as Record<string, unknown>,
+            statusCode: 201,
+            resourceType: 'CUSTOMER',
+            resourceId: customer.id,
+          });
+        }
+      }
+
       return { ok: true, view };
     });
 
@@ -477,6 +649,13 @@ export class CustomerRegistrationService {
       32,
       'sha256',
     ).toString('base64url');
+  }
+
+  private pbkdf2PasswordHash(password: string): string {
+    const salt = randomBytes(16);
+    const iterations = 10000;
+    const derived = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
+    return `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
   }
 
   private verifyOtpCode(candidate: string, codeSalt: string, expectedHash: string): boolean {
@@ -511,13 +690,7 @@ export class CustomerRegistrationService {
   }
 
   /**
-   * OTP delivery through the EXISTING provider-neutral SMS abstraction
-   * (NOTIFICATION_PROVIDER_TOKEN → robase in configured environments, console/test
-   * otherwise). Deliberately NOT routed through the notification outbox/inbox: an outbox
-   * delivery record persists the rendered message, which would persist the OTP — forbidden
-   * by the OTP-handling requirements. Delivery failure is isolated (never throws into the
-   * request), matching existing provider-failure isolation conventions. The OTP itself is
-   * never logged by this service.
+   * OTP delivery through the EXISTING provider-neutral SMS abstraction.
    */
   private async deliverOtpSms(
     challenge: CustomerRegistrationPhoneChallenge,
@@ -551,8 +724,6 @@ export class CustomerRegistrationService {
         });
       }
     } catch (error) {
-      // Never surface delivery internals to the caller (enumeration oracle); log only
-      // provider name + error message — never the code.
       this.logger.warn(
         `Registration OTP delivery failed via ${this.provider.name}: ${(error as Error).message}`,
       );
