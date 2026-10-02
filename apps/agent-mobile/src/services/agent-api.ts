@@ -816,3 +816,161 @@ export function describeTransactionPinError(error: unknown): string {
   }
   return 'Something went wrong. Please retry.';
 }
+
+// ──────────────────────────────────────────────
+// Agent Support Ticket Management (V1-AGENT-MOBILE-11)
+// ──────────────────────────────────────────────
+
+export type SupportTicketCategory =
+  | 'FUNDING'
+  | 'TRANSFER'
+  | 'WALLET'
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'CASH_TO_CASH'
+  | 'PROFILE'
+  | 'PIN'
+  | 'AUTHENTICATION'
+  | 'AGENT_FUNDING'
+  | 'OUTLET'
+  | 'TERMINAL'
+  | 'OTHER';
+
+export type SupportTicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export type SupportTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+
+export interface AgentSupportTicket {
+  id: string;
+  reference: string;
+  subject: string;
+  category: SupportTicketCategory;
+  description: string;
+  status: SupportTicketStatus;
+  priority: SupportTicketPriority;
+  fundingRequestId?: string | null;
+  relatedTransferId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+  closedAt?: string | null;
+  version: number;
+}
+
+export interface AgentSupportTicketListResponse {
+  items: AgentSupportTicket[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+}
+
+export interface CreateAgentSupportTicketInput {
+  subject: string;
+  category: SupportTicketCategory;
+  description: string;
+  priority?: SupportTicketPriority;
+  fundingRequestId?: string;
+  relatedTransferId?: string;
+  idempotencyKey?: string;
+}
+
+export interface AgentSupportTicketMessage {
+  id: string;
+  ticketId: string;
+  authorType: string;
+  authorId: string;
+  body: string;
+  isInternal: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /agents/me/support/tickets (V1-AGENT-MOBILE-11). */
+export async function getAgentSupportTickets(
+  page: number = 1,
+  limit: number = 20,
+): Promise<AgentSupportTicketListResponse> {
+  return ApiClient.get<AgentSupportTicketListResponse>(
+    `api/v1/agents/me/support/tickets?page=${page}&limit=${limit}`,
+  );
+}
+
+/** GET /agents/me/support/tickets/:id (V1-AGENT-MOBILE-11). */
+export async function getAgentSupportTicket(ticketId: string): Promise<AgentSupportTicket> {
+  return ApiClient.get<AgentSupportTicket>(
+    `api/v1/agents/me/support/tickets/${encodeURIComponent(ticketId)}`,
+  );
+}
+
+/** POST /agents/me/support/tickets (V1-AGENT-MOBILE-11). */
+export async function createAgentSupportTicket(
+  input: CreateAgentSupportTicketInput,
+): Promise<AgentSupportTicket> {
+  const { idempotencyKey, ...body } = input;
+  return ApiClient.post<AgentSupportTicket>(
+    'api/v1/agents/me/support/tickets',
+    body,
+    idempotencyKey ? { idempotencyKey } : undefined,
+  );
+}
+
+/** GET /agents/me/support/tickets/:id/messages (V1-AGENT-MOBILE-11). */
+export async function getAgentSupportTicketMessages(
+  ticketId: string,
+): Promise<AgentSupportTicketMessage[]> {
+  return ApiClient.get<AgentSupportTicketMessage[]>(
+    `api/v1/agents/me/support/tickets/${encodeURIComponent(ticketId)}/messages`,
+  );
+}
+
+/** POST /agents/me/support/tickets/:id/messages (V1-AGENT-MOBILE-11). */
+export async function createAgentSupportTicketMessage(
+  ticketId: string,
+  body: string,
+): Promise<AgentSupportTicketMessage> {
+  return ApiClient.post<AgentSupportTicketMessage>(
+    `api/v1/agents/me/support/tickets/${encodeURIComponent(ticketId)}/messages`,
+    { body },
+  );
+}
+
+/**
+ * Safe translation of Support errors (V1-AGENT-MOBILE-11).
+ * Never exposes SQL traces, internal server errors, or sensitive payload data.
+ */
+export function describeSupportError(error: unknown): string {
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    const msg = error.message || '';
+    if (status === 401) {
+      return 'Your session has expired. Please log in again.';
+    }
+    if (status === 403) {
+      return 'You are not permitted to perform this support action.';
+    }
+    if (status === 404) {
+      return 'The requested support ticket was not found.';
+    }
+    if (status === 409) {
+      return 'This support request cannot be processed in its current state.';
+    }
+    if (status === 400) {
+      return msg || 'Invalid support request. Please check your input and try again.';
+    }
+    if (typeof status === 'number' && status >= 500) {
+      return 'The service is temporarily unavailable. Please retry.';
+    }
+    return error.message;
+  }
+  if (error instanceof Error && error.name === 'NetworkError') {
+    return 'No network connection. Check your connection and retry.';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Something went wrong. Please retry.';
+}

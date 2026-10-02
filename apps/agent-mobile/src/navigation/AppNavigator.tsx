@@ -15,6 +15,9 @@ import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen'
 import { TransactionReceiptScreen } from '../screens/authenticated/TransactionReceiptScreen';
 import { TransactionPinManageScreen } from '../screens/authenticated/pin/TransactionPinManageScreen';
 import { SetTransactionPinScreen } from '../screens/authenticated/pin/SetTransactionPinScreen';
+import { SupportScreen } from '../screens/authenticated/support/SupportScreen';
+import { CreateSupportTicketScreen } from '../screens/authenticated/support/CreateSupportTicketScreen';
+import { SupportTicketDetailScreen } from '../screens/authenticated/support/SupportTicketDetailScreen';
 import { CashToWalletRecipientScreen } from '../screens/authenticated/cash-in/CashToWalletRecipientScreen';
 import { CashToWalletAmountScreen } from '../screens/authenticated/cash-in/CashToWalletAmountScreen';
 import { CashToWalletConfirmScreen } from '../screens/authenticated/cash-in/CashToWalletConfirmScreen';
@@ -38,7 +41,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  *  - loading session restore → Splash
  *  - pending mandatory credential rotation → RotateCredential ONLY
  *  - unauthenticated → Login
- *  - authenticated → Home + Account + Transactions/History + PIN Management + Cash→Wallet + Cash→Cash + Wallet→Cash + Cash→Cash Claim
+ *  - authenticated → Home + Account + Support + Transactions/History + PIN Management + Cash→Wallet + Cash→Cash + Wallet→Cash + Cash→Cash Claim
  */
 export const AppNavigator: React.FC = () => {
   const { isAuthenticated, isLoading, pendingRotation } = useAuthStore();
@@ -76,6 +79,21 @@ export const AppNavigator: React.FC = () => {
         <>
           <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'MoneyNaija Agent' }} />
           <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Agent Account' }} />
+          <Stack.Screen
+            name="Support"
+            component={SupportScreen}
+            options={{ title: 'Agent Support' }}
+          />
+          <Stack.Screen
+            name="CreateSupportTicket"
+            component={CreateSupportTicketScreen}
+            options={{ title: 'New Support Request' }}
+          />
+          <Stack.Screen
+            name="SupportTicketDetail"
+            component={SupportTicketDetailScreen}
+            options={{ title: 'Support Request' }}
+          />
           <Stack.Screen
             name="TransactionPinManage"
             component={TransactionPinManageScreen}

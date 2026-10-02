@@ -5,11 +5,15 @@ import { theme } from '../theme';
 
 interface LoadingStateProps {
   message?: string;
+  testID?: string;
 }
 
-export const LoadingState: React.FC<LoadingStateProps> = ({ message = 'Loading MoneyNaija...' }) => {
+export const LoadingState: React.FC<LoadingStateProps> = ({
+  message = 'Loading MoneyNaija...',
+  testID,
+}) => {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={testID}>
       <ActivityIndicator size="large" color={theme.colors.primary.main} />
       {message && <Text style={styles.message}>{message}</Text>}
     </View>

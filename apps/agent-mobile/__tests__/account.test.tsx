@@ -112,7 +112,7 @@ describe('AccountScreen (real Agent information)', () => {
     mockApi.getAgentTransactionPinStatus.mockResolvedValue(pinStatusFixture);
   });
 
-  test('renders profile, class, receiving number, PIN status, outlets, terminals from backend data', async () => {
+  test('renders profile, class, receiving number, PIN status, support entry, outlets, terminals from backend data', async () => {
     const { getAllByText, getByText, getByTestId, queryByText } = wrap(<AccountScreen />);
 
     await waitFor(() => expect(getByTestId('account-reference')).toBeTruthy());
@@ -128,6 +128,12 @@ describe('AccountScreen (real Agent information)', () => {
 
     fireEvent.press(getByTestId('nav-transaction-pin'));
     expect(mockNavigate).toHaveBeenCalledWith('TransactionPinManage');
+
+    // Support card (V1-AGENT-MOBILE-11)
+    expect(getByTestId('account-support-card')).toBeTruthy();
+    expect(getByTestId('nav-support')).toBeTruthy();
+    fireEvent.press(getByTestId('nav-support'));
+    expect(mockNavigate).toHaveBeenCalledWith('Support');
 
     // Outlets
     expect(getByText('HQ — Wuse 2')).toBeTruthy();

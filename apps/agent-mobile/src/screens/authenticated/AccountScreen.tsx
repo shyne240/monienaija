@@ -23,8 +23,9 @@ import { useAuthStore } from '../../store/auth-store';
 import type { RootStackParamList } from '../../navigation/types';
 
 /**
- * Agent Account (V1-AGENT-MOBILE-02 / V1-AGENT-MOBILE-10): profile, class,
- * receiving number, transaction PIN status & management entry, and outlets/terminals.
+ * Agent Account (V1-AGENT-MOBILE-02 / V1-AGENT-MOBILE-10 / V1-AGENT-MOBILE-11):
+ * profile, class, receiving number, transaction PIN status & management,
+ * support access, and outlets/terminals.
  * No raw credentials, secrets, or PIN values are ever displayed.
  */
 export const AccountScreen: React.FC = () => {
@@ -173,6 +174,20 @@ export const AccountScreen: React.FC = () => {
         )}
       </Card>
 
+      {/* Help & Support (V1-AGENT-MOBILE-11) */}
+      <Card style={styles.card} testID="account-support-card">
+        <Text style={styles.sectionTitle}>Help & Support</Text>
+        <Text style={styles.helper}>
+          Have an issue with your account, terminals, or transactions? Contact MonieNaija operations support.
+        </Text>
+        <Button
+          label="Contact Support"
+          variant="outline"
+          onPress={() => navigation.navigate('Support')}
+          testID="nav-support"
+        />
+      </Card>
+
       {/* Receiving number */}
       <Card style={styles.card} testID="account-receiving-card">
         <Text style={styles.sectionTitle}>Receiving Number</Text>
@@ -312,7 +327,11 @@ interface TerminalRowProps {
   last: boolean;
 }
 
-const TerminalRow: React.FC<TerminalRowProps> = ({ terminal, outletName, last }) => (
+const TerminalRow: React.FC<{ terminal: AgentTerminal; outletName: string | null; last: boolean }> = ({
+  terminal,
+  outletName,
+  last,
+}) => (
   <View style={[styles.listRow, last && styles.listRowLast]} testID={`terminal-${terminal.id}`}>
     <View style={styles.listRowText}>
       <Text style={styles.listRowTitle}>{terminal.label || terminal.code}</Text>

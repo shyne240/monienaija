@@ -3,12 +3,18 @@ import {
   agentCashIn,
   agentCashToCash,
   agentCashToCashClaim,
+  createAgentSupportTicket,
+  createAgentSupportTicketMessage,
   describeApiError,
   describeCashToCashError,
   describeCashToCashClaimError,
+  describeSupportError,
   describeTransactionPinError,
-  getAgentReceivingNumber,
   getAgentOutlets,
+  getAgentReceivingNumber,
+  getAgentSupportTicket,
+  getAgentSupportTicketMessages,
+  getAgentSupportTickets,
   getAgentTerminals,
   getAgentTransactionPinStatus,
   setAgentTransactionPin,
@@ -387,6 +393,106 @@ describe('Agent operating-context API bindings', () => {
         'No network connection. Check your connection and retry.',
       );
       expect(describeTransactionPinError(new Error('Local error message'))).toBe(
+        'Local error message',
+      );
+    });
+  });
+
+  describe('Agent Support Ticket API bindings (V1-AGENT-MOBILE-11)', () => {
+    test('getAgentSupportTickets: calls GET /agents/me/support/tickets with pagination', async () => {
+      const listRes = {
+        items: [{ id: 'sup-1', reference: 'SUP-1', subject: 'Help', status: 'OPEN' }],
+        pagination: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false },
+      };
+      mockClient.get.mockResolvedValue(listRes);
+
+      const out = await getAgentSupportTickets(1, 20);
+
+      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/support/tickets?page=1&limit=20');
+      expect(out.items).toHaveLength(1);
+    });
+
+    test('getAgentSupportTicket: calls GET /agents/me/support/tickets/:id', async () => {
+      const ticketRes = { id: 'sup-1', reference: 'SUP-1', subject: 'Help', status: 'OPEN' };
+      mockClient.get.mockResolvedValue(ticketRes);
+
+      const out = await getAgentSupportTicket('sup-1');
+
+      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/support/tickets/sup-1');
+      expect(out.id).toBe('sup-1');
+    });
+
+    test('createAgentSupportTicket: calls POST /agents/me/support/tickets with idempotency header', async () => {
+      const createdRes = { id: 'sup-new', reference: 'SUP-new', subject: 'Help', status: 'OPEN' };
+      mockClient.post.mockResolvedValue(createdRes);
+
+      const out = await createAgentSupportTicket({
+        subject: 'Help Needed',
+        category: 'TERMINAL',
+        description: 'POS malfunctioning',
+        priority: 'HIGH',
+        idempotencyKey: 'idemp-sup-1',
+      });
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/me/support/tickets',
+        {
+          subject: 'Help Needed',
+          category: 'TERMINAL',
+          description: 'POS malfunctioning',
+          priority: 'HIGH',
+        },
+        { idempotencyKey: 'idemp-sup-1' },
+      );
+      expect(out.id).toBe('sup-new');
+    });
+
+    test('getAgentSupportTicketMessages: calls GET /agents/me/support/tickets/:id/messages', async () => {
+      const messagesRes = [{ id: 'm-1', ticketId: 'sup-1', body: 'Msg' }];
+      mockClient.get.mockResolvedValue(messagesRes);
+
+      const out = await getAgentSupportTicketMessages('sup-1');
+
+      expect(mockClient.get).toHaveBeenCalledWith('api/v1/agents/me/support/tickets/sup-1/messages');
+      expect(out).toHaveLength(1);
+    });
+
+    test('createAgentSupportTicketMessage: calls POST /agents/me/support/tickets/:id/messages', async () => {
+      const msgRes = { id: 'm-new', ticketId: 'sup-1', body: 'Reply' };
+      mockClient.post.mockResolvedValue(msgRes);
+
+      const out = await createAgentSupportTicketMessage('sup-1', 'Reply body');
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/me/support/tickets/sup-1/messages',
+        { body: 'Reply body' },
+      );
+      expect(out.id).toBe('m-new');
+    });
+
+    test('describeSupportError: maps errors to safe user-friendly messages', () => {
+      expect(describeSupportError(new ApiError('Unauthorized', 401))).toBe(
+        'Your session has expired. Please log in again.',
+      );
+      expect(describeSupportError(new ApiError('Forbidden', 403))).toBe(
+        'You are not permitted to perform this support action.',
+      );
+      expect(describeSupportError(new ApiError('Not Found', 404))).toBe(
+        'The requested support ticket was not found.',
+      );
+      expect(describeSupportError(new ApiError('Conflict', 409))).toBe(
+        'This support request cannot be processed in its current state.',
+      );
+      expect(describeSupportError(new ApiError('subject must be 3 to 200 characters', 400))).toBe(
+        'subject must be 3 to 200 characters',
+      );
+      expect(describeSupportError(new ApiError('Internal Error', 500))).toBe(
+        'The service is temporarily unavailable. Please retry.',
+      );
+      expect(describeSupportError(new NetworkError('failed'))).toBe(
+        'No network connection. Check your connection and retry.',
+      );
+      expect(describeSupportError(new Error('Local error message'))).toBe(
         'Local error message',
       );
     });

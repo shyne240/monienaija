@@ -5,6 +5,7 @@ import type {
   AgentCashOutResult,
   SafeCashToCashResult,
   AgentCashToCashClaimResult,
+  SupportTicketCategory,
 } from '../services/agent-api';
 
 export type RootStackParamList = {
@@ -23,6 +24,17 @@ export type RootStackParamList = {
   TransactionPinManage: undefined;
   SetTransactionPin: {
     mode: 'CREATE' | 'ROTATE';
+  };
+
+  // Agent Support UI (V1-AGENT-MOBILE-11)
+  Support: undefined;
+  CreateSupportTicket: {
+    prefillCategory?: SupportTicketCategory;
+    relatedTransferId?: string;
+    fundingRequestId?: string;
+  } | undefined;
+  SupportTicketDetail: {
+    ticketId: string;
   };
 
   // Agent Cash→Wallet (V1-AGENT-MOBILE-04). PIN NEVER travels in params.
