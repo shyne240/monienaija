@@ -17,6 +17,10 @@ import { CashToWalletRecipientScreen } from '../screens/authenticated/cash-in/Ca
 import { CashToWalletAmountScreen } from '../screens/authenticated/cash-in/CashToWalletAmountScreen';
 import { CashToWalletConfirmScreen } from '../screens/authenticated/cash-in/CashToWalletConfirmScreen';
 import { CashToWalletSuccessScreen } from '../screens/authenticated/cash-in/CashToWalletSuccessScreen';
+import { CashToCashRecipientScreen } from '../screens/authenticated/cash-to-cash/CashToCashRecipientScreen';
+import { CashToCashAmountScreen } from '../screens/authenticated/cash-to-cash/CashToCashAmountScreen';
+import { CashToCashConfirmScreen } from '../screens/authenticated/cash-to-cash/CashToCashConfirmScreen';
+import { CashToCashSuccessScreen } from '../screens/authenticated/cash-to-cash/CashToCashSuccessScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -25,8 +29,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  *  - loading session restore → Splash
  *  - pending mandatory credential rotation → RotateCredential ONLY
  *  - unauthenticated → Login
- *  - authenticated → Home + Account + clearly-labelled placeholders for the
- *    later Transactions/History phases.
+ *  - authenticated → Home + Account + Transactions/History + Cash→Wallet + Cash→Cash
  */
 export const AppNavigator: React.FC = () => {
   const { isAuthenticated, isLoading, pendingRotation } = useAuthStore();
@@ -98,6 +101,26 @@ export const AppNavigator: React.FC = () => {
             name="CashToWalletSuccess"
             component={CashToWalletSuccessScreen}
             options={{ title: 'Cash→Wallet Complete', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="CashToCash"
+            component={CashToCashRecipientScreen}
+            options={{ title: 'Cash→Cash' }}
+          />
+          <Stack.Screen
+            name="CashToCashAmount"
+            component={CashToCashAmountScreen}
+            options={{ title: 'Amount' }}
+          />
+          <Stack.Screen
+            name="CashToCashConfirm"
+            component={CashToCashConfirmScreen}
+            options={{ title: 'Confirm & Authorize', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="CashToCashSuccess"
+            component={CashToCashSuccessScreen}
+            options={{ title: 'Cash→Cash Complete', headerBackVisible: false }}
           />
         </>
       )}

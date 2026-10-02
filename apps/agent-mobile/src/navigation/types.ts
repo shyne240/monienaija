@@ -1,4 +1,8 @@
-import type { ResolvedRecipientView, AgentCashInResult } from '../services/agent-api';
+import type {
+  ResolvedRecipientView,
+  AgentCashInResult,
+  SafeCashToCashResult,
+} from '../services/agent-api';
 
 export type RootStackParamList = {
   // Unauthenticated screens
@@ -25,6 +29,22 @@ export type RootStackParamList = {
   };
   CashToWalletSuccess: {
     result: AgentCashInResult;
+    amountMinor: string;
+  };
+
+  // Agent Cash→Cash (V1-AGENT-MOBILE-07). PIN and transferCode NEVER travel in params.
+  CashToCash: undefined;
+  CashToCashAmount: {
+    beneficiaryPhone: string;
+    amountMinor?: string;
+  };
+  CashToCashConfirm: {
+    beneficiaryPhone: string;
+    amountMinor: string;
+    idempotencyKey: string;
+  };
+  CashToCashSuccess: {
+    result: SafeCashToCashResult;
     amountMinor: string;
   };
 

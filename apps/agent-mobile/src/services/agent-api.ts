@@ -312,6 +312,99 @@ export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCas
 }
 
 /* ---------------------------------------------------------------------------
+ * Cash→Cash Initiation (V1-AGENT-MOBILE-07) — exact backend contract
+ * (src/agent/agent-cash-to-cash.controller.ts + agent-cash-to-cash.service.ts).
+ * Recipient is unregistered; agent balance is debited and held in unclaimed funds.
+ * A one-time plaintext transfer code is returned on initial creation ONLY.
+ * It is redacted from idempotency storage, never re-derived, and never stored.
+ * PIN is passed in agentPin; answers 401 for PIN failures with preserveSession.
+ * ------------------------------------------------------------------------- */
+
+export interface AgentCashToCashRequest {
+  beneficiaryPhone: string;
+  /** kobo minor units, /^[1-9]\d*$/ */
+  amountMinor: string;
+  currency: 'NGN';
+  idempotencyKey: string;
+  agentPin: string;
+  reference?: string;
+  description?: string;
+  correlationId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentCashToCashResult {
+  status: 'COMPLETED' | 'REPLAYED';
+  transferId: string;
+  journalId: string;
+  agentId: string;
+  beneficiaryPhone: string;
+  principalMinor: string;
+  feeMinor: string;
+  vatMinor: string;
+  totalMinor: string;
+  currency: string;
+  amountMinor: string;
+  idempotencyKey: string;
+  requestHash: string;
+  replayed: boolean;
+  correlationId?: string;
+  reference?: string;
+  createdAt: string;
+  /** One-time plaintext transfer code — returned ONLY on initial 201 COMPLETED, never on replay. */
+  transferCode?: string;
+}
+
+/** Safe projection of result for navigation/receipts — transferCode is strictly omitted. */
+export type SafeCashToCashResult = Omit<AgentCashToCashResult, 'transferCode'>;
+
+/** POST /agents/cash-to-cash (201). PIN failure surfaces as 401 (preserve session). */
+export async function agentCashToCash(request: AgentCashToCashRequest): Promise<AgentCashToCashResult> {
+  return ApiClient.post<AgentCashToCashResult>(
+    'api/v1/agents/cash-to-cash',
+    { ...request },
+    { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Display-Once Transfer Code Ephemeral Handover (C2C-5 / SEC-2).
+ * Strictly in-memory single-read handover between confirmation and result.
+ * Never enters navigation params, never enters persistence, cleared on read
+ * and cleared on unmount.
+ * ------------------------------------------------------------------------- */
+
+let pendingDisplayOnceTransferCode: string | null = null;
+
+export function setPendingTransferCode(code?: string | null): void {
+  pendingDisplayOnceTransferCode = code ?? null;
+}
+
+export function consumePendingTransferCode(): string | null {
+  const code = pendingDisplayOnceTransferCode;
+  pendingDisplayOnceTransferCode = null;
+  return code;
+}
+
+export function clearPendingTransferCode(): void {
+  pendingDisplayOnceTransferCode = null;
+}
+
+export function describeCashToCashError(error: unknown): string {
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    if (status === 401) {
+      if (/locked/i.test(error.message)) return 'Your transaction PIN is locked. Contact support.';
+      return 'Incorrect transaction PIN. Try again.';
+    }
+    if (status === 403) {
+      return 'You are not permitted to perform Cash→Cash for this account.';
+    }
+  }
+  return describeApiError(error);
+}
+
+/* ---------------------------------------------------------------------------
  * Unified Agent transaction history (V1-AGENT-MOBILE-06).
  * GET /agents/me/transactions — verified against
  * src/agent/agent-transaction-history.service.ts (V1-AGENT-HISTORY-01).

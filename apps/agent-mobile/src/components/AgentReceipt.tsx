@@ -4,7 +4,12 @@ import { Share, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../theme';
 import { Card } from './Card';
 import { Button } from './Button';
-import type { AgentCashInResult, AgentHistoryItem } from '../services/agent-api';
+import type {
+  AgentCashInResult,
+  AgentCashToCashResult,
+  AgentHistoryItem,
+  SafeCashToCashResult,
+} from '../services/agent-api';
 import { formatNairaFromMinor } from '../utils/format';
 import { historyDirectionSign, formatHistoryTimestamp } from './TransactionRow';
 
@@ -31,7 +36,7 @@ export interface AgentReceiptLine {
 }
 
 export interface AgentReceiptViewModel {
-  /** e.g. 'Cash→Wallet Receipt' */
+  /** e.g. 'Cash→Wallet Receipt' | 'Cash→Cash Receipt' */
   heading: string;
   /** Server-verbatim status, e.g. 'COMPLETED' | 'REPLAYED' | 'UNCLAIMED' */
   stateLabel: string;
@@ -76,6 +81,48 @@ export function receiptFromCashInResult(
     lines,
     footerNote: note,
     shareText: buildShareText('Cash→Wallet Receipt', replayed ? 'REPLAYED' : result.status, lines, note),
+  };
+}
+
+/** Cash→Cash result → receipt (C2C-8 / RCP-1 integration). transferCode is NEVER included. */
+export function receiptFromCashToCashResult(
+  result: AgentCashToCashResult | SafeCashToCashResult,
+): AgentReceiptViewModel {
+  const replayed = result.replayed === true || result.status === 'REPLAYED';
+  const lines: AgentReceiptLine[] = [
+    {
+      label: 'Amount sent',
+      value: `${formatNairaFromMinor(result.principalMinor || result.amountMinor)} ${result.currency}`,
+    },
+    { label: 'Beneficiary phone', value: result.beneficiaryPhone, selectable: true },
+  ];
+  if (result.feeMinor && result.feeMinor !== '0') {
+    lines.push({ label: 'Fee', value: `${formatNairaFromMinor(result.feeMinor)} ${result.currency}` });
+  }
+  if (result.totalMinor && result.totalMinor !== (result.principalMinor || result.amountMinor)) {
+    lines.push({ label: 'Total debited', value: `${formatNairaFromMinor(result.totalMinor)} ${result.currency}` });
+  }
+  if (result.reference) {
+    lines.push({ label: 'Transaction reference', value: result.reference, selectable: true });
+  }
+  if (result.createdAt) {
+    lines.push({ label: 'Time', value: formatHistoryTimestamp(result.createdAt) });
+  }
+  if (result.correlationId) {
+    lines.push({ label: 'Operation id', value: result.correlationId, selectable: true });
+  }
+
+  const note = replayed
+    ? 'Idempotent replay — this matched an earlier successful submission; a new transfer was NOT created.'
+    : 'Funds have been reserved on the electronic ledger. The beneficiary can claim physical cash at an agent outlet.';
+
+  return {
+    heading: 'Cash→Cash Receipt',
+    stateLabel: replayed ? 'REPLAYED' : result.status,
+    stateTone: replayed ? 'info' : 'success',
+    lines,
+    footerNote: note,
+    shareText: buildShareText('Cash→Cash Receipt', replayed ? 'REPLAYED' : result.status, lines, note),
   };
 }
 

@@ -1,12 +1,17 @@
 import { ApiClient, ApiError, NetworkError } from '../src/services/api-client';
 import {
   agentCashIn,
+  agentCashToCash,
   describeApiError,
+  describeCashToCashError,
   getAgentReceivingNumber,
   getAgentOutlets,
   getAgentTerminals,
   requestAgentMfaChallenge,
   resolveAgentRecipient,
+  setPendingTransferCode,
+  consumePendingTransferCode,
+  clearPendingTransferCode,
 } from '../src/services/agent-api';
 
 jest.mock('../src/services/api-client', () => {
@@ -128,15 +133,84 @@ describe('Agent operating-context API bindings', () => {
     });
   });
 
-  describe('describeApiError — user-facing mapping (raw server errors hidden)', () => {
-    test('401 → session expired message', () => {
+  describe('POST /agents/cash-to-cash binding (Cash→Cash Initiation)', () => {
+    test('sends exact contract body with agentPin and preserveSessionOn401', async () => {
+      const result = {
+        status: 'COMPLETED',
+        transferId: 'c2c-transfer-uuid',
+        journalId: 'journal-uuid',
+        agentId: 'agent-uuid',
+        beneficiaryPhone: '8012345678',
+        principalMinor: '500000',
+        feeMinor: '0',
+        vatMinor: '0',
+        totalMinor: '500000',
+        currency: 'NGN',
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-key-1',
+        requestHash: 'hash-1',
+        replayed: false,
+        reference: 'CASH_TO_CASH-c2c-key-1',
+        createdAt: '2026-06-01T12:00:00.000Z',
+        transferCode: '98765432',
+      };
+      mockClient.post.mockResolvedValue(result);
+
+      const out = await agentCashToCash({
+        beneficiaryPhone: '8012345678',
+        amountMinor: '500000',
+        currency: 'NGN',
+        idempotencyKey: 'c2c-key-1',
+        agentPin: '4321',
+      });
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/cash-to-cash',
+        {
+          beneficiaryPhone: '8012345678',
+          amountMinor: '500000',
+          currency: 'NGN',
+          idempotencyKey: 'c2c-key-1',
+          agentPin: '4321',
+        },
+        { idempotencyKey: 'c2c-key-1', preserveSessionOn401: true },
+      );
+      expect(out.status).toBe('COMPLETED');
+      expect(out.transferCode).toBe('98765432');
+    });
+  });
+
+  describe('Display-Once transferCode ephemeral handover', () => {
+    test('single-use consumption and clearance', () => {
+      setPendingTransferCode('CODE-999');
+      expect(consumePendingTransferCode()).toBe('CODE-999');
+      // Second read returns null (consumed):
+      expect(consumePendingTransferCode()).toBeNull();
+
+      // Clear function works:
+      setPendingTransferCode('CODE-888');
+      clearPendingTransferCode();
+      expect(consumePendingTransferCode()).toBeNull();
+    });
+  });
+
+  describe('describeApiError & describeCashToCashError mapping', () => {
+    test('401 → session expired message in general describeApiError', () => {
       expect(describeApiError(new ApiError('Unauthorized', 401))).toBe(
         'Your session has expired. Please log in again.',
       );
     });
+    test('401 with PIN error → PIN-specific error in describeCashToCashError', () => {
+      expect(describeCashToCashError(new ApiError('Transaction PIN invalid', 401))).toBe(
+        'Incorrect transaction PIN. Try again.',
+      );
+      expect(describeCashToCashError(new ApiError('Transaction PIN is locked', 401))).toBe(
+        'Your transaction PIN is locked. Contact support.',
+      );
+    });
     test('403 → account-availability message', () => {
-      expect(describeApiError(new ApiError('Forbidden', 403))).toBe(
-        'This information is not available for your account.',
+      expect(describeCashToCashError(new ApiError('Forbidden', 403))).toBe(
+        'You are not permitted to perform Cash→Cash for this account.',
       );
     });
     test('500 → generic temporary-unavailable message (raw body hidden)', () => {

@@ -210,6 +210,15 @@ export const HomeScreen: React.FC = () => {
           testID="nav-cash-to-wallet"
         />
       )}
+      {/* Fail-closed: visible ONLY while the backend permits CASH_TO_CASH */}
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_TO_CASH')?.allowed ===
+        true && (
+        <Button
+          label="Cash→Cash — send to unregistered recipient"
+          onPress={() => navigation.navigate('CashToCash')}
+          testID="nav-cash-to-cash"
+        />
+      )}
     </ScrollView>
   );
 };

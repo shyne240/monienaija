@@ -5,9 +5,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import {
   AgentReceipt,
   receiptFromCashInResult,
+  receiptFromCashToCashResult,
   receiptFromHistoryItem,
 } from '../src/components/AgentReceipt';
-import type { AgentCashInResult, AgentHistoryItem } from '../src/services/agent-api';
+import type { AgentCashInResult, AgentCashToCashResult, AgentHistoryItem } from '../src/services/agent-api';
 
 const completedResult: AgentCashInResult = {
   status: 'COMPLETED',
@@ -24,9 +25,31 @@ const completedResult: AgentCashInResult = {
   createdAt: '2026-06-01T12:30:00.000Z',
 };
 
+const completedCashToCashResult: AgentCashToCashResult = {
+  status: 'COMPLETED',
+  transferId: 'c2c-transfer-uuid',
+  journalId: 'internal-journal-10',
+  agentId: 'internal-agent-1',
+  beneficiaryPhone: '8098765000',
+  principalMinor: '500000',
+  feeMinor: '0',
+  vatMinor: '0',
+  totalMinor: '500000',
+  currency: 'NGN',
+  amountMinor: '500000',
+  idempotencyKey: 'c2c-xyz',
+  requestHash: 'internal-hash-c2c',
+  replayed: false,
+  reference: 'CASH_TO_CASH-c2c-xyz',
+  createdAt: '2026-06-01T12:30:00.000Z',
+  transferCode: 'SECRET_CODE_9999',
+};
+
 const SECRET_MARKERS = [
   'transferCode',
+  'SECRET_CODE_9999',
   'internal-journal-9',
+  'internal-journal-10',
   'internal-customer-1',
   'internal-hash',
   'internal-agent-1',
@@ -57,11 +80,40 @@ describe('Shared Agent receipt renderer', () => {
     }
   });
 
+  test('C1c: completed Cash→Cash result renders safely WITHOUT transferCode', () => {
+    const receipt = receiptFromCashToCashResult(completedCashToCashResult);
+    const { getByTestId, getByText, queryByText } = render(<AgentReceipt receipt={receipt} />);
+
+    expect(getByText('MoneyNaija Agent')).toBeTruthy();
+    expect(getByTestId('receipt-heading').props.children).toBe('Cash→Cash Receipt');
+    expect(getByTestId('receipt-status').props.children).toBe('COMPLETED');
+    expect(getByText('₦5,000.00 NGN')).toBeTruthy();
+    expect(getByText('8098765000')).toBeTruthy();
+    expect(getByText('CASH_TO_CASH-c2c-xyz')).toBeTruthy();
+
+    // transferCode must NOT be anywhere in rendered text, view model, or share text:
+    expect(queryByText(/SECRET_CODE_9999/)).toBeNull();
+    expectSecretFree(JSON.stringify(receipt));
+    expectSecretFree(receipt.shareText);
+  });
+
   test('C2: replayed result renders honest REPLAYED state and note', () => {
     const receipt = receiptFromCashInResult({ ...completedResult, status: 'REPLAYED', replayed: true });
     const { getByTestId, getByText } = render(<AgentReceipt receipt={receipt} />);
     expect(getByTestId('receipt-status').props.children).toBe('REPLAYED');
     expect(getByText(/new credit was NOT created/)).toBeTruthy();
+  });
+
+  test('C2b: replayed Cash→Cash result renders honest REPLAYED state and note', () => {
+    const receipt = receiptFromCashToCashResult({
+      ...completedCashToCashResult,
+      status: 'REPLAYED',
+      replayed: true,
+      transferCode: undefined,
+    });
+    const { getByTestId, getByText } = render(<AgentReceipt receipt={receipt} />);
+    expect(getByTestId('receipt-status').props.children).toBe('REPLAYED');
+    expect(getByText(/new transfer was NOT created/)).toBeTruthy();
   });
 
   test('C3: history item receipt includes fee/commission/narration only when authoritative', () => {
@@ -109,7 +161,7 @@ describe('Shared Agent receipt renderer', () => {
 
   test('share action asks RN Share with sanitized text only (no image export)', async () => {
     const shareSpy = jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: 'sharedAction' } as never);
-    const receipt = receiptFromCashInResult(completedResult);
+    const receipt = receiptFromCashToCashResult(completedCashToCashResult);
     const { getByTestId } = render(<AgentReceipt receipt={receipt} />);
     fireEvent.press(getByTestId('receipt-share'));
     await waitFor(() => expect(shareSpy).toHaveBeenCalled());
