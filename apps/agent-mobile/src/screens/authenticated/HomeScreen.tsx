@@ -201,6 +201,15 @@ export const HomeScreen: React.FC = () => {
         onPress={() => navigation.navigate('Transactions')}
         testID="nav-transactions"
       />
+      {/* Fail-closed: visible ONLY while the backend permits CASH_IN */}
+      {capabilitiesQuery.data?.evaluations.find((e) => e.canonicalService === 'CASH_IN')?.allowed ===
+        true && (
+        <Button
+          label="Cash→Wallet — credit a customer wallet"
+          onPress={() => navigation.navigate('CashToWallet')}
+          testID="nav-cash-to-wallet"
+        />
+      )}
     </ScrollView>
   );
 };

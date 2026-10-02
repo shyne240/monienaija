@@ -15,6 +15,12 @@ export interface ApiClientOptions {
   body?: unknown;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /**
+   * Cash→Wallet returns 401 for transaction-PIN failures (not session
+   * expiry). Endpoints like it opt out of automatic session purge; every
+   * other caller keeps the default fail-closed purge behavior.
+   */
+  preserveSessionOn401?: boolean;
 }
 
 export class ApiError extends Error {
@@ -102,7 +108,7 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
       const code = data?.code || data?.error || 'UNKNOWN_ERROR';
       const validationErrors = data?.validationErrors || data?.errors || undefined;
 
-      if (status === 401) {
+      if (status === 401 && !options.preserveSessionOn401) {
         // Expired or revoked agent session — fail closed back to login.
         await purgeAgentSessionFromStorage();
       }

@@ -12,6 +12,10 @@ import { RotateCredentialScreen } from '../screens/unauthenticated/RotateCredent
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { AccountScreen } from '../screens/authenticated/AccountScreen';
 import { PlaceholderScreen } from '../screens/authenticated/PlaceholderScreen';
+import { CashToWalletRecipientScreen } from '../screens/authenticated/cash-in/CashToWalletRecipientScreen';
+import { CashToWalletAmountScreen } from '../screens/authenticated/cash-in/CashToWalletAmountScreen';
+import { CashToWalletConfirmScreen } from '../screens/authenticated/cash-in/CashToWalletConfirmScreen';
+import { CashToWalletSuccessScreen } from '../screens/authenticated/cash-in/CashToWalletSuccessScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -78,6 +82,26 @@ export const AppNavigator: React.FC = () => {
               />
             )}
           </Stack.Screen>
+          <Stack.Screen
+            name="CashToWallet"
+            component={CashToWalletRecipientScreen}
+            options={{ title: 'Cash→Wallet' }}
+          />
+          <Stack.Screen
+            name="CashToWalletAmount"
+            component={CashToWalletAmountScreen}
+            options={{ title: 'Amount' }}
+          />
+          <Stack.Screen
+            name="CashToWalletConfirm"
+            component={CashToWalletConfirmScreen}
+            options={{ title: 'Confirm & Authorize', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="CashToWalletSuccess"
+            component={CashToWalletSuccessScreen}
+            options={{ title: 'Cash→Wallet Complete', headerBackVisible: false }}
+          />
         </>
       )}
     </Stack.Navigator>

@@ -235,6 +235,82 @@ export async function requestAgentMfaChallenge(
   return ApiClient.post<AgentMfaChallenge>('api/v1/agents/me/mfa-challenges', body);
 }
 
+/* ---------------------------------------------------------------------------
+ * Cash→Wallet (V1-AGENT-MOBILE-04) — exact backend contract
+ * (src/agent/agent-cash-in.controller.ts + recipient-resolution): the
+ * backend is the sole authority for resolution, fees, limits, authorization,
+ * idempotency and ledger effects. PIN is required by the contract (body
+ * field); the app never stores/logs it. There is NO customer OTP/MFA in this
+ * flow — the backend does not require it, so none is invented.
+ *
+ * IMPORTANT: this endpoint answers 401 for PIN_invalid/locked (A11). That
+ * 401 is NOT session expiry — therefore agentCashIn opts out of the
+ * automatic session purge (the purge stays intact for every other call).
+ * ------------------------------------------------------------------------- */
+
+/** Recipient identity as resolved by GET /recipients/resolve (agent-facing). */
+export interface ResolvedRecipientView {
+  ownerType: 'CUSTOMER' | 'AGENT';
+  receivingNumber: string;
+  display: string;
+  status: string;
+}
+
+/**
+ * GET /recipients/resolve?identifier=... — identity needed to credit the
+ * right wallet. The backend internal `ownerId` is deliberately stripped at
+ * the binding layer: agent UI must never see internal customer IDs.
+ */
+export async function resolveAgentRecipient(identifier: string): Promise<ResolvedRecipientView> {
+  const raw = await ApiClient.get<ResolvedRecipientView & { ownerId: string }>(
+    `api/v1/recipients/resolve?identifier=${encodeURIComponent(identifier.trim())}`,
+  );
+  return {
+    ownerType: raw.ownerType,
+    receivingNumber: raw.receivingNumber,
+    display: raw.display,
+    status: raw.status,
+  };
+}
+
+export interface AgentCashInRequest {
+  recipientIdentifier: string;
+  /** kobo, /^[1-9]\d*$/ — derived from UI naira input only (never computed for money logic). */
+  amountMinor: string;
+  currency: 'NGN';
+  idempotencyKey: string;
+  pin: string;
+}
+
+/** Server transaction result for Cash→Wallet (201). Internal ledger/customer
+ * ids stay typed for truthfulness but are never rendered by the UI. */
+export interface AgentCashInResult {
+  status: 'COMPLETED' | 'REPLAYED';
+  journalId: string;
+  agentId: string;
+  recipientCustomerId: string;
+  recipientReceivingNumber: string;
+  amountMinor: string;
+  currency: string;
+  idempotencyKey: string;
+  requestHash: string;
+  replayed: boolean;
+  correlationId?: string;
+  reference?: string;
+  createdAt: string;
+}
+
+/** POST /agents/cash-in (201). Idempotency key in the contract body (A12)
+ * AND in the established idempotency-key header. PIN failure surfaces as
+ * 401 — never purge the session for that. */
+export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCashInResult> {
+  return ApiClient.post<AgentCashInResult>(
+    'api/v1/agents/cash-in',
+    { ...request },
+    { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
+  );
+}
+
 /**
  * User-facing message for API failures (§9 error handling):
  * raw server errors are not surfaced verbatim when not meaningful to an agent.

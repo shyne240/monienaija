@@ -1,10 +1,12 @@
 import { ApiClient, ApiError, NetworkError } from '../src/services/api-client';
 import {
+  agentCashIn,
   describeApiError,
   getAgentReceivingNumber,
   getAgentOutlets,
   getAgentTerminals,
   requestAgentMfaChallenge,
+  resolveAgentRecipient,
 } from '../src/services/agent-api';
 
 jest.mock('../src/services/api-client', () => {
@@ -75,6 +77,54 @@ describe('Agent operating-context API bindings', () => {
       await requestAgentMfaChallenge('cust-2', 'CASH_TO_CASH_CLAIM', 45);
       const body2 = mockClient.post.mock.calls[1]?.[1] as Record<string, unknown>;
       expect(body2.ttlSeconds).toBe(45);
+    });
+  });
+
+  describe('GET /recipients/resolve binding (Cash→Wallet recipient identity)', () => {
+    test('resolves identity and STRIPS the internal ownerId before returning', async () => {
+      mockClient.get.mockResolvedValue({
+        ownerType: 'CUSTOMER', ownerId: 'internal-customer-id', receivingNumber: '8000000001',
+        display: 'Ada N.', status: 'ACTIVE',
+      });
+
+      const view = await resolveAgentRecipient(' 8000000001 ');
+
+      // Binding trims before transport:
+      expect(mockClient.get).toHaveBeenCalledWith(
+        'api/v1/recipients/resolve?identifier=8000000001',
+      );
+      expect(view).toEqual({
+        ownerType: 'CUSTOMER', receivingNumber: '8000000001', display: 'Ada N.', status: 'ACTIVE',
+      });
+      expect('ownerId' in view).toBe(false); // internal ids never leak into the app
+    });
+  });
+
+  describe('POST /agents/cash-in binding', () => {
+    test('sends the exact contract body with body+header idempotency and PIN-session preservation', async () => {
+      const result = {
+        status: 'COMPLETED', journalId: 'j-1', agentId: 'a-1', recipientCustomerId: 'c-1',
+        recipientReceivingNumber: '8000000001', amountMinor: '250000', currency: 'NGN',
+        idempotencyKey: 'c2w-x', requestHash: 'h', replayed: false,
+        reference: 'CASH_IN-c2w-x', createdAt: '2026-01-01T00:00:00.000Z',
+      };
+      mockClient.post.mockResolvedValue(result);
+
+      const out = await agentCashIn({
+        recipientIdentifier: '8000000001', amountMinor: '250000', currency: 'NGN',
+        idempotencyKey: 'c2w-x', pin: '1234',
+      });
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/cash-in',
+        {
+          recipientIdentifier: '8000000001', amountMinor: '250000', currency: 'NGN',
+          idempotencyKey: 'c2w-x', pin: '1234',
+        },
+        { idempotencyKey: 'c2w-x', preserveSessionOn401: true },
+      );
+      expect(out.status).toBe('COMPLETED');
+      expect(out.reference).toBe('CASH_IN-c2w-x');
     });
   });
 

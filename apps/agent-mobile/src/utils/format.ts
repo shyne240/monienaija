@@ -16,6 +16,28 @@ export function formatNairaFromMinor(balanceMinor: string): string {
   })}`;
 }
 
+/**
+ * naira text input → kobo string (presentation-layer unit conversion only,
+ * mirroring customer-mobile's `*100` convention; no fees/limits/logic here).
+ * Returns null for empty/zero/<=0 or >2 decimal places.
+ * Examples: "2500" -> "250000", "2,500.50" -> "250050", "0" -> null.
+ */
+export function parseNairaInputToMinor(input: string): string | null {
+  const cleaned = input.replace(/[,₦\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const naira = Number(cleaned);
+  if (!Number.isFinite(naira) || naira <= 0) return null;
+  const kobo = Math.round(naira * 100);
+  if (!Number.isSafeInteger(kobo) || kobo <= 0) return null;
+  return String(kobo);
+}
+
+/** Non-secret idempotency key generated once per transaction attempt. */
+export function newIdempotencyKey(prefix: string): string {
+  const rand = Math.abs(Math.floor(Math.random() * 0xffffffff)).toString(16).padStart(8, '0');
+  return `${prefix}-${Date.now().toString(36)}-${rand}`;
+}
+
 /** "HH:MM" local clock reading used for "Updated at" freshness indicators. */
 export function formatUpdatedAt(timestamp: number): string {
   const d = new Date(timestamp);

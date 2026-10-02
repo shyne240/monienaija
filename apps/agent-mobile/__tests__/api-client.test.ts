@@ -60,6 +60,18 @@ describe('Agent Mobile API client', () => {
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.sessionData)).toBeNull();
   });
 
+  test('cash-in-style 401 with preserveSessionOn401 keeps the stored session (PIN failure ≠ expiry)', async () => {
+    await SecureStorage.set(AGENT_SESSION_KEYS.token, 'live-session');
+    fetchMock.mockResolvedValue(jsonResponse(401, { message: 'Transaction PIN invalid: PIN_INVALID' }));
+
+    await expect(
+      ApiClient.post('api/v1/agents/cash-in', {}, { preserveSessionOn401: true }),
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBe('live-session');
+    await SecureStorage.remove(AGENT_SESSION_KEYS.token);
+  });
+
   test('maps backend errors to ApiError with status/code and never throws tokens', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(403, { message: 'Credential rotation is not pending', code: 'FORBIDDEN' }),
