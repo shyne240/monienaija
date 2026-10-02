@@ -236,8 +236,10 @@ describe('Cash→Wallet — confirmation & submission', () => {
       params: { result: cashInResult, amountMinor: '250000' },
     };
     const view = wrap(<CashToWalletSuccessScreen />);
-    expect(view.getByTestId('success-status')).toBeTruthy();
-    expect(view.getByText('COMPLETED')).toBeTruthy();
+    // Shared-receipt rendering (V1-AGENT-MOBILE-06 integration, RCP-1):
+    expect(view.getByTestId('c2w-receipt')).toBeTruthy();
+    expect(view.getByTestId('receipt-heading').props.children).toBe('Cash→Wallet Receipt');
+    expect(view.getByTestId('receipt-status').props.children).toBe('COMPLETED');
     expect(view.getByText('CASH_IN-c2w-abc')).toBeTruthy();
     expect(view.getByText('₦2,500.00 NGN')).toBeTruthy();
     // Internal identifiers never rendered:

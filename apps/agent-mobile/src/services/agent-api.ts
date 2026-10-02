@@ -311,6 +311,88 @@ export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCas
   );
 }
 
+/* ---------------------------------------------------------------------------
+ * Unified Agent transaction history (V1-AGENT-MOBILE-06).
+ * GET /agents/me/transactions — verified against
+ * src/agent/agent-transaction-history.service.ts (V1-AGENT-HISTORY-01).
+ * The response is the backend's SAFE projection: no journal internals, no
+ * ledger account ids, no request hashes, no PIN/OTP/hash material, no
+ * workforce identity. The UI additionally never renders the row `id` (it is
+ * used only for React keys / cache lookups) and never renders `counterparty
+ * .aggregatorId` — identical to the audit's "no internal IDs" rule.
+ * ------------------------------------------------------------------------- */
+
+export type AgentHistoryType =
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'CASH_TO_CASH'
+  | 'AGENT_FUNDING'
+  | 'AGENT_DEFUNDING';
+
+export type AgentHistoryDirection = 'DEBIT' | 'CREDIT' | 'UNKNOWN';
+
+export type AgentHistoryCounterparty =
+  | { type: 'CUSTOMER'; beneficiaryPhone?: string | null }
+  | { type: 'AGENT' }
+  | { type: 'AGGREGATOR'; aggregatorId?: string | null }
+  | { type: 'WORKFORCE' }
+  | null;
+
+export interface AgentHistoryCommission {
+  commissionMinor: string;
+  payable: boolean;
+  treatment: string | null;
+}
+
+export interface AgentHistoryItem {
+  id: string;
+  type: string;
+  status: string;
+  amountMinor: string;
+  currency: string;
+  direction: string;
+  createdAt: string;
+  completedAt: string | null;
+  reference: string | null;
+  narration: string | null;
+  feeMinor: string;
+  counterparty: AgentHistoryCounterparty;
+  commission: AgentHistoryCommission | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+}
+
+export interface AgentHistoryPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+}
+
+export interface AgentUnifiedHistoryResponse {
+  items: AgentHistoryItem[];
+  pagination: AgentHistoryPagination;
+}
+
+export interface AgentTransactionsQuery {
+  page?: number;
+  limit?: number;
+  type?: AgentHistoryType;
+}
+
+/** GET /agents/me/transactions — project-supported paging + type filter only. */
+export async function getAgentTransactions(query: AgentTransactionsQuery = {}): Promise<AgentUnifiedHistoryResponse> {
+  const params = new URLSearchParams();
+  if (query.page != null) params.set('page', String(query.page));
+  if (query.limit != null) params.set('limit', String(query.limit));
+  if (query.type) params.set('type', query.type);
+  const qs = params.toString();
+  return ApiClient.get<AgentUnifiedHistoryResponse>(
+    `api/v1/agents/me/transactions${qs ? `?${qs}` : ''}`,
+  );
+}
+
 /**
  * User-facing message for API failures (§9 error handling):
  * raw server errors are not surfaced verbatim when not meaningful to an agent.

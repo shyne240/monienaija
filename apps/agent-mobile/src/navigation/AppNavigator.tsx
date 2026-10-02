@@ -11,7 +11,8 @@ import { RotateCredentialScreen } from '../screens/unauthenticated/RotateCredent
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { AccountScreen } from '../screens/authenticated/AccountScreen';
-import { PlaceholderScreen } from '../screens/authenticated/PlaceholderScreen';
+import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
+import { TransactionReceiptScreen } from '../screens/authenticated/TransactionReceiptScreen';
 import { CashToWalletRecipientScreen } from '../screens/authenticated/cash-in/CashToWalletRecipientScreen';
 import { CashToWalletAmountScreen } from '../screens/authenticated/cash-in/CashToWalletAmountScreen';
 import { CashToWalletConfirmScreen } from '../screens/authenticated/cash-in/CashToWalletConfirmScreen';
@@ -65,23 +66,19 @@ export const AppNavigator: React.FC = () => {
           <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Agent Account' }} />
           <Stack.Screen
             name="Transactions"
-            options={{ title: 'Transactions (upcoming)' }}
-          >
-            {() => (
-              <PlaceholderScreen
-                title="Agent Transactions"
-                message="Cash→Wallet, Wallet→Cash and Cash→Cash will be enabled in a later phase of this app build. Nothing here is functional yet."
-              />
-            )}
-          </Stack.Screen>
-          <Stack.Screen name="History" options={{ title: 'Agent History (upcoming)' }}>
-            {() => (
-              <PlaceholderScreen
-                title="Transaction History"
-                message="Your unified agent transaction history will appear here in a later phase of this app build."
-              />
-            )}
-          </Stack.Screen>
+            component={TransactionsScreen}
+            options={{ title: 'Transaction History' }}
+          />
+          <Stack.Screen
+            name="History"
+            component={TransactionsScreen}
+            options={{ title: 'Transaction History' }}
+          />
+          <Stack.Screen
+            name="TransactionReceipt"
+            component={TransactionReceiptScreen}
+            options={{ title: 'Transaction Receipt' }}
+          />
           <Stack.Screen
             name="CashToWallet"
             component={CashToWalletRecipientScreen}

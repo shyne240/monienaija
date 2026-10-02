@@ -27,6 +27,12 @@ export type RootStackParamList = {
     result: AgentCashInResult;
     amountMinor: string;
   };
+
+  // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)
+  TransactionReceipt: {
+    itemId: string;
+    filter?: 'CASH_IN' | 'CASH_OUT' | 'CASH_TO_CASH' | 'AGENT_FUNDING' | 'AGENT_DEFUNDING';
+  };
 };
 
 declare global {

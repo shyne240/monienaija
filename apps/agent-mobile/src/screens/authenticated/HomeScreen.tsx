@@ -196,7 +196,7 @@ export const HomeScreen: React.FC = () => {
         testID="nav-account"
       />
       <Button
-        label="Transactions & History (upcoming)"
+        label="Transaction History"
         variant="outline"
         onPress={() => navigation.navigate('Transactions')}
         testID="nav-transactions"

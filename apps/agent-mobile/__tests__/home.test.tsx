@@ -218,7 +218,7 @@ describe('HomeScreen (real Agent operating context)', () => {
     mockApi.getAgentReceivingNumber.mockResolvedValue(receivingFixture);
 
     const { getByText, queryByText } = wrap(<HomeScreen />);
-    await waitFor(() => expect(getByText('Transactions & History (upcoming)')).toBeTruthy());
+    await waitFor(() => expect(getByText('Transaction History')).toBeTruthy());
     expect(queryByText('Execute')).toBeNull();
   });
 });
