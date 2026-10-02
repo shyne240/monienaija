@@ -195,6 +195,46 @@ export async function getAgentTerminals(): Promise<AgentTerminal[]> {
   return ApiClient.get<AgentTerminal[]>('api/v1/agents/me/terminals');
 }
 
+/* ---------------------------------------------------------------------------
+ * MFA challenge contract (V1-AGENT-MFA-API-01, consumed by V1-AGENT-MOBILE-03).
+ * POST /agents/me/mfa-challenges — issue-only surface: it NEVER returns the
+ * OTP, and there is NO standalone Agent-facing verification endpoint (the OTP
+ * is supplied to the transaction execution endpoints themselves in a later
+ * phase). Exactly two purposes exist; no others are ever sent.
+ * ------------------------------------------------------------------------- */
+
+export type MfaChallengePurpose = 'WALLET_TO_CASH' | 'CASH_TO_CASH_CLAIM';
+
+export interface AgentMfaChallenge {
+  challengeId: string;
+  customerId: string;
+  purpose: MfaChallengePurpose;
+  deliveryChannel: string;
+  destinationMasked: string;
+  delivered: boolean;
+  issuedAt: string;
+  expiresAt: string;
+  ttlSeconds: number;
+}
+
+/**
+ * Issue a customer-MFA challenge for a future transaction step.
+ * `ttlSeconds` is forwarded ONLY when the caller explicitly supplies it —
+ * otherwise the backend default applies and the server still reports the
+ * effective ttl in the response.
+ */
+export async function requestAgentMfaChallenge(
+  customerId: string,
+  purpose: MfaChallengePurpose,
+  ttlSeconds?: number,
+): Promise<AgentMfaChallenge> {
+  const body: Record<string, unknown> = { customerId, purpose };
+  if (ttlSeconds !== undefined) {
+    body.ttlSeconds = ttlSeconds;
+  }
+  return ApiClient.post<AgentMfaChallenge>('api/v1/agents/me/mfa-challenges', body);
+}
+
 /**
  * User-facing message for API failures (§9 error handling):
  * raw server errors are not surfaced verbatim when not meaningful to an agent.

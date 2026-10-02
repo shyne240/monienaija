@@ -4,6 +4,7 @@ import {
   getAgentReceivingNumber,
   getAgentOutlets,
   getAgentTerminals,
+  requestAgentMfaChallenge,
 } from '../src/services/agent-api';
 
 jest.mock('../src/services/api-client', () => {
@@ -44,6 +45,37 @@ describe('Agent operating-context API bindings', () => {
     expect(await getAgentTerminals()).toEqual([{ id: 't1' }]);
     expect(mockClient.get).toHaveBeenNthCalledWith(1, 'api/v1/agents/me/outlets');
     expect(mockClient.get).toHaveBeenNthCalledWith(2, 'api/v1/agents/me/terminals');
+  });
+
+  describe('POST /agents/me/mfa-challenges binding', () => {
+    test('sends customerId+purpose and returns the typed server response', async () => {
+      const issued = {
+        challengeId: 'c-1', customerId: 'cust-1', purpose: 'WALLET_TO_CASH',
+        deliveryChannel: 'SMS', destinationMasked: '******7801', delivered: true,
+        issuedAt: '2026-01-01T00:00:00.000Z', expiresAt: '2026-01-01T00:01:30.000Z', ttlSeconds: 90,
+      };
+      mockClient.post.mockResolvedValue(issued);
+
+      const result = await requestAgentMfaChallenge('cust-1', 'WALLET_TO_CASH');
+
+      expect(mockClient.post).toHaveBeenCalledWith('api/v1/agents/me/mfa-challenges', {
+        customerId: 'cust-1',
+        purpose: 'WALLET_TO_CASH',
+      });
+      expect(result.challengeId).toBe('c-1');
+      expect(result.destinationMasked).toBe('******7801');
+    });
+
+    test('ttlSeconds is omitted unless the caller explicitly supplies it', async () => {
+      mockClient.post.mockResolvedValue({});
+      await requestAgentMfaChallenge('cust-2', 'CASH_TO_CASH_CLAIM');
+      const body = mockClient.post.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect('ttlSeconds' in body).toBe(false);
+
+      await requestAgentMfaChallenge('cust-2', 'CASH_TO_CASH_CLAIM', 45);
+      const body2 = mockClient.post.mock.calls[1]?.[1] as Record<string, unknown>;
+      expect(body2.ttlSeconds).toBe(45);
+    });
   });
 
   describe('describeApiError — user-facing mapping (raw server errors hidden)', () => {
