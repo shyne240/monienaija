@@ -6,6 +6,7 @@ import { Card } from './Card';
 import { Button } from './Button';
 import type {
   AgentCashInResult,
+  AgentCashOutResult,
   AgentCashToCashResult,
   AgentHistoryItem,
   SafeCashToCashResult,
@@ -18,15 +19,14 @@ import { historyDirectionSign, formatHistoryTimestamp } from './TransactionRow';
  *
  * Architecture: authoritative server data → small presentation view-model
  * (never persisted; nothing secret) → one Card + optional text-share via the
- * React-Native core `Share` API (no new dependency, no image export — that
- * remains DECISION-REQUIRED per the audit).
+ * React-Native core `Share` API (no new dependency, no image export).
  *
  * SECURITY RULES enforced by construction:
  *  - The view-model accepts ONLY safe fields; internal ids (row/journal/
  *    wallet/ledger/customer), PIN/OTP/bearer/transferCode values must
  *    never be assigned (types list no such keys and tests assert absence).
- *  - Cash→Cash display-once transferCode is NEVER part of this model —
- *    receipts built from history/results cannot reveal it.
+ *  - Cash→Cash display-once transferCode is NEVER part of this model.
+ *  - Wallet→Cash PINs and OTPs are NEVER part of this model.
  */
 
 export interface AgentReceiptLine {
@@ -36,7 +36,7 @@ export interface AgentReceiptLine {
 }
 
 export interface AgentReceiptViewModel {
-  /** e.g. 'Cash→Wallet Receipt' | 'Cash→Cash Receipt' */
+  /** e.g. 'Cash→Wallet Receipt' | 'Cash→Cash Receipt' | 'Wallet→Cash Receipt' */
   heading: string;
   /** Server-verbatim status, e.g. 'COMPLETED' | 'REPLAYED' | 'UNCLAIMED' */
   stateLabel: string;
@@ -54,10 +54,11 @@ export function receiptFromCashInResult(
 ): AgentReceiptViewModel {
   const replayed = result.replayed === true || result.status === 'REPLAYED';
   const lines: AgentReceiptLine[] = [
-    { label: 'Amount credited', value: `${formatNairaFromMinor(result.amountMinor)} ${result.currency}` },
-    ...(recipientDisplay
-      ? [{ label: 'You credited wallet of', value: recipientDisplay }]
-      : []),
+    {
+      label: 'Amount credited',
+      value: `${formatNairaFromMinor(result.amountMinor)} ${result.currency}`,
+    },
+    ...(recipientDisplay ? [{ label: 'You credited wallet of', value: recipientDisplay }] : []),
     { label: 'Recipient wallet', value: result.recipientReceivingNumber, selectable: true },
   ];
   if (result.reference) {
@@ -80,7 +81,12 @@ export function receiptFromCashInResult(
     stateTone: replayed ? 'info' : 'success',
     lines,
     footerNote: note,
-    shareText: buildShareText('Cash→Wallet Receipt', replayed ? 'REPLAYED' : result.status, lines, note),
+    shareText: buildShareText(
+      'Cash→Wallet Receipt',
+      replayed ? 'REPLAYED' : result.status,
+      lines,
+      note,
+    ),
   };
 }
 
@@ -97,10 +103,16 @@ export function receiptFromCashToCashResult(
     { label: 'Beneficiary phone', value: result.beneficiaryPhone, selectable: true },
   ];
   if (result.feeMinor && result.feeMinor !== '0') {
-    lines.push({ label: 'Fee', value: `${formatNairaFromMinor(result.feeMinor)} ${result.currency}` });
+    lines.push({
+      label: 'Fee',
+      value: `${formatNairaFromMinor(result.feeMinor)} ${result.currency}`,
+    });
   }
   if (result.totalMinor && result.totalMinor !== (result.principalMinor || result.amountMinor)) {
-    lines.push({ label: 'Total debited', value: `${formatNairaFromMinor(result.totalMinor)} ${result.currency}` });
+    lines.push({
+      label: 'Total debited',
+      value: `${formatNairaFromMinor(result.totalMinor)} ${result.currency}`,
+    });
   }
   if (result.reference) {
     lines.push({ label: 'Transaction reference', value: result.reference, selectable: true });
@@ -122,7 +134,58 @@ export function receiptFromCashToCashResult(
     stateTone: replayed ? 'info' : 'success',
     lines,
     footerNote: note,
-    shareText: buildShareText('Cash→Cash Receipt', replayed ? 'REPLAYED' : result.status, lines, note),
+    shareText: buildShareText(
+      'Cash→Cash Receipt',
+      replayed ? 'REPLAYED' : result.status,
+      lines,
+      note,
+    ),
+  };
+}
+
+/** Wallet→Cash result → receipt (V1-AGENT-MOBILE-08 / W2C-8). PINs and OTP are NEVER included. */
+export function receiptFromCashOutResult(
+  result: AgentCashOutResult,
+  customerDisplay?: string,
+  customerReceivingNumber?: string,
+): AgentReceiptViewModel {
+  const replayed = result.replayed === true || result.status === 'REPLAYED';
+  const lines: AgentReceiptLine[] = [
+    {
+      label: 'Amount cashed out',
+      value: `${formatNairaFromMinor(result.amountMinor)} ${result.currency}`,
+    },
+    ...(customerDisplay ? [{ label: 'Customer', value: customerDisplay }] : []),
+    ...(customerReceivingNumber
+      ? [{ label: 'Customer wallet', value: customerReceivingNumber, selectable: true }]
+      : []),
+  ];
+  if (result.reference) {
+    lines.push({ label: 'Transaction reference', value: result.reference, selectable: true });
+  }
+  if (result.createdAt) {
+    lines.push({ label: 'Time', value: formatHistoryTimestamp(result.createdAt) });
+  }
+  if (result.correlationId) {
+    lines.push({ label: 'Operation id', value: result.correlationId, selectable: true });
+  }
+
+  const note = replayed
+    ? 'Idempotent replay — this matched an earlier successful submission; no new debit was created.'
+    : 'The customer wallet was debited and your Agent float credited. Physical cash was handed over outside the ledger.';
+
+  return {
+    heading: 'Wallet→Cash Receipt',
+    stateLabel: replayed ? 'REPLAYED' : result.status,
+    stateTone: replayed ? 'info' : 'success',
+    lines,
+    footerNote: note,
+    shareText: buildShareText(
+      'Wallet→Cash Receipt',
+      replayed ? 'REPLAYED' : result.status,
+      lines,
+      note,
+    ),
   };
 }
 
@@ -184,7 +247,12 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
   };
 }
 
-function buildShareText(heading: string, status: string, lines: AgentReceiptLine[], note?: string): string {
+function buildShareText(
+  heading: string,
+  status: string,
+  lines: AgentReceiptLine[],
+  note?: string,
+): string {
   const parts = [
     `MoneyNaija — Agent Receipt`,
     heading,
@@ -202,7 +270,11 @@ interface AgentReceiptProps {
   testID?: string;
 }
 
-export const AgentReceipt: React.FC<AgentReceiptProps> = ({ receipt, showShare = true, testID }) => {
+export const AgentReceipt: React.FC<AgentReceiptProps> = ({
+  receipt,
+  showShare = true,
+  testID,
+}) => {
   const handleShare = () => {
     void Share.share({ message: receipt.shareText });
   };
@@ -211,7 +283,9 @@ export const AgentReceipt: React.FC<AgentReceiptProps> = ({ receipt, showShare =
     <View testID={testID ?? 'agent-receipt'}>
       <Card style={styles.card}>
         <Text style={styles.brand}>MoneyNaija Agent</Text>
-        <Text style={styles.heading} testID="receipt-heading">{receipt.heading}</Text>
+        <Text style={styles.heading} testID="receipt-heading">
+          {receipt.heading}
+        </Text>
         <View
           style={[
             styles.statePill,
@@ -222,25 +296,38 @@ export const AgentReceipt: React.FC<AgentReceiptProps> = ({ receipt, showShare =
                 : styles.stateInfo,
           ]}
         >
-          <Text style={styles.stateText} testID="receipt-status">{receipt.stateLabel}</Text>
+          <Text style={styles.stateText} testID="receipt-status">
+            {receipt.stateLabel}
+          </Text>
         </View>
 
         {receipt.lines.map((line) => (
           <View style={styles.line} key={`${line.label}:${line.value}`}>
             <Text style={styles.lineLabel}>{line.label}</Text>
-            <Text selectable={line.selectable} style={styles.lineValue} testID={`receipt-line-${line.label}`}>
+            <Text
+              selectable={line.selectable}
+              style={styles.lineValue}
+              testID={`receipt-line-${line.label}`}
+            >
               {line.value}
             </Text>
           </View>
         ))}
 
         {receipt.footerNote && (
-          <Text style={styles.footer} testID="receipt-footer">{receipt.footerNote}</Text>
+          <Text style={styles.footer} testID="receipt-footer">
+            {receipt.footerNote}
+          </Text>
         )}
       </Card>
 
       {showShare && (
-        <Button label="Share receipt (text)" variant="outline" onPress={handleShare} testID="receipt-share" />
+        <Button
+          label="Share receipt (text)"
+          variant="outline"
+          onPress={handleShare}
+          testID="receipt-share"
+        />
       )}
     </View>
   );

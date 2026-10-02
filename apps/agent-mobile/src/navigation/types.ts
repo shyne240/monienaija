@@ -1,6 +1,8 @@
 import type {
   ResolvedRecipientView,
+  ResolvedCustomerRecipientView,
   AgentCashInResult,
+  AgentCashOutResult,
   SafeCashToCashResult,
 } from '../services/agent-api';
 
@@ -46,6 +48,24 @@ export type RootStackParamList = {
   CashToCashSuccess: {
     result: SafeCashToCashResult;
     amountMinor: string;
+  };
+
+  // Agent Wallet→Cash Method 1 (V1-AGENT-MOBILE-08). PINs and OTP NEVER travel in params.
+  WalletToCash: undefined;
+  WalletToCashAmount: {
+    customer: ResolvedCustomerRecipientView;
+    amountMinor?: string;
+  };
+  WalletToCashConfirm: {
+    customer: ResolvedCustomerRecipientView;
+    amountMinor: string;
+    idempotencyKey: string;
+  };
+  WalletToCashSuccess: {
+    result: AgentCashOutResult;
+    amountMinor: string;
+    customerDisplay?: string;
+    customerReceivingNumber?: string;
   };
 
   // Unified history + history-derived receipt (V1-AGENT-MOBILE-06)

@@ -146,8 +146,9 @@ interface AgentReceivingNumberNone {
 }
 
 export async function getAgentReceivingNumber(): Promise<AgentReceivingNumberView | null> {
-  const raw: AgentReceivingNumberView | AgentReceivingNumberNone =
-    await ApiClient.get('api/v1/agents/me/receiving-number');
+  const raw: AgentReceivingNumberView | AgentReceivingNumberNone = await ApiClient.get(
+    'api/v1/agents/me/receiving-number',
+  );
   // Backend answers {receivingNumber: null, status: 'NONE'} when unassigned —
   // normalize to null ("not assigned"); otherwise the full assignment view.
   if (raw && raw.receivingNumber === null) {
@@ -236,16 +237,7 @@ export async function requestAgentMfaChallenge(
 }
 
 /* ---------------------------------------------------------------------------
- * Cash→Wallet (V1-AGENT-MOBILE-04) — exact backend contract
- * (src/agent/agent-cash-in.controller.ts + recipient-resolution): the
- * backend is the sole authority for resolution, fees, limits, authorization,
- * idempotency and ledger effects. PIN is required by the contract (body
- * field); the app never stores/logs it. There is NO customer OTP/MFA in this
- * flow — the backend does not require it, so none is invented.
- *
- * IMPORTANT: this endpoint answers 401 for PIN_invalid/locked (A11). That
- * 401 is NOT session expiry — therefore agentCashIn opts out of the
- * automatic session purge (the purge stays intact for every other call).
+ * Recipient / Customer Resolution (GET /recipients/resolve)
  * ------------------------------------------------------------------------- */
 
 /** Recipient identity as resolved by GET /recipients/resolve (agent-facing). */
@@ -257,14 +249,27 @@ export interface ResolvedRecipientView {
 }
 
 /**
- * GET /recipients/resolve?identifier=... — identity needed to credit the
- * right wallet. The backend internal `ownerId` is deliberately stripped at
- * the binding layer: agent UI must never see internal customer IDs.
+ * Customer recipient with internal customerId (used exclusively by the
+ * API binding layer for MFA challenge issuance and cash-out requests;
+ * NEVER rendered in user-facing UI).
+ */
+export interface ResolvedCustomerRecipientView extends ResolvedRecipientView {
+  customerId: string;
+}
+
+/**
+ * GET /recipients/resolve?identifier=... — identity needed to credit/debit.
+ * The backend internal `ownerId` is stripped for generic views, or assigned
+ * to `customerId` internally for authorized financial commands.
  */
 export async function resolveAgentRecipient(identifier: string): Promise<ResolvedRecipientView> {
-  const raw = await ApiClient.get<ResolvedRecipientView & { ownerId: string }>(
-    `api/v1/recipients/resolve?identifier=${encodeURIComponent(identifier.trim())}`,
-  );
+  const raw = await ApiClient.get<{
+    ownerType: 'CUSTOMER' | 'AGENT';
+    ownerId: string;
+    receivingNumber: string;
+    display: string;
+    status: string;
+  }>(`api/v1/recipients/resolve?identifier=${encodeURIComponent(identifier.trim())}`);
   return {
     ownerType: raw.ownerType,
     receivingNumber: raw.receivingNumber,
@@ -272,6 +277,30 @@ export async function resolveAgentRecipient(identifier: string): Promise<Resolve
     status: raw.status,
   };
 }
+
+export async function resolveCustomerRecipient(
+  identifier: string,
+): Promise<ResolvedCustomerRecipientView> {
+  const raw = await ApiClient.get<{
+    ownerType: 'CUSTOMER' | 'AGENT';
+    ownerId: string;
+    receivingNumber: string;
+    display: string;
+    status: string;
+  }>(`api/v1/recipients/resolve?identifier=${encodeURIComponent(identifier.trim())}`);
+  return {
+    ownerType: raw.ownerType,
+    customerId: raw.ownerId,
+    receivingNumber: raw.receivingNumber,
+    display: raw.display,
+    status: raw.status,
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Cash→Wallet (V1-AGENT-MOBILE-04) — exact backend contract
+ * (src/agent/agent-cash-in.controller.ts + recipient-resolution).
+ * ------------------------------------------------------------------------- */
 
 export interface AgentCashInRequest {
   recipientIdentifier: string;
@@ -300,9 +329,7 @@ export interface AgentCashInResult {
   createdAt: string;
 }
 
-/** POST /agents/cash-in (201). Idempotency key in the contract body (A12)
- * AND in the established idempotency-key header. PIN failure surfaces as
- * 401 — never purge the session for that. */
+/** POST /agents/cash-in (201). PIN failure surfaces as 401 — never purge session. */
 export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCashInResult> {
   return ApiClient.post<AgentCashInResult>(
     'api/v1/agents/cash-in',
@@ -314,10 +341,6 @@ export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCas
 /* ---------------------------------------------------------------------------
  * Cash→Cash Initiation (V1-AGENT-MOBILE-07) — exact backend contract
  * (src/agent/agent-cash-to-cash.controller.ts + agent-cash-to-cash.service.ts).
- * Recipient is unregistered; agent balance is debited and held in unclaimed funds.
- * A one-time plaintext transfer code is returned on initial creation ONLY.
- * It is redacted from idempotency storage, never re-derived, and never stored.
- * PIN is passed in agentPin; answers 401 for PIN failures with preserveSession.
  * ------------------------------------------------------------------------- */
 
 export interface AgentCashToCashRequest {
@@ -359,20 +382,15 @@ export interface AgentCashToCashResult {
 export type SafeCashToCashResult = Omit<AgentCashToCashResult, 'transferCode'>;
 
 /** POST /agents/cash-to-cash (201). PIN failure surfaces as 401 (preserve session). */
-export async function agentCashToCash(request: AgentCashToCashRequest): Promise<AgentCashToCashResult> {
+export async function agentCashToCash(
+  request: AgentCashToCashRequest,
+): Promise<AgentCashToCashResult> {
   return ApiClient.post<AgentCashToCashResult>(
     'api/v1/agents/cash-to-cash',
     { ...request },
     { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
   );
 }
-
-/* ---------------------------------------------------------------------------
- * Display-Once Transfer Code Ephemeral Handover (C2C-5 / SEC-2).
- * Strictly in-memory single-read handover between confirmation and result.
- * Never enters navigation params, never enters persistence, cleared on read
- * and cleared on unmount.
- * ------------------------------------------------------------------------- */
 
 let pendingDisplayOnceTransferCode: string | null = null;
 
@@ -405,14 +423,102 @@ export function describeCashToCashError(error: unknown): string {
 }
 
 /* ---------------------------------------------------------------------------
+ * Wallet→Cash Method 1 (V1-AGENT-MOBILE-08) — exact backend contract
+ * (src/agent/agent-cash-out.controller.ts + agent-cash-out.service.ts).
+ * Requires Agent PIN + Customer PIN + Customer OTP (from MFA challenge).
+ * Customer wallet is debited, Agent electronic float is credited.
+ * ------------------------------------------------------------------------- */
+
+export interface AgentCashOutRequest {
+  customerId: string;
+  amountMinor: string;
+  currency: 'NGN';
+  idempotencyKey: string;
+  agentPin: string;
+  customerPin: string;
+  mfaChallengeId: string;
+  otp: string;
+  reference?: string;
+  description?: string;
+  correlationId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentCashOutResult {
+  status: 'COMPLETED' | 'REPLAYED';
+  journalId: string;
+  agentId: string;
+  customerId: string;
+  amountMinor: string;
+  currency: string;
+  idempotencyKey: string;
+  requestHash: string;
+  replayed: boolean;
+  correlationId?: string;
+  reference?: string;
+  createdAt: string;
+}
+
+/** POST /agents/cash-out (201). Multi-party authorization, preserveSessionOn401. */
+export async function agentCashOut(request: AgentCashOutRequest): Promise<AgentCashOutResult> {
+  return ApiClient.post<AgentCashOutResult>(
+    'api/v1/agents/cash-out',
+    { ...request },
+    { idempotencyKey: request.idempotencyKey, preserveSessionOn401: true },
+  );
+}
+
+export function describeCashOutError(error: unknown): string {
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    const msg = error.message;
+    if (status === 401) {
+      if (/Customer PIN is locked|Customer.*locked/i.test(msg)) {
+        return 'Customer transaction PIN is locked. Ask the customer to contact support.';
+      }
+      if (/Customer PIN/i.test(msg)) {
+        return 'Customer transaction PIN is invalid. Ask the customer to check and try again.';
+      }
+      if (/Agent PIN is locked|locked/i.test(msg)) {
+        return 'Your agent transaction PIN is locked. Contact support.';
+      }
+      if (/Agent PIN|PIN invalid/i.test(msg)) {
+        return 'Agent transaction PIN is incorrect. Try again.';
+      }
+      if (/OTP invalid|MFA_INVALID_OTP/i.test(msg)) {
+        return 'Customer verification code (OTP) is invalid. Check the code and try again.';
+      }
+      return 'Incorrect transaction PIN. Try again.';
+    }
+    if (status === 400) {
+      if (/OTP expired|expired/i.test(msg)) {
+        return 'Customer verification code has expired. Request a new code.';
+      }
+      if (/OTP invalid|OTP verification failed|MISMATCH/i.test(msg)) {
+        return 'Customer verification code (OTP) is invalid. Check the code and try again.';
+      }
+      if (/OTP already used/i.test(msg)) {
+        return 'Customer verification code (OTP) has already been used. Request a new code.';
+      }
+      return error.message;
+    }
+    if (status === 403) {
+      return 'You are not permitted to perform Wallet→Cash cash-outs.';
+    }
+    if (status === 409 || status === 422) {
+      if (/insufficient/i.test(msg)) {
+        return 'Customer has insufficient available balance for this cash-out.';
+      }
+      return error.message;
+    }
+  }
+  return describeApiError(error);
+}
+
+/* ---------------------------------------------------------------------------
  * Unified Agent transaction history (V1-AGENT-MOBILE-06).
  * GET /agents/me/transactions — verified against
  * src/agent/agent-transaction-history.service.ts (V1-AGENT-HISTORY-01).
- * The response is the backend's SAFE projection: no journal internals, no
- * ledger account ids, no request hashes, no PIN/OTP/hash material, no
- * workforce identity. The UI additionally never renders the row `id` (it is
- * used only for React keys / cache lookups) and never renders `counterparty
- * .aggregatorId` — identical to the audit's "no internal IDs" rule.
  * ------------------------------------------------------------------------- */
 
 export type AgentHistoryType =
@@ -475,7 +581,9 @@ export interface AgentTransactionsQuery {
 }
 
 /** GET /agents/me/transactions — project-supported paging + type filter only. */
-export async function getAgentTransactions(query: AgentTransactionsQuery = {}): Promise<AgentUnifiedHistoryResponse> {
+export async function getAgentTransactions(
+  query: AgentTransactionsQuery = {},
+): Promise<AgentUnifiedHistoryResponse> {
   const params = new URLSearchParams();
   if (query.page != null) params.set('page', String(query.page));
   if (query.limit != null) params.set('limit', String(query.limit));
@@ -495,7 +603,8 @@ export function describeApiError(error: unknown): string {
     const status = (error as Error & { status?: number }).status;
     if (status === 401) return 'Your session has expired. Please log in again.';
     if (status === 403) return 'This information is not available for your account.';
-    if (typeof status === 'number' && status >= 500) return 'The service is temporarily unavailable. Please retry.';
+    if (typeof status === 'number' && status >= 500)
+      return 'The service is temporarily unavailable. Please retry.';
     return error.message;
   }
   if (error instanceof Error && error.name === 'NetworkError') {

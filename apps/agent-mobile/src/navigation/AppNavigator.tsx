@@ -21,6 +21,10 @@ import { CashToCashRecipientScreen } from '../screens/authenticated/cash-to-cash
 import { CashToCashAmountScreen } from '../screens/authenticated/cash-to-cash/CashToCashAmountScreen';
 import { CashToCashConfirmScreen } from '../screens/authenticated/cash-to-cash/CashToCashConfirmScreen';
 import { CashToCashSuccessScreen } from '../screens/authenticated/cash-to-cash/CashToCashSuccessScreen';
+import { WalletToCashRecipientScreen } from '../screens/authenticated/cash-out/WalletToCashRecipientScreen';
+import { WalletToCashAmountScreen } from '../screens/authenticated/cash-out/WalletToCashAmountScreen';
+import { WalletToCashConfirmScreen } from '../screens/authenticated/cash-out/WalletToCashConfirmScreen';
+import { WalletToCashSuccessScreen } from '../screens/authenticated/cash-out/WalletToCashSuccessScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -29,7 +33,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  *  - loading session restore → Splash
  *  - pending mandatory credential rotation → RotateCredential ONLY
  *  - unauthenticated → Login
- *  - authenticated → Home + Account + Transactions/History + Cash→Wallet + Cash→Cash
+ *  - authenticated → Home + Account + Transactions/History + Cash→Wallet + Cash→Cash + Wallet→Cash
  */
 export const AppNavigator: React.FC = () => {
   const { isAuthenticated, isLoading, pendingRotation } = useAuthStore();
@@ -65,8 +69,16 @@ export const AppNavigator: React.FC = () => {
         />
       ) : (
         <>
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'MoneyNaija Agent' }} />
-          <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Agent Account' }} />
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{ title: 'MoneyNaija Agent' }}
+          />
+          <Stack.Screen
+            name="Account"
+            component={AccountScreen}
+            options={{ title: 'Agent Account' }}
+          />
           <Stack.Screen
             name="Transactions"
             component={TransactionsScreen}
@@ -121,6 +133,26 @@ export const AppNavigator: React.FC = () => {
             name="CashToCashSuccess"
             component={CashToCashSuccessScreen}
             options={{ title: 'Cash→Cash Complete', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="WalletToCash"
+            component={WalletToCashRecipientScreen}
+            options={{ title: 'Wallet→Cash' }}
+          />
+          <Stack.Screen
+            name="WalletToCashAmount"
+            component={WalletToCashAmountScreen}
+            options={{ title: 'Amount' }}
+          />
+          <Stack.Screen
+            name="WalletToCashConfirm"
+            component={WalletToCashConfirmScreen}
+            options={{ title: 'Confirm & Authorize', headerBackVisible: false }}
+          />
+          <Stack.Screen
+            name="WalletToCashSuccess"
+            component={WalletToCashSuccessScreen}
+            options={{ title: 'Cash-out Complete', headerBackVisible: false }}
           />
         </>
       )}
