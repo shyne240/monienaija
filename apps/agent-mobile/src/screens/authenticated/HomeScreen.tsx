@@ -1,103 +1,206 @@
-import React, { useCallback } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 
 import { theme } from '../../theme';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
-import { LoadingState } from '../../components/LoadingState';
-import { ErrorState } from '../../components/ErrorState';
-import { getAgentMe } from '../../services/agent-api';
+import { CapabilitiesList } from '../../components/CapabilitiesList';
+import {
+  describeApiError,
+  getAgentCapabilities,
+  getAgentFinancialPosition,
+  getAgentProfile,
+  getAgentReceivingNumber,
+} from '../../services/agent-api';
+import { formatNairaFromMinor, formatUpdatedAt } from '../../utils/format';
 import { useAuthStore } from '../../store/auth-store';
 
 /**
- * Agent Home foundation (spec §8/§9): fetches GET /agents/me to establish the
- * authenticated Agent context (identity/reference/status) used by later phases.
- * Financial position, capabilities, receiving number and all money actions are
- * intentionally NOT wired here — later phases populate them.
+ * Agent Home (V1-AGENT-MOBILE-02): real operating context served by the
+ * backend read surface (spec §3/§8). All money comes from server-provided
+ * minor units; the client formats but never computes. Financial position and
+ * capabilities are independent queries with their own loading/error states so
+ * one failing surface never blocks the rest. Pull-to-refresh re-reads the
+ * server (the client is never the authority for agent state; §8).
  */
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const { agentId, logout } = useAuthStore();
+  const { agentId } = useAuthStore();
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['agent-me', agentId],
-    queryFn: getAgentMe,
+  const profileQuery = useQuery({
+    queryKey: ['agent-profile', agentId],
+    queryFn: getAgentProfile,
     enabled: !!agentId,
+    staleTime: 30_000,
+  });
+  const financialQuery = useQuery({
+    queryKey: ['agent-financial-position', agentId],
+    queryFn: getAgentFinancialPosition,
+    enabled: !!agentId,
+    staleTime: 30_000,
+  });
+  const capabilitiesQuery = useQuery({
+    queryKey: ['agent-capabilities', agentId],
+    queryFn: getAgentCapabilities,
+    enabled: !!agentId,
+    staleTime: 30_000,
+  });
+  const receivingQuery = useQuery({
+    queryKey: ['agent-receiving-number', agentId],
+    queryFn: getAgentReceivingNumber,
+    enabled: !!agentId,
+    staleTime: 30_000,
   });
 
-  const goTo = useCallback(
-    (route: string) => () => navigation.navigate(route),
-    [navigation],
-  );
+  const profile = profileQuery.data;
+  const financial = financialQuery.data;
+  const receiving = receivingQuery.data;
 
-  if (isLoading) {
-    return <LoadingState message="Loading your Agent profile..." />;
-  }
+  const isRefreshing =
+    profileQuery.isRefetching ||
+    financialQuery.isRefetching ||
+    capabilitiesQuery.isRefetching ||
+    receivingQuery.isRefetching;
 
-  if (isError) {
-    return (
-      <ErrorState
-        title="Could not load Agent profile"
-        message={error instanceof Error ? error.message : 'Please try again'}
-        onRetry={() => refetch()}
-      />
-    );
-  }
+  const refreshAll = () => {
+    void profileQuery.refetch();
+    void financialQuery.refetch();
+    void capabilitiesQuery.refetch();
+    void receivingQuery.refetch();
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Card style={styles.identityCard} testID="agent-identity-card">
-        <Text style={styles.sectionTitle}>Agent Profile</Text>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Reference</Text>
-          <Text style={styles.rowValue} testID="agent-reference">{data?.reference ?? '—'}</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Status</Text>
-          <View
-            style={[
-              styles.statusBadge,
-              data?.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive,
-            ]}
-          >
-            <Text style={styles.statusText} testID="agent-status">{data?.status ?? '—'}</Text>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} />}
+    >
+      {/* Identity + class (GET /agents/me/profile) */}
+      <Card style={styles.card} testID="agent-identity-card">
+        {profileQuery.isLoading ? (
+          <Text style={styles.muted} testID="identity-loading">Loading Agent profile...</Text>
+        ) : profileQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="identity-error">
+              {describeApiError(profileQuery.error)}
+            </Text>
+            <Button label="Retry" variant="outline" onPress={() => profileQuery.refetch()} testID="identity-retry" />
           </View>
-        </View>
+        ) : (
+          <>
+            <View style={styles.headerRow}>
+              <View style={styles.headerText}>
+                <Text style={styles.sectionTitle}>Agent</Text>
+                <Text style={styles.reference} testID="agent-reference">{profile?.reference}</Text>
+                {profile?.agentClass && (
+                  <Text style={styles.classText} testID="agent-class">
+                    {profile.agentClass.name} · Class {profile.agentClass.code}
+                  </Text>
+                )}
+              </View>
+              <View
+                style={[styles.statusBadge, profile?.status === 'ACTIVE' ? styles.statusActive : styles.statusInactive]}
+              >
+                <Text style={styles.statusText} testID="agent-status">{profile?.status ?? '—'}</Text>
+              </View>
+            </View>
+          </>
+        )}
       </Card>
 
-      <Card style={styles.card} testID="foundation-notice-card">
-        <Text style={styles.sectionTitle}>Agent Mobile — Foundation</Text>
-        <Text style={styles.bodyText}>
-          This build contains the Agent foundation: secure sign-in, mandatory password rotation
-          and your Agent identity. Balance, agent services (Cash→Wallet, Wallet→Cash,
-          Cash→Cash), history, outlets and terminals unlock in later phases.
+      {/* Financial position (GET /agents/me/financial-position) */}
+      <Card style={styles.card} testID="financial-position-card">
+        <Text style={styles.sectionTitle}>Available Balance</Text>
+        {financialQuery.isLoading ? (
+          <Text style={styles.muted} testID="financial-loading">Loading balance...</Text>
+        ) : financialQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="financial-error">
+              {describeApiError(financialQuery.error)}
+            </Text>
+            <Button label="Retry" variant="outline" onPress={() => financialQuery.refetch()} testID="financial-retry" />
+          </View>
+        ) : financial && !financial.walletExists ? (
+          <View testID="financial-no-wallet">
+            <Text style={styles.balanceAmount}>No wallet yet</Text>
+            <Text style={styles.muted}>Your electronic float wallet has not been provisioned.</Text>
+          </View>
+        ) : financial ? (
+          <View>
+            <Text style={styles.balanceAmount} testID="financial-balance">
+              {formatNairaFromMinor(financial.balanceMinor)}
+            </Text>
+            <Text style={styles.balanceMeta} testID="financial-meta">
+              {financial.currency}
+              {financial.status ? ` — wallet ${financial.status}` : ''}
+              {'  ·  '}
+              Updated {formatUpdatedAt(financialQuery.dataUpdatedAt)}
+            </Text>
+          </View>
+        ) : null}
+      </Card>
+
+      {/* Receiving number (GET /agents/me/receiving-number) */}
+      <Card style={styles.card} testID="receiving-number-card">
+        <Text style={styles.sectionTitle}>Your Receiving Number</Text>
+        {receivingQuery.isLoading ? (
+          <Text style={styles.muted} testID="receiving-loading">Loading receiving number...</Text>
+        ) : receivingQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="receiving-error">
+              {describeApiError(receivingQuery.error)}
+            </Text>
+            <Button label="Retry" variant="outline" onPress={() => receivingQuery.refetch()} testID="receiving-retry" />
+          </View>
+        ) : receiving ? (
+          <View>
+            <Text selectable style={styles.receivingNumber} testID="receiving-number">
+              {receiving.receivingNumber}
+            </Text>
+            <Text style={styles.muted}>
+              Long-press to copy. Customers use this number to send money to you.
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.muted} testID="receiving-none">
+            No receiving number is assigned to this agent yet.
+          </Text>
+        )}
+      </Card>
+
+      {/* Capabilities (GET /agents/me/capabilities) — backend-authoritative */}
+      <Card style={styles.card} testID="capabilities-card">
+        <Text style={styles.sectionTitle}>Agent Services</Text>
+        {capabilitiesQuery.isLoading ? (
+          <Text style={styles.muted} testID="capabilities-loading">Loading services...</Text>
+        ) : capabilitiesQuery.isError ? (
+          <View>
+            <Text style={styles.errorText} testID="capabilities-error">
+              {describeApiError(capabilitiesQuery.error)}
+            </Text>
+            <Button label="Retry" variant="outline" onPress={() => capabilitiesQuery.refetch()} testID="capabilities-retry" />
+          </View>
+        ) : capabilitiesQuery.data ? (
+          <CapabilitiesList capabilities={capabilitiesQuery.data} testID="capabilities-list" />
+        ) : null}
+        <Text style={styles.helper}>
+          Transaction execution for enabled services unlocks in a later phase of this app build.
         </Text>
       </Card>
 
-      <View style={styles.shortcuts}>
-        <Button
-          label="Transactions (upcoming)"
-          variant="outline"
-          onPress={goTo('Transactions')}
-          testID="nav-transactions"
-        />
-        <Button
-          label="History (upcoming)"
-          variant="outline"
-          onPress={goTo('History')}
-          testID="nav-history"
-        />
-        <Button
-          label="Agent Account"
-          variant="secondary"
-          onPress={goTo('Account')}
-          testID="nav-account"
-        />
-      </View>
-
-      <Button label="Log Out" variant="text" onPress={logout} testID="logout-button" />
+      <Button
+        label="Agent Account & Outlets"
+        variant="secondary"
+        onPress={() => navigation.navigate('Account')}
+        testID="nav-account"
+      />
+      <Button
+        label="Transactions & History (upcoming)"
+        variant="outline"
+        onPress={() => navigation.navigate('Transactions')}
+        testID="nav-transactions"
+      />
     </ScrollView>
   );
 };
@@ -106,39 +209,37 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: theme.spacing.xl,
+    paddingBottom: theme.spacing.xxl,
     backgroundColor: theme.colors.neutral.offWhite,
-  },
-  identityCard: {
-    marginBottom: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
   card: {
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xs,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+    paddingRight: theme.spacing.md,
   },
   sectionTitle: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
     color: theme.colors.primary.main,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
-  bodyText: {
+  reference: {
     fontSize: theme.typography.sizes.base,
-    color: theme.colors.neutral.slate,
-    lineHeight: 22,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.neutral.charcoal,
   },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: theme.spacing.sm,
-  },
-  rowLabel: {
+  classText: {
     fontSize: theme.typography.sizes.sm,
     color: theme.colors.neutral.slate,
-  },
-  rowValue: {
-    fontSize: theme.typography.sizes.base,
-    fontWeight: theme.typography.weights.medium,
-    color: theme.colors.neutral.charcoal,
+    marginTop: 2,
   },
   statusBadge: {
     borderRadius: 12,
@@ -156,8 +257,37 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.primary.main,
   },
-  shortcuts: {
-    gap: theme.spacing.md,
-    marginBottom: theme.spacing.xl,
+  balanceAmount: {
+    fontSize: theme.typography.sizes.xxl,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary.main,
+  },
+  balanceMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.slate,
+    marginTop: 4,
+  },
+  receivingNumber: {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    letterSpacing: 2,
+    color: theme.colors.neutral.charcoal,
+    fontVariant: ['tabular-nums'],
+    marginBottom: theme.spacing.sm,
+  },
+  muted: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.neutral.slate,
+  },
+  errorText: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.feedback.error,
+    fontWeight: theme.typography.weights.medium,
+    marginBottom: theme.spacing.sm,
+  },
+  helper: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.gray,
+    marginTop: theme.spacing.sm,
   },
 });
