@@ -8,61 +8,79 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { AmountInput } from '../../components/AmountInput';
 import { ConfirmationDialog } from '../../components/ConfirmationDialog';
-import { useAuthStore } from '../../store/auth-store';
-import { ApiClient } from '../../services/api-client';
+import { ApiClient, ApiError } from '../../services/api-client';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'SendMoney'>;
 
 interface Wallet {
   id: string;
-  type: string;
   currency: string;
-  balanceMinor: number;
+  status: string;
+  balanceMinor: string | number;
 }
 
+/**
+ * V1-CUSTOMER-02 — Wallet-to-Wallet.
+ *
+ * Calls the real, authenticated, PIN-protected backend contract:
+ *   GET  /customers/me/wallets                (ownership-scoped, ledger-derived)
+ *   POST /customers/me/transfers              (Idempotency-Key header, Customer
+ *                                               transaction PIN verified server-side
+ *                                               before any ledger debit)
+ *
+ * This screen previously called the legacy, unauthenticated `/transfers` route with
+ * no PIN and no ownership check at all. That was a critical authorization gap — see
+ * docs/V1/V1-CUSTOMER-02-WALLET-TO-WALLET-AUTHORIZATION-COMPLETION-01.md.
+ *
+ * The Customer transaction PIN is held only in local component state, is cleared on
+ * submit/success/error/unmount, is never logged, and is never written to
+ * SecureStore, Zustand, or navigation params.
+ */
 export const SendMoneyScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { customerId } = useAuthStore();
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [walletsError, setWalletsError] = useState('');
   const [destinationWalletId, setDestinationWalletId] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [amountMinor, setAmountMinor] = useState(0);
   const [narration, setNarration] = useState('');
+  const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Logical operation persistent idempotency key
+  // Idempotency key, fresh per transfer attempt session (regenerated after any
+  // non-retryable outcome so a user never reuses a key for a logically new transfer).
   const [idempotencyKey, setIdempotencyKey] = useState('');
 
-  // Generate an idempotency key once per transaction form session
   useEffect(() => {
     generateNewIdempotencyKey();
+    // Never persist the PIN across unmount.
+    return () => setPin('');
   }, []);
 
   const generateNewIdempotencyKey = () => {
-    // Generate a fresh key for a brand new transfer
-    const key = `tx-transfer-${customerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const key = `tx-transfer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     setIdempotencyKey(key);
   };
 
   useEffect(() => {
     const fetchWallets = async () => {
-      if (!customerId) return;
       try {
-        const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
+        const walletList = await ApiClient.get<Wallet[]>('/customers/me/wallets');
         setWallets(walletList);
       } catch (err: any) {
-        setError('Failed to load your source wallets.');
+        setWalletsError('Failed to load your wallet. Pull to refresh or try again later.');
       }
     };
     fetchWallets();
-  }, [customerId]);
+  }, []);
 
-  const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
+  const primaryWallet = wallets.find((w) => w.currency === 'NGN') || wallets[0];
+  const balanceMinor = primaryWallet ? Number(primaryWallet.balanceMinor) : 0;
 
   const handleValidateForm = () => {
     if (!primaryWallet) {
@@ -82,8 +100,12 @@ export const SendMoneyScreen: React.FC = () => {
       setValidationError('Amount must be greater than zero.');
       return;
     }
-    if (primaryWallet.balanceMinor < amountMinor) {
+    if (balanceMinor < amountMinor) {
       setValidationError('Insufficient wallet balance.');
+      return;
+    }
+    if (!/^\d{4,12}$/.test(pin.trim())) {
+      setValidationError('Enter your 4-12 digit Transaction PIN.');
       return;
     }
 
@@ -96,26 +118,33 @@ export const SendMoneyScreen: React.FC = () => {
     setIsLoading(true);
     setError('');
 
+    const pinToSend = pin.trim();
+
     try {
-      // Must submit amountMinor as a positive integer string to bypass matches/regex checking in NestJS
-      const payload = {
-        sourceWalletId: primaryWallet!.id,
-        destinationWalletId: destinationWalletId.trim(),
-        amountMinor: String(amountMinor),
-        currency: 'NGN',
-        reference: idempotencyKey,
-        narration: narration.trim() || 'Wallet Transfer',
-      };
+      await ApiClient.post(
+        '/customers/me/transfers',
+        {
+          sourceWalletId: primaryWallet!.id,
+          destinationWalletId: destinationWalletId.trim(),
+          amountMinor: String(amountMinor),
+          currency: 'NGN',
+          reference: idempotencyKey,
+          narration: narration.trim() || 'Wallet Transfer',
+          pin: pinToSend,
+        },
+        { idempotencyKey },
+      );
 
-      await ApiClient.post('/transfers', payload, {
-        idempotencyKey, // logical persistent key passed down to the network headers
-      });
-
-      // Navigate back to Home on success
+      // PIN is never retained after submission, success or failure.
+      setPin('');
       navigation.navigate('Home');
     } catch (err: any) {
-      // Keep same idempotencyKey for potential retries (satisfying the persistent retry constraints)
-      setError(err?.message || 'Transfer failed. Check connection or try again.');
+      setPin('');
+      setError(describeTransferError(err));
+      // A rejected attempt (PIN error, limit, validation) is not safely retryable
+      // under the same Idempotency-Key semantics as a fresh attempt; issue a new key
+      // for the next try so the user is not silently blocked from correcting input.
+      generateNewIdempotencyKey();
     } finally {
       setIsLoading(false);
     }
@@ -129,21 +158,12 @@ export const SendMoneyScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Send Money</Text>
-          <Text style={styles.subtitle}>Instantly transfer funds to another MoneyNaija wallet</Text>
+          <Text style={styles.subtitle}>Instantly transfer funds to another MonieNaija wallet</Text>
         </View>
 
-        {(!!validationError || !!error) && (
+        {(!!validationError || !!error || !!walletsError) && (
           <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{validationError || error}</Text>
-            {!validationError && (
-              <Button
-                label="Regenerate Transaction Key"
-                size="small"
-                style={{ marginTop: theme.spacing.sm }}
-                variant="outline"
-                onPress={generateNewIdempotencyKey}
-              />
-            )}
+            <Text style={styles.errorText}>{validationError || error || walletsError}</Text>
           </View>
         )}
 
@@ -151,7 +171,7 @@ export const SendMoneyScreen: React.FC = () => {
           <View style={styles.balanceContainer}>
             <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
             <Text style={styles.balanceValue}>
-              ₦{(primaryWallet.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              ₦{(balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         )}
@@ -170,7 +190,7 @@ export const SendMoneyScreen: React.FC = () => {
           />
 
           <AmountInput
-            error={amountMinor > 0 && primaryWallet && primaryWallet.balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
+            error={amountMinor > 0 && primaryWallet && balanceMinor < amountMinor ? 'Insufficient funds' : undefined}
             label="Amount (NGN)"
             value={amountStr}
             onChangeValue={(str, minor) => {
@@ -185,6 +205,21 @@ export const SendMoneyScreen: React.FC = () => {
             placeholder="What is this transfer for?"
             value={narration}
             onChangeText={setNarration}
+          />
+
+          <Input
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="number-pad"
+            label="Transaction PIN"
+            placeholder="••••"
+            maxLength={12}
+            value={pin}
+            onChangeText={(text) => {
+              setPin(text);
+              if (validationError) setValidationError('');
+            }}
           />
 
           <Button
@@ -207,6 +242,36 @@ export const SendMoneyScreen: React.FC = () => {
     </KeyboardAvoidingView>
   );
 };
+
+/**
+ * Maps backend authorization/validation outcomes to plain-language messages.
+ * Never exposes failure codes directly; never implies success on ambiguous errors.
+ */
+function describeTransferError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const message = (err.message || '').toLowerCase();
+    if (err.status === 401 && message.includes('pin is locked')) {
+      return 'Your Transaction PIN is locked due to too many failed attempts. Contact support to continue.';
+    }
+    if (err.status === 401 && message.includes('pin not set')) {
+      return 'You have not set a Transaction PIN yet. Set one from your Profile before sending money.';
+    }
+    if (err.status === 401 && message.includes('pin')) {
+      return 'Incorrect Transaction PIN.';
+    }
+    if (err.status === 404) {
+      return 'Recipient wallet was not found.';
+    }
+    if (err.status === 409) {
+      return err.message || 'This transfer could not be completed because of a conflicting request.';
+    }
+    if (err.code && err.code.startsWith('LIMIT_')) {
+      return 'This transfer exceeds an account transaction limit. Try a smaller amount or contact support.';
+    }
+    return err.message || 'Transfer failed. Check connection or try again.';
+  }
+  return 'Transfer failed. Check connection or try again.';
+}
 
 const styles = StyleSheet.create({
   container: {

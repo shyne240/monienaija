@@ -10,17 +10,13 @@ jest.mock('../src/services/api-client', () => ({
   },
   ApiError: class extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
       super(message);
       this.status = status;
+      this.code = code;
     }
   },
-}));
-
-jest.mock('../src/store/auth-store', () => ({
-  useAuthStore: () => ({
-    customerId: 'cust-uuid-555',
-  }),
 }));
 
 const mockNavigate = jest.fn();
@@ -30,12 +26,22 @@ jest.mock('@react-navigation/native', () => ({
   }),
 }));
 
+/**
+ * V1-CUSTOMER-02 — rewritten against the REAL authorization contract.
+ * The previous version of this test hit the legacy unauthenticated
+ * `/transfers` endpoint with no Transaction PIN at all, which made a real
+ * authorization gap look like a passing test (a PIN field in the UI is
+ * NOT proof the backend enforces it). This version asserts the actual
+ * endpoint (`/customers/me/transfers`), the actual wallet source
+ * (`/customers/me/wallets`), that the PIN is sent, and that it is cleared
+ * from memory after submission.
+ */
 describe('Send Money (Transfer) Screen Tests', () => {
   const mockWallets = [
     {
       id: 'wallet-source-uuid',
-      type: 'PRIMARY',
       currency: 'NGN',
+      status: 'ACTIVE',
       balanceMinor: 50000, // 500.00 Naira
     },
   ];
@@ -45,7 +51,31 @@ describe('Send Money (Transfer) Screen Tests', () => {
     (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets);
   });
 
-  test('should validate insufficient balance', async () => {
+  const fillAndSubmit = async (
+    getByPlaceholderText: any,
+    getByText: any,
+    { destination = '12345678-1234-1234-1234-123456789012', amount = '100', pin = '1234' } = {},
+  ) => {
+    await waitFor(() => {
+      expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
+    });
+
+    fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), destination);
+    fireEvent.changeText(getByPlaceholderText('0.00'), amount);
+    fireEvent.changeText(getByPlaceholderText('••••'), pin);
+
+    fireEvent.press(getByText('Send Funds'));
+  };
+
+  test('loads the wallet from the authenticated /customers/me/wallets endpoint', async () => {
+    render(<SendMoneyScreen />);
+
+    await waitFor(() => {
+      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/wallets');
+    });
+  });
+
+  test('should require a Transaction PIN before allowing submission', async () => {
     const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
 
     await waitFor(() => {
@@ -53,76 +83,117 @@ describe('Send Money (Transfer) Screen Tests', () => {
     });
 
     fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
-    fireEvent.changeText(getByPlaceholderText('0.00'), '600'); // More than available 500 Naira
-    
+    fireEvent.changeText(getByPlaceholderText('0.00'), '100');
+    // PIN left blank
     fireEvent.press(getByText('Send Funds'));
+
+    await waitFor(() => {
+      expect(getByText('Enter your 4-12 digit Transaction PIN.')).toBeTruthy();
+    });
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('should validate insufficient balance', async () => {
+    const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
+
+    await fillAndSubmit(getByPlaceholderText, getByText, { amount: '600' });
 
     await waitFor(() => {
       expect(getByText('Insufficient wallet balance.')).toBeTruthy();
     });
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
-  test('should execute transfer successfully after confirmation', async () => {
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'tx-uuid-789' });
+  test('should execute transfer against the real PIN-protected endpoint and clear the PIN afterward', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'tx-uuid-789', status: 'COMPLETED' });
 
     const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
 
-    await waitFor(() => {
-      expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
-    });
+    await fillAndSubmit(getByPlaceholderText, getByText, { amount: '100', pin: '4321' });
 
-    fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
-    fireEvent.changeText(getByPlaceholderText('0.00'), '100'); // 100 Naira
-    
-    fireEvent.press(getByText('Send Funds'));
-
-    // Confirmation dialog should be displayed
     await waitFor(() => {
       expect(getByText('Confirm Money Transfer')).toBeTruthy();
     });
 
-    // Confirm it
     fireEvent.press(getByText('Confirm'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
-        '/transfers',
+        '/customers/me/transfers',
         expect.objectContaining({
           sourceWalletId: 'wallet-source-uuid',
           destinationWalletId: '12345678-1234-1234-1234-123456789012',
           amountMinor: '10000',
+          pin: '4321',
         }),
-        expect.any(Object)
+        expect.objectContaining({ idempotencyKey: expect.any(String) }),
       );
       expect(mockNavigate).toHaveBeenCalledWith('Home');
     });
+
+    // The PIN input must never remain in rendered state after a successful submit.
+    expect(getByPlaceholderText('••••').props.value).toBe('');
   });
 
-  test('should explain 409 idempotency conflict clearly in error banner', async () => {
+  test('should surface a locked-PIN failure in plain language and clear the PIN field', async () => {
     (ApiClient.post as jest.Mock).mockRejectedValue(
-      new ApiError('Transfer attempt carrying a different payload', 409)
+      new ApiError('Customer PIN is locked', 401),
     );
 
     const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
 
-    await waitFor(() => {
-      expect(getByPlaceholderText('e.g. 5e6f7g8h-...')).toBeTruthy();
-    });
-
-    fireEvent.changeText(getByPlaceholderText('e.g. 5e6f7g8h-...'), '12345678-1234-1234-1234-123456789012');
-    fireEvent.changeText(getByPlaceholderText('0.00'), '10');
-    
-    fireEvent.press(getByText('Send Funds'));
+    await fillAndSubmit(getByPlaceholderText, getByText);
 
     await waitFor(() => {
-      expect(getByText('Confirm')).toBeTruthy();
+      expect(getByText('Confirm Money Transfer')).toBeTruthy();
     });
-
     fireEvent.press(getByText('Confirm'));
 
     await waitFor(() => {
-      // Explains conflict clearly
-      expect(getByText('Transfer attempt carrying a different payload')).toBeTruthy();
+      expect(
+        getByText('Your Transaction PIN is locked due to too many failed attempts. Contact support to continue.'),
+      ).toBeTruthy();
+    });
+    expect(getByPlaceholderText('••••').props.value).toBe('');
+  });
+
+  test('should explain a LIMIT_* failure code in plain language', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new ApiError('Daily transfer amount exceeded', 422, 'LIMIT_DAILY_AMOUNT_EXCEEDED'),
+    );
+
+    const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
+
+    await fillAndSubmit(getByPlaceholderText, getByText);
+
+    await waitFor(() => {
+      expect(getByText('Confirm Money Transfer')).toBeTruthy();
+    });
+    fireEvent.press(getByText('Confirm'));
+
+    await waitFor(() => {
+      expect(
+        getByText('This transfer exceeds an account transaction limit. Try a smaller amount or contact support.'),
+      ).toBeTruthy();
+    });
+  });
+
+  test('should explain a 409 idempotency conflict clearly in the error banner', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new ApiError('The idempotency key was already used for another transfer', 409),
+    );
+
+    const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
+
+    await fillAndSubmit(getByPlaceholderText, getByText);
+
+    await waitFor(() => {
+      expect(getByText('Confirm Money Transfer')).toBeTruthy();
+    });
+    fireEvent.press(getByText('Confirm'));
+
+    await waitFor(() => {
+      expect(getByText('The idempotency key was already used for another transfer')).toBeTruthy();
     });
   });
 });
