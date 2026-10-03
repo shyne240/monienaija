@@ -10,6 +10,7 @@ export type RootStackParamList = {
   SendMoney: undefined;
   Transactions: undefined;
   Profile: undefined;
+  TransactionPin: undefined;
 };
 
 declare global {

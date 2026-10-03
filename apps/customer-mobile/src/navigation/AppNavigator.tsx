@@ -15,6 +15,7 @@ import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
+import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -85,6 +86,11 @@ export const AppNavigator: React.FC = () => {
             name="Profile"
             component={ProfileScreen}
             options={{ title: 'Profile' }}
+          />
+          <Stack.Screen
+            name="TransactionPin"
+            component={TransactionPinScreen}
+            options={{ title: 'Transaction PIN' }}
           />
         </>
       )}

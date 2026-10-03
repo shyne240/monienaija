@@ -117,6 +117,15 @@ export const ProfileScreen: React.FC = () => {
           </View>
         </Card>
 
+        <View style={styles.actionsGroup}>
+          <Button
+            label="Transaction PIN"
+            style={styles.actionBtn}
+            variant="outline"
+            onPress={() => navigation.navigate('TransactionPin')}
+          />
+        </View>
+
         <Button
           label="Log Out of Session"
           style={styles.logoutBtn}
