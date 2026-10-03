@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, waitFor } from '@testing-library/react-native';
 import { HomeScreen } from '../src/screens/authenticated/HomeScreen';
 import { ApiClient } from '../src/services/api-client';
 
@@ -24,60 +24,91 @@ jest.mock('@react-navigation/native', () => ({
   }),
 }));
 
+/**
+ * V1-CUSTOMER-02 — rewritten against the REAL, authenticated,
+ * ownership-scoped `GET /customers/me/wallets` and
+ * `GET /customers/me/transfers` endpoints. The previous version of this
+ * test asserted the legacy unauthenticated `/customers/:id/wallets` route
+ * and a customer-initiated wallet "provisioning" POST that V1 does not
+ * support (wallets are provisioned atomically during registration).
+ */
 describe('HomeScreen Dashboard Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('should render balance correctly formatted from minor units', async () => {
+  test('should render balance correctly formatted from minor units, reading from /customers/me/*', async () => {
     const mockWallets = [
       {
         id: 'wallet-uuid-999',
-        customerId: 'test-customer-uuid',
-        type: 'PRIMARY',
         currency: 'NGN',
         status: 'ACTIVE',
         balanceMinor: 250000, // 2500.00 Naira
       },
     ];
 
-    const mockTxHistory = {
-      items: [],
-    };
+    const mockTxHistory = { items: [] };
 
-    (ApiClient.get as jest.Mock).mockImplementation((url) => {
-      if (url.includes('/wallets?')) return Promise.resolve(mockTxHistory);
-      if (url.includes('/wallets')) return Promise.resolve(mockWallets);
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
+      if (url.startsWith('/customers/me/transfers')) return Promise.resolve(mockTxHistory);
       return Promise.resolve([]);
     });
 
     const { getByText } = render(<HomeScreen />);
 
     await waitFor(() => {
-      // 2,500.00 Naira
+      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/wallets');
       expect(getByText('₦2,500.00')).toBeTruthy();
       expect(getByText('Wallet ID: wallet-uuid-999')).toBeTruthy();
     });
   });
 
-  test('should display empty state with provisioning CTA when customer has no wallets', async () => {
+  test('should display a no-wallet state and NOT offer any self-service wallet creation', async () => {
     (ApiClient.get as jest.Mock).mockResolvedValue([]);
+
+    const { getByText, queryByText } = render(<HomeScreen />);
+
+    await waitFor(() => {
+      expect(getByText('No Wallet Found')).toBeTruthy();
+    });
+
+    // V1 has no customer-initiated wallet provisioning endpoint; this control
+    // must not exist.
+    expect(queryByText('Provision Primary NGN Wallet')).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('should render recent transactions mapped from the transfer list shape', async () => {
+    const mockWallets = [
+      { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: 100000 },
+    ];
+    const mockTxHistory = {
+      items: [
+        {
+          id: 'transfer-1',
+          transferId: 'transfer-1',
+          narration: 'Rent split',
+          reference: 'ref-1',
+          amountMinor: '5000',
+          currency: 'NGN',
+          direction: 'SENT',
+          status: 'COMPLETED',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
+      if (url.startsWith('/customers/me/transfers')) return Promise.resolve(mockTxHistory);
+      return Promise.resolve([]);
+    });
 
     const { getByText } = render(<HomeScreen />);
 
     await waitFor(() => {
-      expect(getByText('No Wallets Found')).toBeTruthy();
-      expect(getByText('Provision Primary NGN Wallet')).toBeTruthy();
-    });
-
-    // Tap provision wallet
-    fireEvent.press(getByText('Provision Primary NGN Wallet'));
-    
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers/test-customer-uuid/wallets', expect.objectContaining({
-        type: 'PRIMARY',
-        currency: 'NGN',
-      }));
+      expect(getByText('Rent split')).toBeTruthy();
     });
   });
 });

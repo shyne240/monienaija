@@ -5,29 +5,16 @@ import { theme } from '../../theme';
 import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { Button } from '../../components/Button';
-import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { mapTransferToRow, type TransferListItem } from '../../services/transfer-view';
 
-interface Wallet {
-  id: string;
-  type: string;
-}
-
-interface Transaction {
-  id: string;
-  narration: string;
-  reference: string;
-  amountMinor: number;
-  currency: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED';
-  createdAt: string;
-}
-
+/**
+ * V1-CUSTOMER-02 — reads from the authenticated, ownership-scoped
+ * `GET /customers/me/transfers` surface instead of the legacy unauthenticated
+ * `/customers/:id/wallets` + `/wallets/:id/transactions` routes.
+ */
 export const TransactionsScreen: React.FC = () => {
-  const { customerId } = useAuthStore();
-  const [walletId, setWalletId] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<TransferListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -35,27 +22,10 @@ export const TransactionsScreen: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchWallet = async () => {
-    if (!customerId) return;
+  const fetchTransactions = async (pageNum: number, reset = false) => {
     try {
-      const wallets = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
-      const primary = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
-      if (primary) {
-        setWalletId(primary.id);
-        fetchTransactions(primary.id, 1, true);
-      } else {
-        setIsLoading(false);
-      }
-    } catch {
-      setError('Failed to load wallet information.');
-      setIsLoading(false);
-    }
-  };
-
-  const fetchTransactions = async (wId: string, pageNum: number, reset = false) => {
-    try {
-      const result = await ApiClient.get<{ items: Transaction[] }>(
-        `/wallets/${wId}/transactions?page=${pageNum}&limit=15`,
+      const result = await ApiClient.get<{ items: TransferListItem[] }>(
+        `/customers/me/transfers?page=${pageNum}&limit=15`,
       );
       const items = result.items || [];
       if (reset) {
@@ -75,19 +45,18 @@ export const TransactionsScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchWallet();
-  }, [customerId]);
+    fetchTransactions(1, true);
+  }, []);
 
   const handleRefresh = () => {
-    if (!walletId) return;
     setRefreshing(true);
-    fetchTransactions(walletId, 1, true);
+    fetchTransactions(1, true);
   };
 
   const handleLoadMore = () => {
-    if (!walletId || isLoadingMore || !hasMore) return;
+    if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
-    fetchTransactions(walletId, page + 1);
+    fetchTransactions(page + 1);
   };
 
   if (isLoading) {
@@ -104,22 +73,25 @@ export const TransactionsScreen: React.FC = () => {
 
       <FlatList
         data={transactions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.transferId ?? item.id}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
         }
-        renderItem={({ item }) => (
-          <TransactionRow
-            amountMinor={item.amountMinor}
-            createdAt={item.createdAt}
-            currency={item.currency}
-            id={item.id}
-            narration={item.narration}
-            reference={item.reference}
-            status={item.status}
-            type={item.type}
-          />
-        )}
+        renderItem={({ item }) => {
+          const row = mapTransferToRow(item);
+          return (
+            <TransactionRow
+              amountMinor={row.amountMinor}
+              createdAt={row.createdAt}
+              currency={row.currency}
+              id={row.id}
+              narration={row.narration}
+              reference={row.reference}
+              status={row.status}
+              type={row.type}
+            />
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No transaction records found.</Text>

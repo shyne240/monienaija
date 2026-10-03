@@ -8,8 +8,6 @@ export type RootStackParamList = {
   // Authenticated screens
   Home: undefined;
   SendMoney: undefined;
-  FundWallet: undefined;
-  Withdraw: undefined;
   Transactions: undefined;
   Profile: undefined;
 };

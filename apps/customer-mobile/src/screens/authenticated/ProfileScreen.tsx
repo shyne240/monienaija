@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
@@ -7,28 +9,48 @@ import { Card } from '../../components/Card';
 import { LoadingState } from '../../components/LoadingState';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { RootStackParamList } from '../../navigation/types';
 
-interface CustomerProfile {
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
+
+interface CustomerIdentity {
   id: string;
   reference: string;
   type: string;
   status: string;
-  actor: string;
+  kycLevel?: string;
+  kycStatus?: string;
   createdAt: string;
 }
 
+interface CustomerProfileDetail {
+  profile?: { displayName?: string | null; legalName?: string | null } | null;
+}
+
+/**
+ * V1-CUSTOMER-02 — reads from the authenticated `GET /customers/me` and
+ * `GET /customers/me/profile` routes instead of the legacy unauthenticated
+ * `GET /customers/:id` route.
+ */
 export const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation<NavigationProp>();
   const { customerId, logout } = useAuthStore();
-  const [profile, setProfile] = useState<CustomerProfile | null>(null);
+  const [identity, setIdentity] = useState<CustomerIdentity | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!customerId) return;
       try {
-        const data = await ApiClient.get<CustomerProfile>(`/customers/${customerId}`);
-        setProfile(data);
+        const me = await ApiClient.get<CustomerIdentity>('/customers/me');
+        setIdentity(me);
+        try {
+          const detail = await ApiClient.get<CustomerProfileDetail>('/customers/me/profile');
+          setDisplayName(detail.profile?.displayName ?? null);
+        } catch {
+          // Profile detail is optional; identity alone is enough to render the screen.
+        }
       } catch (err: any) {
         setError('Failed to load profile details.');
       } finally {
@@ -36,7 +58,7 @@ export const ProfileScreen: React.FC = () => {
       }
     };
     fetchProfile();
-  }, [customerId]);
+  }, []);
 
   if (isLoading) {
     return <LoadingState message="Fetching profile details..." />;
@@ -48,11 +70,11 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.header}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {profile?.actor?.charAt(0).toUpperCase() || 'M'}
+              {(displayName || 'M').charAt(0).toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.name}>{profile?.actor || 'MoneyNaija Customer'}</Text>
-          <Text style={styles.phone}>Ref: {profile?.reference || 'N/A'}</Text>
+          <Text style={styles.name}>{displayName || 'MonieNaija Customer'}</Text>
+          <Text style={styles.phone}>Ref: {identity?.reference || 'N/A'}</Text>
         </View>
 
         {!!error && (
@@ -73,7 +95,7 @@ export const ProfileScreen: React.FC = () => {
 
           <View style={styles.row}>
             <Text style={styles.label}>Account Type</Text>
-            <Text style={styles.value}>{profile?.type || 'INDIVIDUAL'}</Text>
+            <Text style={styles.value}>{identity?.type || 'INDIVIDUAL'}</Text>
           </View>
 
           <View style={styles.divider} />
@@ -81,7 +103,7 @@ export const ProfileScreen: React.FC = () => {
           <View style={styles.row}>
             <Text style={styles.label}>Status</Text>
             <Text style={[styles.value, styles.activeStatus]}>
-              {profile?.status || 'ACTIVE'}
+              {identity?.status || 'ACTIVE'}
             </Text>
           </View>
 
@@ -90,7 +112,7 @@ export const ProfileScreen: React.FC = () => {
           <View style={styles.row}>
             <Text style={styles.label}>Registered On</Text>
             <Text style={styles.value}>
-              {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-NG') : 'N/A'}
+              {identity?.createdAt ? new Date(identity.createdAt).toLocaleDateString('en-NG') : 'N/A'}
             </Text>
           </View>
         </Card>
@@ -176,6 +198,14 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: theme.colors.neutral.lightGray,
     marginVertical: theme.spacing.xs,
+  },
+  actionsGroup: {
+    width: '100%',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  actionBtn: {
+    width: '100%',
   },
   logoutBtn: {
     width: '100%',

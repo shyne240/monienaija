@@ -13,8 +13,6 @@ import { RegistrationScreen } from '../screens/unauthenticated/RegistrationScree
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
-import { FundWalletScreen } from '../screens/authenticated/FundWalletScreen';
-import { WithdrawScreen } from '../screens/authenticated/WithdrawScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
 
@@ -77,16 +75,6 @@ export const AppNavigator: React.FC = () => {
             name="SendMoney"
             component={SendMoneyScreen}
             options={{ title: 'Send Money' }}
-          />
-          <Stack.Screen
-            name="FundWallet"
-            component={FundWalletScreen}
-            options={{ title: 'Fund Wallet' }}
-          />
-          <Stack.Screen
-            name="Withdraw"
-            component={WithdrawScreen}
-            options={{ title: 'Withdraw' }}
           />
           <Stack.Screen
             name="Transactions"

@@ -10,60 +10,51 @@ import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
+import { mapTransferToRow, type TransferListItem } from '../../services/transfer-view';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 interface Wallet {
   id: string;
-  customerId: string;
-  type: string;
   currency: string;
   status: string;
-  balanceMinor: number;
+  balanceMinor: string | number;
 }
 
-interface Transaction {
-  id: string;
-  narration: string;
-  reference: string;
-  amountMinor: number;
-  currency: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED';
-  createdAt: string;
-}
-
+/**
+ * V1-CUSTOMER-02 — Home now reads wallet and transaction data from the real,
+ * authenticated, ownership-scoped surface (`GET /customers/me/wallets`,
+ * `GET /customers/me/transfers`), not the legacy unauthenticated
+ * `/customers/:id/wallets` route. There is no self-service wallet
+ * "provisioning" action: wallet provisioning happens atomically during
+ * registration on the backend (see `CustomerRegistrationService`), and V1
+ * has no customer-initiated funding or withdrawal flow (Wallet-to-Cash and
+ * Cash-to-Wallet are Agent-initiated only).
+ */
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { customerId, logout } = useAuthStore();
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<TransferListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isProvisioning, setIsProvisioning] = useState(false);
   const [error, setError] = useState('');
 
   const fetchData = async () => {
-    if (!customerId) return;
     try {
       setError('');
-      // Fetch user's wallets: GET /customers/:id/wallets
-      const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
+      const walletList = await ApiClient.get<Wallet[]>('/customers/me/wallets');
       setWallets(walletList);
 
-      if (walletList.length > 0 && walletList[0]?.id) {
-        // Fetch recent transactions for the primary wallet: GET /wallets/:walletId/transactions
-        try {
-          const txHistory = await ApiClient.get<{ items: Transaction[] }>(
-            `/wallets/${walletList[0].id}/transactions?page=1&limit=5`,
-          );
-          setTransactions(txHistory.items || []);
-        } catch {
-          // If transaction history fails/empty, fallback gracefully
-          setTransactions([]);
-        }
+      try {
+        const txHistory = await ApiClient.get<{ items: TransferListItem[] }>(
+          '/customers/me/transfers?page=1&limit=5',
+        );
+        setTransactions(txHistory.items || []);
+      } catch {
+        setTransactions([]);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to fetch wallet information.');
@@ -75,45 +66,25 @@ export const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [customerId]);
+  }, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchData();
   };
 
-  const handleProvisionWallet = async () => {
-    if (!customerId) return;
-    setIsProvisioning(true);
-    setError('');
-    try {
-      // POST /customers/:id/wallets
-      await ApiClient.post(`/customers/${customerId}/wallets`, {
-        type: 'PRIMARY',
-        currency: 'NGN',
-        status: 'ACTIVE',
-        actor: 'Customer Self-Onboarding',
-      });
-      await fetchData();
-    } catch (err: any) {
-      setError(err?.message || 'Wallet provisioning failed.');
-    } finally {
-      setIsProvisioning(false);
-    }
-  };
-
   if (isLoading) {
-    return <LoadingState message="Fetching your MoneyNaija wallets..." />;
+    return <LoadingState message="Fetching your MonieNaija wallet..." />;
   }
 
-  const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
-  const balance = primaryWallet ? primaryWallet.balanceMinor / 100 : 0;
+  const primaryWallet = wallets.find((w) => w.currency === 'NGN') || wallets[0];
+  const balance = primaryWallet ? Number(primaryWallet.balanceMinor) / 100 : 0;
 
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
         data={transactions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.transferId ?? item.id}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
         }
@@ -135,15 +106,10 @@ export const HomeScreen: React.FC = () => {
 
             {!primaryWallet ? (
               <Card variant="flat" style={styles.noWalletCard}>
-                <Text style={styles.noWalletTitle}>No Wallets Found</Text>
+                <Text style={styles.noWalletTitle}>No Wallet Found</Text>
                 <Text style={styles.noWalletDescription}>
-                  You do not have an active NGN wallet. Provision a primary wallet to start transacting.
+                  Your wallet could not be found. If you just registered, please contact support.
                 </Text>
-                <Button
-                  loading={isProvisioning}
-                  label="Provision Primary NGN Wallet"
-                  onPress={handleProvisionWallet}
-                />
               </Card>
             ) : (
               <Card variant="elevated" style={styles.balanceCard}>
@@ -167,18 +133,6 @@ export const HomeScreen: React.FC = () => {
                   variant="primary"
                   onPress={() => navigation.navigate('SendMoney')}
                 />
-                <Button
-                  label="Fund Wallet"
-                  style={styles.actionBtn}
-                  variant="outline"
-                  onPress={() => navigation.navigate('FundWallet')}
-                />
-                <Button
-                  label="Withdraw"
-                  style={styles.actionBtn}
-                  variant="outline"
-                  onPress={() => navigation.navigate('Withdraw')}
-                />
               </View>
             )}
 
@@ -193,18 +147,21 @@ export const HomeScreen: React.FC = () => {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <TransactionRow
-            amountMinor={item.amountMinor}
-            createdAt={item.createdAt}
-            currency={item.currency}
-            id={item.id}
-            narration={item.narration}
-            reference={item.reference}
-            status={item.status}
-            type={item.type}
-          />
-        )}
+        renderItem={({ item }) => {
+          const row = mapTransferToRow(item);
+          return (
+            <TransactionRow
+              amountMinor={row.amountMinor}
+              createdAt={row.createdAt}
+              currency={row.currency}
+              id={row.id}
+              narration={row.narration}
+              reference={row.reference}
+              status={row.status}
+              type={row.type}
+            />
+          );
+        }}
         ListEmptyComponent={
           primaryWallet ? (
             <View style={styles.emptyContainer}>
