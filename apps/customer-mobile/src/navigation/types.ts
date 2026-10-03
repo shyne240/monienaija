@@ -11,6 +11,8 @@ export type RootStackParamList = {
   Transactions: undefined;
   Profile: undefined;
   TransactionPin: undefined;
+  Support: undefined;
+  CreateSupportTicket: undefined;
 };
 
 declare global {

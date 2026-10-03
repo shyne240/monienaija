@@ -133,6 +133,12 @@ export const HomeScreen: React.FC = () => {
                   variant="primary"
                   onPress={() => navigation.navigate('SendMoney')}
                 />
+                <Button
+                  label="Support"
+                  style={styles.actionBtn}
+                  variant="outline"
+                  onPress={() => navigation.navigate('Support')}
+                />
               </View>
             )}
 

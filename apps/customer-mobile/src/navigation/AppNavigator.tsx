@@ -16,6 +16,8 @@ import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
 import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScreen';
+import { SupportScreen } from '../screens/authenticated/SupportScreen';
+import { CreateSupportTicketScreen } from '../screens/authenticated/CreateSupportTicketScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -91,6 +93,16 @@ export const AppNavigator: React.FC = () => {
             name="TransactionPin"
             component={TransactionPinScreen}
             options={{ title: 'Transaction PIN' }}
+          />
+          <Stack.Screen
+            name="Support"
+            component={SupportScreen}
+            options={{ title: 'Support' }}
+          />
+          <Stack.Screen
+            name="CreateSupportTicket"
+            component={CreateSupportTicketScreen}
+            options={{ title: 'New Ticket' }}
           />
         </>
       )}

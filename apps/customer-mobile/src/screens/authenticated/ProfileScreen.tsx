@@ -124,6 +124,12 @@ export const ProfileScreen: React.FC = () => {
             variant="outline"
             onPress={() => navigation.navigate('TransactionPin')}
           />
+          <Button
+            label="Support"
+            style={styles.actionBtn}
+            variant="outline"
+            onPress={() => navigation.navigate('Support')}
+          />
         </View>
 
         <Button
