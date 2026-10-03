@@ -2,7 +2,18 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const OPENAPI_PATH = join(__dirname, '..', 'docs', 'api', 'B2-OPENAPI-v1.yaml');
-const CONTRACT_PATH = join(__dirname, '..', 'docs', 'B2-API-DOCUMENTATION-CONTRACT.md');
+// V1-CUSTOMER-02: docs were reorganized (commit ce6a059, "docs: reorganize V1
+// documentation") and this contract doc moved under docs/archive/phases-b1-b2/.
+// Content and intent are unchanged (B2T07 OpenAPI documentation contract);
+// only the path moved. Repointed here rather than deleting the assertion.
+const CONTRACT_PATH = join(
+  __dirname,
+  '..',
+  'docs',
+  'archive',
+  'phases-b1-b2',
+  'B2-API-DOCUMENTATION-CONTRACT.md',
+);
 
 describe('B2 OpenAPI 3.1 specification (B2T07)', () => {
   const getYaml = (): string => {
