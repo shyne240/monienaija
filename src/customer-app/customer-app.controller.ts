@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -999,7 +1000,38 @@ export class CustomerAppController {
 
   // ──────────────────────────────────────────────
   // PIN / Security  (contract #10) — via existing lifecycle
+  //
+  // V1-CUSTOMER-05 SECURITY FIX: the PIN is a financial authorization factor
+  // (it gates Wallet→Wallet transfers — see createTransfer above). The
+  // original `POST customers/me/transaction-pin` unconditionally overwrote
+  // an existing PIN with no proof of knowledge of the old PIN (a bare
+  // authenticated session was sufficient to replace someone's PIN, e.g. via
+  // a hijacked/stolen bearer token with no PIN of its own). This endpoint is
+  // now CREATE-ONLY (409 if a PIN already exists). A legitimate PIN replace
+  // must go through `POST customers/me/transaction-pin/change`, which
+  // requires proof of the current PIN (mirrors the `customers/me/password`
+  // change pattern above and the existing PIN verify/lockout machinery —
+  // same MAX_FAILED_PINS=5 counter, no new counter introduced).
   // ──────────────────────────────────────────────
+
+  @Get('customers/me/transaction-pin')
+  async getTransactionPinStatus(@Req() req: AuthenticatedRequest) {
+    const principal = this.requireCustomerPrincipal(req);
+    const pin = await this.pinService.getTransactionPin(principal.customerId!);
+    if (!pin) {
+      return { status: 'NOT_SET' as const, exists: false, accountLocked: false };
+    }
+    return {
+      status: pin.accountLocked ? ('LOCKED' as const) : ('ACTIVE' as const),
+      exists: true,
+      accountLocked: pin.accountLocked,
+      pinVersion: pin.pinVersion,
+      lastChangedAt: pin.lastChangedAt,
+      failedCount: pin.failedCount,
+      lockedAt: pin.lockedAt,
+      lockReason: pin.lockReason,
+    };
+  }
 
   @Post('customers/me/transaction-pin')
   @HttpCode(200)
@@ -1007,6 +1039,16 @@ export class CustomerAppController {
     const principal = this.requireCustomerPrincipal(req);
     if (!dto?.pin || typeof dto.pin !== 'string' || !/^\d{4,12}$/.test(dto.pin)) {
       throw new BadRequestException('pin must be 4-12 digits');
+    }
+    // FIRST-TIME CREATION ONLY — a customer who already has a PIN (active or
+    // locked) must use the change endpoint, which proves knowledge of the
+    // current PIN before replacing it. This closes the unconditional
+    // overwrite vulnerability at the root without touching the storage layer.
+    const existing = await this.pinService.getTransactionPin(principal.customerId!);
+    if (existing) {
+      throw new ConflictException(
+        'A Transaction PIN already exists for this account. Use customers/me/transaction-pin/change to replace it.',
+      );
     }
     const salt = randomBytes(16);
     const iterations = 10000;
@@ -1016,6 +1058,93 @@ export class CustomerAppController {
       pinHash,
       hashAlgorithm: 'PBKDF2',
       pinVersion: 1,
+      actor: principal.customerId!,
+    });
+    return {
+      customerId: result.customerId,
+      pinVersion: result.pinVersion,
+      updatedAt: result.lastChangedAt,
+    };
+  }
+
+  // KNOWN-PIN CHANGE (V1-CUSTOMER-05). Requires proof of the existing PIN.
+  // Reuses CustomerTransactionPinService.verifyTransactionPin — the SAME
+  // MAX_FAILED_PINS=5 lockout counter used by Wallet→Wallet authorization —
+  // so a brute-force attempt against this endpoint locks the PIN exactly as
+  // it would against a transfer, and a locked PIN cannot be changed (cannot
+  // bypass lockout via "change"). FORGOTTEN/LOCKED recovery is intentionally
+  // NOT implemented here: V1 has no secure channel (OTP/support-verified) to
+  // prove identity independently of the PIN itself, so an ordinary
+  // authenticated session must not be allowed to reset a locked PIN. The
+  // customer must contact support; this is a known, documented limitation,
+  // not a silent gap (see docs/V1/V1-CUSTOMER-05-TRANSACTION-PIN-SECURITY-01.md).
+  @Post('customers/me/transaction-pin/change')
+  @HttpCode(200)
+  async changeTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: { currentPin: string; newPin: string }) {
+    const principal = this.requireCustomerPrincipal(req);
+    const currentPin = (dto as any)?.currentPin;
+    const newPin = (dto as any)?.newPin;
+    if (typeof currentPin !== 'string' || !/^\d{4,12}$/.test(currentPin)) {
+      throw new BadRequestException('currentPin must be 4-12 digits');
+    }
+    if (typeof newPin !== 'string' || !/^\d{4,12}$/.test(newPin)) {
+      throw new BadRequestException('newPin must be 4-12 digits');
+    }
+    if (currentPin === newPin) {
+      throw new BadRequestException('newPin must be different from currentPin');
+    }
+    const existing = await this.pinService.getTransactionPin(principal.customerId!);
+    if (!existing) {
+      throw new BadRequestException('No Transaction PIN is set for this account. Use customers/me/transaction-pin to create one.');
+    }
+    if (existing.accountLocked) {
+      // Cannot bypass lockout via the change flow — recovery requires support (no in-app bypass).
+      throw new UnauthorizedException('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.');
+    }
+    const verifier = {
+      verify: (candidate: string, _alg: string, hash: string) => {
+        try {
+          const parts = hash.split('$');
+          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2') return { verified: false };
+          const digest = (parts[1]?.toLowerCase() as 'sha256' | 'sha512') ?? 'sha256';
+          const iter = Number(parts[2]);
+          const salt = Buffer.from(parts[3] ?? '', 'base64url');
+          const expected = Buffer.from(parts[4] ?? '', 'base64url');
+          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0) return { verified: false };
+          const derived = pbkdf2Sync(candidate, salt, iter, expected.length, digest);
+          if (derived.length !== expected.length) return { verified: false };
+          return { verified: timingSafeEqual(derived, expected) };
+        } catch {
+          return { verified: false };
+        }
+      },
+    };
+    // Proof of knowledge of the CURRENT PIN — same verify/lockout path used
+    // for Wallet→Wallet authorization (increments the same failedCount,
+    // same 5-attempt lockout, same PIN_FAILED/PIN_VERIFIED audit events).
+    const outcome = await this.pinService.verifyTransactionPin(
+      principal.customerId!,
+      { pin: currentPin, actor: principal.customerId! },
+      verifier as any,
+    );
+    if (!outcome.verified) {
+      if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
+        throw new UnauthorizedException('Transaction PIN is now locked due to too many failed attempts. Contact support to proceed.');
+      }
+      throw new UnauthorizedException('Current PIN is incorrect');
+    }
+    // Current PIN proven — rotate to the new PIN (PBKDF2, fresh salt). This
+    // reuses setTransactionPin's existing UPDATE branch, which also resets
+    // failedCount/accountLocked to a clean state and writes a PIN_ROTATED
+    // audit event — no new storage logic required.
+    const salt = randomBytes(16);
+    const iterations = 10000;
+    const derived = pbkdf2Sync(newPin, salt, iterations, 32, 'sha256');
+    const pinHash = `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+    const result = await this.pinService.setTransactionPin(principal.customerId!, {
+      pinHash,
+      hashAlgorithm: 'PBKDF2',
+      pinVersion: existing.pinVersion + 1,
       actor: principal.customerId!,
     });
     return {
