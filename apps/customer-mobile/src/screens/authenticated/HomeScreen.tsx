@@ -10,7 +10,7 @@ import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
-import { mapTransferToRow, type TransferListItem } from '../../services/transfer-view';
+import { mapTransactionToRow, type TransferListItem } from '../../services/transfer-view';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -23,14 +23,19 @@ interface Wallet {
 }
 
 /**
- * V1-CUSTOMER-02 — Home now reads wallet and transaction data from the real,
- * authenticated, ownership-scoped surface (`GET /customers/me/wallets`,
- * `GET /customers/me/transfers`), not the legacy unauthenticated
- * `/customers/:id/wallets` route. There is no self-service wallet
- * "provisioning" action: wallet provisioning happens atomically during
- * registration on the backend (see `CustomerRegistrationService`), and V1
- * has no customer-initiated funding or withdrawal flow (Wallet-to-Cash and
- * Cash-to-Wallet are Agent-initiated only).
+ * V1-CUSTOMER-02 — Home reads wallet data from the real, authenticated,
+ * ownership-scoped `GET /customers/me/wallets` surface, not the legacy
+ * unauthenticated `/customers/:id/wallets` route. There is no self-service
+ * wallet "provisioning" action: wallet provisioning happens atomically
+ * during registration on the backend (see `CustomerRegistrationService`),
+ * and V1 has no customer-initiated funding or withdrawal flow
+ * (Wallet-to-Cash and Cash-to-Wallet are Agent-initiated only).
+ *
+ * V1-CUSTOMER-07 — "Recent Transactions" now reads from the unified
+ * `GET /customers/me/transactions` projection (Wallet→Wallet, Wallet→Cash,
+ * Cash→Wallet, Cash→Cash, and funding) instead of the Wallet→Wallet-only
+ * `GET /customers/me/transfers` endpoint, so Home and the full Transactions
+ * screen never disagree about what counts as "recent" activity.
  */
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -50,7 +55,7 @@ export const HomeScreen: React.FC = () => {
 
       try {
         const txHistory = await ApiClient.get<{ items: TransferListItem[] }>(
-          '/customers/me/transfers?page=1&limit=5',
+          '/customers/me/transactions?page=1&limit=5',
         );
         setTransactions(txHistory.items || []);
       } catch {
@@ -84,7 +89,7 @@ export const HomeScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <FlatList
         data={transactions}
-        keyExtractor={(item) => item.transferId ?? item.id}
+        keyExtractor={(item) => item.id ?? item.transferId}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
         }
@@ -154,7 +159,7 @@ export const HomeScreen: React.FC = () => {
           </View>
         }
         renderItem={({ item }) => {
-          const row = mapTransferToRow(item);
+          const row = mapTransactionToRow(item);
           return (
             <TransactionRow
               amountMinor={row.amountMinor}
@@ -163,8 +168,8 @@ export const HomeScreen: React.FC = () => {
               id={row.id}
               narration={row.narration}
               reference={row.reference}
+              sign={row.sign}
               status={row.status}
-              type={row.type}
             />
           );
         }}

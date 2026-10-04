@@ -6,12 +6,17 @@ import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { Button } from '../../components/Button';
 import { ApiClient } from '../../services/api-client';
-import { mapTransferToRow, type TransferListItem } from '../../services/transfer-view';
+import { mapTransactionToRow, type TransferListItem } from '../../services/transfer-view';
 
 /**
- * V1-CUSTOMER-02 — reads from the authenticated, ownership-scoped
- * `GET /customers/me/transfers` surface instead of the legacy unauthenticated
- * `/customers/:id/wallets` + `/wallets/:id/transactions` routes.
+ * V1-CUSTOMER-07 — reads from the unified, authenticated, ownership-scoped
+ * `GET /customers/me/transactions` projection, which merges all V1
+ * customer-visible flows (Wallet→Wallet, Wallet→Cash, Cash→Wallet,
+ * Cash→Cash, and wallet funding) from the authoritative ledger/transfer/
+ * funding/cash-to-cash tables. The previous version of this screen only
+ * called the Wallet→Wallet-only `GET /customers/me/transfers` endpoint, so
+ * Cash→Wallet, Wallet→Cash, Cash→Cash, and funding activity never
+ * appeared here even though the backend already supported them.
  */
 export const TransactionsScreen: React.FC = () => {
   const [transactions, setTransactions] = useState<TransferListItem[]>([]);
@@ -25,7 +30,7 @@ export const TransactionsScreen: React.FC = () => {
   const fetchTransactions = async (pageNum: number, reset = false) => {
     try {
       const result = await ApiClient.get<{ items: TransferListItem[] }>(
-        `/customers/me/transfers?page=${pageNum}&limit=15`,
+        `/customers/me/transactions?page=${pageNum}&limit=15`,
       );
       const items = result.items || [];
       if (reset) {
@@ -35,6 +40,7 @@ export const TransactionsScreen: React.FC = () => {
       }
       setHasMore(items.length === 15);
       setPage(pageNum);
+      setError('');
     } catch {
       setError('Failed to load transactions.');
     } finally {
@@ -73,12 +79,12 @@ export const TransactionsScreen: React.FC = () => {
 
       <FlatList
         data={transactions}
-        keyExtractor={(item) => item.transferId ?? item.id}
+        keyExtractor={(item) => item.id ?? item.transferId}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
         }
         renderItem={({ item }) => {
-          const row = mapTransferToRow(item);
+          const row = mapTransactionToRow(item);
           return (
             <TransactionRow
               amountMinor={row.amountMinor}
@@ -87,8 +93,8 @@ export const TransactionsScreen: React.FC = () => {
               id={row.id}
               narration={row.narration}
               reference={row.reference}
+              sign={row.sign}
               status={row.status}
-              type={row.type}
             />
           );
         }}

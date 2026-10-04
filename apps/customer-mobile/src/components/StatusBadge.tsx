@@ -3,7 +3,15 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../theme';
 
-export type BadgeStatus = 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED' | 'ACTIVE' | 'SUSPENDED';
+export type BadgeStatus =
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'PENDING'
+  | 'REVERSED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'ACTIVE'
+  | 'SUSPENDED';
 
 interface StatusBadgeProps {
   status: BadgeStatus;
@@ -23,6 +31,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
       case 'FAILED':
       case 'CANCELLED':
       case 'SUSPENDED':
+      case 'EXPIRED':
         return {
           bg: theme.colors.feedback.errorLight,
           text: theme.colors.feedback.error,

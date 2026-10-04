@@ -26,11 +26,15 @@ jest.mock('@react-navigation/native', () => ({
 
 /**
  * V1-CUSTOMER-02 — rewritten against the REAL, authenticated,
- * ownership-scoped `GET /customers/me/wallets` and
- * `GET /customers/me/transfers` endpoints. The previous version of this
- * test asserted the legacy unauthenticated `/customers/:id/wallets` route
- * and a customer-initiated wallet "provisioning" POST that V1 does not
- * support (wallets are provisioned atomically during registration).
+ * ownership-scoped `GET /customers/me/wallets` endpoint. The previous
+ * version of this test asserted the legacy unauthenticated
+ * `/customers/:id/wallets` route and a customer-initiated wallet
+ * "provisioning" POST that V1 does not support (wallets are provisioned
+ * atomically during registration).
+ *
+ * V1-CUSTOMER-07 — "recent transactions" assertions now target the unified
+ * `GET /customers/me/transactions` endpoint instead of the Wallet→Wallet-only
+ * `GET /customers/me/transfers` endpoint.
  */
 describe('HomeScreen Dashboard Tests', () => {
   beforeEach(() => {
@@ -51,7 +55,7 @@ describe('HomeScreen Dashboard Tests', () => {
 
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
-      if (url.startsWith('/customers/me/transfers')) return Promise.resolve(mockTxHistory);
+      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
       return Promise.resolve([]);
     });
 
@@ -59,6 +63,7 @@ describe('HomeScreen Dashboard Tests', () => {
 
     await waitFor(() => {
       expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/wallets');
+      expect(ApiClient.get).toHaveBeenCalledWith('/customers/me/transactions?page=1&limit=5');
       expect(getByText('₦2,500.00')).toBeTruthy();
       expect(getByText('Wallet ID: wallet-uuid-999')).toBeTruthy();
     });
@@ -79,7 +84,7 @@ describe('HomeScreen Dashboard Tests', () => {
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
-  test('should render recent transactions mapped from the transfer list shape', async () => {
+  test('should render recent transactions mapped from the unified history shape', async () => {
     const mockWallets = [
       { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: 100000 },
     ];
@@ -87,7 +92,7 @@ describe('HomeScreen Dashboard Tests', () => {
       items: [
         {
           id: 'transfer-1',
-          transferId: 'transfer-1',
+          type: 'WALLET_TRANSFER',
           narration: 'Rent split',
           reference: 'ref-1',
           amountMinor: '5000',
@@ -101,7 +106,7 @@ describe('HomeScreen Dashboard Tests', () => {
 
     (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
       if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
-      if (url.startsWith('/customers/me/transfers')) return Promise.resolve(mockTxHistory);
+      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
       return Promise.resolve([]);
     });
 
@@ -109,6 +114,40 @@ describe('HomeScreen Dashboard Tests', () => {
 
     await waitFor(() => {
       expect(getByText('Rent split')).toBeTruthy();
+    });
+  });
+
+  test('should render a Cash→Wallet credit on the dashboard with agent context and no raw ledger codes', async () => {
+    const mockWallets = [
+      { id: 'wallet-uuid-999', currency: 'NGN', status: 'ACTIVE', balanceMinor: 100000 },
+    ];
+    const mockTxHistory = {
+      items: [
+        {
+          id: 'cash-in-1',
+          type: 'CASH_IN',
+          narration: null,
+          reference: 'ref-cash-in-1',
+          amountMinor: '15000',
+          currency: 'NGN',
+          direction: 'CREDIT',
+          status: 'COMPLETED',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/customers/me/wallets')) return Promise.resolve(mockWallets);
+      if (url.startsWith('/customers/me/transactions')) return Promise.resolve(mockTxHistory);
+      return Promise.resolve([]);
+    });
+
+    const { getByText } = render(<HomeScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Cash Deposit via Agent')).toBeTruthy();
+      expect(getByText('+₦150.00')).toBeTruthy();
     });
   });
 });

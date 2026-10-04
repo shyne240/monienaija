@@ -18,7 +18,7 @@ function sha64(seed: string): string {
   return createHash('sha256').update(seed).digest('hex');
 }
 
-describe('V1-HARDENING-04 Customer Transaction History Unification (real PostgreSQL) — 25 cases', () => {
+describe('V1-HARDENING-04 Customer Transaction History Unification (real PostgreSQL) — 26 cases', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
 
@@ -762,5 +762,34 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const filtered = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=WALLET_TRANSFER').set('Authorization', `Bearer ${c.token}`).expect(200);
     expect(filtered.body.items).toEqual([]);
     expect(filtered.body.pagination.total).toBe(0);
+  });
+
+  // V1-CUSTOMER-07 — audit finding, intentionally NOT fixed in this task: the detail
+  // route `GET /customers/me/transactions/:id` is a thin alias over the Transfer-only
+  // `GET /customers/me/transfers/:id` lookup, so it only resolves WALLET_TRANSFER ids.
+  // It 404s for ids the unified LIST endpoint legitimately returns for the other four
+  // types (CASH_IN, CASH_OUT, CASH_TO_CASH, FUNDING). Customer Mobile does not call this
+  // route for those types — the list payload already carries everything the UI needs
+  // (type/status/amount/direction/counterparty/reference/narration/dates), so no new
+  // endpoint was added per the task's "do not add an unnecessary endpoint" instruction.
+  // This test pins down and documents the known gap rather than silently leaving it
+  // unverified; it should be revisited if a future client needs server-confirmed detail
+  // fetches for non-WALLET_TRANSFER unified history items.
+  it('26. [KNOWN GAP — documented, not fixed] detail route only resolves WALLET_TRANSFER ids; CASH_IN/CASH_OUT/CASH_TO_CASH/FUNDING ids from the unified list 404 on GET /customers/me/transactions/:id', async () => {
+    const c = await createCustomer();
+    const w = await createWallet(c.customerId);
+    const cashInId = await insertCashInOut({ walletLedgerId: w.ledgerAccountId, amountMinor: '12000', service: 'CASH_IN', createdAt: new Date() });
+
+    const listRes = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/transactions?type=CASH_IN')
+      .set('Authorization', `Bearer ${c.token}`)
+      .expect(200);
+    expect(listRes.body.items[0].id).toBe(cashInId);
+
+    // The very id the unified list just returned 404s on the detail alias today.
+    await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/transactions/${cashInId}`)
+      .set('Authorization', `Bearer ${c.token}`)
+      .expect(404);
   });
 });
