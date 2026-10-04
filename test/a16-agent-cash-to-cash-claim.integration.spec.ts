@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable, no-empty */
-import { ValidationPipe } from '@nestjs/common';
+import { NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -151,7 +151,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     const customerId = custRows[0]!.id;
     await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer A16 ${randomUUID().slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    // verified_at is set because a real ACTIVE customer can only reach ACTIVE status via the
+    // V1-CUSTOMER-ONBOARDING-02 activation gate, which requires a verified primary phone
+    // (see CustomerService.assertVerifiedPrimaryPhone). This fixture bypasses that gate via
+    // raw SQL, so it must set verified_at itself to stay a realistic ACTIVE-customer shape —
+    // required since V1-SYSTEM-01's claimant phone-binding check reads this column.
+    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phoneCanonical]);
     if (withDoc) {
       await customerService.createIdentityDocument(customerId, {
         type: 'NIN' as any,
@@ -233,10 +238,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     });
   }
 
-  async function initiateTransfer(amount = '4000') {
+  async function initiateTransfer(amount = '4000', phoneOverride?: string) {
     const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     await fundAgent(wallet.ledgerAccountId, '10000');
-    const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
+    const phone = phoneOverride ?? `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const res = await cashToCashService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -589,8 +594,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       otp: 'replay-otp',
       idempotencyKey: `claim-15-1-${randomUUID()}`,
     });
-    const { phone: p2, transferId: tid2, transferCode: code2 } = await initiateTransfer('2400');
-    const { customerId: cid2 } = await createBeneficiaryCustomer(p2, true);
+    // V1-SYSTEM-01: the second transfer targets the SAME phone (and therefore the same
+    // claimant) as the first, so this test continues to isolate OTP-replay rejection from the
+    // (separate, also-enforced) claimant-phone-binding check.
+    const { phone: p2, transferId: tid2, transferCode: code2 } = await initiateTransfer('2400', phone);
     // Try to reuse same challengeId/otp for different transfer (should fail as already VERIFIED)
     await expect(claimService.execute({
       transferId: tid2,
@@ -1021,7 +1028,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     );
     const customerId = custRows[0]!.id;
     await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'NoWallet']);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phone]);
+    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phone]);
     // No wallet yet
     const beforeWallets: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
     expect(beforeWallets[0]!.cnt).toBe('0');
@@ -1038,5 +1045,115 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect(res.status).toBe('COMPLETED');
     const afterWallets: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
     expect(afterWallets[0]!.cnt).toBe('1');
+  });
+
+  // ── V1-SYSTEM-01 (critical fix regression): claimant must OWN the beneficiary phone ──
+  // Prior to this fix, a customer could claim a Cash→Cash transfer intended for a DIFFERENT
+  // phone number simply by typing that phone's digits into `beneficiaryPhone` and presenting
+  // a valid OTP issued for their OWN customerId/phone (agent-desk-otp never binds the OTP to
+  // an arbitrary target phone) — redirecting the victim's funds into the attacker's own wallet.
+
+  it('34. EXPLOIT BLOCKED: claimant whose own phone differs from the transfer beneficiary phone cannot steal the funds', async () => {
+    const { transferId, transferCode, phone: victimPhone, amount } = await initiateTransfer('6000');
+
+    // Attacker is a fully legitimate, KYC-approved customer — but their OWN verified phone is
+    // different from the transfer's intended beneficiary phone (the victim's phone).
+    const { customerId: attackerId, wallet: attackerWallet } = await createBeneficiaryCustomer(
+      `70${Math.floor(10000000 + Math.random() * 89999999)}`,
+      true,
+    );
+    const { challengeId } = await createMfaChallenge(attackerId, 'exploit-otp');
+
+    const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const beforeAttackerWallet = await ledgerService.getAccountBalance(attackerWallet.ledgerAccountId);
+
+    // Attacker supplies the VICTIM's phone string (passes the naive string-match check) but
+    // claims as themselves (attackerId), with their OWN valid OTP.
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: victimPhone,
+        transferCode,
+        customerId: attackerId,
+        mfaChallengeId: challengeId,
+        otp: 'exploit-otp',
+        idempotencyKey: `exploit-34-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(NotFoundException);
+
+    // No financial effect: transfer still UNCLAIMED, unclaimed pool unchanged, attacker's
+    // wallet did NOT receive the victim's funds.
+    const transferRow: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(transferRow[0]!.status).toBe('UNCLAIMED');
+    const afterUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const afterAttackerWallet = await ledgerService.getAccountBalance(attackerWallet.ledgerAccountId);
+    expect(afterUnclaimed.balanceMinor).toBe(beforeUnclaimed.balanceMinor);
+    expect(afterAttackerWallet.balanceMinor).toBe(beforeAttackerWallet.balanceMinor);
+
+    // The legitimate beneficiary (owner of victimPhone) can still claim the funds normally.
+    const { customerId: victimId, wallet: victimWallet } = await createBeneficiaryCustomer(victimPhone, true);
+    const { challengeId: victimChallengeId } = await createMfaChallenge(victimId, 'victim-otp');
+    const res = await claimService.execute({
+      transferId,
+      beneficiaryPhone: victimPhone,
+      transferCode,
+      customerId: victimId,
+      mfaChallengeId: victimChallengeId,
+      otp: 'victim-otp',
+      idempotencyKey: `victim-claim-34-${randomUUID()}`,
+    });
+    expect(res.status).toBe('COMPLETED');
+    const victimWalletBalance = await ledgerService.getAccountBalance(victimWallet.ledgerAccountId);
+    expect(victimWalletBalance.balanceMinor).toBe(amount);
+  });
+
+  it('35. claimant with NO verified primary phone at all is rejected (fails closed, not open)', async () => {
+    const { transferId, transferCode, phone } = await initiateTransfer('6100');
+    const custRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
+      [`cust-a16-nophone-${randomUUID().slice(0, 8)}`],
+    );
+    const customerId = custRows[0]!.id;
+    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'NoPhone']);
+    // Deliberately no customer_contact_methods row at all for this customer.
+    const { challengeId } = await createMfaChallenge(customerId, 'nophone-otp');
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'nophone-otp',
+        idempotencyKey: `nophone-35-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('36. claimant with an UNVERIFIED phone matching the transfer is rejected (verification is required, not just possession)', async () => {
+    const { transferId, transferCode, phone } = await initiateTransfer('6200');
+    const custRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
+      [`cust-a16-unverified-${randomUUID().slice(0, 8)}`],
+    );
+    const customerId = custRows[0]!.id;
+    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Unverified']);
+    // Same phone as the transfer, but verified_at IS NULL (never verified).
+    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phone]);
+    const { challengeId } = await createMfaChallenge(customerId, 'unverified-otp');
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'unverified-otp',
+        idempotencyKey: `unverified-36-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(NotFoundException);
   });
 });

@@ -219,7 +219,7 @@ describe('V1-COMMERCIAL-DECISION-03C CASH_TO_CASH snapshot wiring (real PG)', ()
     );
     const customerId = custRows[0].id;
     await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03C',true)`, [customerId]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phoneCanonical]);
     const wallet = await walletService.createWallet({
       customerId,
       currency: 'NGN',

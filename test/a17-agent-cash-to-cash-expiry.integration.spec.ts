@@ -155,7 +155,10 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     );
     const customerId = custRows[0]!.id;
     await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer A17 ${randomUUID().slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    // verified_at set: a real ACTIVE customer can only reach ACTIVE via the activation gate,
+    // which requires a verified primary phone (see CustomerService.assertVerifiedPrimaryPhone);
+    // required since V1-SYSTEM-01's claimant phone-binding check reads this column.
+    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phoneCanonical]);
     if (withDoc) {
       await customerService.createIdentityDocument(customerId, {
         type: 'NIN' as any,

@@ -228,7 +228,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     let phone: string | undefined;
     if (opts.phone) {
       phone = opts.phone;
-      await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phone]);
+      await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,'PHONE',$2,$2,true,NOW())`, [customerId, phone]);
     }
     if (opts.withPin) {
       await customerPinService.setTransactionPin(customerId, { pinHash: hashPin('1234'), hashAlgorithm: 'PBKDF2', pinVersion: 1, actor: customerId });

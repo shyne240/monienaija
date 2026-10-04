@@ -138,6 +138,13 @@ export class AgentCashToCashClaimService {
       if (preTransfer.status !== 'UNCLAIMED') throw new ConflictException(`Transfer status ${preTransfer.status} cannot be claimed`);
       if (preTransfer.is_locked) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
       if (preTransfer.beneficiary_phone !== canonicalPhone) throw new BadRequestException('Beneficiary phone does not match transfer');
+      // V1-SYSTEM-01: the caller-supplied `beneficiaryPhone` string matching the transfer's
+      // stored value only proves the caller *typed* the right number — it does not prove the
+      // claiming `customerId` actually *owns* that phone. Without this check, any customer who
+      // learns a victim's phone number plus the transfer code could claim the funds into their
+      // OWN wallet by presenting their own valid OTP (which agent-desk-otp always issues to the
+      // `customerId`'s own verified phone, never to an arbitrary target phone). Fail closed.
+      await this.assertClaimantOwnsBeneficiaryPhone(this.dataSource, customerId, canonicalPhone);
       // Identity verification before OTP (reuse KYC/IdentityDocument)
       const custRows: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await this.dataSource.query(
         `SELECT id, status, kyc_status, deleted_at FROM customers WHERE id=$1 LIMIT 1`,
@@ -340,6 +347,11 @@ export class AgentCashToCashClaimService {
           if (transfer.beneficiary_phone !== canonicalPhone) {
             throw new BadRequestException('Beneficiary phone does not match transfer');
           }
+
+          // V1-SYSTEM-01: re-check inside the SERIALIZABLE transaction in case the claimant's
+          // own contact methods changed between the pre-check and the lock (mirrors how every
+          // other pre-check in this flow is duplicated here).
+          await this.assertClaimantOwnsBeneficiaryPhone(manager, customerId, canonicalPhone);
 
           // Identity already verified outside, but re-check inside for consistency (in case customer changed)
           const custRows2: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await manager.query(
@@ -758,6 +770,34 @@ export class AgentCashToCashClaimService {
       configurationVersion: null,
       createdBy: 'agent-cash-to-cash-claim',
     });
+  }
+
+  // V1-SYSTEM-01 (critical fix): verifies that `customerId` (the claimant) actually owns a
+  // verified, primary phone number equal to the transfer's `canonicalPhone`. This is the
+  // control that was previously entirely missing: the `beneficiaryPhone` request parameter
+  // alone only proves the caller typed the right digits, and the agent-desk OTP alone only
+  // proves the caller controls `customerId`'s OWN phone (it is never sent to an arbitrary
+  // target phone) — neither proves the claimant is the transfer's intended recipient. Fails
+  // closed (generic NotFoundException, matching the existing no-enumeration-leak pattern used
+  // for every other pre-check in this flow) if the claimant has no verified primary phone or
+  // it does not match. Accepts either `this.dataSource` or a transaction `manager` so it can be
+  // called both in the pre-check phase and again inside the SERIALIZABLE re-check.
+  private async assertClaimantOwnsBeneficiaryPhone(
+    queryable: { query: (sql: string, params?: unknown[]) => Promise<any[]> },
+    customerId: string,
+    canonicalPhone: string,
+  ): Promise<void> {
+    const rows: Array<{ value: string }> = await queryable.query(
+      `SELECT value FROM customer_contact_methods
+       WHERE customer_id=$1 AND type='PHONE' AND is_primary=true AND verified_at IS NOT NULL AND deleted_at IS NULL
+       LIMIT 1`,
+      [customerId],
+    );
+    const ownPhoneRaw = rows[0]?.value;
+    const ownPhoneCanonical = ownPhoneRaw ? AgentReceivingNumberService.canonicalizeTo10(ownPhoneRaw) : null;
+    if (!ownPhoneCanonical || ownPhoneCanonical !== canonicalPhone) {
+      throw new NotFoundException(`Cash→Cash transfer not found`);
+    }
   }
 
   private verifyTransferCode(provided: string, storedHash: string): boolean {
