@@ -18,6 +18,7 @@ import {
 import { DataSource, EntityManager, IsNull } from 'typeorm';
 
 import { A2SecurityRateLimitService } from '../authorization/security-rate-limit.service';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../notification/notification.constants';
 import { ConsoleNotificationProvider } from '../notification/notification-provider.interface';
 import type { NotificationProvider } from '../notification/notification.types';
@@ -173,7 +174,7 @@ export class CustomerRegistrationService {
     );
 
     const now = new Date();
-    const issued = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+    const issued = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_OTP_REQUEST', async (manager) => {
       const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
       const existing = await repository
         .createQueryBuilder('challenge')
@@ -263,7 +264,7 @@ export class CustomerRegistrationService {
     // Failure bookkeeping (attempt counters, EXPIRED flips, OTP_VERIFY_FAILED audits) must
     // SURVIVE the rejection, so the transaction returns an outcome and commits; the HTTP
     // rejection is raised OUTSIDE the transaction.
-    const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+    const outcome = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_OTP_VERIFY', async (manager) => {
       const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
       const challenge = await repository
         .createQueryBuilder('challenge')
@@ -276,14 +277,36 @@ export class CustomerRegistrationService {
 
       const fail = async (reason: VerifyFailureReason): Promise<VerifyOutcome> => {
         if (challenge) {
-          challenge.attemptCount += 1;
-          if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) {
-            challenge.status = 'REVOKED';
-            challenge.revokedAt = now;
-          } else if (now > challenge.expiresAt) {
+          // Only a genuine wrong-code guess against a still-live, in-budget challenge
+          // consumes part of the REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS budget. Rejections
+          // caused by the challenge already being dead — missing, already verified,
+          // inactive/revoked, time-expired, or already locked out — must NOT inflate
+          // attempt_count: no comparison against the stored OTP hash was even made, so no
+          // attempt was actually consumed. Without this guard, re-probing an
+          // already-exhausted challenge (e.g. the inevitable request immediately after the
+          // 5th wrong attempt) pushed the persisted counter past the cap (observed: 6, 7, ...
+          // with every further call) — the original lockout off-by-one.
+          const isGenuineAttempt = reason === 'MISMATCH';
+          const flipsToExpired = reason === 'EXPIRED';
+          if (isGenuineAttempt) {
+            challenge.attemptCount += 1;
+          }
+          if (flipsToExpired) {
+            // Lazy expiry: the first request to observe a time-expired ACTIVE challenge
+            // flips it to EXPIRED so persisted state matches reality. This is a status
+            // transition independent of the attempt budget — it must not, by itself,
+            // count as a failed verification attempt.
             challenge.status = 'EXPIRED';
           }
-          await repository.save(challenge);
+          // Note: exhausting the attempt budget (attemptCount reaching the cap) is
+          // represented purely by attempt_count >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS
+          // while status stays ACTIVE — it does NOT transition status to REVOKED.
+          // REVOKED is reserved for supersession by a fresh OTP request (see requestOtp);
+          // conflating "attempts exhausted" with "superseded" would make a locked-but-live
+          // challenge indistinguishable from a resend-superseded one.
+          if (isGenuineAttempt || flipsToExpired) {
+            await repository.save(challenge);
+          }
           await this.audit(
             manager,
             'CUSTOMER_REGISTRATION_CHALLENGE',
@@ -348,7 +371,7 @@ export class CustomerRegistrationService {
     const phone = this.normalizeNigerianPhone(phoneRaw);
     const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
 
-    const outcome = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+    const outcome = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_COMPLETE', async (manager) => {
       // Idempotency check if idempotencyKey is supplied
       if (idempotencyKey && this.idempotencyService) {
         const reqHash = createHash('sha256')

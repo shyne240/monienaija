@@ -344,20 +344,173 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     await requestOtp(phone);
     const code = extractCode(`+2348${phone.slice(2)}`);
     const wrong = code === '000000' ? '000001' : '000000';
-    for (let i = 0; i < 5; i += 1) {
+    // V1-CUSTOMER-06 — walk each of the 5 permitted wrong attempts individually: the
+    // persisted counter must advance exactly 1-for-1 (1,2,3,4,5) and the challenge must
+    // stay ACTIVE throughout (lockout is expressed by attempt_count reaching the cap, not
+    // by a status transition — REVOKED is reserved for resend supersession, see proof 20).
+    for (let i = 1; i <= 5; i += 1) {
       await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }).expect(400);
+      const row = (
+        await dataSource.query(
+          `SELECT attempt_count, status FROM customer_registration_phone_challenges`,
+        )
+      )[0];
+      expect(row.attempt_count).toBe(i);
+      expect(row.status).toBe('ACTIVE');
     }
-    const midRows: Array<any> = await dataSource.query(
-      `SELECT attempt_count FROM customer_registration_phone_challenges`,
-    );
-    expect(midRows[0].attempt_count).toBe(5);
-    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400); // locked
+    // 6th attempt — even with the CORRECT code — must be rejected as locked, and must NOT
+    // push the persisted counter past the 5-attempt cap (the original off-by-one: a
+    // pre-fix build recorded attempt_count = 6 here).
+    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
     const rows: Array<any> = await dataSource.query(
       `SELECT attempt_count, status, verified_at FROM customer_registration_phone_challenges`,
     );
     expect(rows[0].attempt_count).toBe(5); // not incremented past the cap
     expect(rows[0].status).toBe('ACTIVE');
     expect(rows[0].verified_at).toBeNull();
+
+    // A 7th, 8th... probe against the already-locked challenge must never move the
+    // counter either — the cap is a hard ceiling, not merely "one past" the intended max.
+    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }).expect(400);
+    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
+    const finalRows: Array<any> = await dataSource.query(
+      `SELECT attempt_count, status FROM customer_registration_phone_challenges`,
+    );
+    expect(finalRows[0].attempt_count).toBe(5);
+    expect(finalRows[0].status).toBe('ACTIVE');
+  });
+
+  it('19a: correct code on exactly the 5th attempt still succeeds (lockout boundary is not off-by-one in the safe direction either)', async () => {
+    const phone = nextPhone();
+    await requestOtp(phone);
+    const code = extractCode(`+2348${phone.slice(2)}`);
+    const wrong = code === '000000' ? '000001' : '000000';
+    for (let i = 0; i < 4; i += 1) {
+      await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }).expect(400);
+    }
+    const midRow = (
+      await dataSource.query(`SELECT attempt_count FROM customer_registration_phone_challenges`)
+    )[0];
+    expect(midRow.attempt_count).toBe(4);
+    // The 5th attempt, with the correct code, must still be accepted — the guard only
+    // rejects when attempt_count is ALREADY at the cap on entry, never on the attempt that
+    // reaches it.
+    const verify = await request(app.getHttpServer())
+      .post(VERIFY_PATH)
+      .send({ phone, code })
+      .expect(200);
+    expect(verify.body.status).toBe('PHONE_VERIFIED');
+    const row = (
+      await dataSource.query(
+        `SELECT attempt_count, status, verified_at FROM customer_registration_phone_challenges`,
+      )
+    )[0];
+    expect(row.attempt_count).toBe(4); // a successful verification never counts as a failure
+    expect(row.status).toBe('VERIFIED');
+    expect(row.verified_at).not.toBeNull();
+  });
+
+  it('19b: a locked-out challenge cannot be rescued by the correct code, and repeated post-lockout probes stay inert', async () => {
+    const phone = nextPhone();
+    await requestOtp(phone);
+    const code = extractCode(`+2348${phone.slice(2)}`);
+    const wrong = code === '000000' ? '000001' : '000000';
+    for (let i = 0; i < 5; i += 1) {
+      await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }).expect(400);
+    }
+    for (let i = 0; i < 3; i += 1) {
+      await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
+    }
+    const row = (
+      await dataSource.query(
+        `SELECT attempt_count, status, verified_at FROM customer_registration_phone_challenges`,
+      )
+    )[0];
+    expect(row.attempt_count).toBe(5);
+    expect(row.status).toBe('ACTIVE');
+    expect(row.verified_at).toBeNull();
+  });
+
+  it('19c: a time-expired challenge is never charged against the attempt budget, only flipped to EXPIRED', async () => {
+    const phone = nextPhone();
+    await requestOtp(phone);
+    const code = extractCode(`+2348${phone.slice(2)}`);
+    await dataSource.query(
+      `UPDATE customer_registration_phone_challenges SET expires_at = now() - interval '1 second'`,
+    );
+    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
+    await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
+    const row = (
+      await dataSource.query(
+        `SELECT attempt_count, status FROM customer_registration_phone_challenges`,
+      )
+    )[0];
+    expect(row.status).toBe('EXPIRED');
+    expect(row.attempt_count).toBe(0); // expiry is a dead challenge, not a wasted guess
+  });
+
+  it('19d: replaying the correct code after success is inert — it cannot corrupt the VERIFIED challenge back into a lockable state', async () => {
+    const phone = nextPhone();
+    await requestOtp(phone);
+    const code = extractCode(`+2348${phone.slice(2)}`);
+    const verify = await request(app.getHttpServer())
+      .post(VERIFY_PATH)
+      .send({ phone, code })
+      .expect(200);
+    for (let i = 0; i < 6; i += 1) {
+      await request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code }).expect(400);
+    }
+    const row = (
+      await dataSource.query(
+        `SELECT attempt_count, status FROM customer_registration_phone_challenges`,
+      )
+    )[0];
+    // Repeated replay must never increment attempt_count nor flip a VERIFIED challenge to
+    // REVOKED/EXPIRED — completeRegistration below still requires status = 'VERIFIED'.
+    expect(row.attempt_count).toBe(0);
+    expect(row.status).toBe('VERIFIED');
+    await request(app.getHttpServer())
+      .post(REGISTER_PATH)
+      .send({ phone, verificationToken: verify.body.verificationToken })
+      .expect(201);
+  });
+
+  it('19e: concurrent wrong attempts cannot race past the cap — the challenge row never overcounts or undercounts under contention', async () => {
+    const phone = nextPhone();
+    await requestOtp(phone);
+    const code = extractCode(`+2348${phone.slice(2)}`);
+    const wrong = code === '000000' ? '000001' : '000000';
+    // Fire simultaneous wrong-code attempts against the same challenge row. The
+    // attempt-count read-modify-write is guarded by a pessimistic row lock inside a
+    // SERIALIZABLE transaction (retried up to MAX_SERIALIZABLE_ATTEMPTS on PostgreSQL
+    // 40001/40P01 via the shared runSerializableWithRetry helper — the same pattern already
+    // used by the B2F policy services), so two concurrent requests can never both observe
+    // the same pre-increment count: that would allow the persisted counter to undercount
+    // (lost update) or the cap to be bypassed (an attempt accepted past attempt_count >= 5).
+    //
+    // Under heavy concurrency a handful of requests may instead surface as 503 from the
+    // separate, pre-existing A2SecurityRateLimitService per-phone verify bucket (its own
+    // internal transaction has no retry-on-serialization-failure — a related, out-of-scope
+    // finding documented in docs/V1/V1-CUSTOMER-06-OTP-LOCKOUT-SECURITY-01.md). No response
+    // may ever be 200 for a wrong code, and the final persisted state must never exceed the
+    // cap regardless of how many requests got as far as the OTP comparison.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }),
+      ),
+    );
+    for (const res of results) {
+      expect(res.status).not.toBe(200);
+      expect([400, 503]).toContain(res.status);
+    }
+    const row = (
+      await dataSource.query(
+        `SELECT attempt_count, status FROM customer_registration_phone_challenges`,
+      )
+    )[0];
+    expect(row.attempt_count).toBeGreaterThanOrEqual(1);
+    expect(row.attempt_count).toBeLessThanOrEqual(5); // never overcounts past the cap
+    expect(row.status).toBe('ACTIVE');
   });
 
   it('20: resend cooldown — immediate resend is a generic no-op; after cooldown a fresh OTP supersedes the old one', async () => {
