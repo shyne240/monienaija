@@ -405,8 +405,12 @@ registration OTP attempt-counter off-by-one").
 
 - Starting HEAD for this task: `29cf7a6` (`fix(customer-mobile): complete
   OTP registration flow`), on `arena/01a10374-monienaija`.
-- This task's commit: `1a40353` (`fix(customer): secure transaction PIN
-  change flow`) — parent `29cf7a6`. Contains all 5 changed files: the
-  backend controller change, the Customer Mobile screen rewrite, both new
-  test suites, and this document.
-- Final HEAD after this task: `1a40353`.
+- Commit `1a40353` (`fix(customer): secure transaction PIN change
+  flow`) — parent `29cf7a6`. Contains the backend controller change, the
+  Customer Mobile screen rewrite, and both new test suites.
+- Commit `c50a83d` (`docs(customer): finalize V1-CUSTOMER-05 commit hash
+  reference`) — parent `1a40353`. Updates this document's commit
+  references (this document was originally drafted before its own
+  commit hash was known).
+- Final HEAD after this task: `c50a83d`, pushed to
+  `origin/arena/01a10374-monienaija`.
