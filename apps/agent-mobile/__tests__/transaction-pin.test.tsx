@@ -11,13 +11,12 @@ import {
   describeTransactionPinError,
   type AgentTransactionPinStatus,
   type AgentSetPinResult,
-  type AgentVerifyPinResult,
 } from '../src/services/agent-api';
 
 jest.mock('../src/services/agent-api', () => ({
   getAgentTransactionPinStatus: jest.fn(),
   setAgentTransactionPin: jest.fn(),
-  verifyAgentTransactionPin: jest.fn(),
+  changeAgentTransactionPin: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeTransactionPinError: jest.requireActual('../src/services/agent-api').describeTransactionPinError,
 }));
@@ -25,7 +24,7 @@ jest.mock('../src/services/agent-api', () => ({
 const mockApi = jest.requireMock('../src/services/agent-api') as {
   getAgentTransactionPinStatus: jest.Mock;
   setAgentTransactionPin: jest.Mock;
-  verifyAgentTransactionPin: jest.Mock;
+  changeAgentTransactionPin: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -109,18 +108,29 @@ describe('Agent Transaction PIN Management — Status Screen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('SetTransactionPin', { mode: 'CREATE' });
   });
 
-  test('renders LOCKED status, locked details, and Reset PIN action', async () => {
+  // V1-AGENT-05: the LOCKED state used to offer a "Reset Transaction PIN" button that routed
+  // to the CREATE form, which — combined with the backend's former unconditional overwrite —
+  // let a locked Agent silently replace the PIN with no proof of the old one (a lockout
+  // bypass). There is no secure, independent channel to re-verify identity in V1, so the
+  // locked state now offers ONLY a Contact Support path, never an in-app PIN bypass.
+  test('renders LOCKED status, locked details, and Contact Support action (no in-app reset bypass)', async () => {
     mockApi.getAgentTransactionPinStatus.mockResolvedValue(lockedPinStatus);
-    const { getByTestId, getByText } = wrap(<TransactionPinManageScreen />);
+    const { getByTestId, getByText, queryByTestId } = wrap(<TransactionPinManageScreen />);
 
     await waitFor(() => expect(getByTestId('pin-status-card')).toBeTruthy());
     expect(getByTestId('pin-status-badge').props.children).toBe('LOCKED');
     expect(getByTestId('pin-locked-card')).toBeTruthy();
     expect(getByText('Maximum failed PIN attempts reached')).toBeTruthy();
-    expect(getByTestId('pin-action-reset')).toBeTruthy();
 
-    fireEvent.press(getByTestId('pin-action-reset'));
-    expect(mockNavigate).toHaveBeenCalledWith('SetTransactionPin', { mode: 'CREATE' });
+    // CRITICAL: no "reset" action exists for a locked PIN — it must not be possible to
+    // bypass lockout by navigating to the CREATE form.
+    expect(queryByTestId('pin-action-reset')).toBeNull();
+    expect(queryByTestId('pin-action-create')).toBeNull();
+    expect(queryByTestId('pin-action-rotate')).toBeNull();
+
+    expect(getByTestId('pin-action-support')).toBeTruthy();
+    fireEvent.press(getByTestId('pin-action-support'));
+    expect(mockNavigate).toHaveBeenCalledWith('CreateSupportTicket', { prefillCategory: 'PIN' });
   });
 
   test('error state and retry handling', async () => {
@@ -225,15 +235,15 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     useAuthStore.setState({ agentId: 'agent-pin-uuid-1', isAuthenticated: true });
   });
 
-  test('correct current PIN + valid new PIN rotates PIN successfully', async () => {
-    const verifyResult: AgentVerifyPinResult = { verified: true };
+  // V1-AGENT-05: rotation is now a SINGLE atomic server request (changeAgentTransactionPin),
+  // not a client-orchestrated "verify then set" (which a bypassing client could defeat).
+  test('correct current PIN + valid new PIN rotates PIN successfully (single atomic request)', async () => {
     const setResult: AgentSetPinResult = {
       agentId: 'agent-pin-uuid-1',
       pinVersion: 2,
       updatedAt: new Date().toISOString(),
     };
-    mockApi.verifyAgentTransactionPin.mockResolvedValue(verifyResult);
-    mockApi.setAgentTransactionPin.mockResolvedValue(setResult);
+    mockApi.changeAgentTransactionPin.mockResolvedValue(setResult);
 
     const { getByTestId, getByText } = wrap(<SetTransactionPinScreen />);
 
@@ -244,8 +254,8 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     fireEvent.changeText(getByTestId('pin-input-confirm'), '5678');
     fireEvent.press(getByTestId('pin-submit-button'));
 
-    await waitFor(() => expect(mockApi.verifyAgentTransactionPin).toHaveBeenCalledWith('1234'));
-    await waitFor(() => expect(mockApi.setAgentTransactionPin).toHaveBeenCalledWith('5678', '5678'));
+    await waitFor(() => expect(mockApi.changeAgentTransactionPin).toHaveBeenCalledWith('1234', '5678'));
+    expect(mockApi.setAgentTransactionPin).not.toHaveBeenCalled();
     await waitFor(() => expect(getByTestId('pin-success-card')).toBeTruthy());
     expect(getByText('Transaction PIN Updated')).toBeTruthy();
   });
@@ -259,12 +269,12 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     fireEvent.press(getByTestId('pin-submit-button'));
 
     expect(getByText('New PIN must be different from current PIN.')).toBeTruthy();
-    expect(mockApi.verifyAgentTransactionPin).not.toHaveBeenCalled();
+    expect(mockApi.changeAgentTransactionPin).not.toHaveBeenCalled();
     expect(mockApi.setAgentTransactionPin).not.toHaveBeenCalled();
   });
 
-  test('incorrect current PIN (verify failure) shows error and wipes fields', async () => {
-    mockApi.verifyAgentTransactionPin.mockResolvedValue({ verified: false, reason: 'MISMATCH' });
+  test('incorrect current PIN (server rejects change) shows error and wipes fields', async () => {
+    mockApi.changeAgentTransactionPin.mockRejectedValue(apiError('Current PIN is incorrect', 401));
 
     const { getByTestId, getByText } = wrap(<SetTransactionPinScreen />);
 
@@ -273,7 +283,9 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     fireEvent.changeText(getByTestId('pin-input-confirm'), '5678');
     fireEvent.press(getByTestId('pin-submit-button'));
 
-    await waitFor(() => expect(getByText('Current Transaction PIN is incorrect.')).toBeTruthy());
+    await waitFor(() =>
+      expect(getByText('Incorrect transaction PIN. Check the PIN and try again.')).toBeTruthy(),
+    );
     expect(mockApi.setAgentTransactionPin).not.toHaveBeenCalled();
 
     // Fields wiped on failure
@@ -282,12 +294,10 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
     expect(getByTestId('pin-input-confirm').props.value).toBe('');
   });
 
-  test('locked PIN on verify shows locked message', async () => {
-    mockApi.verifyAgentTransactionPin.mockResolvedValue({
-      verified: false,
-      locked: true,
-      reason: 'PIN_LOCKED',
-    });
+  test('locked PIN on change attempt shows locked message (no bypass)', async () => {
+    mockApi.changeAgentTransactionPin.mockRejectedValue(
+      apiError('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.', 403),
+    );
 
     const { getByTestId, getByText } = wrap(<SetTransactionPinScreen />);
 
@@ -301,6 +311,32 @@ describe('Agent Transaction PIN — Rotate Mode', () => {
         getByText('Transaction PIN is locked due to too many failed attempts.'),
       ).toBeTruthy(),
     );
+  });
+
+  test('duplicate submit while pending does not fire a second change request', async () => {
+    let resolveChange: (value: AgentSetPinResult) => void = () => {};
+    mockApi.changeAgentTransactionPin.mockImplementation(
+      () =>
+        new Promise<AgentSetPinResult>((resolve) => {
+          resolveChange = resolve;
+        }),
+    );
+
+    const { getByTestId } = wrap(<SetTransactionPinScreen />);
+
+    fireEvent.changeText(getByTestId('pin-input-current'), '1234');
+    fireEvent.changeText(getByTestId('pin-input-new'), '5678');
+    fireEvent.changeText(getByTestId('pin-input-confirm'), '5678');
+
+    const submitButton = getByTestId('pin-submit-button');
+    fireEvent.press(submitButton);
+    fireEvent.press(submitButton);
+    fireEvent.press(submitButton);
+
+    await waitFor(() => expect(mockApi.changeAgentTransactionPin).toHaveBeenCalledTimes(1));
+
+    resolveChange({ agentId: 'agent-pin-uuid-1', pinVersion: 2, updatedAt: new Date().toISOString() });
+    await waitFor(() => expect(getByTestId('pin-success-card')).toBeTruthy());
   });
 });
 
@@ -317,8 +353,7 @@ describe('Agent Transaction PIN — Critical Security Invariants', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    mockApi.verifyAgentTransactionPin.mockResolvedValue({ verified: true });
-    mockApi.setAgentTransactionPin.mockResolvedValue({
+    mockApi.changeAgentTransactionPin.mockResolvedValue({
       agentId: 'agent-pin-uuid-1',
       pinVersion: 2,
       updatedAt: new Date().toISOString(),

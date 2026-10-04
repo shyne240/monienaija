@@ -781,6 +781,25 @@ export async function verifyAgentTransactionPin(pin: string): Promise<AgentVerif
 }
 
 /**
+ * POST /agents/me/transaction-pin/change (V1-AGENT-05). Atomically proves knowledge of the
+ * CURRENT PIN and replaces it with a new one in a single server-side operation — the server
+ * verifies currentPin via the SAME lockout machinery used for financial authorization before
+ * rotating the PIN. This replaces the former client-orchestrated "verify then set" flow (two
+ * separate requests), which could be bypassed by any client that skipped the verify call and
+ * invoked the (now create-only) set endpoint directly. PIN is NEVER persisted on-device.
+ */
+export async function changeAgentTransactionPin(
+  currentPin: string,
+  newPin: string,
+): Promise<AgentSetPinResult> {
+  return ApiClient.post<AgentSetPinResult>(
+    'api/v1/agents/me/transaction-pin/change',
+    { currentPin, newPin },
+    { preserveSessionOn401: true },
+  );
+}
+
+/**
  * Safe translation of PIN management errors (V1-AGENT-MOBILE-10 / PIN-5).
  * Never exposes hashes, SQL traces, or internal server errors.
  */
@@ -802,6 +821,9 @@ export function describeTransactionPinError(error: unknown): string {
     }
     if (status === 400) {
       return msg || 'Invalid PIN request. Please check your input and try again.';
+    }
+    if (status === 409) {
+      return 'A Transaction PIN already exists on this account. Use Change Transaction PIN instead.';
     }
     if (typeof status === 'number' && status >= 500) {
       return 'The service is temporarily unavailable. Please retry.';

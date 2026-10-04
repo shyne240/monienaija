@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -23,6 +24,7 @@ import { AgentLoginDto } from './dto/agent-login.dto';
 import { SetTransactionPinDto } from './dto/set-transaction-pin.dto';
 import { RotateInitialCredentialDto } from './dto/rotate-initial-credential.dto';
 import { VerifyTransactionPinDto } from './dto/verify-transaction-pin.dto';
+import { ChangeTransactionPinDto } from './dto/change-transaction-pin.dto';
 import { AgentPasswordHashAlgorithm } from './agent-authentication.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -203,6 +205,21 @@ export class AgentAuthenticationController {
     };
   }
 
+  // ──────────────────────────────────────────────
+  // V1-AGENT-05 SECURITY FIX: the Agent Transaction PIN is a financial
+  // authorization factor — it gates Cash-In, Cash-Out and Cash-to-Cash
+  // (see AgentTransactionAuthorizationService.authorize, consumed by
+  // AgentCashInService / AgentCashOutService / AgentCashToCashService).
+  // The endpoint below originally UPSERTED unconditionally: any authenticated
+  // Agent session (e.g. a hijacked/stolen bearer token) could silently
+  // overwrite an existing PIN — including a LOCKED one — with no proof of
+  // knowledge of the old PIN. This is now CREATE-ONLY (409 if a PIN already
+  // exists, locked or active). A legitimate PIN replacement must go through
+  // `POST agents/me/transaction-pin/change`, which requires proof of the
+  // current PIN via the SAME verify/lockout machinery already used for
+  // transaction authorization (no second hashing/lockout system introduced).
+  // ──────────────────────────────────────────────
+
   @Post('me/transaction-pin')
   @HttpCode(200)
   async setTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: SetTransactionPinDto) {
@@ -210,6 +227,16 @@ export class AgentAuthenticationController {
     // PIN is numeric? Allow 4-6 digits but DTO already validates length; enforce numeric
     if (!/^\d{4,12}$/.test(dto.pin)) {
       throw new UnauthorizedException('Invalid PIN format');
+    }
+    // FIRST-TIME CREATION ONLY — an Agent who already has a PIN (active or
+    // locked) must use the change endpoint, which proves knowledge of the
+    // current PIN before replacing it. This closes the unconditional
+    // overwrite vulnerability at the root without touching the storage layer.
+    const existing = await this.agentAuthenticationService.getTransactionPin(principal.agentId!);
+    if (existing) {
+      throw new ConflictException(
+        'A Transaction PIN already exists for this agent. Use agents/me/transaction-pin/change to replace it.',
+      );
     }
     // Hash PIN using same scheme as password: PBKDF2
     const salt = randomBytes(16);
@@ -221,6 +248,81 @@ export class AgentAuthenticationController {
       hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
       pinVersion: 1,
       actor: principal.agentId!,
+    });
+    // Never return pin or pinHash
+    return {
+      agentId: result.agentId,
+      pinVersion: result.pinVersion,
+      updatedAt: result.lastChangedAt,
+    };
+  }
+
+  // KNOWN-PIN CHANGE (V1-AGENT-05). Requires proof of the existing PIN.
+  // Reuses AgentAuthenticationService.verifyTransactionPin — the SAME
+  // MAX_FAILED_PINS=5 lockout counter used by Cash-In/Cash-Out/Cash-to-Cash
+  // authorization — so a brute-force attempt against this endpoint locks the
+  // PIN exactly as it would against a real financial transaction, and a
+  // locked PIN cannot be changed (cannot bypass lockout via "change").
+  // FORGOTTEN/LOCKED recovery is intentionally NOT implemented here: V1 has
+  // no secure channel (independent of the PIN itself) to prove an Agent's
+  // identity, so an ordinary authenticated session must not be allowed to
+  // reset a locked PIN. The Agent must contact support; this is a known,
+  // documented limitation, not a silent gap (see
+  // docs/V1/V1-AGENT-05-TRANSACTION-PIN-SECURITY-01.md).
+  @Post('me/transaction-pin/change')
+  @HttpCode(200)
+  async changeTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: ChangeTransactionPinDto) {
+    const principal = this.requireAgentPrincipal(req);
+    const agentId = principal.agentId!;
+    if (!/^\d{4,12}$/.test(dto.currentPin)) {
+      throw new UnauthorizedException('Invalid PIN format');
+    }
+    if (!/^\d{4,12}$/.test(dto.newPin)) {
+      throw new UnauthorizedException('Invalid PIN format');
+    }
+    if (dto.currentPin === dto.newPin) {
+      throw new BadRequestException('newPin must be different from currentPin');
+    }
+    const existing = await this.agentAuthenticationService.getTransactionPin(agentId);
+    if (!existing) {
+      throw new BadRequestException(
+        'No Transaction PIN is set for this agent. Use agents/me/transaction-pin to create one.',
+      );
+    }
+    if (existing.accountLocked) {
+      // Cannot bypass lockout via the change flow — recovery requires support (no in-app bypass).
+      throw new ForbiddenException('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.');
+    }
+    // Proof of knowledge of the CURRENT PIN — same verify/lockout path used
+    // for Cash-In/Cash-Out/Cash-to-Cash authorization (increments the same
+    // failedCount, same 5-attempt lockout, same PIN_FAILED/PIN_VERIFIED
+    // audit events; no new hashing/lockout system introduced).
+    const outcome = await this.agentAuthenticationService.verifyTransactionPin(
+      agentId,
+      { pin: dto.currentPin, actor: agentId },
+      this.verificationService,
+    );
+    if (!outcome.verified) {
+      if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
+        throw new ForbiddenException(
+          'Transaction PIN is now locked due to too many failed attempts. Contact support to proceed.',
+        );
+      }
+      throw new UnauthorizedException('Current PIN is incorrect');
+    }
+    // Current PIN proven — rotate to the new PIN (PBKDF2, fresh salt). This
+    // reuses setTransactionPin's existing UPDATE branch, which also resets
+    // failedCount/accountLocked to a clean state and writes a PIN_ROTATED
+    // audit event — no new storage logic required.
+    const salt = randomBytes(16);
+    const iterations = 10000;
+    const derived = this.pbkdf2Hash(dto.newPin, salt, iterations);
+    const pinHash = `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+    const result = await this.agentAuthenticationService.setTransactionPin(agentId, {
+      pinHash,
+      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+      pinVersion: existing.pinVersion + 1,
+      actor: agentId,
     });
     // Never return pin or pinHash
     return {

@@ -16,11 +16,18 @@ import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
- * Agent Transaction PIN Management Screen (V1-AGENT-MOBILE-10 / PIN-1..6).
+ * Agent Transaction PIN Management Screen (V1-AGENT-MOBILE-10 / PIN-1..6, hardened V1-AGENT-05).
  *
  * Displays the authoritative PIN status from GET /agents/me/transaction-pin.
- * Provides entry points for setting a new PIN, rotating an existing PIN, or recovering
- * from a locked PIN state.
+ * Provides entry points for setting a new PIN (NOT_SET) or changing an existing PIN
+ * (ACTIVE, requires the current PIN — see SetTransactionPinScreen's ROTATE mode).
+ *
+ * V1-AGENT-05 note: the LOCKED state previously showed a "Reset Transaction PIN" button
+ * that routed to the CREATE form — which, combined with the backend's former unconditional
+ * overwrite, let a locked (or stolen-session) Agent silently replace the PIN with no proof
+ * of the old one, bypassing the 5-attempt lockout entirely. V1 has no secure, independent
+ * channel to re-verify an Agent's identity outside the PIN itself, so a locked PIN is no
+ * longer "resettable" in-app at all — the only path shown is Contact Support.
  *
  * Ephemeral credential rule: Raw PIN values and hashes are never stored or displayed.
  */
@@ -124,8 +131,8 @@ export const TransactionPinManageScreen: React.FC = () => {
                   {pinStatus.lockReason || 'Maximum failed PIN attempts reached (5 attempts).'}
                 </Text>
                 <Text style={styles.lockedInstruction}>
-                  To restore transaction authorization, set a new Transaction PIN below or contact
-                  your administrator support.
+                  For your security, a locked Transaction PIN cannot be reset from this app.
+                  Contact Support to restore transaction authorization.
                 </Text>
               </View>
             )}
@@ -151,9 +158,9 @@ export const TransactionPinManageScreen: React.FC = () => {
 
           {pinStatus.status === 'LOCKED' && (
             <Button
-              label="Reset Transaction PIN"
-              onPress={() => navigation.navigate('SetTransactionPin', { mode: 'CREATE' })}
-              testID="pin-action-reset"
+              label="Contact Support"
+              onPress={() => navigation.navigate('CreateSupportTicket', { prefillCategory: 'PIN' })}
+              testID="pin-action-support"
             />
           )}
         </>

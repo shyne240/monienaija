@@ -9,9 +9,9 @@ import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
 import {
+  changeAgentTransactionPin,
   describeTransactionPinError,
   setAgentTransactionPin,
-  verifyAgentTransactionPin,
 } from '../../../services/agent-api';
 import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -19,12 +19,19 @@ import type { RootStackParamList } from '../../../navigation/types';
 const PIN_REGEX = /^\d{4,12}$/;
 
 /**
- * Agent Set / Change Transaction PIN Screen (V1-AGENT-MOBILE-10 / PIN-2..4).
+ * Agent Set / Change Transaction PIN Screen (V1-AGENT-MOBILE-10 / PIN-2..4, hardened V1-AGENT-05).
  *
  * Requirements:
- * - Supports initial creation (mode === 'CREATE') and rotation (mode === 'ROTATE').
+ * - Supports initial creation (mode === 'CREATE', POST transaction-pin — CREATE-ONLY,
+ *   409 if a PIN already exists) and a known-PIN change (mode === 'ROTATE', POST
+ *   transaction-pin/change — a single atomic request).
  * - Validates 4-12 numeric digits client-side.
- * - In ROTATE mode, verifies the current PIN before setting the new PIN.
+ * - In ROTATE mode, the server verifies the current PIN and rotates it in ONE request
+ *   (changeAgentTransactionPin). V1-AGENT-05 note: this used to be a client-orchestrated
+ *   "verify PIN, then call set-PIN" two-step flow — a client-side-only check that any
+ *   client bypassing the verify call could defeat, because the old set-PIN endpoint
+ *   unconditionally overwrote an existing PIN. The current PIN is now proven
+ *   server-side, atomically, as part of the same request that performs the rotation.
  * - Strict ephemeral credentials rule: PINs exist ONLY in component state, are never
  *   logged, persisted in SecureStore/Zustand/React Query, or passed in navigation params,
  *   and are cleared on submit, success, error, or unmount.
@@ -53,18 +60,13 @@ export const SetTransactionPinScreen: React.FC = () => {
   const pinMutation = useMutation<void, unknown, void>({
     mutationFn: async () => {
       if (isRotate) {
-        // Step 1: Verify current PIN
-        const verifyResult = await verifyAgentTransactionPin(currentPin.trim());
-        if (!verifyResult.verified) {
-          if (verifyResult.locked || verifyResult.reason === 'PIN_LOCKED') {
-            throw new Error('Transaction PIN is locked due to too many failed attempts.');
-          }
-          throw new Error('Current Transaction PIN is incorrect.');
-        }
+        // Single atomic server-side request: the server verifies currentPin (via the
+        // same lockout machinery used for financial authorization) and rotates to
+        // newPin only if that verification succeeds. No separate client-side verify step.
+        await changeAgentTransactionPin(currentPin.trim(), newPin.trim());
+      } else {
+        await setAgentTransactionPin(newPin.trim(), confirmPin.trim());
       }
-
-      // Step 2: Set/Rotate PIN
-      await setAgentTransactionPin(newPin.trim(), confirmPin.trim());
     },
     onSuccess: () => {
       setCurrentPin('');
@@ -123,6 +125,9 @@ export const SetTransactionPinScreen: React.FC = () => {
     pinMutation.mutate();
   };
 
+  // Server errors (wrong current PIN, locked, invalid format, etc.) are translated through
+  // the shared describeTransactionPinError helper for both CREATE and ROTATE modes — the
+  // backend now reports these consistently (401 incorrect/format, 403 locked).
   const failureText = clientError
     ? clientError
     : pinMutation.isError
