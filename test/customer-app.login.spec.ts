@@ -53,6 +53,7 @@ describe('CustomerAppController Login & Sessions (Unit Tests)', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
   });
 

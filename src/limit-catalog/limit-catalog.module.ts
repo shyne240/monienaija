@@ -8,6 +8,7 @@ import { LimitAssignmentService } from './limit-assignment.service';
 import { LimitAssignment } from './limit-assignment.entity';
 import { LimitCatalogController } from './limit-catalog.controller';
 import { LimitCatalogService } from './limit-catalog.service';
+import { CustomerLimitViewService } from './customer-limit-view.service';
 import { LimitDiagnosticsService } from './limit-diagnostics.service';
 import { LimitEnforcementService } from './limit-enforcement.service';
 import { LimitOperationsController } from './limit-operations.controller';
@@ -30,6 +31,7 @@ import { LimitUsageService } from './limit-usage.service';
     LimitEnforcementService,
     LimitDiagnosticsService,
     LimitReservationRecoveryService,
+    CustomerLimitViewService,
   ],
   exports: [
     LimitCatalogService,
@@ -39,6 +41,7 @@ import { LimitUsageService } from './limit-usage.service';
     LimitEnforcementService,
     LimitDiagnosticsService,
     LimitReservationRecoveryService,
+    CustomerLimitViewService,
   ],
 })
 export class LimitCatalogModule {}

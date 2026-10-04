@@ -41,6 +41,7 @@ import { CustomerLoginDto } from './dto/customer-login.dto';
 import { RotateInitialCustomerCredentialDto } from './dto/rotate-initial-customer-credential.dto';
 import { PasswordHashAlgorithm } from '../customer-authentication/customer-authentication.enums';
 import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
+import { CustomerLimitViewService } from '../limit-catalog/customer-limit-view.service';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -73,6 +74,7 @@ export class CustomerAppController {
     private readonly beneficiaryService: CustomerBeneficiaryService,
     private readonly dataSource: DataSource,
     private readonly transactionHistoryService: CustomerTransactionHistoryService,
+    private readonly customerLimitViewService: CustomerLimitViewService,
   ) {}
 
   // ──────────────────────────────────────────────
@@ -268,6 +270,21 @@ export class CustomerAppController {
       kycLevel: customer.kycLevel,
       kycStatus: customer.kycStatus,
     };
+  }
+
+  // ──────────────────────────────────────────────
+  // Limits (V1-CUSTOMER-08) — customer-safe read-only projection of the
+  // authoritative limit-catalog architecture (LimitProfileResolverService +
+  // LimitEnforcementService). SELF only (no :id param — eliminates IDOR by
+  // construction). Never exposes limitProfileCode, assignmentId, ruleId,
+  // channel, or any other internal policy identifier — see
+  // CustomerLimitViewService for the exact projection contract.
+  // ──────────────────────────────────────────────
+
+  @Get('customers/me/limits')
+  async getMyLimits(@Req() req: AuthenticatedRequest) {
+    const principal = this.requireCustomerPrincipal(req);
+    return this.customerLimitViewService.getMyLimits(principal.customerId!);
   }
 
   // ──────────────────────────────────────────────

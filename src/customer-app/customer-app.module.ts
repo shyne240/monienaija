@@ -16,6 +16,7 @@ import { AgentModule } from '../agent/agent.module';
 import { OperationsModule } from '../operations/operations.module';
 import { CustomerBeneficiaryModule } from '../customer-beneficiary/customer-beneficiary.module';
 import { CustomerTransactionHistoryService } from './customer-transaction-history.service';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CustomerTransactionHistoryService } from './customer-transaction-histor
     AgentModule,
     OperationsModule,
     CustomerBeneficiaryModule,
+    LimitCatalogModule,
   ],
   controllers: [CustomerAppController, CustomerBeneficiaryMeController],
   providers: [CustomerTransactionHistoryService],

@@ -81,4 +81,141 @@ describe('Profile Screen Account Tests', () => {
       expect(getByText('Failed to load profile details.')).toBeTruthy();
     });
   });
+
+  // V1-CUSTOMER-08
+  test('renders KYC level/status from the authoritative backend response (previously fetched but never displayed)', async () => {
+    const mockIdentity = {
+      id: 'cust-uuid-888',
+      reference: 'MN-08012345678',
+      type: 'INDIVIDUAL',
+      status: 'ACTIVE',
+      kycLevel: 'LEVEL_2',
+      kycStatus: 'APPROVED',
+      createdAt: new Date().toISOString(),
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/customers/me') return Promise.resolve(mockIdentity);
+      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/limits') return Promise.resolve({ products: [] });
+      return Promise.reject(new Error('unexpected url'));
+    });
+
+    const { getByText } = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(getByText('LEVEL_2')).toBeTruthy();
+      expect(getByText('APPROVED')).toBeTruthy();
+      expect(getByText('ACTIVE')).toBeTruthy();
+    });
+  });
+
+  // V1-CUSTOMER-08
+  test('a SUSPENDED status is shown verbatim (never overridden to ACTIVE) with a support-contact explanation', async () => {
+    const mockIdentity = {
+      id: 'cust-uuid-888',
+      reference: 'MN-08012345678',
+      type: 'INDIVIDUAL',
+      status: 'SUSPENDED',
+      kycLevel: 'LEVEL_1',
+      kycStatus: 'APPROVED',
+      createdAt: new Date().toISOString(),
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/customers/me') return Promise.resolve(mockIdentity);
+      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/limits') return Promise.resolve({ products: [] });
+      return Promise.reject(new Error('unexpected url'));
+    });
+
+    const { getByText } = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(getByText('SUSPENDED')).toBeTruthy();
+      expect(getByText(/account is suspended/i)).toBeTruthy();
+    });
+  });
+
+  // V1-CUSTOMER-08
+  test('renders only configured transaction limits, using customer-safe labels (no raw profile/rule ids ever shown)', async () => {
+    const mockIdentity = {
+      id: 'cust-uuid-888',
+      reference: 'MN-08012345678',
+      type: 'INDIVIDUAL',
+      status: 'ACTIVE',
+      kycLevel: 'LEVEL_1',
+      kycStatus: 'APPROVED',
+      createdAt: new Date().toISOString(),
+    };
+    const mockLimits = {
+      products: [
+        {
+          product: 'WALLET_TRANSFER',
+          direction: 'OUTGOING',
+          configured: true,
+          perTransactionMinMinor: null,
+          perTransactionMaxMinor: '500000',
+          windows: [
+            {
+              dimension: 'DAILY_AMOUNT',
+              period: 'DAILY',
+              kind: 'AMOUNT',
+              limitMinor: '1000000',
+              limitCount: null,
+              remainingMinor: '700000',
+              remainingCount: null,
+            },
+          ],
+        },
+        {
+          product: 'CASH_TO_WALLET',
+          direction: 'INCOMING',
+          configured: false,
+          perTransactionMinMinor: null,
+          perTransactionMaxMinor: null,
+          windows: [],
+        },
+      ],
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/customers/me') return Promise.resolve(mockIdentity);
+      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/limits') return Promise.resolve(mockLimits);
+      return Promise.reject(new Error('unexpected url'));
+    });
+
+    const { getByText, queryByText } = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Transaction Limits')).toBeTruthy();
+      expect(getByText('Send to Wallet')).toBeTruthy();
+      expect(getByText(/Max ₦5,000.00/)).toBeTruthy();
+      expect(getByText(/₦7,000.00 of ₦10,000.00/)).toBeTruthy();
+      // Unconfigured product never rendered
+      expect(queryByText('Cash-In via Agent')).toBeNull();
+    });
+  });
+
+  // V1-CUSTOMER-08
+  test('omits the Transaction Limits card entirely when nothing is configured (never fabricates a limit)', async () => {
+    const mockIdentity = {
+      id: 'cust-uuid-888',
+      reference: 'MN-08012345678',
+      type: 'INDIVIDUAL',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/customers/me') return Promise.resolve(mockIdentity);
+      if (url === '/customers/me/profile') return Promise.resolve({ profile: { displayName: 'Femi Kuti' } });
+      if (url === '/customers/me/limits') return Promise.resolve({ products: [{ product: 'WALLET_TRANSFER', direction: 'OUTGOING', configured: false, perTransactionMinMinor: null, perTransactionMaxMinor: null, windows: [] }] });
+      return Promise.reject(new Error('unexpected url'));
+    });
+
+    const { queryByText, getByText } = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(getByText('cust-uuid-888')).toBeTruthy();
+    });
+    expect(queryByText('Transaction Limits')).toBeNull();
+  });
 });
