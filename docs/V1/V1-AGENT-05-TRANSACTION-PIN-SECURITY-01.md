@@ -320,5 +320,5 @@ file in `apps/agent-mobile` was modified this session.
   RNTL tests, new backend integration spec.
 - `docs(agent): add V1-AGENT-05 transaction PIN security documentation` — this document.
 
-Starting HEAD: `9a33688`. Fix commit: `413cc9f`. Docs commit (this file, including this
-corrected hash reference): `f629a56` (final HEAD on `arena/01a10374-monienaija`).
+Starting HEAD: `9a33688`. Fix commit: `413cc9f`. Docs commit (this file): `f5d554a`. Final
+HEAD on `arena/01a10374-monienaija` after this corrective hash-reference commit: `a6eaf88`.
