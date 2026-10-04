@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { theme } from '../../theme';
@@ -10,6 +10,7 @@ import { ApiClient, ApiError } from '../../services/api-client';
 import { RootStackParamList } from '../../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'CreateSupportTicket'>;
+type ScreenRouteProp = RouteProp<RootStackParamList, 'CreateSupportTicket'>;
 
 const CATEGORIES = [
   'TRANSFER',
@@ -24,21 +25,58 @@ const CATEGORIES = [
   'OTHER',
 ] as const;
 
+type Category = (typeof CATEGORIES)[number];
+
+function isKnownCategory(value: unknown): value is Category {
+  return typeof value === 'string' && (CATEGORIES as readonly string[]).includes(value);
+}
+
 /**
- * V1-CUSTOMER-02 — Create a support ticket against the real, authenticated
- * `POST /customers/me/support/tickets` route. No financial action (wallet
- * mutation, transfer, PIN change) is reachable from this screen or its
- * backend route — support stays architecturally separate from the
- * financial control plane. No SLA/response-time promise is made anywhere
+ * V1-CUSTOMER-02 / V1-CUSTOMER-09 — Create a support ticket against the real,
+ * authenticated `POST /customers/me/support/tickets` route. No financial
+ * action (wallet mutation, transfer, PIN change) is reachable from this
+ * screen or its backend route — support stays architecturally separate from
+ * the financial control plane. No SLA/response-time promise is made anywhere
  * in this UI because none exists in the backend.
+ *
+ * V1-CUSTOMER-09 adds optional prefill via navigation params so that other
+ * screens (the locked-PIN screen, the transaction history screen) can hand
+ * the customer a head start — a preselected category and/or a reference to
+ * "this transaction" — without the customer ever having to type an internal
+ * identifier. Everything prefilled remains fully editable, and a
+ * `relatedTransferId`/`fundingRequestId` is only ever sent if it was handed
+ * to this screen by another screen in THIS customer's own authenticated
+ * session (e.g. their own transaction list) — the backend independently
+ * re-verifies that any such id actually exists and still re-derives
+ * ownership from the session, never from this screen.
  */
 export const CreateSupportTicketScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const [subject, setSubject] = useState('');
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('OTHER');
-  const [description, setDescription] = useState('');
+  const route = useRoute<ScreenRouteProp>();
+  const params = route.params;
+
+  const [subject, setSubject] = useState(params?.subject ?? '');
+  const [category, setCategory] = useState<Category>(
+    isKnownCategory(params?.category) ? params.category : 'OTHER',
+  );
+  const [description, setDescription] = useState(params?.description ?? '');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Idempotency key, fresh per submission attempt session (regenerated after any
+  // non-retryable outcome) so a double-tap or a network retry of THIS submit never
+  // creates two tickets, but a deliberate new submission always can.
+  const [idempotencyKey, setIdempotencyKey] = useState('');
+
+  useEffect(() => {
+    generateNewIdempotencyKey();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generateNewIdempotencyKey = () => {
+    const key = `support-ticket-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    setIdempotencyKey(key);
+  };
 
   const handleSubmit = async () => {
     setError('');
@@ -53,20 +91,30 @@ export const CreateSupportTicketScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      await ApiClient.post('/customers/me/support/tickets', {
-        subject: subject.trim(),
-        category,
-        description: description.trim(),
-      });
+      await ApiClient.post(
+        '/customers/me/support/tickets',
+        {
+          subject: subject.trim(),
+          category,
+          description: description.trim(),
+          ...(params?.relatedTransferId ? { relatedTransferId: params.relatedTransferId } : {}),
+          ...(params?.fundingRequestId ? { fundingRequestId: params.fundingRequestId } : {}),
+        },
+        { idempotencyKey },
+      );
       navigation.goBack();
     } catch (err: any) {
       setError(
         err instanceof ApiError ? err.message || 'Failed to submit ticket.' : 'Failed to submit ticket.',
       );
+      // A genuinely failed attempt should still be retryable under the same key (safe
+      // replay); only move to a fresh key once the user successfully leaves this screen.
     } finally {
       setIsLoading(false);
     }
   };
+
+  const hasTransactionContext = !!(params?.relatedTransferId || params?.fundingRequestId);
 
   return (
     <KeyboardAvoidingView
@@ -81,6 +129,15 @@ export const CreateSupportTicketScreen: React.FC = () => {
             a support agent will review your ticket separately.
           </Text>
         </View>
+
+        {hasTransactionContext && (
+          <View style={styles.contextBanner} testID="support-transaction-context-banner">
+            <Text style={styles.contextText}>
+              This ticket will be linked to the transaction you selected, so Support can look it up
+              without you needing to share any extra reference.
+            </Text>
+          </View>
+        )}
 
         {!!error && (
           <View style={styles.errorBanner}>
@@ -106,6 +163,7 @@ export const CreateSupportTicketScreen: React.FC = () => {
                 style={styles.chip}
                 variant={category === cat ? 'primary' : 'outline'}
                 onPress={() => setCategory(cat)}
+                testID={`support-category-${cat}`}
               />
             ))}
           </View>
@@ -125,6 +183,7 @@ export const CreateSupportTicketScreen: React.FC = () => {
             label="Submit Ticket"
             style={styles.button}
             onPress={handleSubmit}
+            testID="support-submit-button"
           />
         </View>
       </ScrollView>
@@ -153,6 +212,16 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: theme.typography.sizes.base,
     color: theme.colors.neutral.slate,
+  },
+  contextBanner: {
+    backgroundColor: theme.colors.neutral.lightGray,
+    padding: theme.spacing.md,
+    borderRadius: 8,
+    marginBottom: theme.spacing.lg,
+  },
+  contextText: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.neutral.charcoal,
   },
   form: {
     width: '100%',

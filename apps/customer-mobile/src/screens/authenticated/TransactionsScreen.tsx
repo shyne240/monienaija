@@ -1,12 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { theme } from '../../theme';
 import { TransactionRow } from '../../components/TransactionRow';
 import { LoadingState } from '../../components/LoadingState';
 import { Button } from '../../components/Button';
 import { ApiClient } from '../../services/api-client';
-import { mapTransactionToRow, type TransferListItem } from '../../services/transfer-view';
+import {
+  buildSupportContextForTransaction,
+  mapTransactionToRow,
+  type TransferListItem,
+} from '../../services/transfer-view';
+import { RootStackParamList } from '../../navigation/types';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Transactions'>;
 
 /**
  * V1-CUSTOMER-07 — reads from the unified, authenticated, ownership-scoped
@@ -19,6 +28,7 @@ import { mapTransactionToRow, type TransferListItem } from '../../services/trans
  * appeared here even though the backend already supported them.
  */
 export const TransactionsScreen: React.FC = () => {
+  const navigation = useNavigation<NavigationProp>();
   const [transactions, setTransactions] = useState<TransferListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -95,6 +105,10 @@ export const TransactionsScreen: React.FC = () => {
               reference={row.reference}
               sign={row.sign}
               status={row.status}
+              onGetHelp={() => {
+                const context = buildSupportContextForTransaction(item);
+                navigation.navigate('CreateSupportTicket', context);
+              }}
             />
           );
         }}

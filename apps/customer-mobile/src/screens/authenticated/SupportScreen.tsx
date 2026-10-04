@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, RefreshControl, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -90,18 +90,24 @@ export const SupportScreen: React.FC = () => {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[theme.colors.primary.main]} />
         }
         renderItem={({ item }) => (
-          <Card variant="flat" style={styles.ticketCard}>
-            <View style={styles.ticketRow}>
-              <Text style={styles.ticketSubject}>{item.subject}</Text>
-              <Text style={[styles.statusBadge, statusStyle(item.status)]}>{item.status}</Text>
-            </View>
-            <Text style={styles.ticketMeta}>
-              {item.category} · {item.reference}
-            </Text>
-            <Text style={styles.ticketDate}>
-              {new Date(item.createdAt).toLocaleDateString('en-NG')}
-            </Text>
-          </Card>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('SupportTicketDetail', { ticketId: item.id })}
+            testID={`support-ticket-row-${item.id}`}
+          >
+            <Card variant="flat" style={styles.ticketCard}>
+              <View style={styles.ticketRow}>
+                <Text style={styles.ticketSubject}>{item.subject}</Text>
+                <Text style={[styles.statusBadge, statusStyle(item.status)]}>{item.status}</Text>
+              </View>
+              <Text style={styles.ticketMeta}>
+                {item.category} · {item.reference}
+              </Text>
+              <Text style={styles.ticketDate}>
+                {new Date(item.createdAt).toLocaleDateString('en-NG')}
+              </Text>
+            </Card>
+          </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>

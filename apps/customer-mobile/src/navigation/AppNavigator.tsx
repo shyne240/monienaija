@@ -18,6 +18,7 @@ import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
 import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScreen';
 import { SupportScreen } from '../screens/authenticated/SupportScreen';
 import { CreateSupportTicketScreen } from '../screens/authenticated/CreateSupportTicketScreen';
+import { SupportTicketDetailScreen } from '../screens/authenticated/SupportTicketDetailScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -103,6 +104,11 @@ export const AppNavigator: React.FC = () => {
             name="CreateSupportTicket"
             component={CreateSupportTicketScreen}
             options={{ title: 'New Ticket' }}
+          />
+          <Stack.Screen
+            name="SupportTicketDetail"
+            component={SupportTicketDetailScreen}
+            options={{ title: 'Ticket' }}
           />
         </>
       )}

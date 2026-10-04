@@ -57,6 +57,7 @@ export interface CreateSupportTicketMessageInput {
   ticketId: string;
   body: string;
   isInternal?: boolean;
+  idempotencyKey?: string | null;
   principal: AuthorizationPrincipal;
 }
 
@@ -760,11 +761,12 @@ export class SupportService {
     const ticketId = this.assertUuid(input.ticketId, 'ticketId');
     const body = this.assertText(input.body, 'body', 1, 4000);
     const isInternal = input.isInternal ?? false;
+    const idempotencyKey = this.optionalIdempotencyKey(input.idempotencyKey);
     const principal = this.assertPrincipal(input.principal);
 
     // Determine authorType/authorId
-    let authorType = principal.type;
-    let authorId = principal.principalId;
+    const authorType = principal.type;
+    const authorId = principal.principalId;
     if (principal.type === 'CUSTOMER' && !principal.customerId) throw new ForbiddenException('Customer principal missing');
     if (principal.type === 'AGENT' && !principal.agentId) throw new ForbiddenException('Agent principal missing');
 
@@ -773,8 +775,42 @@ export class SupportService {
       throw new ForbiddenException('Only workforce can create internal messages');
     }
 
+    const requestHash = this.computeRequestHash({
+      ticketId,
+      body,
+      isInternal,
+      authorType,
+      authorId,
+    });
+    const scope = `support.ticket.message.create:${ticketId}:${authorType}:${authorId}`;
+
     // Ensure ticket exists and caller has access, and ticket is not closed for customer/agent
     const result = await this.dataSource.transaction(async (manager) => {
+      let reservation: Awaited<ReturnType<IdempotencyService['reserve']>> | null = null;
+      if (idempotencyKey) {
+        reservation = await this.idempotencyService.reserve(manager, {
+          scope,
+          key: idempotencyKey,
+          requestHash,
+          retentionSeconds: 86400,
+        });
+        if (reservation.kind === 'REPLAY') {
+          const resourceId = reservation.record.resourceId;
+          if (resourceId) {
+            const rows: Array<any> = await manager.query(
+              `SELECT * FROM support_ticket_messages WHERE id=$1 LIMIT 1`,
+              [resourceId],
+            );
+            if (rows[0]) return this.toMessageView(rows[0]);
+          }
+          const replayBody = reservation.record.responseBody as Record<string, unknown> | null;
+          if (replayBody && (replayBody as any).id) {
+            return replayBody as unknown as SupportTicketMessageView;
+          }
+          throw new ConflictException('The idempotent request is already in progress');
+        }
+      }
+
       const ticketRows: Array<any> = await manager.query(
         `SELECT * FROM support_tickets WHERE id=$1 FOR UPDATE`,
         [ticketId],
@@ -836,7 +872,16 @@ export class SupportService {
         `SELECT * FROM support_ticket_messages WHERE id=$1 LIMIT 1`,
         [id],
       );
-      return this.toMessageView(rows[0]);
+      const view = this.toMessageView(rows[0]);
+      if (reservation) {
+        await this.idempotencyService.complete(manager, reservation.record.id, {
+          statusCode: 201,
+          responseBody: view as unknown as Record<string, unknown>,
+          resourceType: 'SUPPORT_TICKET_MESSAGE',
+          resourceId: id,
+        });
+      }
+      return view;
     });
     return result;
   }

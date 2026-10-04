@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { theme } from '../theme';
 import { StatusBadge, type BadgeStatus } from './StatusBadge';
@@ -14,6 +14,8 @@ interface TransactionRowProps {
   sign: TransactionSign;
   status: BadgeStatus;
   createdAt: string;
+  /** V1-CUSTOMER-09 — optional "get help with this transaction" affordance. */
+  onGetHelp?: () => void;
 }
 
 export const TransactionRow: React.FC<TransactionRowProps> = ({
@@ -23,6 +25,7 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
   sign,
   status,
   createdAt,
+  onGetHelp,
 }) => {
   const displayAmount = (amountMinor / 100).toLocaleString('en-NG', {
     minimumFractionDigits: 2,
@@ -65,6 +68,11 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
         <View style={styles.badgeWrapper}>
           <StatusBadge status={status} />
         </View>
+        {!!onGetHelp && (
+          <TouchableOpacity onPress={onGetHelp} testID="transaction-row-get-help" hitSlop={8}>
+            <Text style={styles.helpLink}>Get help</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -118,5 +126,12 @@ const styles = StyleSheet.create({
   },
   badgeWrapper: {
     marginTop: 2,
+  },
+  helpLink: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.primary.main,
+    fontWeight: theme.typography.weights.medium,
+    marginTop: theme.spacing.xs,
+    textDecorationLine: 'underline',
   },
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { TransactionsScreen } from '../src/screens/authenticated/TransactionsScreen';
 import { ApiClient } from '../src/services/api-client';
 
@@ -7,6 +7,14 @@ jest.mock('../src/services/api-client', () => ({
   ApiClient: {
     get: jest.fn(),
   },
+}));
+
+const mockNavigate = jest.fn();
+
+jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({
+    navigate: mockNavigate,
+  }),
 }));
 
 /**
@@ -151,5 +159,99 @@ describe('Transactions Screen History Tests', () => {
     await waitFor(() => {
       expect(getByText('Failed to load transactions.')).toBeTruthy();
     });
+  });
+
+  /**
+   * V1-CUSTOMER-09 Part G — tapping "Get help" on a wallet-transfer row
+   * navigates to CreateSupportTicket with the existing `relatedTransferId`
+   * field (no new backend field invented), fully prefilled and editable.
+   */
+  test('"Get help" on a WALLET_TRANSFER row prefills category/subject/description and relatedTransferId', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce({
+      items: [
+        {
+          id: 'transfer-uuid-1',
+          type: 'WALLET_TRANSFER',
+          narration: 'Rent',
+          reference: 'REF-ABC-123',
+          amountMinor: '150000',
+          currency: 'NGN',
+          direction: 'SENT',
+          status: 'COMPLETED',
+          createdAt: new Date('2026-01-15T10:00:00Z').toISOString(),
+        },
+      ],
+    });
+
+    const { findByTestId } = render(<TransactionsScreen />);
+    const helpButton = await findByTestId('transaction-row-get-help');
+    fireEvent.press(helpButton);
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      'CreateSupportTicket',
+      expect.objectContaining({
+        category: 'TRANSFER',
+        relatedTransferId: 'transfer-uuid-1',
+        subject: expect.stringContaining('REF-ABC-123'),
+        description: expect.stringContaining('REF-ABC-123'),
+      }),
+    );
+    // No fundingRequestId should leak onto an unrelated WALLET_TRANSFER context.
+    expect((mockNavigate.mock.calls[0][1] as Record<string, unknown>).fundingRequestId).toBeUndefined();
+  });
+
+  test('"Get help" on a FUNDING row prefills fundingRequestId instead of relatedTransferId', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce({
+      items: [
+        {
+          id: 'funding-uuid-1',
+          type: 'FUNDING',
+          narration: 'Wallet top-up',
+          reference: 'FUND-REF-9',
+          amountMinor: '500000',
+          currency: 'NGN',
+          direction: 'RECEIVED',
+          status: 'COMPLETED',
+          createdAt: new Date('2026-01-10T10:00:00Z').toISOString(),
+        },
+      ],
+    });
+
+    const { findByTestId } = render(<TransactionsScreen />);
+    fireEvent.press(await findByTestId('transaction-row-get-help'));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      'CreateSupportTicket',
+      expect.objectContaining({ category: 'FUNDING', fundingRequestId: 'funding-uuid-1' }),
+    );
+    expect((mockNavigate.mock.calls[0][1] as Record<string, unknown>).relatedTransferId).toBeUndefined();
+  });
+
+  test('"Get help" on a CASH_TO_CASH row embeds the reference in the description with no new id field', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce({
+      items: [
+        {
+          id: 'c2c-uuid-1',
+          type: 'CASH_TO_CASH',
+          narration: null,
+          reference: 'C2C-REF-7',
+          amountMinor: '200000',
+          currency: 'NGN',
+          direction: 'SENT',
+          status: 'UNCLAIMED',
+          createdAt: new Date('2026-01-05T10:00:00Z').toISOString(),
+        },
+      ],
+    });
+
+    const { findByTestId } = render(<TransactionsScreen />);
+    fireEvent.press(await findByTestId('transaction-row-get-help'));
+
+    const [, params] = mockNavigate.mock.calls[0];
+    expect(params).toEqual(
+      expect.objectContaining({ category: 'CASH_TO_CASH', description: expect.stringContaining('C2C-REF-7') }),
+    );
+    expect(params.relatedTransferId).toBeUndefined();
+    expect(params.fundingRequestId).toBeUndefined();
   });
 });

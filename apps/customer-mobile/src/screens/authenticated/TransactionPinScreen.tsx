@@ -216,7 +216,14 @@ export const TransactionPinScreen: React.FC = () => {
             <Button
               label="Contact Support"
               style={styles.button}
-              onPress={() => navigation.navigate('CreateSupportTicket')}
+              onPress={() =>
+                navigation.navigate('CreateSupportTicket', {
+                  category: 'PIN',
+                  subject: 'Transaction PIN locked',
+                  description:
+                    'My Transaction PIN is locked after too many incorrect attempts and I need Support to unlock it.',
+                })
+              }
             />
           </View>
         )}

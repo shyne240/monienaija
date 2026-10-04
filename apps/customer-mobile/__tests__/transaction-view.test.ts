@@ -1,4 +1,8 @@
-import { mapTransactionToRow, type TransferListItem } from '../src/services/transfer-view';
+import {
+  buildSupportContextForTransaction,
+  mapTransactionToRow,
+  type TransferListItem,
+} from '../src/services/transfer-view';
 
 /**
  * V1-CUSTOMER-07 — pure unit coverage for the unified transaction-history
@@ -147,5 +151,44 @@ describe('mapTransactionToRow — generic field passthrough', () => {
   test('uses explicit narration over the computed default label when present', () => {
     const row = mapTransactionToRow(baseItem({ narration: 'Rent contribution' }));
     expect(row.narration).toBe('Rent contribution');
+  });
+});
+
+/**
+ * V1-CUSTOMER-09 Part G — mapping a unified transaction row to a support-ticket
+ * prefill context. WALLET_TRANSFER/FUNDING reuse the backend's existing
+ * `relatedTransferId`/`fundingRequestId` fields; everything else gets a
+ * human-readable reference embedded in the description instead of a new
+ * backend field.
+ */
+describe('buildSupportContextForTransaction', () => {
+  test('WALLET_TRANSFER maps to category TRANSFER with relatedTransferId set and no fundingRequestId', () => {
+    const ctx = buildSupportContextForTransaction(
+      baseItem({ id: 'transfer-1', type: 'WALLET_TRANSFER', reference: 'REF-1' }),
+    );
+    expect(ctx.category).toBe('TRANSFER');
+    expect(ctx.relatedTransferId).toBe('transfer-1');
+    expect(ctx.fundingRequestId).toBeUndefined();
+    expect(ctx.subject).toContain('REF-1');
+    expect(ctx.description).toContain('REF-1');
+  });
+
+  test('FUNDING maps to category FUNDING with fundingRequestId set and no relatedTransferId', () => {
+    const ctx = buildSupportContextForTransaction(
+      baseItem({ id: 'funding-1', type: 'FUNDING', reference: 'REF-2' }),
+    );
+    expect(ctx.category).toBe('FUNDING');
+    expect(ctx.fundingRequestId).toBe('funding-1');
+    expect(ctx.relatedTransferId).toBeUndefined();
+  });
+
+  test('CASH_TO_CASH, CASH_IN, and CASH_OUT embed the reference in the description with no structured id field', () => {
+    for (const type of ['CASH_TO_CASH', 'CASH_IN', 'CASH_OUT'] as const) {
+      const ctx = buildSupportContextForTransaction(baseItem({ id: 'x-1', type, reference: `REF-${type}` }));
+      expect(ctx.category).toBe(type);
+      expect(ctx.relatedTransferId).toBeUndefined();
+      expect(ctx.fundingRequestId).toBeUndefined();
+      expect(ctx.description).toContain(`REF-${type}`);
+    }
   });
 });

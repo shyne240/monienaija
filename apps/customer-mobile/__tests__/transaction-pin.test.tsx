@@ -129,7 +129,10 @@ describe('TransactionPinScreen', () => {
     expect(queryByPlaceholderText('Enter new PIN')).toBeNull();
 
     fireEvent.press(getByText('Contact Support'));
-    expect(mockNavigate).toHaveBeenCalledWith('CreateSupportTicket');
+    expect(mockNavigate).toHaveBeenCalledWith(
+      'CreateSupportTicket',
+      expect.objectContaining({ category: 'PIN' }),
+    );
   });
 
   test('API failure handling: status fetch failure shows an error with a retry action instead of a blank/crashed screen', async () => {

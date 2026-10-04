@@ -719,6 +719,54 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     expect(a.body.id).not.toBe(b.body.id);
   });
 
+  it('22b. duplicate/idempotent reply behavior (Idempotency-Key on messages) — V1-CUSTOMER-09', async () => {
+    const cust = await createCustomerWithCredential();
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${cust.token}`)
+      .send({ subject: 'Reply idempotency test', category: 'OTHER', description: 'testing reply idempotency' })
+      .expect(201);
+    const key = `idem-msg-${randomUUID()}`;
+    const first = await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .set('Idempotency-Key', key)
+      .send({ body: 'Please check my transaction' })
+      .expect(201);
+    const second = await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .set('Idempotency-Key', key)
+      .send({ body: 'Please check my transaction' })
+      .expect(201);
+    expect(second.body.id).toBe(first.body.id);
+    // Same key, different body -> 409 (prevents silently swallowing a logically different message)
+    await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .set('Idempotency-Key', key)
+      .send({ body: 'A completely different message body' })
+      .expect(409);
+    // Without a key, two genuinely separate replies are created (no accidental dedup)
+    const a = await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .send({ body: 'No key reply A' })
+      .expect(201);
+    const b = await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .send({ body: 'No key reply B' })
+      .expect(201);
+    expect(a.body.id).not.toBe(b.body.id);
+    const allMessages = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/support/tickets/${created.body.id}/messages`)
+      .set('Authorization', `Bearer ${cust.token}`)
+      .expect(200);
+    // 1 (dedup'd pair counts once) + 2 (no-key A/B) = 3 messages total
+    expect(allMessages.body.length).toBe(3);
+  });
+
   it('23. concurrent state transition behaves correctly (one succeeds)', async () => {
     const cust = await createCustomerWithCredential();
     const ticket = await supportService.createTicket({

@@ -186,5 +186,93 @@ export function mapTransactionToRow(item: TransferListItem): TransactionRowView 
   };
 }
 
+export type SupportTicketCategoryForTransaction =
+  | 'TRANSFER'
+  | 'FUNDING'
+  | 'CASH_TO_CASH'
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'OTHER';
+
+export interface TransactionSupportContext {
+  category: SupportTicketCategoryForTransaction;
+  subject: string;
+  description: string;
+  relatedTransferId?: string;
+  fundingRequestId?: string;
+}
+
+/**
+ * V1-CUSTOMER-09 Part G — "reference this transaction without typing an
+ * internal identifier". The backend's `SupportTicket` already has
+ * `relatedTransferId`/`fundingRequestId` columns (no new backend fields are
+ * added here); this maps the unified transaction-history row to that
+ * existing model for the two types it directly covers (WALLET_TRANSFER →
+ * relatedTransferId, FUNDING → fundingRequestId). CASH_TO_CASH, CASH_IN and
+ * CASH_OUT don't have a matching structured column (they are not rows in
+ * the `transfers` or `customer_funding_requests` tables), so for those the
+ * human-readable reference/date/amount is embedded directly into the
+ * prefilled, editable description instead of inventing a new backend field
+ * for a single UI convenience.
+ */
+export function buildSupportContextForTransaction(item: TransferListItem): TransactionSupportContext {
+  const row = mapTransactionToRow(item);
+  const amountDisplay = (row.amountMinor / 100).toLocaleString('en-NG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const dateDisplay = new Date(row.createdAt).toLocaleDateString('en-NG');
+  const descriptionLines = [
+    `I have a question about this transaction:`,
+    `- Reference: ${row.reference || 'N/A'}`,
+    `- Amount: NGN ${amountDisplay}`,
+    `- Date: ${dateDisplay}`,
+    '',
+    'Details: ',
+  ];
+  const description = descriptionLines.join('\n');
+
+  switch (item.type) {
+    case 'WALLET_TRANSFER':
+      return {
+        category: 'TRANSFER',
+        subject: `Issue with transfer ${row.reference}`.trim(),
+        description,
+        relatedTransferId: item.id || item.transferId || undefined,
+      };
+    case 'FUNDING':
+      return {
+        category: 'FUNDING',
+        subject: `Issue with wallet funding ${row.reference}`.trim(),
+        description,
+        fundingRequestId: item.id || undefined,
+      };
+    case 'CASH_TO_CASH':
+      return {
+        category: 'CASH_TO_CASH',
+        subject: `Issue with cash-to-cash transfer ${row.reference}`.trim(),
+        description,
+      };
+    case 'CASH_IN':
+      return {
+        category: 'CASH_IN',
+        subject: `Issue with cash deposit ${row.reference}`.trim(),
+        description,
+      };
+    case 'CASH_OUT':
+      return {
+        category: 'CASH_OUT',
+        subject: `Issue with cash withdrawal ${row.reference}`.trim(),
+        description,
+      };
+    default:
+      return {
+        category: 'OTHER',
+        subject: `Issue with transaction ${row.reference}`.trim(),
+        description,
+      };
+  }
+}
+
 // Backward-compatible alias (pre V1-CUSTOMER-07 call sites referenced this name).
 export const mapTransferToRow = mapTransactionToRow;

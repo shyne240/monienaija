@@ -87,14 +87,19 @@ export class SupportCustomerController {
   async addMessage(
     @Param('id') id: string,
     @Body() dto: CreateSupportTicketMessageDto,
+    @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
+    @Headers('Idempotency-Key') idempotencyKeyHeader2: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
     const principal = this.requireCustomer(req);
     if (dto.isInternal) throw new ForbiddenException('Customer cannot create internal messages');
+    const idempotencyKey =
+      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     return this.supportService.addMessage({
       ticketId: id,
       body: dto.body,
       isInternal: false,
+      idempotencyKey,
       principal,
     });
   }

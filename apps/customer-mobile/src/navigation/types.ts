@@ -12,7 +12,16 @@ export type RootStackParamList = {
   Profile: undefined;
   TransactionPin: undefined;
   Support: undefined;
-  CreateSupportTicket: undefined;
+  CreateSupportTicket:
+    | undefined
+    | {
+        category?: string;
+        subject?: string;
+        description?: string;
+        relatedTransferId?: string;
+        fundingRequestId?: string;
+      };
+  SupportTicketDetail: { ticketId: string };
 };
 
 declare global {
