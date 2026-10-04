@@ -18,6 +18,11 @@ export enum TransferFailureCode {
   DESTINATION_WALLET_NOT_FOUND = 'DESTINATION_WALLET_NOT_FOUND',
   SELF_TRANSFER = 'SELF_TRANSFER',
   WALLET_NOT_ACTIVE = 'WALLET_NOT_ACTIVE',
+  // V1-SYSTEM-01: a wallet's owning customer is no longer ACTIVE (SUSPENDED/DRAFT/CLOSED).
+  // WalletStatus alone is insufficient — wallets are never transitioned away from ACTIVE
+  // when a customer is suspended, so the customer's own lifecycle status must be checked
+  // independently (mirrors the existing check already applied in cash-in/cash-out/C2C-claim).
+  CUSTOMER_NOT_ACTIVE = 'CUSTOMER_NOT_ACTIVE',
   CURRENCY_MISMATCH = 'CURRENCY_MISMATCH',
   INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
   LEDGER_REJECTED = 'LEDGER_REJECTED',

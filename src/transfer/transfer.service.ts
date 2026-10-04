@@ -301,6 +301,51 @@ export class TransferService {
       });
     }
 
+    // V1-SYSTEM-01: WalletAccount.status alone is not authoritative for whether the owning
+    // customer may send or receive funds — wallets are created ACTIVE and are never
+    // transitioned when a customer is later SUSPENDED/CLOSED. Re-check the owning customer's
+    // CURRENT lifecycle status here, at the financial boundary, for both legs of the transfer.
+    // This mirrors the existing, already-correct pattern used by agent cash-in, agent cash-out,
+    // and agent C2C claim (all of which independently check `customers.status === 'ACTIVE'`
+    // before moving money). Non-UUID customerId values identify internal/system wallets
+    // (e.g. fee/commission/suspense accounts) and are intentionally skipped. A UUID-shaped
+    // customerId with NO backing `customers` row is also intentionally NOT blocked here: in
+    // production every real wallet is created with a genuine customerId from the customer
+    // bounded context (WalletAccount.customerId is documented as an "opaque reference" that
+    // this service must not assume is always a customer), so an absent row only ever occurs
+    // for non-customer/system wallets — blocking on absence would reject legitimate non-customer
+    // principals, not add any real protection against suspended customers.
+    const customerWalletCustomerIds = [sourceWallet.customerId, destinationWallet.customerId]
+      .filter((id, index, arr) => arr.indexOf(id) === index)
+      .filter((id) => UUID_PATTERN.test(id));
+    if (customerWalletCustomerIds.length > 0) {
+      const statusRows: Array<{ id: string; status: string; deleted_at: string | null }> =
+        await manager.query(
+          `SELECT id, status, deleted_at FROM customers WHERE id = ANY($1::uuid[])`,
+          [customerWalletCustomerIds],
+        );
+      const statusById = new Map(statusRows.map((row) => [row.id, row]));
+      const sourceIneligible =
+        UUID_PATTERN.test(sourceWallet.customerId) &&
+        (() => {
+          const row = statusById.get(sourceWallet.customerId);
+          return !!row && (row.deleted_at !== null || row.status !== 'ACTIVE');
+        })();
+      const destinationIneligible =
+        UUID_PATTERN.test(destinationWallet.customerId) &&
+        (() => {
+          const row = statusById.get(destinationWallet.customerId);
+          return !!row && (row.deleted_at !== null || row.status !== 'ACTIVE');
+        })();
+      if (sourceIneligible || destinationIneligible) {
+        return this.markFailed(manager, transfer, {
+          code: TransferFailureCode.CUSTOMER_NOT_ACTIVE,
+          statusCode: 409,
+          message: 'Both the sending and receiving customer must be active to transfer funds',
+        });
+      }
+    }
+
     if (
       sourceWallet.currency !== command.currency ||
       destinationWallet.currency !== command.currency ||

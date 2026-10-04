@@ -320,6 +320,21 @@ export class CustomerFundingService {
           if (!wallet) throw new NotFoundException(`Wallet for customer ${customerId} ${currency} was not found`);
           if (wallet.status !== 'ACTIVE') throw new ConflictException(`Wallet ${wallet.id} is ${wallet.status}`);
 
+          // V1-SYSTEM-01: WalletAccount.status is never transitioned away from ACTIVE when a
+          // customer is later SUSPENDED/CLOSED, so it alone cannot gate funding approval. The
+          // funding request may have been created while the customer was ACTIVE and only
+          // approved afterward, so re-check the customer's CURRENT status here, at the point
+          // funds are actually credited — mirroring the same check already applied by agent
+          // cash-in/cash-out/C2C-claim before moving money.
+          const customerStatusRows: Array<{ status: string; deleted_at: string | null }> =
+            await manager.query(`SELECT status, deleted_at FROM customers WHERE id=$1 LIMIT 1`, [
+              customerId,
+            ]);
+          const customerStatusRow = customerStatusRows[0];
+          if (!customerStatusRow || customerStatusRow.deleted_at !== null || customerStatusRow.status !== 'ACTIVE') {
+            throw new ConflictException(`Customer ${customerId} is not active`);
+          }
+
           // Settlement account — authoritative existing funding control account (PAYMENT-SETTLEMENT_ASSET-NGN)
           const settlementAccountId = await this.settlementAccountService.getAccountId(
             manager,
