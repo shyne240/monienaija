@@ -1156,4 +1156,58 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       }),
     ).rejects.toThrow(NotFoundException);
   });
+
+  // 37. V1-C2C-SECURITY-02 Part G proof: a SUSPENDED beneficiary cannot claim and no partial
+  // settlement occurs. This mirrors the already-correct `customers.status === 'ACTIVE'` gate
+  // documented by the V1-SYSTEM-01 commit (049668be) as already applied here (unlike
+  // TransferService/CustomerFundingService, which that commit had to fix) — this test closes
+  // the proof gap for C2C specifically; no production code change was needed.
+  it('37. SUSPENDED beneficiary cannot claim: no status transition, no ledger movement', async () => {
+    const { phone, transferId, transferCode, amount } = await initiateTransfer('6300');
+    const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+    await dataSource.query(`UPDATE customers SET status='SUSPENDED' WHERE id=$1`, [customerId]);
+    const { challengeId } = await createMfaChallenge(customerId, 'suspended-otp');
+
+    const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const beforeBeneficiary = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+
+    await expect(
+      claimService.execute({
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'suspended-otp',
+        idempotencyKey: `suspended-37-${randomUUID()}`,
+      }),
+    ).rejects.toThrow(NotFoundException);
+
+    const transferRow: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(transferRow[0]!.status).toBe('UNCLAIMED');
+    const afterUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const afterBeneficiary = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    expect(afterUnclaimed.balanceMinor).toBe(beforeUnclaimed.balanceMinor);
+    expect(afterBeneficiary.balanceMinor).toBe(beforeBeneficiary.balanceMinor);
+
+    // Reactivating the beneficiary allows the normal, correct claim to proceed — proves this
+    // is a status gate, not an accidental permanent lock from the failed attempt above.
+    await dataSource.query(`UPDATE customers SET status='ACTIVE' WHERE id=$1`, [customerId]);
+    const { challengeId: ch2 } = await createMfaChallenge(customerId, 'reactivated-otp');
+    const res = await claimService.execute({
+      transferId,
+      beneficiaryPhone: phone,
+      transferCode,
+      customerId,
+      mfaChallengeId: ch2,
+      otp: 'reactivated-otp',
+      idempotencyKey: `reactivated-37-${randomUUID()}`,
+    });
+    expect(res.status).toBe('COMPLETED');
+    const finalBeneficiary = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    expect(finalBeneficiary.balanceMinor).toBe((BigInt(beforeBeneficiary.balanceMinor) + BigInt(amount)).toString());
+  });
 });
