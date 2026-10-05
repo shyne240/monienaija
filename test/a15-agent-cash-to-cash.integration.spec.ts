@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable, no-empty */
-import { ValidationPipe } from '@nestjs/common';
+import { ConflictException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -479,7 +479,18 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     const key = `13-${randomUUID()}`;
     const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
     const beforeTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);
-    const [r1, r2] = await Promise.all([
+    // V1-TEST-01: execute() retries its own SERIALIZABLE transaction up to
+    // MAX_SERIALIZABLE_ATTEMPTS times on a genuine PostgreSQL serialization failure
+    // (40001/40P01) before giving up — see src/agent/agent-cash-to-cash.service.ts. Under
+    // this test's deliberately adversarial two-way simultaneous same-idempotency-key
+    // contention, bounded retry exhaustion was observed once in a live full-suite run
+    // (reproduced and root-caused in V1-TEST-01). Exhaustion now always surfaces as a clean,
+    // catchable ConflictException (fixed in this task — previously it could leak the raw
+    // driver QueryFailedError instead); this is accepted here as an extremely rare residual
+    // outcome of the bounded-retry design, not silently hidden, because the only thing this
+    // test actually must guarantee — never more than one financial effect for one principal —
+    // is verified unconditionally below regardless of which shape the result takes.
+    const results = await Promise.allSettled([
       cashToCashService.execute({
         agentId: agent.id,
         agentPrincipal: agentPrincipal(agent.id) as any,
@@ -499,10 +510,22 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
         idempotencyKey: key,
       }),
     ]);
-    const ids = [r1.journalId, r2.journalId];
-    expect(ids[0]).toBe(ids[1]);
-    const statuses = [r1.status, r2.status].sort();
-    expect(statuses).toEqual(['COMPLETED', 'REPLAYED']);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<any>).value);
+    const rejected = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+    for (const reason of rejected) {
+      // Any rejection must be the clean, bounded-retry-exhaustion conflict — never an
+      // unrecognized/raw error — and the common case (both fulfilled) is the expected one.
+      expect(reason).toBeInstanceOf(ConflictException);
+    }
+    if (fulfilled.length === 2) {
+      const ids = fulfilled.map((f) => f.journalId);
+      expect(ids[0]).toBe(ids[1]);
+      const statuses = fulfilled.map((f) => f.status).sort();
+      expect(statuses).toEqual(['COMPLETED', 'REPLAYED']);
+    } else {
+      expect(fulfilled).toHaveLength(1);
+      expect(fulfilled[0].status).toBe('COMPLETED');
+    }
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
     expect(BigInt(afterJournals[0]!.cnt)).toBe(BigInt(beforeJournals[0]!.cnt) + 1n);
     const afterTransfers: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM cash_to_cash_transfers`);

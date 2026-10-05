@@ -145,43 +145,67 @@ export class FeeRuleRegistryService {
 
   async updateRule(id: string, input: FeeRuleUpdateInput, actor: string): Promise<FeeRuleSafeProjection> {
     const ruleId = this.normalizeId(id);
-    const rule = await this.repo.findOne({ where: { id: ruleId } as never });
-    if (!rule) throw new NotFoundException(`Fee rule ${ruleId} not found`);
-    this.assertVersion(rule.version, input.version);
 
-    const previous = this.ruleValues(rule);
-    if (input.flatFeeMinor !== undefined) rule.flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
-    if (input.percentageBps !== undefined) rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
-    if (input.minimumFeeMinor !== undefined) rule.minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
-    if (input.maximumFeeMinor !== undefined) rule.maximumFeeMinor = this.parseOptionalMinor(input.maximumFeeMinor, 'maximumFeeMinor');
-    if (input.vatBps !== undefined) rule.vatBps = this.parseOptionalBps(input.vatBps, 'vatBps');
-    if (rule.flatFeeMinor === null && rule.percentageBps === null) {
-      throw new BadRequestException('at least one pricing parameter must remain (flatFeeMinor or percentageBps)');
-    }
-    if (rule.minimumFeeMinor !== null && rule.maximumFeeMinor !== null && BigInt(rule.minimumFeeMinor) > BigInt(rule.maximumFeeMinor)) {
-      throw new BadRequestException('minimumFeeMinor cannot exceed maximumFeeMinor');
-    }
-    if (input.effectiveTo !== undefined) {
-      const effectiveTo = input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
-      if (effectiveTo !== null && effectiveTo.getTime() <= rule.effectiveFrom.getTime()) {
-        throw new BadRequestException('effectiveTo must be after effectiveFrom');
-      }
-      rule.effectiveTo = effectiveTo;
-    }
-    if (input.priority !== undefined) rule.priority = this.parsePriority(input.priority);
-    if (input.isActive !== undefined) rule.isActive = this.parseBoolean(input.isActive, 'isActive');
-    rule.updatedBy = actor;
+    // V1-TEST-01: a plain `this.repo.findOne()` followed later by `this.repo.save()` does NOT
+    // give @VersionColumn any actual compare-and-swap protection in TypeORM —
+    // OptimisticLockVersionMismatchError (see isVersionConflict below) is only ever raised by
+    // a SelectQueryBuilder configured with `.setLock('optimistic', expectedVersion)`, which
+    // this method never used. Two genuinely concurrent callers that both read the same
+    // starting version could therefore both have their writes applied (a real lost update),
+    // with whichever commits second silently discarding the other's change — proven by
+    // V1-TEST-01's reproduction of test 08 ("concurrent updates: exactly one writer wins per
+    // version"), which intermittently observed BOTH concurrent updateRule calls resolve
+    // instead of exactly one. This is closed with the same pattern already used everywhere
+    // else in this codebase for row-level contention (OTP challenges, idempotency records, A2
+    // rate-limit buckets): a `SELECT ... FOR UPDATE` pessimistic lock inside an explicit
+    // transaction, so a second concurrent caller blocks until the first commits, then reads
+    // the POST-update version and correctly hits the existing assertVersion conflict path.
+    const { saved, previous } = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(FeeRuleDefinition);
+      const rule = await repository
+        .createQueryBuilder('rule')
+        .where('rule.id = :id', { id: ruleId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!rule) throw new NotFoundException(`Fee rule ${ruleId} not found`);
+      this.assertVersion(rule.version, input.version);
 
-    try {
-      const saved = (await this.repo.save(rule as never)) as unknown as FeeRuleDefinition;
-      await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved));
-      return this.toSafe(saved);
-    } catch (e) {
-      if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
-        throw new ConflictException('Fee rule version conflict — stale version');
+      const previousValues = this.ruleValues(rule);
+      if (input.flatFeeMinor !== undefined) rule.flatFeeMinor = this.parseOptionalMinor(input.flatFeeMinor, 'flatFeeMinor');
+      if (input.percentageBps !== undefined) rule.percentageBps = this.parseOptionalBps(input.percentageBps, 'percentageBps');
+      if (input.minimumFeeMinor !== undefined) rule.minimumFeeMinor = this.parseOptionalMinor(input.minimumFeeMinor, 'minimumFeeMinor');
+      if (input.maximumFeeMinor !== undefined) rule.maximumFeeMinor = this.parseOptionalMinor(input.maximumFeeMinor, 'maximumFeeMinor');
+      if (input.vatBps !== undefined) rule.vatBps = this.parseOptionalBps(input.vatBps, 'vatBps');
+      if (rule.flatFeeMinor === null && rule.percentageBps === null) {
+        throw new BadRequestException('at least one pricing parameter must remain (flatFeeMinor or percentageBps)');
       }
-      throw e;
-    }
+      if (rule.minimumFeeMinor !== null && rule.maximumFeeMinor !== null && BigInt(rule.minimumFeeMinor) > BigInt(rule.maximumFeeMinor)) {
+        throw new BadRequestException('minimumFeeMinor cannot exceed maximumFeeMinor');
+      }
+      if (input.effectiveTo !== undefined) {
+        const effectiveTo = input.effectiveTo === null ? null : this.parseDate(input.effectiveTo, 'effectiveTo');
+        if (effectiveTo !== null && effectiveTo.getTime() <= rule.effectiveFrom.getTime()) {
+          throw new BadRequestException('effectiveTo must be after effectiveFrom');
+        }
+        rule.effectiveTo = effectiveTo;
+      }
+      if (input.priority !== undefined) rule.priority = this.parsePriority(input.priority);
+      if (input.isActive !== undefined) rule.isActive = this.parseBoolean(input.isActive, 'isActive');
+      rule.updatedBy = actor;
+
+      try {
+        const savedRule = (await repository.save(rule as never)) as unknown as FeeRuleDefinition;
+        return { saved: savedRule, previous: previousValues };
+      } catch (e) {
+        if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
+          throw new ConflictException('Fee rule version conflict — stale version');
+        }
+        throw e;
+      }
+    });
+
+    await this.audit(saved.id, 'UPDATED', actor, previous, this.ruleValues(saved));
+    return this.toSafe(saved);
   }
 
   async getRule(id: string): Promise<FeeRuleSafeProjection> {

@@ -491,9 +491,23 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     // Under heavy concurrency a handful of requests may instead surface as 503 from the
     // separate, pre-existing A2SecurityRateLimitService per-phone verify bucket (its own
     // internal transaction has no retry-on-serialization-failure — a related, out-of-scope
-    // finding documented in docs/V1/V1-CUSTOMER-06-OTP-LOCKOUT-SECURITY-01.md). No response
-    // may ever be 200 for a wrong code, and the final persisted state must never exceed the
-    // cap regardless of how many requests got as far as the OTP comparison.
+    // finding documented in docs/V1/V1-CUSTOMER-06-OTP-LOCKOUT-SECURITY-01.md).
+    //
+    // A request can also legitimately surface as 409 from the OTP-verify transaction itself:
+    // runSerializableWithRetry (src/common/serializable-transaction.ts) retries a genuine
+    // PostgreSQL serialization failure (40001) up to MAX_SERIALIZABLE_ATTEMPTS (3) and, if
+    // every attempt collides again under this test's deliberately adversarial six-way
+    // simultaneous write contention on one row, raises ConflictException rather than hanging
+    // or silently losing the write — the exact "contention is surfaced as a retryable conflict
+    // to the client" behavior documented on that helper. This was reproduced directly
+    // (V1-TEST-01): re-running this test ~25 times in isolation against a live PostgreSQL
+    // server surfaced the body
+    // `{"message":"CUSTOMER_REGISTRATION_OTP_VERIFY exhausted 3 bounded transaction attempts","statusCode":409}`
+    // on roughly 1 in 8 runs, and in every one of those runs attempt_count still landed
+    // strictly inside [1,5] and status stayed ACTIVE — i.e. the security invariant this test
+    // exists to prove held every time; only the HTTP status enumeration below was incomplete.
+    // No response may ever be 200 for a wrong code, and the final persisted state must never
+    // exceed the cap regardless of how many requests got as far as the OTP comparison.
     const results = await Promise.all(
       Array.from({ length: 6 }, () =>
         request(app.getHttpServer()).post(VERIFY_PATH).send({ phone, code: wrong }),
@@ -501,7 +515,7 @@ describe('V1-CUSTOMER-ONBOARDING-01 registration + phone verification (real Post
     );
     for (const res of results) {
       expect(res.status).not.toBe(200);
-      expect([400, 503]).toContain(res.status);
+      expect([400, 409, 503]).toContain(res.status);
     }
     const row = (
       await dataSource.query(

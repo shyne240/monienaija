@@ -410,7 +410,18 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     return dataSource.query(`SELECT status, dimension FROM limit_reservations WHERE principal_id=$1 ORDER BY reserved_at`, [principalId]);
   }
 
-  const SERIALIZATION_RETRY_CODES = new Set(['40001', '40P01']);
+  // V1-TEST-01: '40001'/'40P01' are the raw PostgreSQL SQLSTATE codes for a retryable
+  // serialization failure / deadlock. 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED' is the stable,
+  // documented machine code production code now throws (see
+  // AgentCashToCashService.transactionContentionExhaustedException()) once its own bounded
+  // internal retry budget (MAX_SERIALIZABLE_ATTEMPTS) is exhausted under genuinely adversarial
+  // multi-way contention for the same limit-usage row — the raw driver error must never leak
+  // to a caller, but the fact that it is safe (and expected) for a well-behaved client to retry
+  // the whole request is preserved via this code. Recognizing it here is not a loosened
+  // assertion: it keeps this harness's pre-existing behavior (transparently retry on a
+  // transient/contention outcome, then assert the final, settled business outcome strictly)
+  // intact against the now-cleaner production error shape.
+  const SERIALIZATION_RETRY_CODES = new Set(['40001', '40P01', 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED']);
 
   function isSerializationFailure(res: AttemptResult): boolean {
     return !res.ok && !!res.code && SERIALIZATION_RETRY_CODES.has(String(res.code));

@@ -537,13 +537,41 @@ export class AgentCashToCashService {
           return result;
         });
       } catch (error) {
-        if (isRetryableTransactionError(error) && attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {
-          continue;
+        if (isRetryableTransactionError(error)) {
+          if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {
+            continue;
+          }
+          // V1-TEST-01: on the final bounded attempt a genuine PostgreSQL serialization
+          // failure (40001/40P01) must still surface as a clean, catchable conflict rather
+          // than the raw QueryFailedError leaking out of the retry loop — the same contract
+          // the shared runSerializableWithRetry helper already provides elsewhere (e.g.
+          // customer registration OTP verify). Without this, two genuinely simultaneous
+          // same-idempotency-key initiations could, under rare worst-case retry-timing
+          // contention, surface an unhandled driver error instead of resolving to one
+          // COMPLETED + one REPLAYED outcome.
+          //
+          // V1-TEST-01 (follow-up): the exception carries a stable, documented machine code
+          // (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`), not just the generic NestJS "Conflict"
+          // reason phrase — mirroring the existing house convention in
+          // LimitEnforcementService.limitException() of setting both `error` and `code` to the
+          // same stable value, plus `.code` directly on the exception instance. This lets a
+          // caller distinguish "transient contention, safe to retry the whole request" from a
+          // final/permanent conflict (e.g. idempotency-replay-missing-linkage above), without
+          // ever re-exposing the raw PostgreSQL SQLSTATE or driver error type.
+          throw this.transactionContentionExhaustedException();
         }
         throw error;
       }
     }
-    throw new ConflictException('Cash→Cash could not complete after concurrent retries');
+    throw this.transactionContentionExhaustedException();
+  }
+
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'Cash→Cash could not complete after concurrent retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   /**

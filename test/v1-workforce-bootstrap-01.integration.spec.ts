@@ -368,7 +368,14 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
 
   it('11. env template ships a VALID production policy set (validated by the real config parser)', () => {
     const env: Record<string, string> = {};
-    for (const raw of readFileSync('docs/config/v1-workforce-bootstrap.env.template', 'utf8').split('\n')) {
+    // V1-TEST-01: the "docs: reorganize V1 documentation" commit (ce6a059) moved this
+    // template from docs/config/ to docs/deployment/config/ without updating this test's
+    // hardcoded path, which left the suite failing with ENOENT — a doc-reorg path drift,
+    // not a defect in the template or the config parser it validates.
+    for (const raw of readFileSync(
+      'docs/deployment/config/v1-workforce-bootstrap.env.template',
+      'utf8',
+    ).split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
       const eq = line.indexOf('=');

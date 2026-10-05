@@ -6,6 +6,8 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import request = require('supertest');
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { AppModule } from '../src/app.module';
 import { WalletService } from '../src/wallet/wallet.service';
@@ -866,24 +868,19 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
     const latest: Array<{ name: string; timestamp: string }> = await dataSource.query(
       `SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect([
-      '1785753600066',
-      '1785753600067',
-      '1785753600068',
-      '1785753600069',
-      '1785753600070',
-      '1785753600071',
-      '1785753600072',
-      '1785753600073',
-      '1785753600074',
-      '1785753600075',
-      '1785753600076',
-      '1785753600077',
-      '1785753600078',
-    ]).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(
-      /^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078)$/,
-    );
+    // V1-TEST-01: this used to be a hardcoded whitelist of specific migration timestamps/names
+    // (066-078) and went stale every time a later migration shipped (079, 080, ...) even
+    // though nothing was actually wrong — the migration ledger was legitimately caught up to
+    // a newer HEAD than the whitelist knew about. The invariant this test actually cares about
+    // — "the ledger's newest entry is the newest migration that exists on disk, i.e. the chain
+    // is not stuck behind HEAD" — is proven directly against the filesystem instead, so it
+    // never needs editing again as new migrations are added.
+    const onDiskTimestamps = readdirSync(join(__dirname, '../src/migrations'))
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => f.split('-')[0])
+      .sort();
+    const newestOnDisk = onDiskTimestamps[onDiskTimestamps.length - 1];
+    expect(latest[0]!.timestamp).toBe(newestOnDisk);
 
     const { customerId } = await createCustomerWithPhone('8888888888');
     const wallet = await walletService.createWallet({
