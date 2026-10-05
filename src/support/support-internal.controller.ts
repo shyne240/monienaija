@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
@@ -117,13 +118,18 @@ export class SupportInternalController {
   async addMessage(
     @Param('id') id: string,
     @Body() dto: CreateSupportTicketMessageDto,
+    @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
+    @Headers('Idempotency-Key') idempotencyKeyHeader2: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
     const principal = this.requireWorkforce(req);
+    const idempotencyKey =
+      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     return this.supportService.addMessage({
       ticketId: id,
       body: dto.body,
       isInternal: dto.isInternal ?? false,
+      idempotencyKey,
       principal,
     });
   }

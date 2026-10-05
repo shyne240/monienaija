@@ -15,6 +15,7 @@ import type { A2WorkforceConfigurationV1 } from './workforce-authentication.type
 import type { AuthorizationRequest, AuthorizationPrincipal } from './authorization.types';
 import { RoutePolicyRegistry } from './route-policy-registry';
 import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
+import { SupportAuthenticationService } from '../support-authentication/support-authentication.service';
 
 interface RuntimeRequest extends AuthorizationRequest {
   method: string;
@@ -32,6 +33,7 @@ export class RuntimeAccessGuard implements CanActivate {
     private readonly workforceSessions: A2WorkforceSessionService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly workforceConfig: A2WorkforceConfigurationV1,
     private readonly agentSessionService: AgentAuthenticationSessionService,
+    private readonly supportAuthenticationService: SupportAuthenticationService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -61,6 +63,19 @@ export class RuntimeAccessGuard implements CanActivate {
         );
         return true;
       } catch (e) {
+        // V1-OPS-01: fall back to SUPPORT workforce sessions. A2 workforce identities
+        // (OPERATOR/SERVICE/PRIVILEGED) and SUPPORT identities are issued by separate
+        // services and stored in separate tables, mirroring the existing Agent-vs-Customer
+        // session split below.
+        try {
+          const supportPrincipal = await this.supportAuthenticationService.validate(token);
+          if (supportPrincipal) {
+            request.authorizationPrincipal = supportPrincipal;
+            return true;
+          }
+        } catch (inner) {
+          if (inner instanceof ForbiddenException) throw inner;
+        }
         // For workforce routes, an Agent or Customer token should be rejected as Forbidden (403) not Unauthorized (401)
         try {
           const agentValidation = await this.agentSessionService.validate({ token });
@@ -88,6 +103,10 @@ export class RuntimeAccessGuard implements CanActivate {
     }
 
     if (route.authenticationMode === 'CUSTOMER_LOGIN') {
+      return true;
+    }
+
+    if (route.authenticationMode === 'SUPPORT_LOGIN') {
       return true;
     }
 

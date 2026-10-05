@@ -23,6 +23,7 @@ import { AuthorizationService } from './authorization.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
 import { RuntimeAccessGuard } from './runtime-access.guard';
 
 @Module({
@@ -33,6 +34,10 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     forwardRef(() => CustomerAuthenticationModule),
     forwardRef(() => AgentAuthenticationModule),
     forwardRef(() => OperationsModule),
+    // V1-OPS-01: RuntimeAccessGuard also validates SUPPORT workforce bearer tokens.
+    // SupportAuthenticationModule has no dependency back on AuthorizationModule, so this
+    // edge does not need to be lazy.
+    SupportAuthenticationModule,
     TypeOrmModule.forFeature([
       PrivilegedActionApproval,
       SecurityEventHistory,

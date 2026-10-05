@@ -20,6 +20,8 @@ import { CustomerContactMethod } from '../customer/customer-contact-method.entit
 import { AgentModule } from '../agent/agent.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { SupportModule } from '../support/support.module';
+import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
+import { AdminSupportCredentialsController } from './admin-support-credentials.controller';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 
 @Module({
@@ -32,6 +34,7 @@ import { CustomerTransactionHistoryService } from '../customer-app/customer-tran
     OperationsModule,
     WalletModule,
     SupportModule,
+    SupportAuthenticationModule,
   ],
   controllers: [
     AdminAgentController,
@@ -40,6 +43,7 @@ import { CustomerTransactionHistoryService } from '../customer-app/customer-tran
     AdminAgentLifecycleController,
     AdminAgentCredentialsController,
     AdminCustomerCredentialsController,
+    AdminSupportCredentialsController,
     AdminNotificationController,
   ],
   providers: [CustomerTransactionHistoryService],

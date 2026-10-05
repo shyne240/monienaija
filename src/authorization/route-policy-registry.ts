@@ -8,7 +8,8 @@ export type RouteAuthenticationMode =
   | 'WORKFORCE_SESSION'
   | 'PROVIDER_CALLBACK'
   | 'AGENT_LOGIN'
-  | 'CUSTOMER_LOGIN';
+  | 'CUSTOMER_LOGIN'
+  | 'SUPPORT_LOGIN';
 
 export interface RoutePolicyInput {
   method: string;
@@ -400,6 +401,41 @@ export class RoutePolicyRegistry {
         },
       };
     }
+
+    // SUPPORT workforce identity provisioning (V1-OPS-01) — mirrors the Agent/Customer
+    // credential-issuance actor vocabulary exactly. SUPPORT must never be able to provision
+    // itself or another SUPPORT identity, so it is explicitly excluded here (defense in
+    // depth alongside AdminSupportCredentialsController's own check).
+    if (
+      method === 'POST' &&
+      /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'support-workforce-provisioning',
+        policy: {
+          resourceType: 'support-workforce-provisioning',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // SUPPORT workforce login (V1-OPS-01) — unauthenticated, like /agents/sessions and
+    // /customers/sessions. The Support user proves its own credential inside the handler;
+    // no bearer token exists yet.
+    if (method === 'POST' && path === '/api/v1/internal/support/workforce-sessions') {
+      return {
+        public: false,
+        authenticationMode: 'SUPPORT_LOGIN',
+        resourceType: 'support-workforce-session',
+      };
+    }
+
     if (
       path.startsWith('/api/v1/internal/admin/agents/') &&
       method === 'POST' &&

@@ -6,6 +6,7 @@ import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import type { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
 import type { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
+import type { SupportAuthenticationService } from '../src/support-authentication/support-authentication.service';
 
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000001';
 const SESSION_ID = '00000000-0000-4000-8000-000000000002';
@@ -42,6 +43,9 @@ describe('RuntimeAccessGuard', () => {
     const authorizationService = { authorize: jest.fn() };
     const workforceSessions = { validate: jest.fn() };
     const agentSessionService = { validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }) };
+    const supportAuthenticationService = {
+      validate: jest.fn().mockRejectedValue(new UnauthorizedException('Invalid support session')),
+    };
     const workforceConfig = {
       enabled: true,
       internalAudience: 'workforce-admin',
@@ -53,8 +57,16 @@ describe('RuntimeAccessGuard', () => {
       workforceSessions as unknown as A2WorkforceSessionService,
       workforceConfig,
       agentSessionService as unknown as import('../src/agent-authentication/agent-authentication-session.service').AgentAuthenticationSessionService,
+      supportAuthenticationService as unknown as SupportAuthenticationService,
     );
-    return { guard, sessionService, authorizationService, workforceSessions, agentSessionService };
+    return {
+      guard,
+      sessionService,
+      authorizationService,
+      workforceSessions,
+      agentSessionService,
+      supportAuthenticationService,
+    };
   }
 
   it('allows explicit public routes without a session', async () => {

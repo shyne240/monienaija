@@ -86,6 +86,7 @@ import { CustomerAppModule } from './customer-app/customer-app.module';
 import { CustomerFundingModule } from './customer-funding/customer-funding.module';
 import { NotificationModule } from './notification/notification.module';
 import { SupportModule } from './support/support.module';
+import { SupportAuthenticationModule } from './support-authentication/support-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -214,6 +215,7 @@ import { WalletModule } from './wallet/wallet.module';
     CustomerFundingModule,
     NotificationModule,
     SupportModule,
+    SupportAuthenticationModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })
