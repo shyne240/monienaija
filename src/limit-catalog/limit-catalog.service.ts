@@ -84,45 +84,68 @@ export class LimitCatalogService {
   async updateProfile(code: string, input: LimitProfileUpdateInput, actor: string): Promise<LimitProfileSafeProjection> {
     const normalizedCode = code.trim().toUpperCase();
     if (!PROFILE_CODE_PATTERN.test(normalizedCode)) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
-    const profile = await this.profileRepo.findOne({ where: { code: normalizedCode } as never });
-    if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
-    this.assertVersion(profile.version, input.version);
-    // validate inputs
+    // validate inputs that do not depend on the current row state
     if (input.kind !== undefined) this.assertEnum(input.kind, LimitProfileKind, 'kind');
     if (input.status !== undefined) this.assertEnum(input.status, LimitProfileStatus, 'status');
     if (input.configurationStatus !== undefined) this.assertEnum(input.configurationStatus, LimitProfileConfigurationStatus, 'configurationStatus');
     if (input.name !== undefined && (!input.name || !input.name.trim())) throw new BadRequestException('name is required');
 
-    const previous = this.profileValues(profile);
-    if (input.name !== undefined) profile.name = input.name.trim();
-    if (input.description !== undefined) profile.description = input.description?.trim() ?? null;
-    if (input.kind !== undefined) profile.kind = input.kind;
-    if (input.status !== undefined) profile.status = input.status;
-    if (input.enabled !== undefined) profile.enabled = input.enabled;
-    if (input.configurationStatus !== undefined) profile.configurationStatus = input.configurationStatus;
-    profile.updatedBy = actor;
-
+    // V1-TEST-02: a plain `this.profileRepo.findOne()` followed later by `this.profileRepo.save()`
+    // gives @VersionColumn no actual DB-level compare-and-swap — identical defect to the one
+    // V1-TEST-01 found and fixed in FeeRuleRegistryService.updateRule() (TypeORM's UPDATE
+    // builder only appends an unconditional `SET version = version + 1`; it never adds
+    // `WHERE version = :old`). Reproduced directly: two genuinely concurrent PATCH requests
+    // against the same profile from the same starting version both returned 200 (test 14,
+    // v1-limit-01-limit-catalogue.integration.spec.ts), each silently overwriting the other's
+    // fields. Fixed with the same pattern already proven in fee-rule-registry and used
+    // elsewhere in this codebase for row-level contention: `SELECT ... FOR UPDATE` inside an
+    // explicit transaction, so a second concurrent caller blocks until the first commits, then
+    // reads the POST-update version and correctly hits the existing assertVersion conflict path.
+    let saved: LimitProfile;
+    let previous: Record<string, unknown>;
     try {
-      const saved = await this.profileRepo.save(profile as never) as unknown as LimitProfile;
-      if (this.auditService) {
-        try {
-          await this.dataSource.transaction(async (m) => {
-            await this.auditService!.record(m, {
-              entityType: 'LIMIT_PROFILE',
-              entityId: saved.code as never,
-              action: 'UPDATED',
-              actor,
-              previousValues: previous,
-              newValues: this.profileValues(saved),
-            } as never);
-          });
-        } catch {}
-      }
-      return this.toProfileSafe(saved);
+      ({ saved, previous } = await this.dataSource.transaction(async (manager) => {
+        const repository = manager.getRepository(LimitProfile);
+        const profile = await repository
+          .createQueryBuilder('profile')
+          .where('profile.code = :code', { code: normalizedCode })
+          .setLock('pessimistic_write')
+          .getOne();
+        if (!profile) throw new NotFoundException(`Limit profile ${normalizedCode} not found`);
+        this.assertVersion(profile.version, input.version);
+
+        const previousValues = this.profileValues(profile);
+        if (input.name !== undefined) profile.name = input.name.trim();
+        if (input.description !== undefined) profile.description = input.description?.trim() ?? null;
+        if (input.kind !== undefined) profile.kind = input.kind;
+        if (input.status !== undefined) profile.status = input.status;
+        if (input.enabled !== undefined) profile.enabled = input.enabled;
+        if (input.configurationStatus !== undefined) profile.configurationStatus = input.configurationStatus;
+        profile.updatedBy = actor;
+
+        const savedProfile = (await repository.save(profile as never)) as unknown as LimitProfile;
+        return { saved: savedProfile, previous: previousValues };
+      }));
     } catch (e) {
       if (this.isUniqueViolation(e)) throw new ConflictException('Profile version conflict');
       throw e;
     }
+
+    if (this.auditService) {
+      try {
+        await this.dataSource.transaction(async (m) => {
+          await this.auditService!.record(m, {
+            entityType: 'LIMIT_PROFILE',
+            entityId: saved.code as never,
+            action: 'UPDATED',
+            actor,
+            previousValues: previous,
+            newValues: this.profileValues(saved),
+          } as never);
+        });
+      } catch {}
+    }
+    return this.toProfileSafe(saved);
   }
 
   async getProfile(code: string): Promise<LimitProfileSafeProjection> {
@@ -218,54 +241,73 @@ export class LimitCatalogService {
   }
 
   async updateRule(id: string, input: LimitRuleUpdateInput, actor: string): Promise<LimitRuleSafeProjection> {
-    const rule = await this.ruleRepo.findOne({ where: { id } as never });
-    if (!rule) throw new NotFoundException(`Limit rule ${id} not found`);
-    this.assertVersion((rule as unknown as LimitRule).version, input.version);
-
-    const r = rule as unknown as LimitRule;
-    if (input.product !== undefined) {
-      if (!PRODUCT_PATTERN.test(input.product.trim().toUpperCase())) throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
-      r.product = input.product.trim().toUpperCase();
+    // validate inputs that do not depend on the current row state
+    if (input.product !== undefined && !PRODUCT_PATTERN.test(input.product.trim().toUpperCase())) {
+      throw new BadRequestException('product must match ^[A-Z0-9_][A-Z0-9_.-]{1,79}$');
     }
-    if (input.direction !== undefined) r.direction = input.direction ? input.direction.trim().toUpperCase() : null;
-    if (input.channel !== undefined) r.channel = input.channel ? input.channel.trim() : null;
-    if (input.currency !== undefined) {
-      if (!CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())) throw new BadRequestException('currency must be 3-letter');
-      r.currency = input.currency.trim().toUpperCase();
+    if (input.currency !== undefined && !CURRENCY_PATTERN.test(input.currency.trim().toUpperCase())) {
+      throw new BadRequestException('currency must be 3-letter');
     }
-    if (input.dimension !== undefined) {
-      this.assertEnum(input.dimension, LimitDimension, 'dimension');
-      r.dimension = input.dimension;
-    }
-    // handle limit values — need to validate exclusive again after all changes
-    if (input.limitValueMinor !== undefined) r.limitValueMinor = input.limitValueMinor ?? null;
-    if (input.limitValueCount !== undefined) r.limitValueCount = input.limitValueCount ?? null;
-
+    if (input.dimension !== undefined) this.assertEnum(input.dimension, LimitDimension, 'dimension');
+    let parsedEffectiveFrom: Date | null | undefined;
     if (input.effectiveFrom !== undefined) {
-      const d = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
-      if (input.effectiveFrom && d && isNaN(d.getTime())) throw new BadRequestException('effectiveFrom must be valid ISO date');
-      if (d) r.effectiveFrom = d;
+      parsedEffectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : null;
+      if (input.effectiveFrom && parsedEffectiveFrom && isNaN(parsedEffectiveFrom.getTime())) {
+        throw new BadRequestException('effectiveFrom must be valid ISO date');
+      }
     }
+    let parsedEffectiveTo: Date | null | undefined;
     if (input.effectiveTo !== undefined) {
-      const d = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
-      if (input.effectiveTo && d && isNaN(d.getTime())) throw new BadRequestException('effectiveTo must be valid ISO date');
-      r.effectiveTo = d;
+      parsedEffectiveTo = input.effectiveTo ? new Date(input.effectiveTo as string) : null;
+      if (input.effectiveTo && parsedEffectiveTo && isNaN(parsedEffectiveTo.getTime())) {
+        throw new BadRequestException('effectiveTo must be valid ISO date');
+      }
     }
-    if (r.effectiveTo && r.effectiveTo <= r.effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
-    if (input.isActive !== undefined) r.isActive = input.isActive;
-    if (input.priority !== undefined) r.priority = input.priority;
-    r.updatedBy = actor;
 
-    // validate amount vs count exclusive for final state
-    this.validateDimensionValue(r.dimension, r.limitValueMinor, r.limitValueCount);
-
+    // V1-TEST-02: same findOne()-then-save() lost-update race as updateProfile() above (and the
+    // defect V1-TEST-01 fixed in FeeRuleRegistryService.updateRule()) — reproduced directly via
+    // two genuinely concurrent PATCH requests both returning 200 (test 15,
+    // v1-limit-01-limit-catalogue.integration.spec.ts). Fixed the same way: `SELECT ... FOR
+    // UPDATE` inside an explicit transaction so the loser blocks, re-reads the post-commit
+    // version, and correctly hits assertVersion's existing conflict path.
+    let saved: LimitRule;
     try {
-      const saved = await this.ruleRepo.save(r as never) as unknown as LimitRule;
-      return this.toRuleSafe(saved);
+      saved = await this.dataSource.transaction(async (manager) => {
+        const repository = manager.getRepository(LimitRule);
+        const r = await repository
+          .createQueryBuilder('rule')
+          .where('rule.id = :id', { id })
+          .setLock('pessimistic_write')
+          .getOne();
+        if (!r) throw new NotFoundException(`Limit rule ${id} not found`);
+        this.assertVersion(r.version, input.version);
+
+        if (input.product !== undefined) r.product = input.product.trim().toUpperCase();
+        if (input.direction !== undefined) r.direction = input.direction ? input.direction.trim().toUpperCase() : null;
+        if (input.channel !== undefined) r.channel = input.channel ? input.channel.trim() : null;
+        if (input.currency !== undefined) r.currency = input.currency.trim().toUpperCase();
+        if (input.dimension !== undefined) r.dimension = input.dimension;
+        // handle limit values — need to validate exclusive again after all changes
+        if (input.limitValueMinor !== undefined) r.limitValueMinor = input.limitValueMinor ?? null;
+        if (input.limitValueCount !== undefined) r.limitValueCount = input.limitValueCount ?? null;
+
+        if (parsedEffectiveFrom !== undefined && parsedEffectiveFrom) r.effectiveFrom = parsedEffectiveFrom;
+        if (parsedEffectiveTo !== undefined) r.effectiveTo = parsedEffectiveTo;
+        if (r.effectiveTo && r.effectiveTo <= r.effectiveFrom) throw new BadRequestException('effectiveTo must be after effectiveFrom');
+        if (input.isActive !== undefined) r.isActive = input.isActive;
+        if (input.priority !== undefined) r.priority = input.priority;
+        r.updatedBy = actor;
+
+        // validate amount vs count exclusive for final state
+        this.validateDimensionValue(r.dimension, r.limitValueMinor, r.limitValueCount);
+
+        return (await repository.save(r as never)) as unknown as LimitRule;
+      });
     } catch (e) {
       if (this.isUniqueViolation(e)) throw new ConflictException('Limit rule unique constraint violation');
       throw e;
     }
+    return this.toRuleSafe(saved);
   }
 
   async getRule(id: string): Promise<LimitRuleSafeProjection> {

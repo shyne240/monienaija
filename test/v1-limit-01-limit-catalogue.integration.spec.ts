@@ -502,4 +502,87 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(mig).not.toContain('TIER_1');
     expect(mig).not.toContain('INSERT INTO limit_profiles');
   });
+
+  // V1-TEST-02: test 9 above only proves *sequential* stale-version rejection (write v1→v2,
+  // then retry with the now-stale v1 → 409). That passes even under the exact defective
+  // pattern V1-TEST-01 found and fixed in FeeRuleRegistryService.updateRule() — a plain
+  // `findOne()` + mutate + `repo.save()` with no DB-level compare-and-swap — because a
+  // sequential retry re-reads nothing; the in-memory `assertVersion()` pre-check alone catches
+  // it. It does NOT prove safety under two callers that both read the SAME starting version
+  // concurrently and race to write. These two tests close that gap directly, firing two
+  // genuinely-concurrent PATCH requests (Promise.all, no await between them) against the same
+  // row from the same starting version, mirroring the exact methodology that caught the
+  // original fee-rule-registry lost-update race (v1-commercial-03-fee-rule-schema test 08) and
+  // the sibling commission-rule-registry / reward-rule-registry "concurrent updates race
+  // optimistic versions" tests that already prove those two services are safe.
+  it('14. concurrent PROFILE updates from the same version: exactly one must be rejected, not both applied', async () => {
+    await createProfile('RACE_PROFILE');
+    const r1 = request(app.getHttpServer())
+      .patch('/api/v1/internal/limit-profiles/RACE_PROFILE')
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, name: 'Renamed by writer A', status: 'DISABLED' });
+    const r2 = request(app.getHttpServer())
+      .patch('/api/v1/internal/limit-profiles/RACE_PROFILE')
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, name: 'Renamed by writer B', enabled: false });
+    const [res1, res2] = await Promise.all([r1, r2]);
+    const statuses = [res1.status, res2.status].sort();
+    const succeeded = [res1, res2].filter((r) => r.status === 200);
+    const rejected = [res1, res2].filter((r) => r.status !== 200);
+    // SAFE outcome: exactly one of the two concurrent writers wins; the other is rejected with
+    // a clean, stable 409 — never both silently applied (VULNERABLE: both 200, one clobbers
+    // the other with no trace it happened).
+    expect(succeeded.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    expect(rejected[0]!.status).toBe(409);
+    // the rejected response must be the established clean application error shape — never a
+    // raw QueryFailedError / PostgreSQL SQLSTATE / stack trace.
+    expect(rejected[0]!.body).toHaveProperty('message');
+    expect(JSON.stringify(rejected[0]!.body)).not.toMatch(/QueryFailedError|duplicate key value|SQLSTATE|at \w+\.\w+ \(/);
+    expect(statuses).toEqual([200, 409]);
+    // Final persisted state must be internally consistent with exactly the winner's write —
+    // not a hybrid of both writers' fields (which would indicate a partial/lost update) and
+    // the version must have advanced by exactly one from the shared starting version.
+    const finalRow: Array<{ name: string; status: string; enabled: boolean; version: number }> = await dataSource.query(
+      `SELECT name, status, enabled, version FROM limit_profiles WHERE code = 'RACE_PROFILE'`,
+    );
+    expect(finalRow).toHaveLength(1);
+    expect(finalRow[0]!.version).toBe(2);
+    const winnerBody = succeeded[0]!.body;
+    expect(finalRow[0]!.name).toBe(winnerBody.name);
+  });
+
+  it('15. concurrent RULE updates from the same version: exactly one must be rejected, not both applied', async () => {
+    await createProfile('RACE_RULE_PROFILE');
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/internal/limit-profiles/RACE_RULE_PROFILE/rules')
+      .set('Authorization', auth('OPERATOR'))
+      .send({ product: 'WALLET_TRANSFER', currency: 'NGN', dimension: 'DAILY_AMOUNT', limitValueMinor: '100000', effectiveFrom: '2026-01-10T00:00:00.000Z' });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    expect(created.body.version).toBe(1);
+
+    const r1 = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-rules/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, limitValueMinor: '200000' });
+    const r2 = request(app.getHttpServer())
+      .patch(`/api/v1/internal/limit-rules/${id}`)
+      .set('Authorization', auth('OPERATOR'))
+      .send({ version: 1, limitValueMinor: '300000' });
+    const [res1, res2] = await Promise.all([r1, r2]);
+    const succeeded = [res1, res2].filter((r) => r.status === 200);
+    const rejected = [res1, res2].filter((r) => r.status !== 200);
+    expect(succeeded.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    expect(rejected[0]!.status).toBe(409);
+    expect(JSON.stringify(rejected[0]!.body)).not.toMatch(/QueryFailedError|duplicate key value|SQLSTATE|at \w+\.\w+ \(/);
+    const finalRow: Array<{ limit_value_minor: string; version: number }> = await dataSource.query(
+      `SELECT limit_value_minor, version FROM limit_rules WHERE id = $1`,
+      [id],
+    );
+    expect(finalRow).toHaveLength(1);
+    expect(finalRow[0]!.version).toBe(2);
+    expect(finalRow[0]!.limit_value_minor).toBe(succeeded[0]!.body.limitValueMinor);
+  });
 });
