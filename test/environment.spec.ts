@@ -40,4 +40,41 @@ describe('validateEnvironment', () => {
       validateEnvironment({ ...validEnvironment, OUTBOX_RETRY_DELAY_SECONDS: '0' }),
     ).toThrow('Invalid environment configuration');
   });
+
+  // V1-RELEASE-01: the 'console' SMS provider never delivers real SMS and logs live OTP
+  // codes to stdout; a production deployment must not be able to fall into it silently.
+  it('rejects a production environment that has not explicitly selected a real SMS provider', () => {
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, NODE_ENV: 'production' }),
+    ).toThrow('Invalid environment configuration');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        NOTIFICATION_SMS_PROVIDER: 'console',
+      }),
+    ).toThrow('Invalid environment configuration');
+  });
+
+  it('accepts a production environment that has explicitly selected the real SMS provider with credentials', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        NOTIFICATION_SMS_PROVIDER: 'robase',
+        ROBASE_API_KEY: `robe_${'a'.repeat(60)}`,
+      }),
+    ).toMatchObject({ NODE_ENV: 'production', NOTIFICATION_SMS_PROVIDER: 'robase' });
+  });
+
+  it('keeps non-production environments defaulting to the console SMS provider unchanged', () => {
+    expect(validateEnvironment({ ...validEnvironment, NODE_ENV: 'staging' })).toMatchObject({
+      NODE_ENV: 'staging',
+      NOTIFICATION_SMS_PROVIDER: 'console',
+    });
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      NODE_ENV: 'development',
+      NOTIFICATION_SMS_PROVIDER: 'console',
+    });
+  });
 });

@@ -144,6 +144,28 @@ export const environmentSchema = z
       });
     }
 
+    // V1-RELEASE-01: a production deployment must never silently fall back to the
+    // 'console' SMS provider. 'console' only ever writes the message (including live OTP
+    // codes — see customer-registration.service.ts) to process stdout; it never reaches a
+    // real phone. Because NOTIFICATION_SMS_PROVIDER defaults to 'console' and is absent from
+    // the shipped .env.example, an operator who does not know this knob exists would deploy
+    // a production instance that accepts registrations and logs in-progress OTPs in
+    // plaintext to server logs while never actually delivering them — silently breaking the
+    // core registration/login flow for every real customer with no error anywhere. Failing
+    // configuration validation fast forces an explicit, informed choice of a real provider
+    // for the production tier specifically; development/test/staging keep defaulting to
+    // 'console' unchanged.
+    if (config.NODE_ENV === 'production' && config.NOTIFICATION_SMS_PROVIDER !== 'robase') {
+      context.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_SMS_PROVIDER'],
+        message:
+          'A production deployment must set NOTIFICATION_SMS_PROVIDER=robase (with a valid ' +
+          'ROBASE_API_KEY) — the default "console" provider never delivers real SMS and would ' +
+          'silently break OTP-gated customer flows while logging live OTP codes to server stdout.',
+      });
+    }
+
     // SMS-V1-01: when the Robase provider is selected, credentials must be present at startup.
     // Safety property: fail configuration validation fast instead of silently degrading to no delivery.
     if (config.NOTIFICATION_SMS_PROVIDER === 'robase') {
