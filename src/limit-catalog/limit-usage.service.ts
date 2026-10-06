@@ -328,14 +328,17 @@ export class LimitUsageService {
         });
         return result as { kind: 'NEW' | 'REPLAY'; reservations: LimitReservation[]; usages: LimitUsage[] };
       } catch (e) {
-        if (this.isRetryable(e) && attempt < 9) {
-          await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
-          continue;
+        if (this.isRetryable(e)) {
+          if (attempt < 9) {
+            await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
+            continue;
+          }
+          throw this.transactionContentionExhaustedException('Could not reserve limit usage after retries');
         }
         throw e;
       }
     }
-    throw new ConflictException('Could not reserve limit usage after retries');
+    throw this.transactionContentionExhaustedException('Could not reserve limit usage after retries');
   }
   // Single reservation convenience
   async reserve(input: {
@@ -424,14 +427,17 @@ export class LimitUsageService {
           return { committed: reservations.length, reservations: updated };
         });
       } catch (e) {
-        if (this.isRetryable(e) && attempt < 9) {
-          await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
-          continue;
+        if (this.isRetryable(e)) {
+          if (attempt < 9) {
+            await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
+            continue;
+          }
+          throw this.transactionContentionExhaustedException('Could not commit after retries');
         }
         throw e;
       }
     }
-    throw new ConflictException('Could not commit after retries');
+    throw this.transactionContentionExhaustedException('Could not commit after retries');
   }
 
   async release(input: LimitUsageCommitInput): Promise<{ released: number; reservations: LimitReservation[] }> {
@@ -472,14 +478,17 @@ export class LimitUsageService {
           return { released: reservations.length, reservations: updated };
         });
       } catch (e) {
-        if (this.isRetryable(e) && attempt < 9) {
-          await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
-          continue;
+        if (this.isRetryable(e)) {
+          if (attempt < 9) {
+            await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
+            continue;
+          }
+          throw this.transactionContentionExhaustedException('Could not release after retries');
         }
         throw e;
       }
     }
-    throw new ConflictException('Could not release after retries');
+    throw this.transactionContentionExhaustedException('Could not release after retries');
   }
 
   async getUsage(params: {
@@ -509,6 +518,18 @@ export class LimitUsageService {
       if (!r.dimension || !/^[A-Z0-9_]{3,40}$/.test(r.dimension.trim().toUpperCase())) throw new BadRequestException('dimension required');
       if (!WINDOWED_DIMENSIONS.has(r.dimension.trim().toUpperCase())) throw new BadRequestException(`dimension ${r.dimension} must be windowed DAILY/WEEKLY/MONTHLY/YEARLY amount/count`);
     }
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance, so a caller never has
+  // to parse a free-text message to recognize "safe to retry the whole request".
+  private transactionContentionExhaustedException(message: string): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryable(error: unknown): boolean {

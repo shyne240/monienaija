@@ -76,7 +76,21 @@ export class A2SecurityRateLimitService {
         await r.save(b);
       });
     } catch (e) {
-      if (e instanceof HttpException && e.getStatus() === 429) throw e;
+      // V1-INFRA-03 Part D: live two-real-process testing against a single shared Postgres
+      // instance showed that genuine cross-process contention on a hot bucket row — the
+      // exact traffic pattern this limiter exists to handle — exhausts the bounded
+      // SERIALIZABLE retry in `runSerializableWithRetry` far more often than single-process
+      // concurrency does (reproduced: 30-70% of 10 concurrent cross-process requests on the
+      // same bucket, vs. zero spurious failures for the same volume within one process; see
+      // test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts, which only exercises
+      // in-process concurrency and therefore could not see this). `runSerializableWithRetry`
+      // already converts that exhaustion into a `ConflictException` (409) — a correctly
+      // labelled, retryable signal. Flattening it into an opaque 503 here (as before) discarded
+      // that signal and made a transient, retry-safe condition indistinguishable from the
+      // genuinely fatal 503 thrown by `validate()` for a broken rule configuration. Pass the
+      // intentional 429 and the already-correct 409 through unchanged; only truly unexpected
+      // errors still become a 503.
+      if (e instanceof HttpException && (e.getStatus() === 429 || e.getStatus() === 409)) throw e;
       throw new ServiceUnavailableException('Security rate-limit state unavailable');
     }
   }

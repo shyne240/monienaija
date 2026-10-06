@@ -131,8 +131,11 @@ export class AgentCashToCashExpiryService {
           };
         });
       } catch (error: any) {
-        if (isRetryableTransactionError(error) && attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {
-          continue;
+        if (isRetryableTransactionError(error)) {
+          if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) {
+            continue;
+          }
+          throw new BadRequestException('Expiry sweep could not complete after retries');
         }
         throw error;
       }
@@ -199,7 +202,15 @@ export class AgentCashToCashExpiryService {
         });
         return result;
       } catch (error: any) {
-        if (isRetryableTransactionError(error) && attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) continue;
+        if (isRetryableTransactionError(error)) {
+          if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) continue;
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock still occurring. This single-transfer expiry path's
+          // own contract already treats "could not expire this attempt" as a clean `false`
+          // (caller moves on to the next candidate), so preserve that contract here instead of
+          // letting the raw QueryFailedError propagate as an unhandled 500.
+          return false;
+        }
         throw error;
       }
     }

@@ -441,11 +441,26 @@ export class AgentFundingService {
           return result;
         });
       } catch (error) {
-        if (isRetryableTransactionError(error) && attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) continue;
+        if (isRetryableTransactionError(error)) {
+          if (attempt < MAX_SERIALIZABLE_ATTEMPTS - 1) continue;
+          throw this.transactionContentionExhaustedException();
+        }
         throw error;
       }
     }
-    throw new ConflictException('Funding execution could not complete after concurrent retries');
+    throw this.transactionContentionExhaustedException();
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'Funding execution could not complete after concurrent retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   /**

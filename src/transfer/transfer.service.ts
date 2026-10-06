@@ -120,9 +120,27 @@ export class TransferService {
           return this.executeWithinTransaction(manager, normalized);
         });
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) {
-          await this.metricsService?.increment(undefined, 'retries');
-          continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) {
+            await this.metricsService?.increment(undefined, 'retries');
+            continue;
+          }
+          // V1-INFRA-03: the bounded retry budget (3 attempts, matching the A5 Ledger /
+          // V1-TEST-01 precedent) is exhausted and PostgreSQL is still reporting a genuine
+          // serialization failure or deadlock (SQLSTATE 40001/40P01). This is a real,
+          // demonstrated-live-under-concurrency outcome — not a bug to retry forever — so it
+          // must surface as the structured, retryable-by-the-client 409 Conflict below instead
+          // of re-throwing the raw QueryFailedError (which the global exception filter would
+          // otherwise turn into an opaque, non-actionable 500 Internal Server Error).
+          //
+          // V1-INFRA-03 (follow-up): the exception carries the stable, documented machine code
+          // `TRANSACTION_CONTENTION_RETRY_EXHAUSTED` — the existing house convention already
+          // established in AgentCashToCashService.transactionContentionExhaustedException() —
+          // rather than the generic NestJS "Conflict" reason phrase, so a caller (and the
+          // V1-LIMIT-05 test harness's own transient-contention retry wrapper) can distinguish
+          // "transient contention, safe to retry the whole request" from a final/permanent
+          // conflict, without ever re-exposing the raw PostgreSQL SQLSTATE or driver error type.
+          throw this.transactionContentionExhaustedException();
         }
 
         if (this.isConstraintViolation(error, 'uq_transfers_idempotency_key')) {
@@ -145,7 +163,7 @@ export class TransferService {
     }
 
     if (!result) {
-      throw new ConflictException('The transfer could not be completed after concurrent retries');
+      throw this.transactionContentionExhaustedException();
     }
 
     if (result.failure) {
@@ -884,6 +902,19 @@ export class TransferService {
       createdAt: transfer.createdAt,
       completedAt: transfer.completedAt,
     };
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance, so a caller never has
+  // to parse a free-text message to recognize "safe to retry the whole request".
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'The transfer could not be completed after concurrent retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryableTransactionError(error: unknown): boolean {

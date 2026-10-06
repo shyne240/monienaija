@@ -254,7 +254,13 @@ export class CustomerFundingService {
         });
         return view;
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) continue;
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock still occurring. Surface the structured,
+          // client-retryable conflict below instead of the raw QueryFailedError.
+          throw this.transactionContentionExhaustedException('The funding request could not be created after concurrent retries');
+        }
         if (this.isConstraintViolation(error, 'uq_customer_funding_requests_idempotency_key')) {
           // Concurrent insert race — fetch existing and compare hash
           const rows: Array<{ request_hash: string }> = await this.dataSource.query(
@@ -274,7 +280,7 @@ export class CustomerFundingService {
         throw error;
       }
     }
-    throw new ConflictException('The funding request could not be created after concurrent retries');
+    throw this.transactionContentionExhaustedException('The funding request could not be created after concurrent retries');
   }
 
   async approve(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
@@ -544,11 +550,14 @@ export class CustomerFundingService {
         });
         return view;
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) continue;
+          throw this.transactionContentionExhaustedException('The funding request could not be approved after concurrent retries');
+        }
         throw error;
       }
     }
-    throw new ConflictException('The funding request could not be approved after concurrent retries');
+    throw this.transactionContentionExhaustedException('The funding request could not be approved after concurrent retries');
   }
 
   async reject(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
@@ -625,11 +634,14 @@ export class CustomerFundingService {
         });
         return view;
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) continue;
+          throw this.transactionContentionExhaustedException('The funding request could not be rejected after concurrent retries');
+        }
         throw error;
       }
     }
-    throw new ConflictException('The funding request could not be rejected after concurrent retries');
+    throw this.transactionContentionExhaustedException('The funding request could not be rejected after concurrent retries');
   }
 
   async getById(fundingRequestId: string): Promise<CustomerFundingView> {
@@ -949,6 +961,17 @@ export class CustomerFundingService {
     if (!principal || !principal.type) throw new UnauthorizedException('Authentication required');
     if (!principal.principalId) throw new UnauthorizedException('Principal is invalid');
     return principal;
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(message: string): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryableTransactionError(error: unknown): boolean {

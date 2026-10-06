@@ -164,14 +164,32 @@ export class LimitReservationRecoveryService {
         });
       } catch (e) {
         const code = (e as { code?: string })?.code;
-        if ((code === '40001' || code === '40P01') && attempt < 4) {
-          await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
-          continue;
+        if (code === '40001' || code === '40P01') {
+          if (attempt < 4) {
+            await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
+            continue;
+          }
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock still occurring. Surface the structured,
+          // client-retryable conflict below instead of the raw QueryFailedError.
+          throw this.transactionContentionExhaustedException();
         }
         throw e;
       }
     }
-    throw new ConflictException('Manual reservation release could not be completed after retries');
+    throw this.transactionContentionExhaustedException();
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'Manual reservation release could not be completed after retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private result(
