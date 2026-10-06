@@ -5,12 +5,20 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#0A3D25"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ng.monienaija.agent"
+      "bundleIdentifier": "ng.monienaija.agent",
+      "buildNumber": "1"
     },
     "android": {
-      "package": "ng.monienaija.agent"
+      "package": "ng.monienaija.agent",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0A3D25"
+      }
     }
   }
 }
