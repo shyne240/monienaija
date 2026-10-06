@@ -8,6 +8,8 @@
 - [ ] Database credentials come from approved secret management.
 - [ ] SSL and certificate verification are enabled as required.
 - [ ] Idempotency, outbox, and shutdown durations are within approved ranges.
+- [ ] `NOTIFICATION_SMS_PROVIDER=robase` with a live `ROBASE_API_KEY` is configured (startup
+      now fails fast otherwise); a real test SMS has been received on a real handset.
 
 ## Database
 

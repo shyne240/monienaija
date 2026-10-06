@@ -19,6 +19,10 @@ Provide configuration through the approved environment/secret mechanism. Require
 - `IDEMPOTENCY_RETENTION_SECONDS`
 - `OUTBOX_RETRY_DELAY_SECONDS`
 - `SHUTDOWN_DRAIN_TIMEOUT_SECONDS`
+- `NOTIFICATION_SMS_PROVIDER=robase` plus `ROBASE_API_KEY` — a `production` `NODE_ENV` fails
+  startup validation unless this is set. The default `console` provider never delivers a
+  real SMS; it only logs the message (including live OTP codes) to process stdout, and is
+  for local development only (see `.env.example`).
 
 Never place credentials in the image, repository, command history, or logs.
 
