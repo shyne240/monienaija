@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -85,34 +85,50 @@ export class SupportAuthenticationService {
     const passwordExpiresAt = new Date(Date.now() + TEMPORARY_PASSWORD_TTL_MS);
     const now = new Date();
 
-    const row = await this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(SupportWorkforceUser);
-      const saved = await repo.save(
-        repo.create({
-          id: randomUUID(),
-          username,
-          passwordHash: hash,
-          hashAlgorithm: SupportPasswordHashAlgorithm.PBKDF2,
-          status: SupportWorkforceUserStatus.ACTIVE,
-          passwordExpiresAt,
-          createdBy: input.actor,
-          disabledBy: null,
-          disabledAt: null,
-          disableReason: null,
-          version: 1,
-          createdAt: now,
-          updatedAt: now,
-        }),
-      );
-      await this.auditService.record(manager, {
-        entityType: 'SUPPORT_WORKFORCE_USER',
-        entityId: saved.id,
-        action: 'SUPPORT_WORKFORCE_USER_PROVISIONED',
-        actor: input.actor,
-        newValues: { username, status: saved.status, passwordExpiresAt },
+    // V1-HARDEN-01: the existence pre-check above and this insert are not atomic, so two
+    // concurrent provision() calls for the same username can both pass the pre-check and
+    // race on the DB's partial unique index (uq_support_workforce_users_username_active).
+    // Without catching the resulting unique-violation here, the loser would surface as a raw,
+    // uncaught QueryFailedError — an avoidable 500 for what is really a benign duplicate-
+    // identity condition — instead of the same ConflictException the pre-check already
+    // returns for the non-racing case. This mirrors the isUniqueViolation pattern already
+    // used elsewhere in the codebase (e.g. LimitCatalogService).
+    let row: SupportWorkforceUser;
+    try {
+      row = await this.dataSource.transaction(async (manager) => {
+        const repo = manager.getRepository(SupportWorkforceUser);
+        const saved = await repo.save(
+          repo.create({
+            id: randomUUID(),
+            username,
+            passwordHash: hash,
+            hashAlgorithm: SupportPasswordHashAlgorithm.PBKDF2,
+            status: SupportWorkforceUserStatus.ACTIVE,
+            passwordExpiresAt,
+            createdBy: input.actor,
+            disabledBy: null,
+            disabledAt: null,
+            disableReason: null,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        );
+        await this.auditService.record(manager, {
+          entityType: 'SUPPORT_WORKFORCE_USER',
+          entityId: saved.id,
+          action: 'SUPPORT_WORKFORCE_USER_PROVISIONED',
+          actor: input.actor,
+          newValues: { username, status: saved.status, passwordExpiresAt },
+        });
+        return saved;
       });
-      return saved;
-    });
+    } catch (e) {
+      if (this.isUniqueViolation(e)) {
+        throw new ConflictException(`Support user '${username}' already exists`);
+      }
+      throw e;
+    }
 
     return { user: this.toUserView(row), temporaryPassword: plaintext, passwordExpiresAt };
   }
@@ -219,9 +235,41 @@ export class SupportAuthenticationService {
     }
 
     if (!row || !verified || row.status !== SupportWorkforceUserStatus.ACTIVE) {
+      // V1-HARDEN-01: audit every failed login attempt against a KNOWN account, mirroring the
+      // existing CustomerAuthenticationService/AgentAuthenticationService convention
+      // (FAILED_AUTHENTICATION_RECORDED). Reuses the existing AuditService — no new audit
+      // mechanism is introduced. An unknown username is intentionally NOT audited here: there
+      // is no real support_workforce_users row to attach the (NOT NULL) entityId to, and
+      // Customer/Agent follow the identical "known-identity-only" convention for the same
+      // reason (see authentication-execution.service.ts / agent-authentication-execution
+      // .service.ts). This does not weaken enumeration resistance beyond what already exists
+      // for Customer/Agent: the HTTP response and its timing profile are unaffected by this
+      // forensic, server-side-only audit write.
+      if (row) {
+        await this.auditService.record(this.dataSource.manager, {
+          entityType: 'SUPPORT_WORKFORCE_USER',
+          entityId: row.id,
+          action: 'SUPPORT_WORKFORCE_LOGIN_FAILED',
+          actor: row.username,
+          newValues: {
+            reason: !verified
+              ? 'INVALID_CREDENTIALS'
+              : row.status !== SupportWorkforceUserStatus.ACTIVE
+                ? `ACCOUNT_STATUS_${row.status}`
+                : 'UNKNOWN',
+          },
+        });
+      }
       throw new UnauthorizedException('Invalid support credentials');
     }
     if (row.passwordExpiresAt && row.passwordExpiresAt.getTime() <= now.getTime()) {
+      await this.auditService.record(this.dataSource.manager, {
+        entityType: 'SUPPORT_WORKFORCE_USER',
+        entityId: row.id,
+        action: 'SUPPORT_WORKFORCE_LOGIN_FAILED',
+        actor: row.username,
+        newValues: { reason: 'CREDENTIAL_EXPIRED' },
+      });
       throw new UnauthorizedException('Support credential has expired — contact an administrator');
     }
 
@@ -370,6 +418,10 @@ export class SupportAuthenticationService {
     if (salt.length === 0 || expected.length === 0) return false;
     const derived = pbkdf2Sync(password, salt, iterations, expected.length, 'sha256');
     return derived.length === expected.length && timingSafeEqual(derived, expected);
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
   }
 
   private toUserView(row: SupportWorkforceUser): SupportWorkforceUserView {

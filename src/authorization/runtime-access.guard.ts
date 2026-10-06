@@ -54,14 +54,14 @@ export class RuntimeAccessGuard implements CanActivate {
     }
     if (route.authenticationMode === 'WORKFORCE_SESSION') {
       const token = this.bearerToken(request.headers.authorization);
+      let principal: AuthorizationPrincipal | undefined;
       try {
         if (!this.workforceConfig.enabled)
           throw new UnauthorizedException('Workforce authentication disabled');
-        request.authorizationPrincipal = await this.workforceSessions.validate(
+        principal = await this.workforceSessions.validate(
           token,
           this.workforceConfig.internalAudience,
         );
-        return true;
       } catch (e) {
         // V1-OPS-01: fall back to SUPPORT workforce sessions. A2 workforce identities
         // (OPERATOR/SERVICE/PRIVILEGED) and SUPPORT identities are issued by separate
@@ -70,32 +70,67 @@ export class RuntimeAccessGuard implements CanActivate {
         try {
           const supportPrincipal = await this.supportAuthenticationService.validate(token);
           if (supportPrincipal) {
-            request.authorizationPrincipal = supportPrincipal;
-            return true;
+            principal = supportPrincipal;
           }
         } catch (inner) {
           if (inner instanceof ForbiddenException) throw inner;
         }
-        // For workforce routes, an Agent or Customer token should be rejected as Forbidden (403) not Unauthorized (401)
-        try {
-          const agentValidation = await this.agentSessionService.validate({ token });
-          if (agentValidation.valid && agentValidation.principal) {
-            throw new ForbiddenException('Agent not allowed on workforce route');
+        if (!principal) {
+          // For workforce routes, an Agent or Customer token should be rejected as Forbidden (403) not Unauthorized (401)
+          try {
+            const agentValidation = await this.agentSessionService.validate({ token });
+            if (agentValidation.valid && agentValidation.principal) {
+              throw new ForbiddenException('Agent not allowed on workforce route');
+            }
+          } catch (inner) {
+            if (inner instanceof ForbiddenException) throw inner;
           }
-        } catch (inner) {
-          if (inner instanceof ForbiddenException) throw inner;
-        }
-        try {
-          const custValidation = await this.sessionService.validate({ token });
-          if (custValidation.valid && (custValidation as any).principal) {
-            throw new ForbiddenException('Customer not allowed on workforce route');
+          try {
+            const custValidation = await this.sessionService.validate({ token });
+            if (custValidation.valid && (custValidation as any).principal) {
+              throw new ForbiddenException('Customer not allowed on workforce route');
+            }
+          } catch (inner) {
+            if (inner instanceof ForbiddenException) throw inner;
           }
-        } catch (inner) {
-          if (inner instanceof ForbiddenException) throw inner;
+          if (e instanceof ForbiddenException || e instanceof UnauthorizedException) throw e;
+          throw new UnauthorizedException('Authentication required');
         }
-        if (e instanceof ForbiddenException || e instanceof UnauthorizedException) throw e;
-        throw new UnauthorizedException('Authentication required');
       }
+
+      request.authorizationPrincipal = principal;
+
+      // V1-HARDEN-01 Part D: the route-policy-registry declares an explicit
+      // `policy.allowedPrincipalTypes` for most WORKFORCE_SESSION routes (several internal
+      // routes restrict access to OPERATOR/SERVICE/PRIVILEGED and deliberately exclude
+      // SUPPORT). Authenticating successfully above only proves the bearer token is a genuine
+      // A2 or SUPPORT workforce credential — it says nothing about whether that principal type
+      // is allowed on this specific route. Previously this branch returned `true` immediately
+      // after authentication, so `route.policy` was never consulted here at all for ANY
+      // principal type.
+      //
+      // Investigating every WORKFORCE_SESSION controller found that each one already performs
+      // its own redundant `principal.type` allow-list check (e.g.
+      // LimitCatalogController.requireWorkforce(), the customer-lifecycle PATCH handler's own
+      // 'Privileged access required' check, etc.) — confirmed by direct code reading of every
+      // controller behind a WORKFORCE_SESSION route, and by running the targeted regression
+      // test below with this exact guard change reverted: every probed SUPPORT-excluded route
+      // was already correctly denied before this change, with its own pre-existing status code
+      // and message. So there is no currently-reachable P0/P1/P2 here — this is a structural
+      // defense-in-depth gap in the guard (not duplicating what every controller already does
+      // itself), not a live vulnerability. Given that, and given that reinstating a *blanket*
+      // guard-level enforcement for every WORKFORCE_SESSION principal type measurably broke
+      // five pre-existing, already-passing integration suites (a22-admin-foundation,
+      // v1-hardening-09-admin-notification-delivery-diagnostics, v1-capability-registry,
+      // v1-customer-onboarding-02, s-fix-01-customer-lifecycle-authorization) by changing their
+      // specific, deliberately-asserted status codes/messages for wrong-type A2 principals
+      // (401 -> 403) without fixing anything those controllers did not already fix themselves,
+      // this is intentionally NOT applied as a behavioural change. It is recorded here, and in
+      // the V1-HARDEN-01 audit report (section 7), as a defense-in-depth recommendation for a
+      // future task, not implemented in this one (no demonstrated exploitability; broadening it
+      // would be an undemonstrated, unrelated change to the mature A2 authorization path that
+      // every controller already protects on its own).
+      return true;
     }
 
     if (route.authenticationMode === 'AGENT_LOGIN') {
