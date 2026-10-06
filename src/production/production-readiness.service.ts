@@ -3,8 +3,15 @@ import { DataSource } from 'typeorm';
 
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600079';
-const EXPECTED_MIGRATION_NAME = 'AddCustomerCredentialRotation1785753600079';
+// V1-RELEASE-01: this marker must always equal the newest file in src/migrations/*.ts.
+// It previously drifted twice (stayed at 1785753600079 while migrations 080 and 081 were
+// added), which made a freshly and fully migrated production database fail this service's
+// own compatibility check and refuse to start (schema_incompatible). See
+// test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
+// full migration chain against real PostgreSQL and fails the build if this constant and the
+// actual latest migration file ever diverge again.
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600081';
+const EXPECTED_MIGRATION_NAME = 'CreateSupportWorkforceAuthentication1785753600081';
 
 type Row = Record<string, unknown>;
 

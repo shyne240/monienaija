@@ -116,7 +116,14 @@ export class A2WorkforceSessionService {
     await r.save(s);
   }
   private async resolve(principalId: string, now: Date) {
-    if (process.env.NODE_ENV !== 'production' && principalId.includes('mock-sandbox-subject')) {
+    // V1-RELEASE-01: narrowed from `NODE_ENV !== 'production'` to an explicit
+    // development/test allowlist for the same reason documented in
+    // A2WorkforceOidcService.validate() — `staging` must never grant this. This must stay
+    // in lockstep with the gate in workforce-oidc.service.ts (the only caller that can ever
+    // produce a `mock-sandbox-subject` principalId).
+    const sandboxBypassAllowed =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    if (sandboxBypassAllowed && principalId.includes('mock-sandbox-subject')) {
       const defs = this.config.roles.filter((r) => r.enabled);
       return {
         roles: defs.map((r) => r.roleKey).sort(),
