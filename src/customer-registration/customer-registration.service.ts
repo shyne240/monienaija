@@ -24,6 +24,7 @@ import { ConsoleNotificationProvider } from '../notification/notification-provid
 import type { NotificationProvider } from '../notification/notification.types';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
+import { IdempotencyRecord } from '../operations/idempotency-record.entity';
 import { ContactMethodType, CustomerStatus, CustomerType, CustomerKycLevel, CustomerKycStatus } from '../customer/customer.enums';
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
@@ -630,7 +631,7 @@ export class CustomerRegistrationService {
       if (idempotencyKey && this.idempotencyService) {
         // Complete the reservation
         const existingRecord = await manager
-          .getRepository(IdempotencyService)
+          .getRepository(IdempotencyRecord)
           .createQueryBuilder('rec')
           .where('rec.scope = :s AND rec.idempotency_key = :k', {
             s: 'CUSTOMER_REGISTRATION',
