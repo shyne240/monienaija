@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { ApiClient } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
+import { clearPendingTransferIntent } from '../services/pending-transfer';
 
 export interface UserSession {
   accessToken: string;
@@ -120,6 +121,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       await SecureStorage.remove('auth_session_token');
       await SecureStorage.remove('auth_customer_id');
       await SecureStorage.remove('auth_session_data');
+      // V1-MOBILE-IDEMPOTENCY-RECOVERY-01 — a pending Wallet→Wallet recovery intent is stored
+      // under a per-customerId key, but it must not be left dangling on a shared/reused device
+      // after this customer logs out either.
+      // Read BEFORE the `set({ customerId: null, ... })` below clears it.
+      const loggedOutCustomerId = useAuthStore.getState().customerId;
+      if (loggedOutCustomerId) {
+        await clearPendingTransferIntent(loggedOutCustomerId).catch(() => undefined);
+      }
 
       set({
         isAuthenticated: false,
