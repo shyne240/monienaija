@@ -9,7 +9,7 @@ interface LoadingStateProps {
 }
 
 export const LoadingState: React.FC<LoadingStateProps> = ({
-  message = 'Loading MoneyNaija...',
+  message = 'Loading MonieNaija...',
   testID,
 }) => {
   return (

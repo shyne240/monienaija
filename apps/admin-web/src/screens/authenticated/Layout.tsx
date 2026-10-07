@@ -24,7 +24,7 @@ export const Layout: React.FC = () => {
       <div style={styles.sidebar}>
         <div style={styles.branding}>
           <span style={styles.brandIcon}>₦</span>
-          <span style={styles.brandText}>MoneyNaija</span>
+          <span style={styles.brandText}>MonieNaija</span>
         </div>
 
         <div style={styles.userInfo}>
@@ -134,7 +134,7 @@ const styles = {
   },
   sidebar: {
     width: '280px',
-    backgroundColor: '#032B14', // MoneyNaija brand deep green
+    backgroundColor: '#032B14', // MonieNaija brand deep green
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -151,7 +151,7 @@ const styles = {
     fontSize: '22px',
     fontWeight: 'bold',
     color: '#0A3D25',
-    backgroundColor: '#FFB703', // MoneyNaija brand gold
+    backgroundColor: '#FFB703', // MonieNaija brand gold
     width: '36px',
     height: '36px',
     borderRadius: '18px',

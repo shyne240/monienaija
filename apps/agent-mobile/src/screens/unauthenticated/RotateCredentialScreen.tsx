@@ -67,7 +67,7 @@ export const RotateCredentialScreen: React.FC = () => {
 
         <Card variant="flat" style={styles.infoBanner} testID="rotation-security-note">
           <Text style={styles.infoText}>
-            For your security: never share your password. MoneyNaija staff will never ask for it.
+            For your security: never share your password. MonieNaija staff will never ask for it.
           </Text>
         </Card>
 

@@ -1,5 +1,5 @@
 /**
- * MoneyNaija Mobile Application Configuration
+ * MonieNaija Mobile Application Configuration
  */
 
 // V1-RELEASE-01: this previously had no environment switching at all — the API base URL

@@ -68,7 +68,7 @@ describe('Shared Agent receipt renderer', () => {
     const receipt = receiptFromCashInResult(completedResult, 'Ada Nnaji');
     const { getByTestId, getByText, queryByText } = render(<AgentReceipt receipt={receipt} />);
 
-    expect(getByText('MoneyNaija Agent')).toBeTruthy();
+    expect(getByText('MonieNaija Agent')).toBeTruthy();
     expect(getByTestId('receipt-heading').props.children).toBe('Cash→Wallet Receipt');
     expect(getByTestId('receipt-status').props.children).toBe('COMPLETED');
     expect(getByText('₦2,500.00 NGN')).toBeTruthy();
@@ -84,7 +84,7 @@ describe('Shared Agent receipt renderer', () => {
     const receipt = receiptFromCashToCashResult(completedCashToCashResult);
     const { getByTestId, getByText, queryByText } = render(<AgentReceipt receipt={receipt} />);
 
-    expect(getByText('MoneyNaija Agent')).toBeTruthy();
+    expect(getByText('MonieNaija Agent')).toBeTruthy();
     expect(getByTestId('receipt-heading').props.children).toBe('Cash→Cash Receipt');
     expect(getByTestId('receipt-status').props.children).toBe('COMPLETED');
     expect(getByText('₦5,000.00 NGN')).toBeTruthy();
@@ -166,7 +166,7 @@ describe('Shared Agent receipt renderer', () => {
     fireEvent.press(getByTestId('receipt-share'));
     await waitFor(() => expect(shareSpy).toHaveBeenCalled());
     const payload = shareSpy.mock.calls[0]?.[0] as { message: string };
-    expect(payload.message).toContain('MoneyNaija — Agent Receipt');
+    expect(payload.message).toContain('MonieNaija — Agent Receipt');
     expect(payload.message).toContain('Status: COMPLETED');
     expectSecretFree(payload.message);
     shareSpy.mockRestore();

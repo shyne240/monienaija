@@ -239,7 +239,7 @@ export const RegistrationScreen: React.FC = () => {
           <Text style={styles.successIcon}>🎉</Text>
           <Text style={styles.successTitle}>Account Created Successfully!</Text>
           <Text style={styles.successDescription}>
-            Your MoneyNaija account has been created and your phone number verified.
+            Your MonieNaija account has been created and your phone number verified.
             {registeredUser.wallet
               ? ' Your NGN wallet is ready.'
               : ' Log in to finish setting up your account.'}

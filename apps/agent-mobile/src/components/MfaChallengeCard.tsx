@@ -159,7 +159,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
           </Text>
           <Text style={styles.bodySmall}>
             Ask the customer to read you the code. The code goes only to the customer's phone —
-            MoneyNaija staff will never ask you for it.
+            MonieNaija staff will never ask you for it.
           </Text>
           {challengeState === 'ready' && (
             <Button

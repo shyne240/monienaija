@@ -80,7 +80,7 @@ export const CashToWalletAmountScreen: React.FC = () => {
         </Card>
 
         <Text style={styles.footerNote}>
-          The physical cash remains outside the electronic ledger — MoneyNaija records only the
+          The physical cash remains outside the electronic ledger — MonieNaija records only the
           electronic credit. Fees, limits and authorization are decided by the server.
         </Text>
       </ScrollView>

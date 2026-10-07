@@ -1,5 +1,5 @@
 /**
- * MoneyNaija Agent Mobile — application configuration.
+ * MonieNaija Agent Mobile — application configuration.
  *
  * AUTH MODEL — FAIL CLOSED (spec V1-AGENT-MOBILE-APPLICATION-SPEC-01 §4/§10):
  * There is deliberately NO development authentication mock in this application

@@ -55,9 +55,9 @@ export const LoginScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Text style={styles.brand}>MoneyNaija Agent</Text>
+          <Text style={styles.brand}>MonieNaija Agent</Text>
           <Text style={styles.subtitle}>
-            Sign in with the Agent ID and password issued to your outlet by MoneyNaija.
+            Sign in with the Agent ID and password issued to your outlet by MonieNaija.
           </Text>
         </View>
 

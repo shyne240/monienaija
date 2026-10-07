@@ -74,7 +74,7 @@ export function receiptFromCashInResult(
 
   const note = replayed
     ? 'Idempotent replay — this matched an earlier successful submission; a new credit was NOT created.'
-    : 'The server has credited the recipient wallet. Keep physical cash receipts per MoneyNaija policy.';
+    : 'The server has credited the recipient wallet. Keep physical cash receipts per MonieNaija policy.';
 
   return {
     heading: 'Cash→Wallet Receipt',
@@ -269,7 +269,7 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
   } else if (item.counterparty?.type === 'AGGREGATOR') {
     lines.push({ label: 'Counterparty', value: 'Aggregator' });
   } else if (item.counterparty?.type === 'WORKFORCE') {
-    lines.push({ label: 'Counterparty', value: 'MoneyNaija Workforce' });
+    lines.push({ label: 'Counterparty', value: 'MonieNaija Workforce' });
   }
   if (item.reference) {
     lines.push({ label: 'Reference', value: item.reference, selectable: true });
@@ -304,7 +304,7 @@ function buildShareText(
   note?: string,
 ): string {
   const parts = [
-    `MoneyNaija — Agent Receipt`,
+    `MonieNaija — Agent Receipt`,
     heading,
     `Status: ${status}`,
     ...lines.map((l) => `${l.label}: ${l.value}`),
@@ -332,7 +332,7 @@ export const AgentReceipt: React.FC<AgentReceiptProps> = ({
   return (
     <View testID={testID ?? 'agent-receipt'}>
       <Card style={styles.card}>
-        <Text style={styles.brand}>MoneyNaija Agent</Text>
+        <Text style={styles.brand}>MonieNaija Agent</Text>
         <Text style={styles.heading} testID="receipt-heading">
           {receipt.heading}
         </Text>

@@ -60,7 +60,7 @@ export const LoginScreen: React.FC = () => {
       <div style={styles.card}>
         <div style={styles.logoSection}>
           <span style={styles.logoIcon}>₦</span>
-          <h1 style={styles.logoText}>MoneyNaija</h1>
+          <h1 style={styles.logoText}>MonieNaija</h1>
           <p style={styles.logoTag}>Operational & Business Administration</p>
         </div>
 

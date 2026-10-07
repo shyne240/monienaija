@@ -30,7 +30,7 @@ function counterpartyLabel(item: AgentHistoryItem): string | null {
     return cp.beneficiaryPhone ? `Customer · beneficiary ${cp.beneficiaryPhone}` : 'Customer wallet';
   }
   if (cp.type === 'AGGREGATOR') return 'Aggregator';
-  if (cp.type === 'WORKFORCE') return 'MoneyNaija Workforce';
+  if (cp.type === 'WORKFORCE') return 'MonieNaija Workforce';
   return null;
 }
 

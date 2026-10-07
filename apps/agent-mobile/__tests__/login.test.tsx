@@ -21,7 +21,7 @@ describe('LoginScreen', () => {
     const { getByTestId, getByText } = render(<LoginScreen />);
     expect(getByTestId('agent-id-input')).toBeTruthy();
     expect(getByTestId('password-input')).toBeTruthy();
-    expect(getByText('MoneyNaija Agent')).toBeTruthy();
+    expect(getByText('MonieNaija Agent')).toBeTruthy();
   });
 
   test('validates required fields', () => {
