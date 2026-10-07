@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "ts:check": "tsc",
-    "test": "jest --watchAll=false"
+    "test": "jest --watchAll=false --runInBand"
   },
   "dependencies": {
     "@react-navigation/native": "^6.1.18",

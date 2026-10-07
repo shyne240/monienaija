@@ -31,7 +31,8 @@
  * all-failures-reported-together behaviour of a single `jest` invocation. The process exits
  * non-zero if any batch failed.
  *
- * Concurrency (PG_TEST_CONCURRENCY, default 1 — sequential):
+ * Concurrency (PG_TEST_CONCURRENCY, default 2 — see measurements below; set to 1 to fall back
+ * to the original fully-sequential behaviour):
  * Each batch is a fully independent Jest process with its own pid-scoped migration template
  * (see migrationTemplateDatabaseName() in test/support/pg-harness.ts) and every suite already
  * gets its own dedicated, uniquely-named database — so running more than one batch's process
@@ -47,12 +48,29 @@
  * more cores (a typical CI runner), the same isolation would be expected to scale better,
  * since the bottleneck here is core count, not a correctness constraint.
  *
- * Default stays 1 (fully sequential) because that is the configuration actually validated
- * end-to-end across all 89 files in this repo (clean, zero-crash, full pass). Set
- * PG_TEST_CONCURRENCY=2 (or higher, headroom permitting) to opt into running that many
- * batches' OS processes at once — raise PG_TEST_MAX_OLD_SPACE_MB down accordingly (e.g. 1536)
- * if doing so, since N concurrent processes each cap at MAX_OLD_SPACE_MB and must jointly fit
- * in available RAM.
+ * Default is 2 (V1-TEST-PERFORMANCE-01, this repo's 2-vCPU sandbox). Measured directly,
+ * repeated twice for determinism: full 92-file suite at concurrency=1 took 902s (15.03min,
+ * 1690/1690 tests passing); at concurrency=2 it took 513s and 477s on two separate runs
+ * (8.55min and 7.95min, both 1690/1690 passing, zero flakiness, zero orphaned databases) — a
+ * real ~43-47% wall-clock reduction for matching this sandbox's actual core count (2), not an
+ * arbitrary oversubscription. Peak resident memory during concurrency=2 runs was observed at
+ * ~3.2-3.7GB out of 3.8GB total (tight but stable, no swap, no crash, across both runs).
+ *
+ * concurrency=4 was separately experimented with (a bounded 11-file / 4-batch subset, not the
+ * full suite, specifically to bound the blast radius of the experiment) and reliably drove
+ * memory to exhaustion (<150MB available, no forward progress for 25+ seconds) before being
+ * deliberately killed — consistent with an identical finding for the root unit suite's Jest
+ * workers at maxWorkers=4 on this same hardware. Do not raise PG_TEST_CONCURRENCY above 2 on a
+ * sandbox/CI runner with less than ~8GB RAM; on a machine with more cores AND more memory
+ * headroom, a higher value may be safe but has not been validated here and must be
+ * independently re-measured, not assumed.
+ *
+ * PG_TEST_MAX_OLD_SPACE_MB is left unchanged (3072, same as the prior concurrency=1 default)
+ * when raising PG_TEST_CONCURRENCY — both concurrency=2 validation runs above used exactly this
+ * ceiling and passed cleanly. The resident-memory pressure seen in the concurrency=4 experiment
+ * was real OS-level memory exhaustion, not a configured per-process heap ceiling being hit, so
+ * lowering this value would not have prevented it and is not a substitute for choosing a safe
+ * PG_TEST_CONCURRENCY.
  */
 
 const { spawn } = require('node:child_process');
@@ -63,8 +81,11 @@ const ROOT = path.resolve(__dirname, '..');
 const JEST_BIN = path.join(ROOT, 'node_modules', 'jest', 'bin', 'jest.js');
 const CONFIG = path.join(ROOT, 'jest.integration.config.js');
 const BATCH_SIZE = Number(process.env.PG_TEST_BATCH_SIZE ?? 15);
+// Unchanged from the prior (concurrency=1) default: this exact 3072MB ceiling is what both
+// concurrency=2 validation runs actually used, so it is not re-tuned alongside the concurrency
+// change below without first re-measuring (see module doc above).
 const MAX_OLD_SPACE_MB = Number(process.env.PG_TEST_MAX_OLD_SPACE_MB ?? 3072);
-const CONCURRENCY = Math.max(1, Number(process.env.PG_TEST_CONCURRENCY ?? 1));
+const CONCURRENCY = Math.max(1, Number(process.env.PG_TEST_CONCURRENCY ?? 2));
 
 function listTestFiles() {
   const result = spawnSync(
