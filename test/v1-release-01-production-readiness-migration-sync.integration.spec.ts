@@ -5,7 +5,10 @@ import { DataSource } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
 import { ProductionReadinessService } from '../src/production/production-readiness.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import {
+  createIntegrationDataSourceFromScratch,
+  destroyIntegrationDataSource,
+} from './support/pg-harness';
 
 /**
  * V1-RELEASE-01 regression coverage.
@@ -24,7 +27,11 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
  * This suite closes that gap: it runs the complete, real migration chain against real
  * PostgreSQL (the same chain `migration-chain.integration.spec.ts` validates structurally)
  * and then asks the real `ProductionReadinessService`, wired through the real `AppModule`,
- * whether it considers that genuinely-fully-migrated schema compatible. If the constants in
+ * whether it considers that genuinely-fully-migrated schema compatible. It deliberately uses
+ * `createIntegrationDataSourceFromScratch` (full migration run from an empty database) rather
+ * than the template-cloning `createIntegrationDataSource`, because running the real migration
+ * chain from empty is exactly what this suite exists to prove — cloning an already-migrated
+ * template would silently stop testing that. If the constants in
  * production-readiness.service.ts ever again fall behind the newest file in
  * src/migrations/*.ts, this test fails with `schema_incompatible` — the same failure a real
  * production deployment would hit — instead of silently passing.
@@ -39,7 +46,7 @@ describe('V1-RELEASE-01 production readiness vs. real migration chain', () => {
     .at(-1);
 
   beforeAll(async () => {
-    dataSource = await createIntegrationDataSource('readinesssync');
+    dataSource = await createIntegrationDataSourceFromScratch('readinesssync');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)

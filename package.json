@@ -18,7 +18,7 @@
     "format": "prettier --write \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
     "bootstrap:statement": "ts-node --transpile-only scripts/generate-bootstrap-statement.ts",
     "test": "jest --runInBand",
-    "test:pg": "jest --config jest.integration.config.js --runInBand",
+    "test:pg": "node scripts/run-pg-integration-tests.js",
     "test:all": "npm run test && npm run test:pg",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",

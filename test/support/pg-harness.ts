@@ -108,11 +108,85 @@ export async function createEmptyIntegrationDataSource(label: string): Promise<D
   return buildIntegrationDataSource(name);
 }
 
+function migrationTemplateDatabaseName(): string {
+  // Scoped to this process id, matching integrationDatabaseName's scheme. Under the required
+  // `--runInBand` execution model every suite in a run shares one process, so this is built
+  // at most once per run and reused by every suite in it; a different run (different pid)
+  // always builds its own. See test/support/pg-template-sweep.js for the matching cleanup.
+  return `mn_it_tpl_${process.pid}`;
+}
+
+async function templateDatabaseExists(ds: DataSource, name: string): Promise<boolean> {
+  const rows: Array<{ exists: boolean }> = await ds.query(
+    `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
+    [name],
+  );
+  return firstRow(rows, 'template database existence check').exists;
+}
+
 /**
- * Creates a dedicated database for the suite and runs the complete migration chain against
- * it. The returned DataSource uses the same entity and migration registration as production.
+ * Ensures a fully-migrated template database exists for this test process, building it once
+ * (the real, complete migration chain run against a genuinely empty database — identical to
+ * what createIntegrationDataSourceFromScratch does) and reusing it for the rest of the run.
+ *
+ * Measured in this repo: a from-scratch create+migrate costs ~930-1050ms per suite; cloning
+ * this template via `CREATE DATABASE ... TEMPLATE` costs ~55-90ms. Every suite that only
+ * needs a correctly-migrated, empty-of-data schema to test application behaviour against
+ * (which is nearly all of them) gets the exact same schema much faster. This is not a
+ * behavioural shortcut: the schema is bit-for-bit what the full migration chain produces,
+ * because it IS that exact migration run, filesystem-cloned by PostgreSQL itself.
+ *
+ * Suites whose entire purpose is proving the real migration chain succeeds end-to-end against
+ * a genuinely empty database (migration-chain.integration.spec.ts,
+ * v1-release-01-production-readiness-migration-sync.integration.spec.ts) must not go through
+ * this path — they use createEmptyIntegrationDataSource / createIntegrationDataSourceFromScratch
+ * instead, so that coverage of the migration chain itself is never short-circuited.
+ */
+async function ensureMigrationTemplateDatabase(): Promise<string> {
+  const name = migrationTemplateDatabaseName();
+  await withAdmin(async (ds) => {
+    if (await templateDatabaseExists(ds, name)) return;
+    await ds.query(`CREATE DATABASE "${name}"`);
+    const template = buildIntegrationDataSource(name);
+    await template.initialize();
+    try {
+      await template.runMigrations({ transaction: 'all' });
+    } finally {
+      await template.destroy();
+    }
+  });
+  return name;
+}
+
+/**
+ * Creates a dedicated database for the suite, pre-populated with the full, real migration
+ * chain, by cloning a once-built template database (see `ensureMigrationTemplateDatabase`).
+ * The returned DataSource uses the same entity and migration registration as production, and
+ * the resulting schema is identical to running the full migration chain fresh — it is simply
+ * built once per test run and cloned, rather than re-run from scratch for every suite.
  */
 export async function createIntegrationDataSource(label: string): Promise<DataSource> {
+  await assertPostgresAvailable();
+  const templateName = await ensureMigrationTemplateDatabase();
+  const name = integrationDatabaseName(label);
+  await withAdmin(async (ds) => {
+    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await ds.query(`CREATE DATABASE "${name}" TEMPLATE "${templateName}"`);
+  });
+  const dataSource = buildIntegrationDataSource(name);
+  await dataSource.initialize();
+  return dataSource;
+}
+
+/**
+ * Identical to createIntegrationDataSource before the template-clone optimization: creates a
+ * genuinely empty database and runs the complete migration chain against it from scratch.
+ * Reserved for suites whose entire purpose is proving the real migration chain itself
+ * succeeds end-to-end against an empty database. Everything else should use
+ * createIntegrationDataSource, which clones a once-built template for speed while producing
+ * the identical schema.
+ */
+export async function createIntegrationDataSourceFromScratch(label: string): Promise<DataSource> {
   const dataSource = await createEmptyIntegrationDataSource(label);
   await dataSource.initialize();
   await dataSource.runMigrations({ transaction: 'all' });
