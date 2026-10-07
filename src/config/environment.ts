@@ -45,15 +45,26 @@ export const environmentSchema = z
     // posture). When enabled, treatment/timing must be explicit — the selected values are
     // evaluated at runtime and any decision requiring an absent treatment fails closed.
     COMMERCIAL_ACCOUNTING_ENABLED: booleanFromEnvironment.default(false),
-    COMMERCIAL_ACCOUNTING_VAT_TREATMENT: z
-      .enum(['EXCLUSIVE_ADD_ON', 'INCLUSIVE_IN_FEE'])
-      .optional(),
-    COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: z
-      .enum(['EXPENSE_PAYABLE', 'AGENT_WALLET_NETTING', 'CONTRA_REVENUE'])
-      .optional(),
-    COMMERCIAL_COMMISSION_RECOGNITION_TIMING: z
-      .enum(['AT_COMPLETION', 'ACCRUE_NOW_SETTLE_LATER'])
-      .optional(),
+    // V1-GO-LIVE-01: these three fields must tolerate the empty-string value that the
+    // shipped .env.example documents for the inert (disabled) posture. Without the same
+    // empty-string-to-undefined preprocessing used by optionalEnvironmentString/Url/Secret
+    // above, z.enum(...).optional() rejects "" as an invalid enum member (it is not
+    // undefined), which made the canonical .env.example reference file fail
+    // validateEnvironment() on every boot path (main.ts, data-source.ts, app.module.ts) —
+    // a fresh deployer following the repo's own documented configuration could not start
+    // the application, run migrations, or load the module tree at all.
+    COMMERCIAL_ACCOUNTING_VAT_TREATMENT: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['EXCLUSIVE_ADD_ON', 'INCLUSIVE_IN_FEE']).optional(),
+    ),
+    COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['EXPENSE_PAYABLE', 'AGENT_WALLET_NETTING', 'CONTRA_REVENUE']).optional(),
+    ),
+    COMMERCIAL_COMMISSION_RECOGNITION_TIMING: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['AT_COMPLETION', 'ACCRUE_NOW_SETTLE_LATER']).optional(),
+    ),
     A2_WORKFORCE_ENABLED: booleanFromEnvironment.default(false),
     A2_WORKFORCE_OIDC_ISSUER: optionalEnvironmentUrl,
     A2_WORKFORCE_OIDC_JWKS_URI: optionalEnvironmentUrl,

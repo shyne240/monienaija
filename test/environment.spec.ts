@@ -77,4 +77,55 @@ describe('validateEnvironment', () => {
       NOTIFICATION_SMS_PROVIDER: 'console',
     });
   });
+
+  // V1-GO-LIVE-01: the shipped .env.example documents the inert commercial-accounting
+  // posture as COMMERCIAL_ACCOUNTING_ENABLED=false with the three treatment/timing knobs
+  // left blank. Before this fix, validateEnvironment() rejected that exact, canonical
+  // configuration in every NODE_ENV (development/test/staging/production) and on every
+  // boot path (main.ts, data-source.ts migrations, app.module.ts), because the three enum
+  // fields lacked the empty-string-to-undefined preprocessing used by every other optional
+  // field in this schema. A fresh deployer following the repo's own .env.example could not
+  // start the application at all.
+  it('accepts the shipped .env.example commercial-accounting posture (disabled, blank treatments)', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        COMMERCIAL_ACCOUNTING_ENABLED: 'false',
+        COMMERCIAL_ACCOUNTING_VAT_TREATMENT: '',
+        COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: '',
+        COMMERCIAL_COMMISSION_RECOGNITION_TIMING: '',
+      }),
+    ).toMatchObject({
+      COMMERCIAL_ACCOUNTING_ENABLED: false,
+      COMMERCIAL_ACCOUNTING_VAT_TREATMENT: undefined,
+      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: undefined,
+      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: undefined,
+    });
+  });
+
+  it('still rejects a genuinely invalid (non-empty, out-of-enum) commercial-accounting treatment', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'NOT_A_REAL_TREATMENT',
+      }),
+    ).toThrow('Invalid environment configuration');
+  });
+
+  it('accepts an explicit commercial-accounting enabled posture with real treatment values', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        COMMERCIAL_ACCOUNTING_ENABLED: 'true',
+        COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'EXCLUSIVE_ADD_ON',
+        COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
+        COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
+      }),
+    ).toMatchObject({
+      COMMERCIAL_ACCOUNTING_ENABLED: true,
+      COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'EXCLUSIVE_ADD_ON',
+      COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: 'AGENT_WALLET_NETTING',
+      COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
+    });
+  });
 });
