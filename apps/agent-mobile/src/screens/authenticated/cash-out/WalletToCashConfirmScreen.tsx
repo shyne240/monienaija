@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,11 +12,18 @@ import { MfaChallengeCard } from '../../../components/MfaChallengeCard';
 import {
   agentCashOut,
   describeCashOutError,
+  isAmbiguousOperationOutcome,
   type AgentCashOutResult,
   type AgentMfaChallenge,
 } from '../../../services/agent-api';
 import { formatNairaFromMinor } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth-store';
+import {
+  clearPendingAgentOperation,
+  loadPendingAgentOperation,
+  matchesPendingAgentOperation,
+  savePendingAgentOperation,
+} from '../../../services/pending-operation';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -30,6 +37,15 @@ import type { RootStackParamList } from '../../../navigation/types';
  * All credentials are sent directly in the POST body to /agents/cash-out.
  * Credentials are NEVER persisted, NEVER logged, NEVER put in navigation params,
  * and always wiped on success, error, or screen unmount.
+ *
+ * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: the Idempotency-Key minted on the Amount
+ * screen is durably persisted (SecureStorage, Agent-scoped) immediately before the request
+ * is sent. If the app process is killed before a response arrives and the Agent restarts the
+ * flow for what they believe is the same Wallet→Cash withdrawal, the persisted key is
+ * recognized (same customer + amount) and reused instead of a fresh key being minted. The
+ * customer OTP itself remains single-use and credential re-entry is unaffected by this — only
+ * the Idempotency-Key's lifecycle changes. On a definitive rejection (4xx) or success the
+ * pending record is cleared; on an ambiguous outcome (network error / 5xx) it is left in place.
  */
 export const WalletToCashConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -43,6 +59,8 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const [customerPin, setCustomerPin] = useState('');
   const [agentPin, setAgentPin] = useState('');
   const [clientError, setClientError] = useState('');
+  const effectiveKeyRef = useRef<string>(idempotencyKey);
+  const submitInFlightRef = useRef(false);
 
   const cashOutMutation = useMutation<AgentCashOutResult, unknown, void>({
     mutationFn: () => {
@@ -56,14 +74,15 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         otp: otp.trim(),
         amountMinor,
         currency: 'NGN',
-        idempotencyKey,
+        idempotencyKey: effectiveKeyRef.current,
         agentPin,
       });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setCustomerPin('');
       setAgentPin('');
       setOtp('');
+      if (agentId) await clearPendingAgentOperation(agentId, 'CASH_OUT');
       // Server-authoritative query invalidation
       void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
       void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
@@ -83,10 +102,13 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         ],
       });
     },
-    onError: () => {
+    onError: async (err) => {
       setCustomerPin('');
       setAgentPin('');
       setOtp('');
+      if (agentId && !isAmbiguousOperationOutcome(err)) {
+        await clearPendingAgentOperation(agentId, 'CASH_OUT');
+      }
     },
   });
 
@@ -100,7 +122,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
     [],
   );
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!challenge) {
       setClientError('Send customer verification code first');
       return;
@@ -117,8 +139,40 @@ export const WalletToCashConfirmScreen: React.FC = () => {
       setClientError('Enter your agent transaction PIN');
       return;
     }
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setClientError('');
-    cashOutMutation.mutate();
+
+    const candidateParams = {
+      counterpartyId: customer.customerId,
+      amountMinor,
+      currency: 'NGN',
+    };
+
+    let effectiveKey = idempotencyKey;
+    if (agentId) {
+      const existing = await loadPendingAgentOperation(agentId, 'CASH_OUT');
+      if (existing && matchesPendingAgentOperation(existing, candidateParams)) {
+        effectiveKey = existing.idempotencyKey;
+      }
+    }
+    effectiveKeyRef.current = effectiveKey;
+
+    if (agentId) {
+      await savePendingAgentOperation({
+        agentId,
+        operationType: 'CASH_OUT',
+        idempotencyKey: effectiveKey,
+        ...candidateParams,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    cashOutMutation.mutate(undefined, {
+      onSettled: () => {
+        submitInFlightRef.current = false;
+      },
+    });
   };
 
   const failureText = clientError

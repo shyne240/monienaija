@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { AGENT_SESSION_KEYS, purgeAgentSessionFromStorage } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
+import { clearAllPendingAgentOperations } from '../services/pending-operation';
 import {
   agentLogin,
   agentLogout,
@@ -117,6 +118,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     set({ isLoading: true });
+    const loggedOutAgentId = get().agentId;
     try {
       const session = get().session;
       if (session) {
@@ -128,6 +130,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     } finally {
       await purgeAgentSessionFromStorage();
+      // V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: a pending operation must never cross an
+      // Agent identity boundary — if this device is reused by a different Agent, no stale
+      // Idempotency-Key from the previous Agent's session may ever be read or reused.
+      if (loggedOutAgentId) {
+        await clearAllPendingAgentOperations(loggedOutAgentId);
+      }
       set({
         isAuthenticated: false,
         isLoading: false,

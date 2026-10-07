@@ -20,6 +20,11 @@ import {
   type ResolvedRecipientView,
   type AgentCashToCashResult,
 } from '../src/services/agent-api';
+import {
+  clearPendingAgentOperation,
+  loadPendingAgentOperation,
+  savePendingAgentOperation,
+} from '../src/services/pending-operation';
 
 jest.mock('../src/services/agent-api', () => ({
   resolveAgentRecipient: jest.fn(),
@@ -27,6 +32,7 @@ jest.mock('../src/services/agent-api', () => ({
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashToCashError: jest.requireActual('../src/services/agent-api').describeCashToCashError,
   setPendingTransferCode: jest.requireActual('../src/services/agent-api').setPendingTransferCode,
+  isAmbiguousOperationOutcome: jest.requireActual('../src/services/agent-api').isAmbiguousOperationOutcome,
   consumePendingTransferCode: jest.requireActual('../src/services/agent-api').consumePendingTransferCode,
   clearPendingTransferCode: jest.requireActual('../src/services/agent-api').clearPendingTransferCode,
 }));
@@ -486,5 +492,143 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
       index: 0,
       routes: [{ name: 'Home' }],
     });
+  });
+});
+
+// V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-AUDIT-01 — the process-kill recovery fix. Mirrors the
+// Cash→Wallet / Wallet→Cash coverage for the Cash→Cash SEND leg (CLAIM is out of scope — it is
+// independently guarded by cash_to_cash_transfers' own state machine, see
+// src/services/pending-operation.ts's module doc).
+describe('Cash→Cash Send — Idempotency-Key durability across a simulated process kill', () => {
+  const agentId = 'agent-persist-c2c';
+  const beneficiaryPhone = '8012345678';
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    clearPendingTransferCode();
+    useAuthStore.setState({ agentId });
+    await clearPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
+  });
+
+  test('1. an ambiguous outcome (NetworkError) durably persists the pending operation, not just in-memory', async () => {
+    mockRoute = {
+      key: 'k1',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-persist-k1' },
+    };
+    const networkErr = new Error('fetch failed');
+    (networkErr as any).name = 'NetworkError';
+    mockApi.agentCashToCash.mockRejectedValueOnce(networkErr);
+
+    const { getByTestId } = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
+
+    const persisted = await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
+    expect(persisted).not.toBeNull();
+    expect(persisted?.idempotencyKey).toBe('c2c-persist-k1');
+    expect(persisted?.counterpartyId).toBe(beneficiaryPhone);
+    expect(persisted?.amountMinor).toBe('500000');
+  });
+
+  test('2. a fresh Confirm instance after a simulated restart reuses the persisted key, not the freshly-minted route-param one', async () => {
+    // Precondition: left behind by an earlier ambiguous attempt (per test 1 above).
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_TO_CASH_SEND',
+      idempotencyKey: 'c2c-restart-original',
+      counterpartyId: beneficiaryPhone,
+      amountMinor: '500000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+
+    // "Reopen the app": a fresh Confirm instance with a BRAND NEW route-param key, exactly
+    // what CashToCashAmountScreen would mint since its in-memory useRef cannot have survived
+    // the process kill.
+    mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
+    mockRoute = {
+      key: 'k2',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-restart-FRESH-K2' },
+    };
+    const second = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(second.getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
+
+    expect(mockApi.agentCashToCash.mock.calls[0][0].idempotencyKey).toBe('c2c-restart-original');
+  });
+
+  test('3. success clears the persisted operation', async () => {
+    mockRoute = {
+      key: 'k1',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-success-clear' },
+    };
+    mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
+    const { getByTestId } = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockReset).toHaveBeenCalled());
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND')).toBeNull(),
+    );
+  });
+
+  test('4. a definitive rejection (4xx) clears the persisted operation — a later attempt gets a clean new key', async () => {
+    mockRoute = {
+      key: 'k1',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-definitive-reject' },
+    };
+    mockApi.agentCashToCash.mockRejectedValueOnce(apiError('Transaction PIN invalid: PIN_INVALID', 401));
+    const first = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(first.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(first.getByTestId('c2c-confirm-submit'));
+    await waitFor(() =>
+      expect(first.getByTestId('c2c-confirm-error').props.children).toBe('Incorrect transaction PIN. Try again.'),
+    );
+    await waitFor(async () =>
+      expect(await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND')).toBeNull(),
+    );
+    first.unmount();
+
+    mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
+    mockRoute = {
+      key: 'k2',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-clean-retry-key' },
+    };
+    const second = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(second.getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(2));
+    expect(mockApi.agentCashToCash.mock.calls[1][0].idempotencyKey).toBe('c2c-clean-retry-key');
+  });
+
+  test('5. a persisted operation for a DIFFERENT amount is never reused — no fuzzy attribution', async () => {
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_TO_CASH_SEND',
+      idempotencyKey: 'c2c-amount-a',
+      counterpartyId: beneficiaryPhone,
+      amountMinor: '500000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+
+    mockApi.agentCashToCash.mockResolvedValueOnce({ ...cashToCashResult, amountMinor: '900000' });
+    mockRoute = {
+      key: 'k2',
+      name: 'CashToCashConfirm',
+      params: { beneficiaryPhone, amountMinor: '900000', idempotencyKey: 'c2c-amount-b-own-key' },
+    };
+    const second = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(second.getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
+    expect(mockApi.agentCashToCash.mock.calls[0][0].idempotencyKey).toBe('c2c-amount-b-own-key');
   });
 });

@@ -706,6 +706,31 @@ export async function getAgentTransactions(
 }
 
 /**
+ * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01.
+ *
+ * Distinguishes an AMBIGUOUS outcome (we genuinely do not know whether the backend already
+ * committed the financial effect — a dropped/timed-out connection or a 5xx response, where the
+ * request may have reached and been processed by the server before the response was lost) from
+ * a DEFINITIVE one (a 4xx the server affirmatively rejected the request for: bad PIN, invalid
+ * OTP, insufficient balance, validation failure, etc. — nothing was committed).
+ *
+ * Only an ambiguous outcome justifies keeping the original Idempotency-Key alive for reuse; a
+ * definitive rejection means it is safe to let the Agent start a clean new logical operation.
+ */
+export function isAmbiguousOperationOutcome(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'NetworkError') {
+    return true;
+  }
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    return typeof status === 'number' && status >= 500;
+  }
+  // Unknown/unexpected error shapes (e.g. a thrown non-ApiError like the client-side
+  // "challenge missing" guard) are treated as definitive — they never reached the network.
+  return false;
+}
+
+/**
  * User-facing message for API failures (§9 error handling):
  * raw server errors are not surfaced verbatim when not meaningful to an agent.
  */

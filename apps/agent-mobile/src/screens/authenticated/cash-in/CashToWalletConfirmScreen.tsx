@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,10 +11,17 @@ import { Input } from '../../../components/Input';
 import {
   agentCashIn,
   describeApiError,
+  isAmbiguousOperationOutcome,
   type AgentCashInResult,
 } from '../../../services/agent-api';
 import { formatNairaFromMinor } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth-store';
+import {
+  clearPendingAgentOperation,
+  loadPendingAgentOperation,
+  matchesPendingAgentOperation,
+  savePendingAgentOperation,
+} from '../../../services/pending-operation';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
@@ -30,6 +37,15 @@ import type { RootStackParamList } from '../../../navigation/types';
  * After success: authoritative transaction queries are invalidated so the
  * transaction surfaces from server (history + financial position) — the
  * client never mutates balances locally.
+ *
+ * V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: the Idempotency-Key minted on the Amount
+ * screen is durably persisted (SecureStorage, Agent-scoped) immediately before the request
+ * is sent. If the app process is killed before a response arrives and the Agent restarts the
+ * flow for what they believe is the same Cash→Wallet credit, the persisted key is recognized
+ * (same recipient + amount) and reused instead of a fresh key being minted — so a resumed
+ * attempt safely replays against the backend's idempotency boundary rather than creating a
+ * second, independent credit. On a definitive rejection (4xx) or success the pending record is
+ * cleared; on an ambiguous outcome (network error / 5xx) it is deliberately left in place.
  */
 export const CashToWalletConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -40,6 +56,14 @@ export const CashToWalletConfirmScreen: React.FC = () => {
 
   const [pin, setPin] = useState('');
   const [clientError, setClientError] = useState('');
+  // The key actually sent on the wire — may be overridden from a persisted pending
+  // operation inside handleSubmit before the mutation fires (see V1-AGENT-MOBILE-
+  // IDEMPOTENCY-PERSISTENCE-01).
+  const effectiveKeyRef = useRef<string>(idempotencyKey);
+  // Synchronous same-tick double-tap guard (the isPending-disabled button only takes
+  // effect on the next render); the backend's own idempotency guarantee would still
+  // collapse a true race to one effect, this just avoids the redundant call.
+  const submitInFlightRef = useRef(false);
 
   const cashInMutation = useMutation<AgentCashInResult, unknown, void>({
     mutationFn: () =>
@@ -47,11 +71,12 @@ export const CashToWalletConfirmScreen: React.FC = () => {
         recipientIdentifier: recipient.receivingNumber,
         amountMinor,
         currency: 'NGN',
-        idempotencyKey,
+        idempotencyKey: effectiveKeyRef.current,
         pin,
       }),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setPin('');
+      if (agentId) await clearPendingAgentOperation(agentId, 'CASH_IN');
       // Server-authoritative refresh: balance and future transaction history.
       void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
       void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
@@ -61,22 +86,64 @@ export const CashToWalletConfirmScreen: React.FC = () => {
         routes: [{ name: 'CashToWalletSuccess', params: { result, amountMinor } }],
       });
     },
-    onError: () => {
+    onError: async (err) => {
       setPin('');
+      if (agentId && !isAmbiguousOperationOutcome(err)) {
+        // Definitive rejection: nothing was committed, safe to retire the pending record.
+        await clearPendingAgentOperation(agentId, 'CASH_IN');
+      }
+      // Ambiguous outcome: the pending record saved before the request was sent is
+      // deliberately left in place so a later retry (this session or after a restart)
+      // reuses the same key.
     },
   });
 
   // Safety: if the screen unmounts for any reason, shed sensitive state.
   useEffect(() => () => setPin(''), []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!pin.trim()) {
       setClientError('Enter your transaction PIN');
       return;
     }
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setClientError('');
-    // Duplicate-submission guard lives in the mutation (isPending-disabled button).
-    cashInMutation.mutate();
+
+    const candidateParams = {
+      counterpartyId: recipient.receivingNumber,
+      amountMinor,
+      currency: 'NGN',
+    };
+
+    // If a still-pending, same-Agent, same-logical-operation intent already exists (the
+    // previous attempt for this exact recipient+amount ended ambiguously), reuse its
+    // Idempotency-Key instead of the freshly-minted one.
+    let effectiveKey = idempotencyKey;
+    if (agentId) {
+      const existing = await loadPendingAgentOperation(agentId, 'CASH_IN');
+      if (existing && matchesPendingAgentOperation(existing, candidateParams)) {
+        effectiveKey = existing.idempotencyKey;
+      }
+    }
+    effectiveKeyRef.current = effectiveKey;
+
+    // Persisted BEFORE the network call so an app kill immediately after send is covered.
+    if (agentId) {
+      await savePendingAgentOperation({
+        agentId,
+        operationType: 'CASH_IN',
+        idempotencyKey: effectiveKey,
+        ...candidateParams,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    cashInMutation.mutate(undefined, {
+      onSettled: () => {
+        submitInFlightRef.current = false;
+      },
+    });
   };
 
   const failureText = clientError
