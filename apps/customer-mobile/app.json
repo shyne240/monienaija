@@ -6,7 +6,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
-      "backgroundColor": "#0A3D25"
+      "backgroundColor": "#0A3D25",
+      "image": "./assets/splash.png",
+      "resizeMode": "contain"
     },
     "ios": {
       "supportsTablet": true,
@@ -17,8 +19,10 @@
       "package": "ng.monienaija.customer",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#0A3D25"
+        "backgroundColor": "#0A3D25",
+        "foregroundImage": "./assets/adaptive-icon.png"
       }
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }
