@@ -98,6 +98,7 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     RuntimeAccessGuard,
   ],
   exports: [
+    A2_WORKFORCE_CONFIG,
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,

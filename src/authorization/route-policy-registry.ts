@@ -57,6 +57,18 @@ export class RoutePolicyRegistry {
         resourceType: 'a2-workforce-session-exchange',
       };
     }
+    // V1-ADMIN-LOCAL-LOGIN-01 — LOCAL DEVELOPMENT ONLY real username/password front door for
+    // Admin Web. Uses the identical authentication mode as the real OIDC exchange above
+    // (unauthenticated at the HTTP layer, hard-gated on A2_WORKFORCE_ENABLED=true by
+    // RuntimeAccessGuard); LocalAdminAuthenticationService then independently refuses outside
+    // NODE_ENV=development/test regardless of this route ever being reachable.
+    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_ASSERTION',
+        resourceType: 'a2-workforce-local-admin-login',
+      };
+    }
     if (path.startsWith('/api/v1/internal/a2/workforce/')) {
       return {
         public: false,

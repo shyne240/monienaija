@@ -1,5 +1,5 @@
 import { useAuthStore } from '../src/store/auth-store';
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -47,6 +47,67 @@ describe('Admin Web Auth Store (Zustand) Tests', () => {
     const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(false);
     expect(state.token).toBeNull();
+  });
+
+  test('should authenticate with email/password against the real backend endpoint and cache the session', async () => {
+    const mockSessionResponse = {
+      accessToken: 'local-admin-bearer-123',
+      tokenType: 'Bearer',
+      sessionId: 'local-admin-session-123',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'https://local-dev-identity.monienaija.invalid:mock-sandbox-subject',
+        sessionId: 'local-admin-session-123',
+        audience: 'workforce-admin',
+        roles: ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'],
+        scopes: ['privileged:execute', 'finance:prepare', 'privileged:approve', 'finance:audit'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
+    };
+
+    (ApiClient.post as jest.Mock).mockResolvedValue(mockSessionResponse);
+
+    await useAuthStore.getState().loginWithPassword('admin@monienaija.local', 'MonieNaijaAdmin123!');
+
+    expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/local-admin-sessions', {
+      email: 'admin@monienaija.local',
+      password: 'MonieNaijaAdmin123!',
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.token).toBe('local-admin-bearer-123');
+    expect(state.principal?.roles).toContain('FINANCE_ADMIN');
+    expect(localStorage.getItem('admin_workforce_token')).toBe('local-admin-bearer-123');
+  });
+
+  test('should surface a clear error and never fabricate a session when credentials are rejected', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(
+      new ApiError('Invalid local administrator credentials', 401),
+    );
+
+    await expect(
+      useAuthStore.getState().loginWithPassword('admin@monienaija.local', 'wrong-password'),
+    ).rejects.toThrow('Invalid local administrator credentials');
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.token).toBeNull();
+    expect(state.error).toBe('Invalid local administrator credentials');
+    expect(localStorage.getItem('admin_workforce_token')).toBeNull();
+  });
+
+  test('should never fabricate a client-side session when the real OIDC endpoint is unreachable', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(new ApiError('Failed to fetch', 0));
+
+    await expect(useAuthStore.getState().login('some-oidc-token')).rejects.toThrow();
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.token).toBeNull();
+    expect(state.principal).toBeNull();
   });
 
   test('should exchange OIDC assertion successfully and cache to localStorage', async () => {

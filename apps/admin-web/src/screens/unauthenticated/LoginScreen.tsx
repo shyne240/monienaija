@@ -3,13 +3,33 @@ import { useAuthStore } from '../../store/auth-store';
 import { DEV_AUTH_MOCK } from '../../config';
 
 export const LoginScreen: React.FC = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
   const [bootstrapInput, setBootstrapInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'oidc' | 'bootstrap'>('oidc');
+  const [advancedTab, setAdvancedTab] = useState<'oidc' | 'bootstrap'>('oidc');
   const [valError, setValError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const { login, bootstrap, isLoading, error, clearError } = useAuthStore();
+  const { loginWithPassword, login, bootstrap, isLoading, error, clearError } = useAuthStore();
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password) {
+      setValError('Email/username and password are required');
+      return;
+    }
+    setValError('');
+    clearError();
+    setSuccessMsg('');
+
+    try {
+      await loginWithPassword(email, password);
+    } catch {
+      // Handled by store
+    }
+  };
 
   const handleOidcLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,14 +67,6 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const fillMockToken = () => {
-    setTokenInput('mock-sandbox-token-ADMIN');
-  };
-
-  const fillMockBootstrap = () => {
-    setBootstrapInput('mock-bootstrap-jws-statement-preparer-controller-auditor');
-  };
-
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -64,18 +76,13 @@ export const LoginScreen: React.FC = () => {
           <p style={styles.logoTag}>Operational & Business Administration</p>
         </div>
 
-        {DEV_AUTH_MOCK ? (
-          <div style={styles.sandboxBanner}>
-            <span style={styles.sandboxTitle}>⚙️ Sandbox Development Mode</span>
-            <p style={styles.sandboxText}>
-              Standard OIDC/bootstrap authentication is active. Quick mock credentials bypass is enabled for sandbox operators.
-            </p>
-          </div>
-        ) : (
-          <div style={styles.productionBanner}>
-            <span style={styles.productionTitle}>⚠️ Production Security Enforced</span>
-            <p style={styles.productionText}>
-              Fail-closed gates are active. MFA-qualified signed JWS tokens are strictly required.
+        {DEV_AUTH_MOCK && (
+          <div style={styles.devBanner}>
+            <span style={styles.devBannerTitle}>Local development build</span>
+            <p style={styles.devBannerText}>
+              Sign in with your workforce email and password. A deterministic default local
+              administrator can be created with <code>node scripts/local-dev-seed-admin.js</code>
+              {' '}(see docs/V1/V1-ADMIN-LOCAL-LOGIN-01.md).
             </p>
           </div>
         )}
@@ -92,83 +99,109 @@ export const LoginScreen: React.FC = () => {
           </div>
         )}
 
-        <div style={styles.tabHeader}>
-          <button
-            style={activeTab === 'oidc' ? styles.activeTabBtn : styles.tabBtn}
-            onClick={() => { setActiveTab('oidc'); setValError(''); }}
-          >
-            OIDC Ingress Login
-          </button>
-          <button
-            style={activeTab === 'bootstrap' ? styles.activeTabBtn : styles.tabBtn}
-            onClick={() => { setActiveTab('bootstrap'); setValError(''); }}
-          >
-            Bootstrap Authority
-          </button>
-        </div>
-
-        {activeTab === 'oidc' ? (
-          <form onSubmit={handleOidcLogin} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Signed OIDC ID Assertion Token (Compact JWS)</label>
-              <textarea
-                style={styles.textarea}
-                placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ii4uLg"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-
-            {DEV_AUTH_MOCK && (
-              <button
-                type="button"
-                onClick={fillMockToken}
-                style={styles.quickFillBtn}
-              >
-                ⚡ Autofill Sandbox Token
-              </button>
-            )}
-
-            <button
-              type="submit"
+        <form onSubmit={handleSignIn} style={styles.form}>
+          <div style={styles.inputGroup}>
+            <label style={styles.label} htmlFor="admin-login-email">Email or username</label>
+            <input
+              id="admin-login-email"
+              style={styles.input}
+              type="text"
+              autoComplete="username"
+              placeholder="admin@monienaija.local"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
-              style={styles.submitBtn}
-            >
-              {isLoading ? 'Exchanging Session...' : 'Establish Session'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleBootstrap} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Finance Admin Bootstrap Statement (JWS)</label>
-              <textarea
-                style={styles.textarea}
-                placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6Ii4uLg"
-                value={bootstrapInput}
-                onChange={(e) => setBootstrapInput(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
+            />
+          </div>
 
-            {DEV_AUTH_MOCK && (
-              <button
-                type="button"
-                onClick={fillMockBootstrap}
-                style={styles.quickFillBtn}
-              >
-                ⚡ Autofill Sandbox Bootstrap
-              </button>
-            )}
-
-            <button
-              type="submit"
+          <div style={styles.inputGroup}>
+            <label style={styles.label} htmlFor="admin-login-password">Password</label>
+            <input
+              id="admin-login-password"
+              style={styles.input}
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
-              style={styles.submitBtn}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            style={styles.submitBtn}
+          >
+            {isLoading ? 'Signing in...' : 'Sign In'}
+          </button>
+        </form>
+
+        {DEV_AUTH_MOCK && (
+          <div style={styles.advancedSection}>
+            <button
+              type="button"
+              style={styles.advancedToggle}
+              onClick={() => setShowAdvanced((prev) => !prev)}
             >
-              {isLoading ? 'Consuming Statement...' : 'Consume Bootstrap Statement'}
+              {showAdvanced ? '▲ Hide advanced (engineering) options' : '▼ Advanced: OIDC / Bootstrap (engineering only)'}
             </button>
-          </form>
+
+            {showAdvanced && (
+              <div>
+                <div style={styles.tabHeader}>
+                  <button
+                    type="button"
+                    style={advancedTab === 'oidc' ? styles.activeTabBtn : styles.tabBtn}
+                    onClick={() => { setAdvancedTab('oidc'); setValError(''); }}
+                  >
+                    OIDC Ingress Login
+                  </button>
+                  <button
+                    type="button"
+                    style={advancedTab === 'bootstrap' ? styles.activeTabBtn : styles.tabBtn}
+                    onClick={() => { setAdvancedTab('bootstrap'); setValError(''); }}
+                  >
+                    Bootstrap Authority
+                  </button>
+                </div>
+
+                {advancedTab === 'oidc' ? (
+                  <form onSubmit={handleOidcLogin} style={styles.form}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Signed OIDC ID Assertion Token (Compact JWS)</label>
+                      <textarea
+                        style={styles.textarea}
+                        placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ii4uLg"
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                        disabled={isLoading}
+                      />
+                    </div>
+                    <button type="submit" disabled={isLoading} style={styles.submitBtn}>
+                      {isLoading ? 'Exchanging Session...' : 'Establish Session'}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleBootstrap} style={styles.form}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Finance Admin Bootstrap Statement (JWS)</label>
+                      <textarea
+                        style={styles.textarea}
+                        placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6Ii4uLg"
+                        value={bootstrapInput}
+                        onChange={(e) => setBootstrapInput(e.target.value)}
+                        disabled={isLoading}
+                      />
+                    </div>
+                    <button type="submit" disabled={isLoading} style={styles.submitBtn}>
+                      {isLoading ? 'Consuming Statement...' : 'Consume Bootstrap Statement'}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -223,45 +256,23 @@ const styles = {
     color: '#64748B',
     margin: 0,
   },
-  sandboxBanner: {
-    backgroundColor: '#FFF8E6',
-    borderColor: '#FFB703',
+  devBanner: {
+    backgroundColor: '#F0F9F4',
+    borderColor: '#0A3D25',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
     padding: '12px',
     marginBottom: '20px',
   },
-  sandboxTitle: {
+  devBannerTitle: {
     fontSize: '12px',
     fontWeight: 'bold',
-    color: '#C88B00',
+    color: '#0A3D25',
     display: 'block',
     marginBottom: '4px',
   },
-  sandboxText: {
-    fontSize: '11px',
-    color: '#475569',
-    margin: 0,
-    lineHeight: '15px',
-  },
-  productionBanner: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#EF4444',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderRadius: '6px',
-    padding: '12px',
-    marginBottom: '20px',
-  },
-  productionTitle: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: '#EF4444',
-    display: 'block',
-    marginBottom: '4px',
-  },
-  productionText: {
+  devBannerText: {
     fontSize: '11px',
     color: '#475569',
     margin: 0,
@@ -332,6 +343,14 @@ const styles = {
     color: '#334155',
     marginBottom: '6px',
   },
+  input: {
+    height: '44px',
+    border: '1px solid #E2E8F0',
+    borderRadius: '6px',
+    padding: '0 12px',
+    fontSize: '14px',
+    color: '#1E293B',
+  },
   textarea: {
     height: '100px',
     border: '1px solid #E2E8F0',
@@ -342,17 +361,6 @@ const styles = {
     resize: 'none' as const,
     color: '#1E293B',
   },
-  quickFillBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#0A3D25',
-    fontSize: '12px',
-    fontWeight: '600',
-    padding: '4px 0',
-    marginBottom: '16px',
-    cursor: 'pointer',
-  },
   submitBtn: {
     backgroundColor: '#0A3D25',
     color: '#FFFFFF',
@@ -361,6 +369,22 @@ const styles = {
     padding: '14px',
     fontSize: '14px',
     fontWeight: '600',
+    cursor: 'pointer',
+  },
+  advancedSection: {
+    marginTop: '24px',
+    paddingTop: '16px',
+    borderTop: '1px dashed #E2E8F0',
+  },
+  advancedToggle: {
+    width: '100%',
+    textAlign: 'left' as const,
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#64748B',
+    fontSize: '12px',
+    fontWeight: '600',
+    padding: '4px 0',
     cursor: 'pointer',
   },
 };

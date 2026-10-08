@@ -24,9 +24,19 @@
 // Production default is a same-origin relative path (`/api/v1`), which works when the
 // backend is reverse-proxied under the same origin as this static app (the common gateway
 // pattern). Cross-origin deployments must set ADMIN_WEB_API_BASE_URL at build time.
+//
+// V1-ADMIN-LOCAL-LOGIN-01: the local-development default used to be the absolute
+// `http://localhost:3000/api/v1`, a different origin from this app's own
+// `http://localhost:5173`. The backend never calls `app.enableCors()` (by design — see the
+// production comment above), so every request from the browser was a blocked cross-origin
+// request that failed before a real HTTP response ever arrived, surfacing only as
+// "Failed to fetch" on the login screen. Local development now defaults to the same
+// same-origin-relative `/api/v1` path production uses, and `vite.config.ts` proxies it to
+// the real backend (`http://localhost:3000` by default) from the dev server itself — the
+// browser only ever talks to its own origin, exactly like the production reverse-proxy
+// model. No backend CORS configuration was added or is needed.
 export const API_BASE_URL: string =
-  (typeof process !== 'undefined' && process.env.ADMIN_WEB_API_BASE_URL) ||
-  (process.env.NODE_ENV === 'production' ? '/api/v1' : 'http://localhost:3000/api/v1');
+  (typeof process !== 'undefined' && process.env.ADMIN_WEB_API_BASE_URL) || '/api/v1';
 
 export const DEV_AUTH_MOCK: boolean = process.env.NODE_ENV !== 'production';
 

@@ -38,10 +38,75 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     });
   });
 
-  test('should render LoginScreen by default when unauthenticated', () => {
-    const { getByText, getByLabelText } = render(<App />);
+  test('should render a real email/password LoginScreen by default when unauthenticated', () => {
+    const { getByText, getByLabelText, queryByText } = render(<App />);
+    expect(getByLabelText('Email or username')).toBeTruthy();
+    expect(getByLabelText('Password')).toBeTruthy();
+    expect(getByText('Sign In')).toBeTruthy();
+
+    // The sandbox-token OIDC/Bootstrap workflow must not be presented as the normal login —
+    // it is hidden behind an explicit "Advanced" toggle, not shown by default.
+    expect(queryByText('OIDC Ingress Login')).toBeNull();
+    expect(queryByText('Bootstrap Authority')).toBeNull();
+    expect(queryByText('⚡ Autofill Sandbox Token')).toBeNull();
+    expect(queryByText('mock-sandbox-token-ADMIN')).toBeNull();
+  });
+
+  test('should reveal the advanced OIDC/Bootstrap panel only after an explicit toggle', () => {
+    const { getByText, queryByText } = render(<App />);
+    expect(queryByText('OIDC Ingress Login')).toBeNull();
+
+    fireEvent.click(getByText('▼ Advanced: OIDC / Bootstrap (engineering only)'));
+
     expect(getByText('OIDC Ingress Login')).toBeTruthy();
     expect(getByText('Bootstrap Authority')).toBeTruthy();
+  });
+
+  test('should submit email/password to the real local-admin-sessions backend endpoint', async () => {
+    const mockSessionResponse = {
+      accessToken: 'real-backend-bearer-123',
+      tokenType: 'Bearer',
+      sessionId: 'real-session-123',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'https://local-dev-identity.monienaija.invalid:mock-sandbox-subject',
+        sessionId: 'real-session-123',
+        audience: 'workforce-admin',
+        roles: ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'],
+        scopes: ['privileged:execute', 'finance:prepare', 'privileged:approve', 'finance:audit'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
+    };
+    (ApiClient.post as jest.Mock).mockResolvedValue(mockSessionResponse);
+
+    const { getByLabelText, getByText } = render(<App />);
+    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Password'), { target: { value: 'MonieNaijaAdmin123!' } });
+    fireEvent.click(getByText('Sign In'));
+
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/local-admin-sessions', {
+        email: 'admin@monienaija.local',
+        password: 'MonieNaijaAdmin123!',
+      });
+      expect(getByText('System Administration Dashboard')).toBeTruthy();
+    });
+  });
+
+  test('should show a clear error and stay on LoginScreen when credentials are rejected (401)', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Invalid local administrator credentials'));
+
+    const { getByLabelText, getByText, queryByText } = render(<App />);
+    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Password'), { target: { value: 'wrong-password' } });
+    fireEvent.click(getByText('Sign In'));
+
+    await waitFor(() => {
+      expect(getByText('Invalid local administrator credentials')).toBeTruthy();
+    });
+    expect(queryByText('System Administration Dashboard')).toBeNull();
   });
 
   test('should render Dashboard and FINANCE_ADMIN sidebar link for FINANCE_ADMIN operator', async () => {
