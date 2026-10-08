@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
 /**
- * V1-ADMIN-LOCAL-LOGIN-01 — fast unit coverage (mocked repository / OIDC / session / audit)
- * for `LocalAdminAuthenticationService`.
+ * V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — fast unit coverage (mocked repository /
+ * session / finance-role-administration / audit) for `LocalAdminAuthenticationService`.
  *
  * Covers deliverable items:
  *   A. deterministic seed creates exactly one admin
@@ -9,7 +9,17 @@
  *   D. wrong password is rejected
  *   F. production mode refuses to seed or authenticate the local credential
  *
- * Real-PostgreSQL + real-HTTP coverage of C/E lives in
+ * V1-ADMIN-UAT-IDENTITY-01 additions:
+ *   I1. login builds its OWN evidence (no longer delegates to A2WorkforceOidcService at all)
+ *       with a principalId deterministically derived from the credential's email, NOT the
+ *       shared 'mock-sandbox-subject'.
+ *   I2. seedDefaultAdmin grants FINANCE_ADMIN through A2FinanceRoleAdministrationService's real
+ *       persisted-assignment mechanism, keyed to that exact deterministic principalId, and this
+ *       is idempotent across repeated seed calls.
+ *   I3. login refuses when A2_WORKFORCE_ENABLED=false (the gate this service used to inherit
+ *       transitively via A2WorkforceOidcService.validate(), now enforced directly).
+ *
+ * Real-PostgreSQL + real-HTTP coverage of C/E/the real persisted role-assignment row lives in
  * test/v1-admin-local-login-01.integration.spec.ts.
  */
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
@@ -23,7 +33,7 @@ function hashPassword(password: string): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
 
-describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, mocked)', () => {
+describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthenticationService (unit, mocked)', () => {
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
   afterEach(() => {
@@ -31,7 +41,10 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
     jest.restoreAllMocks();
   });
 
-  function buildService(rows: Array<{ id: string; email: string; passwordHash: string }>) {
+  function buildService(
+    rows: Array<{ id: string; email: string; passwordHash: string }>,
+    opts: { workforceEnabled?: boolean } = {},
+  ) {
     const repository: any = {
       findOne: jest.fn(async ({ where }: any) => rows.find((r) => r.email === where.email) ?? null),
       create: jest.fn((row: any) => row),
@@ -41,28 +54,54 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
       }),
       manager: {},
     };
-    const oidc: any = { validate: jest.fn(async () => ({ subject: 'mock-sandbox-subject' })) };
     const sessions: any = {
-      establish: jest.fn(async () => ({
+      establish: jest.fn(async (evidence: any) => ({
         accessToken: 'test-token',
         tokenType: 'Bearer',
         sessionId: 'test-session',
         expiresAt: new Date().toISOString(),
-        principal: { type: 'PRIVILEGED', roles: ['FINANCE_ADMIN'] },
+        principal: {
+          type: 'PRIVILEGED',
+          principalId: evidence.principalId,
+          roles: ['FINANCE_ADMIN'],
+        },
+      })),
+    };
+    const financeRoles: any = {
+      grantLocalAdministratorFinanceAdmin: jest.fn(async (principalId: string) => ({
+        assignmentReference: `a2-fin-role-test-${principalId}`,
+        assignmentVersion: 1,
+        principalId,
+        roleKey: 'FINANCE_ADMIN',
+        scopes: ['privileged:execute'],
+        status: 'ACTIVE',
+        interim: true,
+        effectiveFrom: new Date(0).toISOString(),
+        effectiveTo: new Date(Date.now() + 1_000_000_000).toISOString(),
+        assignedBy: 'local-dev-seed-admin-script',
+        assignedAt: new Date().toISOString(),
+        revokedBy: null,
+        revokedAt: null,
+        bootstrapReference: null,
+        approvalIds: [],
+        auditReferences: [],
       })),
     };
     const auditService: any = { record: jest.fn(async () => undefined) };
     const workforceConfig: any = {
+      enabled: opts.workforceEnabled ?? true,
+      oidcIssuer: 'https://local-dev-identity.monienaija.invalid',
+      oidcAudience: 'workforce-admin',
       rateLimits: [{ category: 'workforce-authentication', limit: 10, windowSeconds: 60 }],
     };
     const service = new LocalAdminAuthenticationService(
       repository,
-      oidc,
       sessions,
+      financeRoles,
       auditService,
       workforceConfig,
     );
-    return { service, repository, oidc, sessions, auditService };
+    return { service, repository, sessions, financeRoles, auditService, workforceConfig };
   }
 
   describe('seedDefaultAdmin', () => {
@@ -76,7 +115,8 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
         password: 'MonieNaijaAdmin123!',
       });
 
-      expect(result).toEqual({ created: true, email: 'admin@monienaija.local' });
+      expect(result.created).toBe(true);
+      expect(result.email).toBe('admin@monienaija.local');
       expect(rows).toHaveLength(1);
       expect(rows[0]!.email).toBe('admin@monienaija.local');
       // the plaintext password is never persisted
@@ -103,7 +143,8 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
       });
 
       expect(first.created).toBe(true);
-      expect(second).toEqual({ created: false, email: 'admin@monienaija.local' });
+      expect(second.created).toBe(false);
+      expect(second.email).toBe('admin@monienaija.local');
       expect(rows).toHaveLength(1);
     });
 
@@ -143,21 +184,77 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
       ).rejects.toThrow(/refuses to run outside/i);
       expect(rows).toHaveLength(0);
     });
+
+    it('I2. grants FINANCE_ADMIN through A2FinanceRoleAdministrationService, keyed to a deterministic principalId (NOT mock-sandbox-subject)', async () => {
+      process.env.NODE_ENV = 'test';
+      const rows: Array<{ id: string; email: string; passwordHash: string }> = [];
+      const { service, financeRoles } = buildService(rows);
+
+      const result = await service.seedDefaultAdmin({
+        email: 'admin@monienaija.local',
+        password: 'MonieNaijaAdmin123!',
+      });
+
+      expect(financeRoles.grantLocalAdministratorFinanceAdmin).toHaveBeenCalledTimes(1);
+      const [calledPrincipalId, calledAssignedBy] =
+        financeRoles.grantLocalAdministratorFinanceAdmin.mock.calls[0];
+      expect(calledPrincipalId).not.toContain('mock-sandbox-subject');
+      expect(calledPrincipalId).toContain('https://local-dev-identity.monienaija.invalid:');
+      expect(calledAssignedBy).toBe('local-dev-seed-admin-script');
+      expect(result.role).toMatchObject({ roleKey: 'FINANCE_ADMIN', status: 'ACTIVE' });
+      expect(result.role.principalId).toBe(calledPrincipalId);
+    });
+
+    it('I2b. the same email always resolves to the same principalId across repeated seed calls (deterministic + idempotent)', async () => {
+      process.env.NODE_ENV = 'test';
+      const rows: Array<{ id: string; email: string; passwordHash: string }> = [];
+      const { service, financeRoles } = buildService(rows);
+
+      const first = await service.seedDefaultAdmin({
+        email: 'admin@monienaija.local',
+        password: 'MonieNaijaAdmin123!',
+      });
+      const second = await service.seedDefaultAdmin({
+        email: 'admin@monienaija.local',
+        password: 'MonieNaijaAdmin123!',
+      });
+
+      expect(financeRoles.grantLocalAdministratorFinanceAdmin).toHaveBeenCalledTimes(2);
+      expect(first.role.principalId).toBe(second.role.principalId);
+    });
   });
 
   describe('login', () => {
-    it('C. correct credentials authenticate and return the real workforce session shape', async () => {
+    it('C. correct credentials authenticate and return the real workforce session shape, with a principal tied to the credential (not mock-sandbox-subject)', async () => {
       process.env.NODE_ENV = 'test';
       const rows = [
         { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
       ];
-      const { service, oidc, sessions } = buildService(rows);
+      const { service, sessions } = buildService(rows);
 
       const session = await service.login('admin@monienaija.local', 'MonieNaijaAdmin123!');
 
-      expect(oidc.validate).toHaveBeenCalledWith('mock-sandbox-token-ADMIN');
       expect(sessions.establish).toHaveBeenCalledTimes(1);
+      const evidence = sessions.establish.mock.calls[0][0];
+      expect(evidence.assuranceLevel).toBe('MFA');
+      expect(evidence.principalId).not.toContain('mock-sandbox-subject');
+      expect(evidence.principalId).toContain('https://local-dev-identity.monienaija.invalid:');
       expect(session).toMatchObject({ accessToken: 'test-token', tokenType: 'Bearer' });
+    });
+
+    it('C2. the same email always produces the same principalId across separate logins (deterministic)', async () => {
+      process.env.NODE_ENV = 'test';
+      const rows = [
+        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+      ];
+      const { service, sessions } = buildService(rows);
+
+      await service.login('admin@monienaija.local', 'MonieNaijaAdmin123!');
+      await service.login('admin@monienaija.local', 'MonieNaijaAdmin123!');
+
+      const first = sessions.establish.mock.calls[0][0].principalId;
+      const second = sessions.establish.mock.calls[1][0].principalId;
+      expect(first).toBe(second);
     });
 
     it('D. wrong password is rejected with 401 and does not reach session issuance', async () => {
@@ -197,6 +294,19 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 — LocalAdminAuthenticationService (unit, moc
 
       await expect(service.login('admin@monienaija.local', 'MonieNaijaAdmin123!')).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+      expect(sessions.establish).not.toHaveBeenCalled();
+    });
+
+    it('I3. refuses to authenticate when A2_WORKFORCE_ENABLED=false, even in development/test', async () => {
+      process.env.NODE_ENV = 'test';
+      const rows = [
+        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+      ];
+      const { service, sessions } = buildService(rows, { workforceEnabled: false });
+
+      await expect(service.login('admin@monienaija.local', 'MonieNaijaAdmin123!')).rejects.toBeInstanceOf(
+        UnauthorizedException,
       );
       expect(sessions.establish).not.toHaveBeenCalled();
     });

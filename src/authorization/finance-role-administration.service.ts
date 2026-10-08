@@ -153,6 +153,96 @@ export class A2FinanceRoleAdministrationService {
       return this.view(assignment, now);
     });
   }
+  /**
+   * V1-ADMIN-UAT-IDENTITY-01 — LOCAL DEVELOPMENT / TEST ONLY.
+   *
+   * Grants the single FINANCE_ADMIN role assignment backing the local administrator seeded by
+   * `scripts/local-dev-seed-admin.js`, through this service's OWN `A2FinanceRoleAssignment`
+   * persistence, assignment-reference derivation, and audit trail — i.e. the SAME table and
+   * SAME infrastructure every other role grant in this codebase uses. This is deliberately NOT
+   * the production FINANCE_ADMIN bootstrap ceremony (`consumeBootstrap()` above, which requires
+   * an externally-signed, one-time JWS and remains the ONLY way a real deployment may ever
+   * grant FINANCE_ADMIN) — that method, and its "exactly one ACTIVE FINANCE_ADMIN across the
+   * whole deployment" invariant, are completely untouched by this method. Local development has
+   * no external signing authority to produce that JWS, so this narrowly-scoped method exists
+   * purely to let the local-admin seed script hand its one fixed administrator identity a REAL,
+   * persisted, per-principal role-assignment row instead of relying on the blanket
+   * config-driven `mock-sandbox-subject` grant that used to back it.
+   *
+   * Idempotency is keyed to the target `principalId` alone (a second call for the SAME
+   * principal is a no-op returning the existing row) rather than `consumeBootstrap()`'s global
+   * single-FINANCE_ADMIN check — conflating the two would make the local-dev seed script fail
+   * non-idempotently the moment any other principal's bootstrap-consumption test happened to
+   * touch the same database, which would defeat the point of a local developer convenience.
+   *
+   * Hard-gated to NODE_ENV=development|test independently of (and in addition to) the identical
+   * gate already enforced by every caller in `LocalAdminAuthenticationService` — this method
+   * must never be reachable in a way that grants FINANCE_ADMIN in production.
+   */
+  async grantLocalAdministratorFinanceAdmin(
+    principalId: string,
+    assignedBy: string,
+    now = new Date(),
+  ): Promise<A2FinanceRoleAssignmentViewV1> {
+    if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+      throw new ForbiddenException(
+        'grantLocalAdministratorFinanceAdmin refuses to run outside NODE_ENV=development or NODE_ENV=test',
+      );
+    }
+    const def = this.config.roles.find((r) => r.roleKey === 'FINANCE_ADMIN' && r.enabled);
+    if (!def) throw new ForbiddenException('FINANCE_ADMIN role is disabled or undefined in configuration');
+
+    const ref = this.reference(principalId, 'FINANCE_ADMIN'),
+      r = this.ds.getRepository(A2FinanceRoleAssignment),
+      existing = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
+    if (existing) return this.view(existing, now);
+
+    // A long-lived local-dev convenience window, not a real expiry policy — mirrors the
+    // "disposable local fixture" nature of the credential this backs (see
+    // docs/V1/V1-ADMIN-LOCAL-LOGIN-01.md).
+    const effectiveTo = new Date(now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000);
+    const row = await r.save(
+      r.create({
+        id: randomUUID(),
+        assignmentReference: ref,
+        assignmentVersion: 1,
+        principalId,
+        roleKey: 'FINANCE_ADMIN',
+        scopes: def.scopes,
+        status: 'ACTIVE',
+        interim: true,
+        effectiveFrom: now,
+        effectiveTo,
+        assignedBy,
+        assignedAt: now,
+        revokedBy: null,
+        revokedAt: null,
+        bootstrapReference: null,
+        approvalIds: [],
+        auditReferences: [],
+        recordVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    const event = await this.audit.record(this.ds.manager, {
+      entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+      entityId: row.id,
+      action: 'LOCAL_ADMIN_FINANCE_ADMIN_GRANTED',
+      actor: assignedBy,
+      newValues: {
+        assignmentReference: ref,
+        principalId,
+        roleKey: 'FINANCE_ADMIN',
+        scopes: def.scopes,
+        effectiveFrom: now,
+        effectiveTo,
+      },
+    });
+    row.auditReferences = [event.id];
+    await r.save(row);
+    return this.view(row, now);
+  }
   async assign(c: A2RoleAssignmentCommandV1): Promise<A2FinanceRoleAssignmentViewV1> {
     this.validateCommand(c);
     if (c.principal.principalId === c.targetPrincipalId)

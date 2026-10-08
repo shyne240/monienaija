@@ -11,11 +11,16 @@
  * `POST /internal/a2/workforce/local-admin-sessions`.
  *
  * This is NOT a parallel authentication system: a successful password check against this
- * credential exchanges into the existing, already-reviewed A2 workforce sandbox bypass
- * (`A2WorkforceOidcService` + `A2WorkforceSessionService`), producing the exact same kind of
- * session every other workforce login produces — with every enabled A2 Finance role
- * (FINANCE_ADMIN/FINANCE_PREPARER/FINANCE_CONTROLLER/FINANCE_AUDITOR) and their associated
- * scopes.
+ * credential is exchanged for a session through the existing `A2WorkforceSessionService`,
+ * producing the exact same kind of session every other workforce login produces.
+ *
+ * V1-ADMIN-UAT-IDENTITY-01: this script's seed step also grants the administrator a REAL,
+ * persisted `a2_finance_role_assignments` row — exactly ONE role, `FINANCE_ADMIN` — through
+ * `A2FinanceRoleAdministrationService`, keyed to a principalId deterministically derived from
+ * this credential's own email. The administrator's authorization is therefore resolved the
+ * normal way every other workforce principal's authorization is resolved (a real per-principal
+ * role-assignment lookup), not through the shared, config-driven `mock-sandbox-subject` bypass
+ * this used to depend on.
  *
  * `LocalAdminAuthenticationService` (and this script) refuse to run unless
  * NODE_ENV=development or NODE_ENV=test. NEVER run this against a production database.
@@ -54,6 +59,10 @@ async function main() {
           note: result.created
             ? 'Local administrator credential created.'
             : 'Local administrator credential already exists — no change made (idempotent).',
+          role: result.role,
+          roleNote:
+            'Real, persisted a2_finance_role_assignments row (idempotent — re-running this ' +
+            'script never creates a duplicate), not the old shared mock-sandbox-subject grant.',
           loginUrl: 'http://localhost:5173',
           backendLoginEndpoint: 'POST http://localhost:3000/api/v1/internal/a2/workforce/local-admin-sessions',
         },

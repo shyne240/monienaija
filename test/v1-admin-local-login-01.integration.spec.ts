@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
 /**
- * V1-ADMIN-LOCAL-LOGIN-01 — real PostgreSQL + real HTTP coverage for the local administrator
- * login path used by Admin Web.
+ * V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — real PostgreSQL + real HTTP coverage for
+ * the local administrator login path used by Admin Web.
  *
  * Boots the entire real AppModule (same module graph the running backend uses) against a
  * genuine, freshly migrated PostgreSQL database and drives the HTTP surface exactly the way
@@ -15,6 +15,20 @@
  *   E. the resulting token is a genuine, valid A2 workforce session — it authorizes a real
  *      protected admin endpoint and is rejected once expired/absent
  *   F. production mode refuses both seeding and the login route entirely
+ *
+ * V1-ADMIN-UAT-IDENTITY-01 additions (real PostgreSQL):
+ *   I1. the local administrator's authorization resolves through a REAL, persisted
+ *       `a2_finance_role_assignments` row keyed to its own deterministic principalId — not the
+ *       shared, config-driven `mock-sandbox-subject` blanket grant.
+ *   I2. exactly one ACTIVE FINANCE_ADMIN role-assignment row exists after seeding, and it stays
+ *       exactly one after seeding again (idempotent) and after logging in more than once.
+ *   I3. the local administrator's session is never, at any point, resolvable to the literal
+ *       'mock-sandbox-subject' principal — proven directly against the database rows this
+ *       produces, not just the HTTP response shape.
+ *   I4. `A2WorkforceOidcService.validate()` is never invoked by the local-admin login path —
+ *       proving its authorization does not depend on that service or its sandbox bypass at all.
+ *   I5. logout/revocation and re-login both continue to work against the new, identity-tied
+ *       evidence path.
  */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -24,6 +38,7 @@ import request = require('supertest');
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
+import { A2WorkforceOidcService } from '../src/authorization/workforce-oidc.service';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -42,6 +57,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
   let localAdminService: LocalAdminAuthenticationService;
+  let oidcService: A2WorkforceOidcService;
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
   beforeAll(async () => {
@@ -60,6 +76,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
     await app.getHttpAdapter().getInstance().ready();
 
     localAdminService = moduleRef.get(LocalAdminAuthenticationService);
+    oidcService = moduleRef.get(A2WorkforceOidcService);
   }, 180_000);
 
   afterAll(async () => {
@@ -88,7 +105,9 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
 
   it('A. seeding creates exactly one row in local_admin_credentials', async () => {
     const result = await seed();
-    expect(result).toEqual({ created: true, email: 'admin@monienaija.local' });
+    expect(result.created).toBe(true);
+    expect(result.email).toBe('admin@monienaija.local');
+    expect(result.role).toMatchObject({ roleKey: 'FINANCE_ADMIN', status: 'ACTIVE' });
 
     const rows: Array<{ email: string; hash_algorithm: string }> = await dataSource.query(
       `SELECT email, hash_algorithm FROM local_admin_credentials`,
@@ -199,5 +218,121 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
     } finally {
       process.env.NODE_ENV = 'test';
     }
+  });
+
+  describe('V1-ADMIN-UAT-IDENTITY-01 — real persisted per-identity authorization', () => {
+    it('I1. seeding creates exactly one REAL, persisted ACTIVE FINANCE_ADMIN row in a2_finance_role_assignments, keyed to a principalId that is NOT mock-sandbox-subject', async () => {
+      const result = await seed();
+
+      const rows: Array<{
+        principal_id: string;
+        role_key: string;
+        status: string;
+        scopes: string[];
+      }> = await dataSource.query(
+        `SELECT principal_id, role_key, status, scopes FROM a2_finance_role_assignments`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.role_key).toBe('FINANCE_ADMIN');
+      expect(rows[0]!.status).toBe('ACTIVE');
+      expect(rows[0]!.principal_id).not.toContain('mock-sandbox-subject');
+      expect(rows[0]!.principal_id).toBe(result.role.principalId);
+    });
+
+    it('I2. seeding twice is idempotent for the role assignment too — still exactly one ACTIVE FINANCE_ADMIN row', async () => {
+      const first = await seed();
+      const second = await seed();
+      expect(first.role.assignmentReference).toBe(second.role.assignmentReference);
+
+      const rows: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text as count FROM a2_finance_role_assignments WHERE status = 'ACTIVE'`,
+      );
+      expect(rows[0]!.count).toBe('1');
+    });
+
+    it('I3. the authenticated session principal is the REAL local-admin identity, not mock-sandbox-subject, and resolves through the normal per-principal role-assignment lookup', async () => {
+      await seed();
+
+      const res = await request(app.getHttpServer())
+        .post(LOGIN_PATH)
+        .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
+      expect(res.status).toBe(201);
+      expect(res.body.principal.principalId).not.toContain('mock-sandbox-subject');
+      // Exactly FINANCE_ADMIN — NOT the old blanket grant of every enabled role.
+      expect(res.body.principal.roles).toEqual(['FINANCE_ADMIN']);
+      expect(res.body.principal.type).toBe('PRIVILEGED');
+
+      const sessionRows: Array<{ principal_id: string; subject: string; roles: string[] }> =
+        await dataSource.query(
+          `SELECT principal_id, subject, roles FROM a2_workforce_sessions ORDER BY created_at DESC LIMIT 1`,
+        );
+      expect(sessionRows[0]!.principal_id).toBe(res.body.principal.principalId);
+      expect(sessionRows[0]!.subject).not.toBe('mock-sandbox-subject');
+      expect(sessionRows[0]!.roles).toEqual(['FINANCE_ADMIN']);
+
+      const assignmentRows: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text as count FROM a2_finance_role_assignments
+         WHERE principal_id = $1 AND role_key = 'FINANCE_ADMIN' AND status = 'ACTIVE'`,
+        [res.body.principal.principalId],
+      );
+      expect(assignmentRows[0]!.count).toBe('1');
+    });
+
+    it('I4. A2WorkforceOidcService.validate() is never invoked by the local-admin login path (authorization does not depend on the sandbox bypass)', async () => {
+      await seed();
+      const validateSpy = jest.spyOn(oidcService, 'validate');
+
+      const res = await request(app.getHttpServer())
+        .post(LOGIN_PATH)
+        .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
+
+      expect(res.status).toBe(201);
+      expect(validateSpy).not.toHaveBeenCalled();
+      validateSpy.mockRestore();
+    });
+
+    it('I5. logout revokes the session and the revoked token can no longer reach a privileged endpoint; re-login works', async () => {
+      await seed();
+      const login = await request(app.getHttpServer())
+        .post(LOGIN_PATH)
+        .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
+      const token = login.body.accessToken as string;
+      const sessionId = login.body.sessionId as string;
+
+      const authorizedBeforeLogout = await request(app.getHttpServer())
+        .get('/api/v1/internal/customers')
+        .set('Authorization', `Bearer ${token}`);
+      expect(authorizedBeforeLogout.status).toBe(200);
+
+      const revoke = await request(app.getHttpServer())
+        .delete(`/api/v1/internal/a2/workforce/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ reason: 'V1-ADMIN-UAT-IDENTITY-01 integration test logout' });
+      expect(revoke.status).toBe(200);
+
+      const afterLogout = await request(app.getHttpServer())
+        .get('/api/v1/internal/customers')
+        .set('Authorization', `Bearer ${token}`);
+      expect(afterLogout.status).toBe(401);
+
+      const sessionRows: Array<{ status: string }> = await dataSource.query(
+        `SELECT status FROM a2_workforce_sessions WHERE id = $1`,
+        [sessionId],
+      );
+      expect(sessionRows[0]!.status).toBe('REVOKED');
+
+      // H. re-login works after logout.
+      const reLogin = await request(app.getHttpServer())
+        .post(LOGIN_PATH)
+        .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
+      expect(reLogin.status).toBe(201);
+      expect(reLogin.body.principal.roles).toEqual(['FINANCE_ADMIN']);
+      expect(reLogin.body.sessionId).not.toBe(sessionId);
+
+      const reAuthorized = await request(app.getHttpServer())
+        .get('/api/v1/internal/customers')
+        .set('Authorization', `Bearer ${reLogin.body.accessToken as string}`);
+      expect(reAuthorized.status).toBe(200);
+    });
   });
 });

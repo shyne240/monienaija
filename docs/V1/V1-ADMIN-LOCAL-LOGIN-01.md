@@ -48,12 +48,21 @@ below for how that is enforced, not just conventionally assumed).
 ## 3. How to create the default local administrator
 
 The role granted matches the real V1 finance-administrator role — this does **not** invent a
-new role. The seeded credential, once exchanged for a session, resolves to all of the
-workforce roles enabled in `A2_WORKFORCE_ROLES_JSON`/`.env`
-(`FINANCE_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, `FINANCE_AUDITOR`) with their
-associated scopes (`privileged:approve`, `privileged:execute`, `finance:prepare`,
-`finance:audit`) — the exact same role/scope set the real OIDC login path grants a
-`FINANCE_ADMIN` workforce member in this environment.
+new role. **(Updated by V1-ADMIN-UAT-IDENTITY-01 — see
+`docs/V1/V1-ADMIN-UAT-IDENTITY-01-REPORT.md` for the full before/after investigation.)** The
+seed step grants the administrator exactly **one** role, `FINANCE_ADMIN`, through a REAL,
+persisted `a2_finance_role_assignments` row — scope `privileged:execute` — keyed to a
+principalId deterministically derived from the credential's own email
+(`https://local-dev-identity.monienaija.invalid:local-admin-credential:<sha256(email)>`). This
+is the exact same per-principal role-assignment table and lookup every other workforce
+principal's authorization already goes through (`A2WorkforceSessionService.resolve()`), not a
+blanket grant of every role enabled in `.env` and not the shared, non-identity-specific
+`mock-sandbox-subject` principal. Additional roles (`FINANCE_PREPARER`, `FINANCE_CONTROLLER`,
+`FINANCE_AUDITOR`) are intentionally **not** granted to this account — the real V1 design
+reserves those for separate maker/checker principals, and FINANCE_ADMIN alone already satisfies
+every Admin Web screen's authorization requirement (`type: PRIVILEGED`, no endpoint in this
+codebase currently requires `finance:audit`/`finance:prepare`/`privileged:approve` at the route
+level).
 
 ```bash
 # from the repository root, after `npm run build` and `npm run migration:run`
@@ -148,10 +157,12 @@ configuration was added or is needed.
   wrong password both perform a real PBKDF2 computation and return the identical
   `401 Invalid local administrator credentials` — timing/response are not distinguishable.
 - **Session issuance:** a verified password check never mints a session itself. It instead
-  obtains an `A2WorkforceAssertionEvidenceV1` from the existing, already-reviewed
-  `A2WorkforceOidcService` sandbox bypass and exchanges it through the existing
-  `A2WorkforceSessionService.establish()` — the exact same session/authorization/audit
-  infrastructure every other workforce login in this codebase uses. The response shape is
+  builds an `A2WorkforceAssertionEvidenceV1` directly — with a subject/principalId
+  deterministically derived from the verified credential's own email, NOT the shared
+  `mock-sandbox-subject` literal `A2WorkforceOidcService`'s sandbox bypass produces — and
+  exchanges it through the existing `A2WorkforceSessionService.establish()` — the exact same
+  session/authorization/audit infrastructure every other workforce login in this codebase uses
+  (see `docs/V1/V1-ADMIN-UAT-IDENTITY-01-REPORT.md`). The response shape is
   the real `A2WorkforceSessionTokenV1` (`accessToken`, `tokenType: "Bearer"`, `sessionId`,
   `expiresAt`, `principal.{type, roles, scopes, assuranceLevel, ...}`), honoring the
   configured session TTL (`A2_WORKFORCE_SESSION_TTL_SECONDS`).
@@ -175,11 +186,16 @@ of them alone is sufficient:
 2. **`LocalAdminAuthenticationService.seedDefaultAdmin()`** throws before touching the
    database unless `NODE_ENV=development` or `NODE_ENV=test` — a production deployment
    running the seed script by mistake fails loudly instead of creating a credential.
-3. **`A2WorkforceOidcService.validate()`'s sandbox-bypass branch** (which this feature
-   deliberately reuses rather than duplicating) independently refuses the
-   `mock-sandbox-token-*` literal outside the same two environments, and
-   **`A2WorkforceSessionService`'s role resolution** independently refuses to grant the
-   sandbox principal any role outside them too.
+3. **`LocalAdminAuthenticationService.login()`** independently refuses unless
+   `A2_WORKFORCE_ENABLED=true`, and **`A2FinanceRoleAdministrationService.grantLocalAdministratorFinanceAdmin()`**
+   independently re-checks `NODE_ENV=development/test` before writing the FINANCE_ADMIN
+   role-assignment row.
+
+(As of V1-ADMIN-UAT-IDENTITY-01, this path no longer calls `A2WorkforceOidcService.validate()`
+or its `mock-sandbox-token-*` sandbox bypass at all — that service and its bypass remain fully
+intact for the automated tests that still use them directly, but the local administrator's own
+authorization no longer depends on them in any way. See
+`docs/V1/V1-ADMIN-UAT-IDENTITY-01-REPORT.md`.)
 
 A production (or staging) deployment fails at gate 1 before ever touching the credential
 table, the OIDC service, or the session service — proven in
