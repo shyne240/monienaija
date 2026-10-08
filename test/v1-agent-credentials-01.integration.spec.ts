@@ -48,6 +48,23 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
 
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic `scopes`
+  // set (catalogue function codes, notably `agent.manage_credentials`) now that
+  // AdminAgentCredentialsController calls AuthorizationService.requireFunction() rather than a
+  // bare principal-type check.
+  const PRIVILEGED_WORKFORCE_FUNCTION_SCOPES = [
+    'agent.suspend',
+    'agent.terminate',
+    'agent.reactivate',
+    'agent.activate',
+    'agent.review_application',
+    'agent.manage_credentials',
+    'workforce.user.create',
+    'workforce.user.suspend',
+    'customer.suspend',
+    'customer.activate',
+    'customer.close',
+  ];
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token || !token.startsWith('workforce-'))
@@ -60,7 +77,9 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

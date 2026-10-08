@@ -51,10 +51,14 @@ import { CommercialDecisionModule } from '../commercial-decision/commercial-deci
 import { FeeRulesModule } from '../fee-rules/fee-rules.module';
 import { CommissionModule } from '../commission/commission.module';
 import { CommercialAccountingModule } from '../commercial-accounting/commercial-accounting.module';
+import { AuthorizationModule } from '../authorization/authorization.module';
 
 @Module({
   imports: [
     OperationsModule,
+    // V1-ADMIN-AUTHORIZATION-HARDENING-01: AgentLifecycleController now calls
+    // AuthorizationService.requireFunction() for catalogue-backed function checks.
+    AuthorizationModule,
     LedgerModule,
     WalletModule,
     CustomerModule,

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { SupportAuthenticationService } from '../support-authentication/support-authentication.service';
+import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
 interface AuthenticatedRequest {
@@ -35,12 +36,15 @@ interface AuthenticatedRequest {
  */
 @Controller('internal/admin/support')
 export class AdminSupportCredentialsController {
-  constructor(private readonly supportAuthentication: SupportAuthenticationService) {}
+  constructor(
+    private readonly supportAuthentication: SupportAuthenticationService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post('workforce-users')
   @HttpCode(201)
   async provision(@Body() body: { username?: string }, @Req() req: AuthenticatedRequest) {
-    const actor = this.requireOperational(req);
+    const actor = await this.requireFunction(req, 'workforce.user.create');
     if (!body?.username) throw new UnauthorizedException('username is required');
     const { user, temporaryPassword, passwordExpiresAt } =
       await this.supportAuthentication.provision({ username: body.username, actor });
@@ -63,17 +67,33 @@ export class AdminSupportCredentialsController {
     @Body() body: { reason?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const actor = this.requireOperational(req);
+    const actor = await this.requireFunction(req, 'workforce.user.suspend');
     const user = await this.supportAuthentication.disable(id, actor, body?.reason);
     return user;
   }
 
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: no `authorization_functions` catalogue code exists for
+  // re-enabling a previously-suspended workforce user (only `workforce.user.create` and
+  // `workforce.user.suspend` are seeded — see authorization-catalogue.seed.ts). Per this task's
+  // "do not invent functions" constraint, this action is NOT migrated to requireFunction(); it
+  // keeps the pre-existing OPERATOR/SERVICE/PRIVILEGED (SUPPORT denied) principal-type gate via
+  // requireOperational() below. Documented as a remaining authorization gap requiring a future
+  // catalogue addition (e.g. `workforce.user.reactivate`), not papered over here.
   @Post('workforce-users/:id/enable')
   @HttpCode(200)
   async enable(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const actor = this.requireOperational(req);
     const user = await this.supportAuthentication.enable(id, actor);
     return user;
+  }
+
+  private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'support-workforce-provisioning',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 
   private requireOperational(req: AuthenticatedRequest): string {

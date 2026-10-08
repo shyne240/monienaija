@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import {
+  AUTHORIZATION_FUNCTION_SEED,
+  AUTHORIZATION_ROLE_FUNCTION_SEED,
+  AUTHORIZATION_ROLE_SEED,
+} from '../../src/authorization-catalogue/authorization-catalogue.seed';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -217,6 +222,112 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   if (!rows.length) return;
   const list = rows.map((r) => `"${r.tablename}"`).join(', ');
   await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: `authorization_functions`/`authorization_roles`/
+  // `authorization_role_functions` are bootstrap REFERENCE/governance data (seeded exactly once
+  // by AuthorizationCatalogueSeedService.onApplicationBootstrap() when the Nest app under test
+  // is created), not test-authored business rows — conceptually closer to `typeorm_migrations`
+  // (excluded above) than to a table a test expects to start empty. Before this task nothing in
+  // the live runtime actually depended on this data surviving a mid-suite TRUNCATE (the two
+  // pre-existing `requiredFunctions` call sites — FINANCE_ROLE_ASSIGN/REVOKE — are exercised by
+  // suites that provision their own role assignments per-test and happened not to hit this
+  // gap), so the gap was latent. This task wires `requiredFunctions` into several more
+  // `AuthorizationService.requireFunction()` call sites reached via real, non-mocked workforce
+  // sessions (e.g. the real local-admin SUPER_ADMIN login in
+  // test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts), which DOES
+  // depend on this data surviving every `beforeEach(truncateAllTables)` call, not just the
+  // one-time bootstrap seed — so the catalogue is restored here, every time, to the exact
+  // reference data `AuthorizationCatalogueSeedService` would (idempotently) converge on anyway.
+  // Suites that specifically want to test the seeder/catalogue's own empty-table behavior use
+  // `AuthorizationCatalogueSeedService.reseed()` directly (truncate-then-seed in one call) and
+  // are unaffected by this — they do not rely on `truncateAllTables` leaving the catalogue empty.
+  await reseedAuthorizationCatalogue(dataSource);
+}
+
+/**
+ * Re-inserts the `authorization_functions`/`authorization_roles`/`authorization_role_functions`
+ * bootstrap reference data directly via the DataSource (no NestJS DI/app context required),
+ * mirroring AuthorizationCatalogueSeedService's insert logic exactly against the same exported
+ * seed arrays it uses. Safe to call against already-empty (just-truncated) catalogue tables.
+ */
+async function reseedAuthorizationCatalogue(dataSource: DataSource): Promise<void> {
+  const tableCheck: Array<{ exists: boolean }> = await dataSource.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'authorization_functions') AS exists`,
+  );
+  if (!tableCheck[0]?.exists) return; // migration not present in this suite's schema — nothing to do
+
+  const now = new Date();
+  for (const item of AUTHORIZATION_FUNCTION_SEED) {
+    await dataSource.query(
+      `INSERT INTO authorization_functions
+         (function_code, domain, name, description, sensitivity, v1_status, assignable,
+          finance_class_restricted, maker_checker_required, approval_required,
+          super_admin_excluded, auditor_visible, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+       ON CONFLICT (function_code) DO NOTHING`,
+      [
+        item.functionCode,
+        item.domain,
+        item.name,
+        item.description,
+        item.sensitivity,
+        item.v1Status,
+        item.assignable,
+        item.financeClassRestricted ?? false,
+        item.makerCheckerRequired ?? false,
+        item.approvalRequired ?? false,
+        item.superAdminExcluded ?? false,
+        item.auditorVisible ?? true,
+        item.notes ?? null,
+        now,
+      ],
+    );
+  }
+
+  const roleIdByKey = new Map<string, string>();
+  for (const item of AUTHORIZATION_ROLE_SEED) {
+    const existing: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authorization_roles WHERE role_key = $1`,
+      [item.roleKey],
+    );
+    if (existing[0]) {
+      roleIdByKey.set(item.roleKey, existing[0].id);
+      continue;
+    }
+    const id = randomUUID();
+    await dataSource.query(
+      `INSERT INTO authorization_roles
+         (id, role_key, display_name, description, is_active, is_system_seeded,
+          finance_role_class, administrative_capability, read_only, maker_eligible,
+          checker_eligible, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,true,true,$5,$6,$7,$8,$9,'SYSTEM_SEED',$10,$10)
+       ON CONFLICT (role_key) DO NOTHING`,
+      [
+        id,
+        item.roleKey,
+        item.displayName,
+        item.description,
+        item.financeRoleClass ?? false,
+        item.administrativeCapability ?? false,
+        item.readOnly ?? false,
+        item.makerEligible ?? false,
+        item.checkerEligible ?? false,
+        now,
+      ],
+    );
+    roleIdByKey.set(item.roleKey, id);
+  }
+
+  for (const item of AUTHORIZATION_ROLE_FUNCTION_SEED) {
+    const roleId = roleIdByKey.get(item.roleKey);
+    if (!roleId) continue;
+    await dataSource.query(
+      `INSERT INTO authorization_role_functions
+         (id, role_id, function_code, access_type, is_active, assigned_by, assigned_at, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,true,'SYSTEM_SEED',$5,$5,$5)
+       ON CONFLICT DO NOTHING`,
+      [randomUUID(), roleId, item.functionCode, item.accessType, now],
+    );
+  }
 }
 
 /** Reads a required single scalar from a query result without unchecked index access. */

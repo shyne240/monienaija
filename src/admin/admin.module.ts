@@ -23,6 +23,7 @@ import { SupportModule } from '../support/support.module';
 import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
 import { AdminSupportCredentialsController } from './admin-support-credentials.controller';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
+import { AuthorizationModule } from '../authorization/authorization.module';
 
 @Module({
   imports: [
@@ -35,6 +36,10 @@ import { CustomerTransactionHistoryService } from '../customer-app/customer-tran
     WalletModule,
     SupportModule,
     SupportAuthenticationModule,
+    // V1-ADMIN-AUTHORIZATION-HARDENING-01: AdminAgentLifecycleController,
+    // AdminAgentCredentialsController and AdminSupportCredentialsController now call
+    // AuthorizationService.requireFunction() for catalogue-backed function checks.
+    AuthorizationModule,
   ],
   controllers: [
     AdminAgentController,

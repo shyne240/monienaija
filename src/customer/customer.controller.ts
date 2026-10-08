@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateContactMethodDto } from './dto/create-contact-method.dto';
@@ -19,15 +20,33 @@ import { CreateKycAssessmentDto } from './dto/create-kyc-assessment.dto';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { CustomerStatus } from './customer.enums';
 import { CustomerService } from './customer.service';
 
 interface AuthenticatedRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
 }
 
+// V1-ADMIN-AUTHORIZATION-HARDENING-01 (Decision 4): the PATCH :id lifecycle route stays a
+// single unified route (per Decision 4's explicit allowance), but the catalogue models
+// customer.suspend/.activate/.close as three distinct functions. The required function is
+// derived from the target status actually requested, resolved BEFORE the service performs the
+// transition. CustomerStatus.DRAFT has no corresponding catalogue function (nothing in the V1
+// spec governs transitioning a customer back to DRAFT) and is intentionally left unmapped here
+// — CustomerService.assertCustomerTransition already rejects it as an invalid transition target
+// for every current status, so no function-based gate is needed for it.
+const CUSTOMER_LIFECYCLE_FUNCTION_BY_STATUS: Partial<Record<CustomerStatus, string>> = {
+  [CustomerStatus.ACTIVE]: 'customer.activate',
+  [CustomerStatus.SUSPENDED]: 'customer.suspend',
+  [CustomerStatus.CLOSED]: 'customer.close',
+};
+
 @Controller('customers')
 export class CustomerController {
-  constructor(private readonly customerService: CustomerService) {}
+  constructor(
+    private readonly customerService: CustomerService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateCustomerDto) {
@@ -50,8 +69,12 @@ export class CustomerController {
   // policy. A CUSTOMER principal must not self-activate/self-unsuspend by supplying
   // its own id; workforce-gated at route level (route-policy-registry) AND here.
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateCustomerDto, @Req() req: AuthenticatedRequest) {
-    this.requireWorkforce(req);
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireWorkforce(req, dto.status);
     return this.customerService.updateStatus(id, dto);
   }
 
@@ -105,14 +128,31 @@ export class CustomerController {
     return this.customerService.getKyc(id);
   }
 
-  private requireWorkforce(req: AuthenticatedRequest): string {
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: function-based via customer.suspend/.activate/.close
+  // (Decision 4), AND-combined with the pre-existing OPERATOR/SERVICE/PRIVILEGED principal-type
+  // restriction (SUPPORT/CUSTOMER/AGENT/AGGREGATOR remain denied — UAT-DEFECT-001). Only
+  // OPERATIONS and SUPER_ADMIN hold these EXECUTE functions in the catalogue; CUSTOMER_SERVICE
+  // (view + support-case only), FINANCE_* , COMPLIANCE, RISK_FRAUD and TREASURY (all
+  // principal.type OPERATOR) are now correctly denied instead of succeeding purely by virtue of
+  // their principal type.
+  private async requireWorkforce(req: AuthenticatedRequest, targetStatus: CustomerStatus): Promise<string> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    // UAT-DEFECT-001 tightened: SUPPORT may not perform CUSTOMER lifecycle control
-    // (OPERATOR/SERVICE/PRIVILEGED only) — mirrors the V1-003 agent-lifecycle
-    // tightening and the route-policy-registry customer-lifecycle branch.
-    // SUPPORT scope per authoritative V1 UAT catalogue (UAT-SEC-005/UAT-ADMIN-011):
-    // read + funding-maker + support-queue only.
+    const functionCode = CUSTOMER_LIFECYCLE_FUNCTION_BY_STATUS[targetStatus];
+    if (functionCode) {
+      // deniedStatus: 401 preserves this controller's pre-existing status code for an
+      // authenticated-but-insufficiently-privileged principal (UnauthorizedException, not
+      // ForbiddenException — see test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts).
+      return this.auth.requireFunction(
+        principal,
+        functionCode,
+        'customer-lifecycle',
+        ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+        { deniedStatus: 401 },
+      );
+    }
+    // No catalogue function governs this target status (e.g. DRAFT) — preserve the pre-existing
+    // principal-type-only restriction rather than inventing a function for it.
     if (
       principal.type === 'AGENT' ||
       principal.type === 'CUSTOMER' ||

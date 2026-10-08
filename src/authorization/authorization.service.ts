@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -7,6 +7,7 @@ import type {
   AuthorizationDenialReason,
   AuthorizationPolicy,
   AuthorizationPrincipal,
+  AuthorizationPrincipalType,
   AuthorizationResource,
   CustomerAccessScope,
 } from './authorization.types';
@@ -30,6 +31,67 @@ export class AuthorizationService {
     const decision = this.evaluate(principal, policy, resource);
     await this.recordDecision(decision);
     return decision;
+  }
+
+  /**
+   * V1-ADMIN-AUTHORIZATION-HARDENING-01: reusable, catalogue-backed replacement for the
+   * one-off `principal.type === 'AGENT' || principal.type === 'CUSTOMER' || ...` deny-list
+   * checks previously hand-written inside ~24 individual controllers. Each call site supplies
+   * the catalogue `authorization_functions` code the operation actually requires (never
+   * invented — must already exist in `authorization-catalogue.seed.ts`) plus the resource type
+   * for audit attribution.
+   *
+   * `allowedPrincipalTypes` is accepted and AND-combined with the function check (not a
+   * replacement for it) so this call can never be *less* restrictive than the principal-type
+   * check it replaces — it can only narrow access further, from "any principal of this type"
+   * down to "a principal of this type that also holds the specific catalogue function". This is
+   * what closes the FINANCE_AUDITOR/OPERATOR-collapse gap: FINANCE_AUDITOR is principal.type
+   * OPERATOR (so it still passes any existing `allowedPrincipalTypes` gate) but holds zero
+   * EXECUTE-level catalogue functions, so `requiredFunctions` now denies it where it previously
+   * succeeded purely by virtue of its principal type.
+   *
+   * Records an audit decision via `authorize()` (not the non-auditing `evaluate()`), matching
+   * the existing FINANCE_ROLE_ASSIGN/REVOKE pattern in `workforce-administration.controller.ts`.
+   */
+  async requireFunction(
+    principal: AuthorizationPrincipal | undefined,
+    functionCode: string,
+    resourceType: string,
+    allowedPrincipalTypes?: readonly AuthorizationPrincipalType[],
+    options?: {
+      /**
+       * Some pre-existing controllers this method replaces used `UnauthorizedException` (401)
+       * rather than `ForbiddenException` (403) for an authenticated-but-wrong-type/missing-
+       * function principal (an inconsistency that predates this task). Set to preserve that
+       * exact status code for call sites whose existing tests assert it, rather than silently
+       * changing a response code as a side effect of an authorization-mechanism refactor.
+       */
+      deniedStatus?: 401 | 403;
+    },
+  ): Promise<string> {
+    if (!principal) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    const decision = await this.authorize(
+      principal,
+      {
+        resourceType,
+        action: functionCode,
+        ...(allowedPrincipalTypes ? { allowedPrincipalTypes } : {}),
+        requiredFunctions: [functionCode],
+        customerAccess: 'NONE',
+      },
+      { type: resourceType },
+    );
+    if (!decision.allowed) {
+      if (decision.reason === 'UNAUTHENTICATED' || options?.deniedStatus === 401) {
+        throw new UnauthorizedException(
+          decision.reason === 'UNAUTHENTICATED' ? 'Authentication required' : 'Privileged access required',
+        );
+      }
+      throw new ForbiddenException(`Authorization denied: ${decision.reason}`);
+    }
+    return principal.principalId;
   }
 
   evaluate(

@@ -54,6 +54,14 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
   // Mock workforce session service validating synthetic workforce-<TYPE> tokens.
   // Non-workforce principal types (CUSTOMER/AGENT/AGGREGATOR) validate as sessions of
   // that type and must be rejected by the controller-level workforce assertion.
+  //
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: CustomerController's PATCH :id lifecycle handler now
+  // calls AuthorizationService.requireFunction() (customer.suspend/.activate/.close catalogue
+  // functions, Decision 4), not just a bare principal-type check. This suite tests
+  // session/status-binding business behavior under an assumed-privileged workforce identity, so
+  // OPERATOR/SERVICE/PRIVILEGED need a realistic `scopes` set to keep representing "a
+  // legitimately-privileged workforce user".
+  const CUSTOMER_LIFECYCLE_FUNCTION_SCOPES = ['customer.suspend', 'customer.activate', 'customer.close'];
   const mockWorkforceSessions = {
     validate: (token: string, audience: string): Promise<any> => {
       if (!token || !token.startsWith('workforce-')) {
@@ -75,7 +83,9 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? CUSTOMER_LIFECYCLE_FUNCTION_SCOPES
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

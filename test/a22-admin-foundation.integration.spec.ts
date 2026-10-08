@@ -44,6 +44,26 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
   // Mock workforce session service that validates synthetic tokens:
   //  Bearer workforce-SUPPORT, workforce-OPERATOR, workforce-SERVICE, workforce-PRIVILEGED
   //  Bearer workforce-AGENT, workforce-CUSTOMER should be treated as workforce type but will be denied by controller's requireWorkforce
+  //
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: this suite exercises general admin-foundation business
+  // behavior, not the authorization permission matrix (see
+  // test/v1-admin-authorization-hardening-01.integration.spec.ts for that). SUPPORT/OPERATOR/
+  // SERVICE/PRIVILEGED here represent "a legitimately-privileged workforce user", so they need a
+  // realistic `scopes` set now that controllers call AuthorizationService.requireFunction()
+  // (catalogue function codes) rather than a bare principal-type check.
+  const PRIVILEGED_WORKFORCE_FUNCTION_SCOPES = [
+    'agent.suspend',
+    'agent.terminate',
+    'agent.reactivate',
+    'agent.activate',
+    'agent.review_application',
+    'agent.manage_credentials',
+    'workforce.user.create',
+    'workforce.user.suspend',
+    'customer.suspend',
+    'customer.activate',
+    'customer.close',
+  ];
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
@@ -56,7 +76,9 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

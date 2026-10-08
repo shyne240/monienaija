@@ -47,6 +47,29 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
 
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: this suite tests agent-lifecycle *business* behavior
+  // (idempotency, ledger non-mutation, audit generation, financial-position stability) under an
+  // assumed-privileged workforce identity — it is not the authorization-permission-matrix suite
+  // (see test/v1-admin-authorization-hardening-01.integration.spec.ts for that). The synthetic
+  // OPERATOR/SERVICE/PRIVILEGED principals therefore need a realistic `scopes` set so they keep
+  // representing "a legitimately-privileged workforce user" now that controllers call
+  // AuthorizationService.requireFunction() (catalogue function codes), not just a bare
+  // principal-type check. SUPPORT intentionally keeps empty scopes — its denial here is the
+  // behavior under test (V1-003 decision: SUPPORT may not perform lifecycle control).
+  const PRIVILEGED_WORKFORCE_FUNCTION_SCOPES = [
+    'agent.suspend',
+    'agent.terminate',
+    'agent.reactivate',
+    'agent.activate',
+    'agent.review_application',
+    'agent.manage_credentials',
+    'workforce.user.create',
+    'workforce.user.suspend',
+    'customer.suspend',
+    'customer.activate',
+    'customer.close',
+  ];
+
   const mockWorkforceSessions = {
     // Synthetic: Bearer workforce-OPERATOR etc -> valid workforce principal of that type
     validate: async (token: string, audience: string) => {
@@ -59,7 +82,9 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

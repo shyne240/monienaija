@@ -1,17 +1,10 @@
-import {
-  Controller,
-  ForbiddenException,
-  HttpCode,
-  Param,
-  Post,
-  Req,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AgentAuthenticationService } from '../agent-authentication/agent-authentication.service';
 import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
 import { AgentPasswordHashAlgorithm } from '../agent-authentication/agent-authentication.enums';
+import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
 interface AuthenticatedRequest {
@@ -46,12 +39,13 @@ export class AdminAgentCredentialsController {
   constructor(
     private readonly agentAuthenticationService: AgentAuthenticationService,
     private readonly sessionService: AgentAuthenticationSessionService,
+    private readonly auth: AuthorizationService,
   ) {}
 
   @Post(':id/credentials')
   @HttpCode(200)
   async issueInitialCredential(@Param('id') agentId: string, @Req() req: AuthenticatedRequest) {
-    const actor = this.requireOperational(req);
+    const actor = await this.requireOperational(req);
     const { plaintext, hash } = this.generateTemporaryCredential();
     const credential = await this.agentAuthenticationService.issueInitialCredential(agentId, {
       passwordHash: hash,
@@ -65,7 +59,7 @@ export class AdminAgentCredentialsController {
   @Post(':id/credentials/reissue')
   @HttpCode(200)
   async reissueInitialCredential(@Param('id') agentId: string, @Req() req: AuthenticatedRequest) {
-    const actor = this.requireOperational(req);
+    const actor = await this.requireOperational(req);
     const { plaintext, hash } = this.generateTemporaryCredential();
     const { credential, previousCredentialId } =
       await this.agentAuthenticationService.reissueInitialCredential(agentId, {
@@ -109,22 +103,21 @@ export class AdminAgentCredentialsController {
     };
   }
 
-  private requireOperational(req: AuthenticatedRequest): string {
-    const principal = req.authorizationPrincipal;
-    if (!principal) throw new UnauthorizedException('Authentication required');
-    // Same actor vocabulary as AdminAgentLifecycleController (V1-003 decision):
-    // OPERATOR/SERVICE/PRIVILEGED only; SUPPORT, CUSTOMER, AGENT, AGGREGATOR denied.
-    if (
-      principal.type === 'CUSTOMER' ||
-      principal.type === 'AGENT' ||
-      (principal.type as string) === 'AGGREGATOR' ||
-      principal.type === 'SUPPORT'
-    ) {
-      throw new ForbiddenException('Operational access required');
-    }
-    if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type as string)) {
-      throw new ForbiddenException('Operational access required');
-    }
-    return principal.principalId;
+  /**
+   * V1-ADMIN-AUTHORIZATION-HARDENING-01: function-based via the `agent.manage_credentials`
+   * catalogue function, AND-combined with the pre-existing OPERATOR/SERVICE/PRIVILEGED
+   * principal-type restriction (same actor vocabulary as AdminAgentLifecycleController;
+   * SUPPORT, CUSTOMER, AGENT, AGGREGATOR remain denied). Only AGENT_NETWORK_MANAGER and
+   * SUPER_ADMIN hold `agent.manage_credentials` in the catalogue, so FINANCE_* / COMPLIANCE /
+   * RISK_FRAUD / CUSTOMER_SERVICE / TREASURY principals (all principal.type OPERATOR) that
+   * previously passed the bare type check are now correctly denied.
+   */
+  private requireOperational(req: AuthenticatedRequest): Promise<string> {
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      'agent.manage_credentials',
+      'agent-credential-issuance',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

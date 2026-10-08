@@ -58,6 +58,23 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
 
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic `scopes`
+  // set (catalogue function codes) now that the relevant controllers call
+  // AuthorizationService.requireFunction() rather than a bare principal-type check — this suite
+  // exercises notification-delivery business behavior, not the authorization permission matrix.
+  const PRIVILEGED_WORKFORCE_FUNCTION_SCOPES = [
+    'agent.suspend',
+    'agent.terminate',
+    'agent.reactivate',
+    'agent.activate',
+    'agent.review_application',
+    'agent.manage_credentials',
+    'workforce.user.create',
+    'workforce.user.suspend',
+    'customer.suspend',
+    'customer.activate',
+    'customer.close',
+  ];
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
@@ -69,7 +86,9 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

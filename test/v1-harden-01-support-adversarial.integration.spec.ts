@@ -66,7 +66,22 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic
+        // `scopes` set (catalogue function codes) now that the relevant controllers call
+        // AuthorizationService.requireFunction() rather than a bare principal-type check.
+        scopes: [
+          'agent.suspend',
+          'agent.terminate',
+          'agent.reactivate',
+          'agent.activate',
+          'agent.review_application',
+          'agent.manage_credentials',
+          'workforce.user.create',
+          'workforce.user.suspend',
+          'customer.suspend',
+          'customer.activate',
+          'customer.close',
+        ],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
