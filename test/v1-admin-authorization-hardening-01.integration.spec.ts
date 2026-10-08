@@ -448,12 +448,13 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
         .patch(`/api/v1/customers/${customerId}`)
         .set(auth(token))
         .send({ status: 'SUSPENDED', actor: 'should-be-denied' });
-      // CustomerController.requireWorkforce() preserves its pre-existing status code
-      // (UnauthorizedException, not ForbiddenException) for an authenticated-but-insufficiently-
-      // privileged principal — see src/customer/customer.controller.ts and
-      // test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts. Not changed by this
-      // task; the function-based *denial decision* itself is what's under test here.
-      expect(res.status).toBe(401);
+      // V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 (§6): CustomerController's `deniedStatus: 401`
+      // override is preserved only for genuinely wrong-principal-type/invalid-principal denials
+      // (see test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts). A principal
+      // that IS a valid workforce OPERATOR but simply lacks `customer.suspend`
+      // (FUNCTION_MISSING) now correctly gets 403, not 401 — see
+      // src/authorization/authorization.service.ts `requireFunction()`.
+      expect(res.status).toBe(403);
     });
 
     it('C4. is denied workforce.user.create (does not hold it)', async () => {
@@ -548,8 +549,8 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
           .patch(`/api/v1/customers/${customerId}`)
           .set(auth(token))
           .send({ status: 'SUSPENDED', actor: 'should-be-denied' });
-        // See C3's comment: CustomerController's pre-existing denial status code is 401.
-        expect(suspendCustomer.status).toBe(401);
+        // See C3's comment: FUNCTION_MISSING denials are 403, not 401.
+        expect(suspendCustomer.status).toBe(403);
       },
     );
   });
@@ -576,8 +577,8 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
           .patch(`/api/v1/customers/${customerId}`)
           .set(auth(token))
           .send({ status: 'SUSPENDED', actor: 'should-be-denied' });
-        // See C3's comment: CustomerController's pre-existing denial status code is 401.
-        expect(suspendCustomer.status).toBe(401);
+        // See C3's comment: FUNCTION_MISSING denials are 403, not 401.
+        expect(suspendCustomer.status).toBe(403);
       },
     );
 
@@ -588,8 +589,8 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
         .patch(`/api/v1/customers/${customerId}`)
         .set(auth(token))
         .send({ status: 'SUSPENDED', actor: 'should-be-denied' });
-      // See C3's comment: CustomerController's pre-existing denial status code is 401.
-      expect(res.status).toBe(401);
+      // See C3's comment: FUNCTION_MISSING denials are 403, not 401.
+      expect(res.status).toBe(403);
     });
 
     it('CUSTOMER_SERVICE is denied agent.suspend (no agent.* function at all)', async () => {
@@ -623,8 +624,8 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
         .patch(`/api/v1/customers/${customerId}`)
         .set(auth(token))
         .send({ status: 'SUSPENDED', actor: 'x' });
-      // See C3's comment: CustomerController's pre-existing denial status code is 401.
-      expect(suspendCustomer.status).toBe(401);
+      // See C3's comment: FUNCTION_MISSING denials are 403, not 401.
+      expect(suspendCustomer.status).toBe(403);
 
       const provisionWorkforce = await request(app.getHttpServer())
         .post('/api/v1/internal/admin/support/workforce-users')

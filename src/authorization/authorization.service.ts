@@ -60,11 +60,23 @@ export class AuthorizationService {
     allowedPrincipalTypes?: readonly AuthorizationPrincipalType[],
     options?: {
       /**
-       * Some pre-existing controllers this method replaces used `UnauthorizedException` (401)
-       * rather than `ForbiddenException` (403) for an authenticated-but-wrong-type/missing-
-       * function principal (an inconsistency that predates this task). Set to preserve that
-       * exact status code for call sites whose existing tests assert it, rather than silently
-       * changing a response code as a side effect of an authorization-mechanism refactor.
+       * V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 (§6): some pre-existing controllers this method
+       * replaces used `UnauthorizedException` (401) rather than `ForbiddenException` (403) for
+       * an authenticated-but-wrong-*identity-shape* caller — e.g. a workforce-issued session
+       * masquerading as CUSTOMER/SUPPORT/AGGREGATOR on a lifecycle route (`PRINCIPAL_TYPE_DENIED`
+       * or `INVALID_PRINCIPAL`). This is a legacy, deliberately-named convention ("S-FIX-01
+       * convention" / "UAT-DEFECT-001 boundary") that predates this task and is preserved
+       * verbatim — every denial reason OTHER than `FUNCTION_MISSING` keeps exactly its
+       * pre-existing status code when this option is set.
+       *
+       * It deliberately EXCLUDES `FUNCTION_MISSING`: a principal whose type is genuinely
+       * permitted on this route (a real OPERATOR/SERVICE/PRIVILEGED workforce session) but which
+       * lacks the specific catalogue function is fully authenticated and simply unauthorized for
+       * this one action — correct HTTP semantics are 403, never 401. Before this fix,
+       * `deniedStatus: 401` forced 401 for every denial reason including `FUNCTION_MISSING`,
+       * which incorrectly collapsed a genuine FINANCE_AUDITOR authorization failure
+       * (principal.type === 'OPERATOR', entitled on the route, but missing
+       * `customer.suspend`/`.activate`/`.close`) into an authentication-shaped response code.
        */
       deniedStatus?: 401 | 403;
     },
@@ -84,10 +96,11 @@ export class AuthorizationService {
       { type: resourceType },
     );
     if (!decision.allowed) {
-      if (decision.reason === 'UNAUTHENTICATED' || options?.deniedStatus === 401) {
-        throw new UnauthorizedException(
-          decision.reason === 'UNAUTHENTICATED' ? 'Authentication required' : 'Privileged access required',
-        );
+      if (decision.reason === 'UNAUTHENTICATED') {
+        throw new UnauthorizedException('Authentication required');
+      }
+      if (options?.deniedStatus === 401 && decision.reason !== 'FUNCTION_MISSING') {
+        throw new UnauthorizedException('Privileged access required');
       }
       throw new ForbiddenException(`Authorization denied: ${decision.reason}`);
     }
