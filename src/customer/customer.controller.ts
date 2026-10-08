@@ -20,7 +20,7 @@ import { CreateKycAssessmentDto } from './dto/create-kyc-assessment.dto';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
-import { CustomerStatus } from './customer.enums';
+import { CustomerKycStatus, CustomerStatus } from './customer.enums';
 import { CustomerService } from './customer.service';
 
 interface AuthenticatedRequest {
@@ -39,6 +39,24 @@ const CUSTOMER_LIFECYCLE_FUNCTION_BY_STATUS: Partial<Record<CustomerStatus, stri
   [CustomerStatus.ACTIVE]: 'customer.activate',
   [CustomerStatus.SUSPENDED]: 'customer.suspend',
   [CustomerStatus.CLOSED]: 'customer.close',
+};
+
+// V1-ADMIN-AUTHORIZATION-KYC-01 (Decision 5): `POST /customers/:id/kyc-assessment` is a single,
+// unmodeled backend endpoint whose `dto.status` carries the actual decision intent (Decision 5
+// explicitly permits keeping the single endpoint while modeling `kyc.review`/`kyc.approve`/
+// `kyc.reject` as three distinct authorization functions — the same "derive the function from the
+// request before authorizing" pattern Decision 4 already established for the customer-lifecycle
+// PATCH route above). Approval and rejection are the two Decision-5 decision outcomes and map
+// 1:1 to their own distinct EXECUTE functions; recording a PENDING assessment or resetting to
+// NOT_STARTED is a non-decision review action and maps to the general `kyc.review` function —
+// at no point does holding `kyc.review` alone grant `kyc.approve`/`kyc.reject` or vice versa,
+// since each status maps to exactly one function and `AuthorizationService.requireFunction()`
+// checks only the one function resolved for the specific request made.
+const KYC_ASSESSMENT_FUNCTION_BY_STATUS: Record<CustomerKycStatus, string> = {
+  [CustomerKycStatus.NOT_STARTED]: 'kyc.review',
+  [CustomerKycStatus.PENDING]: 'kyc.review',
+  [CustomerKycStatus.APPROVED]: 'kyc.approve',
+  [CustomerKycStatus.REJECTED]: 'kyc.reject',
 };
 
 @Controller('customers')
@@ -99,7 +117,12 @@ export class CustomerController {
   }
 
   @Post(':id/kyc-assessment')
-  createKycAssessment(@Param('id') id: string, @Body() dto: CreateKycAssessmentDto) {
+  async createKycAssessment(
+    @Param('id') id: string,
+    @Body() dto: CreateKycAssessmentDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.requireKycFunction(req, KYC_ASSESSMENT_FUNCTION_BY_STATUS[dto.status]);
     return this.customerService.createKycAssessment(id, dto);
   }
 
@@ -124,7 +147,8 @@ export class CustomerController {
   }
 
   @Get(':id/kyc')
-  getKyc(@Param('id') id: string) {
+  async getKyc(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireKycFunction(req, 'kyc.view');
     return this.customerService.getKyc(id);
   }
 
@@ -162,5 +186,40 @@ export class CustomerController {
       throw new UnauthorizedException('Privileged access required');
     }
     return principal.principalId;
+  }
+
+  // V1-ADMIN-AUTHORIZATION-KYC-01: `getKyc`/`createKycAssessment` previously had no own
+  // authorization check at all — they were reachable by any principal type the generic
+  // `/api/v1/customers/*` route-policy allows (`CUSTOMER` SELF + any `OPERATOR/SERVICE/
+  // PRIVILEGED`), with zero function-level gate, even though the catalogue's `kyc.view`/
+  // `.review`/`.approve`/`.reject` functions are assigned only to SUPER_ADMIN/COMPLIANCE
+  // (plus `kyc.view` additionally to FINANCE_AUDITOR) — meaning any OPERATOR-collapsing
+  // workforce role (FINANCE_PREPARER, FINANCE_CONTROLLER, RISK_FRAUD, CUSTOMER_SERVICE,
+  // TREASURY, OPERATIONS, AGENT_NETWORK_MANAGER) could view/create KYC assessments for any
+  // customer purely by virtue of its principal type (the exact gap
+  // V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 flagged).
+  //
+  // A real CUSTOMER principal is deliberately EXEMPTED from this function check and left on
+  // its pre-existing, unchanged path (gated only by the route-policy's `customerAccess: 'SELF'`
+  // check, enforced by RuntimeAccessGuard before this controller runs, identical to the other
+  // customer sub-resource GETs on this controller — `/profile`, `/addresses`, `/identity-
+  // documents`, etc.). Catalogue functions are a workforce-only authorization unit: a CUSTOMER
+  // principal never holds any catalogue function in `principal.scopes` (see
+  // `AuthorizationService.evaluate()`/`RuntimeAccessGuard`'s CUSTOMER branch), so requiring one
+  // here would deny a customer's own pre-existing self-service reachability entirely — a
+  // business-behavior change this task is explicitly not authorized to make (no KYC redesign,
+  // no business-logic change). The gap this task closes is specifically the workforce
+  // OPERATOR-collapse over-grant, not customer self-access.
+  //
+  // No `deniedStatus` override: this is a brand-new check with no pre-existing 401 convention
+  // to preserve, so `AuthorizationService.requireFunction()`'s default behavior applies —
+  // unauthenticated is 401, an authenticated-but-under-entitled workforce principal is 403.
+  private async requireKycFunction(req: AuthenticatedRequest, functionCode: string): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') {
+      return;
+    }
+    await this.auth.requireFunction(principal, functionCode, 'kyc', ['OPERATOR', 'SERVICE', 'PRIVILEGED']);
   }
 }
