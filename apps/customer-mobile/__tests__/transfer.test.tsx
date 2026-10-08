@@ -3,6 +3,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { SendMoneyScreen } from '../src/screens/authenticated/SendMoneyScreen';
 import { ApiClient, ApiError, NetworkError } from '../src/services/api-client';
 import { clearPendingTransferIntent, loadPendingTransferIntent } from '../src/services/pending-transfer';
+import { SecureStorage } from '../src/services/secure-storage';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -350,7 +351,16 @@ describe('Send Money (Transfer) Screen Tests', () => {
       expect(customerBKey).not.toBe(customerAPending!.idempotencyKey);
     });
 
-    test('logout clears any pending transfer intent', async () => {
+    test('logout does NOT clear an ambiguous pending transfer intent (V1-MOBILE-REAL-WORLD-VALIDATION-01)', async () => {
+      // V1-MOBILE-REAL-WORLD-VALIDATION-01 PART 16: logout previously discarded this intent,
+      // which opened a duplicate-debit path — ambiguous failure -> logout -> log back in as the
+      // SAME customer -> retry the SAME transfer -> a brand-new Idempotency-Key is minted
+      // because the old one was wiped -> if the original ambiguous request had actually already
+      // committed server-side, a SECOND debit occurs. The intent's storage key is already
+      // scoped by customerId (see the adjacent "two different customers" test above), so a
+      // different customer signing into this device could never read or reuse it regardless —
+      // clearing it on logout removed real retry-safety for no actual isolation benefit. Logout
+      // must still clear all session/auth storage; it must NOT clear this intent.
       (ApiClient.post as jest.Mock).mockRejectedValueOnce(new NetworkError('fetch failed'));
 
       const { getByPlaceholderText, getByText } = render(<SendMoneyScreen />);
@@ -359,15 +369,15 @@ describe('Send Money (Transfer) Screen Tests', () => {
       fireEvent.press(getByText('Confirm'));
       await waitFor(() => expect(getByText(/couldn't confirm/)).toBeTruthy());
 
-      expect(await loadPendingTransferIntent('customer-a-uuid')).not.toBeNull();
+      const pendingBeforeLogout = await loadPendingTransferIntent('customer-a-uuid');
+      expect(pendingBeforeLogout).not.toBeNull();
 
       // Exercise the real logout() implementation (not a mock — `../src/store/auth-store` is
       // mocked at the top of this file for the component under test, but `requireActual` here
       // bypasses that for this one direct call) against the real (test-environment in-memory)
-      // SecureStorage, to prove logout actually clears the pending intent. This real store
-      // instance is independent of the mocked one the rendered component used, so it must be
-      // told which customer is "logged in" before logging out, exactly as the real app would
-      // have it populated from a real login.
+      // SecureStorage. This real store instance is independent of the mocked one the rendered
+      // component used, so it must be told which customer is "logged in" before logging out,
+      // exactly as the real app would have it populated from a real login.
       const { useAuthStore: realUseAuthStore } = jest.requireActual('../src/store/auth-store');
       realUseAuthStore.setState({
         isAuthenticated: true,
@@ -376,7 +386,14 @@ describe('Send Money (Transfer) Screen Tests', () => {
       });
       await realUseAuthStore.getState().logout();
 
-      expect(await loadPendingTransferIntent('customer-a-uuid')).toBeNull();
+      // Session/auth storage IS cleared by logout...
+      expect(await SecureStorage.get('auth_session_token')).toBeNull();
+      expect(await SecureStorage.get('auth_customer_id')).toBeNull();
+      // ...but the ambiguous pending transfer intent survives logout, unchanged, so a
+      // subsequent login as the SAME customer can still safely resume it.
+      const pendingAfterLogout = await loadPendingTransferIntent('customer-a-uuid');
+      expect(pendingAfterLogout).not.toBeNull();
+      expect(pendingAfterLogout).toEqual(pendingBeforeLogout);
     });
 
     test('rapid double-tap on Confirm only sends ONE request (synchronous in-flight guard)', async () => {

@@ -2,6 +2,12 @@ import { useAuthStore } from '../src/store/auth-store';
 import { AGENT_SESSION_KEYS } from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
 import * as agentApi from '../src/services/agent-api';
+import {
+  savePendingAgentOperation,
+  loadPendingAgentOperation,
+  clearAllPendingAgentOperations,
+  type PendingAgentOperation,
+} from '../src/services/pending-operation';
 
 jest.mock('../src/services/agent-api', () => {
   const actual = jest.requireActual('../src/services/agent-api');
@@ -158,5 +164,55 @@ describe('Agent auth store (fail-closed)', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().session).toBeNull();
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBeNull();
+  });
+
+  test('logout does NOT clear an ambiguous pending agent operation (V1-MOBILE-REAL-WORLD-VALIDATION-01)', async () => {
+    // V1-MOBILE-REAL-WORLD-VALIDATION-01 PART 16: logout previously called
+    // clearAllPendingAgentOperations(agentId) unconditionally, which discarded a pending
+    // Cash-In/Cash-Out/Cash-to-Cash-send record even when it existed BECAUSE the last attempt
+    // was AMBIGUOUS (every definitive outcome already clears it immediately — see the confirm
+    // screens' save-before-send / clear-on-definitive-outcome pattern). That opened a
+    // duplicate-financial-effect path: ambiguous failure -> Agent logs out -> logs back in as
+    // the SAME Agent -> retries the SAME operation -> a brand-new Idempotency-Key is minted
+    // because the old one was wiped -> if the original ambiguous request had actually already
+    // committed server-side (these three flows have no independent business-level duplicate
+    // guard), a SECOND financial effect occurs. The record's storage key is already scoped by
+    // agentId AND operationType (storageKeyFor in pending-operation.ts), so a different Agent
+    // logging into this device could never read or collide with it regardless of whether
+    // logout clears it — clearing it provided no real isolation benefit while actively
+    // destroying the retry-safety net. Logout must still clear all session/credential storage;
+    // it must NOT clear this Agent's pending operation record.
+    const session = sessionFixture();
+    await SecureStorage.set(AGENT_SESSION_KEYS.token, session.accessToken);
+    useAuthStore.setState({ isAuthenticated: true, session, agentId: session.agentId });
+    mockedApi.agentLogout.mockResolvedValue({ revoked: true });
+
+    const pending: PendingAgentOperation = {
+      agentId: session.agentId,
+      operationType: 'CASH_IN',
+      idempotencyKey: 'ambiguous-op-key-1',
+      counterpartyId: 'customer-uuid-1',
+      amountMinor: '500000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    };
+    await savePendingAgentOperation(pending);
+
+    await useAuthStore.getState().logout();
+
+    // Session/credential storage IS cleared by logout...
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBeNull();
+    // ...but the ambiguous pending operation survives logout, unchanged, so the SAME Agent
+    // logging back in can still safely resume/match it instead of minting a fresh key.
+    const survived = await loadPendingAgentOperation(session.agentId, 'CASH_IN');
+    expect(survived).toEqual(pending);
+
+    // A DIFFERENT Agent logging into this device still cannot see it — pure function of the
+    // agentId-scoped storage key, independent of the logout change above.
+    const otherAgentView = await loadPendingAgentOperation('a-totally-different-agent-id', 'CASH_IN');
+    expect(otherAgentView).toBeNull();
+
+    await clearAllPendingAgentOperations(session.agentId);
   });
 });

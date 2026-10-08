@@ -2,7 +2,6 @@ import { create } from 'zustand';
 
 import { AGENT_SESSION_KEYS, purgeAgentSessionFromStorage } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
-import { clearAllPendingAgentOperations } from '../services/pending-operation';
 import {
   agentLogin,
   agentLogout,
@@ -118,7 +117,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     set({ isLoading: true });
-    const loggedOutAgentId = get().agentId;
     try {
       const session = get().session;
       if (session) {
@@ -130,12 +128,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     } finally {
       await purgeAgentSessionFromStorage();
-      // V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01: a pending operation must never cross an
-      // Agent identity boundary — if this device is reused by a different Agent, no stale
-      // Idempotency-Key from the previous Agent's session may ever be read or reused.
-      if (loggedOutAgentId) {
-        await clearAllPendingAgentOperations(loggedOutAgentId);
-      }
+      // V1-MOBILE-REAL-WORLD-VALIDATION-01: logout deliberately does NOT clear this Agent's
+      // pending-operation record. A record only ever exists here because the last attempt
+      // ended AMBIGUOUSLY (every definitive outcome — success or a 4xx rejection — already
+      // clears it immediately; see pending-operation.ts call sites). Discarding it on logout
+      // previously meant: ambiguous Cash-In/Cash-Out/Cash-to-Cash-send failure -> Agent logs
+      // out (e.g. to retry the app) -> logs back in as the SAME Agent -> re-submits the SAME
+      // operation -> a brand-new Idempotency-Key is minted because the old one was wiped ->
+      // if the original ambiguous request had actually already committed server-side, this
+      // creates a SECOND, duplicate financial effect (these three flows have no independent
+      // business-level duplicate guard — the persisted Idempotency-Key is the only thing
+      // preventing this). The storage key is already scoped by `agentId`
+      // (`pending_agent_operation:<agentId>:<type>`, see storageKeyFor() in
+      // pending-operation.ts), so a DIFFERENT Agent signing into this device can never read or
+      // collide with this record regardless of whether logout clears it — clearing on logout
+      // was removing real retry-safety for no actual isolation benefit. The 24-hour staleness
+      // window (MAX_PENDING_AGE_MS) still bounds how long an unresolved record can ever be
+      // resumed, logout or not. See docs/V1/V1-MOBILE-REAL-WORLD-VALIDATION-01.md Part 16.
       set({
         isAuthenticated: false,
         isLoading: false,

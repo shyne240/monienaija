@@ -2,7 +2,6 @@ import { create } from 'zustand';
 
 import { ApiClient } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
-import { clearPendingTransferIntent } from '../services/pending-transfer';
 
 export interface UserSession {
   accessToken: string;
@@ -121,15 +120,21 @@ export const useAuthStore = create<AuthState>((set) => ({
       await SecureStorage.remove('auth_session_token');
       await SecureStorage.remove('auth_customer_id');
       await SecureStorage.remove('auth_session_data');
-      // V1-MOBILE-IDEMPOTENCY-RECOVERY-01 — a pending Wallet→Wallet recovery intent is stored
-      // under a per-customerId key, but it must not be left dangling on a shared/reused device
-      // after this customer logs out either.
-      // Read BEFORE the `set({ customerId: null, ... })` below clears it.
-      const loggedOutCustomerId = useAuthStore.getState().customerId;
-      if (loggedOutCustomerId) {
-        await clearPendingTransferIntent(loggedOutCustomerId).catch(() => undefined);
-      }
-
+      // V1-MOBILE-REAL-WORLD-VALIDATION-01: logout deliberately does NOT clear this customer's
+      // pending Wallet-to-Wallet transfer intent. A pending intent only ever exists because the
+      // last attempt ended AMBIGUOUSLY (every definitive outcome — success or a 4xx rejection —
+      // already clears it immediately in SendMoneyScreen). Discarding it on logout previously
+      // meant: ambiguous transfer failure -> customer logs out -> logs back in as the SAME
+      // customer -> re-submits the SAME transfer -> a brand-new Idempotency-Key is minted
+      // because the old one was wiped -> if the original ambiguous request had actually already
+      // committed server-side, this creates a SECOND, duplicate debit/credit. The storage key
+      // is already scoped by `customerId` (`pending_wallet_transfer_intent:<customerId>`, see
+      // storageKeyFor() in pending-transfer.ts), so a DIFFERENT customer signing into this
+      // device can never read or collide with this record regardless of whether logout clears
+      // it — clearing on logout was removing real retry-safety for no actual isolation benefit.
+      // The 24-hour staleness window (MAX_PENDING_AGE_MS) still bounds how long an unresolved
+      // intent can ever be resumed, logout or not. See
+      // docs/V1/V1-MOBILE-REAL-WORLD-VALIDATION-01.md Part 16.
       set({
         isAuthenticated: false,
         isLoading: false,
