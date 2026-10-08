@@ -173,20 +173,59 @@ export class RuntimeAccessGuard implements CanActivate {
       };
     } else {
       const validation = await this.sessionService.validate({ token });
-      if (!validation.valid || !validation.principal) {
-        throw new UnauthorizedException('Authentication required');
+      if (validation.valid && validation.principal) {
+        principal = {
+          type: 'CUSTOMER',
+          principalId: validation.principal.customerId,
+          customerId: validation.principal.customerId,
+          sessionId: validation.principal.sessionId,
+          audience: validation.principal.audience,
+          roles: [],
+          scopes: [],
+          customerAccess: 'SELF',
+          assuranceLevel: 'PASSWORD',
+        };
       }
-      principal = {
-        type: 'CUSTOMER',
-        principalId: validation.principal.customerId,
-        customerId: validation.principal.customerId,
-        sessionId: validation.principal.sessionId,
-        audience: validation.principal.audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'SELF',
-        assuranceLevel: 'PASSWORD',
-      };
+    }
+
+    // V1-ADMIN-FULL-SURFACE-AUDIT-01: this default branch (reached when the route has no
+    // explicit `authenticationMode`) previously only ever attempted Agent then Customer
+    // session resolution. Several routes that fall through to this branch declare A2
+    // workforce principal types (OPERATOR/SERVICE/PRIVILEGED) and/or SUPPORT in their
+    // `policy.allowedPrincipalTypes` (e.g. the generic `/api/v1/customers/*` surface) —
+    // but a genuine, valid workforce or SUPPORT bearer token could never be recognised
+    // here, so it always fell straight through to "Authentication required" (401) before
+    // `authorizationService.authorize()` ever got a chance to evaluate the policy that
+    // already declared it allowed. This is the confirmed root cause of Admin Web screens
+    // (e.g. Customer & KYC Servicing) showing "Authentication required" for a real,
+    // correctly-issued FINANCE_ADMIN session.
+    //
+    // Sessions for every principal type are stored in separate tables and looked up by a
+    // hash of the exact token value, so attempting all four here (Agent, Customer, A2
+    // workforce, SUPPORT) is safe: a given token can only ever validate against one of
+    // them. This does not change behaviour for any existing Agent/Customer caller — those
+    // are tried first, exactly as before — it only adds a fallback for tokens neither of
+    // them recognises. Final allow/deny is still decided entirely by
+    // `authorizationService.authorize()` below using the route's existing, unmodified
+    // policy, so this cannot grant access beyond what each route already declared allowed.
+    if (!principal && this.workforceConfig.enabled) {
+      try {
+        principal = await this.workforceSessions.validate(token, this.workforceConfig.internalAudience);
+      } catch {
+        // Not a valid A2 workforce session — fall through to the next session type.
+      }
+    }
+
+    if (!principal) {
+      try {
+        principal = await this.supportAuthenticationService.validate(token);
+      } catch {
+        // Not a valid SUPPORT session either — every known session type has now been tried.
+      }
+    }
+
+    if (!principal) {
+      throw new UnauthorizedException('Authentication required');
     }
 
     request.authorizationPrincipal = principal;

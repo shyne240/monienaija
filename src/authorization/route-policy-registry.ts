@@ -154,6 +154,42 @@ export class RoutePolicyRegistry {
         },
       };
     }
+    // Bare /customers list + create (no :id segment). This is the same admin/back-office
+    // customer-servicing surface as the generic `/customers/:id` branch below (same
+    // allowedPrincipalTypes, already declared there) but listing/creating customers never
+    // targets an existing customerId, so there is no "self" resource to scope against —
+    // `customerAccess: 'NONE'` is accurate rather than a functional restriction (the
+    // customer-scope check only ever engages when a resource customerId is present).
+    // V1-ADMIN-FULL-SURFACE-AUDIT-01: this exact path previously had no dedicated branch at
+    // all and fell to the final catch-all below, whose `requiredScopes: ['internal:access']`
+    // is never granted to any principal — meaning the bare list/create endpoints were
+    // unreachable by design for everyone, not just workforce principals.
+    // SUPPORT is deliberately excluded from both branches below (not just CUSTOMER/OPERATOR/
+    // SERVICE/PRIVILEGED as previously declared). Per the authoritative V1 UAT catalogue
+    // (UAT-SEC-005 / UAT-ADMIN-011, see the lifecycle-PATCH comment above) SUPPORT's scope is
+    // "read + funding-maker + support-queue only" — it must not read or write arbitrary
+    // customer PII/records through this general-purpose customer domain surface at all, only
+    // through its own dedicated, narrowly-scoped controllers (support tickets, phone
+    // verification, etc. under /internal/customers and /customers/me/support). This was
+    // previously an inert over-grant (the guard bug made the whole branch unreachable by any
+    // workforce/SUPPORT principal, so it never mattered); it is corrected here in the same
+    // change that fixes guard reachability, per the explicit real-HTTP regression test in
+    // test/v1-harden-01-support-adversarial.integration.spec.ts ("a real SUPPORT bearer token
+    // cannot read or modify an arbitrary customer record via the customer API" — written in
+    // advance against exactly this guard fallback fix).
+    if (path === '/api/v1/customers') {
+      return {
+        public: false,
+        resourceType: 'customer',
+        policy: {
+          resourceType: 'customer',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['CUSTOMER', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+        },
+      };
+    }
+
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {
@@ -164,7 +200,7 @@ export class RoutePolicyRegistry {
         policy: {
           resourceType: 'customer',
           action: `${method}:${path}`,
-          allowedPrincipalTypes: ['CUSTOMER', 'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          allowedPrincipalTypes: ['CUSTOMER', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
           customerAccess: 'SELF',
         },
       };

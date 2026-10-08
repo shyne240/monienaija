@@ -171,9 +171,23 @@ export class AuthorizationService {
       return 'CUSTOMER_SCOPE_MISMATCH';
     }
     if (access === 'SELF') {
-      return principal.type === 'CUSTOMER' && principal.customerId === resource.customerId
-        ? undefined
-        : 'CUSTOMER_SCOPE_MISMATCH';
+      if (principal.type === 'CUSTOMER') {
+        return principal.customerId === resource.customerId ? undefined : 'CUSTOMER_SCOPE_MISMATCH';
+      }
+      // V1-ADMIN-FULL-SURFACE-AUDIT-01: `SELF` expresses "this CUSTOMER may only act on
+      // its own customerId" — a concept that only has meaning for the CUSTOMER principal
+      // type, which has a customerId of its own to compare against. For any other
+      // principal type, `evaluate()` has already independently gated on
+      // `policy.allowedPrincipalTypes` earlier in this same decision — if a non-CUSTOMER
+      // principal type reached this point, the route already explicitly declared it
+      // allowed, and re-applying a customer-self-identity concept it cannot satisfy by
+      // definition (it has no customerId) must not be treated as an automatic mismatch.
+      // Previously this returned CUSTOMER_SCOPE_MISMATCH unconditionally for every
+      // non-CUSTOMER principal, silently overriding `allowedPrincipalTypes` for any
+      // resource-ID-scoped route (e.g. the generic `/api/v1/customers/:id` surface, which
+      // declares SUPPORT/OPERATOR/SERVICE/PRIVILEGED as allowed but could never actually
+      // be reached by them because of this check).
+      return undefined;
     }
     if (access === 'ASSIGNED') {
       if (principal.customerAccess === 'ANY') {
