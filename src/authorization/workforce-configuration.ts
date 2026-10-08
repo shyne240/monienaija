@@ -47,11 +47,14 @@ const roleSchema = z
         code: 'custom',
         message: 'approval-capable roles must be MFA-required and checker-eligible',
       });
-    if (role.administrativeCapability && role.roleKey !== 'FINANCE_ADMIN')
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: SUPER_ADMIN is the functional successor of the legacy
+    // A2T11 FINANCE_ADMIN role in this four-slot configuration (see REQUIRED_ROLES below) — the
+    // reservation itself (at most one role may hold this flag) is unchanged.
+    if (role.administrativeCapability && role.roleKey !== 'SUPER_ADMIN')
       context.addIssue({
         code: 'custom',
         path: ['administrativeCapability'],
-        message: 'is reserved for FINANCE_ADMIN in A2T11',
+        message: 'is reserved for SUPER_ADMIN in A2T11',
       });
   });
 const ruleSchema = z
@@ -144,8 +147,21 @@ const proxySchema = z
       family = isIP(address ?? '');
     return bits >= 0 && bits <= (family === 4 ? 32 : 128);
   }, 'must be an IP address or CIDR');
+// V1-ADMIN-AUTHORIZATION-RUNTIME-01: as of the authorization-catalogue runtime migration, this
+// four-role vocabulary is NO LONGER the organizational role authority — `authorization_roles`
+// (src/authorization-catalogue/) is, with ten roles. This configuration is retained, unchanged
+// in shape, purely as the legacy scope-compatibility & maker-checker/rate-limit configuration
+// vocabulary for exactly the four roles that still need it: SUPER_ADMIN (renamed from
+// FINANCE_ADMIN — see workforce-configuration docs), FINANCE_PREPARER, FINANCE_CONTROLLER, and
+// FINANCE_AUDITOR are the only roles the out-of-scope B1/B2F commercial-accounting maker/checker
+// framework (src/policy/b2f-finance-control*.ts) and PrivilegedActionApprovalService's legacy
+// `privileged:*`/`finance:*` scope strings read directly off `principal.roles`/`principal.scopes`.
+// The other six catalogue roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD,
+// CUSTOMER_SERVICE, TREASURY) have no legacy scope/maker-checker/rate-limit semantics to provide
+// and therefore have, and need, no entry here — see A2WorkforceSessionService.resolve(), which
+// resolves role membership against the catalogue independently of this list.
 const REQUIRED_ROLES = [
-    'FINANCE_ADMIN',
+    'SUPER_ADMIN',
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
     'FINANCE_AUDITOR',
@@ -330,9 +346,9 @@ export function workforceConfiguration(
   if (!unique(bootstrapScopes)) throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: duplicate scope');
   if (bootstrapKeys.some((item) => item.environment !== (env.NODE_ENV ?? 'development')))
     throw invalid('A2_BOOTSTRAP_JWKS_JSON.environment: environment mismatch');
-  const admin = roleMap.get('FINANCE_ADMIN')!;
+  const admin = roleMap.get('SUPER_ADMIN')!;
   if ([...admin.scopes].sort().join('\0') !== [...bootstrapScopes].sort().join('\0'))
-    throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: must exactly match FINANCE_ADMIN scopes');
+    throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: must exactly match SUPER_ADMIN scopes');
   const bootstrapIssuer = bootstrapEnabled
       ? requiredText(env, 'A2_BOOTSTRAP_ISSUER', 2048)
       : (env.A2_BOOTSTRAP_ISSUER?.trim() ?? ''),

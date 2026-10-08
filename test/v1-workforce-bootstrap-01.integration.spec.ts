@@ -94,8 +94,8 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
       A2_BOOTSTRAP_ADMIN_SCOPES_JSON: JSON.stringify(['privileged:execute']),
       A2_FINANCE_ROLES_JSON: JSON.stringify([
         {
-          roleKey: 'FINANCE_ADMIN',
-          displayName: 'Finance Administrator',
+          roleKey: 'SUPER_ADMIN',
+          displayName: 'Super Administrator',
           description: 'Bootstrap-granted privileged administration.',
           enabled: true,
           scopes: ['privileged:execute'],
@@ -153,7 +153,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
       A2_MAKER_CHECKER_RULES_JSON: JSON.stringify([
         {
           action: 'FINANCE_ROLE_ASSIGN',
-          initiatingRoles: ['FINANCE_ADMIN'],
+          initiatingRoles: ['SUPER_ADMIN'],
           approvingRoles: ['FINANCE_CONTROLLER'],
           minimumApprovals: 1,
           separationRequired: true,
@@ -164,7 +164,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
         },
         {
           action: 'FINANCE_ROLE_REVOKE',
-          initiatingRoles: ['FINANCE_ADMIN'],
+          initiatingRoles: ['SUPER_ADMIN'],
           approvingRoles: ['FINANCE_CONTROLLER'],
           minimumApprovals: 1,
           separationRequired: true,
@@ -211,11 +211,11 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     await truncateAllTables(dataSource);
   });
 
-  it('1. statement produced by the offline generator is accepted by the EXISTING verifier and creates the one-time FINANCE_ADMIN', async () => {
+  it('1. statement produced by the offline generator is accepted by the EXISTING verifier and creates the one-time SUPER_ADMIN', async () => {
     const { statement, selfCheck } = generateBootstrapStatement(baseInput());
     expect(selfCheck).toBe('OK');
     const view = await roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT));
-    expect(view.roleKey).toBe('FINANCE_ADMIN');
+    expect(view.roleKey).toBe('SUPER_ADMIN');
     expect(view.status).toBe('ACTIVE');
     expect(view.principalId).toBe(`${ISSUER}:${SUBJECT}`);
     expect(view.scopes).toEqual(['privileged:execute']);
@@ -223,7 +223,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     const rows = await dataSource.query(
       `SELECT role_key, status FROM a2_finance_role_assignments`,
     );
-    expect(rows).toEqual([{ role_key: 'FINANCE_ADMIN', status: 'ACTIVE' }]);
+    expect(rows).toEqual([{ role_key: 'SUPER_ADMIN', status: 'ACTIVE' }]);
   });
 
   it('2. wrong identity fails closed (statement principal does not match the calling session principal)', async () => {
@@ -234,7 +234,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     ).rejects.toThrow(/mismatch/i);
   });
 
-  it('3. wrong scope fails closed (scopes must exactly equal the configured FINANCE_ADMIN scopes)', async () => {
+  it('3. wrong scope fails closed (scopes must exactly equal the configured SUPER_ADMIN scopes)', async () => {
     const { statement } = generateBootstrapStatement({
       ...baseInput(),
       scopes: ['privileged:execute', 'finance:prepare'],
@@ -271,7 +271,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
       issuer: ISSUER,
       workforceSubject: SUBJECT,
       principalId: `${ISSUER}:${SUBJECT}`,
-      initialRoleKey: 'FINANCE_ADMIN',
+      initialRoleKey: 'SUPER_ADMIN',
       scopes: ['privileged:execute'],
       effectiveFrom: new Date(Date.now() - 3_600_000).toISOString(),
       effectiveTo: new Date(Date.now() - 1_800_000).toISOString(),
@@ -387,11 +387,11 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     const cfg = workforceConfiguration(env);
     expect(cfg.enabled).toBe(true);
     expect(cfg.roles.map((r) => r.roleKey).sort()).toEqual(
-      ['FINANCE_ADMIN', 'FINANCE_AUDITOR', 'FINANCE_CONTROLLER', 'FINANCE_PREPARER'].sort(),
+      ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'FINANCE_CONTROLLER', 'FINANCE_PREPARER'].sort(),
     );
     expect(cfg.bootstrapFinanceAdminScopes).toEqual(['privileged:execute']);
-    // Invariant: bootstrap scopes exactly match FINANCE_ADMIN scopes.
-    const admin = cfg.roles.find((r) => r.roleKey === 'FINANCE_ADMIN')!;
+    // Invariant: bootstrap scopes exactly match SUPER_ADMIN scopes.
+    const admin = cfg.roles.find((r) => r.roleKey === 'SUPER_ADMIN')!;
     expect([...admin.scopes].sort()).toEqual([...cfg.bootstrapFinanceAdminScopes].sort());
     expect(cfg.makerCheckerRules.map((r) => r.action).sort()).toEqual(
       ['FINANCE_CONTROL_POLICY_ACTIVATE', 'FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],

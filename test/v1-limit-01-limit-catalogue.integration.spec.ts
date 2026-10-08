@@ -93,7 +93,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
     const last = migs[migs.length - 1];
     // after V1-COMMISSION-01 the head is 0073; earlier heads remain accepted for backward compatibility
-    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083']).toContain(last.timestamp);
+    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084']).toContain(last.timestamp);
     if (last.timestamp === '1785753600075') expect(last.name).toBe('AddTransferFeeColumns1785753600075');
     if (last.timestamp === '1785753600076') expect(last.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
     else if (last.timestamp === '1785753600077') expect(last.name).toBe('AddAgentCredentialRotation1785753600077');
@@ -103,6 +103,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     else if (last.timestamp === '1785753600081') expect(last.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
     else if (last.timestamp === '1785753600082') expect(last.name).toBe('CreateLocalAdminAuthentication1785753600082');
     else if (last.timestamp === '1785753600083') expect(last.name).toBe('CreateAuthorizationCatalogue1785753600083');
+    else if (last.timestamp === '1785753600084') expect(last.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
     else if (last.timestamp === '1785753600074') expect(last.name).toBe('CreateRewardRules1785753600074');
     else if (last.timestamp === '1785753600073') expect(last.name).toBe('CreateCommissionRules1785753600073');
     else if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');

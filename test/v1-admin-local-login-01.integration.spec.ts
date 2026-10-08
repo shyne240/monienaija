@@ -20,7 +20,7 @@
  *   I1. the local administrator's authorization resolves through a REAL, persisted
  *       `a2_finance_role_assignments` row keyed to its own deterministic principalId — not the
  *       shared, config-driven `mock-sandbox-subject` blanket grant.
- *   I2. exactly one ACTIVE FINANCE_ADMIN role-assignment row exists after seeding, and it stays
+ *   I2. exactly one ACTIVE SUPER_ADMIN role-assignment row exists after seeding, and it stays
  *       exactly one after seeding again (idempotent) and after logging in more than once.
  *   I3. the local administrator's session is never, at any point, resolvable to the literal
  *       'mock-sandbox-subject' principal — proven directly against the database rows this
@@ -107,7 +107,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
     const result = await seed();
     expect(result.created).toBe(true);
     expect(result.email).toBe('admin@monienaija.local');
-    expect(result.role).toMatchObject({ roleKey: 'FINANCE_ADMIN', status: 'ACTIVE' });
+    expect(result.role).toMatchObject({ roleKey: 'SUPER_ADMIN', status: 'ACTIVE' });
 
     const rows: Array<{ email: string; hash_algorithm: string }> = await dataSource.query(
       `SELECT email, hash_algorithm FROM local_admin_credentials`,
@@ -141,7 +141,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
       tokenType: 'Bearer',
       principal: expect.objectContaining({
         type: 'PRIVILEGED',
-        roles: expect.arrayContaining(['FINANCE_ADMIN']),
+        roles: expect.arrayContaining(['SUPER_ADMIN']),
       }),
     });
     expect(typeof res.body.accessToken).toBe('string');
@@ -221,7 +221,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
   });
 
   describe('V1-ADMIN-UAT-IDENTITY-01 — real persisted per-identity authorization', () => {
-    it('I1. seeding creates exactly one REAL, persisted ACTIVE FINANCE_ADMIN row in a2_finance_role_assignments, keyed to a principalId that is NOT mock-sandbox-subject', async () => {
+    it('I1. seeding creates exactly one REAL, persisted ACTIVE SUPER_ADMIN row in a2_finance_role_assignments, keyed to a principalId that is NOT mock-sandbox-subject', async () => {
       const result = await seed();
 
       const rows: Array<{
@@ -233,13 +233,13 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
         `SELECT principal_id, role_key, status, scopes FROM a2_finance_role_assignments`,
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0]!.role_key).toBe('FINANCE_ADMIN');
+      expect(rows[0]!.role_key).toBe('SUPER_ADMIN');
       expect(rows[0]!.status).toBe('ACTIVE');
       expect(rows[0]!.principal_id).not.toContain('mock-sandbox-subject');
       expect(rows[0]!.principal_id).toBe(result.role.principalId);
     });
 
-    it('I2. seeding twice is idempotent for the role assignment too — still exactly one ACTIVE FINANCE_ADMIN row', async () => {
+    it('I2. seeding twice is idempotent for the role assignment too — still exactly one ACTIVE SUPER_ADMIN row', async () => {
       const first = await seed();
       const second = await seed();
       expect(first.role.assignmentReference).toBe(second.role.assignmentReference);
@@ -258,8 +258,8 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
         .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
       expect(res.status).toBe(201);
       expect(res.body.principal.principalId).not.toContain('mock-sandbox-subject');
-      // Exactly FINANCE_ADMIN — NOT the old blanket grant of every enabled role.
-      expect(res.body.principal.roles).toEqual(['FINANCE_ADMIN']);
+      // Exactly SUPER_ADMIN — NOT the old blanket grant of every enabled role.
+      expect(res.body.principal.roles).toEqual(['SUPER_ADMIN']);
       expect(res.body.principal.type).toBe('PRIVILEGED');
 
       const sessionRows: Array<{ principal_id: string; subject: string; roles: string[] }> =
@@ -268,11 +268,11 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
         );
       expect(sessionRows[0]!.principal_id).toBe(res.body.principal.principalId);
       expect(sessionRows[0]!.subject).not.toBe('mock-sandbox-subject');
-      expect(sessionRows[0]!.roles).toEqual(['FINANCE_ADMIN']);
+      expect(sessionRows[0]!.roles).toEqual(['SUPER_ADMIN']);
 
       const assignmentRows: Array<{ count: string }> = await dataSource.query(
         `SELECT count(*)::text as count FROM a2_finance_role_assignments
-         WHERE principal_id = $1 AND role_key = 'FINANCE_ADMIN' AND status = 'ACTIVE'`,
+         WHERE principal_id = $1 AND role_key = 'SUPER_ADMIN' AND status = 'ACTIVE'`,
         [res.body.principal.principalId],
       );
       expect(assignmentRows[0]!.count).toBe('1');
@@ -326,7 +326,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 (real PostgreSQL + real HTTP)', () => {
         .post(LOGIN_PATH)
         .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
       expect(reLogin.status).toBe(201);
-      expect(reLogin.body.principal.roles).toEqual(['FINANCE_ADMIN']);
+      expect(reLogin.body.principal.roles).toEqual(['SUPER_ADMIN']);
       expect(reLogin.body.sessionId).not.toBe(sessionId);
 
       const reAuthorized = await request(app.getHttpServer())

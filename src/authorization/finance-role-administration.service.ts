@@ -60,7 +60,7 @@ export class A2FinanceRoleAdministrationService {
     )
       throw new UnauthorizedException('Bootstrap identity or environment mismatch');
     if (
-      s.initialRoleKey !== 'FINANCE_ADMIN' ||
+      s.initialRoleKey !== 'SUPER_ADMIN' ||
       canonical([...s.scopes].sort()) !==
         canonical([...this.config.bootstrapFinanceAdminScopes].sort())
     )
@@ -81,16 +81,16 @@ export class A2FinanceRoleAdministrationService {
             : 'Bootstrap nonce conflict',
         );
       const ar = m.getRepository(A2FinanceRoleAssignment);
-      if (await ar.findOne({ where: { roleKey: 'FINANCE_ADMIN', status: 'ACTIVE' } }))
+      if (await ar.findOne({ where: { roleKey: 'SUPER_ADMIN', status: 'ACTIVE' } }))
         throw new ConflictException('Finance bootstrap already completed');
-      const ref = this.reference(s.principalId, 'FINANCE_ADMIN'),
+      const ref = this.reference(s.principalId, 'SUPER_ADMIN'),
         assignment = await ar.save(
           ar.create({
             id: randomUUID(),
             assignmentReference: ref,
             assignmentVersion: 1,
             principalId: s.principalId,
-            roleKey: 'FINANCE_ADMIN',
+            roleKey: 'SUPER_ADMIN',
             scopes: s.scopes,
             status: 'ACTIVE',
             interim: true,
@@ -119,7 +119,7 @@ export class A2FinanceRoleAdministrationService {
           issuer: s.issuer,
           subject: s.workforceSubject,
           principalId: s.principalId,
-          role: 'FINANCE_ADMIN',
+          role: 'SUPER_ADMIN',
           scopes: s.scopes,
           environment: s.environment,
           audience: s.audience,
@@ -139,7 +139,7 @@ export class A2FinanceRoleAdministrationService {
           nonce: s.nonce,
           statementHash,
           principalId: s.principalId,
-          roleKey: 'FINANCE_ADMIN',
+          roleKey: 'SUPER_ADMIN',
           scopes: s.scopes,
           environment: s.environment,
           audience: s.audience,
@@ -155,14 +155,18 @@ export class A2FinanceRoleAdministrationService {
   }
   /**
    * V1-ADMIN-UAT-IDENTITY-01 — LOCAL DEVELOPMENT / TEST ONLY.
+   * V1-ADMIN-AUTHORIZATION-RUNTIME-01: renamed from `grantLocalAdministratorFinanceAdmin` —
+   * grants SUPER_ADMIN (the functional successor of the legacy FINANCE_ADMIN role; see
+   * workforce-configuration.ts) instead of FINANCE_ADMIN. Behaviour and every invariant below
+   * are otherwise unchanged.
    *
-   * Grants the single FINANCE_ADMIN role assignment backing the local administrator seeded by
+   * Grants the single SUPER_ADMIN role assignment backing the local administrator seeded by
    * `scripts/local-dev-seed-admin.js`, through this service's OWN `A2FinanceRoleAssignment`
    * persistence, assignment-reference derivation, and audit trail — i.e. the SAME table and
    * SAME infrastructure every other role grant in this codebase uses. This is deliberately NOT
-   * the production FINANCE_ADMIN bootstrap ceremony (`consumeBootstrap()` above, which requires
+   * the production SUPER_ADMIN bootstrap ceremony (`consumeBootstrap()` above, which requires
    * an externally-signed, one-time JWS and remains the ONLY way a real deployment may ever
-   * grant FINANCE_ADMIN) — that method, and its "exactly one ACTIVE FINANCE_ADMIN across the
+   * grant SUPER_ADMIN) — that method, and its "exactly one ACTIVE SUPER_ADMIN across the
    * whole deployment" invariant, are completely untouched by this method. Local development has
    * no external signing authority to produce that JWS, so this narrowly-scoped method exists
    * purely to let the local-admin seed script hand its one fixed administrator identity a REAL,
@@ -171,28 +175,28 @@ export class A2FinanceRoleAdministrationService {
    *
    * Idempotency is keyed to the target `principalId` alone (a second call for the SAME
    * principal is a no-op returning the existing row) rather than `consumeBootstrap()`'s global
-   * single-FINANCE_ADMIN check — conflating the two would make the local-dev seed script fail
+   * single-SUPER_ADMIN check — conflating the two would make the local-dev seed script fail
    * non-idempotently the moment any other principal's bootstrap-consumption test happened to
    * touch the same database, which would defeat the point of a local developer convenience.
    *
    * Hard-gated to NODE_ENV=development|test independently of (and in addition to) the identical
    * gate already enforced by every caller in `LocalAdminAuthenticationService` — this method
-   * must never be reachable in a way that grants FINANCE_ADMIN in production.
+   * must never be reachable in a way that grants SUPER_ADMIN in production.
    */
-  async grantLocalAdministratorFinanceAdmin(
+  async grantLocalAdministratorSuperAdmin(
     principalId: string,
     assignedBy: string,
     now = new Date(),
   ): Promise<A2FinanceRoleAssignmentViewV1> {
     if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
       throw new ForbiddenException(
-        'grantLocalAdministratorFinanceAdmin refuses to run outside NODE_ENV=development or NODE_ENV=test',
+        'grantLocalAdministratorSuperAdmin refuses to run outside NODE_ENV=development or NODE_ENV=test',
       );
     }
-    const def = this.config.roles.find((r) => r.roleKey === 'FINANCE_ADMIN' && r.enabled);
-    if (!def) throw new ForbiddenException('FINANCE_ADMIN role is disabled or undefined in configuration');
+    const def = this.config.roles.find((r) => r.roleKey === 'SUPER_ADMIN' && r.enabled);
+    if (!def) throw new ForbiddenException('SUPER_ADMIN role is disabled or undefined in configuration');
 
-    const ref = this.reference(principalId, 'FINANCE_ADMIN'),
+    const ref = this.reference(principalId, 'SUPER_ADMIN'),
       r = this.ds.getRepository(A2FinanceRoleAssignment),
       existing = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
     if (existing) return this.view(existing, now);
@@ -207,7 +211,7 @@ export class A2FinanceRoleAdministrationService {
         assignmentReference: ref,
         assignmentVersion: 1,
         principalId,
-        roleKey: 'FINANCE_ADMIN',
+        roleKey: 'SUPER_ADMIN',
         scopes: def.scopes,
         status: 'ACTIVE',
         interim: true,
@@ -228,12 +232,12 @@ export class A2FinanceRoleAdministrationService {
     const event = await this.audit.record(this.ds.manager, {
       entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
       entityId: row.id,
-      action: 'LOCAL_ADMIN_FINANCE_ADMIN_GRANTED',
+      action: 'LOCAL_ADMIN_SUPER_ADMIN_GRANTED',
       actor: assignedBy,
       newValues: {
         assignmentReference: ref,
         principalId,
-        roleKey: 'FINANCE_ADMIN',
+        roleKey: 'SUPER_ADMIN',
         scopes: def.scopes,
         effectiveFrom: now,
         effectiveTo,
@@ -249,15 +253,15 @@ export class A2FinanceRoleAdministrationService {
       throw new ForbiddenException('Self assignment prohibited');
     if (c.principal.assuranceLevel !== 'MFA')
       throw new ForbiddenException('Finance administration requires MFA');
-    if (c.roleKey === 'FINANCE_ADMIN')
-      throw new ForbiddenException('FINANCE_ADMIN assignment prohibited');
+    if (c.roleKey === 'SUPER_ADMIN')
+      throw new ForbiddenException('SUPER_ADMIN assignment prohibited');
     const first =
       (await this.ds
         .getRepository(A2FinanceRoleAssignment)
         .count({ where: { roleKey: c.roleKey, status: 'ACTIVE' } })) === 0;
     if (first) {
       if (
-        !c.principal.roles.includes('FINANCE_ADMIN') ||
+        !c.principal.roles.includes('SUPER_ADMIN') ||
         !INITIAL_BOOTSTRAP_ASSIGNABLE_ROLES.has(c.roleKey)
       )
         throw new ForbiddenException('Initial Finance role assignment denied');
@@ -394,7 +398,7 @@ export class A2FinanceRoleAdministrationService {
     return this.view(row, now);
   }
   private validateCommand(c: A2RoleAssignmentCommandV1) {
-    if (c.roleKey === 'FINANCE_ADMIN') throw new ForbiddenException('Role not allowed');
+    if (c.roleKey === 'SUPER_ADMIN') throw new ForbiddenException('Role not allowed');
     const d = this.config.roles.find((r) => r.roleKey === c.roleKey && r.enabled);
     if (!d) throw new ForbiddenException('Role disabled or undefined');
     const f = new Date(c.effectiveFrom),
@@ -409,7 +413,7 @@ export class A2FinanceRoleAdministrationService {
       issuer: text(p.issuer, 'issuer', 2048),
       workforceSubject: text(p.workforceSubject, 'subject'),
       principalId: text(p.principalId, 'principalId', 160),
-      initialRoleKey: p.initialRoleKey as 'FINANCE_ADMIN',
+      initialRoleKey: p.initialRoleKey as 'SUPER_ADMIN',
       scopes:
         Array.isArray(p.scopes) && p.scopes.every((x) => typeof x === 'string') ? p.scopes : [],
       effectiveFrom: text(p.effectiveFrom, 'effectiveFrom'),

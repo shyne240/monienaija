@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
+import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { A2FinanceRoleAssignment, A2WorkforceSession } from './workforce-authentication.entity';
 import { A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
@@ -11,11 +12,22 @@ import type {
   A2WorkforceSessionTokenV1,
 } from './workforce-authentication.types';
 const hash = (v: string) => createHash('sha256').update(v).digest('hex');
+
+interface ResolvedPrincipalRoles {
+  roles: readonly string[];
+  scopes: readonly string[];
+  /** V1-ADMIN-AUTHORIZATION-RUNTIME-01: catalogue- (or, as fallback, legacy-config-) derived. */
+  administrativeCapability: boolean;
+  /** V1-ADMIN-AUTHORIZATION-RUNTIME-01: true only when every recognized role is catalogue-flagged read-only. */
+  readOnlyPrincipal: boolean;
+}
+
 @Injectable()
 export class A2WorkforceSessionService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
+    private readonly catalogue: AuthorizationCatalogueRuntimeService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
   ) {}
   async establish(
@@ -75,7 +87,7 @@ export class A2WorkforceSessionService {
       tokenType: 'Bearer',
       sessionId: row.id,
       expiresAt: expires.toISOString(),
-      principal: this.principal(row, resolved.roles, resolved.scopes),
+      principal: this.principal(row, resolved),
     };
   }
   async validate(
@@ -97,7 +109,7 @@ export class A2WorkforceSessionService {
     s.scopes = resolved.scopes;
     s.lastSeenAt = now;
     await r.save(s);
-    return this.principal(s, resolved.roles, resolved.scopes);
+    return this.principal(s, resolved);
   }
   async revoke(
     sessionId: string,
@@ -115,7 +127,28 @@ export class A2WorkforceSessionService {
     s.revokeReason = reason.slice(0, 500);
     await r.save(s);
   }
-  private async resolve(principalId: string, now: Date) {
+  /**
+   * V1-ADMIN-AUTHORIZATION-RUNTIME-01: roles/scopes now resolve against BOTH sources —
+   *
+   *   1. `this.config.roles` (A2_FINANCE_ROLES_JSON) — the legacy, 4-slot configuration that
+   *      supplies the literal scope strings (`privileged:execute`, `finance:prepare`, ...) the
+   *      out-of-scope B1/B2F maker/checker frameworks and `PrivilegedActionApprovalService` still
+   *      consume directly. SUPER_ADMIN occupies the slot FINANCE_ADMIN used to (see
+   *      workforce-configuration.ts) — this config is NOT the organizational role authority
+   *      anymore, it is retained only as a legacy scope-compatibility provider.
+   *   2. `authorization_roles` / `authorization_role_functions` (the DB catalogue seeded by
+   *      AuthorizationCatalogueSeedService) — the authoritative, ten-role organizational model.
+   *      Every role key held by a principal is looked up here regardless of whether it is also
+   *      present in (1), which is what makes the six catalogue-only roles (OPERATIONS,
+   *      AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE, TREASURY) resolvable at
+   *      all — `config.roles` has no entries for them and never will (they have no legacy scope
+   *      semantics to provide).
+   *
+   * `principal.scopes` is the UNION of both sources' outputs, so existing `requiredScopes`
+   * policies (legacy strings) and new `requiredFunctions` policies (catalogue function codes)
+   * can both be evaluated off the same flat array.
+   */
+  private async resolve(principalId: string, now: Date): Promise<ResolvedPrincipalRoles> {
     // V1-RELEASE-01: narrowed from `NODE_ENV !== 'production'` to an explicit
     // development/test allowlist for the same reason documented in
     // A2WorkforceOidcService.validate() — `staging` must never grant this. This must stay
@@ -125,38 +158,66 @@ export class A2WorkforceSessionService {
       process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
     if (sandboxBypassAllowed && principalId.includes('mock-sandbox-subject')) {
       const defs = this.config.roles.filter((r) => r.enabled);
+      const roleKeys = defs.map((r) => r.roleKey);
+      const legacyScopes = defs.flatMap((r) => r.scopes);
+      const legacyAdministrative = defs.some((r) => r.administrativeCapability);
+      const catalogue = await this.catalogue.resolveForRoleKeys(roleKeys);
       return {
-        roles: defs.map((r) => r.roleKey).sort(),
-        scopes: [...new Set(defs.flatMap((r) => r.scopes))].sort(),
+        roles: [...new Set(roleKeys)].sort(),
+        scopes: [...new Set([...legacyScopes, ...catalogue.functionCodes])].sort(),
+        administrativeCapability: legacyAdministrative || catalogue.hasAdministrativeCapability,
+        readOnlyPrincipal:
+          catalogue.recognizedRoleKeys.length > 0 && catalogue.allRecognizedRolesReadOnly,
       };
     }
 
     const rows = await this.dataSource
-        .getRepository(A2FinanceRoleAssignment)
-        .find({ where: { principalId, status: 'ACTIVE' } }),
-      defs = new Map(this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]));
-    const active = rows.filter(
-      (a) => a.effectiveFrom <= now && a.effectiveTo > now && defs.has(a.roleKey),
+      .getRepository(A2FinanceRoleAssignment)
+      .find({ where: { principalId, status: 'ACTIVE' } });
+    const legacyDefs = new Map(this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]));
+    const active = rows.filter((a) => a.effectiveFrom <= now && a.effectiveTo > now);
+    const activeRoleKeys = [...new Set(active.map((a) => a.roleKey))];
+
+    const catalogue = await this.catalogue.resolveForRoleKeys(activeRoleKeys);
+
+    // A roleKey survives into principal.roles if EITHER source recognizes it — fail-closed for
+    // any genuinely unknown roleKey (neither legacy config nor the catalogue has ever heard of
+    // it), identical to the old behaviour of silently dropping assignment rows config.roles did
+    // not recognize.
+    const recognizedRoleKeys = activeRoleKeys.filter(
+      (k) => legacyDefs.has(k) || catalogue.recognizedRoleKeys.includes(k),
     );
+    const legacyScopes = recognizedRoleKeys.flatMap((k) => legacyDefs.get(k)?.scopes ?? []);
+    const legacyAdministrative = recognizedRoleKeys.some(
+      (k) => legacyDefs.get(k)?.administrativeCapability === true,
+    );
+
     return {
-      roles: [...new Set(active.map((a) => a.roleKey))].sort(),
-      scopes: [...new Set(active.flatMap((a) => defs.get(a.roleKey)!.scopes))].sort(),
+      roles: recognizedRoleKeys.sort(),
+      scopes: [...new Set([...legacyScopes, ...catalogue.functionCodes])].sort(),
+      administrativeCapability: legacyAdministrative || catalogue.hasAdministrativeCapability,
+      readOnlyPrincipal:
+        catalogue.recognizedRoleKeys.length > 0 &&
+        recognizedRoleKeys.every((k) => catalogue.recognizedRoleKeys.includes(k)) &&
+        catalogue.allRecognizedRolesReadOnly,
     };
   }
-  private principal(
-    s: A2WorkforceSession,
-    roles: readonly string[],
-    scopes: readonly string[],
-  ): AuthorizationPrincipal {
+  private principal(s: A2WorkforceSession, resolved: ResolvedPrincipalRoles): AuthorizationPrincipal {
     return {
-      type: roles.includes('FINANCE_ADMIN') ? 'PRIVILEGED' : 'OPERATOR',
+      // V1-ADMIN-AUTHORIZATION-RUNTIME-01: generalized from the hardcoded
+      // `roles.includes('FINANCE_ADMIN')` literal to the catalogue's (or, as fallback, legacy
+      // config's) `administrative_capability` flag — see ResolvedPrincipalRoles. `type` here is
+      // still only ever OPERATOR/PRIVILEGED; it is NOT a proxy for any specific administrative
+      // function (see `requiredFunctions` / AuthorizationCatalogueRuntimeService for that).
+      type: resolved.administrativeCapability ? 'PRIVILEGED' : 'OPERATOR',
       principalId: s.principalId,
       sessionId: s.id,
       audience: s.audience,
-      roles,
-      scopes,
+      roles: resolved.roles,
+      scopes: resolved.scopes,
       customerAccess: 'NONE',
       assuranceLevel: s.assuranceLevel,
+      readOnlyPrincipal: resolved.readOnlyPrincipal,
     };
   }
 }

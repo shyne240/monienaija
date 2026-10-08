@@ -155,7 +155,7 @@ export function generateBootstrapStatement(
     issuer,
     workforceSubject: subject,
     principalId,
-    initialRoleKey: 'FINANCE_ADMIN',
+    initialRoleKey: 'SUPER_ADMIN',
     scopes,
     effectiveFrom,
     effectiveTo,
@@ -211,7 +211,7 @@ REQUIRED (all of them — the tool fails closed on any missing value):
                                    principalId is derived as <issuer>:<subject> and must equal
                                    the calling workforce session's principal.
   --audience <value>               Must equal the server's A2_BOOTSTRAP_AUDIENCE.
-  --scopes <json-array>            MUST exactly equal the configured FINANCE_ADMIN scopes and
+  --scopes <json-array>            MUST exactly equal the configured SUPER_ADMIN scopes and
                                    A2_BOOTSTRAP_ADMIN_SCOPES_JSON, e.g. '["privileged:execute"]'.
   --effective-from <iso>           Assignment window start (UTC ISO-8601, e.g. 2026-09-30T00:00:00.000Z).
                                    Must not be in the future at generation time.

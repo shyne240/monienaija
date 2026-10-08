@@ -74,7 +74,7 @@ function isLocalDevelopmentEnvironment(): boolean {
  *   3. `A2WorkforceSessionService.establish()` refuses to mint a session unless the evidence's
  *      `assuranceLevel` is `'MFA'` (unconditional, not environment-gated, but only ever
  *      satisfied here because gate 1 already passed).
- *   4. `A2FinanceRoleAdministrationService.grantLocalAdministratorFinanceAdmin()` independently
+ *   4. `A2FinanceRoleAdministrationService.grantLocalAdministratorSuperAdmin()` independently
  *      re-checks NODE_ENV=development/test before writing to the shared
  *      `a2_finance_role_assignments` table.
  * A production (or staging) deployment fails at gate 1 immediately, before ever touching the
@@ -117,7 +117,7 @@ export class LocalAdminAuthenticationService {
    * — never reachable from any HTTP route.
    *
    * V1-ADMIN-UAT-IDENTITY-01: in addition to the credential row, this now ALSO ensures the
-   * local administrator's real, persisted `A2FinanceRoleAssignment` (FINANCE_ADMIN) exists for
+   * local administrator's real, persisted `A2FinanceRoleAssignment` (SUPER_ADMIN) exists for
    * its deterministic principalId — every call converges on exactly one credential row and
    * exactly one ACTIVE role assignment, regardless of whether the credential already existed
    * (the role-assignment step runs unconditionally so a database that already has the
@@ -130,7 +130,7 @@ export class LocalAdminAuthenticationService {
   }): Promise<{
     created: boolean;
     email: string;
-    role: { principalId: string; roleKey: 'FINANCE_ADMIN'; assignmentReference: string; status: string };
+    role: { principalId: string; roleKey: 'SUPER_ADMIN'; assignmentReference: string; status: string };
   }> {
     if (!isLocalDevelopmentEnvironment()) {
       throw new Error(
@@ -179,7 +179,7 @@ export class LocalAdminAuthenticationService {
     }
 
     const principalId = this.localAdminPrincipalId(email);
-    const role = await this.financeRoles.grantLocalAdministratorFinanceAdmin(
+    const role = await this.financeRoles.grantLocalAdministratorSuperAdmin(
       principalId,
       'local-dev-seed-admin-script',
     );
@@ -188,7 +188,7 @@ export class LocalAdminAuthenticationService {
       email,
       role: {
         principalId: role.principalId,
-        roleKey: 'FINANCE_ADMIN',
+        roleKey: 'SUPER_ADMIN',
         assignmentReference: role.assignmentReference,
         status: role.status,
       },

@@ -9,7 +9,7 @@
  *   1. `RuntimeAccessGuard`'s default branch (used by any route with no explicit
  *      `authenticationMode`, e.g. the generic `/api/v1/customers` surface Admin Web's Customer
  *      & KYC Servicing screen calls) only ever attempted to resolve an Agent or a Customer
- *      session. A genuine, correctly-issued A2 workforce (FINANCE_ADMIN/PRIVILEGED) bearer
+ *      session. A genuine, correctly-issued A2 workforce (SUPER_ADMIN/PRIVILEGED) bearer
  *      token could never be recognised there, so it fell straight through to 401
  *      "Authentication required" before `authorizationService.authorize()` ever consulted the
  *      route's policy — even though that policy already declared OPERATOR/SERVICE/PRIVILEGED
@@ -24,9 +24,9 @@
  *      design for everyone until a dedicated branch was added.
  *
  * This suite proves, end-to-end over the real HTTP stack with a REAL local-admin login (the
- * same login Admin Web actually performs) and a REAL, persisted FINANCE_ADMIN role assignment
+ * same login Admin Web actually performs) and a REAL, persisted SUPER_ADMIN role assignment
  * (no synthetic principal injection, no mocked session/authorization service):
- *   - a genuine FINANCE_ADMIN session can now list, create, read, and read the KYC state of
+ *   - a genuine SUPER_ADMIN session can now list, create, read, and read the KYC state of
  *     customers through the exact endpoints Admin Web's Customer & KYC Servicing screen calls;
  *   - an unauthenticated request to the same endpoints still fails closed with 401 (the fix
  *     must not weaken this — see test/v1-customer-onboarding-01.integration.spec.ts line ~190);
@@ -106,7 +106,7 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
       .post(LOGIN_PATH)
       .send({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' });
     expect(login.status).toBe(201);
-    expect(login.body.principal).toMatchObject({ type: 'PRIVILEGED', roles: ['FINANCE_ADMIN'] });
+    expect(login.body.principal).toMatchObject({ type: 'PRIVILEGED', roles: ['SUPER_ADMIN'] });
     return { token: login.body.accessToken as string, sessionId: login.body.sessionId as string };
   }
 
@@ -123,7 +123,7 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
     expect(res.status).toBe(401);
   });
 
-  it('a real FINANCE_ADMIN session can list customers via GET /api/v1/customers (previously 401 "Authentication required")', async () => {
+  it('a real SUPER_ADMIN session can list customers via GET /api/v1/customers (previously 401 "Authentication required")', async () => {
     const { token } = await loginAsFinanceAdmin();
 
     const res = await request(app.getHttpServer())
@@ -134,7 +134,7 @@ describe('V1-ADMIN-FULL-SURFACE-AUDIT-01 Part A — customer API auth propagatio
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('a real FINANCE_ADMIN session can create, read, and read KYC status for a customer via the Admin Web customer-servicing endpoints', async () => {
+  it('a real SUPER_ADMIN session can create, read, and read KYC status for a customer via the Admin Web customer-servicing endpoints', async () => {
     const { token } = await loginAsFinanceAdmin();
     const AUTH = { Authorization: `Bearer ${token}` };
 

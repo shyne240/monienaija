@@ -87,7 +87,7 @@ export class A2WorkforceBootstrapConsumption {
   @Column({ type: 'varchar', length: 255 }) nonce!: string;
   @Column({ name: 'statement_hash', type: 'char', length: 64 }) statementHash!: string;
   @Column({ name: 'principal_id', type: 'varchar', length: 160 }) principalId!: string;
-  @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: 'FINANCE_ADMIN';
+  @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: 'SUPER_ADMIN';
   @Column({ type: 'jsonb' }) scopes!: readonly string[];
   @Column({ type: 'varchar', length: 80 }) environment!: string;
   @Column({ type: 'varchar', length: 80 }) audience!: string;

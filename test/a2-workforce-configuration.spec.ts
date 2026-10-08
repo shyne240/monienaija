@@ -1,7 +1,7 @@
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 
 const roles = [
-  role('FINANCE_ADMIN', ['privileged:execute'], {
+  role('SUPER_ADMIN', ['privileged:execute'], {
     administrativeCapability: true,
     makerEligible: true,
     applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],
@@ -25,7 +25,7 @@ const rules = ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE', 'FINANCE_CONTROL_PO
   (action) => ({
     action,
     initiatingRoles: [
-      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'FINANCE_ADMIN',
+      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'SUPER_ADMIN',
     ],
     approvingRoles: ['FINANCE_CONTROLLER'],
     minimumApprovals: 1,

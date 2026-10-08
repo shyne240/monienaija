@@ -52,7 +52,8 @@ export interface SupportWorkforceSessionTokenV1 {
  * V1-OPS-01 — minimal SUPPORT workforce identity/session mechanism.
  *
  * Deliberately separate from the A2 Finance workforce stack (OIDC + MFA + maker/checker),
- * which is schema-locked to exactly FINANCE_ADMIN/PREPARER/CONTROLLER/AUDITOR and cannot
+ * which is schema-locked to exactly SUPER_ADMIN/PREPARER/CONTROLLER/AUDITOR (V1-ADMIN-
+ * AUTHORIZATION-RUNTIME-01: SUPER_ADMIN renamed from the legacy FINANCE_ADMIN) and cannot
  * accept a SUPPORT role. This mirrors the existing per-principal-type pattern already used
  * for AGENT and CUSTOMER: a dedicated credential + session store, scoped to exactly the
  * SUPPORT principal.

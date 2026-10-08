@@ -13,7 +13,7 @@
  *   I1. login builds its OWN evidence (no longer delegates to A2WorkforceOidcService at all)
  *       with a principalId deterministically derived from the credential's email, NOT the
  *       shared 'mock-sandbox-subject'.
- *   I2. seedDefaultAdmin grants FINANCE_ADMIN through A2FinanceRoleAdministrationService's real
+ *   I2. seedDefaultAdmin grants SUPER_ADMIN through A2FinanceRoleAdministrationService's real
  *       persisted-assignment mechanism, keyed to that exact deterministic principalId, and this
  *       is idempotent across repeated seed calls.
  *   I3. login refuses when A2_WORKFORCE_ENABLED=false (the gate this service used to inherit
@@ -63,16 +63,16 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
         principal: {
           type: 'PRIVILEGED',
           principalId: evidence.principalId,
-          roles: ['FINANCE_ADMIN'],
+          roles: ['SUPER_ADMIN'],
         },
       })),
     };
     const financeRoles: any = {
-      grantLocalAdministratorFinanceAdmin: jest.fn(async (principalId: string) => ({
+      grantLocalAdministratorSuperAdmin: jest.fn(async (principalId: string) => ({
         assignmentReference: `a2-fin-role-test-${principalId}`,
         assignmentVersion: 1,
         principalId,
-        roleKey: 'FINANCE_ADMIN',
+        roleKey: 'SUPER_ADMIN',
         scopes: ['privileged:execute'],
         status: 'ACTIVE',
         interim: true,
@@ -185,7 +185,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
       expect(rows).toHaveLength(0);
     });
 
-    it('I2. grants FINANCE_ADMIN through A2FinanceRoleAdministrationService, keyed to a deterministic principalId (NOT mock-sandbox-subject)', async () => {
+    it('I2. grants SUPER_ADMIN through A2FinanceRoleAdministrationService, keyed to a deterministic principalId (NOT mock-sandbox-subject)', async () => {
       process.env.NODE_ENV = 'test';
       const rows: Array<{ id: string; email: string; passwordHash: string }> = [];
       const { service, financeRoles } = buildService(rows);
@@ -195,13 +195,13 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
         password: 'MonieNaijaAdmin123!',
       });
 
-      expect(financeRoles.grantLocalAdministratorFinanceAdmin).toHaveBeenCalledTimes(1);
+      expect(financeRoles.grantLocalAdministratorSuperAdmin).toHaveBeenCalledTimes(1);
       const [calledPrincipalId, calledAssignedBy] =
-        financeRoles.grantLocalAdministratorFinanceAdmin.mock.calls[0];
+        financeRoles.grantLocalAdministratorSuperAdmin.mock.calls[0];
       expect(calledPrincipalId).not.toContain('mock-sandbox-subject');
       expect(calledPrincipalId).toContain('https://local-dev-identity.monienaija.invalid:');
       expect(calledAssignedBy).toBe('local-dev-seed-admin-script');
-      expect(result.role).toMatchObject({ roleKey: 'FINANCE_ADMIN', status: 'ACTIVE' });
+      expect(result.role).toMatchObject({ roleKey: 'SUPER_ADMIN', status: 'ACTIVE' });
       expect(result.role.principalId).toBe(calledPrincipalId);
     });
 
@@ -219,7 +219,7 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
         password: 'MonieNaijaAdmin123!',
       });
 
-      expect(financeRoles.grantLocalAdministratorFinanceAdmin).toHaveBeenCalledTimes(2);
+      expect(financeRoles.grantLocalAdministratorSuperAdmin).toHaveBeenCalledTimes(2);
       expect(first.role.principalId).toBe(second.role.principalId);
     });
   });

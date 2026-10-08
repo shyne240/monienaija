@@ -84,7 +84,7 @@ export interface A2BootstrapStatementV1 {
   readonly issuer: string;
   readonly workforceSubject: string;
   readonly principalId: string;
-  readonly initialRoleKey: 'FINANCE_ADMIN';
+  readonly initialRoleKey: 'SUPER_ADMIN';
   readonly scopes: readonly string[];
   readonly effectiveFrom: string;
   readonly effectiveTo: string;

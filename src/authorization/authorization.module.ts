@@ -24,6 +24,7 @@ import { RoutePolicyRegistry } from './route-policy-registry';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
+import { AuthorizationCatalogueModule } from '../authorization-catalogue/authorization-catalogue.module';
 import { RuntimeAccessGuard } from './runtime-access.guard';
 
 @Module({
@@ -38,6 +39,10 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     // SupportAuthenticationModule has no dependency back on AuthorizationModule, so this
     // edge does not need to be lazy.
     SupportAuthenticationModule,
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: AuthorizationCatalogueModule has no dependency back on
+    // AuthorizationModule (verified — it only imports TypeOrmModule), so this edge does not
+    // need to be lazy either.
+    AuthorizationCatalogueModule,
     TypeOrmModule.forFeature([
       PrivilegedActionApproval,
       SecurityEventHistory,

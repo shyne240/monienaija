@@ -14,7 +14,7 @@ import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-
  * role configuration the service can be given.
  *
  * Finding: `A2WorkforceSessionService.principal()` only ever returns
- * `'PRIVILEGED'` (when the session's active roles include FINANCE_ADMIN) or
+ * `'PRIVILEGED'` (when the session's active roles include SUPER_ADMIN) or
  * `'OPERATOR'` (every other case). No role configuration, and no other
  * production code path in this codebase, ever constructs a principal with
  * `type: 'SUPPORT'` or `type: 'SERVICE'`. This is not a security hole — the
@@ -63,7 +63,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
       approvalCapability: false,
       makerEligible: false,
       checkerEligible: false,
-      administrativeCapability: roleKey === 'FINANCE_ADMIN',
+      administrativeCapability: roleKey === 'SUPER_ADMIN',
     };
   }
 
@@ -86,7 +86,20 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
       }),
     } as any;
     const audit = { record: jest.fn() } as any;
-    return new A2WorkforceSessionService(dataSource, audit, config);
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: duck-typed fake — these tests exercise the LEGACY
+    // config-driven role/type resolution path specifically, so the catalogue is made to
+    // recognize nothing (empty resolution), which falls back entirely to the legacy
+    // `administrativeCapability` flag on `config.roles` — preserving this file's original
+    // PRIVILEGED-iff-SUPER_ADMIN assertions unchanged.
+    const catalogue = {
+      resolveForRoleKeys: jest.fn().mockResolvedValue({
+        recognizedRoleKeys: [],
+        functionCodes: [],
+        hasAdministrativeCapability: false,
+        allRecognizedRolesReadOnly: false,
+      }),
+    } as any;
+    return new A2WorkforceSessionService(dataSource, audit, catalogue, config);
   }
 
   function activeSessionRow(principalId: string): any {
@@ -105,9 +118,9 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     };
   }
 
-  it('resolves to OPERATOR when the principal holds no FINANCE_ADMIN assignment', async () => {
+  it('resolves to OPERATOR when the principal holds no SUPER_ADMIN assignment', async () => {
     const config = buildConfig([
-      role('FINANCE_ADMIN'),
+      role('SUPER_ADMIN'),
       role('FINANCE_PREPARER'),
       role('FINANCE_CONTROLLER'),
       role('FINANCE_AUDITOR'),
@@ -123,7 +136,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
   });
 
   it('resolves to OPERATOR for a non-admin active role (e.g. FINANCE_AUDITOR)', async () => {
-    const config = buildConfig([role('FINANCE_ADMIN'), role('FINANCE_AUDITOR')]);
+    const config = buildConfig([role('SUPER_ADMIN'), role('FINANCE_AUDITOR')]);
     const now = new Date();
     const service = buildService(config, {
       sessionRow: activeSessionRow('workforce-user-2'),
@@ -140,14 +153,14 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     expect(principal.type).toBe('OPERATOR');
   });
 
-  it('resolves to PRIVILEGED only when the active roles include FINANCE_ADMIN', async () => {
-    const config = buildConfig([role('FINANCE_ADMIN')]);
+  it('resolves to PRIVILEGED only when the active roles include SUPER_ADMIN', async () => {
+    const config = buildConfig([role('SUPER_ADMIN')]);
     const now = new Date();
     const service = buildService(config, {
       sessionRow: activeSessionRow('workforce-user-3'),
       assignments: [
         {
-          roleKey: 'FINANCE_ADMIN',
+          roleKey: 'SUPER_ADMIN',
           status: 'ACTIVE',
           effectiveFrom: new Date(now.getTime() - 1000),
           effectiveTo: new Date(now.getTime() + 100_000),
@@ -159,7 +172,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
   });
 
   it('never resolves to SUPPORT or SERVICE for any role configuration — no production code path issues those types today', async () => {
-    const roleKeys = ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'];
+    const roleKeys = ['SUPER_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'];
     const config = buildConfig(roleKeys.map((k) => role(k)));
     const now = new Date();
     for (const roleKey of roleKeys) {

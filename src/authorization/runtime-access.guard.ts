@@ -24,6 +24,22 @@ interface RuntimeRequest extends AuthorizationRequest {
   params?: Record<string, string | undefined>;
 }
 
+/**
+ * V1-ADMIN-AUTHORIZATION-RUNTIME-01: HTTP methods a read-only principal (`principal.readOnlyPrincipal
+ * === true`, set only by A2WorkforceSessionService when every catalogue role the principal holds is
+ * `read_only = true`) may still use. Everything else (POST/PUT/PATCH/DELETE/...) is rejected with 403
+ * regardless of what any individual controller/route-policy does or does not itself check.
+ *
+ * This generalizes, and closes, the gap documented in
+ * docs/V1/V1-ADMIN-ROLE-ARCHITECTURE-AUDIT-01.md §2.2-2.3: nearly the entire /internal/** surface
+ * gates purely on `allowedPrincipalTypes`, so any role collapsing to OPERATOR previously had full
+ * read/write reach regardless of which specific catalogue role it actually was. It is deliberately
+ * NOT a FINANCE_AUDITOR-specific or any-other-role-specific check — it is driven entirely by the
+ * catalogue's `read_only` flag, so it protects every current and future read-only role without
+ * naming one.
+ */
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 @Injectable()
 export class RuntimeAccessGuard implements CanActivate {
   constructor(
@@ -99,6 +115,7 @@ export class RuntimeAccessGuard implements CanActivate {
       }
 
       request.authorizationPrincipal = principal;
+      this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
 
       // V1-HARDEN-01 Part D: the route-policy-registry declares an explicit
       // `policy.allowedPrincipalTypes` for most WORKFORCE_SESSION routes (several internal
@@ -229,6 +246,7 @@ export class RuntimeAccessGuard implements CanActivate {
     }
 
     request.authorizationPrincipal = principal;
+    this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
     const decision = await this.authorizationService.authorize(principal, route.policy, {
       type: route.resourceType,
       id: route.resourceId,
@@ -241,6 +259,17 @@ export class RuntimeAccessGuard implements CanActivate {
       throw new ForbiddenException('Authorization denied');
     }
     return true;
+  }
+
+  /**
+   * V1-ADMIN-AUTHORIZATION-RUNTIME-01. Guarded by `=== true` (not a truthy check) so a principal
+   * for whom this field is `undefined` (every non-workforce principal type, and any workforce
+   * principal holding zero recognized roles) is never vacuously treated as read-only.
+   */
+  private denyUnsafeMethodForReadOnlyPrincipal(principal: AuthorizationPrincipal, method: string): void {
+    if (principal.readOnlyPrincipal === true && !SAFE_HTTP_METHODS.has(method.toUpperCase())) {
+      throw new ForbiddenException('Read-only principal may not perform this operation');
+    }
   }
 
   private bearerToken(header: string | string[] | undefined): string {

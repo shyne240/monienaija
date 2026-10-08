@@ -15,7 +15,7 @@
  * producing the exact same kind of session every other workforce login produces.
  *
  * V1-ADMIN-UAT-IDENTITY-01: this script's seed step also grants the administrator a REAL,
- * persisted `a2_finance_role_assignments` row — exactly ONE role, `FINANCE_ADMIN` — through
+ * persisted `a2_finance_role_assignments` row — exactly ONE role, `SUPER_ADMIN` — through
  * `A2FinanceRoleAdministrationService`, keyed to a principalId deterministically derived from
  * this credential's own email. The administrator's authorization is therefore resolved the
  * normal way every other workforce principal's authorization is resolved (a real per-principal

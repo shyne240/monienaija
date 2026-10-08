@@ -27,6 +27,15 @@ export interface AuthorizationPrincipal {
   aggregatorAccess?: AggregatorAccessScope;
   assignedCustomerIds?: readonly string[];
   assuranceLevel?: AssuranceLevel;
+  /**
+   * V1-ADMIN-AUTHORIZATION-RUNTIME-01. Set only by A2WorkforceSessionService: true when every
+   * catalogue role actually held by this principal is flagged `read_only` in
+   * `authorization_roles` (and at least one catalogue role was recognized). Generalizes the
+   * "FINANCE_AUDITOR may never mutate" boundary as a reusable, catalogue-driven flag instead of
+   * a role-name check, so RuntimeAccessGuard can deny unsafe HTTP methods for ANY read-only role,
+   * not just a hardcoded one. Always false/undefined for non-workforce principal types.
+   */
+  readOnlyPrincipal?: boolean;
 }
 
 export interface AuthorizationResource {
@@ -43,6 +52,14 @@ export interface AuthorizationPolicy {
   action: string;
   requiredScopes?: readonly string[];
   requiredRoles?: readonly string[];
+  /**
+   * V1-ADMIN-AUTHORIZATION-RUNTIME-01. Function codes from the `authorization_functions`
+   * catalogue (e.g. `workforce.role.assign`) that the principal must hold in `principal.scopes`
+   * (populated by A2WorkforceSessionService from `authorization_role_functions`). Evaluated with
+   * the same all-of semantics as `requiredScopes`/`requiredRoles`, and in addition to them — this
+   * does not replace either, it is a separate, catalogue-sourced authority a route may require.
+   */
+  requiredFunctions?: readonly string[];
   allowedPrincipalTypes?: readonly AuthorizationPrincipalType[];
   customerAccess?: CustomerAccessScope;
   agentAccess?: AgentAccessScope;
@@ -58,11 +75,13 @@ export type AuthorizationDenialReason =
   | 'AUDIENCE_MISMATCH'
   | 'SCOPE_MISSING'
   | 'ROLE_MISSING'
+  | 'FUNCTION_MISSING'
   | 'CUSTOMER_SCOPE_MISMATCH'
   | 'RESOURCE_SCOPE_MISSING'
   | 'MFA_REQUIRED'
   | 'RESOURCE_TYPE_MISMATCH'
-  | 'POLICY_MISSING';
+  | 'POLICY_MISSING'
+  | 'READ_ONLY_PRINCIPAL';
 
 export interface AuthorizationDecision {
   allowed: boolean;
@@ -76,6 +95,8 @@ export interface AuthorizationDecision {
   evaluatedAt: Date;
   requiredScopes: readonly string[];
   requiredRoles: readonly string[];
+  /** Optional (unlike requiredScopes/requiredRoles) so pre-existing call sites that build an AuthorizationDecision-shaped object by hand (outside AuthorizationService.evaluate()) are not forced to add this field. */
+  requiredFunctions?: readonly string[];
 }
 
 export interface AuthorizationRequest {

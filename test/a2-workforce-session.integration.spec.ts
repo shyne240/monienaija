@@ -44,7 +44,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
   let jwksHealthy = true;
 
   const roles = [
-    role('FINANCE_ADMIN', ['privileged:execute'], {
+    role('SUPER_ADMIN', ['privileged:execute'], {
       administrativeCapability: true,
       makerEligible: true,
       applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],
@@ -72,7 +72,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
   ].map((action) => ({
     action,
     initiatingRoles: [
-      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'FINANCE_ADMIN',
+      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'SUPER_ADMIN',
     ],
     approvingRoles: ['FINANCE_CONTROLLER'],
     minimumApprovals: 1,
@@ -178,9 +178,23 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
     });
 
     oidc = new A2WorkforceOidcService(config);
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: duck-typed fake — this suite exercises OIDC/session
+    // token lifecycle specifically, not catalogue-function resolution (covered separately by
+    // test/v1-admin-authorization-runtime-01.integration.spec.ts), so the catalogue is made to
+    // recognize nothing, leaving role/type resolution on the legacy config path this file
+    // already exercises.
+    const catalogue = {
+      resolveForRoleKeys: async () => ({
+        recognizedRoleKeys: [],
+        functionCodes: [],
+        hasAdministrativeCapability: false,
+        allRecognizedRolesReadOnly: false,
+      }),
+    } as never;
     sessions = new A2WorkforceSessionService(
       dataSource,
       new AuditService(dataSource.getRepository(AuditEvent)),
+      catalogue,
       config,
     );
   }, 180000);

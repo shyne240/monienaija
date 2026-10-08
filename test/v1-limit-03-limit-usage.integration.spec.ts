@@ -91,16 +91,17 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   // 01 Migration creates usage table
   it('01. migration creates limit_usages + limit_reservations (0069, still present after 0070)', async () => {
     const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
-    expect(migs.length).toBeGreaterThanOrEqual(70);
+    expect(migs.length).toBeGreaterThanOrEqual(71);
     const usage = migs.find((m) => m.timestamp === '1785753600069');
     expect(usage).toBeDefined();
     expect(usage!.name).toBe('CreateLimitUsages1785753600069');
     // product catalogue (0071) also remains in the chain
     expect(migs.some((m) => m.timestamp === '1785753600071')).toBe(true);
-    // head moved forward with the reward rule schema foundation (0074)
+    // head moved forward with the V1-ADMIN-AUTHORIZATION-RUNTIME-01 bootstrap-role-check
+    // constraint rename (0084)
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600083');
-    expect(last.name).toBe('CreateAuthorizationCatalogue1785753600083');
+    expect(last.timestamp).toBe('1785753600084');
+    expect(last.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);

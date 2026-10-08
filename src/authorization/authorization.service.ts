@@ -40,6 +40,7 @@ export class AuthorizationService {
     const evaluatedAt = new Date();
     const requiredScopes = policy?.requiredScopes ?? [];
     const requiredRoles = policy?.requiredRoles ?? [];
+    const requiredFunctions = policy?.requiredFunctions ?? [];
     const base = {
       resourceType: resource.type,
       resourceId: resource.id,
@@ -48,6 +49,7 @@ export class AuthorizationService {
       evaluatedAt,
       requiredScopes,
       requiredRoles,
+      requiredFunctions,
     };
 
     if (!policy) {
@@ -109,6 +111,15 @@ export class AuthorizationService {
         ...base,
         allowed: false,
         reason: 'ROLE_MISSING',
+        principalType: principal.type,
+        principalId: principal.principalId,
+      };
+    }
+    if (!requiredFunctions.every((fn) => principal.scopes.includes(fn))) {
+      return {
+        ...base,
+        allowed: false,
+        reason: 'FUNCTION_MISSING',
         principalType: principal.type,
         principalId: principal.principalId,
       };
@@ -330,6 +341,7 @@ export class AuthorizationService {
           action: decision.action,
           requiredScopes: decision.requiredScopes,
           requiredRoles: decision.requiredRoles,
+          requiredFunctions: decision.requiredFunctions ?? [],
           evaluatedAt: decision.evaluatedAt,
         },
       });
