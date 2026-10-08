@@ -71,7 +71,7 @@ export const LoginScreen: React.FC = () => {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoSection}>
-          <span style={styles.logoIcon}>₦</span>
+          <img src="/favicon.png" alt="MonieNaija" style={styles.logoIcon} />
           <h1 style={styles.logoText}>MonieNaija</h1>
           <p style={styles.logoTag}>Operational & Business Administration</p>
         </div>
@@ -233,16 +233,12 @@ const styles = {
     marginBottom: '24px',
   },
   logoIcon: {
-    fontSize: '48px',
-    fontWeight: 'bold',
-    color: '#FFB703',
-    backgroundColor: '#0A3D25',
+    // V1-ADMIN-UAT-READINESS-01: the real, already-approved MonieNaija "M" mark
+    // (apps/admin-web/public/favicon.png, wired in commit 2a05c62) replaces the previous
+    // plain-text "₦" glyph-in-a-circle placeholder — no new asset, no redesign.
     width: '72px',
     height: '72px',
-    borderRadius: '36px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    objectFit: 'contain' as const,
     marginBottom: '12px',
   },
   logoText: {

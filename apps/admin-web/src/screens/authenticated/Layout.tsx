@@ -23,7 +23,7 @@ export const Layout: React.FC = () => {
       {/* Sidebar */}
       <div style={styles.sidebar}>
         <div style={styles.branding}>
-          <span style={styles.brandIcon}>₦</span>
+          <img src="/favicon.png" alt="MonieNaija" style={styles.brandIcon} />
           <span style={styles.brandText}>MonieNaija</span>
         </div>
 
@@ -148,16 +148,12 @@ const styles = {
     marginBottom: '32px',
   },
   brandIcon: {
-    fontSize: '22px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    backgroundColor: '#FFB703', // MonieNaija brand gold
+    // V1-ADMIN-UAT-READINESS-01: the real, already-approved MonieNaija "M" mark
+    // (apps/admin-web/public/favicon.png, wired in commit 2a05c62) replaces the previous
+    // plain-text "₦" glyph-in-a-circle placeholder — no new asset, no redesign.
     width: '36px',
     height: '36px',
-    borderRadius: '18px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    objectFit: 'contain' as const,
   },
   brandText: {
     fontSize: '18px',
