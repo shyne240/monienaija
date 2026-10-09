@@ -71,13 +71,25 @@ export class CustomerController {
     return this.customerService.create(dto);
   }
 
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: `list`/`get` previously had no own authorization
+  // check at all — reachable by any principal type the generic `/api/v1/customers*` route-policy
+  // allows (`CUSTOMER` SELF + any `OPERATOR/SERVICE/PRIVILEGED`), with no function-level gate,
+  // even though the catalogue's `customer.view` function ("View a customer profile and KYC
+  // tier" — the exact data these two handlers return: the bare `Customer` record) is assigned
+  // only to SUPER_ADMIN/FINANCE_AUDITOR/OPERATIONS/COMPLIANCE/CUSTOMER_SERVICE — meaning any
+  // other OPERATOR-collapsing workforce role (FINANCE_PREPARER, FINANCE_CONTROLLER,
+  // AGENT_NETWORK_MANAGER, RISK_FRAUD, TREASURY) could list/read any customer purely by virtue
+  // of its principal type (the same gap class V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 flagged and
+  // KYC-01 already closed for the KYC sub-surface).
   @Get()
-  list(@Query() query: CustomerQueryDto) {
+  async list(@Query() query: CustomerQueryDto, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerViewFunction(req);
     return this.customerService.list(query.status, query.type, query.page, query.limit);
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
+  async get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerViewFunction(req);
     return this.customerService.get(id);
   }
 
@@ -126,21 +138,45 @@ export class CustomerController {
     return this.customerService.createKycAssessment(id, dto);
   }
 
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: `customer.view`'s own catalogue name/description
+  // ("View customer profile" / "View a customer profile and KYC tier") is a direct, literal
+  // match for exactly this handler's data (CustomerProfile: displayName/legalName/dateOfBirth/
+  // nationality) — unlike `/addresses`, `/contact-methods`, `/identity-documents` below, which
+  // return distinct sub-resource PII (physical address, phone/email, government document
+  // numbers) that no existing catalogue function's description covers, so those three are
+  // deliberately left unmigrated (see the audit report for the documented gap).
   @Get(':id/profile')
-  getProfile(@Param('id') id: string) {
+  async getProfile(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerViewFunction(req);
     return this.customerService.getProfile(id);
   }
 
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — no catalogue function
+  // exists whose description covers physical-address PII specifically, and `customer.view`'s
+  // documented scope ("profile and KYC tier") does not naturally extend to it. Repurposing
+  // `customer.view` here would be exactly the kind of silent scope-creep this task's
+  // instructions forbid. Left on the pre-existing route-policy-only gate (CUSTOMER SELF +
+  // OPERATOR/SERVICE/PRIVILEGED, no function requirement). Documented as a catalogue gap.
   @Get(':id/addresses')
   getAddresses(@Param('id') id: string) {
     return this.customerService.listAddresses(id);
   }
 
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — same reasoning as
+  // `/addresses` above (no catalogue function covers contact-method PII specifically).
+  // Documented as a catalogue gap.
   @Get(':id/contact-methods')
   getContactMethods(@Param('id') id: string) {
     return this.customerService.listContactMethods(id);
   }
 
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — identity-document
+  // records carry government document numbers (`documentNumber`), materially more sensitive
+  // than `customer.view`'s documented "profile and KYC tier" scope and with no dedicated
+  // catalogue function of its own. Repurposing `customer.view` to also gate this would be the
+  // exact ambiguous-semantics repurposing this task's instructions forbid. Documented as a
+  // catalogue gap (a future `customer.view_identity_documents`-class function would need its
+  // own governance sign-off, out of scope here).
   @Get(':id/identity-documents')
   getIdentityDocuments(@Param('id') id: string) {
     return this.customerService.listIdentityDocuments(id);
@@ -221,5 +257,29 @@ export class CustomerController {
       return;
     }
     await this.auth.requireFunction(principal, functionCode, 'kyc', ['OPERATOR', 'SERVICE', 'PRIVILEGED']);
+  }
+
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: identical exemption/gating pattern to
+  // `requireKycFunction` above. A real CUSTOMER principal is deliberately EXEMPTED and left on
+  // its pre-existing, unchanged path (gated only by the route-policy's `customerAccess: 'SELF'`
+  // check, enforced by RuntimeAccessGuard before this controller runs) — catalogue functions are
+  // a workforce-only authorization unit, a CUSTOMER principal never holds one in
+  // `principal.scopes`, so requiring one here would deny a customer's own pre-existing
+  // self-service reachability entirely (not this task's objective, and not authorized). The gap
+  // closed is specifically the workforce OPERATOR-collapse over-grant on `list`/`get`/
+  // `getProfile`. No `deniedStatus` override: these are brand-new checks with no pre-existing 401
+  // convention to preserve — unauthenticated is 401, an authenticated-but-under-entitled
+  // workforce principal is 403 (AuthorizationService.requireFunction()'s default behavior).
+  private async requireCustomerViewFunction(req: AuthenticatedRequest): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') {
+      return;
+    }
+    await this.auth.requireFunction(principal, 'customer.view', 'customer', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 }
