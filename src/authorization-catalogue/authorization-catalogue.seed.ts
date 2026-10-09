@@ -10,6 +10,14 @@ import { FunctionSensitivity, FunctionV1Status, RoleFunctionAccessType } from '.
  * per-role definitions and §9 matrix, as finalized (non-reopenable) by
  * docs/V1/V1-ADMIN-ROLE-AND-PERMISSION-DECISIONS-01.md.
  *
+ * EXCEPTION — three functions added by a later task: `customer.view_address`,
+ * `customer.view_contact_methods`, `customer.view_identity_documents` were not
+ * present in the original SPEC-01 §7 catalogue (a gap documented by
+ * V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01). Their function identifiers,
+ * sensitivity classification, and exact role assignments are instead sourced
+ * from docs/V1/V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-DECISION-01.md (approved),
+ * implemented by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01.
+ *
  * IMPORTANT — what `assignable` does and does not mean here:
  *   - `assignable: false` is used for every FUTURE / OUT_OF_V1_SCOPE
  *     function, and for the explicit non-assignable list named in the
@@ -87,6 +95,19 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'customer.view_wallets', domain: 'CUSTOMER', name: 'View customer wallets', description: 'View a customer wallet balances.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'customer.create_wallet', domain: 'CUSTOMER', name: 'Create customer wallet', description: 'Create an additional wallet for a customer.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'customer.manage_support_case', domain: 'CUSTOMER', name: 'Manage customer support case', description: 'Create/update/close a customer support ticket.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: closes the three catalogue gaps
+  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 deliberately left open (no existing function's
+  // description covered this PII) — approved by
+  // docs/V1/V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-DECISION-01.md. Each is its own distinct
+  // function (never a repurposing of customer.view, whose documented scope is "profile and
+  // KYC tier" only). customer.view_identity_documents is classified SENSITIVE (not READ) —
+  // government document numbers are materially more sensitive than address/contact PII — and
+  // is intentionally NOT assigned to FINANCE_AUDITOR (unlike customer.view_address/
+  // .view_contact_methods, which are READ-sensitivity and FINANCE_AUDITOR-eligible), per the
+  // approved decision's narrower SUPER_ADMIN/COMPLIANCE-only matrix for identity documents.
+  { functionCode: 'customer.view_address', domain: 'CUSTOMER', name: 'View customer address', description: 'View a customer physical/mailing address.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+  { functionCode: 'customer.view_contact_methods', domain: 'CUSTOMER', name: 'View customer contact methods', description: 'View a customer phone/email contact methods.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+  { functionCode: 'customer.view_identity_documents', domain: 'CUSTOMER', name: 'View customer identity documents', description: 'View a customer identity document records, including document numbers.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, notes: 'Decision V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-DECISION-01: SUPER_ADMIN/COMPLIANCE only — explicitly narrower than customer.view, including FINANCE_AUDITOR exclusion.' },
 
   // -------------------------------------------------------------------- AGENT
   { functionCode: 'agent.view', domain: 'AGENT', name: 'View agent profile', description: 'View an agent profile and status.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
@@ -263,6 +284,10 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'customer.view_wallets', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.create_wallet', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.manage_support_case', EXECUTE),
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01
+  nowAssign('SUPER_ADMIN', 'customer.view_address', VIEW),
+  nowAssign('SUPER_ADMIN', 'customer.view_contact_methods', VIEW),
+  nowAssign('SUPER_ADMIN', 'customer.view_identity_documents', VIEW),
   nowAssign('SUPER_ADMIN', 'agent.view', VIEW),
   nowAssign('SUPER_ADMIN', 'agent.review_application', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.activate', EXECUTE),
@@ -352,6 +377,12 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_AUDITOR', 'customer.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'customer.view_transactions', VIEW),
   nowAssign('FINANCE_AUDITOR', 'customer.view_wallets', VIEW),
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: FINANCE_AUDITOR holds
+  // customer.view_address/.view_contact_methods (both READ-sensitivity, consistent with this
+  // read_only role) but deliberately does NOT hold customer.view_identity_documents — the
+  // approved decision narrows identity-document access to SUPER_ADMIN/COMPLIANCE only.
+  nowAssign('FINANCE_AUDITOR', 'customer.view_address', VIEW),
+  nowAssign('FINANCE_AUDITOR', 'customer.view_contact_methods', VIEW),
   nowAssign('FINANCE_AUDITOR', 'agent.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'aggregator.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'transaction.view', VIEW),
@@ -379,6 +410,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('OPERATIONS', 'customer.close', EXECUTE),
   nowAssign('OPERATIONS', 'customer.view_transactions', VIEW),
   nowAssign('OPERATIONS', 'customer.manage_support_case', EXECUTE),
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01
+  nowAssign('OPERATIONS', 'customer.view_address', VIEW),
+  nowAssign('OPERATIONS', 'customer.view_contact_methods', VIEW),
   nowAssign('OPERATIONS', 'aggregator.view', VIEW),
   nowAssign('OPERATIONS', 'aggregator.manage', EXECUTE),
   nowAssign('OPERATIONS', 'workforce.user.view', VIEW),
@@ -412,6 +446,12 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('COMPLIANCE', 'compliance.manage_case', EXECUTE),
   nowAssign('COMPLIANCE', 'compliance.manage_risk_profile', EXECUTE),
   nowAssign('COMPLIANCE', 'customer.view', VIEW),
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: COMPLIANCE is one of exactly two
+  // roles (with SUPER_ADMIN) holding customer.view_identity_documents, per the approved
+  // decision's narrower identity-document matrix.
+  nowAssign('COMPLIANCE', 'customer.view_address', VIEW),
+  nowAssign('COMPLIANCE', 'customer.view_contact_methods', VIEW),
+  nowAssign('COMPLIANCE', 'customer.view_identity_documents', VIEW),
 
   // ------------------------------------------------------------------- RISK_FRAUD
   nowAssign('RISK_FRAUD', 'risk_fraud.manage_fraud_case', EXECUTE),
@@ -421,6 +461,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('CUSTOMER_SERVICE', 'customer.view_wallets', VIEW),
   nowAssign('CUSTOMER_SERVICE', 'customer.view_transactions', VIEW),
   nowAssign('CUSTOMER_SERVICE', 'customer.manage_support_case', EXECUTE),
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01
+  nowAssign('CUSTOMER_SERVICE', 'customer.view_address', VIEW),
+  nowAssign('CUSTOMER_SERVICE', 'customer.view_contact_methods', VIEW),
 
   // ----------------------------------------------------------------------- TREASURY
   nowAssign('TREASURY', 'reconciliation.view', VIEW),

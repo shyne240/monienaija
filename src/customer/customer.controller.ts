@@ -151,34 +151,38 @@ export class CustomerController {
     return this.customerService.getProfile(id);
   }
 
-  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — no catalogue function
-  // exists whose description covers physical-address PII specifically, and `customer.view`'s
-  // documented scope ("profile and KYC tier") does not naturally extend to it. Repurposing
-  // `customer.view` here would be exactly the kind of silent scope-creep this task's
-  // instructions forbid. Left on the pre-existing route-policy-only gate (CUSTOMER SELF +
-  // OPERATOR/SERVICE/PRIVILEGED, no function requirement). Documented as a catalogue gap.
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: previously left deliberately
+  // unmigrated by V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 (no catalogue function covered
+  // address PII). Per docs/V1/V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-DECISION-01.md (approved),
+  // this now requires its own dedicated `customer.view_address` function — never
+  // `customer.view` — assigned to SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS, COMPLIANCE,
+  // CUSTOMER_SERVICE only. A real CUSTOMER principal is exempted exactly like
+  // `requireCustomerViewFunction`/`requireKycFunction` above — this is the same workforce-only
+  // gate pattern, not a change to CUSTOMER self-service.
   @Get(':id/addresses')
-  getAddresses(@Param('id') id: string) {
+  async getAddresses(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requirePiiFunction(req, 'customer.view_address');
     return this.customerService.listAddresses(id);
   }
 
-  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — same reasoning as
-  // `/addresses` above (no catalogue function covers contact-method PII specifically).
-  // Documented as a catalogue gap.
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: same pattern as `/addresses` above,
+  // gated by the dedicated `customer.view_contact_methods` function (SUPER_ADMIN,
+  // FINANCE_AUDITOR, OPERATIONS, COMPLIANCE, CUSTOMER_SERVICE).
   @Get(':id/contact-methods')
-  getContactMethods(@Param('id') id: string) {
+  async getContactMethods(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requirePiiFunction(req, 'customer.view_contact_methods');
     return this.customerService.listContactMethods(id);
   }
 
-  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: deliberately NOT migrated — identity-document
-  // records carry government document numbers (`documentNumber`), materially more sensitive
-  // than `customer.view`'s documented "profile and KYC tier" scope and with no dedicated
-  // catalogue function of its own. Repurposing `customer.view` to also gate this would be the
-  // exact ambiguous-semantics repurposing this task's instructions forbid. Documented as a
-  // catalogue gap (a future `customer.view_identity_documents`-class function would need its
-  // own governance sign-off, out of scope here).
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: identity-document records carry
+  // government document numbers (`documentNumber`), materially more sensitive than address/
+  // contact-method PII. Per the approved decision, `customer.view_identity_documents` is
+  // assigned ONLY to SUPER_ADMIN and COMPLIANCE — explicitly narrower than `customer.view` and
+  // narrower than the address/contact-methods functions above (FINANCE_AUDITOR, OPERATIONS,
+  // CUSTOMER_SERVICE are all denied here despite holding the other two PII functions).
   @Get(':id/identity-documents')
-  getIdentityDocuments(@Param('id') id: string) {
+  async getIdentityDocuments(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requirePiiFunction(req, 'customer.view_identity_documents');
     return this.customerService.listIdentityDocuments(id);
   }
 
@@ -277,6 +281,33 @@ export class CustomerController {
       return;
     }
     await this.auth.requireFunction(principal, 'customer.view', 'customer', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
+  }
+
+  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: identical exemption/gating pattern
+  // to `requireCustomerViewFunction`/`requireKycFunction` above, parameterized by the specific
+  // PII function code for each of `/addresses`, `/contact-methods`, `/identity-documents`. A
+  // real CUSTOMER principal is deliberately EXEMPTED and left on its pre-existing, unchanged
+  // path (gated only by the route-policy's `customerAccess: 'SELF'` check, enforced by
+  // RuntimeAccessGuard before this controller runs) — catalogue functions are a workforce-only
+  // authorization unit, a CUSTOMER principal never holds one in `principal.scopes`, so
+  // requiring one here would deny a customer's own pre-existing self-service reachability
+  // entirely (not this task's objective, and not authorized: no change to CUSTOMER
+  // self-service, ownership checks, response shape, or business logic). No `deniedStatus`
+  // override: these are brand-new checks with no pre-existing 401 convention to preserve —
+  // unauthenticated is 401, an authenticated-but-under-entitled workforce principal is 403
+  // (AuthorizationService.requireFunction()'s default behavior — FUNCTION_MISSING never
+  // collapses into 401).
+  private async requirePiiFunction(req: AuthenticatedRequest, functionCode: string): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') {
+      return;
+    }
+    await this.auth.requireFunction(principal, functionCode, 'customer', [
       'OPERATOR',
       'SERVICE',
       'PRIVILEGED',

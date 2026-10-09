@@ -21,10 +21,18 @@
  *      `/customers/:id` and `/customers/:id/profile` still succeeds with no function required,
  *      and reading a DIFFERENT customer's record is still denied by the pre-existing
  *      `customerAccess: 'SELF'` route-policy check (unaffected by this task).
- *   E. The three deliberately NOT-migrated endpoints (`/addresses`, `/contact-methods`,
- *      `/identity-documents`) retain their exact pre-existing behavior: reachable by any
- *      OPERATOR/SERVICE/PRIVILEGED principal regardless of `customer.view`, proving this task
- *      did not silently widen or narrow their surface.
+ *   E. (AMENDED by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01) `/addresses`,
+ *      `/contact-methods`, `/identity-documents` were deliberately left unmigrated by THIS
+ *      task (no catalogue function existed for them at the time) and were proven reachable by
+ *      any OPERATOR/SERVICE/PRIVILEGED principal regardless of `customer.view`. A later,
+ *      separately-approved task (V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01) closed
+ *      that catalogue gap with dedicated `customer.view_address` / `.view_contact_methods` /
+ *      `.view_identity_documents` functions. Section D below is updated accordingly (TREASURY,
+ *      which never holds any of the three new functions, is now correctly denied 403 instead
+ *      of reaching 200) — see
+ *      test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts for the
+ *      full dedicated proof suite. CUSTOMER self-service (D3) and unauthenticated 401 (D2) are
+ *      unaffected and still verified here.
  *   F. No function is accidentally granted to an unrelated role — FINANCE_PREPARER,
  *      FINANCE_CONTROLLER, AGENT_NETWORK_MANAGER, RISK_FRAUD, TREASURY are denied on all three
  *      migrated routes despite being genuine, fully-authenticated OPERATOR-type workforce
@@ -361,7 +369,7 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
   // D. Non-migrated endpoints retain their exact pre-existing behavior
   // =====================================================================================
 
-  describe('D. deliberately NOT-migrated endpoints (/addresses, /contact-methods, /identity-documents) are unchanged', () => {
+  describe('D. /addresses, /contact-methods, /identity-documents (AMENDED by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — now function-gated; see that task\'s dedicated suite)', () => {
     const NOT_MIGRATED = [
       { name: 'addresses', path: (id: string) => `/api/v1/customers/${id}/addresses` },
       { name: 'contact-methods', path: (id: string) => `/api/v1/customers/${id}/contact-methods` },
@@ -369,15 +377,14 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
     ];
 
     it.each(NOT_MIGRATED)(
-      'D1. $name remains reachable by a workforce role lacking customer.view (e.g. TREASURY) — pre-existing route-policy-only gate, unchanged by this task',
+      'D1. $name now denies a workforce role lacking its dedicated PII function (e.g. TREASURY) — 403 (AMENDED by V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01)',
       async ({ path }) => {
         const token = await tokenForRole('TREASURY');
         const customerId = await createActiveCustomer();
         const res = await request(app.getHttpServer()).get(path(customerId)).set(auth(token));
-        // Pre-existing behavior: no function check exists on these routes. They must remain
-        // reachable (200, with an empty array) for any OPERATOR/SERVICE/PRIVILEGED principal,
-        // proving this task did not accidentally widen or narrow their surface.
-        expect(res.status).toBe(200);
+        // TREASURY does not hold customer.view_address/.view_contact_methods/
+        // .view_identity_documents in the approved role matrix — correctly denied 403.
+        expect(res.status).toBe(403);
       },
     );
 
