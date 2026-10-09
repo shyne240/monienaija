@@ -23,10 +23,18 @@ import { FunctionSensitivity, FunctionV1Status, RoleFunctionAccessType } from '.
  *     function, and for the explicit non-assignable list named in the
  *     V1-ADMIN-AUTHORIZATION-FOUNDATION-01 task (transaction.search,
  *     transaction-level reversal, agent.manage_permissions,
- *     workforce.role.create/modify, compliance.restrict_account/
+ *     compliance.restrict_account/
  *     release_restriction, audit.export, reconciliation.investigate/resolve,
  *     dedicated fraud-engine functions, external Treasury/settlement
  *     functions). None of these receive any row in ROLE_FUNCTION_SEED.
+ *   - `workforce.role.create`/`workforce.role.modify` were FUTURE/
+ *     non-assignable as of V1-ADMIN-AUTHORIZATION-FOUNDATION-01 ("Decision
+ *     10: when built, requires dual-control governance"). They became
+ *     IMPLEMENTED/assignable under
+ *     V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01, which built
+ *     exactly that dual-control governance (SUPER_ADMIN initiates,
+ *     FINANCE_CONTROLLER independently approves, via
+ *     RoleDefinitionGovernanceService) — see role assignments below.
  *   - `assignable: true` on a BACKEND_ONLY function (e.g. ledger.post,
  *     ledger.reverse, transaction.view, reconciliation.view) means the
  *     approved role→function matrix intentionally assigns catalogue
@@ -160,8 +168,8 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'workforce.role.view', domain: 'WORKFORCE', name: 'View workforce role assignments', description: 'View workforce role assignment records.', sensitivity: READ, v1Status: PARTIALLY_IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.role.assign', domain: 'WORKFORCE', name: 'Assign workforce role', description: 'Grant a role to a workforce principal (maker side).', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true },
   { functionCode: 'workforce.role.revoke', domain: 'WORKFORCE', name: 'Revoke workforce role', description: 'Revoke a role from a workforce principal (maker side).', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true },
-  { functionCode: 'workforce.role.create', domain: 'WORKFORCE', name: 'Create workforce role', description: 'Create a new configurable role (dynamic role creation).', sensitivity: PRIVILEGED, v1Status: FUTURE, assignable: false, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: when built, requires dual-control governance. Not an active capability in this task; not assigned to any role, including SUPER_ADMIN.' },
-  { functionCode: 'workforce.role.modify', domain: 'WORKFORCE', name: 'Modify workforce role', description: 'Modify an existing role definition/bundle.', sensitivity: PRIVILEGED, v1Status: FUTURE, assignable: false, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: not an active capability in this task.' },
+  { functionCode: 'workforce.role.create', domain: 'WORKFORCE', name: 'Create workforce role', description: 'Create a new configurable role (dynamic role creation).', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: dual-control governance. Implemented by V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 via RoleDefinitionGovernanceService: SUPER_ADMIN holds this as INITIATE, FINANCE_CONTROLLER holds it as APPROVE. Not assigned to ADMINISTRATOR or any other role.' },
+  { functionCode: 'workforce.role.modify', domain: 'WORKFORCE', name: 'Modify workforce role', description: 'Modify an existing role definition/bundle.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: dual-control governance. Implemented by V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 via RoleDefinitionGovernanceService; only ever targets roles created through that same workflow (is_system_seeded = FALSE) — the eleven V1-seeded roles are immutable through this path. SUPER_ADMIN holds this as INITIATE, FINANCE_CONTROLLER holds it as APPROVE. Not assigned to ADMINISTRATOR or any other role.' },
   // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (GOVERNANCE-DECISIONS-01 Decision 2):
   // deliberately DISTINCT function codes from workforce.role.assign/.revoke, not a reuse of them
   // with a different accessType — overloading one function code with two different authorization
@@ -290,6 +298,12 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'workforce.role.assign', INITIATE),
   nowAssign('SUPER_ADMIN', 'workforce.role.revoke', INITIATE),
   nowAssign('SUPER_ADMIN', 'workforce.role.view', VIEW),
+  // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: SUPER_ADMIN may INITIATE a role
+  // definition proposal (create a new role, or modify a role previously created through this
+  // same workflow) but never approve its own proposal — FINANCE_CONTROLLER is the sole
+  // independent approver, mirroring workforce.role.assign/.revoke immediately above.
+  nowAssign('SUPER_ADMIN', 'workforce.role.create', INITIATE),
+  nowAssign('SUPER_ADMIN', 'workforce.role.modify', INITIATE),
   // Decision 2: SUPER_ADMIN "retains unrestricted use of all role-assignment actions, including
   // this new one" — it is a strict superset of ADMINISTRATOR's capability, not a narrower path.
   nowAssign('SUPER_ADMIN', 'workforce.role.assign_operational', EXECUTE),
@@ -385,6 +399,12 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_CONTROLLER', 'finance.control_policy.activate', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'workforce.role.assign', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'workforce.role.revoke', APPROVE),
+  // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: sole independent approver of a
+  // SUPER_ADMIN-initiated role definition proposal; also needs VIEW to review proposal content
+  // before deciding, mirroring the view+approve pairing used throughout this role's other grants.
+  nowAssign('FINANCE_CONTROLLER', 'workforce.role.create', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'workforce.role.modify', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'workforce.role.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'agent.fund', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'agent.defund', APPROVE),
   // NOTE: FINANCE_CONTROLLER deliberately does NOT hold ledger.post/reverse (maker-only

@@ -678,9 +678,18 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
     });
 
     it('I2. a non-assignable (FUTURE/OUT_OF_V1_SCOPE) function has zero role assignments', async () => {
+      // NOTE (V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01): `workforce.role.create` and
+      // `workforce.role.modify` were FUTURE/unassigned placeholders at the time this test was
+      // written. That task's entire deliverable is the governed role-definition workflow, whose
+      // maker/checker gate IS SUPER_ADMIN holding INITIATE and FINANCE_CONTROLLER holding APPROVE
+      // on exactly these two functions (see
+      // test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts, "14b").
+      // They are intentionally retrofitted to IMPLEMENTED/assignable and excluded from this
+      // "still zero assignments" check; every other function here remains an untouched,
+      // non-assignable placeholder.
       const rows: Array<{ count: string }> = await dataSource.query(
         `SELECT count(*)::text as count FROM authorization_role_functions
-         WHERE function_code IN ('workforce.role.create','workforce.role.modify','ledger.approve_adjustment','customer.terminate','agent.manage_permissions')`,
+         WHERE function_code IN ('ledger.approve_adjustment','customer.terminate','agent.manage_permissions')`,
       );
       expect(Number(rows[0]!.count)).toBe(0);
     });

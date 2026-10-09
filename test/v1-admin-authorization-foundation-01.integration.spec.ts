@@ -179,13 +179,20 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     `);
     expect(wronglyAssignable.length).toBe(0);
 
+    // NOTE (V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01): `workforce.role.create` and
+    // `workforce.role.modify` were FUTURE/unassigned placeholders when this test was written.
+    // That task's entire deliverable is the governed role-definition workflow, whose
+    // maker/checker gate IS SUPER_ADMIN holding INITIATE and FINANCE_CONTROLLER holding APPROVE
+    // on exactly these two functions (see migration 1785753600086-CreateRoleDefinitionGovernance
+    // and test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts, "14b").
+    // They are intentionally retrofitted to IMPLEMENTED/assignable and removed from this
+    // "still barred" list; every other function here remains an untouched, non-assignable
+    // placeholder.
     const explicitlyBarred = [
       'transaction.search',
       'transaction.reversal.request',
       'transaction.reversal.approve',
       'agent.manage_permissions',
-      'workforce.role.create',
-      'workforce.role.modify',
       'compliance.restrict_account',
       'compliance.release_restriction',
       'audit.export',

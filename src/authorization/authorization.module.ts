@@ -25,7 +25,13 @@ import { AgentAuthenticationModule } from '../agent-authentication/agent-authent
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
 import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
 import { AuthorizationCatalogueModule } from '../authorization-catalogue/authorization-catalogue.module';
+import { AuthorizationFunction } from '../authorization-catalogue/authorization-function.entity';
+import { AuthorizationRoleFunction } from '../authorization-catalogue/authorization-role-function.entity';
+import { AuthorizationRole } from '../authorization-catalogue/authorization-role.entity';
 import { RuntimeAccessGuard } from './runtime-access.guard';
+import { RoleDefinitionGovernanceController } from './role-definition-governance.controller';
+import { RoleDefinitionGovernanceService } from './role-definition-governance.service';
+import { RoleDefinitionProposal } from './role-definition-proposal.entity';
 
 @Module({
   imports: [
@@ -50,9 +56,21 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
       A2FinanceRoleAssignment,
       A2WorkforceBootstrapConsumption,
       A2SecurityRateBucket,
+      RoleDefinitionProposal,
+      // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: RoleDefinitionGovernanceService
+      // needs direct repository access to these three catalogue entities (to create/modify roles
+      // and their function grants, not just read a resolved role->function set the way
+      // AuthorizationCatalogueRuntimeService does). Registering them again here is safe and
+      // standard NestJS/TypeORM practice — this creates a second, independent repository
+      // provider in this module's own scope, backed by the exact same table/DataSource as the
+      // one already registered in AuthorizationCatalogueModule; it does not duplicate the schema
+      // or any data.
+      AuthorizationFunction,
+      AuthorizationRole,
+      AuthorizationRoleFunction,
     ]),
   ],
-  controllers: [A2WorkforceAdministrationController],
+  controllers: [A2WorkforceAdministrationController, RoleDefinitionGovernanceController],
   providers: [
     {
       provide: A2_WORKFORCE_CONFIG,
@@ -101,6 +119,7 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     PrivilegedActionApprovalService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
+    RoleDefinitionGovernanceService,
   ],
   exports: [
     A2_WORKFORCE_CONFIG,
@@ -113,6 +132,7 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     PrivilegedActionApprovalService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
+    RoleDefinitionGovernanceService,
   ],
 })
 export class AuthorizationModule {}

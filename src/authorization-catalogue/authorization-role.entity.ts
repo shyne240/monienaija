@@ -59,6 +59,15 @@ export class AuthorizationRole {
   @Column({ name: 'checker_eligible', type: 'boolean', default: false })
   checkerEligible!: boolean;
 
+  /**
+   * V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: optimistic-concurrency token,
+   * incremented by `RoleDefinitionGovernanceService.apply()` on every successful MODIFY. Lets a
+   * proposal's `expectedDefinitionVersion` detect that a role changed since the proposal was
+   * submitted (or since it was approved), both at submit time and again at apply time.
+   */
+  @Column({ name: 'definition_version', type: 'integer', default: 1 })
+  definitionVersion!: number;
+
   @Column({ name: 'created_by', type: 'varchar', length: 100, default: 'SYSTEM_SEED' })
   createdBy!: string;
 

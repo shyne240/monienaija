@@ -10,8 +10,8 @@ import { ReconciliationService } from '../reconciliation/reconciliation.service'
 // test/v1-release-01-production-readiness-migration-sync.integration.spec.ts, which runs the
 // full migration chain against real PostgreSQL and fails the build if this constant and the
 // actual latest migration file ever diverge again.
-const EXPECTED_MIGRATION_TIMESTAMP = '1785753600085';
-const EXPECTED_MIGRATION_NAME = 'AddAdministratorRoleAssignmentScope1785753600085';
+const EXPECTED_MIGRATION_TIMESTAMP = '1785753600086';
+const EXPECTED_MIGRATION_NAME = 'CreateRoleDefinitionGovernance1785753600086';
 
 type Row = Record<string, unknown>;
 
