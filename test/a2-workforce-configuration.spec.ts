@@ -20,6 +20,7 @@ const roles = [
     ],
   }),
   role('FINANCE_AUDITOR', ['finance:audit']),
+  role('ADMINISTRATOR', []),
 ];
 const rules = ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE', 'FINANCE_CONTROL_POLICY_ACTIVATE'].map(
   (action) => ({
@@ -103,7 +104,7 @@ describe('A2T11 workforce configuration validation', () => {
       workforceConfiguration(valid({ A2_FINANCE_ROLES_JSON: JSON.stringify([{ roleKey: 1 }]) })),
     ).toThrow('A2_FINANCE_ROLES_JSON'));
   it('rejects duplicate role keys', () => {
-    const changed = [...roles.slice(0, 3), roles[0]];
+    const changed = [...roles.slice(0, 4), roles[0]];
     expect(() =>
       workforceConfiguration(valid({ A2_FINANCE_ROLES_JSON: JSON.stringify(changed) })),
     ).toThrow('duplicate role key');

@@ -63,6 +63,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
       ],
     }),
     role('FINANCE_AUDITOR', ['finance:audit']),
+    role('ADMINISTRATOR', []),
   ];
 
   const rules = [

@@ -13,6 +13,9 @@ import { DataSource } from 'typeorm';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import { A2FinanceRoleAdministrationService } from '../src/authorization/finance-role-administration.service';
+import { AuthorizationCatalogueRuntimeService } from '../src/authorization-catalogue/authorization-catalogue-runtime.service';
+import { AuthorizationRole } from '../src/authorization-catalogue/authorization-role.entity';
+import { AuthorizationRoleFunction } from '../src/authorization-catalogue/authorization-role-function.entity';
 import { PrivilegedActionApproval } from '../src/authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
@@ -149,6 +152,19 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
           checkerEligible: false,
           administrativeCapability: false,
         },
+        {
+          roleKey: 'ADMINISTRATOR',
+          displayName: 'Administrator',
+          description: 'Delegated workforce administration; no finance or super-admin authority.',
+          enabled: true,
+          scopes: [],
+          applicableActions: [],
+          mfaRequired: true,
+          approvalCapability: false,
+          makerEligible: false,
+          checkerEligible: false,
+          administrativeCapability: false,
+        },
       ]),
       A2_MAKER_CHECKER_RULES_JSON: JSON.stringify([
         {
@@ -200,7 +216,11 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
       audit,
       new AuthorizationService(dataSource, audit),
     );
-    roles = new A2FinanceRoleAdministrationService(dataSource, audit, approvals, config);
+    const catalogue = new AuthorizationCatalogueRuntimeService(
+      dataSource.getRepository(AuthorizationRole),
+      dataSource.getRepository(AuthorizationRoleFunction),
+    );
+    roles = new A2FinanceRoleAdministrationService(dataSource, audit, approvals, config, catalogue);
   }, 180000);
 
   afterAll(async () => {
@@ -359,6 +379,10 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
         new AuthorizationService(dataSource, audit),
       ),
       closed,
+      new AuthorizationCatalogueRuntimeService(
+        dataSource.getRepository(AuthorizationRole),
+        dataSource.getRepository(AuthorizationRoleFunction),
+      ),
     );
     const { statement } = generateBootstrapStatement(baseInput());
     await expect(
@@ -387,7 +411,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     const cfg = workforceConfiguration(env);
     expect(cfg.enabled).toBe(true);
     expect(cfg.roles.map((r) => r.roleKey).sort()).toEqual(
-      ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'FINANCE_CONTROLLER', 'FINANCE_PREPARER'].sort(),
+      ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'FINANCE_CONTROLLER', 'FINANCE_PREPARER', 'ADMINISTRATOR'].sort(),
     );
     expect(cfg.bootstrapFinanceAdminScopes).toEqual(['privileged:execute']);
     // Invariant: bootstrap scopes exactly match SUPER_ADMIN scopes.

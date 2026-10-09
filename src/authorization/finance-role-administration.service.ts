@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
+import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import type { AuthorizationPrincipal } from './authorization.types';
 import {
@@ -22,10 +23,34 @@ import type {
   A2WorkforceConfigurationV1,
 } from './workforce-authentication.types';
 import { canonical, instant, parseCompactJws, sha256, text, verifyRs256 } from './workforce-crypto';
+// V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: ADMINISTRATOR's OWN assignment is
+// governed exactly like the three Finance roles (SUPER_ADMIN-only, first-assignment-then-maker/
+// checker) — see GOVERNANCE-DECISIONS-01 Decision 2 item 5. It is deliberately NOT added to
+// ADMINISTRATOR_OPERATIONAL_ROLE_KEYS below (that set is for the roles ADMINISTRATOR may in turn
+// delegate, which never includes itself — no lateral self-proliferation).
 const INITIAL_BOOTSTRAP_ASSIGNABLE_ROLES = new Set([
   'FINANCE_PREPARER',
   'FINANCE_CONTROLLER',
   'FINANCE_AUDITOR',
+  'ADMINISTRATOR',
+]);
+/**
+ * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (GOVERNANCE-DECISIONS-01 Decision 2):
+ * the exact six catalogue-only organizational roles ADMINISTRATOR (and SUPER_ADMIN, which retains
+ * every capability ADMINISTRATOR has) may assign/revoke by direct EXECUTE, no second approver.
+ * This list is also the DB CHECK constraint's allow-list (migration 1785753600085) — kept in sync
+ * manually, since the two live in different systems (TypeScript vs. SQL) by design: the database
+ * constraint is the backstop that holds even if this TypeScript list is ever wrong, not a
+ * duplicate implementation of the same control. Exported so the controller can route on it
+ * without hand-duplicating the set (single source of truth within the application layer).
+ */
+export const ADMINISTRATOR_OPERATIONAL_ROLE_KEYS: ReadonlySet<string> = new Set([
+  'OPERATIONS',
+  'AGENT_NETWORK_MANAGER',
+  'COMPLIANCE',
+  'RISK_FRAUD',
+  'CUSTOMER_SERVICE',
+  'TREASURY',
 ]);
 @Injectable()
 export class A2FinanceRoleAdministrationService {
@@ -34,6 +59,7 @@ export class A2FinanceRoleAdministrationService {
     private readonly audit: AuditService,
     private readonly approvals: PrivilegedActionApprovalService,
     @Inject(A2_WORKFORCE_CONFIG) private readonly config: A2WorkforceConfigurationV1,
+    private readonly catalogue: AuthorizationCatalogueRuntimeService,
   ) {}
   async consumeBootstrap(compact: string, principal: AuthorizationPrincipal, now = new Date()) {
     if (!this.config.bootstrapEnabled) throw new ForbiddenException('Bootstrap disabled');
@@ -94,6 +120,7 @@ export class A2FinanceRoleAdministrationService {
             scopes: s.scopes,
             status: 'ACTIVE',
             interim: true,
+            initiatedScope: 'SUPER_ADMIN_SCOPE',
             effectiveFrom: from,
             effectiveTo: to,
             assignedBy: `bootstrap:${s.approvalChangeReference}`,
@@ -215,6 +242,7 @@ export class A2FinanceRoleAdministrationService {
         scopes: def.scopes,
         status: 'ACTIVE',
         interim: true,
+        initiatedScope: 'SUPER_ADMIN_SCOPE',
         effectiveFrom: now,
         effectiveTo,
         assignedBy,
@@ -248,13 +276,20 @@ export class A2FinanceRoleAdministrationService {
     return this.view(row, now);
   }
   async assign(c: A2RoleAssignmentCommandV1): Promise<A2FinanceRoleAssignmentViewV1> {
-    this.validateCommand(c);
+    await this.validateCommand(c);
     if (c.principal.principalId === c.targetPrincipalId)
       throw new ForbiddenException('Self assignment prohibited');
     if (c.principal.assuranceLevel !== 'MFA')
       throw new ForbiddenException('Finance administration requires MFA');
     if (c.roleKey === 'SUPER_ADMIN')
       throw new ForbiddenException('SUPER_ADMIN assignment prohibited');
+    // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: the six operational roles are
+    // NEVER routed through the legacy Finance-style maker/checker path below (which stays
+    // byte-for-byte unchanged for the three Finance roles and ADMINISTRATOR's own assignment) —
+    // they go through the new, dedicated, database-CHECK-constrained direct-EXECUTE path.
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey)) {
+      return this.assignOperational(c);
+    }
     const first =
       (await this.ds
         .getRepository(A2FinanceRoleAssignment)
@@ -273,12 +308,15 @@ export class A2FinanceRoleAdministrationService {
         throw new ForbiddenException('Finance role assignment initiator denied');
       await this.consumeApprovals('FINANCE_ROLE_ASSIGN', c);
     }
-    return this.persist(c, 'FINANCE_ROLE_ASSIGN', c.approvalIds ?? []);
+    return this.persist(c, 'FINANCE_ROLE_ASSIGN', c.approvalIds ?? [], 'SUPER_ADMIN_SCOPE');
   }
   async revoke(c: A2RoleAssignmentCommandV1) {
-    this.validateCommand(c);
+    await this.validateCommand(c);
     if (c.principal.principalId === c.targetPrincipalId)
       throw new ForbiddenException('Self revocation prohibited');
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey)) {
+      return this.revokeOperational(c);
+    }
     await this.consumeApprovals('FINANCE_ROLE_REVOKE', c);
     const ref = this.reference(c.targetPrincipalId, c.roleKey),
       r = this.ds.getRepository(A2FinanceRoleAssignment),
@@ -289,6 +327,57 @@ export class A2FinanceRoleAdministrationService {
     row.revokedAt = c.now ?? new Date();
     await r.save(row);
     return this.view(row, c.now ?? new Date());
+  }
+  /**
+   * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (GOVERNANCE-DECISIONS-01 Decision 2):
+   * direct EXECUTE, no second human approver — the `initiated_scope = 'ADMINISTRATOR_SCOPE'` tag
+   * plus the database CHECK constraint (migration 1785753600085) is the control, not a
+   * maker/checker pair. `ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey)` and the initiator
+   * role check below are defense-in-depth at the application layer; the CHECK constraint is what
+   * makes this safe even if both were ever wrong or bypassed.
+   */
+  private async assignOperational(
+    c: A2RoleAssignmentCommandV1,
+  ): Promise<A2FinanceRoleAssignmentViewV1> {
+    if (!ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey))
+      throw new ForbiddenException('Role is not administrator-assignable');
+    if (!c.principal.roles.includes('ADMINISTRATOR') && !c.principal.roles.includes('SUPER_ADMIN'))
+      throw new ForbiddenException('Operational role assignment initiator denied');
+    return this.persist(
+      c,
+      'WORKFORCE_ROLE_ASSIGN_OPERATIONAL',
+      [],
+      'ADMINISTRATOR_SCOPE',
+    );
+  }
+  private async revokeOperational(c: A2RoleAssignmentCommandV1) {
+    if (!ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(c.roleKey))
+      throw new ForbiddenException('Role is not administrator-assignable');
+    if (!c.principal.roles.includes('ADMINISTRATOR') && !c.principal.roles.includes('SUPER_ADMIN'))
+      throw new ForbiddenException('Operational role revocation initiator denied');
+    const ref = this.reference(c.targetPrincipalId, c.roleKey),
+      r = this.ds.getRepository(A2FinanceRoleAssignment),
+      row = await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } });
+    if (!row) throw new ConflictException('Active assignment not found');
+    const now = c.now ?? new Date();
+    row.status = 'REVOKED';
+    row.revokedBy = c.principal.principalId;
+    row.revokedAt = now;
+    await r.save(row);
+    await this.audit.record(this.ds.manager, {
+      entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
+      entityId: row.id,
+      action: 'WORKFORCE_ROLE_REVOKED_OPERATIONAL',
+      actor: c.principal.principalId,
+      correlationId: c.correlationId,
+      newValues: {
+        assignmentReference: ref,
+        targetPrincipalId: c.targetPrincipalId,
+        roleKey: c.roleKey,
+        initiatedScope: 'ADMINISTRATOR_SCOPE',
+      },
+    });
+    return this.view(row, now);
   }
   async exportForB9() {
     const rows = await this.ds
@@ -346,13 +435,32 @@ export class A2FinanceRoleAdministrationService {
     if (rule.selfApprovalProhibited && approvers.has(c.principal.principalId))
       throw new ForbiddenException('Self approval prohibited');
   }
-  private async persist(c: A2RoleAssignmentCommandV1, _op: string, approvalIds: readonly string[]) {
-    const d = this.config.roles.find((r) => r.roleKey === c.roleKey)!,
+  /**
+   * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: generalized to accept an
+   * `auditAction` (was hardcoded to the Finance-specific `'FINANCE_ROLE_ASSIGNED'`) and an
+   * `initiatedScope` tag (new `a2_finance_role_assignments.initiated_scope` column — see
+   * migration 1785753600085), so the single, unchanged insert/audit mechanics below serve both
+   * the existing Finance-style path and the new ADMINISTRATOR-initiated operational path — one
+   * persistence implementation, never a second one duplicated for the new path. `scopes` falls
+   * back to the catalogue's function codes for the target role when it is not present in the
+   * legacy `A2_FINANCE_ROLES_JSON` vocabulary (true for all six operational roles) — this is
+   * informational/view-only data (see A2WorkforceSessionService.resolve(), which recomputes
+   * authoritative scopes fresh at session-resolution time and never reads this column).
+   */
+  private async persist(
+    c: A2RoleAssignmentCommandV1,
+    auditAction: string,
+    approvalIds: readonly string[],
+    initiatedScope: 'SUPER_ADMIN_SCOPE' | 'ADMINISTRATOR_SCOPE',
+  ) {
+    const legacyDef = this.config.roles.find((r) => r.roleKey === c.roleKey),
       now = c.now ?? new Date(),
       ref = this.reference(c.targetPrincipalId, c.roleKey),
       r = this.ds.getRepository(A2FinanceRoleAssignment);
     if (await r.findOne({ where: { assignmentReference: ref, status: 'ACTIVE' } }))
       throw new ConflictException('Active assignment exists');
+    const scopes =
+      legacyDef?.scopes ?? (await this.catalogue.resolveForRoleKeys([c.roleKey])).functionCodes;
     const row = await r.save(
       r.create({
         id: randomUUID(),
@@ -360,9 +468,10 @@ export class A2FinanceRoleAdministrationService {
         assignmentVersion: 1,
         principalId: c.targetPrincipalId,
         roleKey: c.roleKey,
-        scopes: d.scopes,
+        scopes,
         status: 'ACTIVE',
         interim: true,
+        initiatedScope,
         effectiveFrom: new Date(c.effectiveFrom),
         effectiveTo: new Date(c.effectiveTo),
         assignedBy: c.principal.principalId,
@@ -380,14 +489,15 @@ export class A2FinanceRoleAdministrationService {
     const e = await this.audit.record(this.ds.manager, {
       entityType: 'A2_FINANCE_ROLE_ASSIGNMENT',
       entityId: row.id,
-      action: 'FINANCE_ROLE_ASSIGNED',
+      action: auditAction,
       actor: c.principal.principalId,
       correlationId: c.correlationId,
       newValues: {
         assignmentReference: ref,
         targetPrincipalId: c.targetPrincipalId,
         roleKey: c.roleKey,
-        scopes: d.scopes,
+        scopes,
+        initiatedScope,
         effectiveFrom: c.effectiveFrom,
         effectiveTo: c.effectiveTo,
         interim: true,
@@ -397,10 +507,23 @@ export class A2FinanceRoleAdministrationService {
     await r.save(row);
     return this.view(row, now);
   }
-  private validateCommand(c: A2RoleAssignmentCommandV1) {
+  /**
+   * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: now async — a roleKey not present in
+   * the legacy `A2_FINANCE_ROLES_JSON` vocabulary (true for all six operational roles, which
+   * deliberately have no entry there — see workforce-configuration.ts) is additionally checked
+   * against the authoritative catalogue (`authorization_roles`, active rows only). SUPER_ADMIN
+   * remains unconditionally rejected here regardless of either source — this exact guard is what
+   * `GOVERNANCE-01`/`GOVERNANCE-DECISIONS-01` both call "the single most important invariant not
+   * to regress while implementing" ADMINISTRATOR's new initiator path.
+   */
+  private async validateCommand(c: A2RoleAssignmentCommandV1) {
     if (c.roleKey === 'SUPER_ADMIN') throw new ForbiddenException('Role not allowed');
-    const d = this.config.roles.find((r) => r.roleKey === c.roleKey && r.enabled);
-    if (!d) throw new ForbiddenException('Role disabled or undefined');
+    const legacyDef = this.config.roles.find((r) => r.roleKey === c.roleKey && r.enabled);
+    if (!legacyDef) {
+      const resolved = await this.catalogue.resolveForRoleKeys([c.roleKey]);
+      if (!resolved.recognizedRoleKeys.includes(c.roleKey))
+        throw new ForbiddenException('Role disabled or undefined');
+    }
     const f = new Date(c.effectiveFrom),
       t = new Date(c.effectiveTo);
     if (!Number.isFinite(f.getTime()) || !Number.isFinite(t.getTime()) || t <= f)

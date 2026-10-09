@@ -19,9 +19,9 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600084' : '1785753600004',
+          timestamp: this.compatible ? '1785753600085' : '1785753600004',
           name: this.compatible
-            ? 'RenameWorkforceBootstrapRoleToSuperAdmin1785753600084'
+            ? 'AddAdministratorRoleAssignmentScope1785753600085'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);

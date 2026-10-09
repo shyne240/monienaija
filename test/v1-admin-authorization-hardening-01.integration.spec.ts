@@ -701,11 +701,14 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
       expect(rows.map((r) => r.function_code)).toEqual(['risk_fraud.manage_fraud_case']);
     });
 
-    it('I5. all ten V1 roles resolve from the persistent catalogue table (no hardcoded role universe)', async () => {
+    it('I5. all eleven V1 roles resolve from the persistent catalogue table (no hardcoded role universe)', async () => {
+      // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 added ADMINISTRATOR (the 11th
+      // approved role) to the catalogue seed — see docs/V1/V1-ADMIN-ADMINISTRATOR-GOVERNANCE-01.md.
       const rows: Array<{ role_key: string }> = await dataSource.query(
         `SELECT role_key FROM authorization_roles WHERE is_active = true ORDER BY role_key`,
       );
       expect(rows.map((r) => r.role_key)).toEqual([
+        'ADMINISTRATOR',
         'AGENT_NETWORK_MANAGER',
         'COMPLIANCE',
         'CUSTOMER_SERVICE',

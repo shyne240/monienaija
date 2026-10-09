@@ -48,7 +48,7 @@ const roleSchema = z
         message: 'approval-capable roles must be MFA-required and checker-eligible',
       });
     // V1-ADMIN-AUTHORIZATION-RUNTIME-01: SUPER_ADMIN is the functional successor of the legacy
-    // A2T11 FINANCE_ADMIN role in this four-slot configuration (see REQUIRED_ROLES below) — the
+    // A2T11 FINANCE_ADMIN role in this configuration (see REQUIRED_ROLES below) — the
     // reservation itself (at most one role may hold this flag) is unchanged.
     if (role.administrativeCapability && role.roleKey !== 'SUPER_ADMIN')
       context.addIssue({
@@ -148,23 +148,41 @@ const proxySchema = z
     return bits >= 0 && bits <= (family === 4 ? 32 : 128);
   }, 'must be an IP address or CIDR');
 // V1-ADMIN-AUTHORIZATION-RUNTIME-01: as of the authorization-catalogue runtime migration, this
-// four-role vocabulary is NO LONGER the organizational role authority — `authorization_roles`
-// (src/authorization-catalogue/) is, with ten roles. This configuration is retained, unchanged
+// role vocabulary is NO LONGER the organizational role authority — `authorization_roles`
+// (src/authorization-catalogue/) is, with eleven roles (V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-
+// IMPLEMENTATION-01 added the eleventh, ADMINISTRATOR). This configuration is retained, unchanged
 // in shape, purely as the legacy scope-compatibility & maker-checker/rate-limit configuration
-// vocabulary for exactly the four roles that still need it: SUPER_ADMIN (renamed from
-// FINANCE_ADMIN — see workforce-configuration docs), FINANCE_PREPARER, FINANCE_CONTROLLER, and
-// FINANCE_AUDITOR are the only roles the out-of-scope B1/B2F commercial-accounting maker/checker
-// framework (src/policy/b2f-finance-control*.ts) and PrivilegedActionApprovalService's legacy
-// `privileged:*`/`finance:*` scope strings read directly off `principal.roles`/`principal.scopes`.
-// The other six catalogue roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD,
-// CUSTOMER_SERVICE, TREASURY) have no legacy scope/maker-checker/rate-limit semantics to provide
-// and therefore have, and need, no entry here — see A2WorkforceSessionService.resolve(), which
-// resolves role membership against the catalogue independently of this list.
+// vocabulary for exactly the five roles that still need it: SUPER_ADMIN (renamed from
+// FINANCE_ADMIN — see workforce-configuration docs), FINANCE_PREPARER, FINANCE_CONTROLLER,
+// FINANCE_AUDITOR, and ADMINISTRATOR are the only roles the out-of-scope B1/B2F
+// commercial-accounting maker/checker framework (src/policy/b2f-finance-control*.ts) and
+// PrivilegedActionApprovalService's legacy `privileged:*`/`finance:*` scope strings read directly
+// off `principal.roles`/`principal.scopes`, AND the only roles whose own assignment (not the
+// authority the role carries once held — that is 100% catalogue-governed) still needs this
+// legacy FINANCE_ROLE_ASSIGN/REVOKE maker/checker vocabulary (ADMINISTRATOR's assignment stays
+// SUPER_ADMIN-gated exactly like the three Finance roles — see GOVERNANCE-DECISIONS-01 Decision 2
+// item 5). The other six catalogue roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE,
+// RISK_FRAUD, CUSTOMER_SERVICE, TREASURY) have no legacy scope/maker-checker/rate-limit semantics
+// to provide and therefore have, and need, no entry here — they are instead assigned/revoked
+// through the new, dedicated, direct-EXECUTE `workforce.role.assign_operational`/
+// `.revoke_operational` action, gated by a database CHECK constraint, not this legacy
+// vocabulary — see A2FinanceRoleAdministrationService and
+// A2WorkforceSessionService.resolve(), which resolves role membership against the catalogue
+// independently of this list.
 const REQUIRED_ROLES = [
     'SUPER_ADMIN',
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
     'FINANCE_AUDITOR',
+    // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: ADMINISTRATOR's OWN assignment
+    // (granting/revoking the ADMINISTRATOR role itself) stays SUPER_ADMIN-only, governed by the
+    // exact same INITIAL_BOOTSTRAP_ASSIGNABLE_ROLES-gated/FINANCE_ROLE_ASSIGN-equivalent
+    // maker/checker machinery the three Finance roles already use (Decision 2, item 5) — so
+    // ADMINISTRATOR genuinely needs this legacy vocabulary's scope-compatibility semantics, unlike
+    // the six catalogue-only operational roles it may in turn delegate (which have no legacy
+    // scope/maker-checker/rate-limit semantics to provide and are never added here — see the
+    // six-role note below and A2WorkforceSessionService.resolve()).
+    'ADMINISTRATOR',
   ] as const,
   REQUIRED_RULES = [
     'FINANCE_ROLE_ASSIGN',
@@ -255,7 +273,7 @@ export function workforceConfiguration(
   const roleList = parseJson(
       'A2_FINANCE_ROLES_JSON',
       env.A2_FINANCE_ROLES_JSON,
-      z.array(roleSchema).min(4).max(4),
+      z.array(roleSchema).min(5).max(5),
       [],
     ),
     roleKeys = roleList.map((role) => role.roleKey);

@@ -162,6 +162,15 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'workforce.role.revoke', domain: 'WORKFORCE', name: 'Revoke workforce role', description: 'Revoke a role from a workforce principal (maker side).', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true },
   { functionCode: 'workforce.role.create', domain: 'WORKFORCE', name: 'Create workforce role', description: 'Create a new configurable role (dynamic role creation).', sensitivity: PRIVILEGED, v1Status: FUTURE, assignable: false, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: when built, requires dual-control governance. Not an active capability in this task; not assigned to any role, including SUPER_ADMIN.' },
   { functionCode: 'workforce.role.modify', domain: 'WORKFORCE', name: 'Modify workforce role', description: 'Modify an existing role definition/bundle.', sensitivity: PRIVILEGED, v1Status: FUTURE, assignable: false, makerCheckerRequired: true, approvalRequired: true, notes: 'Decision 10: not an active capability in this task.' },
+  // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (GOVERNANCE-DECISIONS-01 Decision 2):
+  // deliberately DISTINCT function codes from workforce.role.assign/.revoke, not a reuse of them
+  // with a different accessType — overloading one function code with two different authorization
+  // meanings (SUPER_ADMIN/FINANCE-scope maker/checker vs. ADMINISTRATOR-scope direct EXECUTE)
+  // would make the two code paths impossible to independently audit or independently revoke as
+  // catalogue grants. No maker/checker metadata here: this is a direct-EXECUTE action gated by
+  // the `initiated_scope` DB CHECK constraint (migration 1785753600085), not a human approver.
+  { functionCode: 'workforce.role.assign_operational', domain: 'WORKFORCE', name: 'Assign operational workforce role', description: 'Grant one of the six ADMINISTRATOR-delegable operational roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE, TREASURY) to a workforce principal. Never SUPER_ADMIN or any FINANCE_* role — enforced by a database CHECK constraint, not merely by this grant.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true },
+  { functionCode: 'workforce.role.revoke_operational', domain: 'WORKFORCE', name: 'Revoke operational workforce role', description: 'Revoke one of the six ADMINISTRATOR-delegable operational roles from a workforce principal. Never SUPER_ADMIN or any FINANCE_* role — enforced by a database CHECK constraint, not merely by this grant.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.view', domain: 'WORKFORCE', name: 'View workforce user', description: 'View a workforce user/identity record.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.create', domain: 'WORKFORCE', name: 'Create workforce user', description: 'Provision a new workforce user identity.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.suspend', domain: 'WORKFORCE', name: 'Suspend workforce user', description: 'Suspend/disable a workforce user identity.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
@@ -260,6 +269,12 @@ export const AUTHORIZATION_ROLE_SEED: AuthorizationRoleSeed[] = [
     displayName: 'Treasury',
     description: 'Decision 6: holds exactly reconciliation.view and nothing else in V1. No external settlement/suspense functionality exists yet.',
   },
+  {
+    roleKey: 'ADMINISTRATOR',
+    displayName: 'Administrator',
+    description:
+      'Delegated day-to-day workforce administration, not a second SUPER_ADMIN. May assign/revoke exactly the six operational roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE, TREASURY); never SUPER_ADMIN or any FINANCE_* role, DB-enforced. No workforce.role.create/modify, no ledger/finance/KYC/compliance decision authority.',
+  },
 ];
 
 const nowAssign = (roleKey: string, functionCode: string, accessType: RoleFunctionAccessType): AuthorizationRoleFunctionSeed => ({
@@ -275,6 +290,10 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'workforce.role.assign', INITIATE),
   nowAssign('SUPER_ADMIN', 'workforce.role.revoke', INITIATE),
   nowAssign('SUPER_ADMIN', 'workforce.role.view', VIEW),
+  // Decision 2: SUPER_ADMIN "retains unrestricted use of all role-assignment actions, including
+  // this new one" — it is a strict superset of ADMINISTRATOR's capability, not a narrower path.
+  nowAssign('SUPER_ADMIN', 'workforce.role.assign_operational', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'workforce.role.revoke_operational', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.view', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.create', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.suspend', EXECUTE),
@@ -467,4 +486,21 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
 
   // ----------------------------------------------------------------------- TREASURY
   nowAssign('TREASURY', 'reconciliation.view', VIEW),
+
+  // ---------------------------------------------------------------- ADMINISTRATOR
+  // GOVERNANCE-01 §2.2/§3: every function below already exists in the catalogue (except the two
+  // dedicated operational-scope role-assignment functions added alongside this role — see the
+  // WORKFORCE section above); no function is invented purely to pass a test. Explicitly excluded,
+  // by design: workforce.role.create/.modify, workforce.role.assign/.revoke (SUPER_ADMIN/FINANCE
+  // scope — unscoped), every ledger.*/agent.fund/.defund APPROVE/finance.control_policy.activate,
+  // kyc.approve/.reject, compliance.manage_case/.manage_risk_profile, risk_fraud.manage_fraud_case.
+  nowAssign('ADMINISTRATOR', 'workforce.user.view', VIEW),
+  nowAssign('ADMINISTRATOR', 'workforce.user.create', EXECUTE),
+  nowAssign('ADMINISTRATOR', 'workforce.user.suspend', EXECUTE),
+  nowAssign('ADMINISTRATOR', 'workforce.role.view', VIEW),
+  nowAssign('ADMINISTRATOR', 'workforce.role.assign_operational', EXECUTE),
+  nowAssign('ADMINISTRATOR', 'workforce.role.revoke_operational', EXECUTE),
+  nowAssign('ADMINISTRATOR', 'customer.view', VIEW),
+  nowAssign('ADMINISTRATOR', 'agent.view', VIEW),
+  nowAssign('ADMINISTRATOR', 'aggregator.view', VIEW),
 ];

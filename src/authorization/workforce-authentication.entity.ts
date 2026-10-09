@@ -50,6 +50,14 @@ export class A2WorkforceSession {
 @Index('idx_a2_finance_assignment_principal_status', ['principalId', 'status'])
 @Index('idx_a2_finance_assignment_role_status', ['roleKey', 'status'])
 @Check('chk_a2_finance_assignment_status', "status IN ('ACTIVE','REVOKED')")
+@Check(
+  'chk_a2_finance_assignment_initiated_scope',
+  "initiated_scope IN ('SUPER_ADMIN_SCOPE','ADMINISTRATOR_SCOPE')",
+)
+@Check(
+  'chk_administrator_scope_role_allowlist',
+  "initiated_scope <> 'ADMINISTRATOR_SCOPE' OR role_key IN ('OPERATIONS','AGENT_NETWORK_MANAGER','COMPLIANCE','RISK_FRAUD','CUSTOMER_SERVICE','TREASURY')",
+)
 export class A2FinanceRoleAssignment {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ name: 'assignment_reference', type: 'varchar', length: 160 })
@@ -59,6 +67,15 @@ export class A2FinanceRoleAssignment {
   @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: string;
   @Column({ type: 'jsonb' }) scopes!: readonly string[];
   @Column({ type: 'varchar', length: 16 }) status!: 'ACTIVE' | 'REVOKED';
+  /**
+   * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (Decision 2): immutable at write
+   * time, set by the service layer, never updated after insert. 'ADMINISTRATOR_SCOPE' rows are
+   * structurally confined (see the CHECK constraint above, mirrored in migration 1785753600085)
+   * to exactly the six ADMINISTRATOR-delegable operational roles — this is a database-level
+   * guarantee, independent of any application code path.
+   */
+  @Column({ name: 'initiated_scope', type: 'varchar', length: 32, default: 'SUPER_ADMIN_SCOPE' })
+  initiatedScope!: 'SUPER_ADMIN_SCOPE' | 'ADMINISTRATOR_SCOPE';
   @Column({ type: 'boolean', default: true }) interim!: true;
   @Column({ name: 'effective_from', type: 'timestamptz' }) effectiveFrom!: Date;
   @Column({ name: 'effective_to', type: 'timestamptz' }) effectiveTo!: Date;

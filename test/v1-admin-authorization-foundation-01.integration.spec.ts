@@ -100,13 +100,16 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     }
   }, 60000);
 
-  // --- 1. All ten roles exist after migration/seed ---------------------
-  it('seeds exactly the ten approved V1 roles', async () => {
+  // --- 1. All eleven roles exist after migration/seed --------------------
+  // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 added ADMINISTRATOR (the 11th
+  // approved role) to the catalogue seed.
+  it('seeds exactly the eleven approved V1 roles', async () => {
     const rows: Array<{ role_key: string }> = await dataSource.query(
       `SELECT role_key FROM authorization_roles ORDER BY role_key`,
     );
     const keys = rows.map((r) => r.role_key).sort();
     const expected = [
+      'ADMINISTRATOR',
       'AGENT_NETWORK_MANAGER',
       'COMPLIANCE',
       'CUSTOMER_SERVICE',
@@ -119,7 +122,7 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
       'TREASURY',
     ].sort();
     expect(keys).toEqual(expected);
-    expect(keys.length).toBe(10);
+    expect(keys.length).toBe(11);
   });
 
   // --- 2. FINANCE_ADMIN is not seeded as an organizational role ---------

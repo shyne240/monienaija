@@ -11,7 +11,10 @@ import {
 import type { FastifyRequest } from 'fastify';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { AuthorizationService } from './authorization.service';
-import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
+import {
+  ADMINISTRATOR_OPERATIONAL_ROLE_KEYS,
+  A2FinanceRoleAdministrationService,
+} from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.service';
@@ -83,7 +86,19 @@ export class A2WorkforceAdministrationController {
     @Req() r: R,
   ) {
     const p = this.principal(r);
-    await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: the six operational roles never
+    // touch the legacy FINANCE_ROLE_ASSIGN maker/checker-rule gate below — ADMINISTRATOR holds no
+    // `initiatingRoles` entry there and must not gain one, since that rule also governs the three
+    // Finance roles and ADMINISTRATOR's own (SUPER_ADMIN-only) assignment. Direct-EXECUTE catalogue
+    // function check only; the service layer re-validates role membership independently.
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(b.roleKey)) {
+      await this.auth.requireFunction(p, 'workforce.role.assign_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
+        'OPERATOR',
+        'PRIVILEGED',
+      ]);
+    } else {
+      await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    }
     await this.limits.consume(
       this.rateRule('finance-role-administration'),
       [p.principalId, p.sessionId ?? 'none', 'FINANCE_ROLE_ASSIGN'],
@@ -108,7 +123,14 @@ export class A2WorkforceAdministrationController {
     @Req() r: R,
   ) {
     const p = this.principal(r);
-    await this.authorize(p, 'FINANCE_ROLE_REVOKE', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(roleKey)) {
+      await this.auth.requireFunction(p, 'workforce.role.revoke_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
+        'OPERATOR',
+        'PRIVILEGED',
+      ]);
+    } else {
+      await this.authorize(p, 'FINANCE_ROLE_REVOKE', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    }
     await this.limits.consume(
       this.rateRule('finance-role-administration'),
       [p.principalId, p.sessionId ?? 'none', 'FINANCE_ROLE_REVOKE'],
