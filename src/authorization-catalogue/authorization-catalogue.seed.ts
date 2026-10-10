@@ -215,6 +215,24 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'metrics.view', domain: 'OPERATIONS', name: 'View metrics', description: 'View operational metrics.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'diagnostics.view', domain: 'OPERATIONS', name: 'View diagnostics', description: 'View operational diagnostics endpoints.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'notification.view_deliveries', domain: 'OPERATIONS', name: 'View notification deliveries', description: 'View notification delivery records.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+
+  // --------------------------------------------------------------- REPORTING
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: a deliberately narrow, new aggregate-only
+  // reporting function, distinct from `transaction.view` (single-record view) and
+  // `transaction.search` (FUTURE/non-assignable free-form cross-record search). This grants
+  // access to non-PII, non-filterable, fixed-size platform-wide transaction totals/breakdowns
+  // and a short recent-activity feed (identifiers/type/amount/status/timestamp only, no customer
+  // PII) for dashboard reporting purposes only. Does not reopen or widen the `transaction.search`
+  // decision in any way.
+  { functionCode: 'reporting.transaction_summary.view', domain: 'REPORTING', name: 'View transaction summary report', description: 'View aggregate, non-PII transaction totals/breakdowns and a short recent-activity feed for dashboard reporting.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true, notes: 'V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: new, narrowly-scoped aggregate reporting function. Deliberately distinct from transaction.view/transaction.search.' },
+
+  // --------------------------------------------------------------- DASHBOARD
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: governs the configurable-dashboard
+  // template/assignment layer only (Layer B/C in the task's architecture). Holding these
+  // functions never grants or changes any other function/role/permission — it only controls
+  // who may view or change which dashboard TEMPLATE a role is configured to display.
+  { functionCode: 'workforce.dashboard.view', domain: 'DASHBOARD', name: 'View dashboard configuration', description: 'View the list of dashboard templates and role-to-template assignments.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+  { functionCode: 'workforce.dashboard.assign', domain: 'DASHBOARD', name: 'Assign dashboard template', description: 'Assign or change which dashboard template a role displays. Never changes any permission/function grant.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true, notes: 'Single-actor governance (no maker/checker) — see V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 report §5 for the documented reasoning: this action is structurally incapable of altering permissions, so dual control was judged unnecessary; fully audited via AuditService.' },
 ];
 
 export const AUTHORIZATION_ROLE_SEED: AuthorizationRoleSeed[] = [
@@ -355,6 +373,10 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'reward_rule.view', VIEW),
   nowAssign('SUPER_ADMIN', 'product.view', VIEW),
   nowAssign('SUPER_ADMIN', 'limit.view', VIEW),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
+  nowAssign('SUPER_ADMIN', 'reporting.transaction_summary.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'workforce.dashboard.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'workforce.dashboard.assign', EXECUTE),
   // NOTE: SUPER_ADMIN deliberately does NOT hold ledger.post/reverse/approve_adjustment,
   // fee_rule/commission_rule/reward_rule/product/limit create-or-modify, finance.control_policy.activate,
   // agent.fund/defund, or risk_fraud.manage_fraud_case. This is intentional, per the approved
@@ -379,6 +401,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_PREPARER', 'limit.modify', INITIATE),
   nowAssign('FINANCE_PREPARER', 'limit.view', VIEW),
   nowAssign('FINANCE_PREPARER', 'finance.control_policy.activate', INITIATE),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: needed to see recognized fee/commission figures
+  // relevant to the commercial configuration this role prepares.
+  nowAssign('FINANCE_PREPARER', 'reporting.transaction_summary.view', VIEW),
 
   // ---------------------------------------------------------- FINANCE_CONTROLLER
   nowAssign('FINANCE_CONTROLLER', 'ledger.view', VIEW),
@@ -407,6 +432,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_CONTROLLER', 'workforce.role.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'agent.fund', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'agent.defund', APPROVE),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
+  nowAssign('FINANCE_CONTROLLER', 'reporting.transaction_summary.view', VIEW),
   // NOTE: FINANCE_CONTROLLER deliberately does NOT hold ledger.post/reverse (maker-only
   // functions) nor ledger.approve_adjustment (not assignable yet — see module header notes).
 
@@ -440,6 +467,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_AUDITOR', 'diagnostics.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'notification.view_deliveries', VIEW),
   nowAssign('FINANCE_AUDITOR', 'reconciliation.view', VIEW),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
+  nowAssign('FINANCE_AUDITOR', 'reporting.transaction_summary.view', VIEW),
 
   // ------------------------------------------------------------------ OPERATIONS
   nowAssign('OPERATIONS', 'customer.view', VIEW),
@@ -462,6 +491,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('OPERATIONS', 'diagnostics.view', VIEW),
   nowAssign('OPERATIONS', 'notification.view_deliveries', VIEW),
   nowAssign('OPERATIONS', 'transaction.view', VIEW),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
+  nowAssign('OPERATIONS', 'reporting.transaction_summary.view', VIEW),
 
   // ------------------------------------------------------- AGENT_NETWORK_MANAGER
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.view', VIEW),
@@ -523,4 +554,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('ADMINISTRATOR', 'customer.view', VIEW),
   nowAssign('ADMINISTRATOR', 'agent.view', VIEW),
   nowAssign('ADMINISTRATOR', 'aggregator.view', VIEW),
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: ADMINISTRATOR co-holds dashboard configuration
+  // authority alongside SUPER_ADMIN, consistent with its existing workforce/operational
+  // administration remit. Neither function changes any role/permission grant.
+  nowAssign('ADMINISTRATOR', 'workforce.dashboard.view', VIEW),
+  nowAssign('ADMINISTRATOR', 'workforce.dashboard.assign', EXECUTE),
 ];

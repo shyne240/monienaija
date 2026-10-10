@@ -12,6 +12,13 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
+// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
+// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
+// dashboard — always the first recorded call. Prefixed onto every sequential
+// `.mockResolvedValueOnce(...)` chain below so the rest of each chain still lines up with the
+// ledger screen's own call order.
+const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+
 describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
   const mockAccounts = [
     {
@@ -84,6 +91,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal); // journal audit
 
@@ -95,7 +103,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
     fireEvent.click(getByText('Audit Journal'));
 
-    expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/ledger/journals/journal-uuid-999');
+    expect(ApiClient.get).toHaveBeenNthCalledWith(3, '/ledger/journals/journal-uuid-999');
 
     expect(await findByText('Pilot Wallet Funding')).toBeTruthy();
     expect(await findByText('acc-uuid-debit')).toBeTruthy();
@@ -114,6 +122,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal) // journal audit
       .mockResolvedValueOnce({ ...mockJournal, status: 'REVERSED' }) // reload journal
@@ -172,6 +181,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal); // journal audit
 

@@ -6,6 +6,10 @@ import {
   AUTHORIZATION_ROLE_FUNCTION_SEED,
   AUTHORIZATION_ROLE_SEED,
 } from '../../src/authorization-catalogue/authorization-catalogue.seed';
+import {
+  DASHBOARD_TEMPLATE_SEED,
+  ROLE_DASHBOARD_ASSIGNMENT_SEED,
+} from '../../src/dashboard/dashboard-templates.seed';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -241,6 +245,12 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   // `AuthorizationCatalogueSeedService.reseed()` directly (truncate-then-seed in one call) and
   // are unaffected by this — they do not rely on `truncateAllTables` leaving the catalogue empty.
   await reseedAuthorizationCatalogue(dataSource);
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: identical rationale — `dashboard_templates`/
+  // `role_dashboard_assignments` are bootstrap reference data seeded once by
+  // `DashboardSeedService.onApplicationBootstrap()`, and suites that exercise `/my-dashboard`,
+  // `/widgets/:widgetKey`, or the dashboard settings endpoints via a real, non-mocked app need it
+  // to survive every `beforeEach(truncateAllTables)` call, not just the first test.
+  await reseedDashboardPlatform(dataSource);
 }
 
 /**
@@ -326,6 +336,39 @@ async function reseedAuthorizationCatalogue(dataSource: DataSource): Promise<voi
        VALUES ($1,$2,$3,$4,true,'SYSTEM_SEED',$5,$5,$5)
        ON CONFLICT DO NOTHING`,
       [randomUUID(), roleId, item.functionCode, item.accessType, now],
+    );
+  }
+}
+
+/**
+ * Re-inserts the `dashboard_templates`/`role_dashboard_assignments` bootstrap reference data
+ * directly via the DataSource, mirroring `DashboardSeedService`'s insert-missing-only logic
+ * against the same exported seed arrays it uses. Safe to call against already-empty
+ * (just-truncated) tables, and a no-op if the migration hasn't run in this suite's schema.
+ */
+async function reseedDashboardPlatform(dataSource: DataSource): Promise<void> {
+  const tableCheck: Array<{ exists: boolean }> = await dataSource.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'dashboard_templates') AS exists`,
+  );
+  if (!tableCheck[0]?.exists) return;
+
+  const now = new Date();
+  for (const item of DASHBOARD_TEMPLATE_SEED) {
+    await dataSource.query(
+      `INSERT INTO dashboard_templates
+         (template_key, display_name, description, operational_area, layout, is_active, metadata, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,true,NULL,$6,$6)
+       ON CONFLICT (template_key) DO NOTHING`,
+      [item.templateKey, item.displayName, item.description, item.operationalArea, JSON.stringify({ widgets: item.widgets }), now],
+    );
+  }
+  for (const item of ROLE_DASHBOARD_ASSIGNMENT_SEED) {
+    await dataSource.query(
+      `INSERT INTO role_dashboard_assignments
+         (role_key, template_key, assigned_by, assigned_at, reason, created_at, updated_at)
+       VALUES ($1,$2,'SYSTEM_SEED',$3,$4,$3,$3)
+       ON CONFLICT (role_key) DO NOTHING`,
+      [item.roleKey, item.templateKey, now, item.reason],
     );
   }
 }

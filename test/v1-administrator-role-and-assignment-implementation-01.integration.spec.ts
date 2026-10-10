@@ -225,7 +225,11 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
       ]);
     });
 
-    it('1b. ADMINISTRATOR holds exactly its approved 9 function grants and nothing else', async () => {
+    it('1b. ADMINISTRATOR holds exactly its approved 11 function grants and nothing else', async () => {
+      // Note: V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 adds two narrowly-scoped grants
+      // (workforce.dashboard.view, workforce.dashboard.assign) so ADMINISTRATOR can co-manage
+      // role-to-dashboard-template assignment alongside SUPER_ADMIN. Assigning a dashboard
+      // template never changes any permission/function grant — see that task's report §5.
       const rows: Array<{ function_code: string; access_type: string }> = await dataSource.query(`
         SELECT f.function_code, rf.access_type FROM authorization_role_functions rf
         JOIN authorization_roles r ON r.id = rf.role_id
@@ -238,6 +242,8 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
           { function_code: 'aggregator.view', access_type: 'VIEW' },
           { function_code: 'agent.view', access_type: 'VIEW' },
           { function_code: 'customer.view', access_type: 'VIEW' },
+          { function_code: 'workforce.dashboard.assign', access_type: 'EXECUTE' },
+          { function_code: 'workforce.dashboard.view', access_type: 'VIEW' },
           { function_code: 'workforce.role.assign_operational', access_type: 'EXECUTE' },
           { function_code: 'workforce.role.revoke_operational', access_type: 'EXECUTE' },
           { function_code: 'workforce.role.view', access_type: 'VIEW' },

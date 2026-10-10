@@ -1,440 +1,343 @@
-# V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — Report (Recovered)
+# V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01/02 — Final Report
 
-## 0. Why this report says "INCOMPLETE" instead of "successful"
+## 0. Status: COMPLETE (backend + frontend), verified end-to-end
 
-This task was previously reported to a user as **successful**, but no report file ever existed at
-this path, and **no commit for this task exists anywhere in the repository's history** (verified
-by `git log --all --oneline | grep -i dashboard` returning nothing, and by comparing the local
-branch tip against `origin/arena/01a10374-monienaija`). This document was reconstructed from first
-principles in a dedicated recovery session: by reading the actual (uncommitted) code, the actual
-migration, and by **running** the code against a real, freshly-provisioned PostgreSQL instance and
-a real HTTP server, rather than by trusting the earlier "successful" claim.
+This supersedes the prior "-01" recovery report, which documented an **incomplete** state: two
+blocking backend defects and a completely unbuilt Admin Web frontend. This "-02" pass fixed every
+defect found, added two small, honestly-scoped new capabilities, built the full Admin Web
+dashboard experience against the real backend, and verified all of it — backend and frontend —
+with automated tests plus live, manual end-to-end checks against a running server. Every number in
+this report was produced by a command in §9/§10, in this session, against this repository's actual
+code. Nothing is inherited from an earlier "successful" claim without being re-verified here.
 
-**The honest finding: this task is INCOMPLETE.**
-- The backend (entities, migration, service, controller, widget registry, seed data) is
-  substantially built and was runnable, but a from-scratch, independent PG-backed test run
-  performed in this recovery session found **two genuine, reproducible, blocking defects**
-  (detailed in §7 and §9) that mean core claims of the original task — "an admin can reassign a
-  role's dashboard template" and "the transaction-summary widget works" — **do not currently
-  hold**.
-- The Admin Web frontend portion of the task (widget components, a dashboard settings screen, any
-  API-client wiring for these new endpoints) was **never started**. Only the pre-existing
-  placeholder `apps/admin-web/src/screens/authenticated/DashboardScreen.tsx` exists; it does not
-  reference any of the new backend endpoints.
-- **Nothing for this task was ever committed.** All of it exists only as uncommitted working-tree
-  changes on top of commit `654aa29049c162c8c9b61507192a82f03be2f17d` (the real, pushed tip of
-  `arena/01a10374-monienaija` as of this report, which corresponds to the completed
-  V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 task).
+**What changed since the "-01" recovery report:**
+- Fixed Defect #1 (dashboard-assignment `PUT` always returning 400).
+- Fixed Defect #2 (`transaction-summary` always returning 500 for deposits/withdrawals).
+- Found and fixed two further, previously-undetected defects in the same uncommitted V1 code
+  (Defects #3 and #4 below) while building regression tests for #1/#2.
+- Added two small, real, tested features: a `transaction-trend` widget (daily volume/value trend)
+  and a `compare=true` period-over-period comparison option on `transaction-summary`.
+- Built the entire Admin Web dashboard experience (viewing + configuration) against the real,
+  fixed backend.
+- Everything in this report (backend fixes/features and the frontend) is now **committed** —
+  unlike the "-01" state, where nothing had ever been committed.
 
-This report documents exactly what exists, what was verified in this recovery session (with
-real commands and real output), what was not verified, and the two defects found. No test result
-anywhere in this report is invented — every number cited was produced by a command listed in §10.
+## 1. Dashboard template / widget architecture (unchanged from "-01", re-verified)
 
----
+Three independently-evolving layers: **Layer A** (pre-existing `authorization_roles` /
+`authorization_role_functions`), **Layer B** (`dashboard_templates` — 12 seeded templates: 11
+operational-area + `DEFAULT_FALLBACK`), **Layer C** (`role_dashboard_assignments` — one row per
+role). The static widget registry (`src/dashboard/dashboard-widget-registry.ts`) now declares
+**18 widgets** (17 from "-01" plus the new `transaction-trend`). This separation, and the claim
+that assigning a template never touches Layer A, is proven by a passing, real-PG test (`4a.
+changing TREASURY's dashboard template does not alter its function grants`) — this test exists in
+both reports, but in "-01" it **could not pass** because Defect #1 blocked it; it is a genuine,
+currently-passing proof now.
 
-## 1. Dashboard template / widget architecture
+## 2. Role↔template assignment is independent of permissions — now verified end-to-end, not just by design
 
-The implementation separates three layers, exactly as the original task required:
+Confirmed by an actually-passing test suite (not merely code review, as "-01" had to settle for):
+`2a` (assignment persists across independent requests), `3a` (a brand-new role is assigned an
+existing template purely via DB/API rows), `4a` (changing TREASURY's template leaves its function
+grants byte-for-byte identical) **all pass** against real PostgreSQL. Additionally verified live,
+manually, against a running server (see §9.3): `PUT .../assignments/TREASURY` with
+`{"templateKey":"EXECUTIVE_GOVERNANCE"}` returned `200` and persisted immediately, confirmed via a
+follow-up `GET .../assignments`, then reverted.
 
-- **Layer A — Roles & permissions** (pre-existing, untouched): `authorization_roles` /
-  `authorization_role_functions` / `authorization_functions`, owned by
-  `AuthorizationCatalogueSeedService`.
-- **Layer B — Dashboard templates**: new table `dashboard_templates` (migration
-  `1785753600087-CreateDashboardPlatform.ts`). Columns: `id`, `template_key` (unique),
-  `display_name`, `description`, `operational_area`, `layout` (JSONB — an ordered widget list),
-  `is_active`, `metadata`, timestamps. A template is a reusable, named *shape* (which widgets, in
-  which order) completely independent of which role(s) use it.
-- **Layer C — Role → template assignment**: new table `role_dashboard_assignments`
-  (`role_key` unique, `template_key`, `assigned_by`, `assigned_at`, `reason`, timestamps). One row
-  per role, resolved at request time by `DashboardService.resolveMyDashboard()` — never cached,
-  never hardcoded in frontend or backend code.
-- **Widget registry** (`src/dashboard/dashboard-widget-registry.ts`): a static, code-level catalog
-  of 17 widgets, each declaring a `widgetKey`, a human `displayName`/`description`, a `kind`
-  (chart/table/summary/etc.), a `fetchMode` (`proxy` — backend fetches and returns real data
-  through `DashboardWidgetDataService`; or `direct` — the client calls an existing endpoint
-  directly), and `requiredFunctions` (the authorization function codes a role must hold for that
-  specific widget, independent of which template surfaces it).
+## 3. A new role can reuse an existing template with zero source-code change — now verified, not just designed
 
-This is a correct, clean separation: changing which template a role is assigned to (Layer C) never
-touches Layer A (permissions) and never touches the widget registry (Layer B's vocabulary). This
-was **confirmed by a passing test** (see §2, test `1b`) that every widget referenced by every
-seeded template actually exists in the registry, and by code review of `assignTemplate()`
-(`dashboard.service.ts`), which only ever writes to `role_dashboard_assignments` and the audit log
-— it has no code path that can write to `authorization_role_functions`.
-
-12 templates are seeded (`dashboard-templates.seed.ts`): `EXECUTIVE_GOVERNANCE`,
-`WORKFORCE_ADMINISTRATION`, `FINANCE_PREPARATION`, `FINANCIAL_CONTROL_APPROVALS`,
-`FINANCIAL_AUDIT_ASSURANCE`, `TRANSACTION_OPERATIONS`, `AGENT_NETWORK_MANAGEMENT`,
-`COMPLIANCE_KYC`, `FRAUD_CASE_MONITORING`, `CUSTOMER_SERVICING`, `RECONCILIATION_VISIBILITY`, and
-`DEFAULT_FALLBACK` (the 11 operational-area templates plus the fallback), each declaring its own
-ordered widget list drawn from the shared 17-widget registry.
-
-## 2. Is a role's dashboard template independent of its permissions?
-
-**Yes, by design and by one passing, real-PG-backed test** (`1b. 12 templates seeded...`, part of
-the 28 passing tests in this recovery session's run — see §9). `assignTemplate()` only writes
-`role_dashboard_assignments`; it never touches `authorization_role_functions`.
-
-However, the **two intended end-to-end proofs of this specific claim — tests `4a` ("changing
-TREASURY's dashboard template does not alter its function grants") and `3a`/`2a`
-(assignment-persists-and-is-independently-reusable) — all FAIL**, not because the independence
-claim is false, but because the **PUT `/assignments/:roleKey` endpoint itself is completely
-broken** (defect #1, §7) and returns `400 Bad Request` for every call, regardless of payload. So
-while the architecture is correctly separated on paper and in the write path's own code, **the
-only API surface that lets an admin actually exercise "change a role's template" is non-functional
-today**, and that specific claim is **unverified-by-passing-test**, not merely "verified by design
-review."
-
-## 3. Can a brand-new role reuse an existing dashboard template with zero source-code changes?
-
-**By design: yes.** `assignTemplate()` takes an arbitrary `roleKey` string and an existing
-`templateKey`; nothing in the write or read path requires a role to be one of the 11 original V1
-roles, is gated behind an enum, or requires a widget/frontend code change. `DashboardService`
-resolves any role's dashboard purely from the `role_dashboard_assignments` row at request time.
-
-**This specific claim could not be confirmed by test**, again because of defect #1: test `3a` ("a
-newly-created role can be assigned an existing template purely via DB/API rows") fails at the same
-PUT call for the same reason as §2. The mechanism is correct by code inspection, but is
-**currently unusable through the API**, so "zero-code-change role reuse" is a defect-blocked,
-unverified claim, not a demonstrated one.
+Test `3a` provisions a brand-new role (`v1-dash-plat-01-new-role`, never seen anywhere in source
+code) directly via a DB insert into `authorization_roles`, then calls the real `PUT
+/assignments/:roleKey` endpoint to point it at the pre-existing `CUSTOMER_SERVICING` template, and
+confirms its resolved dashboard is now identical to `CUSTOMER_SERVICE`'s. This **passes**. The
+Admin Web "Dashboard Settings" screen's role→template dropdown is the concrete UI proof of the
+same claim: it lists every existing template for every role the backend returns, with no
+role-name branching anywhere in the frontend.
 
 ## 4. Dashboards for all 11 V1 roles
 
-All 11 V1 roles (`SUPER_ADMIN`, `ADMINISTRATOR`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`,
-`FINANCE_AUDITOR`, `OPERATIONS`, `AGENT_NETWORK_MANAGER`, `COMPLIANCE`, `RISK_FRAUD`,
-`CUSTOMER_SERVICE`, `TREASURY`) have a seeded assignment to an active, role-appropriate template
-(`dashboard-templates.seed.ts`, `ROLE_DASHBOARD_ASSIGNMENT_SEED`) — **confirmed passing**, test
-`1a`, real PG.
+All 11 roles still resolve to a seeded, active, role-appropriate template (test `1a`, passing).
+The full per-role "every authorized widget is independently fetchable" check (test group `11`)
+**now passes for all 11 roles** (it failed for 5 of 11 roles in "-01", entirely due to Defects #2–
+#4 below).
 
-Of the per-role dashboard-correctness test (§11 of the test file — "resolves a dashboard whose
-authorized flags exactly match its real catalogue grants, and every authorized proxy widget is
-fetchable"): **6 of 11 roles pass** (`ADMINISTRATOR`, `AGENT_NETWORK_MANAGER`, `COMPLIANCE`,
-`RISK_FRAUD`, `CUSTOMER_SERVICE`, `TREASURY`) and **5 of 11 fail**
-(`SUPER_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, `FINANCE_AUDITOR`, `OPERATIONS`) — every
-one of the 5 failing roles is exactly the set of roles granted `reporting.transaction_summary.view`
-(see the `authorization-catalogue.seed.ts` diff in §8), i.e. every role whose dashboard includes
-the broken `transaction-summary` widget (defect #2, §7). The *authorization-flag correctness* part
-of this test passes even for the failing roles — only the "every authorized proxy widget is
-independently fetchable" assertion fails, and only for the one broken widget.
+## 5. Are displayed metrics real/authoritative? Definitions
 
-## 5. Are the displayed metrics real and authoritative? How are volume/success-rate/fee/trend figures defined?
+Unchanged in design from "-01" (every widget queries authoritative tables directly — see that
+report section for the full breakdown) but now **actually exercised end-to-end without crashing**,
+and extended with two new, tested capabilities:
 
-By code review, **every widget queries an authoritative source table or existing service directly
-— none pre-aggregate from another dashboard, cache layer, or synthetic/estimated figure**:
+- **`transaction-trend`** (new): daily completed-transaction count and value, summed across all
+  four V1 types, grouped by calendar day (UTC), zero-filled for days with no activity, capped at a
+  92-day window. Rendered in Admin Web as a lightweight inline SVG bar chart (no new chart-library
+  dependency). This is the "historical trend" capability the "-01" report flagged as entirely
+  missing.
+- **`compare=true`** (new, opt-in) on `transaction-summary`: returns a `previousPeriod` object
+  (the immediately preceding period of equal length) and a `comparison` object with
+  `completedCountChangePercent`/`completedValueChangePercent`, explicitly `null` (never
+  `NaN`/`Infinity`/a crash) when there is no comparable non-zero baseline. This is the
+  "period-over-period comparison" capability the "-01" report flagged as missing. Omitting the
+  query param changes nothing for existing callers (verified by test `9g`).
+- **Labelling discipline** (explicit frontend requirement): the Admin Web Transaction Summary
+  widget labels are "Completed (volume / count)", "Completed Value", "Fee Revenue (not profit)",
+  with an inline definitions note stating plainly that fee revenue is not profit and that no
+  profit/margin figure is computed anywhere in this release (verified by a frontend test that
+  asserts no "Profit" text ever renders — see §8).
+- **No commission/profit figure is invented.** `commission: null` plus `commissionNote` is
+  unchanged from "-01" and is still surfaced verbatim in the UI.
 
-- `transaction-summary` / `recent-transactions`: `DashboardWidgetDataService.transactionSummary()`
-  / `.recentTransactions()` query the four real transaction tables directly —
-  `transfers` (W2W), `deposits` (C2W), `withdrawals` (W2C), `cash_to_cash_transfers` (C2C) — each
-  with its own real `completedStatus`/`failedStatuses`/`pendingStatuses` definitions (e.g. W2W
-  completed = `COMPLETED`, failed = `FAILED`/`CANCELLED`; C2C completed = `CLAIMED`, failed =
-  `EXPIRED`). "Volume" = `COUNT(*)` grouped by status within the requested date window; "value" =
-  `SUM(amount_minor)` (or `principal_minor` for C2C); "fee" = `SUM(fee_minor)` **only** where a fee
-  column exists for that transaction type (`transfers`/`cash_to_cash_transfers`); for `deposits`
-  and `withdrawals` (no fee column), the widget is designed to omit a fee figure entirely rather
-  than invent one — `commission: null` with an explanatory `commissionNote` string is the
-  documented no-invented-figures behavior asserted by test `9d`.
-- "Period" filters (`today`/`7d`/`30d`/`custom`) are computed in `resolvePeriod()` as real
-  `Date` arithmetic against `now()`, not pre-bucketed/cached windows; `custom` requires explicit
-  `from`/`to` ISO dates and rejects `from > to` (confirmed passing, tests `9b`/`9c`).
-- `ledger-summary`: a real `GROUP BY` over `ledger_journals`/`ledger_lines` (debits/credits by
-  currency and accounting unit) — no synthetic netting.
-- `reconciliation-status`: delegates directly to the existing, real `ReconciliationService`
-  (`runReconciliation()` / `getTrialBalance()`), not a cached summary.
-- `workforce-overview`, `agent-lifecycle-summary`, `kyc-queue-summary`,
-  `compliance-case-summary`, `fraud-case-summary`: each a direct `COUNT(*)`/`GROUP BY` over its
-  respective real table (`a2_finance_role_assignments`, `agents`/`agent_applications`,
-  `customer_kyc_assessments`, `customer_compliance_cases`), with correct `deleted_at IS NULL`
-  filtering reviewed and fixed earlier in this engagement.
-- **No "trend" or "comparison vs. prior period" figure is implemented anywhere in the widget
-  registry or data service.** The original task's requirement for trend/comparison data is **not
-  met** — there is no widget that computes a period-over-period delta. This is a scope gap,
-  separate from the two defects in §7.
+## 6. SUPER_ADMIN executive BI vs. other roles
 
-**However**, the one widget that actually implements fee/volume semantics (`transaction-summary`)
-is **currently non-functional for 2 of its 4 transaction types due to defect #2** — so while the
-*design* of "real, authoritative, no invented figures" is sound and partially verified (the
-`custom`-period commission-null-and-noted behavior passed in test `9d`... actually see correction
-below), the widget as a whole cannot be exercised end-to-end today. (Correction: test `9d` itself
-is one of the 10 failing tests — it fails with the same HTTP 500 as `9a`, before its
-no-invented-commission assertion is ever reached. The commission-null/commissionNote behavior is
-implemented in the source code — reviewed directly — but **was not actually exercised by a passing
-test** in this session, due to defect #2 blocking the request before that code path runs.)
+Unchanged in design (`EXECUTIVE_GOVERNANCE` vs. operational-area templates), now additionally
+carries the new `transaction-trend` widget (added to `EXECUTIVE_GOVERNANCE` and
+`TRANSACTION_OPERATIONS` only — the two templates where a volume trend is operationally relevant).
+Category-boundary tests `11z` (RISK_FRAUD never sees AML/KYC data) and `11y` (TREASURY limited to
+reconciliation data) still pass. The Admin Web dashboard is **one shared component tree**
+(`DashboardScreen` + the widget-rendering library in `src/components/dashboard/`) for all 11
+roles — there is no SUPER_ADMIN-specific frontend code path; the backend's template/widget/
+authorization resolution is the only thing that varies.
 
-## 6. SUPER_ADMIN executive BI vs. other roles' operational dashboards
+## 7. Authorization, restricted visibility, fallback, error states — now with zero known defects
 
-By seed design: `SUPER_ADMIN` is assigned `EXECUTIVE_GOVERNANCE`, a template distinct from every
-operational role's template, intended to span cross-functional widgets (transaction summary,
-ledger, reconciliation, workforce overview, role-governance queue, system health) rather than a
-single operational area's widgets (e.g. `TREASURY` → `RECONCILIATION_VISIBILITY`, scoped to
-reconciliation-only data; `RISK_FRAUD` → `FRAUD_CASE_MONITORING`, scoped to fraud-case data only).
-Two specific category-boundary claims **were confirmed by passing tests in this session**:
-test `11z` — `RISK_FRAUD` never sees AML/KYC/SANCTIONS compliance-case data (only `FRAUD`-category
-rows, enforced by the `category = 'FRAUD'` filter in `fraudCaseSummary()`), and test `11y` —
-`TREASURY` is limited to exactly reconciliation-view-backed data. Both passed against real
-PostgreSQL with real seeded cases of multiple categories.
+All 17 authorization/fallback-focused backend tests from "-01" still pass, plus new ones added for
+the fixed/new widgets (`transaction-trend` per-widget authorization, `recent-transactions`
+resilience to a malformed `limit` query param). On the frontend: a widget the backend marks
+`authorized: false` is rendered as a "🔒 Restricted" tile and **its data endpoint is never called**
+(verified by a frontend test asserting the relevant URL never appears in the mock's call list —
+defense in depth, mirroring the backend's own per-widget re-check). The Dashboard Settings screen
+shows a specific, backend-sourced message on `401`/`403` (never a generic crash) and a specific
+backend-sourced error message when a save is rejected (e.g. "Dashboard template 'GHOST' is not a
+known, active template.") — both covered by frontend tests.
 
-`SUPER_ADMIN`'s own dashboard-correctness test (`11.SUPER_ADMIN`) is one of the 5 failures
-described in §4/§7 — caused by the same `transaction-summary` defect, not by an authorization or
-template-design problem (its *authorized-flag correctness* assertions, run before the widget-fetch
-assertion that fails, were not separately isolated in this session, so whether SUPER_ADMIN's
-*authorization flags* specifically are correct is not independently confirmed — only that the test
-as a whole fails on the widget-fetch step).
+### Defects found and fixed in this pass
 
-## 7. Authorization enforcement, restricted visibility, fallback, and error states
+**Defect #1 — dashboard-assignment `PUT` always returned 400 (FIXED).** Root cause (from the "-01"
+report, confirmed here): `AssignTemplateDto` had no `class-validator` decorators, so the global
+`ValidationPipe({ whitelist: true })` silently stripped the entire request body before the
+controller's own check ran. **Fix:** moved the DTO to `src/dashboard/dto/assign-template.dto.ts`
+with `@IsString()`/`@IsNotEmpty()`/`@IsOptional()`/`@MaxLength()` decorators and a `@Transform`
+trim, following the exact convention already used elsewhere in the codebase (e.g.
+`src/bank/dto/update-bank.dto.ts`). Verified: tests `2a`/`3a`/`4a`/`7d`/`7e`/`10b` all pass; also
+verified live against a running server (`PUT` returns `200`, persists, and is readable back via
+`GET`; see §9.3).
 
-**This is the most thoroughly, successfully verified area.** All of the following passed against
-real PostgreSQL + real HTTP in this recovery session:
+**Defect #2 — `transaction-summary` always returned 500 for deposits (C2W) and withdrawals (W2C)
+(FIXED).** Root cause (from the "-01" report, confirmed here): the query always bound 3 SQL
+parameters but only ever referenced the 3rd (`$3`, a conditional fee aggregate) in the generated
+SQL text when a fee column existed, which Postgres rejects outright for tables without one.
+**Fix:** `computeTransactionSummaryForRange()` now builds the parameter array to match exactly
+what the generated SQL text references — `$3` is only appended, and only ever used, when
+`t.feeColumn` is set. Verified: tests `9a`/`9d`/`9e` (new, explicit per-type regression test) all
+pass; live-verified (`period=30d&compare=true` returns `200` with a well-formed `byType` array).
 
-- No bearer token → `401` on every dashboard route (`5a`).
-- A role lacking `workforce.dashboard.view` (`TREASURY`) is denied listing
-  templates/assignments (`5b`).
-- A role lacking `workforce.dashboard.assign` (`FINANCE_AUDITOR`, a read-only governed role)
-  cannot change an assignment (`5c`).
-- Only `SUPER_ADMIN`/`ADMINISTRATOR` hold `workforce.dashboard.assign` — least-privilege check
-  against the real catalogue (`5d`).
-- **Tamper resistance**: forcing a role onto a template containing widgets it is not entitled to
-  (bypassing the UI/API entirely, writing the assignment row directly) still results in the
-  per-widget data endpoint rejecting the unauthorized widget fetch server-side (`6a`) — enforcement
-  lives in `DashboardController`'s per-widget `requireFunction` check, not in template selection.
-- **Fallback behavior**, all passing: a role with no assignment row falls back to
-  `DEFAULT_FALLBACK` (`7a`); a role assigned to a since-deactivated template falls back to
-  `DEFAULT_FALLBACK` (`7b`); a role assigned to a template key that no longer exists falls back to
-  `DEFAULT_FALLBACK` (`7c`); assigning/reading an unknown role via the API is rejected with `400`,
-  not a crash (`7d`); assigning a role to an unknown/inactive template is rejected with `400`
-  (`7e`).
-- **Per-widget authorization boundaries**: `CUSTOMER_SERVICE` cannot fetch `fraud-case-summary`
-  even though it is a valid, registered widget key (`8a`); `AGENT_NETWORK_MANAGER` cannot fetch
-  `kyc-queue-summary` (`8b`); a request for a non-existent widget key returns `404` (`8c`); a
-  `direct`-fetchMode widget cannot be pulled through the generic proxy route (`8d`).
-- Malformed/edge-case requests: a non-existent template key returns `404` (`10a`); a `PUT`
-  assignment missing `templateKey` in the body correctly returns `400` (`10b` — this one still
-  passes, because it is testing the *controller's* explicit null-check, which fires before/
-  regardless of the ValidationPipe-stripping defect, since there genuinely is no `templateKey` in
-  that request).
+**Defect #3 (new finding, not in "-01") — `recent-transactions` always returned a Postgres syntax
+error (FIXED).** Each per-table branch of the `UNION ALL` embedded its own `ORDER BY ... LIMIT
+...` without parentheses around the branch — Postgres only permits `ORDER BY`/`LIMIT` inside an
+individual `UNION ALL` branch when that branch is parenthesised; without it, every single call
+failed with `"syntax error at or near UNION"`, unconditionally, for every role whose template
+includes this widget (SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS). This was found while writing a
+dedicated regression test for `recent-transactions` that the "-01" test suite never actually
+had — the earlier recovery session only exercised this widget indirectly through the broader
+per-role dashboard check, which reported a `500` without pinpointing the cause; the “-01” report's
+scope boundary (“run only the checks necessary… don't expand scope”) meant that specific root
+cause was never isolated. **Fix:** wrapped each branch in parentheses:
+`(SELECT ... ORDER BY ... LIMIT ...) UNION ALL (...) ... ORDER BY ... LIMIT ...`. Also fixed, in
+the same function, a latent `LIMIT NaN` risk when an invalid/non-numeric `limit` query parameter
+was supplied (now clamped to a safe default). Verified: 3 new, explicit regression tests pass;
+live-verified (`GET .../widgets/recent-transactions` returns `200 []` against the empty live DB).
 
-**This gives high confidence that the authorization model (who can see what, and the safe-fallback
-behavior when configuration is missing/invalid/tampered) is correctly implemented** — 17 of the 17
-tests specifically targeting these properties passed.
+**Defect #4 (new finding, not in "-01") — `recent-transactions` crashed specifically on
+`cash_to_cash_transfers` with "column completed_at does not exist" (FIXED).** The query hardcoded
+`completed_at` for every unioned table, but `cash_to_cash_transfers` has no such column at all —
+its completion timestamp is `claimed_at` (added by migration `1785753600058`, set when a transfer
+transitions to `CLAIMED`). This was masked by Defect #3 (the whole query failed with a syntax
+error before this column reference was ever evaluated) and only surfaced once #3 was fixed.
+**Fix:** added a `completedAtColumn` field to each entry in `TRANSACTION_TABLES`
+(`'completed_at'` for transfers/deposits/withdrawals, `'claimed_at'` for cash-to-cash) and used it
+in the query instead of a hardcoded column name. Verified: a dedicated regression test pins this
+exact defect description so it cannot silently regress; live-verified.
 
-### Defect #1 (blocking): the dashboard-assignment PUT endpoint is completely non-functional
+**No other defects were found.** The full existing PG regression suite (103 files, 2014 tests —
+see §9) passes with zero failures after all four fixes, confirming nothing else in the platform
+was affected.
 
-`PUT /api/v1/internal/a2/workforce/dashboard/assignments/:roleKey` with a well-formed body (e.g.
-`{"templateKey": "RECONCILIATION_VISIBILITY", "reason": "..."}`) **always returns `400
-{"message":"templateKey is required."}`**, for every role, every template, every call — including
-in a legitimate `SUPER_ADMIN` session with the correct `workforce.dashboard.assign` grant.
+## 8. Database migrations, API endpoints, Admin Web changes, and tests
 
-**Root cause** (confirmed by direct debug instrumentation against the running app in this
-session, then reverted — no production code was changed): the global `ValidationPipe({
-whitelist: true, transform: true, forbidNonWhitelisted: false })`, configured identically in both
-`src/main.ts` (the real app) and the test harness, strips any request-body property that has **no
-class-validator decorator** when transforming it into its target DTO class. `AssignTemplateDto` in
-`src/dashboard/dashboard.controller.ts` is declared as:
+**Migration:** unchanged from "-01" — `1785753600087-CreateDashboardPlatform.ts` (purely additive,
+two new tables). No new migration was needed for this pass: the new `transaction-trend` widget and
+`compare` feature are pure query/code additions against existing tables, and widget-to-template
+membership changes are data within the already-flexible `dashboard_templates.layout` JSONB column.
 
-```ts
-class AssignTemplateDto {
-  templateKey!: string;
-  reason?: string;
-}
-```
+**API endpoints** (`src/dashboard/dashboard.controller.ts`, all under
+`/api/v1/internal/a2/workforce/dashboard`) — same six endpoints as "-01", with two additions to
+the widget proxy:
+- `GET /widgets/transaction-summary?period=&from=&to=&compare=` — `compare` is new, optional,
+  defaults to off.
+- `GET /widgets/transaction-trend?period=&from=&to=` — new widget, same authorization
+  (`reporting.transaction_summary.view`), same period semantics as `transaction-summary`, capped
+  at a 92-day window (`400` if exceeded).
+- `PUT /assignments/:roleKey` — now actually works (Defect #1 fixed); same authorization
+  (`workforce.dashboard.assign`), same audit logging via `AuditService`, unchanged behaviour for
+  unknown-role/unknown-template/malformed-body cases.
 
-— with **no `@IsString()`/`@IsOptional()` decorators at all**. Under `whitelist: true`, Nest's
-`ValidationPipe` treats an undecorated class as having zero known properties and discards the
-entire body before the controller even runs, so `@Body() body: AssignTemplateDto` is always `{}`.
-The controller's own manual check (`if (!body?.templateKey ...) throw new
-BadRequestException('templateKey is required.')`) then (correctly, given its already-empty input)
-throws every time.
+**Admin Web — now fully implemented** (`apps/admin-web/`):
+- `src/services/api-client.ts` — added `ApiClient.put` (was missing; the PUT assignment endpoint
+  needed it).
+- `src/components/dashboard/` (new, ~1,300 lines across 7 files) — a shared widget-rendering
+  library used identically by every role's dashboard:
+  - `types.ts` — TypeScript mirrors of the real backend response shapes, plus `formatMinor`/
+    `formatPercent`/`formatDate` helpers.
+  - `tokens.ts` — shared brand color tokens (matches the existing Layout/DashboardScreen palette).
+  - `useWidgetData.ts` — a generic, cancel-safe data-fetching hook used by every widget.
+  - `WidgetCard.tsx` — shared chrome implementing all four required states: loading, error,
+    permission-denied ("🔒 Restricted"), and empty.
+  - `KpiTile.tsx`, `PeriodControls.tsx` — small reusable building blocks (KPI cards; the
+    today/7d/30d/custom + compare-checkbox date-range control used by both period-filterable
+    widgets).
+  - `widgets.tsx` — one rendering component per widget shape: `TransactionSummaryWidget`,
+    `TransactionTrendWidget` (inline SVG bar chart), `RecentTransactionsWidget`,
+    `LedgerSummaryWidget`, `ReconciliationStatusWidget`, `WorkforceOverviewWidget`,
+    `StatusCountWidget` (shared by agent-lifecycle/KYC/compliance/fraud summaries),
+    `GenericDirectWidget` (defensive renderer for the four widgets that call pre-existing,
+    independently-owned endpoints: `system-health` → `/internal/metrics`, `role-governance-queue`,
+    `agent-applications-queue`, `support-ticket-queue`), `DirectoryLinkWidget`, and the
+    `WidgetRenderer` dispatcher that ties a resolved widget entry to its component — this
+    dispatcher, not any role check, is what makes one shared framework serve all 11 roles.
+- `src/screens/authenticated/DashboardScreen.tsx` (rewritten) — replaces the V1 placeholder
+  ("Not yet available — ... gap" cards) with a real fetch of
+  `GET .../dashboard/my-dashboard` and renders every returned widget through the library above.
+  The pre-existing Identity & Session / Entitlements cards (driven directly by the already-known
+  `principal`, zero extra request) are kept at the top and intentionally excluded from the generic
+  widget list to avoid duplicate display.
+- `src/screens/authenticated/DashboardSettingsScreen.tsx` (new, ~490 lines) — the configuration
+  surface: lists templates (read-only, with an expandable widget list cross-referenced against the
+  real widget registry), lists role→template assignments, and offers the one mutation the backend
+  actually supports — reassigning a role to any other active template, with a reason field, a
+  per-row Save button, and clear success/error feedback. Explicitly does **not** offer template
+  creation or widget-layout editing (the backend has no such endpoint) and says so in the UI,
+  rather than implying a capability that doesn't persist anywhere.
+- `src/screens/authenticated/Layout.tsx` — added a "⚙️ Dashboard Settings" nav entry, visible to
+  any authenticated principal (exactly like the existing "📊 Operational Dashboard" entry) —
+  authorization is enforced entirely server-side; an unauthorized visitor sees a clear,
+  backend-sourced "you do not have permission" message, never a client-side role-name gate that
+  could itself be wrong or bypassed.
 
-This is a **real, deterministic defect in the uncommitted production code**, not a test-harness
-artifact — `src/main.ts` uses the exact same `whitelist: true` pipe configuration as the test, so
-the real, deployed app would exhibit identical behavior: an admin can never actually change a
-role's dashboard template through this API. It directly caused the failures of tests `2a`, `3a`,
-and `4a` (all three "change an assignment and observe the result" tests).
+**Tests added/updated this pass:**
+- Backend: 9 new cases in `test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts`
+  (`9e`/`9f`/`9g` for the fee-bug regression and the new `compare` feature; a new "9.5" describe
+  block with 6 cases for `recent-transactions` Defects #3/#4 and the new `transaction-trend`
+  widget) — total file now 47 cases, all passing against real PostgreSQL + real HTTP.
+- Frontend: new `apps/admin-web/__tests__/dashboard.test.tsx` (7 cases) covering KPI rendering
+  with a real-shaped API response (and asserting no "profit" text ever appears), restricted-widget
+  behavior (and that its endpoint is never called), dashboard-fetch error state, fallback badge
+  rendering, successful template reassignment end-to-end through the UI, the 403 permission-denied
+  state, and a rejected-save error message.
+- 3 existing frontend test files (`customer-servicing.test.tsx`, `ledger-operations.test.tsx`,
+  `transaction-observability.test.tsx`) needed a mechanical update: since the Dashboard screen
+  (the default view every one of these tests lands on first) now makes one real `ApiClient.get`
+  call on mount, 6 pre-existing sequential `.mockResolvedValueOnce(...)` chains needed one extra
+  stub value prepended to stay aligned, and 2 `toHaveBeenNthCalledWith(n, ...)` assertions needed
+  their index incremented by one. No test *logic* changed — purely absorbing one extra, expected
+  call. All 3 files pass after the update.
 
-**Not fixed in this session** — per this task's explicit scope (report, don't rebuild), this is
-reported as a finding for a human/implementation decision, not silently patched. The fix is
-mechanical (add class-validator decorators to `AssignTemplateDto`, e.g. `@IsString()
-templateKey!: string; @IsOptional() @IsString() reason?: string;`) but is a source-code change to
-already-reported-as-complete functionality and was left untouched.
+## 9. Verification performed in this session (exact commands and results)
 
-### Defect #2 (blocking): the `transaction-summary` widget always returns HTTP 500
+| # | Check | Command | Result |
+|---|---|---|---|
+| 1 | Backend TypeScript compile | `npx tsc --noEmit -p .` | **Clean (0 errors)** |
+| 2 | Backend production build | `npx nest build` | **Success, exit 0** |
+| 3 | Backend unit tests | `npx jest --maxWorkers=2` | **174/174 suites, 1823/1823 tests passed** |
+| 4 | Backend PG integration (full suite, incl. dashboard file) | `npm run test:pg` | **103/103 files, 2014/2014 tests passed** (0 failures — includes all four defect-fix regressions and the full pre-existing suite) |
+| 5 | Dashboard-specific PG integration suite alone | `npx jest --config jest.integration.config.js test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts --runInBand` | **47/47 passed** (28 carried over from "-01" + 19 new/previously-failing, all now passing) |
+| 6 | Admin Web TypeScript compile | `cd apps/admin-web && npx tsc --noEmit` | **Clean (0 errors)** |
+| 7 | Admin Web production build | `cd apps/admin-web && npx vite build` | **Success** (249.85 kB / 69.15 kB gzip) |
+| 8 | Admin Web test suite | `cd apps/admin-web && npx jest --watchAll=false` | **7/7 suites, 34/34 tests passed** (27 pre-existing + 7 new) |
+| 9 | Live, manual end-to-end verification | real embedded Postgres + `npm run migration:run` + `node src/main.ts` (real server on :3000) + `vite --host 0.0.0.0 --port 5173` (real dev server, proxying `/api` to :3000, exactly like production's reverse-proxy model) + `curl` | Logged in as the real local-admin SUPER_ADMIN session; `GET /my-dashboard` returned the real, fully-resolved `EXECUTIVE_GOVERNANCE` dashboard (11 widgets, all authorized); `GET /widgets/transaction-summary?period=30d&compare=true` returned `200` with a well-formed `comparison`/`previousPeriod`; `GET /widgets/recent-transactions` returned `200 []`; `GET /widgets/transaction-trend?period=7d` returned `200` with 8 zero-filled daily rows; `PUT /assignments/TREASURY` returned `200`, persisted (confirmed via a follow-up `GET /assignments`), and was reverted — all against the real seeded database (`DashboardSeedService` logged "inserted 12 template(s), 11 assignment(s)" on boot), not a test harness |
 
-`GET /api/v1/internal/a2/workforce/dashboard/widgets/transaction-summary` (any `period` value)
-**always returns `500 Internal Server Error`** for any role authorized to see it.
+No result above was assumed, inherited, or invented. Commands 1–8 are fully reproducible by anyone
+with this repository checked out; command 9 additionally required `npm run migration:run` against
+a real Postgres instance (the embedded one used by this sandbox) and a throwaway local-admin
+credential seed (not committed — it is a dev-only, env-gated path the backend already refuses to
+serve outside `NODE_ENV=development/test`).
 
-**Root cause** (confirmed via the real Postgres driver error surfaced in server logs during this
-session's test run):
+## 10. Changed-files summary (now fully committed)
 
-```
-QueryFailedError: bind message supplies 3 parameters, but prepared statement "" requires 2
-```
+**Backend — fixed:**
+- `src/dashboard/dashboard-widget-data.service.ts` — Defects #2/#3/#4 fixed; `transactionTrend()`
+  and `compare` support added; `percentChange()` helper added.
+- `src/dashboard/dashboard-widget-registry.ts` — `transaction-trend` entry added; `'trend'` added
+  to the `kind` union.
+- `src/dashboard/dashboard-templates.seed.ts` — `transaction-trend` added to `EXECUTIVE_GOVERNANCE`
+  and `TRANSACTION_OPERATIONS`.
+- `src/dashboard/dashboard.controller.ts` — Defect #1 fixed (uses the new decorated DTO); `compare`
+  query param and `transaction-trend` case wired into the widget proxy.
+- `src/dashboard/dto/assign-template.dto.ts` (new) — the decorated DTO.
+- `test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts` — 9 new regression/feature
+  test cases (47 total, up from 38).
 
-at `DashboardWidgetDataService.transactionSummary()` (`src/dashboard/dashboard-widget-data.service.ts`,
-~line 80). The query is built as:
+**Backend — carried over unchanged from "-01" (already reviewed/correct, now committed):**
+`src/dashboard/{dashboard.service.ts, dashboard-seed.service.ts, dashboard-template.entity.ts,
+role-dashboard-assignment.entity.ts, dashboard.module.ts}`,
+`src/migrations/1785753600087-CreateDashboardPlatform.ts`,
+`src/app.module.ts`, `src/authorization-catalogue/authorization-catalogue.seed.ts`,
+`src/production/production-readiness.service.ts`, `test/production-readiness.spec.ts`,
+`test/support/pg-harness.ts`, 17 "latest migration" mechanical test updates.
 
-```ts
-`SELECT status, COUNT(*)::text AS count,
-        COALESCE(SUM(${t.amountColumn}), 0)::text AS value_minor
-        ${t.feeColumn ? `, COALESCE(SUM(CASE WHEN status = $3 THEN ${t.feeColumn} ELSE 0 END), 0)::text AS fee_minor` : ''}
-   FROM ${t.table}
-  WHERE created_at >= $1 AND created_at <= $2
-  GROUP BY status`,
-[range.from.toISOString(), range.to.toISOString(), t.completedStatus],
-```
+**Frontend — new:**
+`apps/admin-web/src/components/dashboard/{types.ts, tokens.ts, useWidgetData.ts, WidgetCard.tsx,
+KpiTile.tsx, PeriodControls.tsx, widgets.tsx}`,
+`apps/admin-web/src/screens/authenticated/DashboardSettingsScreen.tsx`,
+`apps/admin-web/__tests__/dashboard.test.tsx`.
 
-The `$3` placeholder is only emitted into the SQL text when `t.feeColumn` is set, but **the
-3-element parameter array is always passed, regardless of whether `$3` appears in the query
-text**. Two of the four entries in `TRANSACTION_TABLES` have `feeColumn: null` (`deposits`/C2W and
-`withdrawals`/W2C — confirmed by reading the table directly), so for those two transaction types
-the generated SQL only contains `$1`/`$2` while 3 parameters are bound, which Postgres rejects
-outright. Since `transactionSummary()` runs all four transaction-table queries via
-`Promise.all(...)` and surfaces any rejection as a single failure, **every call to this widget
-fails, for every role, for every period, deterministically** — it is not a timing/data issue, it
-reproduces on every invocation against an empty, freshly-reseeded database.
+**Frontend — modified:**
+`apps/admin-web/src/services/api-client.ts` (added `put`),
+`apps/admin-web/src/screens/authenticated/DashboardScreen.tsx` (rewritten),
+`apps/admin-web/src/screens/authenticated/Layout.tsx` (new nav entry),
+`apps/admin-web/__tests__/{customer-servicing,ledger-operations,transaction-observability}.test.tsx`
+(mechanical mock-sequence fix, described in §8).
 
-This is a **real, deterministic defect in the uncommitted production code**. It caused the direct
-failures of tests `9a` and `9d` (direct widget fetch) and, indirectly, the 5 role-dashboard
-failures described in §4 (every role whose template includes `transaction-summary` as an
-authorized, proxied widget — `SUPER_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`,
-`FINANCE_AUDITOR`, `OPERATIONS` — fails test group 11 at the "every authorized proxy widget is
-independently fetchable" assertion).
+## 11. Known limitations and deliberately deferred scope
 
-**Not fixed in this session**, for the same reason as defect #1. The mechanical fix is to only push
-`t.completedStatus` into the parameter array when `t.feeColumn` is truthy (and use `$3` only in
-that branch), or to always include the `CASE WHEN` clause unconditionally with a dummy/consistent
-reference. Left untouched and reported here instead.
+1. **Template/widget authoring is not implemented in the UI, by design.** The backend has no
+   endpoint to create a template, edit a template's widget list, or register a new widget type —
+   only to change which existing, active template a role points at. The Dashboard Settings screen
+   says this explicitly rather than offering controls that would silently do nothing or
+   misrepresent persistence. Implementing true template/widget authoring (a drag-and-drop layout
+   editor, a new-widget-type registration flow) is a materially larger backend+frontend task,
+   explicitly out of scope for this pass, and is flagged here rather than attempted partially.
+2. **`DashboardSeedService` is insert-missing-only (pre-existing, not changed in this pass).** In a
+   real, already-provisioned deployment, adding a widget to an existing template's seed array (as
+   this pass did for `transaction-trend`) does not retroactively update an already-existing
+   database row — only a fresh database, or an explicit reassignment through the now-working `PUT`
+   endpoint, picks up the revised widget list. This is documented, intentional, pre-existing
+   behaviour (mirrors `AuthorizationCatalogueSeedService`'s own pattern) and was verified
+   consistent in this pass's live boot log ("Dashboard platform: inserted 12 template(s), 11
+   assignment(s)" — a fresh database, so the new widget was included from the first seed).
+3. **`GenericDirectWidget` renders four endpoints it does not fully control the shape of**
+   (`system-health`, `role-governance-queue`, `agent-applications-queue`, `support-ticket-queue`)
+   with a defensive, generic array/object renderer rather than a hand-built layout per endpoint.
+   This was a deliberate scope choice to avoid guessing at contracts owned by other, independently
+   evolving modules; it renders correctly and never crashes on an unexpected shape, but is visually
+   plainer than the purpose-built widgets (Transaction Summary, Trend, Recent Transactions, etc.).
+4. **No trend/comparison widget exists for non-transaction metrics** (e.g. no KYC-queue trend, no
+   workforce-headcount trend). Only the transaction-volume metric — the one explicitly called out
+   in the task and the one with the clearest, least ambiguous definition — got a trend/comparison
+   treatment in this pass. Extending the same pattern to other metrics is straightforward but
+   was not done, to keep this pass's scope honest and fully tested rather than broad and thin.
+5. **No end-to-end (real-browser) test exists**, only: (a) backend integration tests against real
+   PostgreSQL + real HTTP, (b) frontend unit/component tests with a mocked `ApiClient`, and (c) a
+   manual, live, full-stack `curl`-based verification in this session (§9.9). A true
+   browser-automation E2E suite (e.g. Playwright/Cypress) does not exist anywhere in this
+   repository for any screen, not just this one, and introducing one was judged out of scope for a
+   single-feature task.
 
-## 8. Database migrations, API endpoints, Admin Web changes, and tests (as they exist today, uncommitted)
+## 12. Conclusion
 
-**Migration** — `src/migrations/1785753600087-CreateDashboardPlatform.ts` (read in full this
-session): creates `dashboard_templates` (`id` uuid PK, `template_key` unique varchar(80),
-`display_name`, `description`, `operational_area`, `layout` jsonb, `is_active` boolean default
-true, `metadata` jsonb nullable, timestamps) and `role_dashboard_assignments` (`id` uuid PK,
-`role_key` unique varchar(100), `template_key` varchar(80), `assigned_by`, `assigned_at`, `reason`
-nullable, timestamps). Purely additive — no existing table is altered. Confirmed this migration is
-correctly wired as the new expected-latest-migration in `production-readiness.service.ts` and its
-spec, and that its column names exactly match what `test/support/pg-harness.ts`'s
-`reseedDashboardPlatform()` helper inserts (this cross-check was an open item from earlier in the
-engagement and is now resolved: **they match**).
-
-**API endpoints** (`src/dashboard/dashboard.controller.ts`, mounted at
-`/api/v1/internal/a2/workforce/dashboard`):
-- `GET /templates` — list all templates (requires `workforce.dashboard.view`)
-- `GET /templates/:key` — get one template (requires `workforce.dashboard.view`)
-- `GET /assignments` — list all role→template assignments (requires `workforce.dashboard.view`)
-- `GET /roles` — list active roles eligible for assignment (requires `workforce.dashboard.view`)
-- `GET /widget-registry` — the full static widget catalog (requires `workforce.dashboard.view`)
-- `PUT /assignments/:roleKey` — change a role's assigned template (requires
-  `workforce.dashboard.assign`) — **currently always returns 400; see Defect #1**
-- `GET /my-dashboard` — the caller's own resolved dashboard, derived only from their own session's
-  roles/scopes (no dedicated function grant required — same self-access pattern as viewing one's
-  own profile)
-- `GET /widgets/:widgetKey` — generic proxy/data endpoint for `proxy`-fetchMode widgets, enforcing
-  that widget's own `requiredFunctions`; supports `?period=today|7d|30d|custom&from=&to=` for the
-  transaction-summary widget — **the `transaction-summary` widget currently always returns 500;
-  see Defect #2**
-
-New authorization functions added to support this (confirmed via diff of
-`src/authorization-catalogue/authorization-catalogue.seed.ts`): `reporting.transaction_summary.view`
-(granted to `SUPER_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, `FINANCE_AUDITOR`,
-`OPERATIONS`), `workforce.dashboard.view` and `workforce.dashboard.assign` (granted to
-`SUPER_ADMIN` and `ADMINISTRATOR` only). The existing
-`v1-administrator-role-and-assignment-implementation-01.integration.spec.ts` test asserting
-ADMINISTRATOR's exact function-grant set was updated (9 → 11 grants) to include the two new
-dashboard functions, with an inline comment explaining why — reviewed, correct, and consistent
-with the rest of this report.
-
-**Admin Web (`apps/admin-web/`): NOT IMPLEMENTED.** Confirmed via `find apps/admin-web -iname
-"*dashboard*"` that the only dashboard-related file in the frontend is the pre-existing,
-unmodified placeholder `src/screens/authenticated/DashboardScreen.tsx`. There is no new widget
-rendering code, no dashboard-settings/template-assignment screen, and no API-client wiring for any
-of the six endpoints above. **This is the single largest incomplete part of the original task.**
-
-**Tests**: one new file, `test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts`
-(real PostgreSQL + real HTTP, no mocking of authorization), covering the 12 categories the
-original task specified. Plus 17 small, mechanical updates to other integration tests' "latest
-migration" assertion lists/regexes (to include the new migration) and one function-grant-count
-update, all reviewed in this session and confirmed correct/non-behavioral. See §9 and §10 for exact
-results.
-
-## 9. Incomplete requirements, limitations, and risks (consolidated)
-
-1. **Frontend (Admin Web) is 0% implemented.** No widgets, no settings screen, no API wiring.
-2. **Defect #1** (§7): the dashboard-assignment change API is completely non-functional
-   (`ValidationPipe` strips the undecorated DTO body) — an admin cannot actually reassign a role's
-   dashboard template today, despite the underlying service-layer mechanism being correctly
-   designed.
-3. **Defect #2** (§7): the `transaction-summary` widget always returns `500` (SQL bind-parameter
-   count mismatch for transaction tables without a fee column — `deposits`/`withdrawals`),
-   affecting 5 of 11 roles' dashboards (every role with `reporting.transaction_summary.view`).
-4. **No trend/period-over-period comparison widget exists** — the original task's "trends and
-   comparisons" requirement has no corresponding implementation anywhere in the widget registry.
-5. **Nothing for this task has been committed.** All backend code, the migration, the seed/catalogue
-   changes, and the new test file exist only as uncommitted working-tree changes.
-6. **The new dashboard-specific test suite had never successfully compiled, let alone run, before
-   this recovery session** — it had ~7 TypeScript errors (untyped `Map` construction losing
-   generic inference; a chained `.authorized` access on an inferred `{}` type) that were corrected
-   in this session as a type-annotation-only fix (no test logic/assertions changed) solely to
-   obtain a real pass/fail signal, per this task's instruction to run only the checks necessary to
-   verify claims. This fix is included in the uncommitted `test/` file; it is a mechanical typing
-   correction, not new test coverage.
-7. Given defects #1 and #2, **the "assignment independent of permissions" and "new role reuses an
-   existing template with zero code changes" claims (§2, §3) are architecturally correct by
-   design/code-review but are currently unverified end-to-end**, because the only API path that
-   would prove them is blocked by Defect #1.
-
-## 10. Verification performed in this recovery session (exact commands and results)
-
-All of the following were executed against a freshly provisioned embedded PostgreSQL instance
-(`node scripts/embedded-pg.js`) and a `.env` reconstructed from `.env.example` with the same
-`A2_FINANCE_ROLES_JSON`/`A2_MAKER_CHECKER_RULES_JSON`/`A2_WORKFORCE_RATE_LIMITS_JSON`/OIDC fixture
-values this repository's own test suites expect. `node_modules` was freshly installed
-(`npm ci`, 930 packages) since it does not persist between sandbox sessions.
-
-| Check | Command | Result |
-|---|---|---|
-| TypeScript compile (whole repo, incl. new test file) | `npx tsc --noEmit -p .` | **Clean (0 errors)**, after fixing the 7 mechanical typing issues described in §9.6 |
-| Production source build | `npx nest build` | **Success, exit 0** |
-| Unit test suite | `npx jest --maxWorkers=2` | **174/174 suites passed, 1823/1823 tests passed** |
-| Full existing PG integration suite (103 files, incl. the new dashboard file) | `npm run test:pg` | 1 pre-existing, unrelated test (`s-fix-01-customer-lifecycle-authorization...`) failed under concurrency due to a `beforeAll` hook timeout; **re-run in isolation it passed 7/7** (`npx jest --config jest.integration.config.js test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts --runInBand`) — judged a transient resource-contention timeout in this sandbox, not a regression, since that file is untouched by this task |
-| Dashboard-specific integration suite (the real proof-of-claims file) | `npx jest --config jest.integration.config.js test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts --runInBand` | **28 passed, 10 failed, 38 total** — the 10 failures are fully explained by Defects #1 and #2 above; every other claim in this report backed by a specific test name passed |
-
-No PG integration result in this report was assumed, inherited, or invented — all were produced by
-the commands above, in this session, against this working tree's actual uncommitted code.
-
-## 11. Changed-files summary (uncommitted, as of this report)
-
-**New (untracked):**
-- `src/dashboard/` — entities, service, controller, widget registry, widget-data service, seed
-  service, templates seed, module (9 files, 1213 lines)
-- `src/migrations/1785753600087-CreateDashboardPlatform.ts`
-- `test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts`
-
-**Modified (22 files):**
-- `src/app.module.ts` — registers `DashboardModule`
-- `src/authorization-catalogue/authorization-catalogue.seed.ts` — adds
-  `reporting.transaction_summary.view`, `workforce.dashboard.view`, `workforce.dashboard.assign`
-  functions and their role grants
-- `src/production/production-readiness.service.ts` — bumps expected-latest-migration constant to
-  `1785753600087`/`CreateDashboardPlatform1785753600087`
-- `test/production-readiness.spec.ts` — matching test-fixture update
-- `test/support/pg-harness.ts` — adds `reseedDashboardPlatform()` (column names now confirmed
-  correct against the migration DDL) and wires it into `truncateAllTables()`
-- `test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts` — updates
-  ADMINISTRATOR's expected function-grant count (9 → 11) for the two new dashboard functions
-- 16 other `*.integration.spec.ts` files — mechanical updates to "latest migration" assertion
-  lists/regexes to include the new migration; no behavioral changes (all reviewed via `git diff`
-  in this session)
-
-## 12. Conclusion and recommendation
-
-The backend data model, authorization-enforcement, and fallback behavior for a configurable,
-per-role dashboard platform are soundly designed and substantially verified (17/17 authorization
-and fallback-focused tests pass against real PostgreSQL). However, this task is **not complete**:
-two concrete, reproducible defects block the two most central claims (changing an assignment at
-all, and the flagship transaction-summary metric), the entire Admin Web frontend is unbuilt, and
-nothing has been committed. The prior "successful" status was inaccurate. Recommended next steps
-for whoever picks this up: (1) fix Defect #1 (add class-validator decorators to
-`AssignTemplateDto`), (2) fix Defect #2 (stop binding `$3` when `feeColumn` is null), (3) re-run
-the dashboard integration suite to confirm 38/38, (4) build the Admin Web frontend, (5) commit the
-backend+tests and the frontend together (or in reviewed stages) with an accurate commit message,
-and only then consider the task complete.
+Both previously-reported blocking defects are fixed and verified; two further defects in the same
+code were found and fixed while building proper regression coverage; two small, honestly-scoped
+new BI capabilities (trend, period comparison) were added and tested; and the Admin Web frontend —
+previously a complete placeholder — now has a real, functional, shared dashboard experience for
+all 11 roles plus a working configuration screen, verified by 34 frontend tests, 2061 backend
+tests (1823 unit + 47 dashboard-integration, counted within the 2014 total PG-integration tests),
+and a live manual run against an actual server. This task is now genuinely complete, not merely
+reported as such.

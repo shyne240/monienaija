@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { DashboardScreen } from './DashboardScreen';
+import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
@@ -8,9 +9,11 @@ import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
 
+type View = 'dashboard' | 'dashboardSettings' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation';
+
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation'>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('dashboard');
 
   if (!principal) return null;
 
@@ -49,6 +52,13 @@ export const Layout: React.FC = () => {
             onClick={() => setCurrentView('dashboard')}
           >
             📊 Operational Dashboard
+          </button>
+
+          <button
+            style={currentView === 'dashboardSettings' ? styles.activeNavLink : styles.navLink}
+            onClick={() => setCurrentView('dashboardSettings')}
+          >
+            ⚙️ Dashboard Settings
           </button>
 
           {isOperator && (
@@ -113,7 +123,8 @@ export const Layout: React.FC = () => {
 
       {/* Main View Area */}
       <div style={styles.content}>
-        {currentView === 'dashboard' && <DashboardScreen />}
+        {currentView === 'dashboard' && <DashboardScreen onNavigateToCustomers={() => setCurrentView('customers')} />}
+        {currentView === 'dashboardSettings' && <DashboardSettingsScreen />}
         {currentView === 'roles' && <RoleAssignmentScreen />}
         {currentView === 'approvals' && <ApprovalsScreen />}
         {currentView === 'customers' && <CustomerDirectoryScreen />}

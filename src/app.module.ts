@@ -76,6 +76,7 @@ import { WithdrawalModule } from './withdrawal/withdrawal.module';
 import { AdminModule } from './admin/admin.module';
 import { CapabilityRegistryModule } from './capability-registry/capability.module';
 import { AuthorizationCatalogueModule } from './authorization-catalogue/authorization-catalogue.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
 import { CommissionModule } from './commission/commission.module';
 import { CommercialAccountingModule } from './commercial-accounting/commercial-accounting.module';
@@ -207,6 +208,7 @@ import { WalletModule } from './wallet/wallet.module';
     AdminModule,
     CapabilityRegistryModule,
     AuthorizationCatalogueModule,
+    DashboardModule,
     CommercialDecisionModule,
     CommissionModule,
     CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
