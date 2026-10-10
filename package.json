@@ -17,6 +17,7 @@
     "format:check": "prettier --check \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
     "format": "prettier --write \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
     "bootstrap:statement": "ts-node --transpile-only scripts/generate-bootstrap-statement.ts",
+    "recovery:statement": "ts-node --transpile-only scripts/generate-revocation-statement.ts",
     "test": "jest --maxWorkers=2",
     "test:pg": "node scripts/run-pg-integration-tests.js",
     "test:all": "npm run test && npm run test:pg",

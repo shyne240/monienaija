@@ -117,6 +117,41 @@ export class A2WorkforceBootstrapConsumption {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
 }
 
+/**
+ * V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — structural twin of `A2WorkforceBootstrapConsumption`
+ * (same one-time, nonce-unique consumption-ledger shape), but for the SUPER_ADMIN
+ * recovery/revocation ceremony instead of the initial-bootstrap ceremony. A row here is written
+ * in the SAME database transaction that revokes the target `A2FinanceRoleAssignment` row and
+ * every active `A2WorkforceSession` for that principal — see SuperAdminRecoveryService — so a
+ * successful consumption and its audit/replay evidence are always atomic with each other.
+ */
+@Entity({ name: 'a2_super_admin_recovery_consumptions' })
+@Index('uq_a2_super_admin_recovery_nonce', ['nonce'], { unique: true })
+@Index('idx_a2_super_admin_recovery_target', ['targetPrincipalId'])
+export class A2SuperAdminRecoveryConsumption {
+  @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column({ name: 'recovery_reference', type: 'varchar', length: 160 })
+  recoveryReference!: string;
+  @Column({ type: 'varchar', length: 255 }) nonce!: string;
+  @Column({ name: 'statement_hash', type: 'char', length: 64 }) statementHash!: string;
+  @Column({ type: 'varchar', length: 40 }) operation!: 'REVOKE_SUPER_ADMIN';
+  @Column({ name: 'target_assignment_reference', type: 'varchar', length: 160 })
+  targetAssignmentReference!: string;
+  @Column({ name: 'target_principal_id', type: 'varchar', length: 160 })
+  targetPrincipalId!: string;
+  @Column({ type: 'varchar', length: 500 }) reason!: string;
+  @Column({ type: 'varchar', length: 80 }) environment!: string;
+  @Column({ type: 'varchar', length: 80 }) audience!: string;
+  @Column({ name: 'signing_key_reference', type: 'varchar', length: 160 })
+  signingKeyReference!: string;
+  @Column({ name: 'approval_change_reference', type: 'varchar', length: 160 })
+  approvalChangeReference!: string;
+  @Column({ name: 'consumed_by', type: 'varchar', length: 160 }) consumedBy!: string;
+  @Column({ name: 'consumed_at', type: 'timestamptz' }) consumedAt!: Date;
+  @Column({ name: 'audit_reference', type: 'uuid' }) auditReference!: string;
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
+}
+
 @Entity({ name: 'a2_security_rate_buckets' })
 @Index('uq_a2_security_rate_bucket_key', ['bucketKey'], { unique: true })
 export class A2SecurityRateBucket {

@@ -265,6 +265,9 @@ export function workforceConfiguration(
       bootstrapAudience: '',
       bootstrapKeys: [],
       bootstrapFinanceAdminScopes: [],
+      recoveryEnabled: false,
+      recoveryAudience: '',
+      recoveryKeys: [],
       roles: [],
       makerCheckerRules: [],
       rateLimits: [],
@@ -377,6 +380,29 @@ export function workforceConfiguration(
     throw invalid(
       'A2_BOOTSTRAP_JWKS_JSON: at least one trusted key required when bootstrap enabled',
     );
+  // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: deliberately independent of the bootstrap block above —
+  // its own enable flag, its own trusted-key set (A2_RECOVERY_JWKS_JSON, never bootstrapKeys),
+  // and its own audience. Same validation shape as bootstrap (duplicate-kid / environment-match /
+  // fail-closed-when-enabled-but-keyless) because it reuses the identical jwkSchema/verifyRs256
+  // crypto path, not because the two trust chains are related.
+  const recoveryEnabled = env.A2_RECOVERY_ENABLED === 'true',
+    recoveryKeys = parseJson(
+      'A2_RECOVERY_JWKS_JSON',
+      env.A2_RECOVERY_JWKS_JSON,
+      z.array(jwkSchema).max(32),
+      [],
+    );
+  if (!unique(recoveryKeys.map((item) => item.kid)))
+    throw invalid('A2_RECOVERY_JWKS_JSON.kid: duplicate key ID');
+  if (recoveryKeys.some((item) => item.environment !== (env.NODE_ENV ?? 'development')))
+    throw invalid('A2_RECOVERY_JWKS_JSON.environment: environment mismatch');
+  const recoveryAudience = recoveryEnabled
+    ? requiredText(env, 'A2_RECOVERY_AUDIENCE', 255)
+    : (env.A2_RECOVERY_AUDIENCE?.trim() ?? '');
+  if (recoveryEnabled && !recoveryKeys.length)
+    throw invalid(
+      'A2_RECOVERY_JWKS_JSON: at least one trusted key required when recovery enabled',
+    );
   const ttl = Number(env.A2_WORKFORCE_SESSION_TTL_SECONDS ?? 900);
   if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 3600)
     throw invalid('A2_WORKFORCE_SESSION_TTL_SECONDS: must be an integer from 60 through 3600');
@@ -407,6 +433,9 @@ export function workforceConfiguration(
     bootstrapAudience,
     bootstrapKeys,
     bootstrapFinanceAdminScopes: bootstrapScopes,
+    recoveryEnabled,
+    recoveryAudience,
+    recoveryKeys,
     roles: roleList,
     makerCheckerRules: rules,
     rateLimits: rates,

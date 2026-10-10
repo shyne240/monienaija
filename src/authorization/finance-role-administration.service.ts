@@ -52,6 +52,19 @@ export const ADMINISTRATOR_OPERATIONAL_ROLE_KEYS: ReadonlySet<string> = new Set(
   'CUSTOMER_SERVICE',
   'TREASURY',
 ]);
+/**
+ * V1-SECURITY-SUPER-ADMIN-RECOVERY-01: extracted (unchanged formula) from the private
+ * `reference()` method below so `SuperAdminRecoveryService` can compute the IDENTICAL
+ * `assignmentReference` a SUPER_ADMIN bootstrap row was given, without duplicating the hash
+ * formula in a second file. Pure function — no I/O, no side effects.
+ */
+export function financeRoleAssignmentReference(
+  principalId: string,
+  roleKey: string,
+  environment: string,
+): string {
+  return `a2-fin-role-${sha256(canonical({ principalId, roleKey, environment })).slice(0, 32)}`;
+}
 @Injectable()
 export class A2FinanceRoleAdministrationService {
   constructor(
@@ -550,7 +563,7 @@ export class A2FinanceRoleAdministrationService {
     };
   }
   private reference(p: string, r: string) {
-    return `a2-fin-role-${sha256(canonical({ principalId: p, roleKey: r, environment: this.config.environment })).slice(0, 32)}`;
+    return financeRoleAssignmentReference(p, r, this.config.environment);
   }
   private view(a: A2FinanceRoleAssignment, now: Date): A2FinanceRoleAssignmentViewV1 {
     return {

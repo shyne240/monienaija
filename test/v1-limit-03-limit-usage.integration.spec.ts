@@ -100,8 +100,8 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     // head moved forward with the V1-ADMIN-AUTHORIZATION-RUNTIME-01 bootstrap-role-check
     // constraint rename (0084)
     const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600087');
-    expect(last.name).toBe('CreateDashboardPlatform1785753600087');
+    expect(last.timestamp).toBe('1785753600088');
+    expect(last.name).toBe('CreateSuperAdminRecoveryConsumptions1785753600088');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);

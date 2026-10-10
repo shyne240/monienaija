@@ -53,6 +53,16 @@ export interface A2WorkforceConfigurationV1 {
   readonly bootstrapAudience: string;
   readonly bootstrapKeys: readonly A2TrustedJwkV1[];
   readonly bootstrapFinanceAdminScopes: readonly string[];
+  /**
+   * V1-SECURITY-SUPER-ADMIN-RECOVERY-01: a structurally separate trust configuration from the
+   * bootstrap settings above. `recoveryKeys` is sourced from its OWN env var
+   * (`A2_RECOVERY_JWKS_JSON`), never the bootstrap JWKS set, so the two ceremonies never share a
+   * signing-key custody chain even though both verify RS256 statements with the same generic
+   * crypto code (workforce-crypto.ts).
+   */
+  readonly recoveryEnabled: boolean;
+  readonly recoveryAudience: string;
+  readonly recoveryKeys: readonly A2TrustedJwkV1[];
   readonly roles: readonly A2FinanceRoleDefinitionV1[];
   readonly makerCheckerRules: readonly A2MakerCheckerRuleV1[];
   readonly rateLimits: readonly A2RateLimitRuleV1[];
@@ -94,6 +104,42 @@ export interface A2BootstrapStatementV1 {
   readonly issuedAt: string;
   readonly expiresAt: string;
   readonly signingKeyReference: string;
+}
+/**
+ * V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — the signed, externally-produced statement authorizing
+ * consumption of the protected SUPER_ADMIN recovery ceremony (see
+ * docs/V1/V1-ADMIN-ADMINISTRATOR-GOVERNANCE-DECISIONS-01.md §3 and
+ * docs/deployment/V1-SUPER-ADMIN-RECOVERY-RUNBOOK-01.md for the full format/process). Unlike
+ * `A2BootstrapStatementV1`, this never grants a new role window — it only ever names an
+ * EXISTING active SUPER_ADMIN assignment for revocation, so it carries no `scopes`/
+ * `effectiveFrom`/`effectiveTo`. `operation` is a closed, versioned vocabulary — today exactly
+ * one value is supported; the field exists so adding a future distinct recovery operation never
+ * requires a new statement schema or a new signing-key configuration surface.
+ */
+export interface A2RecoveryStatementV1 {
+  readonly schemaVersion: 1;
+  readonly operation: 'REVOKE_SUPER_ADMIN';
+  readonly environment: string;
+  readonly audience: string;
+  readonly targetAssignmentReference: string;
+  readonly targetPrincipalId: string;
+  readonly reason: string;
+  readonly approvalChangeReference: string;
+  readonly nonce: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  readonly signingKeyReference: string;
+}
+export interface A2SuperAdminRecoveryViewV1 {
+  readonly recoveryReference: string;
+  readonly operation: 'REVOKE_SUPER_ADMIN';
+  readonly targetAssignmentReference: string;
+  readonly targetPrincipalId: string;
+  readonly reason: string;
+  readonly revokedSessionCount: number;
+  readonly consumedBy: string;
+  readonly consumedAt: string;
+  readonly auditReference: string;
 }
 export interface A2FinanceRoleAssignmentViewV1 {
   readonly assignmentReference: string;

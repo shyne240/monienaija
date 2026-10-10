@@ -8,10 +8,13 @@ import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import {
   A2FinanceRoleAssignment,
   A2SecurityRateBucket,
+  A2SuperAdminRecoveryConsumption,
   A2WorkforceBootstrapConsumption,
   A2WorkforceSession,
 } from './workforce-authentication.entity';
 import { A2WorkforceAdministrationController } from './workforce-administration.controller';
+import { SuperAdminRecoveryController } from './super-admin-recovery.controller';
+import { SuperAdminRecoveryService } from './super-admin-recovery.service';
 import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2WorkforceOidcService, A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
@@ -55,6 +58,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
       A2WorkforceSession,
       A2FinanceRoleAssignment,
       A2WorkforceBootstrapConsumption,
+      A2SuperAdminRecoveryConsumption,
       A2SecurityRateBucket,
       RoleDefinitionProposal,
       // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: RoleDefinitionGovernanceService
@@ -70,7 +74,11 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
       AuthorizationRoleFunction,
     ]),
   ],
-  controllers: [A2WorkforceAdministrationController, RoleDefinitionGovernanceController],
+  controllers: [
+    A2WorkforceAdministrationController,
+    SuperAdminRecoveryController,
+    RoleDefinitionGovernanceController,
+  ],
   providers: [
     {
       provide: A2_WORKFORCE_CONFIG,
@@ -94,6 +102,9 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
               'A2_BOOTSTRAP_ADMIN_SCOPES_JSON',
               'A2_FINANCE_ROLES_JSON',
               'A2_MAKER_CHECKER_RULES_JSON',
+              'A2_RECOVERY_ENABLED',
+              'A2_RECOVERY_AUDIENCE',
+              'A2_RECOVERY_JWKS_JSON',
               'A2_WORKFORCE_RATE_LIMITS_JSON',
               'A2_TRUSTED_PROXY_ADDRESSES_JSON',
             ].map((name) => {
@@ -113,6 +124,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,
+    SuperAdminRecoveryService,
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,
@@ -126,6 +138,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,
+    SuperAdminRecoveryService,
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,

@@ -79,6 +79,14 @@ export const environmentSchema = z
     A2_BOOTSTRAP_ADMIN_SCOPES_JSON: optionalEnvironmentJson,
     A2_FINANCE_ROLES_JSON: optionalEnvironmentJson,
     A2_MAKER_CHECKER_RULES_JSON: optionalEnvironmentJson,
+    // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: structurally independent from the bootstrap
+    // (A2_BOOTSTRAP_*) settings above — a separate enable flag, audience, and trusted-key set,
+    // so the bootstrap ceremony and the SUPER_ADMIN recovery/revocation ceremony never share a
+    // signing-key custody chain. See workforce-configuration.ts and
+    // docs/deployment/V1-SUPER-ADMIN-RECOVERY-RUNBOOK-01.md.
+    A2_RECOVERY_ENABLED: booleanFromEnvironment.default(false),
+    A2_RECOVERY_AUDIENCE: optionalEnvironmentString,
+    A2_RECOVERY_JWKS_JSON: optionalEnvironmentJson,
     A2_WORKFORCE_RATE_LIMITS_JSON: optionalEnvironmentJson,
     A2_TRUSTED_PROXY_ADDRESSES_JSON: optionalEnvironmentJson,
     A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),

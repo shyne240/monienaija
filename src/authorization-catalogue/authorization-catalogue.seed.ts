@@ -179,6 +179,16 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   // the `initiated_scope` DB CHECK constraint (migration 1785753600085), not a human approver.
   { functionCode: 'workforce.role.assign_operational', domain: 'WORKFORCE', name: 'Assign operational workforce role', description: 'Grant one of the six ADMINISTRATOR-delegable operational roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE, TREASURY) to a workforce principal. Never SUPER_ADMIN or any FINANCE_* role — enforced by a database CHECK constraint, not merely by this grant.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.role.revoke_operational', domain: 'WORKFORCE', name: 'Revoke operational workforce role', description: 'Revoke one of the six ADMINISTRATOR-delegable operational roles from a workforce principal. Never SUPER_ADMIN or any FINANCE_* role — enforced by a database CHECK constraint, not merely by this grant.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true },
+  // V1-SECURITY-SUPER-ADMIN-RECOVERY-01 (GOVERNANCE-DECISIONS-01 §3): consumption-only trigger
+  // for the protected SUPER_ADMIN recovery/revocation ceremony. Granted to ADMINISTRATOR ONLY —
+  // deliberately never to SUPER_ADMIN (the protected role must never be able to both be the
+  // target and the trigger of its own recovery) and never to any other role. Holding this
+  // function never grants authority to revoke SUPER_ADMIN by itself: `consumeRevocation()` still
+  // requires a separately-produced, RS256-signed `A2RecoveryStatementV1` verified against
+  // `A2_RECOVERY_JWKS_JSON` (a trusted-key set configured independently of any in-app
+  // credential) before anything is mutated — this function code only ever gates WHO may ask the
+  // service to attempt consuming an already-valid statement, never WHAT gets revoked.
+  { functionCode: 'workforce.super_admin.recover', domain: 'WORKFORCE', name: 'Consume SUPER_ADMIN recovery statement', description: 'Trigger consumption of an externally-signed SUPER_ADMIN recovery/revocation statement. Does not itself authorize revoking SUPER_ADMIN — the externally-signed statement is the sole source of that authority; this function only gates who may submit one for consumption.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.view', domain: 'WORKFORCE', name: 'View workforce user', description: 'View a workforce user/identity record.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.create', domain: 'WORKFORCE', name: 'Create workforce user', description: 'Provision a new workforce user identity.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'workforce.user.suspend', domain: 'WORKFORCE', name: 'Suspend workforce user', description: 'Suspend/disable a workforce user identity.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
@@ -549,6 +559,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('ADMINISTRATOR', 'workforce.user.create', EXECUTE),
   nowAssign('ADMINISTRATOR', 'workforce.user.suspend', EXECUTE),
   nowAssign('ADMINISTRATOR', 'workforce.role.view', VIEW),
+  // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: the ONLY role granted this function — see the
+  // function-level note above. Not granted to SUPER_ADMIN or any other role.
+  nowAssign('ADMINISTRATOR', 'workforce.super_admin.recover', EXECUTE),
   nowAssign('ADMINISTRATOR', 'workforce.role.assign_operational', EXECUTE),
   nowAssign('ADMINISTRATOR', 'workforce.role.revoke_operational', EXECUTE),
   nowAssign('ADMINISTRATOR', 'customer.view', VIEW),

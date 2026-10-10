@@ -225,11 +225,19 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
       ]);
     });
 
-    it('1b. ADMINISTRATOR holds exactly its approved 11 function grants and nothing else', async () => {
+    it('1b. ADMINISTRATOR holds exactly its approved 12 function grants and nothing else', async () => {
       // Note: V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 adds two narrowly-scoped grants
       // (workforce.dashboard.view, workforce.dashboard.assign) so ADMINISTRATOR can co-manage
       // role-to-dashboard-template assignment alongside SUPER_ADMIN. Assigning a dashboard
       // template never changes any permission/function grant — see that task's report §5.
+      //
+      // V1-SECURITY-SUPER-ADMIN-RECOVERY-01 adds one further narrowly-scoped grant
+      // (workforce.super_admin.recover) so an ordinary ADMINISTRATOR can trigger consumption
+      // of an already-valid, externally-signed SUPER_ADMIN recovery statement. Holding this
+      // function never itself authorizes revoking/replacing SUPER_ADMIN — the externally-signed
+      // statement (verified against A2_RECOVERY_JWKS_JSON, configured independently of any
+      // in-app credential) is the sole source of that authority. See that task's report for the
+      // full threat model.
       const rows: Array<{ function_code: string; access_type: string }> = await dataSource.query(`
         SELECT f.function_code, rf.access_type FROM authorization_role_functions rf
         JOIN authorization_roles r ON r.id = rf.role_id
@@ -247,6 +255,7 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
           { function_code: 'workforce.role.assign_operational', access_type: 'EXECUTE' },
           { function_code: 'workforce.role.revoke_operational', access_type: 'EXECUTE' },
           { function_code: 'workforce.role.view', access_type: 'VIEW' },
+          { function_code: 'workforce.super_admin.recover', access_type: 'EXECUTE' },
           { function_code: 'workforce.user.create', access_type: 'EXECUTE' },
           { function_code: 'workforce.user.suspend', access_type: 'EXECUTE' },
           { function_code: 'workforce.user.view', access_type: 'VIEW' },

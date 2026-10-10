@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
 import { AuthorizationCatalogueRuntimeService } from '../authorization-catalogue/authorization-catalogue-runtime.service';
 import type { AuthorizationPrincipal } from './authorization.types';
@@ -126,6 +126,30 @@ export class A2WorkforceSessionService {
     s.revokedAt = now;
     s.revokeReason = reason.slice(0, 500);
     await r.save(s);
+  }
+  /**
+   * V1-SECURITY-SUPER-ADMIN-RECOVERY-01: manager-scoped (unlike `revoke()` above, which uses
+   * `this.dataSource` directly) so it can participate in the recovery ceremony's own
+   * SERIALIZABLE transaction — immediate session revocation is part of the same atomic
+   * operation as the SUPER_ADMIN assignment revocation, not a separate best-effort step that
+   * could succeed or fail independently of it. Revokes EVERY currently-ACTIVE session for the
+   * given principal (there may be more than one), not a single session by id.
+   */
+  async revokeAllForPrincipal(
+    manager: EntityManager,
+    principalId: string,
+    reason: string,
+    now = new Date(),
+  ): Promise<number> {
+    const r = manager.getRepository(A2WorkforceSession),
+      rows = await r.find({ where: { principalId, status: 'ACTIVE' } });
+    for (const row of rows) {
+      row.status = 'REVOKED';
+      row.revokedAt = now;
+      row.revokeReason = reason.slice(0, 500);
+    }
+    if (rows.length) await r.save(rows);
+    return rows.length;
   }
   /**
    * V1-ADMIN-AUTHORIZATION-RUNTIME-01: roles/scopes now resolve against BOTH sources —
