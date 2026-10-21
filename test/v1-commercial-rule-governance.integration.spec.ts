@@ -208,7 +208,7 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
       .post(`${APPROVE_PATH}/${own.body.approvalId}/approve`)
       .set(auth(both.token))
       .send({ comment: 'no' });
-    expect(selfDecision.status).toBe(200);
+    expect(selfDecision.status).toBe(201);
     expect(selfDecision.body).toMatchObject({
       approved: false,
       reason: 'SELF_APPROVAL_FORBIDDEN',
@@ -219,7 +219,7 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
       .post(`${APPROVE_PATH}/${approvalId}/approve`)
       .set(auth(controller.token))
       .send({ comment: 'verified pricing' });
-    expect(decision.status).toBe(200);
+    expect(decision.status).toBe(201);
     expect(decision.body).toMatchObject({ approved: true, reason: 'APPROVED' });
   });
 
@@ -337,7 +337,7 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
       .post(`${APPROVE_PATH}/${approvalId}/reject`)
       .set(auth(controller.token))
       .send({ comment: 'pricing out of policy' });
-    expect(rejected.status).toBe(200);
+    expect(rejected.status).toBe(201);
     expect(rejected.body).toMatchObject({ approved: false, reason: 'REJECTED' });
 
     const execute = await request(app.getHttpServer())

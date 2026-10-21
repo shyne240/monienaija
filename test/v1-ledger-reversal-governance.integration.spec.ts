@@ -253,7 +253,7 @@ describe('P0-B ledger journal reversal maker-checker governance — real Postgre
       .post(`${APPROVE_PATH}/${approvalId}/approve`)
       .set(auth(controller.token))
       .send({ comment: 'reversal verified' });
-    expect(decision.status).toBe(200);
+    expect(decision.status).toBe(201);
     expect(decision.body).toMatchObject({ approved: true, reason: 'APPROVED' });
   });
 

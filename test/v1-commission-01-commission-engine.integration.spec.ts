@@ -623,7 +623,7 @@ describe('V1-COMMISSION-01 Commission Engine foundation (real PG)', () => {
       .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
       .set('Authorization', auth('privileged'))
       .send({ comment: 'approved' })
-      .expect(200);
+      .expect(201);
     const created = await request(app.getHttpServer())
       .post(`/api/v1/internal/commission-rules/changes/${makerReq.body.approvalId}/execute-create`)
       .set('Authorization', auth('privileged'))
@@ -657,7 +657,7 @@ describe('V1-COMMISSION-01 Commission Engine foundation (real PG)', () => {
       .post(`/api/v1/internal/a2/workforce/approvals/${modifyReq.body.approvalId}/approve`)
       .set('Authorization', auth('privileged'))
       .send({ comment: 'approved' })
-      .expect(200);
+      .expect(201);
     const patched = await request(app.getHttpServer())
       .post(`/api/v1/internal/commission-rules/changes/${modifyReq.body.approvalId}/execute-modify`)
       .set('Authorization', auth('privileged'))

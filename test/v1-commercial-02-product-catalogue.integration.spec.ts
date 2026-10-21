@@ -257,7 +257,7 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
       .set('Authorization', auth('PRIVILEGED'))
       .send({ comment: 'approve duplicate attempt' })
-      .expect(200);
+      .expect(201);
     await request(app.getHttpServer())
       .post(`/api/v1/internal/products/changes/${makerReq.body.approvalId}/execute-create`)
       .set('Authorization', auth('PRIVILEGED'))

@@ -342,7 +342,7 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
       .set('Authorization', auth('PRIVILEGED'))
       .send({ comment: 'approve duplicate attempt' })
-      .expect(200);
+      .expect(201);
     await request(app.getHttpServer())
       .post(`/api/v1/internal/fee-rules/changes/${makerReq.body.approvalId}/execute-create`)
       .set('Authorization', auth('PRIVILEGED'))
