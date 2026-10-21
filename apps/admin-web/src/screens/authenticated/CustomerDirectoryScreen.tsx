@@ -30,7 +30,12 @@ interface KycRecord {
   createdAt: string;
 }
 
-export const CustomerDirectoryScreen: React.FC = () => {
+interface CustomerDirectoryProps {
+  onNavigate?: (view: string, customerId: string) => void;
+  selectedCustomerId?: string;
+}
+
+export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNavigate, selectedCustomerId }) => {
   const { principal } = useAuthStore();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchStatus, setSearchStatus] = useState('');
@@ -99,6 +104,14 @@ export const CustomerDirectoryScreen: React.FC = () => {
   useEffect(() => {
     fetchCustomers();
   }, [searchStatus, searchType]);
+
+  // Customer 360° — if navigated from deep-link with customerId, auto-open drawer
+  useEffect(() => {
+    if (selectedCustomerId && customers.length > 0) {
+      const found = customers.find(c => c.id === selectedCustomerId);
+      if (found) handleLoadDetails(found);
+    }
+  }, [selectedCustomerId, customers]);
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -421,6 +434,28 @@ export const CustomerDirectoryScreen: React.FC = () => {
                   </form>
                 )}
               </div>
+
+              {/* Customer 360° — Related Actions (deep-link hub, no UUID paste) */}
+              {onNavigate && (
+                <div style={styles.metaBlock}>
+                  <h4 style={styles.blockTitle}>🔗 Customer 360° — Related Actions</h4>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px 0' }}>
+                    Navigate to related tasks with this customer pre-filled — no manual UUID paste required.
+                  </p>
+                  <div style={styles.relatedGrid}>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('transfers', selectedCust.id)}>View Transactions</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('kycQueue', selectedCust.id)}>Open in KYC Queue</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('complianceCases', selectedCust.id)}>Open Compliance Cases</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('fraudCases', selectedCust.id)}>Open Fraud Cases</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('support', selectedCust.id)}>Open Support Tickets</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('auditEvents', selectedCust.id)}>View Audit Trail</button>
+                    <button style={styles.relatedBtn} onClick={() => onNavigate('limitAssignments', selectedCust.id)}>View Limit Assignments</button>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
+                    Customer ID: <code style={styles.mono}>{selectedCust.id.slice(0, 8)}…</code> carried via route state — R9 eliminated.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -765,5 +800,28 @@ const styles = {
     color: '#94A3B8',
     textAlign: 'center' as const,
     margin: '8px 0',
+  },
+  relatedGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '8px',
+  },
+  relatedBtn: {
+    padding: '8px 10px',
+    fontSize: '12px',
+    backgroundColor: '#F8FAFC',
+    border: '1px solid #E2E8F0',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+    color: '#032B14',
+    fontWeight: '600',
+  },
+  mono: {
+    fontFamily: 'monospace',
+    fontSize: '11px',
+    backgroundColor: '#F1F5F9',
+    padding: '2px 4px',
+    borderRadius: '4px',
   },
 };

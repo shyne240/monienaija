@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -23,10 +23,10 @@ interface FeeResult {
   totalMinor: string;
 }
 
-export const TransactionObservabilityScreen: React.FC = () => {
+export const TransactionObservabilityScreen: React.FC<{ initialType?: string; initialCustomerId?: string }> = ({ initialType, initialCustomerId }) => {
   const { principal } = useAuthStore();
-  const [searchTxId, setSearchTxId] = useState('');
-  const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>('TRANSFER');
+  const [searchTxId, setSearchTxId] = useState(initialCustomerId || '');
+  const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>((initialType as any) || 'TRANSFER');
   const [txDetail, setTxDetail] = useState<TransactionDetail | null>(null);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState('');

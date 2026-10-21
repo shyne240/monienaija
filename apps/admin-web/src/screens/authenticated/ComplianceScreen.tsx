@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
-export const ComplianceScreen: React.FC = () => {
+export const ComplianceScreen: React.FC<{ initialCustomerId?: string; initialCategory?: string }> = ({ initialCustomerId, initialCategory }) => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
   const canView = hasFn('kyc.view') || hasFn('compliance.manage_case') || hasFn('compliance.manage_risk_profile') || principal?.roles.includes('COMPLIANCE') || principal?.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute');
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId || '');
   const [kyc, setKyc] = useState<any>(null);
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,16 +38,19 @@ export const ComplianceScreen: React.FC = () => {
     } catch(e:any){ setAssessErr(e?.message||'Assessment failed'); }
   };
 
+  useEffect(() => { if(initialCustomerId) fetchForCustomer(); }, [initialCustomerId]);
+
   if(!canView) return <div style={wrap}><div style={denied}>Requires <code>kyc.view / compliance.manage_case</code>. Roles: {principal?.roles.join(', ')}</div></div>;
 
   return (
     <div style={wrap}>
       <h2 style={h2}>🛡️ Compliance & KYC</h2>
-      <p style={sub}>KYC queue, compliance cases, risk profiles — per customer investigation. Search by customer UUID (from Customer directory).</p>
+      <p style={sub}>KYC queue, compliance cases, risk profiles — per customer investigation. {initialCustomerId ? 'Pre-filled from Customer 360° — no manual UUID paste.' : 'Search by customer UUID (from Customer directory).'}</p>
       <div style={searchRow}>
-        <input value={customerId} onChange={e=>setCustomerId(e.target.value)} placeholder="Customer UUID" style={input} />
+        <input value={customerId} onChange={e=>setCustomerId(e.target.value)} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}… (pre-filled from 360°)` : "Customer UUID"} style={input} />
         <button onClick={fetchForCustomer} style={btn} disabled={loading}>{loading?'Loading…':'Search'}</button>
       </div>
+      {initialCustomerId && <div style={note}>🔗 Customer context carried from Customer Directory — R9 eliminated.</div>}
       {error && <div style={errBox}>{error}</div>}
       {kyc && <div style={card}><strong>KYC:</strong> Level {kyc.level ?? kyc.kycLevel} — Status {kyc.status ?? kyc.kycStatus} {kyc.assessedBy && <>by {kyc.assessedBy}</>} {kyc.reason && <> — {kyc.reason}</>}</div>}
       {cases.length>0 ? <table style={table}><thead><tr><th>ID</th><th>Category</th><th>Status</th><th>Reason</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td style={mono}>{c.id.slice(0,8)}…</td><td>{c.category||c.type}</td><td><span style={badge(c.status)}>{c.status}</span></td><td>{c.reason||c.description||'-'}</td></tr>)}</tbody></table> : !loading && customerId && <div style={empty}>No compliance cases for this customer, or customer not found.</div>}

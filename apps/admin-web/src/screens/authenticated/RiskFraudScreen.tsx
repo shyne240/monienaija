@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
-export const RiskFraudScreen: React.FC = () => {
+export const RiskFraudScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
   const canView = hasFn('compliance.manage_case') || hasFn('kyc.view') || principal?.roles.includes('RISK_FRAUD') || principal?.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute');
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId || '');
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,13 +23,16 @@ export const RiskFraudScreen: React.FC = () => {
     finally{ setLoading(false); }
   };
 
+  useEffect(() => { if(initialCustomerId) fetchFraud(); }, [initialCustomerId]);
+
   if(!canView) return <div style={wrap}><div style={denied}>Requires FRAUD case access — <code>RISK_FRAUD</code> or <code>compliance.manage_case + FRAUD</code>. Roles: {principal?.roles.join(', ')}</div></div>;
 
   return (
     <div style={wrap}>
       <h2 style={h2}>🚨 Risk & Fraud</h2>
-      <p style={sub}>FRAUD-category compliance cases only — isolated to <code>RISK_FRAUD</code> per V1 isolation rule. COMPLIANCE owns non-FRAUD; this screen filters FRAUD exclusively.</p>
-      <div style={row}><input value={customerId} onChange={e=>setCustomerId(e.target.value)} placeholder="Customer UUID" style={input}/><button onClick={fetchFraud} style={btn} disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</button></div>
+      <p style={sub}>FRAUD-category compliance cases only — isolated to <code>RISK_FRAUD</code> per V1 isolation rule. {initialCustomerId ? 'Pre-filled from Customer 360°.' : 'COMPLIANCE owns non-FRAUD; this screen filters FRAUD exclusively.'}</p>
+      <div style={row}><input value={customerId} onChange={e=>setCustomerId(e.target.value)} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : "Customer UUID"} style={input}/><button onClick={fetchFraud} style={btn} disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</button></div>
+      {initialCustomerId && <div style={note}>🔗 Customer pre-filled — no manual UUID paste.</div>}
       {error && <div style={errBox}>{error}</div>}
       {cases.length>0 ? <table style={table}><thead><tr><th>ID</th><th>Status</th><th>Reason</th><th>Created</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td style={mono}>{c.id.slice(0,8)}…</td><td><span style={badge(c.status)}>{c.status}</span></td><td>{c.reason||'-'}</td><td>{c.createdAt? new Date(c.createdAt).toLocaleString(): '-'}</td></tr>)}</tbody></table> : !loading && customerId && !error && <div style={empty}>No FRAUD cases — empty is expected unless risk events were created.</div>}
       <div style={note}>This is a filtered view of the same <code>/customers/:id/compliance-cases</code> resource, constrained to <code>category=FRAUD</code> at the service layer. Backend enforces that COMPLIANCE principals cannot read FRAUD cases and RISK_FRAUD cannot read non-FRAUD.</div>

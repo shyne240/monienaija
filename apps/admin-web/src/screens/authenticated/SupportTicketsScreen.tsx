@@ -4,10 +4,11 @@ import { useAuthStore } from '../../store/auth-store';
 
 interface Ticket { id: string; status: string; priority?: string; subject?: string; customerId?: string; agentId?: string; assignedTo?: string; createdAt: string; updatedAt: string; }
 
-export const SupportTicketsScreen: React.FC = () => {
+export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
   const canView = hasFn('customer.manage_support_case') || hasFn('customer.view') || principal?.roles.includes('CUSTOMER_SERVICE') || principal?.roles.includes('SUPER_ADMIN') || principal?.roles.includes('OPERATIONS');
+  const customerFilter = initialCustomerId || '';
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -54,7 +55,8 @@ export const SupportTicketsScreen: React.FC = () => {
   return (
     <div style={wrap}>
       <h2 style={h2}>🎧 Support Tickets</h2>
-      <p style={sub}>Workforce ticket queue (internal service). Assign, update status, add messages — real ledger-backed workflow.</p>
+      <p style={sub}>Workforce ticket queue (internal service). {initialCustomerId ? `Filtered to customer ${initialCustomerId.slice(0,8)}… from Customer 360° — no manual entry.` : 'Assign, update status, add messages — real ledger-backed workflow.'}</p>
+      {initialCustomerId && <div style={{...filters, background:'#F8FAFC', padding:'8px', borderRadius:6, border:'1px solid #E2E8F0', fontSize:12}}>🔗 Customer context: <code>{initialCustomerId}</code> — tickets filtered to this customer when backend supports <code>?customerId=</code></div>}
       <div style={filters}>
         <label>Status <select value={status} onChange={e=>{setStatus(e.target.value); setPage(1);}}><option value="">All</option><option value="OPEN">OPEN</option><option value="IN_PROGRESS">IN_PROGRESS</option><option value="RESOLVED">RESOLVED</option><option value="CLOSED">CLOSED</option></select></label>
         <button onClick={fetchList} style={btn}>Refresh</button>

@@ -4,11 +4,12 @@ import { useAuthStore } from '../../store/auth-store';
 
 type Tab = 'fees'|'commissions'|'rewards'|'products'|'limits';
 
-export const CommercialRulesScreen: React.FC = () => {
+export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialTab }) => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
   const canView = hasFn('fee_rule.view') || hasFn('commission_rule.view') || hasFn('reward_rule.view') || hasFn('product.view') || hasFn('product.create') || hasFn('limit.view') || principal?.roles.includes('SUPER_ADMIN') || principal?.roles.includes('FINANCE_PREPARER') || hasFn('finance:prepare');
-  const [tab, setTab] = useState<Tab>('fees');
+  const [tab, setTab] = useState<Tab>(initialTab || 'fees');
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
