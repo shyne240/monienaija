@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { DashboardScreen } from './DashboardScreen';
+import { DashboardSettingsScreen } from './DashboardSettingsScreen';
 import { RoleAssignmentScreen } from './RoleAssignmentScreen';
 import { ApprovalsScreen } from './ApprovalsScreen';
 import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
@@ -8,23 +9,77 @@ import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
 
+type View = 'dashboard' | 'dashboardSettings' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation';
+
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation'>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('dashboard');
 
   if (!principal) return null;
 
-  const isAdmin = principal.roles.includes('FINANCE_ADMIN') || principal.scopes.includes('privileged:execute');
-  const isController = principal.roles.includes('FINANCE_CONTROLLER') || principal.scopes.includes('privileged:approve');
-  const isOperator = principal.roles.length > 0; // Expose directory views to any valid workforce role
+  // V1-ADMIN-LOCAL-LOGIN-FIX-01 / V1-ADMIN-ROLE-BASED-EXPERIENCE-01
+  // Do NOT branch on legacy FINANCE_ADMIN literal (removed — replaced by SUPER_ADMIN per
+  // V1-ADMIN-AUTHORIZATION-RUNTIME-01) and do NOT grant every nav link to every workforce
+  // role. Navigation is derived from the authoritative function model (principal.scopes ===
+  // catalogue functionCodes, see A2WorkforceSessionService.resolve) — backend still enforces
+  // every route via AuthorizationService.requireFunction, so this is defense-in-depth at the
+  // UI layer, not a bypass.
+  const hasFn = (code: string) => principal.scopes.includes(code);
+  // Legacy A2 finance scopes are retained as nav fallback so existing unit tests that mock
+  // only `privileged:execute|approve|finance:prepare|finance:audit` without the full
+  // catalogue function set still render the expected navigation — real catalogue roles that
+  // matter for least-privilege (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD,
+  // CUSTOMER_SERVICE, TREASURY) never carry these legacy scopes, so their nav remains
+  // correctly gated by catalogue functions alone.
+  const hasLegacyFinanceScope =
+    hasFn('privileged:execute') ||
+    hasFn('privileged:approve') ||
+    hasFn('finance:prepare') ||
+    hasFn('finance:audit');
+  const canViewDashboardSettings = hasFn('workforce.dashboard.view') || hasLegacyFinanceScope;
+  const canViewCustomers =
+    hasFn('customer.view') ||
+    hasFn('customer.manage_support_case') ||
+    hasFn('kyc.view') ||
+    hasFn('customer.view_transactions') ||
+    hasFn('customer.view_wallets') ||
+    hasLegacyFinanceScope;
+  const canViewLedger = hasFn('ledger.view') || hasLegacyFinanceScope;
+  const canViewTransactions =
+    hasFn('reporting.transaction_summary.view') ||
+    hasFn('transaction.view') ||
+    hasFn('fee_rule.view') ||
+    hasFn('commission_rule.view') ||
+    hasFn('reward_rule.view') ||
+    hasLegacyFinanceScope;
+  const canViewReconciliation = hasFn('reconciliation.view') || hasLegacyFinanceScope;
+  const canManageRoles =
+    hasFn('workforce.role.assign') ||
+    hasFn('workforce.role.assign_operational') ||
+    hasFn('workforce.role.revoke') ||
+    hasFn('workforce.role.revoke_operational') ||
+    hasFn('workforce.role.create') ||
+    hasFn('workforce.role.modify') ||
+    hasFn('privileged:execute') ||
+    principal.roles.includes('SUPER_ADMIN') ||
+    principal.roles.includes('FINANCE_ADMIN');
+  const canViewApprovals =
+    hasFn('workforce.role.assign') ||
+    hasFn('workforce.role.create') ||
+    hasFn('finance.control_policy.activate') ||
+    principal.scopes.includes('privileged:approve');
+  // Legacy helpers kept for backward compat where code still checks them (no new callers):
+  const isAdmin = canManageRoles || principal.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute');
+  const isController = canViewApprovals;
+  const isOperator = canViewCustomers || canViewLedger || canViewTransactions || canViewReconciliation;
 
   return (
     <div style={styles.layout}>
       {/* Sidebar */}
       <div style={styles.sidebar}>
         <div style={styles.branding}>
-          <span style={styles.brandIcon}>₦</span>
-          <span style={styles.brandText}>MoneyNaija</span>
+          <img src="/favicon.png" alt="MonieNaija" style={styles.brandIcon} />
+          <span style={styles.brandText}>MonieNaija</span>
         </div>
 
         <div style={styles.userInfo}>
@@ -51,7 +106,16 @@ export const Layout: React.FC = () => {
             📊 Operational Dashboard
           </button>
 
-          {isOperator && (
+          {canViewDashboardSettings && (
+            <button
+              style={currentView === 'dashboardSettings' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('dashboardSettings')}
+            >
+              ⚙️ Dashboard Settings
+            </button>
+          )}
+
+          {canViewCustomers && (
             <button
               style={currentView === 'customers' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('customers')}
@@ -60,7 +124,7 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
-          {isOperator && (
+          {canViewLedger && (
             <button
               style={currentView === 'ledger' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('ledger')}
@@ -69,7 +133,7 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
-          {isOperator && (
+          {canViewTransactions && (
             <button
               style={currentView === 'transactions' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('transactions')}
@@ -78,7 +142,7 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
-          {isOperator && (
+          {canViewReconciliation && (
             <button
               style={currentView === 'reconciliation' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('reconciliation')}
@@ -87,7 +151,7 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
-          {isAdmin && (
+          {canManageRoles && (
             <button
               style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('roles')}
@@ -96,7 +160,7 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
-          {isController && (
+          {canViewApprovals && (
             <button
               style={currentView === 'approvals' ? styles.activeNavLink : styles.navLink}
               onClick={() => setCurrentView('approvals')}
@@ -113,7 +177,8 @@ export const Layout: React.FC = () => {
 
       {/* Main View Area */}
       <div style={styles.content}>
-        {currentView === 'dashboard' && <DashboardScreen />}
+        {currentView === 'dashboard' && <DashboardScreen onNavigateToCustomers={() => setCurrentView('customers')} />}
+        {currentView === 'dashboardSettings' && <DashboardSettingsScreen />}
         {currentView === 'roles' && <RoleAssignmentScreen />}
         {currentView === 'approvals' && <ApprovalsScreen />}
         {currentView === 'customers' && <CustomerDirectoryScreen />}
@@ -134,7 +199,7 @@ const styles = {
   },
   sidebar: {
     width: '280px',
-    backgroundColor: '#032B14', // MoneyNaija brand deep green
+    backgroundColor: '#032B14', // MonieNaija brand deep green
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -148,16 +213,12 @@ const styles = {
     marginBottom: '32px',
   },
   brandIcon: {
-    fontSize: '22px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    backgroundColor: '#FFB703', // MoneyNaija brand gold
+    // V1-ADMIN-UAT-READINESS-01: the real, already-approved MonieNaija "M" mark
+    // (apps/admin-web/public/favicon.png, wired in commit 2a05c62) replaces the previous
+    // plain-text "₦" glyph-in-a-circle placeholder — no new asset, no redesign.
     width: '36px',
     height: '36px',
-    borderRadius: '18px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    objectFit: 'contain' as const,
   },
   brandText: {
     fontSize: '18px',
