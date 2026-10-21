@@ -10,14 +10,19 @@ import {
   DASHBOARD_TEMPLATE_SEED,
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from '../../src/dashboard/dashboard-templates.seed';
+import {
+  assertOwnRunDatabaseName,
+  resolveRunIdentifier,
+} from './pg-run-namespace';
 
 /**
  * Real-PostgreSQL integration harness.
  *
- * Every suite gets its own database, named per process id, so that suites running in
- * separate Jest workers never share schema or rows. Nothing here mocks PostgreSQL: if the
- * server is unreachable the harness throws so the suite fails loudly rather than silently
- * skipping and reporting false coverage.
+ * Every suite gets its own database, named per run namespace + process id, so that suites
+ * running in separate Jest workers never share schema or rows AND a new run can never collide
+ * with databases left behind by previous runs (see test/support/pg-run-namespace.ts). Nothing
+ * here mocks PostgreSQL: if the server is unreachable the harness throws so the suite fails
+ * loudly rather than silently skipping and reporting false coverage.
  */
 
 export interface PostgresAdminConfig {
@@ -80,12 +85,44 @@ export async function assertPostgresAvailable(): Promise<void> {
   }
 }
 
+/**
+ * Suite database name for this run: `mn_it_<label>_<runId>_<pid>`. The run identifier
+ * (PG_TEST_RUN_ID) namespaces the whole run; the pid keeps suites in separate Jest processes
+ * isolated. Throws when PG_TEST_RUN_ID is missing or invalid — never falls back to the old
+ * un-namespaced scheme.
+ */
 export function integrationDatabaseName(label: string): string {
   const safe = label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .slice(0, 24);
-  return `mn_it_${safe}_${process.pid}`;
+  return `mn_it_${safe}_${resolveRunIdentifier()}_${process.pid}`;
+}
+
+/**
+ * Migration-template database name for this run: `mn_it_tpl_<runId>_<pid>`. Scoped to this run
+ * namespace and process id, matching integrationDatabaseName's scheme. Under the required
+ * `--runInBand` execution model every suite in a run shares one process, so this is built at
+ * most once per run and reused by every suite in it; a different run always builds its own.
+ * See test/support/pg-template-sweep.ts for the matching cleanup.
+ */
+export function migrationTemplateDatabaseName(): string {
+  return `mn_it_tpl_${resolveRunIdentifier()}_${process.pid}`;
+}
+
+/**
+ * Drops a database that belongs to THIS run's namespace, refusing anything else. Every DROP
+ * in the harness goes through here so cleanup can never touch a pre-existing or foreign
+ * database (e.g. `mn_it_h04unify_20364`) even if it were handed an unexpected name.
+ */
+async function dropOwnDatabase(ds: DataSource, name: string): Promise<void> {
+  assertOwnRunDatabaseName(name);
+  await ds.query(
+    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE datname = $1 AND pid <> pg_backend_pid()`,
+    [name],
+  );
+  await ds.query(`DROP DATABASE IF EXISTS \"${name}\"`);
 }
 
 export function buildIntegrationDataSource(name: string): DataSource {
@@ -111,18 +148,10 @@ export async function createEmptyIntegrationDataSource(label: string): Promise<D
   await assertPostgresAvailable();
   const name = integrationDatabaseName(label);
   await withAdmin(async (ds) => {
-    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await dropOwnDatabase(ds, name);
     await ds.query(`CREATE DATABASE "${name}"`);
   });
   return buildIntegrationDataSource(name);
-}
-
-function migrationTemplateDatabaseName(): string {
-  // Scoped to this process id, matching integrationDatabaseName's scheme. Under the required
-  // `--runInBand` execution model every suite in a run shares one process, so this is built
-  // at most once per run and reused by every suite in it; a different run (different pid)
-  // always builds its own. See test/support/pg-template-sweep.js for the matching cleanup.
-  return `mn_it_tpl_${process.pid}`;
 }
 
 async function templateDatabaseExists(ds: DataSource, name: string): Promise<boolean> {
@@ -179,7 +208,7 @@ export async function createIntegrationDataSource(label: string): Promise<DataSo
   const templateName = await ensureMigrationTemplateDatabase();
   const name = integrationDatabaseName(label);
   await withAdmin(async (ds) => {
-    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await dropOwnDatabase(ds, name);
     await ds.query(`CREATE DATABASE "${name}" TEMPLATE "${templateName}"`);
   });
   const dataSource = buildIntegrationDataSource(name);
@@ -209,12 +238,7 @@ export async function destroyIntegrationDataSource(dataSource: DataSource): Prom
     await dataSource.destroy();
   }
   await withAdmin(async (ds) => {
-    await ds.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-        WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [name],
-    );
-    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await dropOwnDatabase(ds, name);
   });
 }
 

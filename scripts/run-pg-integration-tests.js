@@ -75,6 +75,7 @@
 
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -86,6 +87,34 @@ const BATCH_SIZE = Number(process.env.PG_TEST_BATCH_SIZE ?? 15);
 // change below without first re-measuring (see module doc above).
 const MAX_OLD_SPACE_MB = Number(process.env.PG_TEST_MAX_OLD_SPACE_MB ?? 3072);
 const CONCURRENCY = Math.max(1, Number(process.env.PG_TEST_CONCURRENCY ?? 2));
+
+/**
+ * Run namespace for generated integration-test databases (see test/support/pg-run-namespace.ts
+ * — keep this pattern in sync with RUN_IDENTIFIER_PATTERN there). The runner accepts a
+ * caller-provided PG_TEST_RUN_ID and validates it; an invalid value fails fast rather than
+ * silently falling back to any other naming scheme. When absent, a fresh identifier is
+ * generated ONCE here and propagated to every batch process, so every suite and cleanup
+ * operation in the run shares one namespace.
+ */
+const RUN_IDENTIFIER_PATTERN = /^[a-z][a-z0-9]{3,15}$/;
+
+function resolveRunIdentifier() {
+  const provided = process.env.PG_TEST_RUN_ID;
+  if (provided !== undefined && provided !== '') {
+    if (!RUN_IDENTIFIER_PATTERN.test(provided)) {
+      throw new Error(
+        `Invalid PG_TEST_RUN_ID ${JSON.stringify(provided)}: must match ` +
+          `${String(RUN_IDENTIFIER_PATTERN)} (e.g. "win21oct"). Refusing to fall back to ` +
+          `un-namespaced database names.`,
+      );
+    }
+    return provided;
+  }
+  return `r${randomBytes(6).toString('hex')}`;
+}
+
+/** Set once in main(): the namespace shared by every batch process of this run. */
+let RUN_IDENTIFIER;
 
 function listTestFiles() {
   const result = spawnSync(
@@ -124,7 +153,13 @@ function runBatch(files, index, total) {
         '--runInBand',
         ...files,
       ],
-      { cwd: ROOT, stdio: 'inherit' },
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+        // Every batch process shares this run's namespace: the harness embeds
+        // PG_TEST_RUN_ID in every generated database name (see test/support/pg-run-namespace.ts).
+        env: { ...process.env, PG_TEST_RUN_ID: RUN_IDENTIFIER },
+      },
     );
     child.on('exit', (code) => {
       process.stdout.write(
@@ -149,6 +184,14 @@ async function runWithConcurrency(batches, concurrency) {
 }
 
 async function main() {
+  // Resolve the run namespace FIRST (fails fast on an invalid caller-provided identifier)
+  // and propagate it to every child process via the environment.
+  RUN_IDENTIFIER = resolveRunIdentifier();
+  process.env.PG_TEST_RUN_ID = RUN_IDENTIFIER;
+  process.stdout.write(
+    `\n=== PG integration run id: ${RUN_IDENTIFIER} ` +
+      `(database namespace mn_it_*_${RUN_IDENTIFIER}_*) ===\n`,
+  );
   const files = listTestFiles();
   if (files.length === 0) {
     throw new Error('No integration test files were discovered — the glob may be broken.');

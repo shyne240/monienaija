@@ -2,13 +2,15 @@
  * Jest globalSetup/globalTeardown housekeeping for the real-PostgreSQL migration template
  * that `test/support/pg-harness.ts` builds (see `ensureMigrationTemplateDatabase`).
  *
- * The template is named `mn_it_tpl_<pid>`, matching the same process-id-scoped naming scheme
- * `pg-harness.ts` already uses for every suite's own database. This script only ever drops
- * the template for *this* Jest process's own pid (never a wildcard sweep of other
- * `mn_it_tpl_%` names), so it cannot interfere with a different, concurrently-running
- * integration test invocation against the same PostgreSQL server.
+ * The template is named `mn_it_tpl_<runId>_<pid>` via the SAME `migrationTemplateDatabaseName()`
+ * the harness uses (imported below — no duplicated naming logic), so the namespace is identical
+ * across every suite and cleanup operation in the run. This script only ever drops the template
+ * for *this* Jest process's own pid under *this* run's namespace (asserted before any drop),
+ * never a wildcard sweep of other `mn_it_tpl_%` names, so it cannot interfere with a different,
+ * concurrently-running integration test invocation — nor with databases from previous runs
+ * (e.g. `mn_it_h04unify_20364`).
  *
- * - globalSetup: drops any pre-existing template for this pid before any suite runs, so a
+ * - globalSetup: drops any pre-existing template for this run+pid before any suite runs, so a
  *   template surviving from a previous run that happened to reuse the same OS pid can never
  *   be mistaken for an up-to-date one.
  * - globalTeardown: drops the template this run built, once every suite has finished with it,
@@ -17,6 +19,8 @@
 
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
+import { migrationTemplateDatabaseName } from './pg-harness';
+import { assertOwnRunDatabaseName } from './pg-run-namespace';
 
 function adminConfig() {
   const host = process.env.DB_HOST ?? '127.0.0.1';
@@ -27,10 +31,6 @@ function adminConfig() {
     password: process.env.DB_PASSWORD ?? 'monienaija-pw',
     database: process.env.DB_ADMIN_NAME ?? 'postgres',
   };
-}
-
-function templateDatabaseName(): string {
-  return `mn_it_tpl_${process.pid}`;
 }
 
 export default async function dropOwnMigrationTemplateDatabase(): Promise<void> {
@@ -57,13 +57,23 @@ export default async function dropOwnMigrationTemplateDatabase(): Promise<void> 
     return;
   }
   try {
-    const name = templateDatabaseName();
+    // Name resolution and the namespace guard both fail loudly when PG_TEST_RUN_ID is
+    // missing/invalid — the suites fail with the same error, which is the intended loud
+    // failure. If the name is somehow outside this run's namespace, skip the drop entirely
+    // rather than touching a database this run does not own.
+    const name = migrationTemplateDatabaseName();
+    assertOwnRunDatabaseName(name);
     await ds.query(
       `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
         WHERE datname = $1 AND pid <> pg_backend_pid()`,
       [name],
     );
     await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+  } catch (error) {
+    // Never drop a database outside this run's namespace. A missing/invalid run identifier is
+    // reported by the suites themselves (they fail loudly); housekeeping stays best-effort.
+    if (String((error as Error).message).includes('PG_TEST_RUN_ID')) return;
+    throw error;
   } finally {
     await ds.destroy().catch(() => undefined);
   }
