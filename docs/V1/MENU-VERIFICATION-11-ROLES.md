@@ -1,6 +1,6 @@
-# V1 Menu Visibility Verification — 11 Roles (2026-10-21 Stage 2b)
+# V1 Menu Visibility Verification — 11 Roles (2026-10-21 Stage 2b — bb65235)
 
-**Branch:** `arena/edba26d6-monienaija` (Stage 2b commit pending)  
+**Branch:** `arena/edba26d6-monienaija` @ `bb65235` (Stage 2b, 7-section 26-submenu)  
 **Backend:** `http://localhost:3000/api/v1` (Nest) — `POST /internal/a2/workforce/local-admin-sessions` with real `A2WorkforceSessionService.establish()` and catalogue `authorization_role_functions`  
 **Frontend:** `apps/admin-web` Vite dev server — `Layout.tsx` renders **7 sections / 26 submenus** (proposal §3.2 corrected from 23 miscount), gated strictly by `principal.scopes` (catalogue `function_code`), `SUPER_ADMIN` overgrant only. Mobile hamburger (`max-width:768px`) mirrors desktop. No legacy 15-key aliases — normative 26-key tree is single source.
 
@@ -93,12 +93,18 @@ All 26 submenus verified click-through to real screens (heading regex). Customer
 
 - **Production `internal:access` catch-all** remains for truly public routes not in `route-policy-registry` — documented as Future per `V1-SCOPE-CHALLENGE-01`, controller-level `requireFunction` covers every V1-required surface.
 
-## Test Results and Commit
+## Test Results and Commit (Stage 2c re-verified 2026-10-21)
 
-- **Frontend build:** `npm --prefix apps/admin-web run build` — `✓ 74 modules, dist/assets/index-*.js 306.56 kB gz 81.77 kB` (1.2s)
-- **Backend build:** `npm run build` (`nest build`) — 0 errors (19.6s)
-- **New menu test:** `npm --prefix apps/admin-web test -- menu-visibility-11-roles` — **24 passed, 0 failed** (7.2s) — 7-section 26-submenu desktop + mobile + click-through + no-leak + commercial granularity
-- **Customer 360 test:** `npm --prefix apps/admin-web test -- customer-360` — **7 passed, 0 failed** (4.8s) — deep-link preservation 7/7
-- **Full admin-web suite:** **9 suites, 65 passed, 0 failed** (9.3s)
-- **Backend P1 hardening suite:** previously 16/16 PASS (29.4s) — not re-run without DB in sandbox; build verified, authorization code unchanged
-- **Commit:** Stage 2b commit (this branch) includes Layout 7-section 26-submenu, granular commercial, Customer 360, and both new test suites
+**Important — mock vs real DB distinction (do not conflate):**
+- **Mock-based (no DB):** Frontend suite `apps/admin-web` (9 suites, 65 tests) — `ApiClient` is fully mocked; `useAuthStore` scopes are hardcoded from live catalogue capture; `Layout` rendered via `@testing-library/react`. Verifies **rendered navigation, section headers, mobile drawer, click-through to screen headings, Customer 360 `customerId` preservation via `NavContext`**. Does **not** call real API, does not verify backend authorization or persistence.
+- **Real DB required (blocked in this sandbox):** Backend integration suites `test/*.integration.spec.ts` (including `v1-admin-p1-authorization-hardening` 16 tests — allowed/403/FINANCE_AUDITOR read-only/maker-checker) — require live PostgreSQL `127.0.0.1:5432` + `DB_HOST/DB_NAME/DB_USER/DB_PASSWORD` env + isolated `mn_it_*_${pid}` DBs (safe, non-destructive to main DB — per `pg-harness.ts` `createIntegrationDataSource` + `truncateAllTables` on test DB only). **This sandbox has no `docker`/`psql`/`postgres` (verified `docker: command not found`, `pg_isready` not found, `ECONNREFUSED 127.0.0.1:5432`) and `Invalid environment configuration: DB_HOST/DB_NAME/DB_USER/DB_PASSWORD missing` — integration run aborted after 11.4s with 16/16 failures due to env/DB, not code. Not re-run here; prior evidence 16/16 PASS (29.4s) from docs remains the last real-DB result. Do not claim new end-to-end verification in this stage.
+- **Unit (no DB, real code):** Backend `npm run test` (jest unit, no `test:pg`) — 174 suites, 1831/1831 PASS 44.9s — verifies domain logic, guards, DTOs, but not HTTP/Auth/DB.
+
+- **Frontend build:** `npm --prefix apps/admin-web run build` — `✓ 74 modules, dist/assets/index-*.js 305.73kB gz 81.59kB` (1.19s, Stage 2c re-verified)
+- **Backend build:** `npm run build` (`nest build`) — 0 errors (19.7s, Stage 2c re-verified)
+- **Frontend mock suite (Stage 2c re-run):** `npm --prefix apps/admin-web test` — **9 suites, 65 passed, 0 failed** (7.2s) — includes 24 menu-visibility + 7 Customer 360 deep-link preservation
+  - `menu-visibility-11-roles` — **24 passed** (7.2s) — 7-section 26-submenu desktop + mobile + section headers + click-through + no-leak + commercial granularity
+  - `customer-360` — **7 passed** (4.8s) — 7/7 destinations preserve `customerId` via `NavContext` (mock API)
+- **Backend unit suite (Stage 2c):** `npm run test` — **174 suites, 1831/1831 PASS** (44.9s)
+- **Backend integration (P1 hardening) — Stage 2c inspection, not re-run:** `npm run test:pg -- test/v1-admin-p1-authorization-hardening.integration.spec.ts` — **blocked** (16/16 failed due to missing DB/env, not code — see above). Last real-DB result remains 16/16 PASS (29.4s) from prior verification matrix; no destructive `truncateAllTables` on main DB was performed (isolated test DB only when available).
+- **Commits:** Stage 2b `bb65235` (7-section 26-submenu, granular commercial, Customer 360 mock) + Stage 2c `this commit` (inspection, doc clarification, re-verification of builds/unit/frontend — no nav redesign)
