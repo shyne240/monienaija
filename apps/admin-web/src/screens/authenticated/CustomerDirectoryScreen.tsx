@@ -65,10 +65,17 @@ export const CustomerDirectoryScreen: React.FC = () => {
   // Status Update State
   const [statusSuccess, setStatusSuccess] = useState('');
 
-  // Check roles permissions
-  const isPreparer = principal?.roles.includes('FINANCE_PREPARER') || principal?.roles.includes('FINANCE_ADMIN') || principal?.scopes.includes('finance:prepare');
-  const isController = principal?.roles.includes('FINANCE_CONTROLLER') || principal?.scopes.includes('privileged:approve');
-  const isAuditor = principal?.roles.includes('FINANCE_AUDITOR') || principal?.scopes.includes('finance:audit');
+  // V1-CUSTOMER-CENTRED — catalogue-based permissions (fixes menu-visibility drift).
+  const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN');
+  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
+  const canManageCustomers = isSuperAdmin || hasFn('customer.view') || hasFn('customer.create') || hasFn('customer.suspend') || hasFn('customer.manage_support_case') || hasFn('kyc.view');
+  const canProvisionWallet = isSuperAdmin || hasFn('customer.create_wallet') || hasFn('customer.view_wallets') || hasFn('customer.view') || hasFn('customer.create');
+  const canManageKyc = isSuperAdmin || hasFn('kyc.view') || hasFn('kyc.review') || hasFn('kyc.approve') || hasFn('kyc.reject') || hasFn('customer.view');
+  const canSuspend = isSuperAdmin || hasFn('customer.suspend') || hasFn('customer.view') || hasFn('customer.create');
+  // Legacy aliases for template guards (preserve isPreparer name to avoid massive rename — now maps to canManageCustomers)
+  const isPreparer = canManageCustomers;
+  const isController = canSuspend;
+  const isAuditor = hasFn('finance:audit') || hasFn('audit.view');
 
   const fetchCustomers = async () => {
     setIsLoading(true);

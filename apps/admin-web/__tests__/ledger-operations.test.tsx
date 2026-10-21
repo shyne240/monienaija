@@ -157,15 +157,15 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
   });
 
   test('should submit preparer approval maker request on click instead of direct execution', async () => {
-    // Set active principal role to Preparer (Maker)
+    // Set active principal role to Preparer (Maker) — must have ledger.view + finance:prepare to be recognised as preparer, not controller
     useAuthStore.setState({
       principal: {
         type: 'OPERATOR',
         principalId: 'iss:back-office-preparer',
         sessionId: 'preparer-sess',
         audience: 'workforce-admin',
-        roles: ['SUPER_ADMIN'],
-        scopes: ['ledger.view','transaction.view','reporting.transaction_summary.view'],
+        roles: ['FINANCE_PREPARER'],
+        scopes: ['ledger.view','ledger.post','finance:prepare','transaction.view','reporting.transaction_summary.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

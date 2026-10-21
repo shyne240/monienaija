@@ -45,9 +45,12 @@ export const TransactionObservabilityScreen: React.FC = () => {
   const [sandboxError, setSandboxError] = useState('');
   const [sandboxLoading, setSandboxLoading] = useState(false);
 
-  // Check roles
-  const isController = principal?.roles.includes('FINANCE_CONTROLLER') || principal?.scopes.includes('privileged:approve');
-  const isPreparer = principal?.roles.includes('FINANCE_PREPARER') || principal?.roles.includes('FINANCE_ADMIN') || principal?.scopes.includes('finance:prepare');
+  // V1-TRANSACTIONS — catalogue-based. Any role that can view transactions can use sandbox (backend enforces).
+  const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN');
+  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
+  const canTrace = isSuperAdmin || hasFn('transaction.view') || hasFn('reporting.transaction_summary.view') || hasFn('fee_rule.view');
+  const isController = canTrace;
+  const isPreparer = canTrace;
 
   const handleSearchTx = async (e: React.FormEvent) => {
     e.preventDefault();
