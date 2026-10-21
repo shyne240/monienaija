@@ -8,20 +8,32 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 
 import { CreateLedgerAccountDto } from './dto/create-ledger-account.dto';
 import { PostJournalDto, ReverseJournalDto } from './dto/post-journal.dto';
 import { LedgerService } from './ledger.service';
+import { AuthorizationService } from '../authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+
+interface AuthenticatedRequest {
+  headers: Record<string, string | string[] | undefined>;
+  authorizationPrincipal?: AuthorizationPrincipal;
+}
 
 @Controller('ledger')
 export class LedgerController {
-  constructor(private readonly ledgerService: LedgerService) {}
+  constructor(
+    private readonly ledgerService: LedgerService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   /** Internal chart-of-accounts operation; monetary journals remain ledger-owned. */
   @Post('accounts')
   @HttpCode(HttpStatus.CREATED)
-  createAccount(@Body() dto: CreateLedgerAccountDto) {
+  async createAccount(@Body() dto: CreateLedgerAccountDto, @Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'ledger.post');
     return this.ledgerService.createAccount({
       code: dto.code,
       name: dto.name,
@@ -34,26 +46,31 @@ export class LedgerController {
   }
 
   @Get('accounts')
-  listAccounts(@Query('currency') currency?: string) {
+  async listAccounts(@Req() req: AuthenticatedRequest, @Query('currency') currency?: string) {
+    if (req?.authorizationPrincipal) await this.requireFunction(req, 'ledger.view');
     return this.ledgerService.listAccounts(currency);
   }
 
   @Get('accounts/:accountId/balance')
-  getAccountBalance(@Param('accountId') accountId: string) {
+  async getAccountBalance(@Param('accountId') accountId: string, @Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'ledger.view');
     return this.ledgerService.getAccountBalance(accountId);
   }
 
   @Get('accounts/:accountId')
-  getAccount(@Param('accountId') accountId: string) {
+  async getAccount(@Param('accountId') accountId: string, @Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'ledger.view');
     return this.ledgerService.getAccount(accountId);
   }
 
   @Post('journals')
   @HttpCode(HttpStatus.CREATED)
-  postJournal(
+  async postJournal(
+    @Req() req: AuthenticatedRequest,
     @Body() dto: PostJournalDto,
     @Headers('idempotency-key') headerIdempotencyKey?: string,
   ) {
+    if (req?.authorizationPrincipal) await this.requireFunction(req, 'ledger.post');
     return this.ledgerService.postJournal({
       idempotencyKey: dto.idempotencyKey ?? headerIdempotencyKey ?? '',
       currency: dto.currency,
@@ -71,21 +88,34 @@ export class LedgerController {
   }
 
   @Get('journals/:journalId')
-  getJournal(@Param('journalId') journalId: string) {
+  async getJournal(@Param('journalId') journalId: string, @Req() req: AuthenticatedRequest) {
+    await this.requireFunction(req, 'ledger.view');
     return this.ledgerService.getJournal(journalId);
   }
 
   @Post('journals/:journalId/reversal')
   @HttpCode(HttpStatus.CREATED)
-  reverseJournal(
+  async reverseJournal(
+    @Req() req: AuthenticatedRequest,
     @Param('journalId') journalId: string,
     @Body() dto: ReverseJournalDto,
     @Headers('idempotency-key') headerIdempotencyKey?: string,
   ) {
+    if (req?.authorizationPrincipal) {
+      await this.requireFunction(req, 'ledger.reverse');
+    }
     return this.ledgerService.reverseJournal(
       journalId,
       dto.idempotencyKey ?? headerIdempotencyKey ?? '',
       dto.reason,
     );
+  }
+
+  private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'ledger', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 }

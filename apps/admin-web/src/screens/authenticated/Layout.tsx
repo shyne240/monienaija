@@ -8,8 +8,15 @@ import { CustomerDirectoryScreen } from './CustomerDirectoryScreen';
 import { LedgerOperationsScreen } from './LedgerOperationsScreen';
 import { TransactionObservabilityScreen } from './TransactionObservabilityScreen';
 import { ReconciliationObservabilityScreen } from './ReconciliationObservabilityScreen';
+import { AgentNetworkScreen } from './AgentNetworkScreen';
+import { SupportTicketsScreen } from './SupportTicketsScreen';
+import { ComplianceScreen } from './ComplianceScreen';
+import { RiskFraudScreen } from './RiskFraudScreen';
+import { WorkforceAdminScreen } from './WorkforceAdminScreen';
+import { SystemHealthScreen } from './SystemHealthScreen';
+import { CommercialRulesScreen } from './CommercialRulesScreen';
 
-type View = 'dashboard' | 'dashboardSettings' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation';
+type View = 'dashboard' | 'dashboardSettings' | 'roles' | 'approvals' | 'customers' | 'ledger' | 'transactions' | 'reconciliation' | 'agents' | 'support' | 'compliance' | 'riskfraud' | 'workforce' | 'system' | 'commercial';
 
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
@@ -17,7 +24,7 @@ export const Layout: React.FC = () => {
 
   if (!principal) return null;
 
-  // V1-ADMIN-LOCAL-LOGIN-FIX-01 / V1-ADMIN-ROLE-BASED-EXPERIENCE-01
+  // V1-ADMIN-LOCAL-LOGIN-FIX-01 / V1-ADMIN-ROLE-BASED-EXPERIENCE-01 / V1-FULL-ADMIN-WEB-01
   // Do NOT branch on legacy FINANCE_ADMIN literal (removed — replaced by SUPER_ADMIN per
   // V1-ADMIN-AUTHORIZATION-RUNTIME-01) and do NOT grant every nav link to every workforce
   // role. Navigation is derived from the authoritative function model (principal.scopes ===
@@ -53,6 +60,13 @@ export const Layout: React.FC = () => {
     hasFn('reward_rule.view') ||
     hasLegacyFinanceScope;
   const canViewReconciliation = hasFn('reconciliation.view') || hasLegacyFinanceScope;
+  const canViewAgents = hasFn('agent.view') || hasFn('agent.activate') || hasFn('agent.suspend') || hasFn('agent.review_application') || hasLegacyFinanceScope;
+  const canViewSupport = hasFn('customer.manage_support_case') || principal.roles.includes('CUSTOMER_SERVICE') || principal.roles.includes('OPERATIONS') || hasLegacyFinanceScope;
+  const canViewCompliance = hasFn('kyc.view') || hasFn('compliance.manage_case') || hasFn('compliance.manage_risk_profile') || principal.roles.includes('COMPLIANCE') || hasLegacyFinanceScope;
+  const canViewRiskFraud = hasFn('compliance.manage_case') || principal.roles.includes('RISK_FRAUD') || principal.roles.includes('COMPLIANCE') || hasLegacyFinanceScope;
+  const canViewWorkforce = hasFn('workforce.user.view') || hasFn('workforce.role.view') || hasFn('workforce.dashboard.view') || principal.roles.includes('ADMINISTRATOR') || hasLegacyFinanceScope;
+  const canViewSystem = hasFn('metrics.view') || hasFn('diagnostics.view') || hasFn('outbox.view') || principal.roles.includes('OPERATIONS') || hasLegacyFinanceScope;
+  const canViewCommercial = hasFn('fee_rule.view') || hasFn('commission_rule.view') || hasFn('reward_rule.view') || hasFn('product.view') || hasFn('limit.view') || hasLegacyFinanceScope;
   const canManageRoles =
     hasFn('workforce.role.assign') ||
     hasFn('workforce.role.assign_operational') ||
@@ -68,10 +82,6 @@ export const Layout: React.FC = () => {
     hasFn('workforce.role.create') ||
     hasFn('finance.control_policy.activate') ||
     principal.scopes.includes('privileged:approve');
-  // Legacy helpers kept for backward compat where code still checks them (no new callers):
-  const isAdmin = canManageRoles || principal.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute');
-  const isController = canViewApprovals;
-  const isOperator = canViewCustomers || canViewLedger || canViewTransactions || canViewReconciliation;
 
   return (
     <div style={styles.layout}>
@@ -124,6 +134,15 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
+          {canViewAgents && (
+            <button
+              style={currentView === 'agents' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('agents')}
+            >
+              🏪 Agent Network
+            </button>
+          )}
+
           {canViewLedger && (
             <button
               style={currentView === 'ledger' ? styles.activeNavLink : styles.navLink}
@@ -151,6 +170,33 @@ export const Layout: React.FC = () => {
             </button>
           )}
 
+          {canViewSupport && (
+            <button
+              style={currentView === 'support' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('support')}
+            >
+              🎧 Support Tickets
+            </button>
+          )}
+
+          {canViewCompliance && (
+            <button
+              style={currentView === 'compliance' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('compliance')}
+            >
+              🛡️ Compliance & KYC
+            </button>
+          )}
+
+          {canViewRiskFraud && (
+            <button
+              style={currentView === 'riskfraud' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('riskfraud')}
+            >
+              🚨 Risk & Fraud
+            </button>
+          )}
+
           {canManageRoles && (
             <button
               style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
@@ -168,6 +214,33 @@ export const Layout: React.FC = () => {
               ⚖️ Privileged Approvals
             </button>
           )}
+
+          {canViewWorkforce && (
+            <button
+              style={currentView === 'workforce' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('workforce')}
+            >
+              👷 Workforce Admin
+            </button>
+          )}
+
+          {canViewSystem && (
+            <button
+              style={currentView === 'system' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('system')}
+            >
+              🩺 System Health
+            </button>
+          )}
+
+          {canViewCommercial && (
+            <button
+              style={currentView === 'commercial' ? styles.activeNavLink : styles.navLink}
+              onClick={() => setCurrentView('commercial')}
+            >
+              🏷️ Commercial Rules
+            </button>
+          )}
         </nav>
 
         <button onClick={logout} style={styles.logoutBtn}>
@@ -182,9 +255,16 @@ export const Layout: React.FC = () => {
         {currentView === 'roles' && <RoleAssignmentScreen />}
         {currentView === 'approvals' && <ApprovalsScreen />}
         {currentView === 'customers' && <CustomerDirectoryScreen />}
+        {currentView === 'agents' && <AgentNetworkScreen />}
         {currentView === 'ledger' && <LedgerOperationsScreen />}
         {currentView === 'transactions' && <TransactionObservabilityScreen />}
         {currentView === 'reconciliation' && <ReconciliationObservabilityScreen />}
+        {currentView === 'support' && <SupportTicketsScreen />}
+        {currentView === 'compliance' && <ComplianceScreen />}
+        {currentView === 'riskfraud' && <RiskFraudScreen />}
+        {currentView === 'workforce' && <WorkforceAdminScreen />}
+        {currentView === 'system' && <SystemHealthScreen />}
+        {currentView === 'commercial' && <CommercialRulesScreen />}
       </div>
     </div>
   );
@@ -199,7 +279,7 @@ const styles = {
   },
   sidebar: {
     width: '280px',
-    backgroundColor: '#032B14', // MonieNaija brand deep green
+    backgroundColor: '#032B14',
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -213,9 +293,6 @@ const styles = {
     marginBottom: '32px',
   },
   brandIcon: {
-    // V1-ADMIN-UAT-READINESS-01: the real, already-approved MonieNaija "M" mark
-    // (apps/admin-web/public/favicon.png, wired in commit 2a05c62) replaces the previous
-    // plain-text "₦" glyph-in-a-circle placeholder — no new asset, no redesign.
     width: '36px',
     height: '36px',
     objectFit: 'contain' as const,
