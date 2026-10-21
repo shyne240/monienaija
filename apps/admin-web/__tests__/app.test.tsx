@@ -109,7 +109,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(queryByText('System Administration Dashboard')).toBeNull();
   });
 
-  test('should render Dashboard and FINANCE_ADMIN sidebar link for FINANCE_ADMIN operator', async () => {
+  test('should render Dashboard and FINANCE_ADMIN sidebar link for SUPER_ADMIN operator', async () => {
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
@@ -120,8 +120,8 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         principalId: 'iss:test-admin-principal',
         sessionId: 'admin-sess',
         audience: 'workforce-admin',
-        roles: ['FINANCE_ADMIN'],
-        scopes: ['privileged:execute'],
+        roles: ['SUPER_ADMIN'],
+        scopes: ['workforce.role.assign', 'workforce.dashboard.view', 'workforce.dashboard.assign', 'customer.view', 'ledger.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -130,13 +130,14 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     const { getByText, queryByText, getAllByText } = render(<App />);
 
     expect(getByText('System Administration Dashboard')).toBeTruthy();
-    expect(getAllByText('FINANCE_ADMIN').length).toBeGreaterThan(0);
+    expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
     
-    // Admin links must be present
+    // Admin links must be present for SUPER_ADMIN
     expect(getByText('🔑 Finance Role Admin')).toBeTruthy();
+    expect(getByText('⚙️ Dashboard Settings')).toBeTruthy();
     
-    // Controller links must NOT be present
-    expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    // All major links present for SUPER_ADMIN
+    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
   });
 
   test('should render Dashboard and Privileged Approvals sidebar link for FINANCE_CONTROLLER operator', async () => {
@@ -151,7 +152,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['privileged:approve'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'ledger.view', 'fee_rule.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -162,11 +163,12 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getByText('System Administration Dashboard')).toBeTruthy();
     expect(getAllByText('FINANCE_CONTROLLER').length).toBeGreaterThan(0);
     
-    // Controller links must be present
+    // Controller links must be present via catalogue functions
     expect(getByText('⚖️ Privileged Approvals')).toBeTruthy();
+    expect(getByText('🔑 Finance Role Admin')).toBeTruthy();
     
-    // Admin links must NOT be present
-    expect(queryByText('🔑 Finance Role Admin')).toBeNull();
+    // Customers must NOT be present for finance controller
+    expect(queryByText('👥 Customer & KYC Servicing')).toBeNull();
   });
 
   test('should render read-only Dashboard for FINANCE_AUDITOR operator without admin or controller controls', async () => {
@@ -181,7 +183,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'auditor-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_AUDITOR'],
-        scopes: ['finance:audit'],
+        scopes: ['customer.view', 'ledger.view', 'reconciliation.view', 'fee_rule.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -192,9 +194,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getByText('System Administration Dashboard')).toBeTruthy();
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
     
-    // Admin & Controller controls must NOT be present
+    // Admin & Controller controls must NOT be present for auditor (read-only)
     expect(queryByText('🔑 Finance Role Admin')).toBeNull();
     expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    // But ledger should be visible for auditor
+    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
   });
 
   test('should execute approvals POST trigger on form submit', async () => {
@@ -209,7 +213,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['privileged:approve'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

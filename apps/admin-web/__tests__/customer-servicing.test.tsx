@@ -35,8 +35,8 @@ describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
         principalId: 'iss:back-office-operator',
         sessionId: 'operator-sess',
         audience: 'workforce-admin',
-        roles: ['FINANCE_PREPARER'], // Maker-eligible
-        scopes: ['finance:prepare'],
+        roles: ['SUPER_ADMIN'],
+        scopes: ['customer.view','customer.view_transactions','customer.view_wallets','customer.manage_support_case','kyc.view','ledger.view','transaction.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

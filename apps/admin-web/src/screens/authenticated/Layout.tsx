@@ -21,72 +21,130 @@ type View = 'dashboard' | 'dashboardSettings' | 'roles' | 'approvals' | 'custome
 export const Layout: React.FC = () => {
   const { principal, logout } = useAuthStore();
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   if (!principal) return null;
 
-  // V1-ADMIN-LOCAL-LOGIN-FIX-01 / V1-ADMIN-ROLE-BASED-EXPERIENCE-01 / V1-FULL-ADMIN-WEB-01
-  // Do NOT branch on legacy FINANCE_ADMIN literal (removed — replaced by SUPER_ADMIN per
-  // V1-ADMIN-AUTHORIZATION-RUNTIME-01) and do NOT grant every nav link to every workforce
-  // role. Navigation is derived from the authoritative function model (principal.scopes ===
-  // catalogue functionCodes, see A2WorkforceSessionService.resolve) — backend still enforces
-  // every route via AuthorizationService.requireFunction, so this is defense-in-depth at the
-  // UI layer, not a bypass.
+  const isSuperAdmin = principal.roles.includes('SUPER_ADMIN');
   const hasFn = (code: string) => principal.scopes.includes(code);
-  // Legacy A2 finance scopes are retained as nav fallback so existing unit tests that mock
-  // only `privileged:execute|approve|finance:prepare|finance:audit` without the full
-  // catalogue function set still render the expected navigation — real catalogue roles that
-  // matter for least-privilege (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD,
-  // CUSTOMER_SERVICE, TREASURY) never carry these legacy scopes, so their nav remains
-  // correctly gated by catalogue functions alone.
-  const hasLegacyFinanceScope =
-    hasFn('privileged:execute') ||
-    hasFn('privileged:approve') ||
-    hasFn('finance:prepare') ||
-    hasFn('finance:audit');
-  const canViewDashboardSettings = hasFn('workforce.dashboard.view') || hasLegacyFinanceScope;
+
+  // V1-MENU-VISIBILITY-11-ROLES-01 — strict catalogue-based nav, no legacy fallback.
+  // Each canView* mirrors the exact function(s) that grant that operational area.
+  // SUPER_ADMIN is the sole privileged overgrant (sees all) as the reserved admin role;
+  // no other role is granted a menu via role name alone — only via catalogue functions.
+  // This ensures FINANCE_PREPARER/CONTROLLER/AUDITOR no longer inherit every menu
+  // via legacy privileged:execute/finance:prepare etc.
+  const canViewDashboardSettings = isSuperAdmin || hasFn('workforce.dashboard.view');
   const canViewCustomers =
+    isSuperAdmin ||
     hasFn('customer.view') ||
     hasFn('customer.manage_support_case') ||
     hasFn('kyc.view') ||
     hasFn('customer.view_transactions') ||
-    hasFn('customer.view_wallets') ||
-    hasLegacyFinanceScope;
-  const canViewLedger = hasFn('ledger.view') || hasLegacyFinanceScope;
+    hasFn('customer.view_wallets');
+  const canViewLedger = isSuperAdmin || hasFn('ledger.view');
   const canViewTransactions =
+    isSuperAdmin ||
     hasFn('reporting.transaction_summary.view') ||
     hasFn('transaction.view') ||
     hasFn('fee_rule.view') ||
     hasFn('commission_rule.view') ||
+    hasFn('reward_rule.view');
+  const canViewReconciliation = isSuperAdmin || hasFn('reconciliation.view');
+  const canViewAgents =
+    isSuperAdmin ||
+    hasFn('agent.view') ||
+    hasFn('agent.activate') ||
+    hasFn('agent.suspend') ||
+    hasFn('agent.review_application') ||
+    hasFn('agent.manage_credentials') ||
+    hasFn('agent.manage_outlets_terminals');
+  const canViewSupport = isSuperAdmin || hasFn('customer.manage_support_case');
+  const canViewCompliance =
+    isSuperAdmin ||
+    hasFn('kyc.view') ||
+    hasFn('compliance.manage_case') ||
+    hasFn('compliance.manage_risk_profile');
+  const canViewRiskFraud = isSuperAdmin || hasFn('risk_fraud.manage_fraud_case');
+  const canViewWorkforce =
+    isSuperAdmin ||
+    hasFn('workforce.user.view') ||
+    hasFn('workforce.role.view') ||
+    hasFn('workforce.dashboard.view');
+  const canViewSystem =
+    isSuperAdmin ||
+    hasFn('metrics.view') ||
+    hasFn('diagnostics.view') ||
+    hasFn('outbox.view');
+  const canViewCommercial =
+    isSuperAdmin ||
+    hasFn('fee_rule.view') ||
+    hasFn('commission_rule.view') ||
     hasFn('reward_rule.view') ||
-    hasLegacyFinanceScope;
-  const canViewReconciliation = hasFn('reconciliation.view') || hasLegacyFinanceScope;
-  const canViewAgents = hasFn('agent.view') || hasFn('agent.activate') || hasFn('agent.suspend') || hasFn('agent.review_application') || hasLegacyFinanceScope;
-  const canViewSupport = hasFn('customer.manage_support_case') || principal.roles.includes('CUSTOMER_SERVICE') || principal.roles.includes('OPERATIONS') || hasLegacyFinanceScope;
-  const canViewCompliance = hasFn('kyc.view') || hasFn('compliance.manage_case') || hasFn('compliance.manage_risk_profile') || principal.roles.includes('COMPLIANCE') || hasLegacyFinanceScope;
-  const canViewRiskFraud = hasFn('compliance.manage_case') || principal.roles.includes('RISK_FRAUD') || principal.roles.includes('COMPLIANCE') || hasLegacyFinanceScope;
-  const canViewWorkforce = hasFn('workforce.user.view') || hasFn('workforce.role.view') || hasFn('workforce.dashboard.view') || principal.roles.includes('ADMINISTRATOR') || hasLegacyFinanceScope;
-  const canViewSystem = hasFn('metrics.view') || hasFn('diagnostics.view') || hasFn('outbox.view') || principal.roles.includes('OPERATIONS') || hasLegacyFinanceScope;
-  const canViewCommercial = hasFn('fee_rule.view') || hasFn('commission_rule.view') || hasFn('reward_rule.view') || hasFn('product.view') || hasFn('limit.view') || hasLegacyFinanceScope;
+    hasFn('product.view') ||
+    hasFn('limit.view');
   const canManageRoles =
+    isSuperAdmin ||
     hasFn('workforce.role.assign') ||
     hasFn('workforce.role.assign_operational') ||
     hasFn('workforce.role.revoke') ||
     hasFn('workforce.role.revoke_operational') ||
     hasFn('workforce.role.create') ||
-    hasFn('workforce.role.modify') ||
-    hasFn('privileged:execute') ||
-    principal.roles.includes('SUPER_ADMIN') ||
-    principal.roles.includes('FINANCE_ADMIN');
+    hasFn('workforce.role.modify');
   const canViewApprovals =
+    isSuperAdmin ||
     hasFn('workforce.role.assign') ||
     hasFn('workforce.role.create') ||
-    hasFn('finance.control_policy.activate') ||
-    principal.scopes.includes('privileged:approve');
+    hasFn('finance.control_policy.activate');
+
+  const navItems: Array<{ key: View; label: string; visible: boolean }> = [
+    { key: 'dashboard', label: '📊 Operational Dashboard', visible: true },
+    { key: 'dashboardSettings', label: '⚙️ Dashboard Settings', visible: canViewDashboardSettings },
+    { key: 'customers', label: '👥 Customer & KYC Servicing', visible: canViewCustomers },
+    { key: 'agents', label: '🏪 Agent Network', visible: canViewAgents },
+    { key: 'ledger', label: '📖 Ledger & Reversals', visible: canViewLedger },
+    { key: 'transactions', label: '💸 Transaction & Fee Ops', visible: canViewTransactions },
+    { key: 'reconciliation', label: '⚖️ Reconciliation & Breaks', visible: canViewReconciliation },
+    { key: 'support', label: '🎧 Support Tickets', visible: canViewSupport },
+    { key: 'compliance', label: '🛡️ Compliance & KYC', visible: canViewCompliance },
+    { key: 'riskfraud', label: '🚨 Risk & Fraud', visible: canViewRiskFraud },
+    { key: 'roles', label: '🔑 Finance Role Admin', visible: canManageRoles },
+    { key: 'approvals', label: '⚖️ Privileged Approvals', visible: canViewApprovals },
+    { key: 'workforce', label: '👷 Workforce Admin', visible: canViewWorkforce },
+    { key: 'system', label: '🩺 System Health', visible: canViewSystem },
+    { key: 'commercial', label: '🏷️ Commercial Rules', visible: canViewCommercial },
+  ];
+
+  const handleNav = (v: View) => {
+    setCurrentView(v);
+    setMobileOpen(false);
+  };
+
+  const renderContent = () => {
+    switch (currentView) {
+      case 'dashboard': return <DashboardScreen onNavigateToCustomers={() => setCurrentView('customers')} />;
+      case 'dashboardSettings': return <DashboardSettingsScreen />;
+      case 'roles': return <RoleAssignmentScreen />;
+      case 'approvals': return <ApprovalsScreen />;
+      case 'customers': return <CustomerDirectoryScreen />;
+      case 'agents': return <AgentNetworkScreen />;
+      case 'ledger': return <LedgerOperationsScreen />;
+      case 'transactions': return <TransactionObservabilityScreen />;
+      case 'reconciliation': return <ReconciliationObservabilityScreen />;
+      case 'support': return <SupportTicketsScreen />;
+      case 'compliance': return <ComplianceScreen />;
+      case 'riskfraud': return <RiskFraudScreen />;
+      case 'workforce': return <WorkforceAdminScreen />;
+      case 'system': return <SystemHealthScreen />;
+      case 'commercial': return <CommercialRulesScreen />;
+      default: return null;
+    }
+  };
 
   return (
     <div style={styles.layout}>
-      {/* Sidebar */}
-      <div style={styles.sidebar}>
+      {/* Desktop Sidebar */}
+      <div style={styles.sidebar} data-testid="desktop-nav">
         <div style={styles.branding}>
           <img src="/favicon.png" alt="MonieNaija" style={styles.brandIcon} />
           <span style={styles.brandText}>MonieNaija</span>
@@ -108,139 +166,17 @@ export const Layout: React.FC = () => {
           </div>
         </div>
 
-        <nav style={styles.nav}>
-          <button
-            style={currentView === 'dashboard' ? styles.activeNavLink : styles.navLink}
-            onClick={() => setCurrentView('dashboard')}
-          >
-            📊 Operational Dashboard
-          </button>
-
-          {canViewDashboardSettings && (
+        <nav style={styles.nav} aria-label="Main navigation">
+          {navItems.filter(i => i.visible).map(item => (
             <button
-              style={currentView === 'dashboardSettings' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('dashboardSettings')}
+              key={item.key}
+              data-testid={`nav-${item.key}`}
+              style={currentView === item.key ? styles.activeNavLink : styles.navLink}
+              onClick={() => handleNav(item.key)}
             >
-              ⚙️ Dashboard Settings
+              {item.label}
             </button>
-          )}
-
-          {canViewCustomers && (
-            <button
-              style={currentView === 'customers' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('customers')}
-            >
-              👥 Customer & KYC Servicing
-            </button>
-          )}
-
-          {canViewAgents && (
-            <button
-              style={currentView === 'agents' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('agents')}
-            >
-              🏪 Agent Network
-            </button>
-          )}
-
-          {canViewLedger && (
-            <button
-              style={currentView === 'ledger' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('ledger')}
-            >
-              📖 Ledger & Reversals
-            </button>
-          )}
-
-          {canViewTransactions && (
-            <button
-              style={currentView === 'transactions' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('transactions')}
-            >
-              💸 Transaction & Fee Ops
-            </button>
-          )}
-
-          {canViewReconciliation && (
-            <button
-              style={currentView === 'reconciliation' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('reconciliation')}
-            >
-              ⚖️ Reconciliation & Breaks
-            </button>
-          )}
-
-          {canViewSupport && (
-            <button
-              style={currentView === 'support' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('support')}
-            >
-              🎧 Support Tickets
-            </button>
-          )}
-
-          {canViewCompliance && (
-            <button
-              style={currentView === 'compliance' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('compliance')}
-            >
-              🛡️ Compliance & KYC
-            </button>
-          )}
-
-          {canViewRiskFraud && (
-            <button
-              style={currentView === 'riskfraud' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('riskfraud')}
-            >
-              🚨 Risk & Fraud
-            </button>
-          )}
-
-          {canManageRoles && (
-            <button
-              style={currentView === 'roles' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('roles')}
-            >
-              🔑 Finance Role Admin
-            </button>
-          )}
-
-          {canViewApprovals && (
-            <button
-              style={currentView === 'approvals' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('approvals')}
-            >
-              ⚖️ Privileged Approvals
-            </button>
-          )}
-
-          {canViewWorkforce && (
-            <button
-              style={currentView === 'workforce' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('workforce')}
-            >
-              👷 Workforce Admin
-            </button>
-          )}
-
-          {canViewSystem && (
-            <button
-              style={currentView === 'system' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('system')}
-            >
-              🩺 System Health
-            </button>
-          )}
-
-          {canViewCommercial && (
-            <button
-              style={currentView === 'commercial' ? styles.activeNavLink : styles.navLink}
-              onClick={() => setCurrentView('commercial')}
-            >
-              🏷️ Commercial Rules
-            </button>
-          )}
+          ))}
         </nav>
 
         <button onClick={logout} style={styles.logoutBtn}>
@@ -248,29 +184,48 @@ export const Layout: React.FC = () => {
         </button>
       </div>
 
+      {/* Mobile Header + Hamburger */}
+      <div style={styles.mobileHeader} data-testid="mobile-header">
+        <button
+          aria-label="Open navigation menu"
+          data-testid="mobile-menu-toggle"
+          onClick={() => setMobileOpen(v => !v)}
+          style={styles.hamburger}
+        >
+          ☰
+        </button>
+        <span style={styles.mobileBrand}>MonieNaija</span>
+        <span style={styles.mobileRole}>{principal.roles[0]}</span>
+        {mobileOpen && (
+          <div style={styles.mobileDrawer} data-testid="mobile-nav">
+            <nav aria-label="Mobile navigation" style={styles.mobileNav}>
+              {navItems.filter(i => i.visible).map(item => (
+                <button
+                  key={item.key}
+                  data-testid={`mobile-nav-${item.key}`}
+                  style={currentView === item.key ? styles.mobileActiveLink : styles.mobileNavLink}
+                  onClick={() => handleNav(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <button onClick={logout} style={styles.mobileLogoutBtn}>
+                🚪 Log Out
+              </button>
+            </nav>
+          </div>
+        )}
+      </div>
+
       {/* Main View Area */}
-      <div style={styles.content}>
-        {currentView === 'dashboard' && <DashboardScreen onNavigateToCustomers={() => setCurrentView('customers')} />}
-        {currentView === 'dashboardSettings' && <DashboardSettingsScreen />}
-        {currentView === 'roles' && <RoleAssignmentScreen />}
-        {currentView === 'approvals' && <ApprovalsScreen />}
-        {currentView === 'customers' && <CustomerDirectoryScreen />}
-        {currentView === 'agents' && <AgentNetworkScreen />}
-        {currentView === 'ledger' && <LedgerOperationsScreen />}
-        {currentView === 'transactions' && <TransactionObservabilityScreen />}
-        {currentView === 'reconciliation' && <ReconciliationObservabilityScreen />}
-        {currentView === 'support' && <SupportTicketsScreen />}
-        {currentView === 'compliance' && <ComplianceScreen />}
-        {currentView === 'riskfraud' && <RiskFraudScreen />}
-        {currentView === 'workforce' && <WorkforceAdminScreen />}
-        {currentView === 'system' && <SystemHealthScreen />}
-        {currentView === 'commercial' && <CommercialRulesScreen />}
+      <div style={styles.content} data-testid="main-content">
+        {renderContent()}
       </div>
     </div>
   );
 };
 
-const styles = {
+const styles: Record<string, React.CSSProperties> = {
   layout: {
     display: 'flex',
     minHeight: '100vh',
@@ -282,7 +237,7 @@ const styles = {
     backgroundColor: '#032B14',
     color: '#FFFFFF',
     display: 'flex',
-    flexDirection: 'column' as const,
+    flexDirection: 'column',
     padding: '24px',
     boxShadow: '2px 0 8px rgba(0, 0, 0, 0.05)',
   },
@@ -295,7 +250,7 @@ const styles = {
   brandIcon: {
     width: '36px',
     height: '36px',
-    objectFit: 'contain' as const,
+    objectFit: 'contain',
   },
   brandText: {
     fontSize: '18px',
@@ -326,7 +281,7 @@ const styles = {
   },
   userMeta: {
     display: 'flex',
-    flexDirection: 'column' as const,
+    flexDirection: 'column',
     flex: 1,
     overflow: 'hidden',
   },
@@ -334,7 +289,7 @@ const styles = {
     fontSize: '13px',
     fontWeight: 'bold',
     color: '#F8FAFC',
-    whiteSpace: 'nowrap' as const,
+    whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
     overflow: 'hidden',
   },
@@ -350,12 +305,12 @@ const styles = {
     borderStyle: 'solid',
     padding: '2px 6px',
     borderRadius: '4px',
-    textTransform: 'uppercase' as const,
+    textTransform: 'uppercase',
     display: 'inline-block',
   },
   nav: {
     display: 'flex',
-    flexDirection: 'column' as const,
+    flexDirection: 'column',
     gap: '8px',
     flex: 1,
   },
@@ -363,7 +318,7 @@ const styles = {
     display: 'block',
     width: '100%',
     padding: '12px 16px',
-    textAlign: 'left' as const,
+    textAlign: 'left',
     fontSize: '14px',
     fontWeight: '500',
     color: '#CBD5E1',
@@ -377,7 +332,7 @@ const styles = {
     display: 'block',
     width: '100%',
     padding: '12px 16px',
-    textAlign: 'left' as const,
+    textAlign: 'left',
     fontSize: '14px',
     fontWeight: '600',
     color: '#FFFFFF',
@@ -397,8 +352,110 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
   },
+  mobileHeader: {
+    display: 'none', // overridden via media query injected below
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '56px',
+    backgroundColor: '#032B14',
+    color: '#fff',
+    alignItems: 'center',
+    padding: '0 12px',
+    gap: '12px',
+    zIndex: 100,
+  } as React.CSSProperties,
+  hamburger: {
+    background: 'transparent',
+    border: '1px solid rgba(255,255,255,0.3)',
+    color: '#fff',
+    fontSize: '22px',
+    borderRadius: '6px',
+    padding: '4px 10px',
+    cursor: 'pointer',
+  },
+  mobileBrand: {
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+  },
+  mobileRole: {
+    marginLeft: 'auto',
+    fontSize: '10px',
+    border: '1px solid #FFB703',
+    color: '#FFB703',
+    padding: '2px 6px',
+    borderRadius: '4px',
+  },
+  mobileDrawer: {
+    position: 'fixed',
+    top: '56px',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#032B14',
+    padding: '16px',
+    overflowY: 'auto',
+    zIndex: 99,
+  } as React.CSSProperties,
+  mobileNav: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  } as React.CSSProperties,
+  mobileNavLink: {
+    width: '100%',
+    padding: '12px 16px',
+    textAlign: 'left',
+    fontSize: '14px',
+    color: '#CBD5E1',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  mobileActiveLink: {
+    width: '100%',
+    padding: '12px 16px',
+    textAlign: 'left',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  mobileLogoutBtn: {
+    marginTop: '16px',
+    backgroundColor: '#EF4444',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  } as React.CSSProperties,
   content: {
     flex: 1,
-    overflowY: 'auto' as const,
+    overflowY: 'auto',
   },
 };
+
+// Inject responsive CSS for mobile header/sidebar toggle
+if (typeof document !== 'undefined' && !document.getElementById('layout-responsive-style')) {
+  const styleTag = document.createElement('style');
+  styleTag.id = 'layout-responsive-style';
+  styleTag.textContent = `
+    @media (max-width: 768px) {
+      [data-testid=\"desktop-nav\"] { display: none !important; }
+      [data-testid=\"mobile-header\"] { display: flex !important; }
+      [data-testid=\"main-content\"] { margin-top: 56px; }
+    }
+    @media (min-width: 769px) {
+      [data-testid=\"mobile-header\"] { display: none !important; }
+      [data-testid=\"mobile-nav\"] { display: none !important; }
+    }
+  `;
+  document.head.appendChild(styleTag);
+}
