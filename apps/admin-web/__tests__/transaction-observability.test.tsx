@@ -60,8 +60,8 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
     const { getByText, getByPlaceholderText, findByText, getAllByText } = render(<App />);
 
-    // Click navigation tab
-    fireEvent.click(getByText('💸 Transaction & Fee Ops'));
+    // Click navigation tab — new 7-section Money Movement (3.x) — transfers is primary entry to TransactionObservabilityScreen
+    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
 
     // Select DEPOSIT type
     const selectEl = getByText('P2P TRANSFER').parentElement as HTMLSelectElement;
@@ -98,7 +98,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
-    fireEvent.click(getByText('💸 Transaction & Fee Ops'));
+    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
 
     expect(getByText('Pricing Fee Simulator Tool')).toBeTruthy();
 

@@ -19,7 +19,7 @@ import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
 
-// V1-ADMIN-IA-02 — seven-section, 23-submenu (26 actual rows, 23 claimed due to miscount) normative IA.
+// V1-ADMIN-IA-02 — seven-section, 26-submenu normative IA (corrected from 23 miscount — see proposal §3.2 2026-10-21).
 // All Future/BACKEND_ONLY ledger posting removed (see proposal §4.1). Commercial is definition-only.
 // Money Movement 4 tabs are filters on same TransactionObservabilityScreen; Commercial 6 tabs are on CommercialRulesScreen.
 
@@ -119,13 +119,13 @@ export const Layout: React.FC = () => {
     hasFn('reward_rule.view');
   const canViewLedgerExplorer = isSuperAdmin || hasFn('ledger.view');
   const canViewReconciliation = isSuperAdmin || hasFn('reconciliation.view');
-  const canViewCommercial =
-    isSuperAdmin ||
-    hasFn('fee_rule.view') ||
-    hasFn('commission_rule.view') ||
-    hasFn('reward_rule.view') ||
-    hasFn('product.view') ||
-    hasFn('limit.view');
+  // Commercial submenus are individually gated — least-privilege per catalogue (fixes overgrant where limit.view showed fee rules)
+  const canViewFeeRules = isSuperAdmin || hasFn('fee_rule.view');
+  const canViewCommissionRules = isSuperAdmin || hasFn('commission_rule.view');
+  const canViewRewardRules = isSuperAdmin || hasFn('reward_rule.view');
+  const canViewProductCatalogue = isSuperAdmin || hasFn('product.view');
+  const canViewLimitCatalogue = isSuperAdmin || hasFn('limit.view');
+  const canViewLimitAssignments = isSuperAdmin || hasFn('limit.view') || hasFn('agent.assign_limit');
   const canViewKycQueue =
     isSuperAdmin ||
     hasFn('kyc.view') ||
@@ -177,7 +177,7 @@ export const Layout: React.FC = () => {
     handleNav(view, { customerId });
   };
 
-  // Section definitions — normative 7×26 (proposal claims 23, actual rows 26)
+  // Section definitions — normative 7×26 (corrected from 23 miscount — proposal §3.2)
   const sections = [
     {
       id: 'home',
@@ -218,12 +218,12 @@ export const Layout: React.FC = () => {
       id: 'commercial',
       title: '5. Commercial & Risk Controls',
       items: [
-        { key: 'feeRules' as View, label: '5.1 Fee Rules', visible: canViewCommercial },
-        { key: 'commissionRules' as View, label: '5.2 Commission Rules', visible: canViewCommercial },
-        { key: 'rewardRules' as View, label: '5.3 Reward Rules', visible: canViewCommercial },
-        { key: 'productCatalogue' as View, label: '5.4 Product Catalogue', visible: canViewCommercial },
-        { key: 'limitCatalogue' as View, label: '5.5 Limit Catalogue', visible: canViewCommercial },
-        { key: 'limitAssignments' as View, label: '5.6 Limit Assignments', visible: canViewCommercial },
+        { key: 'feeRules' as View, label: '5.1 Fee Rules', visible: canViewFeeRules },
+        { key: 'commissionRules' as View, label: '5.2 Commission Rules', visible: canViewCommissionRules },
+        { key: 'rewardRules' as View, label: '5.3 Reward Rules', visible: canViewRewardRules },
+        { key: 'productCatalogue' as View, label: '5.4 Product Catalogue', visible: canViewProductCatalogue },
+        { key: 'limitCatalogue' as View, label: '5.5 Limit Catalogue', visible: canViewLimitCatalogue },
+        { key: 'limitAssignments' as View, label: '5.6 Limit Assignments', visible: canViewLimitAssignments },
       ],
     },
     {
@@ -249,21 +249,9 @@ export const Layout: React.FC = () => {
     },
   ];
 
-  // Legacy aliases for backwards compat — hidden div with old testIds for menu-visibility matrix (15 keys). For keys where visible already carries old label, hidden label is made distinct to avoid duplicate getByText.
-  const legacyAliases: Array<{ key: View; label: string; visible: boolean; mapsTo: View }> = [
-    { key: 'ledger' as View, label: 'hidden-ledger', visible: canViewLedgerExplorer, mapsTo: 'ledgerExplorer' },
-    { key: 'transactions' as View, label: '💸 Transaction & Fee Ops', visible: canViewMoneyMovement, mapsTo: 'transfers' },
-    { key: 'commercial' as View, label: '🏷️ Commercial Rules', visible: canViewCommercial, mapsTo: 'feeRules' },
-    { key: 'compliance' as View, label: '🛡️ Compliance & KYC', visible: canViewKycQueue, mapsTo: 'kycQueue' },
-    { key: 'riskfraud' as View, label: '🚨 Risk & Fraud', visible: canViewFraudCases, mapsTo: 'fraudCases' },
-    { key: 'roles' as View, label: 'hidden-roles', visible: canViewRoleGovernance, mapsTo: 'roleGovernance' },
-    { key: 'approvals' as View, label: 'hidden-approvals', visible: canViewApprovalsInbox, mapsTo: 'approvalsInbox' },
-    { key: 'workforce' as View, label: 'hidden-workforce', visible: canViewWorkforceAccess, mapsTo: 'workforceAccess' },
-    { key: 'system' as View, label: 'hidden-system', visible: canViewSystemHealth, mapsTo: 'systemHealth' },
-  ];
-
+  // Legacy viewMap retained for deep-link/back-compat (old flat keys from bookmarks) — not rendered as hidden nav aliases.
   const renderContent = () => {
-    // Map legacy aliases to new primary for rendering
+    // Map legacy aliases to new primary for rendering (keeps old bookmarks functional)
     const viewMap: Record<string, View> = {
       ledger: 'ledgerExplorer',
       transactions: 'transfers',
@@ -308,10 +296,7 @@ export const Layout: React.FC = () => {
     }
   };
 
-  const allVisibleNavKeys = [
-    ...sections.flatMap(s => s.items.filter(i => i.visible).map(i => i.key)),
-    ...legacyAliases.filter(i => i.visible).map(i => i.key),
-  ];
+  const allVisibleNavKeys = sections.flatMap(s => s.items.filter(i => i.visible).map(i => i.key));
 
   return (
     <div style={styles.layout}>
@@ -355,33 +340,24 @@ export const Layout: React.FC = () => {
                 </button>
                 {expandedSections[section.id] && (
                   <div style={styles.sectionItems}>
-                    {visibleItems.map(item => (
-                      <button
-                        key={item.key}
-                        data-testid={`nav-${item.key}`}
-                        style={currentView === item.key || (legacyAliases.find(a => a.key === currentView)?.mapsTo === item.key) ? styles.activeNavLink : styles.navLink}
-                        onClick={() => handleNav(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                    {visibleItems.map(item => {
+                      const isActive = currentView === item.key || (({ ledger:'ledgerExplorer', transactions:'transfers', commercial:'feeRules', compliance:'kycQueue', riskfraud:'fraudCases', roles:'roleGovernance', approvals:'approvalsInbox', workforce:'workforceAccess', system:'systemHealth' } as any)[currentView] === item.key);
+                      return (
+                        <button
+                          key={item.key}
+                          data-testid={`nav-${item.key}`}
+                          style={isActive ? styles.activeNavLink : styles.navLink}
+                          onClick={() => handleNav(item.key)}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             );
           })}
-          {/* Hidden legacy aliases for test harness — still render as data-testid but visually hidden off-screen for backwards compat */}
-          <div style={{ display: 'none' }} aria-hidden="true">
-            {legacyAliases.filter(i => i.visible).map(item => (
-              <button
-                key={item.key}
-                data-testid={`nav-${item.key}`}
-                onClick={() => handleNav(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
         </nav>
 
         <button onClick={logout} style={styles.logoutBtn}>
@@ -423,12 +399,6 @@ export const Layout: React.FC = () => {
                   </div>
                 );
               })}
-              {/* Mobile legacy aliases hidden */}
-              <div style={{ display: 'none' }}>
-                {legacyAliases.filter(i => i.visible).map(item => (
-                  <button key={item.key} data-testid={`mobile-nav-${item.key}`} onClick={() => handleNav(item.key)}>{item.label}</button>
-                ))}
-              </div>
               <button onClick={logout} style={styles.mobileLogoutBtn}>
                 🚪 Log Out
               </button>
