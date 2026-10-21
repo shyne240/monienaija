@@ -33,7 +33,7 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 
-const LEDGER_PATH = '/api/v1/internal/ledger';
+const LEDGER_PATH = '/api/v1/ledger';
 const APPROVE_PATH = '/api/v1/internal/a2/workforce/approvals';
 
 describe('P0-B ledger journal reversal maker-checker governance — real PostgreSQL + real HTTP', () => {

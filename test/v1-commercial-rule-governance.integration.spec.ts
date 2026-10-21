@@ -28,6 +28,7 @@ import { A2WorkforceSessionService } from '../src/authorization/workforce-sessio
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { PrivilegedActionApproval } from '../src/authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../src/authorization/privileged-action-approval.enums';
+import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -85,6 +86,9 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
+    // fee_rules → products FK: the catalogue truncate leaves products empty, so restore the
+    // canonical product seed exactly like v1-commercial-03 does (seedIfEmpty, not reseed).
+    await app.get(ProductCatalogSeedService).seedIfEmpty();
   });
 
   // ---------------------------------------------------------------- session helpers
@@ -139,7 +143,9 @@ describe('P0-A commercial rule maker-checker governance — real PostgreSQL + re
 
   const feeCreateBody = (reason: string) => ({
     reason,
-    productCode: `P0A_${randomUUID().slice(0, 8).toUpperCase()}`,
+    // Canonical seeded product (fee_rules has a FK to products.code — synthetic codes 404 at
+    // execution). Identity uniqueness per test is guaranteed by the per-test truncate.
+    productCode: 'WALLET_TRANSFER',
     currency: 'NGN',
     percentageBps: 42,
     priority: 1,
