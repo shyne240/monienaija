@@ -56,9 +56,28 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     jwksJson: [],
     financeRoles: [],
     makerCheckerRules: [],
-    rateLimits: [],
+    rateLimits: [{ category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true }],
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
+
+  // P0-A mock repair: principals carry the roles/scopes/assurance the catalogue runtime would
+  // resolve for their role (empty roles/scopes broke every function gate). OPERATOR =
+  // FINANCE_PREPARER (maker), PRIVILEGED = FINANCE_CONTROLLER (checker).
+  const TYPE_AUTHORITIES: Record<string, { roles: string[]; scopes: string[] }> = {
+    OPERATOR: {
+      roles: ['FINANCE_PREPARER'],
+      scopes: ['product.view', 'product.modify'],
+    },
+    SERVICE: { roles: [], scopes: ['product.view'] },
+    PRIVILEGED: {
+      roles: ['FINANCE_CONTROLLER'],
+      scopes: ['product.view', 'product.modify', 'privileged:approve', 'privileged:execute', 'privileged:request'],
+    },
+    SUPPORT: { roles: [], scopes: [] },
+    CUSTOMER: { roles: [], scopes: [] },
+    AGENT: { roles: [], scopes: [] },
+    AGGREGATOR: { roles: [], scopes: [] },
+  };
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
@@ -66,12 +85,14 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+      const authority = TYPE_AUTHORITIES[type] ?? { roles: [], scopes: [] };
       return {
         type,
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
-        roles: [],
-        scopes: [],
+        roles: authority.roles,
+        scopes: authority.scopes,
+        assuranceLevel: 'MFA',
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -218,11 +239,30 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
   it('04. product code is unique: duplicate creation conflicts, V2/out-of-scope products never exist', async () => {
     await expect(service.createProduct({ code: 'WALLET_TRANSFER', name: 'Dup', domain: 'CUSTOMER' }, 'test')).rejects.toMatchObject({ status: 409 });
-    await request(app.getHttpServer())
+    // Same identity over HTTP also conflicts — through the P0-A governed flow: the maker request
+    // is accepted (no direct write); the duplicate conflicts only when the approved change is
+    // executed against the catalogue.
+    const dupBody = {
+      reason: 'V1-COMMERCIAL-02 duplicate identity over HTTP',
+      code: 'wallet_transfer',
+      name: 'Dup',
+      domain: 'CUSTOMER',
+    };
+    const makerReq = await request(app.getHttpServer())
       .post('/api/v1/internal/products')
+      .set('Authorization', auth('OPERATOR'))
+      .send(dupBody)
+      .expect(201); // normalized to uppercase → same identity
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
       .set('Authorization', auth('PRIVILEGED'))
-      .send({ code: 'wallet_transfer', name: 'Dup', domain: 'CUSTOMER' })
-      .expect(409); // normalized to uppercase → same identity
+      .send({ comment: 'approve duplicate attempt' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/products/changes/${makerReq.body.approvalId}/execute-create`)
+      .set('Authorization', auth('PRIVILEGED'))
+      .send(dupBody)
+      .expect(409);
     expect(await rowCount('products')).toBe(7);
 
     const all: Array<{ code: string; product_scope: string; enabled: boolean }> = await dataSource.query(`SELECT code, product_scope, enabled FROM products`);

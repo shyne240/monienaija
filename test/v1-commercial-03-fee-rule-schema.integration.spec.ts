@@ -60,9 +60,35 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     jwksJson: [],
     financeRoles: [],
     makerCheckerRules: [],
-    rateLimits: [],
+    rateLimits: [{ category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true }],
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
+
+  // P0-A mock repair: principals carry the roles/scopes/assurance the catalogue runtime would
+  // resolve for their role (the earlier empty roles/scopes broke every requireFunction gate).
+  // OPERATOR = FINANCE_PREPARER (maker), PRIVILEGED = FINANCE_CONTROLLER (checker).
+  const TYPE_AUTHORITIES: Record<string, { roles: string[]; scopes: string[] }> = {
+    OPERATOR: {
+      roles: ['FINANCE_PREPARER'],
+      scopes: ['fee_rule.view', 'fee_rule.create', 'fee_rule.modify'],
+    },
+    SERVICE: { roles: [], scopes: ['fee_rule.view'] },
+    PRIVILEGED: {
+      roles: ['FINANCE_CONTROLLER'],
+      scopes: [
+        'fee_rule.view',
+        'fee_rule.create',
+        'fee_rule.modify',
+        'privileged:approve',
+        'privileged:execute',
+        'privileged:request',
+      ],
+    },
+    SUPPORT: { roles: [], scopes: [] },
+    CUSTOMER: { roles: [], scopes: [] },
+    AGENT: { roles: [], scopes: [] },
+    AGGREGATOR: { roles: [], scopes: [] },
+  };
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
@@ -70,12 +96,14 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+      const authority = TYPE_AUTHORITIES[type] ?? { roles: [], scopes: [] };
       return {
         type,
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
-        roles: [],
-        scopes: [],
+        roles: authority.roles,
+        scopes: authority.scopes,
+        assuranceLevel: 'MFA',
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -295,11 +323,30 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     const effectiveFrom = '2031-05-01T00:00:00Z';
     await service.createRule(baseRule({ effectiveFrom }), 'test');
     await expect(service.createRule(baseRule({ effectiveFrom }), 'test')).rejects.toMatchObject({ status: 409 });
-    // same identity over HTTP also conflicts
-    await request(app.getHttpServer())
+    // same identity over HTTP also conflicts — through the P0-A governed flow: the maker request
+    // is accepted (no direct write), and the duplicate conflicts only when the approved change
+    // is executed against the registry.
+    const dupBody = {
+      reason: 'V1-COMMERCIAL-03 duplicate identity over HTTP',
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      flatFeeMinor: '0',
+      effectiveFrom,
+    };
+    const makerReq = await request(app.getHttpServer())
       .post('/api/v1/internal/fee-rules')
+      .set('Authorization', auth('OPERATOR'))
+      .send(dupBody)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
       .set('Authorization', auth('PRIVILEGED'))
-      .send({ productCode: 'WALLET_TRANSFER', currency: 'NGN', flatFeeMinor: '0', effectiveFrom })
+      .send({ comment: 'approve duplicate attempt' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/fee-rules/changes/${makerReq.body.approvalId}/execute-create`)
+      .set('Authorization', auth('PRIVILEGED'))
+      .send(dupBody)
       .expect(409);
 
     // different effective_from → distinct rule (future policy window)

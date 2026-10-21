@@ -10,6 +10,7 @@ import { LedgerController } from './ledger.controller';
 import { LedgerJournal } from './ledger-journal.entity';
 import { LedgerLine } from './ledger-line.entity';
 import { LedgerService } from './ledger.service';
+import { LedgerReversalGovernanceService } from './ledger-reversal-governance.service';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { LedgerService } from './ledger.service';
     TypeOrmModule.forFeature([LedgerAccount, LedgerJournal, LedgerLine]),
   ],
   controllers: [LedgerController],
-  providers: [LedgerService, A5ArControlAccountProvisioningService],
+  providers: [LedgerService, LedgerReversalGovernanceService, A5ArControlAccountProvisioningService],
   exports: [LedgerService, A5ArControlAccountProvisioningService, TypeOrmModule],
 })
 export class LedgerModule {}

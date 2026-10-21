@@ -67,9 +67,35 @@ describe('V1-REWARD-01 Reward Engine foundation (real PG)', () => {
     jwksJson: [],
     financeRoles: [],
     makerCheckerRules: [],
-    rateLimits: [],
+    rateLimits: [{ category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true }],
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
+
+  // P0-A mock repair: principals carry the roles/scopes/assurance the catalogue runtime would
+  // resolve for their role (empty roles/scopes broke every function gate). OPERATOR =
+  // FINANCE_PREPARER (maker), PRIVILEGED = FINANCE_CONTROLLER (checker).
+  const TYPE_AUTHORITIES: Record<string, { roles: string[]; scopes: string[] }> = {
+    OPERATOR: {
+      roles: ['FINANCE_PREPARER'],
+      scopes: ['reward_rule.view', 'reward_rule.create', 'reward_rule.modify'],
+    },
+    SERVICE: { roles: [], scopes: ['reward_rule.view'] },
+    PRIVILEGED: {
+      roles: ['FINANCE_CONTROLLER'],
+      scopes: [
+        'reward_rule.view',
+        'reward_rule.create',
+        'reward_rule.modify',
+        'privileged:approve',
+        'privileged:execute',
+        'privileged:request',
+      ],
+    },
+    SUPPORT: { roles: [], scopes: [] },
+    CUSTOMER: { roles: [], scopes: [] },
+    AGENT: { roles: [], scopes: [] },
+    AGGREGATOR: { roles: [], scopes: [] },
+  };
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
@@ -77,12 +103,14 @@ describe('V1-REWARD-01 Reward Engine foundation (real PG)', () => {
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+      const authority = TYPE_AUTHORITIES[type] ?? { roles: [], scopes: [] };
       return {
         type,
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
-        roles: [],
-        scopes: [],
+        roles: authority.roles,
+        scopes: authority.scopes,
+        assuranceLevel: 'MFA',
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -626,10 +654,27 @@ describe('V1-REWARD-01 Reward Engine foundation (real PG)', () => {
     await request(app.getHttpServer()).post('/api/v1/internal/reward-rules').set('Authorization', auth('customer')).send({}).expect(403);
     await request(app.getHttpServer()).get('/api/v1/internal/reward-rules').expect(401);
 
-    const created = await request(app.getHttpServer())
+    // P0-A governed flow: the operator INITIATES a pending maker-checker request (never a
+    // direct write); the privileged FINANCE_CONTROLLER approves and executes it.
+    const createBody = {
+      ...baseRule({ effectiveFrom: new Date(Date.now() - 60000) }),
+      reason: 'V1-REWARD-01 governed create roundtrip',
+    } as Record<string, unknown>;
+    const makerReq = await request(app.getHttpServer())
       .post('/api/v1/internal/reward-rules')
       .set('Authorization', auth('operator'))
-      .send(baseRule({ effectiveFrom: new Date(Date.now() - 60000) }))
+      .send(createBody)
+      .expect(201);
+    expect(makerReq.body).toMatchObject({ status: 'REQUESTED', actionType: 'REWARD_RULE_CREATE' });
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${makerReq.body.approvalId}/approve`)
+      .set('Authorization', auth('privileged'))
+      .send({ comment: 'approved' })
+      .expect(200);
+    const created = await request(app.getHttpServer())
+      .post(`/api/v1/internal/reward-rules/changes/${makerReq.body.approvalId}/execute-create`)
+      .set('Authorization', auth('privileged'))
+      .send(createBody)
       .expect(201);
     expect(created.body.beneficiaryType).toBe('CUSTOMER');
     expect(created.body.rewardType).toBe('CASHBACK');
@@ -641,10 +686,30 @@ describe('V1-REWARD-01 Reward Engine foundation (real PG)', () => {
     const got = await request(app.getHttpServer()).get(`/api/v1/internal/reward-rules/${created.body.id}`).set('Authorization', auth('operator')).expect(200);
     expect(got.body.calculationModel).toBe('FIXED');
 
-    const patched = await request(app.getHttpServer())
+    const modifyBody = {
+      reason: 'V1-REWARD-01 governed modify roundtrip',
+      flatRewardMinor: '77',
+      version: 1,
+    };
+    const modifyReq = await request(app.getHttpServer())
       .patch(`/api/v1/internal/reward-rules/${created.body.id}`)
       .set('Authorization', auth('operator'))
-      .send({ flatRewardMinor: '77', version: 1 })
+      .send(modifyBody)
+      .expect(200);
+    expect(modifyReq.body).toMatchObject({
+      status: 'REQUESTED',
+      actionType: 'REWARD_RULE_MODIFY',
+      resourceId: created.body.id,
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/a2/workforce/approvals/${modifyReq.body.approvalId}/approve`)
+      .set('Authorization', auth('privileged'))
+      .send({ comment: 'approved' })
+      .expect(200);
+    const patched = await request(app.getHttpServer())
+      .post(`/api/v1/internal/reward-rules/changes/${modifyReq.body.approvalId}/execute-modify`)
+      .set('Authorization', auth('privileged'))
+      .send(modifyBody)
       .expect(200);
     expect(patched.body.version).toBe(2);
 

@@ -18,8 +18,9 @@ import {
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.service';
-import type { A2WorkforceConfigurationV1 } from './workforce-authentication.types';
+import type { A2WorkforceConfigurationV1, A2MakerCheckerRuleV1 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
+import { governedAction } from './governed-action.registry';
 interface R extends FastifyRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
   requestContext?: { correlationId: string };
@@ -157,7 +158,7 @@ export class A2WorkforceAdministrationController {
   ) {
     const principal = this.principal(r),
       rule = this.rule(b.action),
-      functionCode = ACTION_FUNCTION_CODES[b.action];
+      initiatingFunctionCodes = this.initiatingFunctionCodes(b.action);
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, b.action],
@@ -174,7 +175,7 @@ export class A2WorkforceAdministrationController {
         action: b.action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.initiatingRoles,
-        ...(functionCode ? { requiredFunctions: [functionCode] } : {}),
+        ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },
@@ -189,7 +190,7 @@ export class A2WorkforceAdministrationController {
       approval = await this.approvals.getApproval(approvalId);
     if (!approval) throw new ForbiddenException('Approval not found');
     const rule = this.rule(approval.actionType);
-    const approveFunctionCode = ACTION_FUNCTION_CODES[approval.actionType];
+    const approvingFunctionCodes = this.approvingFunctionCodes(approval.actionType);
     const decision = await this.auth.authorize(
       principal,
       {
@@ -197,7 +198,7 @@ export class A2WorkforceAdministrationController {
         action: approval.actionType,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.approvingRoles,
-        ...(approveFunctionCode ? { requiredFunctions: [approveFunctionCode] } : {}),
+        ...(approvingFunctionCodes.length ? { requiredFunctions: approvingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },
@@ -212,14 +213,96 @@ export class A2WorkforceAdministrationController {
     );
     return this.approvals.approve({ approvalId, principal, ...b });
   }
+  /**
+   * Maker-checker rejection surface (same decide() machinery as approve, with the established
+   * separation-of-duties / MFA / approval-scope controls applied to the checker side). Without
+   * this route a FINANCE_CONTROLLER had no rejection path for a pending governed change.
+   */
+  @Post('approvals/:id/reject') async reject(
+    @Param('id') approvalId: string,
+    @Body() b: { comment?: string; reason?: string },
+    @Req() r: R,
+  ) {
+    const principal = this.principal(r),
+      approval = await this.approvals.getApproval(approvalId);
+    if (!approval) throw new ForbiddenException('Approval not found');
+    const rule = this.rule(approval.actionType);
+    const approvingFunctionCodes = this.approvingFunctionCodes(approval.actionType);
+    const decision = await this.auth.authorize(
+      principal,
+      {
+        resourceType: approval.resourceType,
+        action: approval.actionType,
+        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+        requiredRoles: rule.approvingRoles,
+        ...(approvingFunctionCodes.length ? { requiredFunctions: approvingFunctionCodes } : {}),
+        minimumAssurance: rule.minimumAssurance,
+        customerAccess: 'NONE',
+      },
+      { type: approval.resourceType, id: approval.resourceId ?? undefined },
+    );
+    if (!decision.allowed)
+      throw new ForbiddenException(`Approval authorization denied: ${decision.reason}`);
+    await this.limits.consume(
+      this.rateRule('privileged-approval'),
+      [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
+      r.requestContext?.correlationId ?? 'unknown',
+    );
+    return this.approvals.reject({
+      approvalId,
+      principal,
+      comment: b.comment ?? b.reason,
+    });
+  }
   private principal(r: R) {
     if (!r.authorizationPrincipal) throw new ForbiddenException('Workforce principal missing');
     return r.authorizationPrincipal;
   }
-  private rule(action: string) {
-    const rule = this.config.makerCheckerRules.find((item) => item.action === action);
-    if (!rule) throw new ForbiddenException(`Maker/checker policy missing: ${action}`);
-    return rule;
+  /**
+   * Maker/checker rule resolution. `A2_MAKER_CHECKER_RULES_JSON` keeps precedence for the
+   * legacy actions it defines; for actions that environment file never carried (the governed
+   * commercial-rule and journal-reversal actions) the registered governed-action catalogue
+   * supplies the same policy the domain execution surfaces enforce — so the decide step can
+   * never be bypassed just because an action is not in the legacy environment registry. An
+   * unknown action still fails closed exactly as before.
+   */
+  private rule(action: string): A2MakerCheckerRuleV1 {
+    const legacy = this.config.makerCheckerRules.find((item) => item.action === action);
+    if (legacy) return legacy;
+    const governed = governedAction(action);
+    if (governed) {
+      return {
+        action: governed.action,
+        initiatingRoles: governed.initiatingRoles,
+        approvingRoles: governed.approvingRoles,
+        minimumApprovals: governed.minimumApprovals,
+        // Self-approval-prohibited implies a distinct maker and checker.
+        separationRequired: governed.selfApprovalProhibited,
+        selfApprovalProhibited: governed.selfApprovalProhibited,
+        mfaRequired: governed.mfaRequired,
+        minimumAssurance: governed.minimumAssurance,
+        materialityRequired: false,
+      };
+    }
+    throw new ForbiddenException(`Maker/checker policy missing: ${action}`);
+  }
+  /** Per-side catalogue function codes: initiation leg. */
+  private initiatingFunctionCodes(action: string): readonly string[] {
+    const governed = governedAction(action);
+    if (governed) return governed.initiatingFunctionCodes;
+    const code = ACTION_FUNCTION_CODES[action];
+    return code ? [code] : [];
+  }
+  /**
+   * Per-side catalogue function codes: approval leg. Governed actions carry explicit
+   * `approvingFunctionCodes` (e.g. none for LEDGER_JOURNAL_REVERSAL — its checker-side authority
+   * is the approving role + `approvalScope`); legacy actions keep the established lookup.
+   */
+  private approvingFunctionCodes(action: string): readonly string[] {
+    const governed = governedAction(action);
+    if (governed) return governed.approvingFunctionCodes;
+    const code = ACTION_FUNCTION_CODES[action];
+    return code ? [code] : [];
   }
   private rateRule(category: string) {
     const rule = this.config.rateLimits.find((item) => item.category === category);
@@ -228,7 +311,7 @@ export class A2WorkforceAdministrationController {
   }
   private async authorize(p: AuthorizationPrincipal, action: string, resourceType: string) {
     const rule = this.rule(action);
-    const functionCode = ACTION_FUNCTION_CODES[action];
+    const initiatingFunctionCodes = this.initiatingFunctionCodes(action);
     const d = await this.auth.authorize(
       p,
       {
@@ -236,7 +319,7 @@ export class A2WorkforceAdministrationController {
         action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.initiatingRoles,
-        ...(functionCode ? { requiredFunctions: [functionCode] } : {}),
+        ...(initiatingFunctionCodes.length ? { requiredFunctions: initiatingFunctionCodes } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },

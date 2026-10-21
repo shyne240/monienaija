@@ -21,6 +21,7 @@ import { A2WorkforceOidcService, A2_WORKFORCE_CONFIG } from './workforce-oidc.se
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { workforceConfiguration } from './workforce-configuration';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
+import { CommercialRuleGovernanceService } from './commercial-rule-governance.service';
 import { AuthorizationGuard } from './authorization.guard';
 import { AuthorizationService } from './authorization.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
@@ -129,6 +130,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
     RoleDefinitionGovernanceService,
@@ -143,6 +145,7 @@ import { RoleDefinitionProposal } from './role-definition-proposal.entity';
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
     RoleDefinitionGovernanceService,

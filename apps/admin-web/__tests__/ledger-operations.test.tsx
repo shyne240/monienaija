@@ -111,7 +111,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     expect((await findAllByText('₦500.00')).length).toBeGreaterThan(0); // verify debit column
   });
 
-  test('should submit controller direct journal reversal override on click', async () => {
+  test('should execute controller reversal only with an approved maker-checker request id (P0-B)', async () => {
     const mockJournal = {
       id: 'journal-uuid-999',
       status: 'POSTED',
@@ -138,10 +138,13 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
     fireEvent.click(getByText('Audit Journal'));
 
-    // Trigger reversal
-    expect(await findByText('Sign & Execute Reversal')).toBeTruthy();
+    // Trigger governed reversal execution
+    expect(await findByText('Execute Approved Reversal')).toBeTruthy();
     fireEvent.change(getByPlaceholderText('e.g. Correct posting duplicate entry'), { target: { value: 'Reversing Pilot Funding' } });
-    fireEvent.click(getByText('Sign & Execute Reversal'));
+    fireEvent.change(getByPlaceholderText('e.g. 3f2c1a00-... (from the approved reversal request)'), {
+      target: { value: '3f2c1a00-0000-0000-0000-000000000abc' },
+    });
+    fireEvent.click(getByText('Execute Approved Reversal'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
@@ -149,15 +152,49 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         {
           idempotencyKey: expect.stringContaining('rev-journal-uuid-999-'),
           reason: 'Reversing Pilot Funding',
+          approvalId: '3f2c1a00-0000-0000-0000-000000000abc',
         },
         expect.any(Object)
       );
-      expect(getByText('Journal reversal compensating entry executed successfully!')).toBeTruthy();
+      expect(getByText('Governed journal reversal executed from the approved request.')).toBeTruthy();
     });
   });
 
-  test('should submit preparer approval maker request on click instead of direct execution', async () => {
-    // Set active principal role to Preparer (Maker) — must have ledger.view + finance:prepare to be recognised as preparer, not controller
+  test('should reject controller reversal when no approved maker-checker request id is supplied', async () => {
+    const mockJournal = {
+      id: 'journal-uuid-999',
+      status: 'POSTED',
+      currency: 'NGN',
+      accountingUnit: 'LAGOS_BRANCH',
+      description: 'Pilot Wallet Funding',
+      lines: [],
+    };
+
+    (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(mockJournal);
+
+    (ApiClient.post as jest.Mock).mockResolvedValue({});
+
+    const { getByText, getByPlaceholderText, findByText } = render(<App />);
+
+    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
+    fireEvent.click(getByText('Audit Journal'));
+
+    expect(await findByText('Execute Approved Reversal')).toBeTruthy();
+    fireEvent.change(getByPlaceholderText('e.g. Correct posting duplicate entry'), { target: { value: 'No approval supplied' } });
+    fireEvent.click(getByText('Execute Approved Reversal'));
+
+    await waitFor(() => {
+      expect(getByText('Approved maker-checker request ID (approvalId) is required.')).toBeTruthy();
+    });
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('should submit preparer reversal maker request to the domain endpoint (no mock fingerprint)', async () => {
+    // Set active principal role to Preparer (Maker) — ledger.reverse / finance:prepare initiates; never executes
     useAuthStore.setState({
       principal: {
         type: 'OPERATOR',
@@ -165,7 +202,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         sessionId: 'preparer-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_PREPARER'],
-        scopes: ['ledger.view','ledger.post','finance:prepare','transaction.view','reporting.transaction_summary.view'],
+        scopes: ['ledger.view','ledger.post','ledger.reverse','finance:prepare','transaction.view','reporting.transaction_summary.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -185,7 +222,14 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal); // journal audit
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: false, reason: 'REQUESTED' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      approvalId: 'req-uuid-1',
+      status: 'REQUESTED',
+      actionType: 'LEDGER_JOURNAL_REVERSAL',
+      resourceType: 'LEDGER_JOURNAL',
+      resourceId: 'journal-uuid-999',
+      actionFingerprint: 'a'.repeat(64),
+    });
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
@@ -201,14 +245,17 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.click(getByText('Request Reversal Approval'));
 
     await waitFor(() => {
+      // P0-B: the maker leg posts the actual reversal request to the domain endpoint; the
+      // backend derives the deterministic fingerprint (the client never sends one).
       expect(ApiClient.post).toHaveBeenCalledWith(
-        '/internal/a2/workforce/approvals/request',
-        expect.objectContaining({
-          action: 'FINANCE_CONTROL_POLICY_ACTIVATE',
-          reason: 'Preparer Reversal Request',
-        })
+        '/ledger/journals/journal-uuid-999/reversal-request',
+        { reason: 'Preparer Reversal Request' },
       );
-      expect(getByText('Privileged reversal maker request created. Requires checking signature.')).toBeTruthy();
+      expect(ApiClient.post).not.toHaveBeenCalledWith(
+        '/internal/a2/workforce/approvals/request',
+        expect.anything(),
+      );
+      expect(getByText('Reversal maker request created (request ID req-uuid-1). Awaiting independent FINANCE_CONTROLLER approval.')).toBeTruthy();
     });
   });
 });
