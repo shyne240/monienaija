@@ -12,6 +12,12 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
+// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
+// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
+// dashboard — always the first recorded call. Prefixed onto the sequential
+// `.mockResolvedValueOnce(...)` chain below so it still lines up with this screen's own call order.
+const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+
 describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -46,6 +52,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce(mockDeposit) // search load
       .mockResolvedValueOnce({ ...mockDeposit, status: 'COMPLETED' }); // reload after complete
 
@@ -64,7 +71,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
     fireEvent.click(getByText('Track'));
 
-    expect(ApiClient.get).toHaveBeenNthCalledWith(1, '/deposits/dep-uuid-777');
+    expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/deposits/dep-uuid-777');
     expect(await findByText('DEPOSIT Detail View')).toBeTruthy();
     expect(await findByText('dep-ref-123')).toBeTruthy();
     expect(await findByText('PENDING')).toBeTruthy();

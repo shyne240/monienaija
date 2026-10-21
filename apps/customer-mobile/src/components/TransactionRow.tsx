@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { theme } from '../theme';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadge, type BadgeStatus } from './StatusBadge';
+import type { TransactionSign } from '../services/transfer-view';
 
 interface TransactionRowProps {
   id: string;
@@ -10,20 +11,22 @@ interface TransactionRowProps {
   reference: string;
   amountMinor: number;
   currency: string;
-  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT';
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REVERSED' | 'CANCELLED';
+  sign: TransactionSign;
+  status: BadgeStatus;
   createdAt: string;
+  /** V1-CUSTOMER-09 — optional "get help with this transaction" affordance. */
+  onGetHelp?: () => void;
 }
 
 export const TransactionRow: React.FC<TransactionRowProps> = ({
   narration,
   reference,
   amountMinor,
-  type,
+  sign,
   status,
   createdAt,
+  onGetHelp,
 }) => {
-  const isIncoming = type === 'DEPOSIT' || type === 'TRANSFER_IN';
   const displayAmount = (amountMinor / 100).toLocaleString('en-NG', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -44,28 +47,32 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
     }
   }, [createdAt]);
 
+  const amountStyle =
+    sign === 'IN' ? styles.incoming : sign === 'OUT' ? styles.outgoing : styles.neutral;
+  const amountPrefix = sign === 'IN' ? '+' : sign === 'OUT' ? '-' : '';
+
   return (
     <View style={styles.container}>
       <View style={styles.leftContainer}>
         <Text numberOfLines={1} style={styles.narration}>
-          {narration || (type === 'DEPOSIT' ? 'Deposit Funding' : type === 'WITHDRAWAL' ? 'Withdrawal Outflow' : 'Wallet Transfer')}
+          {narration}
         </Text>
         <Text style={styles.reference}>Ref: {reference}</Text>
         <Text style={styles.date}>{formattedDate}</Text>
       </View>
 
       <View style={styles.rightContainer}>
-        <Text
-          style={[
-            styles.amount,
-            isIncoming ? styles.incoming : styles.outgoing,
-          ]}
-        >
-          {isIncoming ? '+' : '-'}₦{displayAmount}
+        <Text style={[styles.amount, amountStyle]}>
+          {amountPrefix}₦{displayAmount}
         </Text>
         <View style={styles.badgeWrapper}>
           <StatusBadge status={status} />
         </View>
+        {!!onGetHelp && (
+          <TouchableOpacity onPress={onGetHelp} testID="transaction-row-get-help" hitSlop={8}>
+            <Text style={styles.helpLink}>Get help</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -114,7 +121,17 @@ const styles = StyleSheet.create({
   outgoing: {
     color: theme.colors.neutral.charcoal,
   },
+  neutral: {
+    color: theme.colors.neutral.slate,
+  },
   badgeWrapper: {
     marginTop: 2,
+  },
+  helpLink: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.primary.main,
+    fontWeight: theme.typography.weights.medium,
+    marginTop: theme.spacing.xs,
+    textDecorationLine: 'underline',
   },
 });

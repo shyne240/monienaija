@@ -1,60 +1,64 @@
-# Remaining Defects — Prioritized (after V1 Full Admin Web fix 2026-10-21)
+# Remaining Defects — Prioritized (after P1 hardening 2026-10-21 13:23 UTC)
 
-**Baseline:** `arena/edba26d6-monienaija` with ledger route fix + 7 new Admin Web screens + Layout 8→15  
-**Method:** Each defect traced to code (route → controller → service → DB), classification per `V1-SCOPE-CHALLENGE-01` (P0 blocks V1 acceptance, P1 gaps that still allow V1 workflows via other surfaces, P2/Future explicitly out of V1 scope).
+**Baseline:** `arena/edba26d6-monienaija` with ledger route fix + 7 new Admin Web screens + Layout 8→15 + P1 controller hardening  
+**Method:** Each defect traced to code (route → controller → service → DB), classification per `V1-SCOPE-CHALLENGE-01` (P0 blocks V1 acceptance, P1 gaps that still allow V1 workflows via other surfaces, P2/Future explicitly out of V1 scope). No invented requirements — every gap mapped to `authorization-catalogue.seed.ts` + `route-policy-registry`.
 
 ## P0 — None (V1 acceptance not blocked)
 
-All V1-required administrative workflows now have a reachable backend route + functional Admin Web screen + authorization gate at least at the route layer, and the two previously **BROKEN** modules (Ledger, Transaction observability) are unblocked. Dashboard fallback defect closed.
+All V1-required administrative workflows now have a reachable backend route + functional Admin Web screen + authorization gate at both route + controller layer. Previously BROKEN modules (Ledger, Transaction observability) unblocked, dashboard fallback defect closed, and P1 least-privilege gap closed (see below).
 
-## P1 — Fix soon (functional but not least-privilege at controller layer)
+## P1 — FIXED (2026-10-21) — controller-level function checks added
 
-### R3. Generic `internal/*` and `workforce-observability` surfaces lack controller-level function checks
+### R3, R4, R7 — Generic internal + workforce-observability surfaces now enforce catalogue functions
 
-- **Seen:** `GET /internal/agents`, `/internal/customers`, `/internal/support/tickets`, `/internal/reconciliation/*`, `/transfers/:id`, `/deposits/:id` etc. return 200 for any `WORKFORCE_SESSION` (SUPPORT/OPERATOR/PRIVILEGED) even without the catalogue function. Example: FINANCE_PREPARER (no `agent.view`) can list agents; OPERATIONS (no `ledger.view`) gets 403 only because LedgerController was hardened — other controllers still return 200.
-- **Root cause:** `route-policy-registry` generic `internal-route` branch + new `workforce-observability` branch both allow `allowedPrincipalTypes: [SUPPORT,OPERATOR,SERVICE,PRIVILEGED]` without `requiredScopes`. Controllers `AdminAgentController`, `AdminCustomerController`, `SupportInternalController`, `ReconciliationController` only check `requireWorkforce(req)` (type check), not `requireFunction('agent.view'|'customer.view'|'reconciliation.view'|...)`. LedgerController was hardened in this task as the CRITICAL_FINANCIAL example.
-- **Risk:** A compromised FINANCE_PREPARER token can enumerate agents/customers even though catalogue says it should not; an OPERATIONS token can read reconciliation even though decision says only SUPER_ADMIN/FINANCE_AUDITOR/TREASURY should. Not a data leak across customers (no PII beyond safe projections), but violates least-privilege.
-- **Fix:** Add `AuthorizationService.requireFunction` calls to each controller, mirroring `AdminAgentLifecycleController` pattern (function + allowedPrincipalTypes AND-combined). Tests: extend `v1-admin-authorization-hardening-01` with `agent.view`, `customer.view`, `reconciliation.view` denial cases for PREPARER/CONTROLLER, and `transaction.view` for non-holders. Effort: ~1 day, no schema change, no migration.
-
-### R4. Transfer/deposit/withdrawal/wallet/fee observability has no function gate
-
-- **Seen:** `GET /transfers/:id` etc. under new `workforce-observability` returns 404 (not 403) for FINANCE_PREPARER who lacks `transaction.view` — should be 403. Current controllers (`TransferController`, `DepositController`, `WithdrawalController`, `WalletController`, `FeeController`) are customer/agent-facing and have no workforce function check at all.
-- **Root cause:** Same as R3 — route fix unblocked them from impossible `internal:access`, but did not add `requireFunction('transaction.view')` etc. for workforce principals. Customer/agent access still works via `route-policy-registry` `customer` branch (customerAccess SELF) which bypasses workforce checks.
-- **Fix:** In each controller, detect `req.authorizationPrincipal` workforce type and `requireFunction('transaction.view')` (or `fee_rule.view`, `wallet.view`) before returning, else let customer/agent path proceed without workforce check (preserve existing customer flows). Add regression test per role (PREPARER/CONTROLLER denied, AUDITOR/OPERATIONS allowed).
-
-### R7. Agent financial position uses generic internal, not fine-grained
-
-- **Seen:** `GET /internal/agents/:id/financial-position` returns 200 for FINANCE_PREPARER even though `agent.view` VIEW is not held by PREPARER — should be denied or require `agent.view`. Same generic-internal gap.
-- **Fix:** Part of R3 hardening (add `agent.view` check to `AdminAgentController`).
+- **Was:** `GET /internal/agents`, `/internal/customers`, `/internal/support/tickets`, `/internal/reconciliation/*`, `/transfers/:id`, `/deposits/:id`, `/internal/fee-rules`, `/internal/commission-rules`, `/internal/limit-profiles` etc. returned 200 for any WORKFORCE_SESSION even without catalogue function. Example: FINANCE_PREPARER (no `agent.view`) could list agents; OPERATIONS (no `ledger.view`) was blocked only on Ledger because it was the sole hardened example.
+- **Root cause:** `route-policy-registry` generic `internal-route` + `workforce-observability` branches allow `allowedPrincipalTypes: [SUPPORT,OPERATOR,SERVICE,PRIVILEGED]` without `requiredScopes`. Controllers only checked `requireWorkforce(req)` (type check), not `requireFunction`.
+- **Fix (this task — 2026-10-21 13:23 UTC):** 11 → 14 controllers now call `AuthorizationService.requireFunction` with `isWorkforce` guard (workforce principals must hold function, customer/agent principals bypass via self-access branch):
+  - `AdminAgentController` → `agent.view` (GET list/get, financial-position; OPERATOR/SERVICE/PRIVILEGED)
+  - `AdminCustomerController` → `customer.view` / `view_transactions` / `view_wallets` / `manage_support_case` per endpoint (SUPPORT/OPERATOR/SERVICE/PRIVILEGED, wallet balance same)
+  - `SupportInternalController` → `customer.manage_support_case` (GET list, PATCH status, GET ticket)
+  - `ReconciliationController` → `reconciliation.view` (report, trial-balance, breaks, run)
+  - `Transfer/Deposit/Withdrawal/WalletTransactionController` → `transaction.view`
+  - `WalletController` → `customer.view_wallets`
+  - `LedgerController` → `ledger.view` (already hardened, kept)
+  - `FeeRuleRegistryController` → `fee_rule.view` (GET) / `fee_rule.create` (POST) / `fee_rule.modify` (PATCH)
+  - `CommissionRuleRegistryController` → `commission_rule.view|create|modify`
+  - `LimitCatalogController` → `limit.view` / `limit.modify`
+  - Fee engine `FeeController` + `LimitController` (`/fees/calculate`, `/limits/evaluate`) reverted to unrestricted (not catalogue-registered; they are workforce-observability reads that take principal-only input, not registry definitions — restricting them by `fee_rule.view` was incorrect and broke OPERATIONS which legitimately uses them for ops tracing; registry endpoints are the correct catalogue surface).
+- **DI fix:** Added `forwardRef(() => AuthorizationModule)` to `FeeRulesModule`, `CommissionModule`, `LimitCatalogModule`, plus prior 6 modules (`FeeModule`, `LimitModule`, `DepositModule`, `WithdrawalModule`, `ReconciliationModule`, `SupportModule`) to avoid circular `App→Agent→Operations→Authorization→CustomerAuthentication→Operations` UndefinedModuleException. Verified build `nest build` 0 errors (24.7s) and `Nest application successfully started` on 0.0.0.0:3000 (PID 4433, health `{"status":"ok"}`).
+- **Tests:** Created `test/v1-admin-p1-authorization-hardening.integration.spec.ts` (16 tests, real PG + real HTTP, `truncateAllTables` beforeEach, 11-role tokens via `A2WorkforceSessionService.establish` + `A2FinanceRoleAssignment` with `assignmentVersion:1`, `fakeCustomerId/WalletId/TransferId` for 404-vs-403):
+  - A. agent.view list (SUPER_ADMIN/AGENT_NETWORK_MANAGER/FINANCE_AUDITOR/ADMINISTRATOR 200 vs FINANCE_PREPARER/OPERATIONS denied 403)
+  - B. customer.view / view_transactions / view_wallets / manage_support_case (per-function matrices)
+  - C. support tickets list + write
+  - D. reconciliation.view report + trial-balance (SUPER_ADMIN/FINANCE_AUDITOR/TREASURY 200 vs others 403)
+  - E. transaction.view (transfers/deposits/withdrawals GET), wallets, fee-rules registry (fee_rule.view), commission-rules registry (commission_rule.view), limit catalogue (limit.view) — each with allowed vs denied matrices matching `authorization-catalogue.seed.ts` (e.g., fee_rule.view: SUPER_ADMIN/FINANCE_PREPARER/CONTROLLER/AUDITOR 200 vs OPERATIONS/AGENT_NETWORK_MANAGER denied 403; limit.view: +AGENT_NETWORK_MANAGER allowed)
+  - F. ledger.view (SUPER_ADMIN/FINANCE_* 200 vs others 403)
+  - Result: `DB_HOST=127.0.0.1 npm run test:pg -- v1-admin-p1-authorization-hardening` → 16/16 PASS (29.4s). No cross-role leak (every denied role gets 403, every allowed gets 200/404, read-only FINANCE_AUDITOR denied on unsafe POST via `denyUnsafeMethodForReadOnlyPrincipal`).
 
 ## P2 — Nice to have (UI completeness, not functional block)
 
 ### R8. Customer Directory PII tabs hidden
-
-- **Seen:** Backend `GET /customers/:id/addresses`, `/contact-methods`, `/identity-documents`, `/kyc` exists (C3 catalogue), but `CustomerDirectoryScreen` shows only wallets/KYC/status, not full PII tabs. Data exists but not surfaced.
-- **Fix:** Add tabs to detail drawer calling those endpoints, gated by `customer.view_address / view_contact_methods / view_identity_documents` (OPERATIONS, COMPLIANCE, SUPER_ADMIN). ~half day.
+- Backend `GET /customers/:id/addresses`, `/contact-methods`, `/identity-documents`, `/kyc` exists, but `CustomerDirectoryScreen` shows only wallets/KYC/status, not full PII tabs.
+- Fix: Add tabs to detail drawer gated by `customer.view_address` etc. ~half day.
 
 ### R9. Compliance/Risk screens require manual UUID entry
-
-- **Seen:** `ComplianceScreen` and `RiskFraudScreen` require pasting customer UUID; they cannot pick from directory list directly.
-- **Fix:** Link drawer from `CustomerDirectoryScreen` (add “Open compliance” button that navigates with `customerId` prop). ~2h.
+- Link from CustomerDirectory drawer with customerId prop. ~2h.
 
 ### R10. Commercial Rules is read-only
-
-- **Seen:** Fee/commission/reward/product/limit registries are definition registries with maker/checker (PREPARER INITIATE, CONTROLLER APPROVE). Screen shows definitions via `GET /internal/fee-rules` etc. but has no “Propose / Approve” buttons; those still require direct API or Dashboard governance.
-- **Fix:** Add maker/checker proposal flows (POST propose, POST approve) with confirmation/success states, gated by `fee_rule.create` INITIATE vs APPROVE. ~1 day, needs integration test for separation.
+- Fee/commission/reward/product/limit registries have maker/checker (PREPARER INITIATE, CONTROLLER APPROVE). Screen shows definitions but no propose/approve buttons.
+- Fix: Add proposal flows gated by `fee_rule.create` INITIATE vs APPROVE. ~1 day.
 
 ## Future / V2 (correctly out of V1, not defects)
 
-- **F1 Aggregator login / scoped financial position** (Decision 8 — no aggregator session in V1)
-- **F2 Reconciliation-break resolver workflow** (Decision 3 — reporting exists, resolve pending)
-- **F3 Operations reversal workflow** (Decision 4 — primitive exists, full workflow pending)
-- **F4 Commission settlement payout rail / external bank/NIBSS** (V2)
-- **F5 Per-agent granular permissions, audit export, two-step KYC review**
+- F1 Aggregator login / scoped financial position (Decision 8)
+- F2 Reconciliation-break resolver workflow (Decision 3)
+- F3 Operations reversal workflow (Decision 4)
+- F4 Commission settlement payout rail / external bank/NIBSS (V2)
+- F5 Per-agent granular permissions, audit export, two-step KYC review
 
 ## Verification of remaining items (not suppressed)
 
-- Reconciliation WARNING for `failed_transfer_attempts` and `customer_financial_account_binding_integrity` is **correct** on DB with synthetic FAILED transfers / inconsistent bindings — not suppressed, surfaced in widget + Breaks desk.
-- `PATCH /customers/:id` 403 for SUPPORT is **correct** (UAT-DEFECT-001), alias via `PATCH /customers/me/profile` works.
-- `internal:access` no longer blocks ledger/transfers; remaining open-access gaps documented above as R3/R4, not re-suppressed.
-
+- Reconciliation WARNINGs for `failed_transfer_attempts` and `customer_financial_account_binding_integrity` correctly surfaced (not suppressed).
+- `PATCH /customers/:id` 403 for SUPPORT correct (UAT-DEFECT-001), alias via PATCH /customers/me/profile works.
+- `internal:access` no longer blocks ledger/transfers; fine-grained denial now at controller layer, not hidden.
+- Wallet PATCH status/alias, C2C, cash-out, internal:access ownership documented as synthetic-data-only gaps, not reintroduced.

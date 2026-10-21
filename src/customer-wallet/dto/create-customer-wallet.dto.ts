@@ -19,8 +19,9 @@ export class CreateCustomerWalletDto {
   status: CustomerWalletStatus = CustomerWalletStatus.PENDING;
 
   @IsString()
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @MinLength(1)
   @MaxLength(160)
-  actor!: string;
+  actor?: string;
 }

@@ -13,6 +13,14 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
+// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
+// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
+// dashboard. It is always the first recorded `ApiClient.get` call in these tests, so every
+// sequential `.mockResolvedValueOnce(...)` chain below is prefixed with one extra resolved value
+// to "absorb" it — this keeps each chain's remaining values aligned with the screen-specific call
+// order the rest of the test asserts on.
+const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+
 describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -121,6 +129,7 @@ describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([mockCustomer]) // list customers
       .mockResolvedValueOnce(mockWallets)    // load wallets
       .mockResolvedValueOnce(mockKyc);       // load KYC
@@ -192,6 +201,7 @@ describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([mockCustomer]) // list customers
       .mockResolvedValueOnce([])             // load wallets
       .mockResolvedValueOnce(null);          // load kyc

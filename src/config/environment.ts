@@ -39,6 +39,32 @@ export const environmentSchema = z
     OUTBOX_RETENTION_SECONDS: z.coerce.number().int().min(3_600).max(31_536_000).default(2_592_000),
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
+    CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting configuration.
+    // All optional; absence means the commercial accounting layer is inert (legacy evidence-only
+    // posture). When enabled, treatment/timing must be explicit — the selected values are
+    // evaluated at runtime and any decision requiring an absent treatment fails closed.
+    COMMERCIAL_ACCOUNTING_ENABLED: booleanFromEnvironment.default(false),
+    // V1-GO-LIVE-01: these three fields must tolerate the empty-string value that the
+    // shipped .env.example documents for the inert (disabled) posture. Without the same
+    // empty-string-to-undefined preprocessing used by optionalEnvironmentString/Url/Secret
+    // above, z.enum(...).optional() rejects "" as an invalid enum member (it is not
+    // undefined), which made the canonical .env.example reference file fail
+    // validateEnvironment() on every boot path (main.ts, data-source.ts, app.module.ts) —
+    // a fresh deployer following the repo's own documented configuration could not start
+    // the application, run migrations, or load the module tree at all.
+    COMMERCIAL_ACCOUNTING_VAT_TREATMENT: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['EXCLUSIVE_ADD_ON', 'INCLUSIVE_IN_FEE']).optional(),
+    ),
+    COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['EXPENSE_PAYABLE', 'AGENT_WALLET_NETTING', 'CONTRA_REVENUE']).optional(),
+    ),
+    COMMERCIAL_COMMISSION_RECOGNITION_TIMING: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['AT_COMPLETION', 'ACCRUE_NOW_SETTLE_LATER']).optional(),
+    ),
     A2_WORKFORCE_ENABLED: booleanFromEnvironment.default(false),
     A2_WORKFORCE_OIDC_ISSUER: optionalEnvironmentUrl,
     A2_WORKFORCE_OIDC_JWKS_URI: optionalEnvironmentUrl,
@@ -53,6 +79,14 @@ export const environmentSchema = z
     A2_BOOTSTRAP_ADMIN_SCOPES_JSON: optionalEnvironmentJson,
     A2_FINANCE_ROLES_JSON: optionalEnvironmentJson,
     A2_MAKER_CHECKER_RULES_JSON: optionalEnvironmentJson,
+    // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: structurally independent from the bootstrap
+    // (A2_BOOTSTRAP_*) settings above — a separate enable flag, audience, and trusted-key set,
+    // so the bootstrap ceremony and the SUPER_ADMIN recovery/revocation ceremony never share a
+    // signing-key custody chain. See workforce-configuration.ts and
+    // docs/deployment/V1-SUPER-ADMIN-RECOVERY-RUNBOOK-01.md.
+    A2_RECOVERY_ENABLED: booleanFromEnvironment.default(false),
+    A2_RECOVERY_AUDIENCE: optionalEnvironmentString,
+    A2_RECOVERY_JWKS_JSON: optionalEnvironmentJson,
     A2_WORKFORCE_RATE_LIMITS_JSON: optionalEnvironmentJson,
     A2_TRUSTED_PROXY_ADDRESSES_JSON: optionalEnvironmentJson,
     A5_PILOT_EMERGENCY_STOP: booleanFromEnvironment.default(false),
@@ -88,6 +122,25 @@ export const environmentSchema = z
     DB_PASSWORD: z.string().min(1),
     DB_SSL: booleanFromEnvironment.default(false),
     DB_SSL_REJECT_UNAUTHORIZED: booleanFromEnvironment.default(true),
+    // SMS-V1-01 — provider-neutral SMS production configuration.
+    // Provider selection: 'console' (default, keeps dev/test provider-neutral) or 'robase'.
+    NOTIFICATION_SMS_PROVIDER: z.enum(['console', 'robase']).default('console'),
+    // Robase verified contract: POST {base}/v1/sms/send with Bearer robe_* key (docs.robase.dev).
+    ROBASE_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.robase.dev'),
+    ROBASE_API_KEY: optionalEnvironmentSecret,
+    ROBASE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(10_000),
+    // Background delivery worker (provider-neutral). Disabled by default; enable per environment.
+    NOTIFICATION_WORKER_ENABLED: booleanFromEnvironment.default(false),
+    NOTIFICATION_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(500)
+      .max(60_000)
+      .default(5_000),
+    NOTIFICATION_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
+    // Bounded SMS retry semantics (delivery level, never reversed into finance).
+    SMS_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+    SMS_RETRY_BASE_DELAY_SECONDS: z.coerce.number().int().min(5).max(86_400).default(60),
   })
   .superRefine((config, context) => {
     if (
@@ -108,6 +161,46 @@ export const environmentSchema = z
         path: ['A6_PARTNER_ENVIRONMENT'],
         message: 'Production partner configuration requires NODE_ENV=production',
       });
+    }
+
+    // V1-RELEASE-01: a production deployment must never silently fall back to the
+    // 'console' SMS provider. 'console' only ever writes the message (including live OTP
+    // codes — see customer-registration.service.ts) to process stdout; it never reaches a
+    // real phone. Because NOTIFICATION_SMS_PROVIDER defaults to 'console' and is absent from
+    // the shipped .env.example, an operator who does not know this knob exists would deploy
+    // a production instance that accepts registrations and logs in-progress OTPs in
+    // plaintext to server logs while never actually delivering them — silently breaking the
+    // core registration/login flow for every real customer with no error anywhere. Failing
+    // configuration validation fast forces an explicit, informed choice of a real provider
+    // for the production tier specifically; development/test/staging keep defaulting to
+    // 'console' unchanged.
+    if (config.NODE_ENV === 'production' && config.NOTIFICATION_SMS_PROVIDER !== 'robase') {
+      context.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_SMS_PROVIDER'],
+        message:
+          'A production deployment must set NOTIFICATION_SMS_PROVIDER=robase (with a valid ' +
+          'ROBASE_API_KEY) — the default "console" provider never delivers real SMS and would ' +
+          'silently break OTP-gated customer flows while logging live OTP codes to server stdout.',
+      });
+    }
+
+    // SMS-V1-01: when the Robase provider is selected, credentials must be present at startup.
+    // Safety property: fail configuration validation fast instead of silently degrading to no delivery.
+    if (config.NOTIFICATION_SMS_PROVIDER === 'robase') {
+      if (!config.ROBASE_API_KEY) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ROBASE_API_KEY'],
+          message: 'ROBASE_API_KEY is required when NOTIFICATION_SMS_PROVIDER=robase',
+        });
+      } else if (!config.ROBASE_API_KEY.startsWith('robe_')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ROBASE_API_KEY'],
+          message: 'ROBASE_API_KEY must be a Robase live key (robe_ prefix, see docs.robase.dev)',
+        });
+      }
     }
 
     if (!config.A6_PARTNER_ENABLED) return;

@@ -11,7 +11,10 @@ import {
 import type { FastifyRequest } from 'fastify';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { AuthorizationService } from './authorization.service';
-import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
+import {
+  ADMINISTRATOR_OPERATIONAL_ROLE_KEYS,
+  A2FinanceRoleAdministrationService,
+} from './finance-role-administration.service';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.service';
@@ -21,6 +24,20 @@ interface R extends FastifyRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
   requestContext?: { correlationId: string };
 }
+/**
+ * V1-ADMIN-AUTHORIZATION-RUNTIME-01: maps the legacy `A2_MAKER_CHECKER_RULES_JSON` action names
+ * this controller already governs to their `authorization_functions` catalogue codes (Foundation-01
+ * seed), where one exists. Added ALONGSIDE (never instead of) the existing `requiredRoles:
+ * rule.initiatingRoles/approvingRoles` checks below — maker/checker role separation remains
+ * governed by the untouched legacy config; this is a genuinely additional, catalogue-sourced
+ * authority gate. Actions with no catalogue function defined (e.g. FINANCE_CONTROL_POLICY_ACTIVATE,
+ * which belongs to the out-of-scope B1/B2F commercial-accounting maker/checker module) are
+ * intentionally absent here and fall back to the legacy-only check — never invent a code for them.
+ */
+const ACTION_FUNCTION_CODES: Readonly<Record<string, string>> = {
+  FINANCE_ROLE_ASSIGN: 'workforce.role.assign',
+  FINANCE_ROLE_REVOKE: 'workforce.role.revoke',
+};
 @Controller('internal/a2/workforce')
 export class A2WorkforceAdministrationController {
   constructor(
@@ -69,7 +86,19 @@ export class A2WorkforceAdministrationController {
     @Req() r: R,
   ) {
     const p = this.principal(r);
-    await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: the six operational roles never
+    // touch the legacy FINANCE_ROLE_ASSIGN maker/checker-rule gate below — ADMINISTRATOR holds no
+    // `initiatingRoles` entry there and must not gain one, since that rule also governs the three
+    // Finance roles and ADMINISTRATOR's own (SUPER_ADMIN-only) assignment. Direct-EXECUTE catalogue
+    // function check only; the service layer re-validates role membership independently.
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(b.roleKey)) {
+      await this.auth.requireFunction(p, 'workforce.role.assign_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
+        'OPERATOR',
+        'PRIVILEGED',
+      ]);
+    } else {
+      await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    }
     await this.limits.consume(
       this.rateRule('finance-role-administration'),
       [p.principalId, p.sessionId ?? 'none', 'FINANCE_ROLE_ASSIGN'],
@@ -94,7 +123,14 @@ export class A2WorkforceAdministrationController {
     @Req() r: R,
   ) {
     const p = this.principal(r);
-    await this.authorize(p, 'FINANCE_ROLE_REVOKE', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(roleKey)) {
+      await this.auth.requireFunction(p, 'workforce.role.revoke_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
+        'OPERATOR',
+        'PRIVILEGED',
+      ]);
+    } else {
+      await this.authorize(p, 'FINANCE_ROLE_REVOKE', 'A2_FINANCE_ROLE_ASSIGNMENT');
+    }
     await this.limits.consume(
       this.rateRule('finance-role-administration'),
       [p.principalId, p.sessionId ?? 'none', 'FINANCE_ROLE_REVOKE'],
@@ -120,7 +156,8 @@ export class A2WorkforceAdministrationController {
     @Req() r: R,
   ) {
     const principal = this.principal(r),
-      rule = this.rule(b.action);
+      rule = this.rule(b.action),
+      functionCode = ACTION_FUNCTION_CODES[b.action];
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [principal.principalId, b.action],
@@ -137,6 +174,7 @@ export class A2WorkforceAdministrationController {
         action: b.action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.initiatingRoles,
+        ...(functionCode ? { requiredFunctions: [functionCode] } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },
@@ -151,6 +189,7 @@ export class A2WorkforceAdministrationController {
       approval = await this.approvals.getApproval(approvalId);
     if (!approval) throw new ForbiddenException('Approval not found');
     const rule = this.rule(approval.actionType);
+    const approveFunctionCode = ACTION_FUNCTION_CODES[approval.actionType];
     const decision = await this.auth.authorize(
       principal,
       {
@@ -158,6 +197,7 @@ export class A2WorkforceAdministrationController {
         action: approval.actionType,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.approvingRoles,
+        ...(approveFunctionCode ? { requiredFunctions: [approveFunctionCode] } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },
@@ -188,6 +228,7 @@ export class A2WorkforceAdministrationController {
   }
   private async authorize(p: AuthorizationPrincipal, action: string, resourceType: string) {
     const rule = this.rule(action);
+    const functionCode = ACTION_FUNCTION_CODES[action];
     const d = await this.auth.authorize(
       p,
       {
@@ -195,6 +236,7 @@ export class A2WorkforceAdministrationController {
         action,
         allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
         requiredRoles: rule.initiatingRoles,
+        ...(functionCode ? { requiredFunctions: [functionCode] } : {}),
         minimumAssurance: rule.minimumAssurance,
         customerAccess: 'NONE',
       },
