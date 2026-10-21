@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
 
 import { ProductCatalogController } from './product-catalog.controller';
@@ -13,7 +14,14 @@ import { Product } from './product.entity';
  * Authoritative "what product is this?" registry for future commercial configuration.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Product]), OperationsModule],
+  imports: [
+    TypeOrmModule.forFeature([Product]),
+    OperationsModule,
+    // P0-A: the catalog controller injects CommercialRuleGovernanceService +
+    // AuthorizationService, both exported by AuthorizationModule (same wiring as
+    // FeeRulesModule/CommissionModule).
+    forwardRef(() => AuthorizationModule),
+  ],
   controllers: [ProductCatalogController],
   providers: [ProductCatalogService, ProductCatalogSeedService],
   exports: [ProductCatalogService, ProductCatalogSeedService],

@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
 
 import { RewardRuleRegistryController } from './reward-rule-registry.controller';
@@ -26,7 +27,14 @@ import { RewardRuleDefinition } from './reward-rule.entity';
  * eligibility/precedence/funding/accounting) AND a separate wiring task.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([RewardRuleDefinition]), OperationsModule],
+  imports: [
+    TypeOrmModule.forFeature([RewardRuleDefinition]),
+    OperationsModule,
+    // P0-A: the registry controller injects CommercialRuleGovernanceService +
+    // AuthorizationService, both exported by AuthorizationModule (same wiring as
+    // FeeRulesModule/CommissionModule).
+    forwardRef(() => AuthorizationModule),
+  ],
   controllers: [RewardRuleRegistryController, RewardRuleResolverController],
   providers: [RewardCalculator, RewardRuleRegistryService, RewardRuleResolverService, RewardEngine],
   exports: [RewardRuleRegistryService, RewardRuleResolverService, RewardEngine],
