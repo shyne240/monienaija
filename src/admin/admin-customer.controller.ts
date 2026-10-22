@@ -245,6 +245,14 @@ export class AdminCustomerController {
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
     return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'internal-customers', [
+      // SUPPORT is an intended read-side principal of the customer investigation surface
+      // (V1-HARDENING-06 tests 1-4 assert SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed on
+      // transactions/wallets/balance/support-tickets; V1-CUSTOMER-ONBOARDING-02 asserts SUPPORT
+      // may read the phone-verification review surface; UAT-SEC-005/UAT-ADMIN-011: SUPPORT =
+      // read + funding-maker + support-queue). This controller is exclusively read/inspection
+      // plus the support-tickets alias — lifecycle writes live on their own controllers and
+      // remain OPERATOR/SERVICE/PRIVILEGED only.
+      'SUPPORT',
       'OPERATOR',
       'SERVICE',
       'PRIVILEGED',

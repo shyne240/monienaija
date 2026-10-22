@@ -82,6 +82,9 @@ describe('V1-HARDEN-01 Part D — RuntimeAccessGuard WORKFORCE_SESSION boundary 
     'customer.suspend',
     'customer.activate',
     'customer.close',
+    // LimitCatalogController.requireWorkforce + requireFunction('limit.view') — the OPERATOR
+    // probe in "OPERATOR (A2) remains allowed..." must read /internal/limit-profiles.
+    'limit.view',
   ];
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {

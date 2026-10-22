@@ -381,7 +381,22 @@ export class SupportAuthenticationService {
       sessionId,
       audience: 'support-workforce',
       roles: ['SUPPORT'],
-      scopes: ['support:ticket:read', 'support:ticket:reply', 'support:ticket:status'],
+      scopes: [
+        // Legacy V1-OPS-01 ticket-surface scopes (pre-P1), kept for compatibility.
+        'support:ticket:read',
+        'support:ticket:reply',
+        'support:ticket:status',
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01 switched the /internal/support/* surface
+        // (SupportInternalController) to AuthorizationService.requireFunction() against the
+        // catalogue function `customer.manage_support_case`. The real SUPPORT identity must
+        // carry that catalogue code or no genuine SUPPORT session can operate its own
+        // support queue (V1-OPS-01 §4/5/7/8/10, V1-HARDEN-01 Part C/G+E/G race/IDOR probes,
+        // V1-HARDEN-01 Part D guard boundary). Scope is deliberately limited to the
+        // support-case function only — SUPPORT holds no customer/agent/financial read,
+        // wallet, transfer, or lifecycle functions (V1-HARDEN-01 Part I;
+        // UAT-SEC-005/UAT-ADMIN-011: SUPPORT = read + funding-maker + support-queue only).
+        'customer.manage_support_case',
+      ],
       customerAccess: 'NONE',
       assuranceLevel: 'PASSWORD',
     };

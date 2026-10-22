@@ -43,7 +43,13 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: LimitCatalogController requires the catalogue
+        // functions `limit.view` / `limit.modify` via requireFunction(). Test 6 asserts
+        // SUPPORT/AGENT/CUSTOMER stay blocked (requireWorkforce type allow-list denies SUPPORT
+        // regardless of scopes), so the codes go to OPERATOR/SERVICE/PRIVILEGED only.
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? ['limit.view', 'limit.modify']
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

@@ -48,7 +48,11 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: financial-position reads require the catalogue
+        // function `agent.view` (AdminAgentController.requireFunction). Test 1 asserts
+        // SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed; tests 2-5 assert
+        // CUSTOMER/AGENT/AGGREGATOR/unauth denied, so only the four workforce types get it.
+        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type) ? ['agent.view'] : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

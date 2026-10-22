@@ -74,21 +74,28 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
         // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic
         // `scopes` set (catalogue function codes) now that the relevant controllers call
         // AuthorizationService.requireFunction() rather than a bare principal-type check.
-        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? [
-              'agent.suspend',
-              'agent.terminate',
-              'agent.reactivate',
-              'agent.activate',
-              'agent.review_application',
-              'agent.manage_credentials',
-              'workforce.user.create',
-              'workforce.user.suspend',
-              'customer.suspend',
-              'customer.activate',
-              'customer.close',
-            ]
-          : [],
+        // The phone-verification review surface requires `customer.view`; SUPPORT holds that
+        // read code only (UAT-SEC-005/UAT-ADMIN-011: SUPPORT = read + funding-maker +
+        // support-queue) while lifecycle writes stay OPERATOR/SERVICE/PRIVILEGED — the
+        // lifecycle denial of SUPPORT is enforced by allowedPrincipalTypes, not scopes.
+        scopes: ['SUPPORT'].includes(type)
+          ? ['customer.view']
+          : ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? [
+                'agent.suspend',
+                'agent.terminate',
+                'agent.reactivate',
+                'agent.activate',
+                'agent.review_application',
+                'agent.manage_credentials',
+                'workforce.user.create',
+                'workforce.user.suspend',
+                'customer.suspend',
+                'customer.activate',
+                'customer.close',
+                'customer.view',
+              ]
+            : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

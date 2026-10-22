@@ -65,7 +65,13 @@ describe('V1-HARDEN-01 Part L — limit-catalog CHECK-constraint boundary is not
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: LimitCatalogController requires the catalogue
+        // functions `limit.view` / `limit.modify` via requireFunction(). The limit catalogue
+        // surface is OPERATOR/SERVICE/PRIVILEGED only (route policy + requireWorkforce deny
+        // SUPPORT by type regardless of scopes), so the codes go to those three types.
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? ['limit.view', 'limit.modify']
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

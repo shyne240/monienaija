@@ -83,7 +83,13 @@ describe('V1-CUSTOMER-09 Part C — /internal/support workforce permission bound
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the /internal/support/* surface requires the
+        // catalogue function `customer.manage_support_case` (SupportInternalController). Part C
+        // asserts SUPPORT/OPERATOR/SERVICE/PRIVILEGED may manage the support queue and
+        // CUSTOMER/AGENT/AGGREGATOR may not, so only the four workforce types get the code.
+        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? ['customer.manage_support_case']
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

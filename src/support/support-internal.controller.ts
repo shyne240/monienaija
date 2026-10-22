@@ -163,6 +163,12 @@ export class SupportInternalController {
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
     return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'internal-support', [
+      // SUPPORT is the primary principal of the support-queue surface (V1-OPS-01 §4/5/7/8/10
+      // real SUPPORT sessions, V1-CUSTOMER-09 Part C, V1-HARDEN-01 Part C/G+E/G+D). The P1
+      // hardening dropped SUPPORT from this allow-list, which — combined with the missing
+      // `customer.manage_support_case` catalogue code on the SUPPORT identity — locked real
+      // SUPPORT sessions out of their own queue entirely.
+      'SUPPORT',
       'OPERATOR',
       'SERVICE',
       'PRIVILEGED',

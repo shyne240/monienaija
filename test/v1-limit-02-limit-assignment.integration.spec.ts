@@ -44,7 +44,14 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the profile/rule helpers this suite creates
+        // assignments against require the catalogue functions `limit.view` / `limit.modify`
+        // (LimitCatalogController.requireFunction). Test 07 asserts SUPPORT/AGENT/CUSTOMER/
+        // AGGREGATOR stay blocked (requireWorkforce type allow-list), so the codes go to
+        // OPERATOR/SERVICE/PRIVILEGED only.
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? ['limit.view', 'limit.modify']
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

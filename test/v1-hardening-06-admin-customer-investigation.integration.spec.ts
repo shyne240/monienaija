@@ -71,7 +71,18 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the investigation read surface requires the
+        // catalogue functions its controllers call via requireFunction() —
+        // customer.view_transactions / customer.view_wallets / customer.manage_support_case.
+        // Tests 1-4 assert SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed and
+        // CUSTOMER/AGENT/unauth denied, so only the four workforce types receive the codes.
+        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? [
+              'customer.view_transactions',
+              'customer.view_wallets',
+              'customer.manage_support_case',
+            ]
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',

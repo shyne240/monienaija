@@ -63,6 +63,11 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     'customer.suspend',
     'customer.activate',
     'customer.close',
+    // Investigation read surfaces (AdminAgentController/AdminAgentController requireFunction)
+    // and the financial read (ReconciliationController 'reconciliation.view') — tests 4/5/6/10.
+    'agent.view',
+    'customer.view',
+    'reconciliation.view',
   ];
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {

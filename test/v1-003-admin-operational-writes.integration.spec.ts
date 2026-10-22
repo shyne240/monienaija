@@ -68,6 +68,9 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     'customer.suspend',
     'customer.activate',
     'customer.close',
+    // Support-queue surface (SupportInternalController / admin-customer support-tickets)
+    // requires the catalogue function `customer.manage_support_case` (test 19).
+    'customer.manage_support_case',
   ];
 
   const mockWorkforceSessions = {

@@ -121,6 +121,12 @@ export class AdminAgentController {
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
     return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'internal-agents', [
+      // SUPPORT is an intended read-side principal of the agent investigation surface
+      // (V1-HARDENING-07 test 1 asserts SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed on
+      // financial-position; A22 tests 4-6 assert the same on agent list/get reads). This
+      // controller is exclusively read/inspection; agent lifecycle writes (suspend/terminate/
+      // fund/...) live on their own controllers with their own principal-type restrictions.
+      'SUPPORT',
       'OPERATOR',
       'SERVICE',
       'PRIVILEGED',

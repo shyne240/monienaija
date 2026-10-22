@@ -67,7 +67,11 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the fee-rule read surface requires the
+        // catalogue function `fee_rule.view` (FeeRulesController.requireFunction). Test 17
+        // asserts SUPPORT/CUSTOMER/AGENT/AGGREGATOR stay denied, so only OPERATOR/SERVICE/
+        // PRIVILEGED receive the code (mirrors the real resolve() for finance workforce roles).
+        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type) ? ['fee_rule.view'] : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
