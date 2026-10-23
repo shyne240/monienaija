@@ -66,7 +66,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
         {result && <div style={successBox}>{result}</div>}
         {resultErr && <div style={errBox}>{resultErr}</div>}
       </div>}
-      <div style={note}>Usage and reservations (<code>/limit-operations/:id</code>) are read-only diagnostics — see Commercial → Limit Catalogue for profile definitions.</div>
+      <div style={note}>Usage and reservation diagnostics are available through <code>GET /internal/limit-usages</code> and <code>GET /internal/limit-reservations</code>; this screen does not query them. See Commercial → Limit Catalogue for profile definitions.</div>
     </div>
   );
 };

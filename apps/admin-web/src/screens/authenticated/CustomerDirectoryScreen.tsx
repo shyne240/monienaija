@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { ApiClient, ApiError } from '../../services/api-client';
+import React, { useState, useEffect, useRef } from 'react';
+import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { extractRecords, StructuredColumn, StructuredRecordTable } from '../../components/StructuredData';
 
 interface Customer {
   id: string;
@@ -30,6 +31,33 @@ interface KycRecord {
   createdAt: string;
 }
 
+type PiiSection = 'addresses' | 'contactMethods' | 'identityDocuments';
+
+const PII_SECTIONS: Array<{ key: PiiSection; label: string; functionCode: string; path: string }> = [
+  { key: 'addresses', label: 'Addresses', functionCode: 'customer.view_address', path: 'addresses' },
+  { key: 'contactMethods', label: 'Contact Methods', functionCode: 'customer.view_contact_methods', path: 'contact-methods' },
+  { key: 'identityDocuments', label: 'Identity Documents', functionCode: 'customer.view_identity_documents', path: 'identity-documents' },
+];
+
+const PII_COLUMNS: Record<PiiSection, StructuredColumn[]> = {
+  addresses: [
+    { key: 'type', label: 'Type' }, { key: 'lineOne', label: 'Address' },
+    { key: 'lineTwo', label: 'Address line 2' }, { key: 'city', label: 'City' },
+    { key: 'state', label: 'State' }, { key: 'country', label: 'Country' },
+    { key: 'postalCode', label: 'Postal code' },
+  ],
+  contactMethods: [
+    { key: 'type', label: 'Type' }, { key: 'value', label: 'Value' },
+    { key: 'normalizedValue', label: 'Normalized value' }, { key: 'isPrimary', label: 'Primary' },
+    { key: 'verifiedAt', label: 'Verified at' },
+  ],
+  identityDocuments: [
+    { key: 'type', label: 'Document type' }, { key: 'documentNumber', label: 'Document number' },
+    { key: 'issuingCountry', label: 'Issuing country' }, { key: 'issuedAt', label: 'Issued at' },
+    { key: 'expiresAt', label: 'Expires at' },
+  ],
+};
+
 interface CustomerDirectoryProps {
   onNavigate?: (view: string, customerId: string) => void;
   selectedCustomerId?: string;
@@ -55,6 +83,11 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [kyc, setKyc] = useState<KycRecord | null>(null);
   const [detailError, setDetailError] = useState('');
+  const [piiSection, setPiiSection] = useState<PiiSection | null>(null);
+  const [piiRows, setPiiRows] = useState<Record<string, unknown>[]>([]);
+  const [piiLoading, setPiiLoading] = useState(false);
+  const [piiError, setPiiError] = useState('');
+  const piiRequestSequence = useRef(0);
 
   // Wallet Provision State
   const [walletCurrency, setWalletCurrency] = useState('NGN');
@@ -91,6 +124,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   const canViewCustomerTransactions = hasFn('customer.view_transactions');
   const canViewAudit = hasFn('audit.search');
   const canViewLimits = hasFn('limit.view') || hasFn('agent.assign_limit');
+  const availablePiiSections = PII_SECTIONS.filter((section) => hasFn(section.functionCode));
 
   const relatedActions = [
     ...(canViewCustomerTransactions ? [{ view: 'transfers', label: 'View Transactions' }] : []),
@@ -160,9 +194,14 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   };
 
   const handleLoadDetails = async (customer: Customer) => {
+    piiRequestSequence.current += 1;
     setSelectedCust(customer);
     setWallets([]);
     setKyc(null);
+    setPiiSection(null);
+    setPiiRows([]);
+    setPiiError('');
+    setPiiLoading(false);
     setDetailError('');
     setWalletSuccess('');
     setKycSuccess('');
@@ -187,6 +226,26 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
         // A missing assessment is a valid empty state; backend access failures remain protected.
         setKyc(null);
       }
+    }
+  };
+
+  const handleLoadPii = async (sectionKey: PiiSection) => {
+    if (!selectedCust) return;
+    const section = PII_SECTIONS.find((candidate) => candidate.key === sectionKey);
+    if (!section || !hasFn(section.functionCode)) return;
+
+    const requestSequence = ++piiRequestSequence.current;
+    setPiiSection(sectionKey);
+    setPiiRows([]);
+    setPiiError('');
+    setPiiLoading(true);
+    try {
+      const response = await ApiClient.get(`/customers/${encodeURIComponent(selectedCust.id)}/${section.path}`);
+      if (requestSequence === piiRequestSequence.current) setPiiRows(extractRecords(response));
+    } catch (err: any) {
+      if (requestSequence === piiRequestSequence.current) setPiiError(err?.message || `Failed to load ${section.label.toLowerCase()}.`);
+    } finally {
+      if (requestSequence === piiRequestSequence.current) setPiiLoading(false);
     }
   };
 
@@ -474,6 +533,46 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                 )}
               </div>}
 
+              {availablePiiSections.length > 0 && (
+                <section style={styles.metaBlock} aria-label="Customer PII records">
+                  <h4 style={styles.blockTitle}>Customer PII Records</h4>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px 0' }}>
+                    Each read is loaded on demand and shown only when its matching customer-data function is granted.
+                  </p>
+                  <div style={{ ...styles.btnRow, flexWrap: 'wrap' as const }}>
+                    {availablePiiSections.map((section) => (
+                      <button
+                        key={section.key}
+                        type="button"
+                        aria-pressed={piiSection === section.key}
+                        style={piiSection === section.key ? styles.activePiiBtn : styles.viewBtn}
+                        onClick={() => void handleLoadPii(section.key)}
+                      >
+                        {section.label}
+                      </button>
+                    ))}
+                  </div>
+                  {piiSection && (
+                    <div style={{ marginTop: 12 }}>
+                      <h5 style={styles.subBlockTitle}>{PII_SECTIONS.find((section) => section.key === piiSection)?.label}</h5>
+                      {piiSection === 'identityDocuments' && (
+                        <p style={styles.piiWarning}>Identity document numbers are returned by the existing API and displayed only for principals holding <code>customer.view_identity_documents</code>.</p>
+                      )}
+                      {piiLoading ? <p style={styles.loadingText}>Loading customer records…</p> : piiError ? (
+                        <div role="alert" style={styles.errorBox}>{piiError}</div>
+                      ) : (
+                        <StructuredRecordTable
+                          rows={piiRows}
+                          columns={PII_COLUMNS[piiSection]}
+                          showDetails={false}
+                          emptyMessage={`No ${PII_SECTIONS.find((section) => section.key === piiSection)?.label.toLowerCase()} were returned.`}
+                        />
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
               {/* Customer 360° — Related Actions (deep-link hub, no UUID paste) */}
               {onNavigate && relatedActions.length > 0 && (
                 <div style={styles.metaBlock}>
@@ -700,6 +799,24 @@ const styles = {
     fontSize: '12px',
     fontWeight: '600',
     cursor: 'pointer',
+  },
+  activePiiBtn: {
+    backgroundColor: '#0A3D25',
+    border: '1px solid #0A3D25',
+    color: '#FFFFFF',
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  piiWarning: {
+    fontSize: '12px',
+    color: '#854D0E',
+    backgroundColor: '#FEFCE8',
+    border: '1px solid #FDE68A',
+    borderRadius: '6px',
+    padding: '8px',
   },
   detailsSection: {
     width: '460px',

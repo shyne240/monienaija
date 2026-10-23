@@ -127,7 +127,7 @@ export function canAccessAdminView(
     case 'superAdminRecovery':
       return has('workforce.super_admin.recover');
     case 'systemHealth':
-      return hasAny('metrics.view', 'diagnostics.view', 'outbox.view');
+      return hasAny('metrics.view', 'diagnostics.view', 'outbox.view', 'notification.view_deliveries');
     case 'auditEvents':
       return has('audit.search');
     default:
