@@ -181,10 +181,10 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 
 #### 16. Limit Assignments — `limitAssignments`
 - **Roles/route:** `SUPER_ADMIN`, `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, `FINANCE_AUDITOR`, `AGENT_NETWORK_MANAGER` (`limit.view` or `agent.assign_limit`).
-- **UI/actions:** assignment listing; customer-context listing; assigning a profile to an agent with `agent.assign_limit`. No customer assignment form.
-- **Backend/API:** `GET /internal/limit-assignments`, `/customer/:id` and related subject filters; `POST /internal/limit-assignments`. Controller scope checks apply. Usage/reservation reads are `GET /internal/limit-usages` and `/internal/limit-reservations`; the current screen does not display them. Batch 01 corrects the help text that previously named a nonexistent `/limit-operations/:id` route.
-- **API verification:** API static — paths and scope checks inspected; not live.
-- **UI availability:** partial; agent assignment and read lists exist; usage/reservation visibility is missing.
+- **UI/actions:** assignment listing; customer-context listing; agent profile assignment with `agent.assign_limit`; Batch 03 adds on-demand filtered/paginated usage and reservation read-only panels to the shared screen. No customer assignment form and no reservation-release mutation are exposed. Staleness is shown as a diagnostic signal only.
+- **Backend/API:** assignment routes include `GET /internal/limit-assignments`, `/customer/:id` and related subject filters; agent `POST /internal/limit-assignments`. Read-only diagnostics are `GET /internal/limit-usages` and `/internal/limit-reservations`. Current controllers enforce workforce principal type on those reads, not `limit.view`; Batch 03's `limit.view` check is frontend presentation gating only. Manual release exists separately at `POST /internal/limit-reservation-recovery/release`, requires a `PRIVILEGED` workforce principal plus a reason and is audited; it remains intentionally absent from this screen pending explicit operational UI authorization review. Batch 01 corrected the help text that previously named a nonexistent `/limit-operations/:id` route.
+- **API verification:** API static — paths, response shapes, and controller checks inspected; not live.
+- **UI availability:** assignment and agent-profile action remain available; Batch 03 adds structured diagnostics. Backend function-level authorization is still a blocker; manual release has not been added.
 - **Actual UI/E2E:** Not performed.
 
 ### 3.6 Compliance & Risk
@@ -265,12 +265,12 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 
 ## 4. Cross-page authorization and integration findings
 
-1. **Frontend gating is not backend authorization.** Record separately: `reward_rule.view` and `product.view` list/detail controller gaps; notification deliveries only has workforce-type checking; customer compliance-case access does not enforce the catalogue function/category server-side; audit is intentionally left authentication-only to preserve tested SUPPORT use. The UI must not be described as fixing these server-side conditions.
+1. **Frontend gating is not backend authorization.** Record separately: `reward_rule.view` and `product.view` list/detail controller gaps; notification deliveries and limit-assignment/usage/reservation reads currently use workforce-type checks without their corresponding catalogue view-function enforcement; customer compliance-case access does not enforce the catalogue function/category server-side; audit is intentionally left authentication-only to preserve tested SUPPORT use. The UI must not be described as fixing these server-side conditions. Batch 03 shows limit diagnostics only for `limit.view`, but that is presentation gating, not a backend authorization fix.
 2. **Commercial maker/checker:** fee, commission, reward, product create/modify routes require governed request/approval/execute flows; the generic approval UI does not supply a list/detail queue. Do not replace this with direct mutation calls or invent approval IDs.
 3. **Limits are not commercial-governed:** existing profile/rule writes call services directly after `limit.modify`; no maker/checker execution path was verified. Batch 01 adds read-only lists only.
 4. **Missing endpoints must remain explicit:** global transaction/journal list, generic approval list/detail, current workforce identity list, and customer compliance queue/filter are not inferred from similarly named detail/write routes.
 5. **Contextual navigation:** Customer 360° preserves `customerId` for transaction history, KYC, compliance/fraud, support, audit, and limits. This context is in-app state, not a backend entitlement.
-6. **Other known UI omissions:** Agent applications/credentials/outlets/terminals/funding; Support assignee directory (no API); Reconciliation break resolution; limit usage/reservation panels; operational role and role-definition governance; generic approval queue/detail. These remain backlog entries; Batch 02 adds only existing support and generic checker actions.
+6. **Other known UI omissions:** Agent applications/credentials/outlets/terminals/funding; Support assignee directory (no API); Reconciliation break resolution; operational role and role-definition governance; generic approval queue/detail. Manual limit-reservation release has an existing privileged-only backend route but remains unexposed pending explicit operational UI authorization review. These remain backlog entries; Batches 02 and 03 add only the documented existing support/checker actions and read-only limit diagnostics.
 
 ## 5. Batch 01 — Super Admin/shared screen completion
 
@@ -296,10 +296,23 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 
 - Support Inbox now renders the API's `items`/nested `pagination` response, message history (including internal/customer-visible classification), existing assignment by workforce principal ID, and customer-visible outbound messages. It passes the current version on assignment/status updates and disables status/assignment/message actions that the existing service transition rules disallow. The missing assignee directory is documented rather than inferred.
 - Privileged Approvals now offers both existing `approve` and generic `reject` POST decisions with an optional comment. The backend remains authoritative for checker authorization. A visible note explains that agent-funding requests must use the dedicated atomic rejection flow; generic `reject` intentionally refuses those approval IDs.
-- **API verification:** static inspection of the current support controller/service and workforce approval controller only. No authenticated HTTP or database-backed request was made.
 - **UI verification:** `npm test -- --runInBand` — passed, 11 suites / 82 tests, including four Batch 02 component tests using mocked `ApiClient` responses. These are not live backend tests or E2E.
 - **TypeScript:** `npm run ts:check` — passed.
 - **Production build:** `npm run build` — passed; Vite emitted its existing CommonJS Node API deprecation warning.
 - **API verification:** static inspection of the current support controller/service and workforce approval controller only. No authenticated HTTP or database-backed request was made.
 - **Actual interface/E2E:** not performed.
 - **Changed Batch 02 files:** `apps/admin-web/src/screens/authenticated/SupportTicketsScreen.tsx`, `ApprovalsScreen.tsx`, `apps/admin-web/__tests__/admin-batch-02-support-approvals.test.tsx`, and this inventory document. Pre-existing unrelated changes are excluded from this batch.
+
+## 7. Batch 03 — Limit usage and reservation diagnostics
+
+**Scope:** add structured, on-demand, read-only usage/reservation diagnostics to Limit Assignments using the existing GET routes. No mutations, recovery controls, backend authorization changes, migrations, or financial-rule changes are included.
+
+- Usage and reservation panels expose the existing query filters and page navigation, render typed table columns/details, and preserve amounts in minor units. Requests are lazy and are made only after a user selects Search.
+- The UI requests diagnostics only when the principal has `limit.view`. The current backend routes enforce workforce principal type but not the catalogue function; the UI check is not a replacement for backend authorization.
+- Stale status/age are displayed as diagnostic-only signals. The backend's stale threshold does not prove a reservation is orphaned. The existing privileged manual-release route is intentionally not exposed pending explicit operational UI authorization review.
+- **API verification:** static inspection of `LimitOperationsController`, `LimitDiagnosticsService`, and `LimitAssignmentController`; no authenticated HTTP or database-backed request was made.
+- **UI verification:** `npm test -- --runInBand` — passed, 12 suites / 84 tests, including two Batch 03 component tests using mocked `ApiClient` responses; not live API tests or E2E.
+- **TypeScript:** `npm run ts:check` — passed.
+- **Production build:** `npm run build` — passed; Vite emitted its existing CommonJS Node API deprecation warning.
+- **Actual interface/E2E:** not performed.
+- **Changed Batch 03 files:** `apps/admin-web/src/screens/authenticated/LimitAssignmentScreen.tsx`, `apps/admin-web/__tests__/admin-batch-03-limit-diagnostics.test.tsx`, and this inventory document. Pre-existing unrelated changes are excluded from this batch.
