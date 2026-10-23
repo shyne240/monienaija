@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
-export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
+export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('agent.assign_limit') || hasFn('limit.view') || hasFn('limit.modify') || principal?.roles.includes('AGENT_NETWORK_MANAGER') || principal?.roles.includes('SUPER_ADMIN');
+  const canAssignAgent = hasFn('agent.assign_limit');
+  const canView = canAssignAgent || hasFn('limit.view');
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -16,37 +17,46 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string }> = (
   const fetchAssignments = async () => {
     setLoading(true); setError('');
     try {
-      const res: any = await ApiClient.get('/internal/limit-assignments');
+      const endpoint = initialCustomerId
+        ? `/internal/limit-assignments/customer/${encodeURIComponent(initialCustomerId)}`
+        : '/internal/limit-assignments';
+      const res: any = await ApiClient.get(endpoint);
       setAssignments(res.data || res.items || (Array.isArray(res) ? res : []));
     } catch (e: any) { setError(e?.message || 'Failed to load limit assignments'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (canView) fetchAssignments(); else setLoading(false); }, []);
+  useEffect(() => { if (canView) fetchAssignments(); else setLoading(false); }, [canView, initialCustomerId]);
 
   const handleAssign = async (e: React.FormEvent) => {
-    e.preventDefault(); setResult(''); setResultErr('');
+    e.preventDefault();
+    if (!canAssignAgent) return;
+    setResult(''); setResultErr('');
     if (!agentId.trim() || !profileCode.trim()) { setResultErr('Agent ID and profile code required'); return; }
     try {
-      await ApiClient.post(`/internal/agents/${agentId.trim()}/limit-assignment`, { profileCode: profileCode.trim() });
-      setResult(`Assigned profile ${profileCode} to agent ${agentId}`);
+      await ApiClient.post('/internal/limit-assignments', {
+        limitProfileCode: profileCode.trim().toUpperCase(),
+        subjectType: 'AGENT',
+        subjectId: agentId.trim(),
+      });
+      setResult(`Assigned profile ${profileCode.trim().toUpperCase()} to agent ${agentId.trim()}`);
       fetchAssignments();
     } catch (e: any) { setResultErr(e?.message || 'Assign failed — requires agent.assign_limit (AGENT_NETWORK_MANAGER)'); }
   };
 
-  if (!canView) return <div style={wrap}><div style={denied}>Requires <code>agent.assign_limit / limit.view</code> (AGENT_NETWORK_MANAGER / SUPER_ADMIN). Roles: {principal?.roles.join(', ')}</div></div>;
+  if (!canView) return <div style={wrap} role="alert"><div style={denied}>Viewing limit assignments requires <code>limit.view</code> or <code>agent.assign_limit</code>.</div></div>;
 
   return (
     <div style={wrap}>
-      <h2 style={h2}>📏 Limit Assignments & Usage</h2>
-      <p style={sub}>Assign an existing limit profile to an agent/customer and monitor usage. Catalogue definitions (<code>limit.modify</code>) vs ordinary assignments (<code>agent.assign_limit</code>) are distinct per Decision 2.</p>
-      {initialCustomerId && <div style={note}>Pre-filled from Customer 360° customer {initialCustomerId.slice(0,8)}… — use Agent ID field below for agent assignment.</div>}
+      <h2 style={h2}>📏 Limit Assignments</h2>
+      <p style={sub}>View existing assignments. Creating an agent assignment is available only with <code>agent.assign_limit</code>; catalogue definitions are managed separately.</p>
+      {initialCustomerId && <div style={note}>Showing assignments for customer <code>{initialCustomerId}</code>.{onBackToCustomer && <> <button type="button" onClick={onBackToCustomer} style={smallLink}>Back to Customer 360°</button></>}</div>}
       {error && <div style={errBox}>{error}</div>}
       {loading ? <div style={loadingBox}>Loading assignments…</div> :
-        assignments.length === 0 ? <div style={empty}>No limit assignments — assign a profile below. Catalogue definitions live in Commercial → Limit Catalogue.</div> :
-          <table style={table}><thead><tr><th>Subject</th><th>Profile</th><th>Status</th><th>Effective</th></tr></thead><tbody>{assignments.map((a:any)=><tr key={a.id}><td style={mono}>{a.subjectId?.slice(0,8) || a.agentId?.slice(0,8) || '-'}</td><td>{a.profileCode || a.profile || '-'}</td><td><span style={badge(a.status)}>{a.status || 'ACTIVE'}</span></td><td>{a.effectiveFrom ? new Date(a.effectiveFrom).toLocaleString() : '-'}</td></tr>)}</tbody></table>
+        assignments.length === 0 ? <div style={empty}>No matching limit assignments.</div> :
+          <table style={table}><thead><tr><th>Subject</th><th>Profile</th><th>Active</th><th>Effective</th></tr></thead><tbody>{assignments.map((a:any)=><tr key={a.id}><td style={mono}>{a.subjectType}: {a.subjectId?.slice(0,8) || a.segmentCode || '-'}</td><td>{a.limitProfileCode || '-'}</td><td><span style={badge(a.isActive ? 'ACTIVE' : 'INACTIVE')}>{a.isActive ? 'ACTIVE' : 'INACTIVE'}</span></td><td>{a.effectiveFrom ? new Date(a.effectiveFrom).toLocaleString() : '-'}</td></tr>)}</tbody></table>
       }
-      <div style={formCard}>
+      {!initialCustomerId && canAssignAgent && <div style={formCard}>
         <h4 style={h4}>Assign Limit Profile to Agent</h4>
         <form onSubmit={handleAssign} style={form}>
           <input value={agentId} onChange={e=>setAgentId(e.target.value)} placeholder="Agent UUID" style={input} />
@@ -55,7 +65,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string }> = (
         </form>
         {result && <div style={successBox}>{result}</div>}
         {resultErr && <div style={errBox}>{resultErr}</div>}
-      </div>
+      </div>}
       <div style={note}>Usage and reservations (<code>/limit-operations/:id</code>) are read-only diagnostics — see Commercial → Limit Catalogue for profile definitions.</div>
     </div>
   );
@@ -77,4 +87,5 @@ const h4: React.CSSProperties={margin:'0 0 8px'};
 const form: React.CSSProperties={display:'flex',gap:8,flexWrap:'wrap' as const,alignItems:'center'};
 const input: React.CSSProperties={flex:1,padding:'8px 10px',borderRadius:6,border:'1px solid #E2E8F0',minWidth:160};
 const btn: React.CSSProperties={padding:'8px 14px',borderRadius:6,border:'1px solid #E2E8F0',background:'#fff',cursor:'pointer'};
+const smallLink: React.CSSProperties={marginLeft:8,padding:'4px 7px',borderRadius:5,border:'1px solid #CBD5E1',background:'#FFFFFF',color:'#334155',cursor:'pointer',fontSize:11};
 const note: React.CSSProperties={marginTop:12,fontSize:12,color:'#64748B',background:'#F8FAFC',padding:10,borderRadius:6,border:'1px solid #E2E8F0'};

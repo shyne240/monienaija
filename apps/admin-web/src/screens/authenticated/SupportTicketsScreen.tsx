@@ -6,8 +6,7 @@ interface Ticket { id: string; status: string; priority?: string; subject?: stri
 
 export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
   const { principal } = useAuthStore();
-  const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('customer.manage_support_case') || hasFn('customer.view') || principal?.roles.includes('CUSTOMER_SERVICE') || principal?.roles.includes('SUPER_ADMIN') || principal?.roles.includes('OPERATIONS');
+  const canView = principal?.scopes.includes('customer.manage_support_case') ?? false;
   const customerFilter = initialCustomerId || '';
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
@@ -23,28 +22,34 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
   const fetchList = async () => {
     setLoading(true); setError('');
     try {
-      const q = [`page=${page}`, `limit=20`, ...(status? [`status=${status}`]:[])].join('&');
+      const q = [
+        `page=${page}`,
+        `limit=20`,
+        ...(status ? [`status=${encodeURIComponent(status)}`] : []),
+        ...(customerFilter ? [`customerId=${encodeURIComponent(customerFilter)}`] : []),
+      ].join('&');
       const res: any = await ApiClient.get(`/internal/support/tickets?${q}`);
       setTickets(res.data || res.items || res || []);
       setTotal(res.total ?? 0);
     } catch (e: any) { setError(e?.message || 'Failed to load tickets'); }
     finally { setLoading(false); }
   };
-  useEffect(()=>{ if(canView) fetchList(); else setLoading(false); }, [page, status]);
+  useEffect(()=>{ if(canView) fetchList(); else setLoading(false); }, [page, status, customerFilter, canView]);
 
   const open = async (t: Ticket) => {
+    if (!canView) return;
     setSelected(null); setDetailErr(''); setMsgRes('');
     try { const d: any = await ApiClient.get(`/internal/support/tickets/${t.id}`); setSelected(d); }
     catch(e:any){ setDetailErr(e?.message||'Failed to load ticket'); setSelected(t); }
   };
   const doStatus = async (newStatus: string) => {
-    if(!selected) return;
+    if(!canView || !selected) return;
     setDetailErr(''); setMsgRes('');
     try { await ApiClient.post(`/internal/support/tickets/${selected.id}/status`, { status: newStatus, version: selected.version }); setMsgRes(`Status → ${newStatus}`); fetchList(); }
     catch(e:any){ setDetailErr(e?.message||'Status update failed'); }
   };
   const addMessage = async (e: React.FormEvent) => {
-    e.preventDefault(); if(!msgBody.trim()||!selected) return;
+    e.preventDefault(); if(!canView || !msgBody.trim()||!selected) return;
     setDetailErr(''); setMsgRes('');
     try { await ApiClient.post(`/internal/support/tickets/${selected.id}/messages`, { body: msgBody, isInternal: false }); setMsgBody(''); setMsgRes('Message added'); }
     catch(e:any){ setDetailErr(e?.message||'Message failed'); }
@@ -55,8 +60,8 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
   return (
     <div style={wrap}>
       <h2 style={h2}>🎧 Support Tickets</h2>
-      <p style={sub}>Workforce ticket queue (internal service). {initialCustomerId ? `Filtered to customer ${initialCustomerId.slice(0,8)}… from Customer 360° — no manual entry.` : 'Assign, update status, add messages — real ledger-backed workflow.'}</p>
-      {initialCustomerId && <div style={{...filters, background:'#F8FAFC', padding:'8px', borderRadius:6, border:'1px solid #E2E8F0', fontSize:12}}>🔗 Customer context: <code>{initialCustomerId}</code> — tickets filtered to this customer when backend supports <code>?customerId=</code></div>}
+      <p style={sub}>Workforce ticket queue. Update ticket status and add messages through the existing internal support endpoints.</p>
+      {initialCustomerId && <div style={{...filters, background:'#F8FAFC', padding:'8px', borderRadius:6, border:'1px solid #E2E8F0', fontSize:12}}>🔗 Customer context: <code>{initialCustomerId}</code> — results are filtered by the backend <code>customerId</code> query.</div>}
       <div style={filters}>
         <label>Status <select value={status} onChange={e=>{setStatus(e.target.value); setPage(1);}}><option value="">All</option><option value="OPEN">OPEN</option><option value="IN_PROGRESS">IN_PROGRESS</option><option value="RESOLVED">RESOLVED</option><option value="CLOSED">CLOSED</option></select></label>
         <button onClick={fetchList} style={btn}>Refresh</button>

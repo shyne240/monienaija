@@ -472,7 +472,7 @@ export const DirectoryLinkWidget: React.FC<{ title: string; description: string;
       <h3 style={styles.title}>{title}</h3>
       <p style={styles.description}>{description}</p>
     </div>
-    <button style={styles.linkButton} onClick={onNavigate}>
+    <button style={styles.linkButton} onClick={onNavigate} disabled={!onNavigate} aria-disabled={!onNavigate}>
       Open →
     </button>
   </div>

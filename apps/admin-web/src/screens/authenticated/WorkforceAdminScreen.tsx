@@ -5,59 +5,69 @@ import { useAuthStore } from '../../store/auth-store';
 export const WorkforceAdminScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('workforce.user.view') || hasFn('workforce.dashboard.view') || hasFn('workforce.role.view') || principal?.roles.includes('ADMINISTRATOR') || principal?.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute');
+  const canViewOverview = hasFn('workforce.dashboard.view');
+  const canCreateSupportUser = hasFn('workforce.user.create');
+  const canView = canViewOverview || canCreateSupportUser;
   const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [createEmail, setCreateEmail] = useState('');
-  const [createRole, setCreateRole] = useState('OPERATIONS');
+  const [createUsername, setCreateUsername] = useState('');
   const [createRes, setCreateRes] = useState(''); const [createErr, setCreateErr] = useState('');
 
   const fetchOverview = async () => {
+    if (!canViewOverview) return;
     setLoading(true); setError('');
     try {
-      // Reuse dashboard widget workforce-overview endpoint (direct)
+      // The workforce-overview widget is the implemented read-only workforce surface.
       const data: any = await ApiClient.get('/internal/a2/workforce/dashboard/widgets/workforce-overview');
       setOverview(data);
     } catch(e:any){ setError(e?.message||'Failed to load workforce overview'); }
     finally{ setLoading(false); }
   };
-  useEffect(()=>{ if(canView) fetchOverview(); else setLoading(false); }, []);
+  useEffect(()=>{ if(canViewOverview) fetchOverview(); else setLoading(false); }, [canViewOverview]);
 
   const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault(); setCreateRes(''); setCreateErr('');
+    e.preventDefault();
+    if (!canCreateSupportUser) return;
+    setCreateRes(''); setCreateErr('');
+    if (!createUsername.trim()) {
+      setCreateErr('Support username is required.');
+      return;
+    }
     try {
-      const res: any = await ApiClient.post('/internal/admin/support/workforce-users', { email: createEmail, role: createRole, displayName: createEmail.split('@')[0] });
-      setCreateRes(`Created workforce user ${res.id || createEmail} — check response for credentials`);
-      fetchOverview();
+      const res: any = await ApiClient.post('/internal/admin/support/workforce-users', { username: createUsername.trim() });
+      setCreateRes(`Support user ${res.username} created (ID ${res.supportUserId}). One-time temporary password: ${res.temporaryPassword}. Expires: ${res.passwordExpiresAt}. Deliver this credential out-of-band.`);
+      setCreateUsername('');
+      if (canViewOverview) fetchOverview();
     } catch(e:any){ setCreateErr(e?.message||'Create failed'); }
   };
 
-  if(!canView) return <div style={wrap}><div style={denied}>Requires <code>workforce.user.view</code> or <code>ADMINISTRATOR / SUPER_ADMIN</code>. Roles: {principal?.roles.join(', ')}</div></div>;
+  if(!canView) return <div style={wrap}><div style={denied}>This screen requires <code>workforce.dashboard.view</code> for the workforce overview or <code>workforce.user.create</code> for SUPPORT provisioning.</div></div>;
 
   return (
     <div style={wrap}>
-      <h2 style={h2}>👷 Workforce Administration</h2>
-      <p style={sub}>Workforce headcount, role distribution, and SUPPORT provisioning. Read via dashboard workforce-overview widget; mutate via admin workforce user endpoint.</p>
-      {error && <div style={errBox}>{error}</div>}
-      {loading ? <div style={loadingBox}>Loading workforce overview…</div> :
-        overview ? <div style={grid}>
-          <div style={card}><strong>Headcount</strong><div style={big}>{overview.totalUsers ?? overview.headcount ?? '-'}</div><div style={muted}>Active workforce principals</div></div>
-          <div style={card}><strong>By Role</strong><pre style={pre}>{JSON.stringify(overview.byRole ?? overview.distribution ?? overview, null, 2)}</pre></div>
-        </div> : <div style={empty}>No overview data — ensure at least one workforce assignment exists (seed 11 roles).</div>
-      }
-      <div style={formCard}>
-        <h4 style={h4}>Provision SUPPORT workforce user (OPERATOR-only)</h4>
-        <p style={sub}>Creates a SUPPORT-type identity. SUPPORT cannot self-provision — this action requires <code>workforce.user.create</code> (OPERATOR/PRIVILEGED).</p>
+      <h2 style={h2}>👷 Workforce Overview & Support Provisioning</h2>
+      <p style={sub}>The implemented capabilities on this screen are the workforce-overview widget and SUPPORT identity provisioning.</p>
+      {canViewOverview && <>
+        {error && <div style={errBox}>{error}</div>}
+        {loading ? <div style={loadingBox}>Loading workforce overview…</div> :
+          overview ? <div style={grid}>
+            <div style={card}><strong>Headcount</strong><div style={big}>{overview.totalUsers ?? overview.headcount ?? '-'}</div><div style={muted}>Active workforce principals</div></div>
+            <div style={card}><strong>By Role</strong><pre style={pre}>{JSON.stringify(overview.byRole ?? overview.distribution ?? overview, null, 2)}</pre></div>
+          </div> : <div style={empty}>No overview data — ensure at least one workforce assignment exists.</div>
+        }
+      </>}
+      {canCreateSupportUser && <div style={formCard}>
+        <h4 style={h4}>Provision SUPPORT workforce user</h4>
+        <p style={sub}>Creates a SUPPORT-type identity. SUPPORT cannot self-provision. The endpoint requires <code>workforce.user.create</code>; its one-time temporary password is shown once after successful creation for out-of-band delivery.</p>
         <form onSubmit={handleCreate} style={form}>
-          <input value={createEmail} onChange={e=>setCreateEmail(e.target.value)} placeholder="email@monienaija.test" style={input}/>
-          <select value={createRole} onChange={e=>setCreateRole(e.target.value)} style={input}><option>OPERATIONS</option><option>CUSTOMER_SERVICE</option><option>COMPLIANCE</option><option>TREASURY</option><option>AGENT_NETWORK_MANAGER</option><option>RISK_FRAUD</option></select>
-          <button type="submit" style={btn}>Create</button>
+          <input value={createUsername} onChange={e=>setCreateUsername(e.target.value)} placeholder="Support username or email" style={input}/>
+          <button type="submit" style={btn}>Create SUPPORT User</button>
         </form>
-        {createRes && <div style={successBox}>{createRes}</div>}
-        {createErr && <div style={errBox}>{createErr}</div>}
-      </div>
-      <div style={note}>SUPPORT provisioning is intentionally operator-gated; a SUPPORT bearer token attempting <code>POST /internal/admin/support/workforce-users</code> receives 403 (defense in depth — see route-policy and controller checks).</div>
+        {createRes && <div style={successBox} role="status">{createRes}</div>}
+        {createErr && <div style={errBox} role="alert">{createErr}</div>}
+      </div>}
+      {canCreateSupportUser && <div style={note}>SUPPORT provisioning is intentionally operator-gated; a SUPPORT bearer token attempting <code>POST /internal/admin/support/workforce-users</code> receives 403 (defense in depth — see route-policy and controller checks).</div>}
     </div>
   );
 };

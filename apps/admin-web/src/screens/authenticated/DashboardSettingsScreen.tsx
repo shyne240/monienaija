@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ApiClient, ApiError } from '../../services/api-client';
+import { useAuthStore } from '../../store/auth-store';
 import type {
   DashboardTemplateSummary,
   RoleDashboardAssignmentSummary,
@@ -35,6 +36,9 @@ type LoadState = 'loading' | 'ready' | 'forbidden' | 'error';
  * never decides on its own that a user may or may not configure dashboards.
  */
 export const DashboardSettingsScreen: React.FC = () => {
+  const { principal } = useAuthStore();
+  const canView = principal?.scopes.includes('workforce.dashboard.view') ?? false;
+  const canAssign = principal?.scopes.includes('workforce.dashboard.assign') ?? false;
   const [state, setState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [templates, setTemplates] = useState<DashboardTemplateSummary[]>([]);
@@ -72,13 +76,15 @@ export const DashboardSettingsScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (canView) load();
+    else setState('forbidden');
+  }, [load, canView]);
 
   const widgetName = (widgetKey: string) => registry.find((w) => w.widgetKey === widgetKey)?.displayName || widgetKey;
   const activeTemplates = templates.filter((t) => t.isActive);
 
   const handleSave = async (roleKey: string) => {
+    if (!canAssign) return;
     const templateKey = pendingTemplateByRole[roleKey];
     if (!templateKey) {
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message: 'Choose a template first.' } }));
@@ -126,8 +132,8 @@ export const DashboardSettingsScreen: React.FC = () => {
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
         <div style={styles.forbiddenBox}>
-          🔒 You do not have permission to view or change dashboard configuration. This requires the{' '}
-          <code style={styles.code}>workforce.dashboard.view</code> function (SUPER_ADMIN/ADMINISTRATOR by default).
+          🔒 You do not have permission to view dashboard configuration. This requires the{' '}
+          <code style={styles.code}>workforce.dashboard.view</code> function.
         </div>
       </div>
     );
@@ -202,9 +208,11 @@ export const DashboardSettingsScreen: React.FC = () => {
             <tr>
               <th style={styles.th}>Role</th>
               <th style={styles.th}>Current Template</th>
-              <th style={styles.th}>Change To</th>
-              <th style={styles.th}>Reason</th>
-              <th style={styles.th} />
+              {canAssign && <>
+                <th style={styles.th}>Change To</th>
+                <th style={styles.th}>Reason</th>
+                <th style={styles.th} />
+              </>}
             </tr>
           </thead>
           <tbody>
@@ -216,40 +224,42 @@ export const DashboardSettingsScreen: React.FC = () => {
                     <strong>{a.roleKey}</strong>
                   </td>
                   <td style={styles.td}>{a.templateKey}</td>
-                  <td style={styles.td}>
-                    <select
-                      style={styles.select}
-                      value={pendingTemplateByRole[a.roleKey] ?? a.templateKey}
-                      onChange={(e) => setPendingTemplateByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
-                    >
-                      {activeTemplates.map((t) => (
-                        <option key={t.templateKey} value={t.templateKey}>
-                          {t.templateKey}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td style={styles.td}>
-                    <input
-                      style={styles.reasonInput}
-                      type="text"
-                      placeholder="Reason for this change (optional)"
-                      value={reasonByRole[a.roleKey] ?? ''}
-                      onChange={(e) => setReasonByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <button
-                      style={styles.saveBtn}
-                      disabled={savingRole === a.roleKey || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
-                      onClick={() => handleSave(a.roleKey)}
-                    >
-                      {savingRole === a.roleKey ? 'Saving…' : 'Save'}
-                    </button>
-                    {feedback && (
-                      <div style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
-                    )}
-                  </td>
+                  {canAssign && <>
+                    <td style={styles.td}>
+                      <select
+                        style={styles.select}
+                        value={pendingTemplateByRole[a.roleKey] ?? a.templateKey}
+                        onChange={(e) => setPendingTemplateByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
+                      >
+                        {activeTemplates.map((t) => (
+                          <option key={t.templateKey} value={t.templateKey}>
+                            {t.templateKey}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={styles.td}>
+                      <input
+                        style={styles.reasonInput}
+                        type="text"
+                        placeholder="Reason for this change (optional)"
+                        value={reasonByRole[a.roleKey] ?? ''}
+                        onChange={(e) => setReasonByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
+                      />
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        style={styles.saveBtn}
+                        disabled={savingRole === a.roleKey || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
+                        onClick={() => handleSave(a.roleKey)}
+                      >
+                        {savingRole === a.roleKey ? 'Saving…' : 'Save'}
+                      </button>
+                      {feedback && (
+                        <div style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
+                      )}
+                    </td>
+                  </>}
                 </tr>
               );
             })}

@@ -1,47 +1,62 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
 export const SystemHealthScreen: React.FC = () => {
   const { principal } = useAuthStore();
-  const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('metrics.view') || hasFn('diagnostics.view') || hasFn('outbox.view') || principal?.roles.includes('OPERATIONS') || principal?.roles.includes('SUPER_ADMIN') || hasFn('privileged:execute') || principal?.roles.includes('ADMINISTRATOR');
+  const canViewMetrics = principal?.scopes.includes('metrics.view') ?? false;
+  const canViewDiagnostics = principal?.scopes.includes('diagnostics.view') ?? false;
+  const canViewOutbox = principal?.scopes.includes('outbox.view') ?? false;
+  const canViewAny = canViewMetrics || canViewDiagnostics || canViewOutbox;
   const [metrics, setMetrics] = useState<any>(null);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [outbox, setOutbox] = useState<any>(null);
+  const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
-  const fetchAll = async () => {
-    setLoading(true); setError('');
-    try {
-      const [m,d,o]: any = await Promise.all([
-        ApiClient.get('/internal/metrics').catch((e:any)=>({ error: e.message })),
-        ApiClient.get('/internal/diagnostics').catch((e:any)=>({ error: e.message })),
-        ApiClient.get('/internal/outbox').catch((e:any)=>({ error: e.message })),
-      ]);
-      setMetrics(m); setDiagnostics(d); setOutbox(o);
-    } catch(e:any){ setError(e?.message||'Failed to load system health'); }
-    finally{ setLoading(false); }
-  };
-  useEffect(()=>{ if(canView) fetchAll(); else setLoading(false); }, []);
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    setLoadErrors({});
+    const requests: Promise<void>[] = [];
+    if (canViewMetrics) {
+      requests.push(ApiClient.get('/internal/metrics').then(setMetrics).catch((err: any) => {
+        setLoadErrors((prev) => ({ ...prev, metrics: err?.message || 'Metrics unavailable' }));
+      }));
+    }
+    if (canViewDiagnostics) {
+      requests.push(ApiClient.get('/internal/diagnostics').then(setDiagnostics).catch((err: any) => {
+        setLoadErrors((prev) => ({ ...prev, diagnostics: err?.message || 'Diagnostics unavailable' }));
+      }));
+    }
+    if (canViewOutbox) {
+      requests.push(ApiClient.get('/internal/outbox').then(setOutbox).catch((err: any) => {
+        setLoadErrors((prev) => ({ ...prev, outbox: err?.message || 'Outbox unavailable' }));
+      }));
+    }
+    await Promise.all(requests);
+    setLoading(false);
+  }, [canViewMetrics, canViewDiagnostics, canViewOutbox]);
 
-  if(!canView) return <div style={wrap}><div style={denied}>Requires <code>metrics.view / diagnostics.view</code>. Roles: {principal?.roles.join(', ')}</div></div>;
+  useEffect(() => {
+    if (canViewAny) fetchAll();
+    else setLoading(false);
+  }, [canViewAny, fetchAll]);
+
+  if(!canViewAny) return <div style={wrap} role="alert"><div style={denied}>This screen requires at least one of <code>metrics.view</code>, <code>diagnostics.view</code>, or <code>outbox.view</code>.</div></div>;
 
   return (
     <div style={wrap}>
-      <h2 style={h2}>🩺 System Health & Ops</h2>
-      <p style={sub}>Metrics, diagnostics, outbox — live internal surfaces. All require workforce session via <code>/internal/*</code> (generic internal admin surface).</p>
+      <h2 style={h2}>🩺 System Health</h2>
+      <p style={sub}>Read-only operational data. Each panel is loaded only when the corresponding function is granted.</p>
       <button onClick={fetchAll} style={btn} disabled={loading}>{loading?'Loading…':'Refresh'}</button>
-      {error && <div style={errBox}>{error}</div>}
       {loading ? <div style={loadingBox}>Loading health data…</div> : <>
         <div style={grid}>
-          <div style={card}><h4 style={h4}>Metrics</h4><pre style={pre}>{JSON.stringify(metrics, null, 2)}</pre></div>
-          <div style={card}><h4 style={h4}>Diagnostics</h4><pre style={pre}>{JSON.stringify(diagnostics, null, 2)}</pre></div>
+          {canViewMetrics && <div style={card}><h4 style={h4}>Metrics</h4>{loadErrors.metrics ? <div style={errBox}>{loadErrors.metrics}</div> : <pre style={pre}>{JSON.stringify(metrics, null, 2)}</pre>}</div>}
+          {canViewDiagnostics && <div style={card}><h4 style={h4}>Diagnostics</h4>{loadErrors.diagnostics ? <div style={errBox}>{loadErrors.diagnostics}</div> : <pre style={pre}>{JSON.stringify(diagnostics, null, 2)}</pre>}</div>}
         </div>
-        <div style={card}><h4 style={h4}>Outbox (recent events)</h4><pre style={pre}>{JSON.stringify(outbox, null, 2)}</pre></div>
+        {canViewOutbox && <div style={card}><h4 style={h4}>Outbox (recent events)</h4>{loadErrors.outbox ? <div style={errBox}>{loadErrors.outbox}</div> : <pre style={pre}>{JSON.stringify(outbox, null, 2)}</pre>}</div>}
       </>}
-      <div style={note}>If metrics show <code>reconciliation.duration_ms</code> that feed is from the reconciliation run; outbox pending count should be 0 on healthy system (deliveries + inbox cover notifications).</div>
+      <div style={note}>Outbox pending count and diagnostics are read-only operational signals; this screen does not mutate delivery, reconciliation, or ledger state.</div>
     </div>
   );
 };

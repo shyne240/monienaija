@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/auth-store';
 export const SuperAdminRecoveryScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('workforce.super_admin.recover') || principal?.roles.includes('ADMINISTRATOR') || principal?.roles.includes('SUPER_ADMIN');
+  const canView = hasFn('workforce.super_admin.recover');
   const [statement, setStatement] = useState('');
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
@@ -13,9 +13,10 @@ export const SuperAdminRecoveryScreen: React.FC = () => {
 
   const handleRecover = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canView) return;
     setError(''); setResult(''); setLoading(true);
     try {
-      const res: any = await ApiClient.post('/internal/a2/workforce/super-admin/recover', { recoveryStatement: statement });
+      const res: any = await ApiClient.post('/internal/a2/workforce/super-admin/recovery', { statement });
       setResult(`Recovery executed: ${JSON.stringify(res)}`);
     } catch (err: any) {
       setError(err?.message || 'Recovery failed — requires RS256-signed A2RecoveryStatementV1 and ADMINISTRATOR role');

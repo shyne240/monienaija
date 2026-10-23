@@ -4,19 +4,20 @@ import { useAuthStore } from '../../store/auth-store';
 
 export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
   const { principal } = useAuthStore();
-  const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('audit.view') || hasFn('audit.search') || principal?.roles.includes('FINANCE_AUDITOR') || principal?.roles.includes('SUPER_ADMIN');
+  const canView = principal?.scopes.includes('audit.search') ?? false;
   const [customerId, setCustomerId] = useState(initialCustomerId || '');
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const fetchEvents = async () => {
+    if (!canView) return;
     setLoading(true); setError(''); setEvents([]);
     try {
-      const endpoint = customerId.trim() ? `/customers/${customerId.trim()}/audit-events` : '/internal/audit/search';
-      const res: any = await ApiClient.get(endpoint);
-      setEvents(res.data || res.items || (Array.isArray(res) ? res : []));
+      const query = new URLSearchParams({ limit: '100' });
+      if (customerId.trim()) query.set('entityId', customerId.trim());
+      const res: any = await ApiClient.get(`/internal/audit?${query.toString()}`);
+      setEvents(Array.isArray(res) ? res : res.data || res.items || []);
     } catch (e: any) { setError(e?.message || 'Failed to load audit trail'); }
     finally { setLoading(false); }
   };
@@ -25,20 +26,20 @@ export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = ({ ini
     if (initialCustomerId && canView) fetchEvents();
   }, [initialCustomerId]);
 
-  if (!canView) return <div style={wrap}><div style={denied}>Requires <code>audit.view / audit.search</code> (FINANCE_AUDITOR / SUPER_ADMIN). Roles: {principal?.roles.join(', ')}</div></div>;
+  if (!canView) return <div style={wrap} role="alert"><div style={denied}>Audit search requires the <code>audit.search</code> function.</div></div>;
 
   return (
     <div style={wrap}>
       <h2 style={h2}>📜 Audit & Security Events</h2>
-      <p style={sub}>Search audit trail — per-customer or global. Workforce session via <code>/internal/a2/workforce/security-events</code>. Read-only, no mutation.</p>
+      <p style={sub}>Search audit records — per-entity or global. Uses the implemented read-only <code>GET /internal/audit</code> endpoint.</p>
       <div style={row}>
-        <input value={customerId} onChange={e => setCustomerId(e.target.value)} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : "Customer UUID (optional — leave empty for global search)"} style={input} />
+        <input value={customerId} onChange={e => setCustomerId(e.target.value)} placeholder={initialCustomerId ? `Customer entity ${initialCustomerId.slice(0,8)}…` : "Entity UUID (optional — leave empty for global search)"} style={input} />
         <button onClick={fetchEvents} style={btn} disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
       </div>
       {initialCustomerId && <div style={note}>Pre-filled from Customer 360° — no manual UUID paste required.</div>}
       {error && <div style={errBox}>{error}</div>}
       {loading ? <div style={loadingBox}>Searching audit events…</div> :
-        events.length > 0 ? <table style={table}><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>{events.map((ev:any,i)=><tr key={ev.id||i}><td style={mono}>{ev.createdAt ? new Date(ev.createdAt).toLocaleString() : '-'}</td><td>{ev.actor || ev.actorId || '-'}</td><td>{ev.action || ev.event || '-'}</td><td style={mono}>{ev.targetId || ev.resourceId || '-'}</td></tr>)}</tbody></table> :
+        events.length > 0 ? <table style={table}><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Entity ID</th></tr></thead><tbody>{events.map((ev:any,i)=><tr key={ev.id||i}><td style={mono}>{ev.occurredAt ? new Date(ev.occurredAt).toLocaleString() : '-'}</td><td>{ev.actor || '-'}</td><td>{ev.action || '-'}</td><td>{ev.entityType || '-'}</td><td style={mono}>{ev.entityId || '-'}</td></tr>)}</tbody></table> :
         <div style={empty}>No audit events — try a different customer or global search.</div>
       }
     </div>
