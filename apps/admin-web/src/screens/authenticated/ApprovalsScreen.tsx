@@ -11,10 +11,10 @@ export const ApprovalsScreen: React.FC = () => {
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<'approve' | 'reject' | null>(null);
+  const [decisionAction, setDecisionAction] = useState<'approve' | 'reject' | null>(null);
 
-  const handleApprove = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleDecision = async (action: 'approve' | 'reject') => {
     if (!canApprove) return;
     if (!approvalId.trim()) {
       setError('Approval ID is required');
@@ -22,22 +22,29 @@ export const ApprovalsScreen: React.FC = () => {
     }
 
     setIsLoading(true);
+    setDecisionAction(action);
     setError('');
-    setSuccess(false);
+    setSuccess(null);
 
     try {
-      // POST /internal/a2/workforce/approvals/:id/approve
-      await ApiClient.post(`/internal/a2/workforce/approvals/${approvalId.trim()}/approve`, {
+      // Both decision routes exist; the backend remains authoritative for the checker policy.
+      await ApiClient.post(`/internal/a2/workforce/approvals/${approvalId.trim()}/${action}`, {
         comment: comment.trim() || undefined,
       });
-      setSuccess(true);
+      setSuccess(action);
       setApprovalId('');
       setComment('');
     } catch (err: any) {
-      setError(err?.message || 'Failed to approve the action override');
+      setError(err?.message || `Failed to ${action} the action override`);
     } finally {
       setIsLoading(false);
+      setDecisionAction(null);
     }
+  };
+
+  const handleApproveSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void handleDecision('approve');
   };
 
   if (!canApprove) {
@@ -58,16 +65,19 @@ export const ApprovalsScreen: React.FC = () => {
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Read-Only Listing & Details Unavailable</span>
         <p style={styles.gapText}>
-          The current A2 workforce controller does not expose GET `/approvals` or GET `/approvals/:id` endpoints. Viewing pending lists is currently a backend gap. Action execution is supported via direct POST commands.
+          The current A2 workforce controller does not expose GET `/approvals` or GET `/approvals/:id` endpoints. Viewing pending lists is currently a backend gap. Decisions require an approval ID from an existing workflow.
         </p>
       </div>
+      <div style={styles.fundingNote}>
+        Agent funding requests use their dedicated rejection workflow so approval and request state change atomically. This generic rejection action intentionally rejects funding approval IDs; it does not replace that workflow.
+      </div>
 
-      {error && <div style={styles.errorBox}>{error}</div>}
-      {success && <div style={styles.successBox}>Privileged action checked and approved successfully!</div>}
+      {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Privileged action checked and approved successfully!' : 'Approval decision recorded as rejected successfully.'}</div>}
 
       <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Submit Checker Approval Signature</h3>
-        <form onSubmit={handleApprove} style={styles.form}>
+        <h3 style={styles.cardTitle}>Submit Checker Decision</h3>
+        <form onSubmit={handleApproveSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Pending Approval ID (UUID)</label>
             <input
@@ -91,13 +101,14 @@ export const ApprovalsScreen: React.FC = () => {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            style={styles.submitBtn}
-          >
-            {isLoading ? 'Signing Approval...' : 'Sign & Approve Action'}
-          </button>
+          <div style={styles.decisionButtons}>
+            <button type="submit" disabled={isLoading || !approvalId.trim()} style={styles.submitBtn}>
+              {isLoading && decisionAction === 'approve' ? 'Approving…' : 'Sign & Approve Action'}
+            </button>
+            <button type="button" disabled={isLoading || !approvalId.trim()} onClick={() => void handleDecision('reject')} style={styles.rejectBtn}>
+              {isLoading && decisionAction === 'reject' ? 'Rejecting…' : 'Reject Action'}
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -143,6 +154,16 @@ const styles = {
     fontSize: '12px',
     color: '#78350F',
     margin: 0,
+    lineHeight: '18px',
+  },
+  fundingNote: {
+    backgroundColor: '#EFF6FF',
+    border: '1px solid #BFDBFE',
+    borderRadius: '6px',
+    padding: '12px',
+    marginBottom: '20px',
+    color: '#1E3A8A',
+    fontSize: '12px',
     lineHeight: '18px',
   },
   errorBox: {
@@ -217,6 +238,11 @@ const styles = {
     resize: 'none' as const,
     color: '#1E293B',
   },
+  decisionButtons: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap' as const,
+  },
   submitBtn: {
     backgroundColor: '#0A3D25',
     color: '#FFFFFF',
@@ -226,7 +252,17 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-    alignSelf: 'flex-start',
+    minWidth: '180px',
+  },
+  rejectBtn: {
+    backgroundColor: '#FEF2F2',
+    color: '#991B1B',
+    border: '1px solid #FCA5A5',
+    borderRadius: '6px',
+    padding: '12px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
     minWidth: '180px',
   },
 };

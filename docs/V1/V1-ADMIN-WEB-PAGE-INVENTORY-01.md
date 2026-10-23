@@ -85,10 +85,10 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 
 #### 5. Support Inbox — `support`
 - **Roles/route:** `SUPER_ADMIN`, `OPERATIONS`, `CUSTOMER_SERVICE` (`customer.manage_support_case`).
-- **UI/actions:** status/customer-filtered paginated queue; detail drawer; status updates; outbound message creation. The screen does not render message history, does not expose the existing assignment action, and does not render the existing messages GET route.
-- **Backend/API:** `GET /internal/support/tickets`, `/tickets/:id`, `/tickets/:id/messages`; `POST /tickets/:id/status`, `/assign`, `/resolve`, `/close`, `/messages` under `/internal/support`. Route/function authorization is source-inspected, not live.
-- **API verification:** API static — current route paths match; no runtime test.
-- **UI availability:** partial; assignment and message-history controls are absent.
+- **UI/actions:** status/customer-filtered paginated queue; detail drawer; allowed status transitions; assignment by manually entered workforce principal ID; message history with internal/customer-visible labels; customer-visible outbound message. Batch 02 adds the existing message-history and assignment actions, uses returned version values on writes, and disables status/assignment/message controls when the current backend transition rules do not permit them. There is no assignee-directory API.
+- **Backend/API:** `GET /internal/support/tickets` returns `items` plus nested `pagination`; detail/history are `GET /tickets/:id` and `/tickets/:id/messages`; writes are `POST /tickets/:id/status`, `/assign`, `/resolve`, `/close`, `/messages` under `/internal/support`. All workforce routes require `customer.manage_support_case`; route/function authorization and response mapping are source-inspected, not live.
+- **API verification:** API static — current controller/service paths and payload/response shapes inspected; no runtime request.
+- **UI availability:** usable queue/detail/history/assignment/status/message controls for the existing APIs after Batch 02; workforce assignee lookup remains blocked by a missing directory endpoint.
 - **Actual UI/E2E:** Not performed.
 
 ### 3.3 Money Movement
@@ -233,10 +233,10 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 
 #### 22. Privileged Approvals — `approvalsInbox`
 - **Roles/route:** `FINANCE_CONTROLLER` role plus `privileged:approve`.
-- **UI/actions:** manual approval UUID and comment; approve only. No reject button, pending list, or approval detail view.
+- **UI/actions:** manual approval UUID and optional comment; Batch 02 adds both approve and reject calls on existing POST routes. The UI still requires an ID supplied by an existing workflow; it does not show pending items or approval details. Agent funding rejections remain on their dedicated atomic workflow; the generic reject route explicitly refuses those IDs.
 - **Backend/API:** `POST /internal/a2/workforce/approvals/:id/approve` and `/reject`; generic request route is `POST /internal/a2/workforce/approvals/request`. There is no generic `GET /approvals` or `GET /approvals/:id` queue/detail. Some role-definition proposals have their own GET list/detail endpoints.
-- **API verification:** API static — POST paths inspected; queue/detail routes confirmed absent; not live.
-- **UI availability:** partial; manual approve works against an externally supplied ID; reject/queue/detail UI missing.
+- **API verification:** API static — existing POST paths and funding rejection guard inspected; queue/detail routes confirmed absent; not live.
+- **UI availability:** approve/reject decision controls are present after Batch 02 for externally supplied IDs; queue/detail remain backend blockers.
 - **Actual UI/E2E:** Not performed.
 
 #### 23. Super-Admin Recovery — `superAdminRecovery`
@@ -270,7 +270,7 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 3. **Limits are not commercial-governed:** existing profile/rule writes call services directly after `limit.modify`; no maker/checker execution path was verified. Batch 01 adds read-only lists only.
 4. **Missing endpoints must remain explicit:** global transaction/journal list, generic approval list/detail, current workforce identity list, and customer compliance queue/filter are not inferred from similarly named detail/write routes.
 5. **Contextual navigation:** Customer 360° preserves `customerId` for transaction history, KYC, compliance/fraud, support, audit, and limits. This context is in-app state, not a backend entitlement.
-6. **Other known UI omissions:** Agent applications/credentials/outlets/terminals/funding; Support assignment/message history; Reconciliation break resolution; limit usage/reservation panels; operational role and role-definition governance; generic approval reject/queue/detail. These remain backlog entries, not features added by Batch 01.
+6. **Other known UI omissions:** Agent applications/credentials/outlets/terminals/funding; Support assignee directory (no API); Reconciliation break resolution; limit usage/reservation panels; operational role and role-definition governance; generic approval queue/detail. These remain backlog entries; Batch 02 adds only existing support and generic checker actions.
 
 ## 5. Batch 01 — Super Admin/shared screen completion
 
@@ -289,3 +289,17 @@ Each page records its visible roles, active UI/actions, backend paths and functi
 - **API verification:** static controller/path/authorization-source inspection only. No authenticated HTTP call or database-backed API request was made.
 - **Actual interface/E2E:** not performed; no running backend or authenticated browser session was exercised. Jest component tests are not E2E.
 - **Changed Batch 01 files:** `apps/admin-web/src/components/StructuredData.tsx`; `apps/admin-web/src/screens/authenticated/CommercialRulesScreen.tsx`, `CustomerDirectoryScreen.tsx`, `LimitAssignmentScreen.tsx`, `SuperAdminRecoveryScreen.tsx`, `SystemHealthScreen.tsx`, `WorkforceAdminScreen.tsx`, and `navigation-access.ts`; `apps/admin-web/__tests__/admin-shared-panels.test.tsx`; and this inventory document. Only these files are eligible for the Batch 01 commit; pre-existing dirty/untracked work is excluded.
+
+## 6. Batch 02 — Support operations and checker rejection
+
+**Scope:** expose existing support message history/assignment endpoints and the existing generic approval rejection route. No backend source, authorization policy, migration, financial rule, or new endpoint is changed. The generic approval list/detail blocker remains explicit.
+
+- Support Inbox now renders the API's `items`/nested `pagination` response, message history (including internal/customer-visible classification), existing assignment by workforce principal ID, and customer-visible outbound messages. It passes the current version on assignment/status updates and disables status/assignment/message actions that the existing service transition rules disallow. The missing assignee directory is documented rather than inferred.
+- Privileged Approvals now offers both existing `approve` and generic `reject` POST decisions with an optional comment. The backend remains authoritative for checker authorization. A visible note explains that agent-funding requests must use the dedicated atomic rejection flow; generic `reject` intentionally refuses those approval IDs.
+- **API verification:** static inspection of the current support controller/service and workforce approval controller only. No authenticated HTTP or database-backed request was made.
+- **UI verification:** `npm test -- --runInBand` — passed, 11 suites / 82 tests, including four Batch 02 component tests using mocked `ApiClient` responses. These are not live backend tests or E2E.
+- **TypeScript:** `npm run ts:check` — passed.
+- **Production build:** `npm run build` — passed; Vite emitted its existing CommonJS Node API deprecation warning.
+- **API verification:** static inspection of the current support controller/service and workforce approval controller only. No authenticated HTTP or database-backed request was made.
+- **Actual interface/E2E:** not performed.
+- **Changed Batch 02 files:** `apps/admin-web/src/screens/authenticated/SupportTicketsScreen.tsx`, `ApprovalsScreen.tsx`, `apps/admin-web/__tests__/admin-batch-02-support-approvals.test.tsx`, and this inventory document. Pre-existing unrelated changes are excluded from this batch.
