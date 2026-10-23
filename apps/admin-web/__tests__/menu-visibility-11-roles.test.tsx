@@ -1,182 +1,304 @@
-/**
- * V1-MENU-VISIBILITY-11-ROLES — seven-section 26-submenu normative IA verification.
- * Renders actual Layout with each role's real catalogue scopes (live backend POST /internal/a2/workforce/local-admin-sessions capture)
- * and inspects rendered navigation buttons for both desktop and mobile, plus section headers.
- * Also clicks every visible menu and asserts target screen renders heading, proving route not blank.
- * Expected matrix derived from authorization-catalogue.seed.ts + Layout canView* predicates (least-privilege, granular commercial).
- * Legacy 15-key aliases removed — this tests the 26-submenu normative tree (proposal §3.2 corrected 2026-10-21).
- */
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { ApiClient } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
 import { Layout } from '../src/screens/authenticated/Layout';
+import { AgentNetworkScreen } from '../src/screens/authenticated/AgentNetworkScreen';
+import { CommercialRulesScreen } from '../src/screens/authenticated/CommercialRulesScreen';
+import { LedgerOperationsScreen } from '../src/screens/authenticated/LedgerOperationsScreen';
+import { ReconciliationObservabilityScreen } from '../src/screens/authenticated/ReconciliationObservabilityScreen';
+import { canAccessAdminView } from '../src/screens/authenticated/navigation-access';
 
-const ROLE_PRINCIPALS: Record<string, { roles: string[]; scopes: string[]; type: 'PRIVILEGED'|'OPERATOR' }> = {
-  SUPER_ADMIN: { type: 'PRIVILEGED', roles: ['SUPER_ADMIN'], scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'] },
-  FINANCE_PREPARER: { type: 'OPERATOR', roles: ['FINANCE_PREPARER'], scopes: ['commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.post','ledger.reverse','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','finance:prepare'] },
-  FINANCE_CONTROLLER: { type: 'OPERATOR', roles: ['FINANCE_CONTROLLER'], scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'] },
-  FINANCE_AUDITOR: { type: 'OPERATOR', roles: ['FINANCE_AUDITOR'], scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'] },
-  ADMINISTRATOR: { type: 'OPERATOR', roles: ['ADMINISTRATOR'], scopes: ['agent.view','aggregator.view','customer.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign_operational','workforce.role.revoke_operational','workforce.role.view','workforce.super_admin.recover','workforce.user.create','workforce.user.suspend','workforce.user.view'] },
-  OPERATIONS: { type: 'OPERATOR', roles: ['OPERATIONS'], scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','metrics.view','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'] },
-  AGENT_NETWORK_MANAGER: { type: 'OPERATOR', roles: ['AGENT_NETWORK_MANAGER'], scopes: ['agent.activate','agent.assign_limit','agent.defund','agent.fund','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','limit.view'] },
-  COMPLIANCE: { type: 'OPERATOR', roles: ['COMPLIANCE'], scopes: ['compliance.manage_case','compliance.manage_risk_profile','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','kyc.approve','kyc.reject','kyc.review','kyc.view'] },
-  RISK_FRAUD: { type: 'OPERATOR', roles: ['RISK_FRAUD'], scopes: ['risk_fraud.manage_fraud_case'] },
-  CUSTOMER_SERVICE: { type: 'OPERATOR', roles: ['CUSTOMER_SERVICE'], scopes: ['customer.manage_support_case','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets'] },
-  TREASURY: { type: 'OPERATOR', roles: ['TREASURY'], scopes: ['reconciliation.view'] },
-};
+jest.mock('../src/services/api-client', () => ({
+  ApiClient: {
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    patch: jest.fn(),
+    delete: jest.fn(),
+  },
+  ApiError: class MockApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+}));
 
-// 26-submenu normative tree (proposal §3.2 corrected 26, not 23)
-const ALL_NAV_KEYS = ['dashboard','dashboardSettings','customers','agents','support','transfers','cashIn','cashOut','cashToCash','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','fraudCases','workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents'] as const;
+// Seed catalogue function grants plus the legacy scope sample from .env.example. Runtime
+// principals receive the union; the menu itself is always driven by principal.scopes.
+const ROLE_PRINCIPALS = {
+  SUPER_ADMIN: {
+    type: 'PRIVILEGED', roles: ['SUPER_ADMIN'],
+    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
+  },
+  FINANCE_PREPARER: {
+    type: 'OPERATOR', roles: ['FINANCE_PREPARER'],
+    scopes: ['commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.post','ledger.reverse','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','finance:prepare'],
+  },
+  FINANCE_CONTROLLER: {
+    type: 'OPERATOR', roles: ['FINANCE_CONTROLLER'],
+    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
+  },
+  FINANCE_AUDITOR: {
+    type: 'OPERATOR', roles: ['FINANCE_AUDITOR'],
+    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
+  },
+  ADMINISTRATOR: {
+    type: 'OPERATOR', roles: ['ADMINISTRATOR'],
+    scopes: ['agent.view','aggregator.view','customer.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign_operational','workforce.role.revoke_operational','workforce.role.view','workforce.super_admin.recover','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+  },
+  OPERATIONS: {
+    type: 'OPERATOR', roles: ['OPERATIONS'],
+    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','metrics.view','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+  },
+  AGENT_NETWORK_MANAGER: {
+    type: 'OPERATOR', roles: ['AGENT_NETWORK_MANAGER'],
+    scopes: ['agent.activate','agent.assign_limit','agent.defund','agent.fund','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','limit.view'],
+  },
+  COMPLIANCE: {
+    type: 'OPERATOR', roles: ['COMPLIANCE'],
+    scopes: ['compliance.manage_case','compliance.manage_risk_profile','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','kyc.approve','kyc.reject','kyc.review','kyc.view'],
+  },
+  RISK_FRAUD: {
+    type: 'OPERATOR', roles: ['RISK_FRAUD'], scopes: ['risk_fraud.manage_fraud_case'],
+  },
+  CUSTOMER_SERVICE: {
+    type: 'OPERATOR', roles: ['CUSTOMER_SERVICE'],
+    scopes: ['customer.manage_support_case','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets'],
+  },
+  TREASURY: {
+    type: 'OPERATOR', roles: ['TREASURY'], scopes: ['reconciliation.view'],
+  },
+} as const;
+
+type RoleKey = keyof typeof ROLE_PRINCIPALS;
+const ALL_ROLES = Object.keys(ROLE_PRINCIPALS) as RoleKey[];
+
+const ALL_NAV_KEYS = [
+  'dashboard','dashboardSettings','customers','agents','support','transfers','cashIn','cashOut',
+  'ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue',
+  'limitCatalogue','limitAssignments','kycQueue','complianceCases','fraudCases','workforceAccess',
+  'roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents',
+] as const;
 type NavKey = typeof ALL_NAV_KEYS[number];
 
-// Expected visibility derived from Layout canView* predicates (least-privilege granular commercial)
-// Verified 2026-10-21 via node probe against ROLE_PRINCIPALS scopes
-const EXPECTED: Record<string, Record<NavKey, boolean>> = {
-  SUPER_ADMIN: { dashboard:true, dashboardSettings:true, customers:true, agents:true, support:true, transfers:true, cashIn:true, cashOut:true, cashToCash:true, ledgerExplorer:true, reconciliation:true, feeRules:true, commissionRules:true, rewardRules:true, productCatalogue:true, limitCatalogue:true, limitAssignments:true, kycQueue:true, complianceCases:true, fraudCases:true, workforceAccess:true, roleGovernance:true, approvalsInbox:true, superAdminRecovery:true, systemHealth:true, auditEvents:true },
-  FINANCE_PREPARER: { dashboard:true, dashboardSettings:false, customers:false, agents:false, support:false, transfers:true, cashIn:true, cashOut:true, cashToCash:true, ledgerExplorer:true, reconciliation:false, feeRules:true, commissionRules:true, rewardRules:true, productCatalogue:true, limitCatalogue:true, limitAssignments:true, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:false, roleGovernance:false, approvalsInbox:true, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  FINANCE_CONTROLLER: { dashboard:true, dashboardSettings:false, customers:false, agents:false, support:false, transfers:true, cashIn:true, cashOut:true, cashToCash:true, ledgerExplorer:true, reconciliation:false, feeRules:true, commissionRules:true, rewardRules:true, productCatalogue:true, limitCatalogue:true, limitAssignments:true, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:true, roleGovernance:true, approvalsInbox:true, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  FINANCE_AUDITOR: { dashboard:true, dashboardSettings:false, customers:true, agents:true, support:false, transfers:true, cashIn:true, cashOut:true, cashToCash:true, ledgerExplorer:true, reconciliation:true, feeRules:true, commissionRules:true, rewardRules:true, productCatalogue:true, limitCatalogue:true, limitAssignments:true, kycQueue:true, complianceCases:false, fraudCases:false, workforceAccess:true, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:true, auditEvents:true },
-  ADMINISTRATOR: { dashboard:true, dashboardSettings:true, customers:true, agents:true, support:false, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:true, roleGovernance:true, approvalsInbox:false, superAdminRecovery:true, systemHealth:false, auditEvents:false },
-  OPERATIONS: { dashboard:true, dashboardSettings:false, customers:true, agents:false, support:true, transfers:true, cashIn:true, cashOut:true, cashToCash:true, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:true, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:true, auditEvents:false },
-  AGENT_NETWORK_MANAGER: { dashboard:true, dashboardSettings:false, customers:false, agents:true, support:false, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:true, limitAssignments:true, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:false, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  COMPLIANCE: { dashboard:true, dashboardSettings:false, customers:true, agents:false, support:false, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:true, complianceCases:true, fraudCases:false, workforceAccess:false, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  RISK_FRAUD: { dashboard:true, dashboardSettings:false, customers:false, agents:false, support:false, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:false, complianceCases:false, fraudCases:true, workforceAccess:false, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  CUSTOMER_SERVICE: { dashboard:true, dashboardSettings:false, customers:true, agents:false, support:true, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:false, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:false, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:false, auditEvents:false },
-  TREASURY: { dashboard:true, dashboardSettings:false, customers:false, agents:false, support:false, transfers:false, cashIn:false, cashOut:false, cashToCash:false, ledgerExplorer:false, reconciliation:true, feeRules:false, commissionRules:false, rewardRules:false, productCatalogue:false, limitCatalogue:false, limitAssignments:false, kycQueue:false, complianceCases:false, fraudCases:false, workforceAccess:false, roleGovernance:false, approvalsInbox:false, superAdminRecovery:false, systemHealth:false, auditEvents:false },
+// Visible sidebar routes, derived from each role's seeded function-code set and the existing
+// legacy approval/execution scopes. Customer-service transaction history is contextual, not a
+// global sidebar route.
+const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
+  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','support','transfers','cashIn','cashOut','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','systemHealth','auditEvents'],
+  FINANCE_PREPARER: ['dashboard','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
+  FINANCE_CONTROLLER: ['dashboard','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox'],
+  FINANCE_AUDITOR: ['dashboard','customers','agents','transfers','cashIn','cashOut','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','systemHealth','auditEvents'],
+  ADMINISTRATOR: ['dashboard','dashboardSettings','customers','agents','workforceAccess','superAdminRecovery'],
+  OPERATIONS: ['dashboard','customers','support','transfers','cashIn','cashOut','workforceAccess','systemHealth'],
+  AGENT_NETWORK_MANAGER: ['dashboard','agents','limitCatalogue','limitAssignments'],
+  COMPLIANCE: ['dashboard','customers','kycQueue','complianceCases'],
+  RISK_FRAUD: ['dashboard','fraudCases'],
+  CUSTOMER_SERVICE: ['dashboard','customers','support'],
+  TREASURY: ['dashboard','reconciliation'],
 };
 
-// Each nav key must open a real screen (heading regex). Commercial 6 tabs share same heading; Money Movement 4 tabs share same screen.
+const SECTION_KEYS: Record<string, readonly NavKey[]> = {
+  home: ['dashboard','dashboardSettings'],
+  servicing: ['customers','agents','support'],
+  money: ['transfers','cashIn','cashOut'],
+  finance: ['ledgerExplorer','reconciliation'],
+  commercial: ['feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
+  compliance: ['kycQueue','complianceCases','fraudCases'],
+  platform: ['workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents'],
+};
+
 const SCREEN_MARKERS: Record<NavKey, RegExp> = {
-  dashboard: /Operational Dashboard|System Administration Dashboard/i,
+  dashboard: /System Administration Dashboard/i,
   dashboardSettings: /Dashboard Settings/i,
-  customers: /Customer Directory|Customer.*KYC Servicing/i,
-  agents: /Agent Network/i,
+  customers: /Customer Directory/i,
+  agents: /Agent Network Management/i,
   support: /Support Tickets/i,
-  transfers: /Transaction.*Fee|In-House Transaction/i,
-  cashIn: /Transaction.*Fee|In-House Transaction/i,
-  cashOut: /Transaction.*Fee|In-House Transaction/i,
-  cashToCash: /Transaction.*Fee|In-House Transaction/i,
-  ledgerExplorer: /Ledger.*Reversals|Ledger Core/i,
-  reconciliation: /Reconciliation.*Breaks|Independent Reconciliation/i,
+  transfers: /In-House Transaction & Fee Operations/i,
+  cashIn: /In-House Transaction & Fee Operations/i,
+  cashOut: /In-House Transaction & Fee Operations/i,
+  ledgerExplorer: /Ledger Core & Reversals Desk/i,
+  reconciliation: /Independent Reconciliation & Breaks Desk/i,
   feeRules: /Commercial Rule Registries/i,
   commissionRules: /Commercial Rule Registries/i,
   rewardRules: /Commercial Rule Registries/i,
   productCatalogue: /Commercial Rule Registries/i,
   limitCatalogue: /Commercial Rule Registries/i,
   limitAssignments: /Limit Assignments/i,
-  kycQueue: /Compliance.*KYC/i,
-  complianceCases: /Compliance.*KYC/i,
-  fraudCases: /Risk.*Fraud/i,
-  workforceAccess: /Workforce Administration|Workforce Admin/i,
-  roleGovernance: /Finance Role Administration|Workforce.*Role/i,
+  kycQueue: /KYC Assessment Lookup & Review/i,
+  complianceCases: /Compliance Case Lookup/i,
+  fraudCases: /Fraud Case Lookup/i,
+  workforceAccess: /Workforce Overview & Support Provisioning/i,
+  roleGovernance: /Finance Role Assignments/i,
   approvalsInbox: /Privileged Approvals/i,
   superAdminRecovery: /Super-Admin Recovery/i,
   systemHealth: /System Health/i,
-  auditEvents: /Audit.*Security Events/i,
+  auditEvents: /Audit & Security Events/i,
 };
 
-describe('V1-MENU-VISIBILITY-11-ROLES — 7-section 26-submenu normative IA', () => {
+function setPrincipal(roleKey: RoleKey) {
+  const definition = ROLE_PRINCIPALS[roleKey];
+  useAuthStore.setState({
+    isAuthenticated: true,
+    isLoading: false,
+    token: 'test-token',
+    sessionId: 'test-session',
+    principal: {
+      type: definition.type,
+      principalId: `issuer:${roleKey}`,
+      sessionId: 'test-session',
+      audience: 'workforce-admin',
+      roles: [...definition.roles],
+      scopes: [...definition.scopes],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    },
+  });
+}
+
+describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue roles', () => {
   beforeEach(() => {
-    useAuthStore.setState({ isAuthenticated:false, isLoading:false, token:null, sessionId:null, principal:null, error:null });
-    (global as any).localStorage={ getItem:()=>null, setItem:()=>{}, removeItem:()=>{}, clear:()=>{} };
+    jest.clearAllMocks();
+    (global as any).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path === '/internal/a2/workforce/dashboard/my-dashboard') {
+        return Promise.resolve({ templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] });
+      }
+      if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [], total: 0 });
+      if (path.startsWith('/internal/agents/') && path.endsWith('/financial-position')) {
+        return Promise.resolve({ agentId: 'agent-id', currency: 'NGN', balanceMinor: '0', walletExists: false, walletId: null });
+      }
+      return Promise.resolve([]);
+    });
+    (ApiClient.post as jest.Mock).mockResolvedValue({});
+    (ApiClient.put as jest.Mock).mockResolvedValue({});
+    (ApiClient.patch as jest.Mock).mockResolvedValue({});
+    (ApiClient.delete as jest.Mock).mockResolvedValue({});
+    useAuthStore.setState({ isAuthenticated: false, isLoading: false, token: null, sessionId: null, principal: null, error: null });
   });
 
-  const ALL_ROLES=Object.keys(ROLE_PRINCIPALS) as Array<keyof typeof ROLE_PRINCIPALS>;
+  test.each(ALL_ROLES)('desktop and mobile navigation for %s matches its granted routes', async (roleKey) => {
+    setPrincipal(roleKey);
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<Layout />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const { queryByTestId } = view!;
+    const expected = new Set<NavKey>(EXPECTED[roleKey]);
 
-  test.each(ALL_ROLES)('desktop nav for %s matches expected 26-key matrix (least-privilege)', (roleKey) => {
-    const def=ROLE_PRINCIPALS[roleKey];
-    useAuthStore.setState({ isAuthenticated:true, isLoading:false, token:'test-token', sessionId:'test-session', principal:{ type:def.type as any, principalId:'https://local-dev-identity.monienaija.invalid:local-admin-credential:'+roleKey, sessionId:'test-session', audience:'workforce-admin', roles:def.roles, scopes:def.scopes, customerAccess:'NONE', assuranceLevel:'MFA' }});
-    const { queryByTestId } = render(<Layout />);
-    for(const navKey of ALL_NAV_KEYS){
-      const expectedVisible=EXPECTED[roleKey][navKey];
-      const el=queryByTestId('nav-'+navKey);
-      if(expectedVisible) expect(el).not.toBeNull();
-      else expect(el).toBeNull();
+    for (const key of ALL_NAV_KEYS) {
+      expect(queryByTestId(`nav-${key}`) !== null).toBe(expected.has(key));
     }
-    // Section headers must exist when they contain visible items
-    const visibleSectionsForRole = new Set<string>();
-    // Derive expected visible sections from navKeys (7 sections map)
-    const sectionMap: Record<string, NavKey[]> = {
-      home: ['dashboard','dashboardSettings'],
-      servicing: ['customers','agents','support'],
-      money: ['transfers','cashIn','cashOut','cashToCash'],
-      finance: ['ledgerExplorer','reconciliation'],
-      commercial: ['feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
-      compliance: ['kycQueue','complianceCases','fraudCases'],
-      platform: ['workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents'],
-    };
-    for(const [secId, keys] of Object.entries(sectionMap)){
-      if(keys.some(k=>EXPECTED[roleKey][k as NavKey])) visibleSectionsForRole.add(secId);
+    for (const [section, keys] of Object.entries(SECTION_KEYS)) {
+      expect(queryByTestId(`section-${section}`) !== null).toBe(keys.some((key) => expected.has(key)));
     }
-    for(const secId of ['home','servicing','money','finance','commercial','compliance','platform']){
-      const header=queryByTestId('section-'+secId);
-      if(visibleSectionsForRole.has(secId)) expect(header).not.toBeNull();
-      else expect(header).toBeNull();
-    }
-    // mobile drawer parity
-    const hamburger=queryByTestId('mobile-menu-toggle');
+
+    const hamburger = queryByTestId('mobile-menu-toggle');
     expect(hamburger).not.toBeNull();
     fireEvent.click(hamburger!);
-    const mobileNav=queryByTestId('mobile-nav');
-    expect(mobileNav).not.toBeNull();
-    for(const navKey of ALL_NAV_KEYS){
-      const expectedVisible=EXPECTED[roleKey][navKey];
-      const mobileEl=queryByTestId('mobile-nav-'+navKey);
-      if(expectedVisible) expect(mobileEl).not.toBeNull();
-      else expect(mobileEl).toBeNull();
-    }
-    fireEvent.click(hamburger!);
-  });
-
-  test.each(ALL_ROLES)('each visible menu for %s renders a real screen (not blank)', (roleKey) => {
-    const def=ROLE_PRINCIPALS[roleKey];
-    useAuthStore.setState({ isAuthenticated:true, isLoading:false, token:'test-token', sessionId:'test-session', principal:{ type:def.type as any, principalId:'https://local-dev-identity.monienaija.invalid:local-admin-credential:'+roleKey, sessionId:'test-session', audience:'workforce-admin', roles:def.roles, scopes:def.scopes, customerAccess:'NONE', assuranceLevel:'MFA' }});
-    const { container, getByTestId } = render(<Layout />);
-    for(const navKey of ALL_NAV_KEYS){
-      if(!EXPECTED[roleKey][navKey]) continue;
-      const btn=getByTestId('nav-'+navKey);
-      fireEvent.click(btn);
-      const content=container.textContent||'';
-      if(navKey==='dashboard') expect(content.length).toBeGreaterThan(200);
-      else expect(content).toMatch(SCREEN_MARKERS[navKey]);
+    expect(queryByTestId('mobile-nav')).not.toBeNull();
+    for (const key of ALL_NAV_KEYS) {
+      expect(queryByTestId(`mobile-nav-${key}`) !== null).toBe(expected.has(key));
     }
   });
 
-  test('no cross-role leak for critical least-privilege pairs', () => {
-    const forbiddenPairs: Array<[string, NavKey]> = [
-      ['FINANCE_PREPARER','customers'],
-      ['FINANCE_PREPARER','agents'],
-      ['FINANCE_PREPARER','kycQueue'],
-      ['OPERATIONS','ledgerExplorer'],
-      ['OPERATIONS','feeRules'],
-      ['TREASURY','customers'],
-      ['TREASURY','transfers'],
-      ['RISK_FRAUD','complianceCases'],
-      ['RISK_FRAUD','kycQueue'],
-      ['COMPLIANCE','fraudCases'],
-      ['COMPLIANCE','ledgerExplorer'],
-      ['CUSTOMER_SERVICE','ledgerExplorer'],
-      ['CUSTOMER_SERVICE','reconciliation'],
-      ['AGENT_NETWORK_MANAGER','feeRules'],
-      ['AGENT_NETWORK_MANAGER','transfers'],
-    ];
-    for(const [roleKey, navKey] of forbiddenPairs){
-      const def=ROLE_PRINCIPALS[roleKey as keyof typeof ROLE_PRINCIPALS];
-      useAuthStore.setState({ isAuthenticated:true, isLoading:false, token:'t', sessionId:'s', principal:{ type:def.type as any, principalId:'iss:'+roleKey, sessionId:'s', audience:'workforce-admin', roles:def.roles, scopes:def.scopes, customerAccess:'NONE', assuranceLevel:'MFA' }});
-      const { queryByTestId }=render(<Layout />);
-      expect(queryByTestId('nav-'+navKey)).toBeNull();
+  test.each(ALL_ROLES)('each visible route for %s renders its implemented screen', async (roleKey) => {
+    setPrincipal(roleKey);
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<Layout />);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const { container, getByTestId } = view!;
+    for (const key of EXPECTED[roleKey]) {
+      await act(async () => {
+        fireEvent.click(getByTestId(`nav-${key}`));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(container.textContent).toMatch(SCREEN_MARKERS[key]);
     }
   });
 
-  test('commercial granularity: AGENT_NETWORK_MANAGER sees only limit submenus, not fee/commission', () => {
-    const def=ROLE_PRINCIPALS['AGENT_NETWORK_MANAGER'];
-    useAuthStore.setState({ isAuthenticated:true, isLoading:false, token:'t', sessionId:'s', principal:{ type:def.type as any, principalId:'iss:AGENT_NETWORK_MANAGER', sessionId:'s', audience:'workforce-admin', roles:def.roles, scopes:def.scopes, customerAccess:'NONE', assuranceLevel:'MFA' }});
-    const { queryByTestId }=render(<Layout />);
-    expect(queryByTestId('nav-feeRules')).toBeNull();
-    expect(queryByTestId('nav-commissionRules')).toBeNull();
-    expect(queryByTestId('nav-rewardRules')).toBeNull();
-    expect(queryByTestId('nav-productCatalogue')).toBeNull();
-    expect(queryByTestId('nav-limitCatalogue')).not.toBeNull();
-    expect(queryByTestId('nav-limitAssignments')).not.toBeNull();
+  test('customer-scoped history is contextual; it is not a substitute for global transaction.view', () => {
+    expect(canAccessAdminView('transfers', ['transaction.view'], ['CUSTOMER_SERVICE'], { customerId: 'customer-1' })).toBe(false);
+    expect(canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE'], { customerId: 'customer-1' })).toBe(true);
+    expect(canAccessAdminView('transactions', ['customer.view_transactions'], ['CUSTOMER_SERVICE'])).toBe(false);
+  });
+
+  test('approval navigation requires both the configured checker role and approval scope', () => {
+    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_AUDITOR'])).toBe(false);
+    expect(canAccessAdminView('approvalsInbox', [], ['FINANCE_CONTROLLER'])).toBe(false);
+    expect(canAccessAdminView('approvalsInbox', ['privileged:approve'], ['FINANCE_CONTROLLER'])).toBe(true);
+  });
+
+  test('agent list and lifecycle affordances use exact function scopes, not role-name fallbacks', async () => {
+    const agent = { id: 'agent-id', reference: 'AG-001', status: 'ACTIVE', agentClassId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.startsWith('/internal/agents?')) return Promise.resolve({ data: [agent], total: 1 });
+      if (path.endsWith('/financial-position')) return Promise.resolve({ agentId: agent.id, currency: 'NGN', balanceMinor: '0', walletExists: false, walletId: null });
+      return Promise.resolve([]);
+    });
+
+    setPrincipal('FINANCE_AUDITOR');
+    const readOnly = render(<AgentNetworkScreen />);
+    const readOnlyViewButton = await readOnly.findByText('View');
+    await act(async () => {
+      fireEvent.click(readOnlyViewButton);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(readOnly.queryByText('Suspend')).toBeNull();
+    expect(readOnly.queryByText('Terminate')).toBeNull();
+    expect(readOnly.queryByText('Reactivate')).toBeNull();
+    expect(readOnly.queryByText('Activate')).toBeNull();
+    readOnly.unmount();
+
+    setPrincipal('AGENT_NETWORK_MANAGER');
+    const manager = render(<AgentNetworkScreen />);
+    const managerViewButton = await manager.findByText('View');
+    await act(async () => {
+      fireEvent.click(managerViewButton);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(manager.getByText('Suspend')).toBeTruthy();
+    expect(manager.getByText('Terminate')).toBeTruthy();
+    expect(manager.getByText('Reactivate')).toBeTruthy();
+    expect(manager.getByText('Activate')).toBeTruthy();
+  });
+
+  test('commercial tabs are individually scope-gated instead of inherited from role labels', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
+      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: ['fee_rule.view'], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+    });
+    (ApiClient.get as jest.Mock).mockImplementation(() => new Promise(() => {}));
+    const screen = render(<CommercialRulesScreen initialTab="fees" />);
+    expect(screen.getByText('Fees')).toBeTruthy();
+    expect(screen.queryByText('Commissions')).toBeNull();
+    expect(screen.queryByText('Products')).toBeNull();
+    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules'));
+    expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules');
+  });
+
+  test('ledger read screen does not use SUPER_ADMIN role alone as a substitute for ledger.view', () => {
+    useAuthStore.setState({
+      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
+      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: [], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+    });
+    const screen = render(<LedgerOperationsScreen />);
+    expect(screen.getByRole('alert').textContent).toMatch(/requires ledger.view/i);
+    expect(ApiClient.get).not.toHaveBeenCalled();
+  });
+
+  test('reconciliation screen requires reconciliation.view even when rendered directly', () => {
+    useAuthStore.setState({
+      isAuthenticated: true, isLoading: false, token: 't', sessionId: 's',
+      principal: { type: 'PRIVILEGED', principalId: 'issuer:SUPER_ADMIN', sessionId: 's', audience: 'workforce-admin', roles: ['SUPER_ADMIN'], scopes: [], customerAccess: 'NONE', assuranceLevel: 'MFA' },
+    });
+    const screen = render(<ReconciliationObservabilityScreen />);
+    expect(screen.getByRole('alert').textContent).toMatch(/requires reconciliation.view/i);
   });
 });

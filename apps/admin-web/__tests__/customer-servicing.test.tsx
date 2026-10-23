@@ -36,7 +36,7 @@ describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
         sessionId: 'operator-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['customer.view','customer.view_transactions','customer.view_wallets','customer.manage_support_case','kyc.view','ledger.view','transaction.view'],
+        scopes: ['customer.view','customer.create','customer.suspend','customer.activate','customer.close','customer.view_transactions','customer.view_wallets','customer.create_wallet','customer.manage_support_case','kyc.view','kyc.review','kyc.approve','kyc.reject','ledger.view','transaction.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -226,7 +226,7 @@ describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
         status: 'SUSPENDED',
         actor: 'iss:back-office-operator',
       });
-      expect(getByText('Customer status locked to SUSPENDED successfully.')).toBeTruthy();
+      expect(getByText('Customer status updated to SUSPENDED successfully.')).toBeTruthy();
     });
   });
 });

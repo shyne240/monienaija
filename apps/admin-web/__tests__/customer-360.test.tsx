@@ -29,6 +29,7 @@ describe('Customer 360° deep links preserve customerId (no UUID paste)', () => 
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (ApiClient.get as jest.Mock).mockResolvedValue([]);
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
@@ -65,30 +66,23 @@ describe('Customer 360° deep links preserve customerId (no UUID paste)', () => 
     return { getByText, findByText };
   }
 
-  test('View Transactions preserves customerId via navContext', async () => {
+  test('View Transactions preserves customerId via the customer-scoped history route', async () => {
     const utils = await openCustomerDetail();
     const { getByText, findByText } = utils;
-    // Mock for destination screen after nav (TransactionObservability will need dashboard fetch already done, but we already consumed it)
-    // For transfers screen, it will not auto-fetch until search, but we verify pre-filled note
     fireEvent.click(getByText('View Transactions'));
-    // Destination is TransactionObservabilityScreen with initialCustomerId pre-filled
-    expect(await findByText(/In-House Transaction & Fee Operations/)).toBeTruthy();
-    // Pre-filled indicator: search input has placeholder with customer context? Check Transaction screen shows pre-filled customerId note
-    // Our screen shows initialCustomerId slice in transactionType note? We show via initialType prop, but we also check that searching with that customerId is possible via initialCustomerId prop
-    // Verify that the screen's subtitle or note mentions customer context — we added no explicit note, but initialCustomerId is carried
-    // Instead verify that the transaction screen's input is pre-filled? Actually our screen sets searchTxId to initialCustomerId
-    // So we can check that the detail view shows the customerId is not empty (search input value)
-    // The placeholder for transaction screen is 'e.g. 5e6f7g8h-...' — but value should be cust-360-uuid
-    // We can check that the screen does not show UUID paste manual entry warning
-    expect((utils.getByText('P2P TRANSFER') || {} as any)).toBeTruthy();
+
+    expect(await findByText('Customer Transaction History')).toBeTruthy();
+    expect(ApiClient.get).toHaveBeenCalledWith(
+      `/internal/customers/${mockCustomer.id}/transactions?page=1&limit=20`,
+    );
   });
 
-  test('Open in KYC Queue preserves customerId', async () => {
+  test('Open KYC Assessment Lookup preserves customerId', async () => {
     const utils = await openCustomerDetail();
     (ApiClient.get as jest.Mock).mockImplementation(() => Promise.resolve([]));
-    fireEvent.click(utils.getByText('Open in KYC Queue'));
-    expect(await utils.findByText('🛡️ Compliance & KYC')).toBeTruthy();
-    expect(utils.getByText(/Pre-filled from Customer 360°/)).toBeTruthy();
+    fireEvent.click(utils.getByText('Open KYC Assessment Lookup'));
+    expect(await utils.findByText('🪪 KYC Assessment Lookup & Review')).toBeTruthy();
+    expect(utils.getByText(/Customer context carried from Customer 360°/)).toBeTruthy();
     // Input should be pre-filled with customerId
     const inputs = document.querySelectorAll('input');
     const prefilled = Array.from(inputs).find(i => (i as HTMLInputElement).value === mockCustomer.id);
@@ -99,15 +93,15 @@ describe('Customer 360° deep links preserve customerId (no UUID paste)', () => 
     const utils = await openCustomerDetail();
     (ApiClient.get as jest.Mock).mockResolvedValue([]); // mock any compliance fetch
     fireEvent.click(utils.getByText('Open Compliance Cases'));
-    expect(await utils.findByText(/Compliance & KYC/)).toBeTruthy();
-    expect(utils.getByText(/Pre-filled from Customer 360°/)).toBeTruthy();
+    expect(await utils.findByText('🛡️ Compliance Case Lookup')).toBeTruthy();
+    expect(utils.getByText(/Customer context carried from Customer 360°/)).toBeTruthy();
   });
 
   test('Open Fraud Cases preserves customerId', async () => {
     const utils = await openCustomerDetail();
     (ApiClient.get as jest.Mock).mockImplementation(() => Promise.resolve({ data: [], items: [] }));
     fireEvent.click(utils.getByText('Open Fraud Cases'));
-    expect(await utils.findByText('🚨 Risk & Fraud')).toBeTruthy();
+    expect(await utils.findByText('🚨 Fraud Case Lookup')).toBeTruthy();
     // Note is specific to RiskFraudScreen
     expect(await utils.findByText(/Customer pre-filled/)).toBeTruthy();
     const input = document.querySelector('input[placeholder*="Customer"]') as HTMLInputElement;
@@ -138,7 +132,7 @@ describe('Customer 360° deep links preserve customerId (no UUID paste)', () => 
     const utils = await openCustomerDetail();
     (ApiClient.get as jest.Mock).mockImplementation(() => Promise.resolve({ items: [], data: [] }));
     fireEvent.click(utils.getByText('View Limit Assignments'));
-    expect(await utils.findByText('📏 Limit Assignments & Usage')).toBeTruthy();
-    expect(utils.getByText(/Pre-filled from Customer 360°/)).toBeTruthy();
+    expect(await utils.findByText('📏 Limit Assignments')).toBeTruthy();
+    expect(utils.getByText(mockCustomer.id)).toBeTruthy();
   });
 });

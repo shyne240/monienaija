@@ -52,27 +52,23 @@ export const LedgerOperationsScreen: React.FC = () => {
   const [reversalSuccess, setReversalSuccess] = useState('');
   const [reversalLoading, setReversalLoading] = useState(false);
 
-  // V1-LEDGER — catalogue-based. Distinguish maker (FINANCE_PREPARER) vs checker (SUPER_ADMIN / FINANCE_CONTROLLER).
-  const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN');
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
-  const canViewLedger = isSuperAdmin || hasFn('ledger.view') || hasFn('ledger.post') || hasFn('ledger.reverse');
-  // Maker (P0-B): FINANCE_PREPARER initiates — `ledger.reverse` is the PREPARER's initiation
-  // function (per the catalogue), alongside the legacy finance:prepare/ledger.post markers.
-  const isPreparer =
-    hasFn('ledger.reverse') ||
-    hasFn('finance:prepare') ||
-    hasFn('ledger.post') ||
-    principal?.roles.includes('FINANCE_PREPARER');
-  // Checker: FINANCE_CONTROLLER approves AND executes (privileged:approve / legacy markers).
+  // The account/journal read endpoints require ledger.view; a role label or write grant does not
+  // substitute for that route function.
+  const canViewLedger = hasFn('ledger.view');
+  // Maker request endpoint requires ledger.reverse (legacy finance:prepare/ledger.post alone do
+  // not authorize this route).
+  const isPreparer = hasFn('ledger.reverse');
+  // The backend reversal executor explicitly accepts a FINANCE_CONTROLLER role or
+  // privileged:execute; keep this UI condition in lockstep with that source policy.
   const isController =
-    isSuperAdmin ||
-    hasFn('privileged:approve') ||
-    principal?.roles.includes('FINANCE_CONTROLLER') ||
-    hasFn('finance.control_policy.activate');
-  // If neither legacy flag set but user has ledger.view (e.g. test harness with SUPER_ADMIN), treat as controller for direct-reversal path
-  const canAct = isPreparer || isController || canViewLedger;
+    principal?.roles.includes('FINANCE_CONTROLLER') === true || hasFn('privileged:execute');
 
   const fetchAccounts = async () => {
+    if (!canViewLedger) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError('');
     try {
@@ -88,11 +84,13 @@ export const LedgerOperationsScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchAccounts();
-  }, [searchCurrency]);
+    if (canViewLedger) fetchAccounts();
+    else setIsLoading(false);
+  }, [searchCurrency, canViewLedger]);
 
   const handleSearchJournal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canViewLedger) return;
     if (!searchJournalId.trim()) {
       setJournalError('Journal ID is required');
       return;
@@ -115,7 +113,7 @@ export const LedgerOperationsScreen: React.FC = () => {
   };
 
   const handleReverseJournal = async () => {
-    if (!journal) return;
+    if (!canViewLedger || !journal || (!isPreparer && !isController)) return;
     setReversalError('');
     setReversalSuccess('');
     setReversalLoading(true);
@@ -166,6 +164,14 @@ export const LedgerOperationsScreen: React.FC = () => {
       setReversalLoading(false);
     }
   };
+
+  if (!canViewLedger) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>Ledger account and journal lookup requires <code>ledger.view</code>.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>

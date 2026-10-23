@@ -46,7 +46,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['SUPER_ADMIN'],
-        scopes: ['ledger.view','transaction.view','reporting.transaction_summary.view'],
+        scopes: ['ledger.view','transaction.view','reporting.transaction_summary.view','privileged:execute'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
+import { useAuthStore } from '../../store/auth-store';
 
 export const ApprovalsScreen: React.FC = () => {
+  const { principal } = useAuthStore();
+  const canApprove =
+    principal?.roles.includes('FINANCE_CONTROLLER') === true &&
+    (principal?.scopes.includes('privileged:approve') ?? false);
   const [approvalId, setApprovalId] = useState('');
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -10,6 +15,7 @@ export const ApprovalsScreen: React.FC = () => {
 
   const handleApprove = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canApprove) return;
     if (!approvalId.trim()) {
       setError('Approval ID is required');
       return;
@@ -33,6 +39,14 @@ export const ApprovalsScreen: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  if (!canApprove) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>The configured checker role <code>FINANCE_CONTROLLER</code> and <code>privileged:approve</code> are required for these approval actions.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>

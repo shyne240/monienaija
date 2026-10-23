@@ -6,7 +6,7 @@ interface Agent {
   id: string;
   reference: string;
   status: string;
-  agentClassId: string;
+  agentClassId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,8 +22,19 @@ interface AgentFinancialPosition {
 export const AgentNetworkScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
-  const canView = hasFn('agent.view') || hasFn('privileged:execute') || principal?.roles.includes('SUPER_ADMIN') || principal?.roles.includes('AGENT_NETWORK_MANAGER');
-  const canLifecycle = hasFn('agent.suspend') || hasFn('agent.terminate') || hasFn('agent.reactivate') || hasFn('agent.activate') || principal?.roles.includes('SUPER_ADMIN') || principal?.roles.includes('AGENT_NETWORK_MANAGER');
+  const canView = hasFn('agent.view');
+  const canSuspend = hasFn('agent.suspend');
+  const canTerminate = hasFn('agent.terminate');
+  const canReactivate = hasFn('agent.reactivate');
+  const canActivate = hasFn('agent.activate');
+  const canLifecycle = canSuspend || canTerminate || canReactivate || canActivate;
+
+  const lifecycleFunctions = {
+    suspend: 'agent.suspend',
+    terminate: 'agent.terminate',
+    reactivate: 'agent.reactivate',
+    activate: 'agent.activate',
+  } as const;
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [total, setTotal] = useState(0);
@@ -38,6 +49,10 @@ export const AgentNetworkScreen: React.FC = () => {
   const [actionErr, setActionErr] = useState('');
 
   const fetchAgents = async () => {
+    if (!canView) {
+      setLoading(false);
+      return;
+    }
     setLoading(true); setError('');
     try {
       const params: string[] = [`page=${page}`, `limit=20`];
@@ -49,9 +64,10 @@ export const AgentNetworkScreen: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (canView) fetchAgents(); else setLoading(false); }, [page, statusFilter]);
+  useEffect(() => { if (canView) fetchAgents(); else setLoading(false); }, [page, statusFilter, canView]);
 
   const openDetail = async (a: Agent) => {
+    if (!canView) return;
     setSelected(a); setPosition(null); setDetailError(''); setActionMsg(''); setActionErr('');
     try {
       const pos: any = await ApiClient.get(`/internal/agents/${a.id}/financial-position`);
@@ -59,7 +75,8 @@ export const AgentNetworkScreen: React.FC = () => {
     } catch (e: any) { setDetailError(e?.message || 'Failed to load financial position'); }
   };
 
-  const doLifecycle = async (action: 'suspend'|'terminate'|'reactivate'|'activate', id: string) => {
+  const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
+    if (!hasFn(lifecycleFunctions[action])) return;
     setActionErr(''); setActionMsg('');
     try {
       await ApiClient.post(`/internal/admin/agents/${id}/${action}`, { reason: `${action} via Admin Web` });
@@ -74,17 +91,17 @@ export const AgentNetworkScreen: React.FC = () => {
 
   return (
     <div style={wrap}>
-      <h2 style={h2}>🏪 Agent Network</h2>
-      <p style={sub}>Agents, financial position (ledger-derived), lifecycle (suspend/terminate/reactivate) and applications. Data is live from workforce APIs.</p>
+      <h2 style={h2}>🏪 Agent Network Management</h2>
+      <p style={sub}>Browse agents, inspect ledger-derived financial positions, and perform only lifecycle actions granted to this principal.</p>
 
       <div style={filters}>
-        <label>Status: <select value={statusFilter} onChange={e=>{setStatusFilter(e.target.value); setPage(1);}}><option value="">All</option><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option><option value="TERMINATED">TERMINATED</option><option value="PENDING_APPROVAL">PENDING</option></select></label>
+        <label>Status: <select value={statusFilter} onChange={e=>{setStatusFilter(e.target.value); setPage(1);}}><option value="">All</option><option value="PENDING">PENDING</option><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option><option value="TERMINATED">TERMINATED</option></select></label>
         <button onClick={fetchAgents} style={btn}>Refresh</button>
       </div>
 
       {error && <div style={errBox}>{error}</div>}
       {loading ? <div style={loadingBox}>Loading agents…</div> :
-        agents.length === 0 ? <div style={empty}>No agents found for this filter. Create agents via the public agent application flow, then review here.</div> :
+        agents.length === 0 ? <div style={empty}>No agents found for this filter.</div> :
         <table style={table}><thead><tr><th>Reference</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>{agents.map(a=><tr key={a.id}><td>{a.reference}</td><td><span style={badge(a.status)}>{a.status}</span></td><td>{new Date(a.createdAt).toLocaleString()}</td><td><button onClick={()=>openDetail(a)} style={smallBtn}>View</button></td></tr>)}</tbody></table>
       }
       <div style={pager}>Total: {total} — Page {page} <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} style={smallBtn}>Prev</button> <button onClick={()=>setPage(p=>p+1)} style={smallBtn}>Next</button></div>
@@ -97,11 +114,11 @@ export const AgentNetworkScreen: React.FC = () => {
             <div><strong>Class:</strong> {selected.agentClassId}</div>
             {detailError && <div style={errBox}>{detailError}</div>}
             {position ? <div style={card}><strong>Financial Position (NGN ledger-derived)</strong><div>Wallet: {position.walletExists ? position.walletId : 'none'} — Balance: {(Number(position.balanceMinor)/100).toLocaleString()} NGN</div></div> : <div style={loadingBox}>Loading position…</div>}
-            {canLifecycle && <div style={actionRow}>
-              <button onClick={()=>doLifecycle('suspend', selected.id)} style={warnBtn}>Suspend</button>
-              <button onClick={()=>doLifecycle('terminate', selected.id)} style={dangerBtn}>Terminate</button>
-              <button onClick={()=>doLifecycle('reactivate', selected.id)} style={successBtn}>Reactivate</button>
-              <button onClick={()=>doLifecycle('activate', selected.id)} style={successBtn}>Activate</button>
+            {canLifecycle && <div style={actionRow} aria-label="Granted agent lifecycle actions">
+              {canSuspend && <button onClick={()=>doLifecycle('suspend', selected.id)} style={warnBtn}>Suspend</button>}
+              {canTerminate && <button onClick={()=>doLifecycle('terminate', selected.id)} style={dangerBtn}>Terminate</button>}
+              {canReactivate && <button onClick={()=>doLifecycle('reactivate', selected.id)} style={successBtn}>Reactivate</button>}
+              {canActivate && <button onClick={()=>doLifecycle('activate', selected.id)} style={successBtn}>Activate</button>}
             </div>}
             {actionMsg && <div style={successBox}>{actionMsg}</div>}
             {actionErr && <div style={errBox}>{actionErr}</div>}

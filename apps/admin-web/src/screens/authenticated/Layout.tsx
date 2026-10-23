@@ -18,58 +18,16 @@ import { CommercialRulesScreen } from './CommercialRulesScreen';
 import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
+import { canonicalAdminView, canAccessAdminView, type AdminView } from './navigation-access';
 
-// V1-ADMIN-IA-02 — seven-section, 26-submenu normative IA (corrected from 23 miscount — see proposal §3.2 2026-10-21).
-// All Future/BACKEND_ONLY ledger posting removed (see proposal §4.1). Commercial is definition-only.
-// Money Movement 4 tabs are filters on same TransactionObservabilityScreen; Commercial 6 tabs are on CommercialRulesScreen.
+// V1-ADMIN-IA-02 — seven-section, 25-item navigation. Counts reflect the screens actually
+// implemented here: three money-movement filters (no cash-to-cash admin route) and six
+// commercial/limit views. Menu visibility and route selection use function scopes, not role labels.
 
-type View =
-  | 'dashboard'
-  | 'dashboardSettings'
-  // Customer & Agent Servicing
-  | 'customers'
-  | 'agents'
-  | 'support'
-  // Money Movement
-  | 'transfers'
-  | 'cashIn'
-  | 'cashOut'
-  | 'cashToCash'
-  // Finance & Ledger
-  | 'ledgerExplorer'
-  | 'reconciliation'
-  // Commercial & Risk Controls
-  | 'feeRules'
-  | 'commissionRules'
-  | 'rewardRules'
-  | 'productCatalogue'
-  | 'limitCatalogue'
-  | 'limitAssignments'
-  // Compliance & Risk
-  | 'kycQueue'
-  | 'complianceCases'
-  | 'fraudCases'
-  // Platform Administration
-  | 'workforceAccess'
-  | 'roleGovernance'
-  | 'approvalsInbox'
-  | 'superAdminRecovery'
-  | 'systemHealth'
-  | 'auditEvents'
-  // Legacy aliases (kept for test harness backwards compat — map to new primary)
-  | 'ledger'
-  | 'transactions'
-  | 'commercial'
-  | 'compliance'
-  | 'riskfraud'
-  | 'roles'
-  | 'approvals'
-  | 'workforce'
-  | 'system';
+type View = AdminView;
 
 interface NavContext {
   customerId?: string;
-  initialType?: string;
 }
 
 export const Layout: React.FC = () => {
@@ -89,86 +47,97 @@ export const Layout: React.FC = () => {
 
   if (!principal) return null;
 
-  const isSuperAdmin = principal.roles.includes('SUPER_ADMIN');
-  const hasFn = (code: string) => principal.scopes.includes(code);
+  const isVisible = (view: View) =>
+    canAccessAdminView(view, principal.scopes, principal.roles);
 
-  // Strict catalogue-based visibility (V1-MENU-VISIBILITY-11-ROLES-01)
-  const canViewDashboardSettings = isSuperAdmin || hasFn('workforce.dashboard.view');
-  const canViewCustomers =
-    isSuperAdmin ||
-    hasFn('customer.view') ||
-    hasFn('customer.manage_support_case') ||
-    hasFn('kyc.view') ||
-    hasFn('customer.view_transactions') ||
-    hasFn('customer.view_wallets');
-  const canViewAgents =
-    isSuperAdmin ||
-    hasFn('agent.view') ||
-    hasFn('agent.activate') ||
-    hasFn('agent.suspend') ||
-    hasFn('agent.review_application') ||
-    hasFn('agent.manage_credentials') ||
-    hasFn('agent.manage_outlets_terminals');
-  const canViewSupport = isSuperAdmin || hasFn('customer.manage_support_case');
-  const canViewMoneyMovement =
-    isSuperAdmin ||
-    hasFn('reporting.transaction_summary.view') ||
-    hasFn('transaction.view') ||
-    hasFn('fee_rule.view') ||
-    hasFn('commission_rule.view') ||
-    hasFn('reward_rule.view');
-  const canViewLedgerExplorer = isSuperAdmin || hasFn('ledger.view');
-  const canViewReconciliation = isSuperAdmin || hasFn('reconciliation.view');
-  // Commercial submenus are individually gated — least-privilege per catalogue (fixes overgrant where limit.view showed fee rules)
-  const canViewFeeRules = isSuperAdmin || hasFn('fee_rule.view');
-  const canViewCommissionRules = isSuperAdmin || hasFn('commission_rule.view');
-  const canViewRewardRules = isSuperAdmin || hasFn('reward_rule.view');
-  const canViewProductCatalogue = isSuperAdmin || hasFn('product.view');
-  const canViewLimitCatalogue = isSuperAdmin || hasFn('limit.view');
-  const canViewLimitAssignments = isSuperAdmin || hasFn('limit.view') || hasFn('agent.assign_limit');
-  const canViewKycQueue =
-    isSuperAdmin ||
-    hasFn('kyc.view') ||
-    hasFn('compliance.manage_case') ||
-    hasFn('compliance.manage_risk_profile');
-  const canViewComplianceCases = isSuperAdmin || hasFn('compliance.manage_case') || hasFn('compliance.manage_risk_profile');
-  const canViewFraudCases = isSuperAdmin || hasFn('risk_fraud.manage_fraud_case');
-  const canViewWorkforceAccess =
-    isSuperAdmin ||
-    hasFn('workforce.user.view') ||
-    hasFn('workforce.role.view') ||
-    hasFn('workforce.dashboard.view');
-  const canViewRoleGovernance =
-    isSuperAdmin ||
-    hasFn('workforce.role.assign') ||
-    hasFn('workforce.role.assign_operational') ||
-    hasFn('workforce.role.revoke') ||
-    hasFn('workforce.role.revoke_operational') ||
-    hasFn('workforce.role.create') ||
-    hasFn('workforce.role.modify');
-  const canViewApprovalsInbox =
-    isSuperAdmin ||
-    hasFn('workforce.role.assign') ||
-    hasFn('workforce.role.create') ||
-    hasFn('finance.control_policy.activate');
-  const canViewSuperAdminRecovery = isSuperAdmin || hasFn('workforce.super_admin.recover');
-  const canViewSystemHealth =
-    isSuperAdmin ||
-    hasFn('metrics.view') ||
-    hasFn('diagnostics.view') ||
-    hasFn('outbox.view');
-  const canViewAuditEvents =
-    isSuperAdmin ||
-    hasFn('audit.view') ||
-    hasFn('audit.search');
+  // Seven sections; only implemented menu routes are exposed.
+  const sections = [
+    {
+      id: 'home',
+      title: '1. Home & My Work',
+      items: [
+        { key: 'dashboard' as View, label: '📊 Operational Dashboard', visible: true },
+        { key: 'dashboardSettings' as View, label: '⚙️ Dashboard Settings', visible: isVisible('dashboardSettings') },
+      ],
+    },
+    {
+      id: 'servicing',
+      title: '2. Customer & Agent Servicing',
+      items: [
+        { key: 'customers' as View, label: '👥 Customer & KYC Servicing', visible: isVisible('customers') },
+        { key: 'agents' as View, label: '🏪 Agent Network Management', visible: isVisible('agents') },
+        { key: 'support' as View, label: '🎧 Support Inbox', visible: isVisible('support') },
+      ],
+    },
+    {
+      id: 'money',
+      title: '3. Money Movement',
+      items: [
+        { key: 'transfers' as View, label: '💸 Transaction & Fee Ops — Transfers (W2W)', visible: isVisible('transfers') },
+        { key: 'cashIn' as View, label: '💸 Transaction & Fee Ops — Cash-In (C2W)', visible: isVisible('transfers') },
+        { key: 'cashOut' as View, label: '💸 Transaction & Fee Ops — Cash-Out (W2C)', visible: isVisible('transfers') },
+      ],
+    },
+    {
+      id: 'finance',
+      title: '4. Finance & Ledger',
+      items: [
+        { key: 'ledgerExplorer' as View, label: '📖 Ledger & Reversals', visible: isVisible('ledgerExplorer') },
+        { key: 'reconciliation' as View, label: '⚖️ Reconciliation & Breaks', visible: isVisible('reconciliation') },
+      ],
+    },
+    {
+      id: 'commercial',
+      title: '5. Commercial & Risk Controls',
+      items: [
+        { key: 'feeRules' as View, label: '5.1 Fee Rules', visible: isVisible('feeRules') },
+        { key: 'commissionRules' as View, label: '5.2 Commission Rules', visible: isVisible('commissionRules') },
+        { key: 'rewardRules' as View, label: '5.3 Reward Rules', visible: isVisible('rewardRules') },
+        { key: 'productCatalogue' as View, label: '5.4 Product Catalogue', visible: isVisible('productCatalogue') },
+        { key: 'limitCatalogue' as View, label: '5.5 Limit Catalogue', visible: isVisible('limitCatalogue') },
+        { key: 'limitAssignments' as View, label: '5.6 Limit Assignments', visible: isVisible('limitAssignments') },
+      ],
+    },
+    {
+      id: 'compliance',
+      title: '6. Compliance & Risk',
+      items: [
+        { key: 'kycQueue' as View, label: '6.1 KYC Assessment Lookup & Review', visible: isVisible('kycQueue') },
+        { key: 'complianceCases' as View, label: '6.2 Compliance Case Lookup', visible: isVisible('complianceCases') },
+        { key: 'fraudCases' as View, label: '6.3 Fraud Case Lookup', visible: isVisible('fraudCases') },
+      ],
+    },
+    {
+      id: 'platform',
+      title: '7. Platform Administration',
+      items: [
+        { key: 'workforceAccess' as View, label: '👷 Workforce Overview & Support Provisioning', visible: isVisible('workforceAccess') },
+        { key: 'roleGovernance' as View, label: '🔑 Finance Role Assignments', visible: isVisible('roleGovernance') },
+        { key: 'approvalsInbox' as View, label: '⚖️ Privileged Approvals', visible: isVisible('approvalsInbox') },
+        { key: 'superAdminRecovery' as View, label: '🔐 Super-Admin Recovery', visible: isVisible('superAdminRecovery') },
+        { key: 'systemHealth' as View, label: '🩺 System Health', visible: isVisible('systemHealth') },
+        { key: 'auditEvents' as View, label: '📜 Audit & Security Events', visible: isVisible('auditEvents') },
+      ],
+    },
+  ];
 
-  const toggleSection = (key: string) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleSection = (key: string) =>
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleNav = (v: View, ctx?: NavContext) => {
-    setCurrentView(v);
-    if (ctx) setNavContext(ctx);
-    else if (v !== 'customers' && v !== 'kycQueue' && v !== 'complianceCases' && v !== 'fraudCases' && v !== 'support' && v !== 'auditEvents' && v !== 'limitAssignments') {
-      // keep context for deep links only; clear otherwise unless it's a customer-centric view
+  const handleNav = (view: View, context?: NavContext) => {
+    if (!canAccessAdminView(view, principal.scopes, principal.roles, context)) return;
+
+    setCurrentView(view);
+    // Customer context belongs only to the destination explicitly selected from Customer 360°.
+    // Clear it on every ordinary navigation so stale IDs cannot leak into unrelated screens.
+    setNavContext(context ? { ...context } : {});
+
+    const canonicalView = canonicalAdminView(view);
+    const owningSection = sections.find((section) =>
+      section.items.some((item) => item.key === canonicalView),
+    );
+    if (owningSection) {
+      setExpandedSections((prev) => ({ ...prev, [owningSection.id]: true }));
     }
     setMobileOpen(false);
   };
@@ -177,104 +146,26 @@ export const Layout: React.FC = () => {
     handleNav(view, { customerId });
   };
 
-  // Section definitions — normative 7×26 (corrected from 23 miscount — proposal §3.2)
-  const sections = [
-    {
-      id: 'home',
-      title: '1. Home & My Work',
-      items: [
-        { key: 'dashboard' as View, label: '📊 Operational Dashboard', visible: true },
-        { key: 'dashboardSettings' as View, label: '⚙️ Dashboard Settings', visible: canViewDashboardSettings },
-      ],
-    },
-    {
-      id: 'servicing',
-      title: '2. Customer & Agent Servicing',
-      items: [
-        { key: 'customers' as View, label: '👥 Customer & KYC Servicing', visible: canViewCustomers },
-        { key: 'agents' as View, label: '🏪 Agent Network', visible: canViewAgents },
-        { key: 'support' as View, label: '🎧 Support Inbox', visible: canViewSupport },
-      ],
-    },
-    {
-      id: 'money',
-      title: '3. Money Movement',
-      items: [
-        { key: 'transfers' as View, label: '💸 Transaction & Fee Ops — Transfers (W2W)', visible: canViewMoneyMovement },
-        { key: 'cashIn' as View, label: '💸 Transaction & Fee Ops — Cash-In (C2W)', visible: canViewMoneyMovement },
-        { key: 'cashOut' as View, label: '💸 Transaction & Fee Ops — Cash-Out (W2C)', visible: canViewMoneyMovement },
-        { key: 'cashToCash' as View, label: '💸 Transaction & Fee Ops — Cash-to-Cash (C2C)', visible: canViewMoneyMovement },
-      ],
-    },
-    {
-      id: 'finance',
-      title: '4. Finance & Ledger',
-      items: [
-        { key: 'ledgerExplorer' as View, label: '📖 Ledger & Reversals', visible: canViewLedgerExplorer },
-        { key: 'reconciliation' as View, label: '⚖️ Reconciliation & Breaks', visible: canViewReconciliation },
-      ],
-    },
-    {
-      id: 'commercial',
-      title: '5. Commercial & Risk Controls',
-      items: [
-        { key: 'feeRules' as View, label: '5.1 Fee Rules', visible: canViewFeeRules },
-        { key: 'commissionRules' as View, label: '5.2 Commission Rules', visible: canViewCommissionRules },
-        { key: 'rewardRules' as View, label: '5.3 Reward Rules', visible: canViewRewardRules },
-        { key: 'productCatalogue' as View, label: '5.4 Product Catalogue', visible: canViewProductCatalogue },
-        { key: 'limitCatalogue' as View, label: '5.5 Limit Catalogue', visible: canViewLimitCatalogue },
-        { key: 'limitAssignments' as View, label: '5.6 Limit Assignments', visible: canViewLimitAssignments },
-      ],
-    },
-    {
-      id: 'compliance',
-      title: '6. Compliance & Risk',
-      items: [
-        { key: 'kycQueue' as View, label: '6.1 KYC Queue', visible: canViewKycQueue },
-        { key: 'complianceCases' as View, label: '6.2 Compliance Cases', visible: canViewComplianceCases },
-        { key: 'fraudCases' as View, label: '6.3 Fraud Cases', visible: canViewFraudCases },
-      ],
-    },
-    {
-      id: 'platform',
-      title: '7. Platform Administration',
-      items: [
-        { key: 'workforceAccess' as View, label: '👷 Workforce Admin', visible: canViewWorkforceAccess },
-        { key: 'roleGovernance' as View, label: '🔑 Finance Role Admin', visible: canViewRoleGovernance },
-        { key: 'approvalsInbox' as View, label: '⚖️ Privileged Approvals', visible: canViewApprovalsInbox },
-        { key: 'superAdminRecovery' as View, label: '🔐 Super-Admin Recovery', visible: canViewSuperAdminRecovery },
-        { key: 'systemHealth' as View, label: '🩺 System Health', visible: canViewSystemHealth },
-        { key: 'auditEvents' as View, label: '📜 Audit & Security Events', visible: canViewAuditEvents },
-      ],
-    },
-  ];
-
-  // Legacy viewMap retained for deep-link/back-compat (old flat keys from bookmarks) — not rendered as hidden nav aliases.
+  // Legacy view aliases remain supported, but every alias passes the same route guard.
   const renderContent = () => {
-    // Map legacy aliases to new primary for rendering (keeps old bookmarks functional)
-    const viewMap: Record<string, View> = {
-      ledger: 'ledgerExplorer',
-      transactions: 'transfers',
-      commercial: 'feeRules',
-      compliance: 'kycQueue',
-      riskfraud: 'fraudCases',
-      roles: 'roleGovernance',
-      approvals: 'approvalsInbox',
-      workforce: 'workforceAccess',
-      system: 'systemHealth',
-    };
-    const effectiveView = (viewMap[currentView] as View) || currentView;
+    if (!canAccessAdminView(currentView, principal.scopes, principal.roles, navContext)) {
+      return (
+        <div role="alert" style={styles.routeDenied}>
+          This screen is not available to the current workforce principal.
+        </div>
+      );
+    }
 
+    const effectiveView = canonicalAdminView(currentView);
     switch (effectiveView) {
       case 'dashboard': return <DashboardScreen onNavigateToCustomers={() => handleNav('customers')} />;
       case 'dashboardSettings': return <DashboardSettingsScreen />;
       case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} />;
       case 'agents': return <AgentNetworkScreen />;
       case 'support': return <SupportTicketsScreen initialCustomerId={navContext.customerId} />;
-      case 'transfers': return <TransactionObservabilityScreen initialType="TRANSFER" initialCustomerId={navContext.customerId} />;
+      case 'transfers': return <TransactionObservabilityScreen initialType="TRANSFER" initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
       case 'cashIn': return <TransactionObservabilityScreen initialType="DEPOSIT" initialCustomerId={navContext.customerId} />;
       case 'cashOut': return <TransactionObservabilityScreen initialType="WITHDRAWAL" initialCustomerId={navContext.customerId} />;
-      case 'cashToCash': return <TransactionObservabilityScreen initialType="TRANSFER" initialCustomerId={navContext.customerId} />;
       case 'ledgerExplorer': return <LedgerOperationsScreen />;
       case 'reconciliation': return <ReconciliationObservabilityScreen />;
       case 'feeRules': return <CommercialRulesScreen initialTab="fees" />;
@@ -282,10 +173,10 @@ export const Layout: React.FC = () => {
       case 'rewardRules': return <CommercialRulesScreen initialTab="rewards" />;
       case 'productCatalogue': return <CommercialRulesScreen initialTab="products" />;
       case 'limitCatalogue': return <CommercialRulesScreen initialTab="limits" />;
-      case 'limitAssignments': return <LimitAssignmentScreen initialCustomerId={navContext.customerId} />;
-      case 'kycQueue': return <ComplianceScreen initialCustomerId={navContext.customerId} />;
-      case 'complianceCases': return <ComplianceScreen initialCustomerId={navContext.customerId} initialCategory="AML" />;
-      case 'fraudCases': return <RiskFraudScreen initialCustomerId={navContext.customerId} />;
+      case 'limitAssignments': return <LimitAssignmentScreen initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
+      case 'kycQueue': return <ComplianceScreen initialCustomerId={navContext.customerId} mode="kyc" onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
+      case 'complianceCases': return <ComplianceScreen initialCustomerId={navContext.customerId} initialCategory="AML" mode="cases" onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
+      case 'fraudCases': return <RiskFraudScreen initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
       case 'workforceAccess': return <WorkforceAdminScreen />;
       case 'roleGovernance': return <RoleAssignmentScreen />;
       case 'approvalsInbox': return <ApprovalsScreen />;
@@ -295,8 +186,6 @@ export const Layout: React.FC = () => {
       default: return null;
     }
   };
-
-  const allVisibleNavKeys = sections.flatMap(s => s.items.filter(i => i.visible).map(i => i.key));
 
   return (
     <div style={styles.layout}>
@@ -341,12 +230,13 @@ export const Layout: React.FC = () => {
                 {expandedSections[section.id] && (
                   <div style={styles.sectionItems}>
                     {visibleItems.map(item => {
-                      const isActive = currentView === item.key || (({ ledger:'ledgerExplorer', transactions:'transfers', commercial:'feeRules', compliance:'kycQueue', riskfraud:'fraudCases', roles:'roleGovernance', approvals:'approvalsInbox', workforce:'workforceAccess', system:'systemHealth' } as any)[currentView] === item.key);
+                      const isActive = canonicalAdminView(currentView) === item.key;
                       return (
                         <button
                           key={item.key}
                           data-testid={`nav-${item.key}`}
                           style={isActive ? styles.activeNavLink : styles.navLink}
+                          aria-current={isActive ? 'page' : undefined}
                           onClick={() => handleNav(item.key)}
                         >
                           {item.label}
@@ -385,17 +275,30 @@ export const Layout: React.FC = () => {
                 if (visibleItems.length === 0) return null;
                 return (
                   <div key={section.id} style={styles.mobileSection}>
-                    <div style={styles.mobileSectionHeader}>{section.title}</div>
-                    {visibleItems.map(item => (
-                      <button
-                        key={item.key}
-                        data-testid={`mobile-nav-${item.key}`}
-                        style={currentView === item.key ? styles.mobileActiveLink : styles.mobileNavLink}
-                        onClick={() => handleNav(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      style={styles.mobileSectionHeader}
+                      aria-expanded={expandedSections[section.id]}
+                      data-testid={`mobile-section-${section.id}`}
+                      onClick={() => toggleSection(section.id)}
+                    >
+                      <span>{section.title}</span>
+                      <span>{expandedSections[section.id] ? '▾' : '▸'}</span>
+                    </button>
+                    {expandedSections[section.id] && visibleItems.map(item => {
+                      const isActive = canonicalAdminView(currentView) === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          data-testid={`mobile-nav-${item.key}`}
+                          aria-current={isActive ? 'page' : undefined}
+                          style={isActive ? styles.mobileActiveLink : styles.mobileNavLink}
+                          onClick={() => handleNav(item.key)}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -629,6 +532,13 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '12px',
   },
   mobileSectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    textAlign: 'left',
     fontSize: '11px',
     fontWeight: 700,
     color: '#FFB703',

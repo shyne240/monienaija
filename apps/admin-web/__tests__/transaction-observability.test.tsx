@@ -40,34 +40,26 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     });
   });
 
-  test('should load specific deposit details and execute sandbox completion successfully', async () => {
+  test('loads deposit details as read-only and never submits a sandbox settlement command', async () => {
     const mockDeposit = {
       id: 'dep-uuid-777',
       status: 'PENDING',
       currency: 'NGN',
-      amountMinor: '125000', // 1,250.00 Naira
+      amountMinor: '125000',
       createdAt: new Date().toISOString(),
       walletId: 'wallet-uuid-123',
       reference: 'dep-ref-123',
     };
 
     (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
-      .mockResolvedValueOnce(mockDeposit) // search load
-      .mockResolvedValueOnce({ ...mockDeposit, status: 'COMPLETED' }); // reload after complete
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB)
+      .mockResolvedValueOnce(mockDeposit);
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'SUCCESS' });
+    const { getByText, getByPlaceholderText, findByText, queryByText } = render(<App />);
 
-    const { getByText, getByPlaceholderText, findByText, getAllByText } = render(<App />);
-
-    // Click navigation tab — new 7-section Money Movement (3.x) — transfers is primary entry to TransactionObservabilityScreen
     fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
-
-    // Select DEPOSIT type
     const selectEl = getByText('P2P TRANSFER').parentElement as HTMLSelectElement;
     fireEvent.change(selectEl, { target: { value: 'DEPOSIT' } });
-
-    // Search Deposit
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
     fireEvent.click(getByText('Track'));
 
@@ -75,16 +67,11 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
     expect(await findByText('DEPOSIT Detail View')).toBeTruthy();
     expect(await findByText('dep-ref-123')).toBeTruthy();
     expect(await findByText('PENDING')).toBeTruthy();
-
-    // Trigger Sandbox complete
-    expect(await findByText('Trigger Sandbox Completion')).toBeTruthy();
-    fireEvent.click(getByText('Trigger Sandbox Completion'));
-
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/deposits/dep-uuid-777/complete');
-      expect(getByText('Sandbox simulated transaction completed successfully!')).toBeTruthy();
-      expect(getAllByText('COMPLETED').length).toBeGreaterThan(0);
-    });
+    expect(
+      await findByText('This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.'),
+    ).toBeTruthy();
+    expect(queryByText('Trigger Sandbox Completion')).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
   test('should run fee simulator calculations and display gross output', async () => {

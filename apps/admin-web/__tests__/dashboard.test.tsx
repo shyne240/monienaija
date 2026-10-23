@@ -170,7 +170,7 @@ describe('Admin Web Portal — V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02 real 
 describe('Admin Web Portal — Dashboard Settings (role → template assignment)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    setPrincipal(['SUPER_ADMIN'], ['privileged:execute']);
+    setPrincipal(['SUPER_ADMIN'], ['privileged:execute', 'workforce.dashboard.view', 'workforce.dashboard.assign']);
   });
 
   const templates = [
@@ -252,7 +252,7 @@ describe('Admin Web Portal — Dashboard Settings (role → template assignment)
     const { getByText, findByText } = render(<App />);
     fireEvent.click(getByText('⚙️ Dashboard Settings'));
 
-    expect(await findByText(/do not have permission to view or change dashboard configuration/)).toBeTruthy();
+    expect(await findByText(/do not have permission to view dashboard configuration/)).toBeTruthy();
   });
 
   test('shows a clear, specific error message (not a silent failure) when saving an assignment is rejected', async () => {

@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
+import { useAuthStore } from '../../store/auth-store';
 
 export const RoleAssignmentScreen: React.FC = () => {
+  const { principal } = useAuthStore();
+  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
+  const canAssign = principal?.roles.includes('SUPER_ADMIN') === true && hasFn('workforce.role.assign');
+  const canRevoke = principal?.roles.includes('SUPER_ADMIN') === true && hasFn('workforce.role.revoke');
+  const canManageFinanceRoles = canAssign || canRevoke;
   const [targetPrincipalId, setTargetPrincipalId] = useState('');
   const [roleKey, setRoleKey] = useState('FINANCE_PREPARER');
   const [effectiveFrom, setEffectiveFrom] = useState('');
@@ -10,10 +16,11 @@ export const RoleAssignmentScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [action, setAction] = useState<'assign' | 'revoke'>('assign');
+  const [action, setAction] = useState<'assign' | 'revoke'>(canAssign ? 'assign' : 'revoke');
 
   const handleRoleAction = async (e: React.FormEvent) => {
     e.preventDefault();
+    if ((action === 'assign' && !canAssign) || (action === 'revoke' && !canRevoke)) return;
     if (!targetPrincipalId.trim()) {
       setError('Target Principal ID is required');
       return;
@@ -64,26 +71,30 @@ export const RoleAssignmentScreen: React.FC = () => {
     }
   };
 
+  if (!canManageFinanceRoles) {
+    return <div style={styles.container} role="alert"><div style={styles.errorBox}>Finance role assignment requires the corresponding workforce role function and SUPER_ADMIN initiation authority.</div></div>;
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>Finance Role Administration</h2>
-        <p style={styles.subtitle}>Manage operator, preparer, controller, and auditor role entitlements</p>
+        <h2 style={styles.title}>Finance Role Assignments</h2>
+        <p style={styles.subtitle}>Manage FINANCE_* workforce role assignments through the existing governed assignment workflow.</p>
       </div>
 
       <div style={styles.tabHeader}>
-        <button
+        {canAssign && <button
           style={action === 'assign' ? styles.activeTabBtn : styles.tabBtn}
           onClick={() => { setAction('assign'); setError(''); setSuccess(false); }}
         >
-          Assign Role Entitlement
-        </button>
-        <button
+          Assign Finance Role
+        </button>}
+        {canRevoke && <button
           style={action === 'revoke' ? styles.activeTabBtn : styles.tabBtn}
           onClick={() => { setAction('revoke'); setError(''); setSuccess(false); }}
         >
-          Revoke Role Entitlement
-        </button>
+          Revoke Finance Role
+        </button>}
       </div>
 
       {error && <div style={styles.errorBox}>{error}</div>}

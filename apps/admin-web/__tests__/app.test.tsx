@@ -133,7 +133,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
     
     // Admin links must be present for SUPER_ADMIN
-    expect(getByText('🔑 Finance Role Admin')).toBeTruthy();
+    expect(getByText('🔑 Finance Role Assignments')).toBeTruthy();
     expect(getByText('⚙️ Dashboard Settings')).toBeTruthy();
     
     // All major links present for SUPER_ADMIN
@@ -152,7 +152,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'ledger.view', 'fee_rule.view'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'ledger.view', 'fee_rule.view', 'privileged:approve'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -165,7 +165,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     
     // Controller links must be present via catalogue functions
     expect(getByText('⚖️ Privileged Approvals')).toBeTruthy();
-    expect(getByText('🔑 Finance Role Admin')).toBeTruthy();
+    expect(queryByText('🔑 Finance Role Assignments')).toBeNull();
     
     // Customers must NOT be present for finance controller
     expect(queryByText('👥 Customer & KYC Servicing')).toBeNull();
@@ -195,7 +195,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
     
     // Admin & Controller controls must NOT be present for auditor (read-only)
-    expect(queryByText('🔑 Finance Role Admin')).toBeNull();
+    expect(queryByText('🔑 Finance Role Assignments')).toBeNull();
     expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
     // But ledger should be visible for auditor
     expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
@@ -213,7 +213,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['finance.control_policy.activate', 'workforce.role.assign'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'privileged:approve'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

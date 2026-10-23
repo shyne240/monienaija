@@ -70,17 +70,37 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   // Status Update State
   const [statusSuccess, setStatusSuccess] = useState('');
 
-  // V1-CUSTOMER-CENTRED — catalogue-based permissions (fixes menu-visibility drift).
-  const isSuperAdmin = principal?.roles.includes('SUPER_ADMIN');
+  // UI affordances mirror the exact catalogue function enforced by each backend operation.
+  // These checks only shape the screen; the controllers remain authoritative.
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
-  const canManageCustomers = isSuperAdmin || hasFn('customer.view') || hasFn('customer.create') || hasFn('customer.suspend') || hasFn('customer.manage_support_case') || hasFn('kyc.view');
-  const canProvisionWallet = isSuperAdmin || hasFn('customer.create_wallet') || hasFn('customer.view_wallets') || hasFn('customer.view') || hasFn('customer.create');
-  const canManageKyc = isSuperAdmin || hasFn('kyc.view') || hasFn('kyc.review') || hasFn('kyc.approve') || hasFn('kyc.reject') || hasFn('customer.view');
-  const canSuspend = isSuperAdmin || hasFn('customer.suspend') || hasFn('customer.view') || hasFn('customer.create');
-  // Legacy aliases for template guards (preserve isPreparer name to avoid massive rename — now maps to canManageCustomers)
-  const isPreparer = canManageCustomers;
-  const isController = canSuspend;
-  const isAuditor = hasFn('finance:audit') || hasFn('audit.view');
+  const canViewCustomers = hasFn('customer.view');
+  const canCreateCustomer = hasFn('customer.create');
+  const canViewWallets = hasFn('customer.view_wallets');
+  const canCreateWallet = hasFn('customer.create_wallet');
+  const canViewKyc = hasFn('kyc.view');
+  const availableKycStatuses = [
+    ...(hasFn('kyc.review') ? ['NOT_STARTED', 'PENDING'] : []),
+    ...(hasFn('kyc.approve') ? ['APPROVED'] : []),
+    ...(hasFn('kyc.reject') ? ['REJECTED'] : []),
+  ];
+  const canManageKyc = availableKycStatuses.length > 0;
+  const canActivateCustomer = hasFn('customer.activate');
+  const canSuspendCustomer = hasFn('customer.suspend');
+  const canCloseCustomer = hasFn('customer.close');
+  const canViewSupportCases = hasFn('customer.manage_support_case');
+  const canViewCustomerTransactions = hasFn('customer.view_transactions');
+  const canViewAudit = hasFn('audit.search');
+  const canViewLimits = hasFn('limit.view') || hasFn('agent.assign_limit');
+
+  const relatedActions = [
+    ...(canViewCustomerTransactions ? [{ view: 'transfers', label: 'View Transactions' }] : []),
+    ...(canViewKyc ? [{ view: 'kycQueue', label: 'Open KYC Assessment Lookup' }] : []),
+    ...(hasFn('compliance.manage_case') ? [{ view: 'complianceCases', label: 'Open Compliance Cases' }] : []),
+    ...(hasFn('risk_fraud.manage_fraud_case') ? [{ view: 'fraudCases', label: 'Open Fraud Cases' }] : []),
+    ...(canViewSupportCases ? [{ view: 'support', label: 'Open Support Tickets' }] : []),
+    ...(canViewAudit ? [{ view: 'auditEvents', label: 'View Audit Trail' }] : []),
+    ...(canViewLimits ? [{ view: 'limitAssignments', label: 'View Limit Assignments' }] : []),
+  ];
 
   const fetchCustomers = async () => {
     setIsLoading(true);
@@ -102,12 +122,13 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   };
 
   useEffect(() => {
-    fetchCustomers();
-  }, [searchStatus, searchType]);
+    if (canViewCustomers) fetchCustomers();
+    else setIsLoading(false);
+  }, [searchStatus, searchType, canViewCustomers]);
 
   // Customer 360° — if navigated from deep-link with customerId, auto-open drawer
   useEffect(() => {
-    if (selectedCustomerId && customers.length > 0) {
+    if (canViewCustomers && selectedCustomerId && customers.length > 0) {
       const found = customers.find(c => c.id === selectedCustomerId);
       if (found) handleLoadDetails(found);
     }
@@ -147,26 +168,30 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
     setKycSuccess('');
     setStatusSuccess('');
 
-    try {
-      // GET /customers/:id/wallets
-      const walletList = await ApiClient.get<Wallet[]>(`/customers/${customer.id}/wallets`);
-      setWallets(walletList || []);
-
-      // GET /customers/:id/kyc
+    if (canViewWallets) {
       try {
+        // GET /customers/:id/wallets requires customer.view_wallets.
+        const walletList = await ApiClient.get<Wallet[]>(`/customers/${customer.id}/wallets`);
+        setWallets(walletList || []);
+      } catch (err: any) {
+        setDetailError('Error retrieving wallet bindings: ' + (err?.message || ''));
+      }
+    }
+
+    if (canViewKyc) {
+      try {
+        // GET /customers/:id/kyc requires kyc.view.
         const kycRecord = await ApiClient.get<KycRecord>(`/customers/${customer.id}/kyc`);
         setKyc(kycRecord);
       } catch {
-        // Fallback for null/empty KYC records
+        // A missing assessment is a valid empty state; backend access failures remain protected.
         setKyc(null);
       }
-    } catch (err: any) {
-      setDetailError('Error retrieving details: ' + (err?.message || ''));
     }
   };
 
   const handleProvisionWallet = async () => {
-    if (!selectedCust) return;
+    if (!selectedCust || !canCreateWallet) return;
     setDetailError('');
     setWalletSuccess('');
     try {
@@ -179,9 +204,11 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
       });
       setWalletSuccess('NGN Wallet provisioned successfully!');
       
-      // Reload wallets
-      const walletList = await ApiClient.get<Wallet[]>(`/customers/${selectedCust.id}/wallets`);
-      setWallets(walletList || []);
+      // Reload balances only when this principal also has the wallet read function.
+      if (canViewWallets) {
+        const walletList = await ApiClient.get<Wallet[]>(`/customers/${selectedCust.id}/wallets`);
+        setWallets(walletList || []);
+      }
     } catch (err: any) {
       setDetailError(err?.message || 'Wallet provisioning failed');
     }
@@ -189,7 +216,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
 
   const handleUpdateKyc = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCust) return;
+    if (!selectedCust || !availableKycStatuses.includes(kycStatus)) return;
     setDetailError('');
     setKycSuccess('');
     try {
@@ -209,7 +236,11 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
   };
 
   const handleUpdateStatus = async (newStatus: 'ACTIVE' | 'SUSPENDED' | 'CLOSED') => {
-    if (!selectedCust) return;
+    const canSetStatus =
+      (newStatus === 'ACTIVE' && canActivateCustomer) ||
+      (newStatus === 'SUSPENDED' && canSuspendCustomer) ||
+      (newStatus === 'CLOSED' && canCloseCustomer);
+    if (!selectedCust || !canSetStatus) return;
     setDetailError('');
     setStatusSuccess('');
     try {
@@ -218,13 +249,17 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
         status: newStatus,
         actor: principal?.principalId || 'Back-Office Operator',
       });
-      setStatusSuccess(`Customer status locked to ${newStatus} successfully.`);
+      setStatusSuccess(`Customer status updated to ${newStatus} successfully.`);
       setSelectedCust(res);
       fetchCustomers();
     } catch (err: any) {
       setDetailError(err?.message || 'Customer status update failed');
     }
   };
+
+  if (!canViewCustomers) {
+    return <div role="alert" style={styles.errorBox}>Customer profile access is not available to this workforce principal.</div>;
+  }
 
   return (
     <div style={styles.container}>
@@ -250,14 +285,14 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
           </select>
         </div>
 
-        {isPreparer && (
+        {canCreateCustomer && (
           <button style={styles.createBtn} onClick={() => { setShowCreate(!showCreate); setCreateSuccess(''); setCreateError(''); }}>
             {showCreate ? 'Close Register Form' : '➕ Register Customer'}
           </button>
         )}
       </div>
 
-      {showCreate && (
+      {showCreate && canCreateCustomer && (
         <div style={styles.formCard}>
           <h3 style={styles.cardTitle}>Register New Customer Profile</h3>
           {createError && <div style={styles.errorBox}>{createError}</div>}
@@ -340,13 +375,13 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                 <p style={styles.metaItem}><strong>Status:</strong> {selectedCust.status}</p>
                 <p style={styles.metaItem}><strong>Registered On:</strong> {new Date(selectedCust.createdAt).toLocaleString()}</p>
                 
-                {isPreparer && (
+                {(canActivateCustomer || canSuspendCustomer || canCloseCustomer) && (
                   <div style={styles.statusToggleBlock}>
-                    <span style={styles.label}>Lock/Unlock Profile:</span>
+                    <span style={styles.label}>Customer Profile Status:</span>
                     <div style={styles.btnRow}>
-                      <button style={styles.activeBtn} onClick={() => handleUpdateStatus('ACTIVE')}>ACTIVE</button>
-                      <button style={styles.suspendBtn} onClick={() => handleUpdateStatus('SUSPENDED')}>SUSPEND</button>
-                      <button style={styles.closeBtn} onClick={() => handleUpdateStatus('CLOSED')}>CLOSE</button>
+                      {canActivateCustomer && <button style={styles.activeBtn} onClick={() => handleUpdateStatus('ACTIVE')}>ACTIVATE</button>}
+                      {canSuspendCustomer && <button style={styles.suspendBtn} onClick={() => handleUpdateStatus('SUSPENDED')}>SUSPEND</button>}
+                      {canCloseCustomer && <button style={styles.closeBtn} onClick={() => handleUpdateStatus('CLOSED')}>CLOSE</button>}
                     </div>
                     {statusSuccess && <p style={styles.inlineSuccess}>{statusSuccess}</p>}
                   </div>
@@ -358,23 +393,27 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                 <h4 style={styles.blockTitle}>Preserved Wallet Bindings</h4>
                 {walletSuccess && <div style={styles.successBox}>{walletSuccess}</div>}
                 
-                {wallets.length === 0 ? (
-                  <p style={styles.emptyText}>No active wallet bindings found.</p>
-                ) : (
-                  wallets.map((w) => (
-                    <div key={w.id} style={styles.walletRow}>
-                      <div>
-                        <span style={styles.walletId}>ID: {w.id}</span>
-                        <span style={styles.walletMeta}>{w.type} / {w.currency} ({w.status})</span>
+                {canViewWallets ? (
+                  wallets.length === 0 ? (
+                    <p style={styles.emptyText}>No active wallet bindings found.</p>
+                  ) : (
+                    wallets.map((w) => (
+                      <div key={w.id} style={styles.walletRow}>
+                        <div>
+                          <span style={styles.walletId}>ID: {w.id}</span>
+                          <span style={styles.walletMeta}>{w.type} / {w.currency} ({w.status})</span>
+                        </div>
+                        <span style={styles.walletBalance}>
+                          ₦{(w.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
-                      <span style={styles.walletBalance}>
-                        ₦{(w.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ))
+                    ))
+                  )
+                ) : (
+                  <p style={styles.emptyText}>Wallet balances and bindings are not available to this role.</p>
                 )}
 
-                {isPreparer && (
+                {canCreateWallet && (
                   <div style={styles.provisionBlock}>
                     <h5 style={styles.subBlockTitle}>Provision NGN Wallet</h5>
                     <div style={styles.grid}>
@@ -390,11 +429,13 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
               </div>
 
               {/* KYC Assessment */}
-              <div style={styles.metaBlock}>
+              {(canViewKyc || canManageKyc) && <div style={styles.metaBlock}>
                 <h4 style={styles.blockTitle}>KYC Assessment & Verifications</h4>
                 {kycSuccess && <div style={styles.successBox}>{kycSuccess}</div>}
 
-                {kyc ? (
+                {!canViewKyc ? (
+                  <p style={styles.emptyText}>Existing KYC assessment details are not available to this role.</p>
+                ) : kyc ? (
                   <div style={styles.kycInfo}>
                     <p style={styles.metaItem}><strong>KYC Level:</strong> {kyc.level}</p>
                     <p style={styles.metaItem}><strong>Status:</strong> <span style={kyc.status === 'APPROVED' ? styles.activeStatus : styles.inactiveStatus}>{kyc.status}</span></p>
@@ -405,7 +446,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                   <p style={styles.emptyText}>No KYC verification assessment recorded.</p>
                 )}
 
-                {isPreparer && (
+                {canManageKyc && (
                   <form onSubmit={handleUpdateKyc} style={styles.kycForm}>
                     <h5 style={styles.subBlockTitle}>Submit KYC Assessment</h5>
                     <div style={styles.grid}>
@@ -415,9 +456,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                         <option value="LEVEL_3">LEVEL 3</option>
                       </select>
                       <select style={styles.select} value={kycStatus} onChange={(e) => setKycStatus(e.target.value)}>
-                        <option value="APPROVED">APPROVED</option>
-                        <option value="PENDING">PENDING</option>
-                        <option value="REJECTED">REJECTED</option>
+                        {availableKycStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
                       </select>
                     </div>
                     <div style={{ ...styles.inputGroup, marginTop: '10px' }}>
@@ -433,23 +472,25 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNa
                     <button type="submit" style={{ ...styles.submitBtn, marginTop: '10px' }}>Submit KYC Assessment</button>
                   </form>
                 )}
-              </div>
+              </div>}
 
               {/* Customer 360° — Related Actions (deep-link hub, no UUID paste) */}
-              {onNavigate && (
+              {onNavigate && relatedActions.length > 0 && (
                 <div style={styles.metaBlock}>
                   <h4 style={styles.blockTitle}>🔗 Customer 360° — Related Actions</h4>
                   <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px 0' }}>
                     Navigate to related tasks with this customer pre-filled — no manual UUID paste required.
                   </p>
                   <div style={styles.relatedGrid}>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('transfers', selectedCust.id)}>View Transactions</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('kycQueue', selectedCust.id)}>Open in KYC Queue</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('complianceCases', selectedCust.id)}>Open Compliance Cases</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('fraudCases', selectedCust.id)}>Open Fraud Cases</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('support', selectedCust.id)}>Open Support Tickets</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('auditEvents', selectedCust.id)}>View Audit Trail</button>
-                    <button style={styles.relatedBtn} onClick={() => onNavigate('limitAssignments', selectedCust.id)}>View Limit Assignments</button>
+                    {relatedActions.map((action) => (
+                      <button
+                        key={action.view}
+                        style={styles.relatedBtn}
+                        onClick={() => onNavigate(action.view, selectedCust.id)}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
                   </div>
                   <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
                     Customer ID: <code style={styles.mono}>{selectedCust.id.slice(0, 8)}…</code> carried via route state — R9 eliminated.

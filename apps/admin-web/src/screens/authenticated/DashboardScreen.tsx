@@ -39,6 +39,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToCu
 
   if (!principal) return null;
 
+  const customerDirectoryNavigation = principal.scopes.includes('customer.view') ? onNavigateToCustomers : undefined;
   const renderableWidgets = (dashboard?.widgets ?? [])
     .filter((w) => w.widgetKey !== 'identity-session' && w.widgetKey !== 'entitlements-scopes')
     .slice()
@@ -114,7 +115,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToCu
       {!loading && !error && renderableWidgets.length > 0 && (
         <div style={styles.widgetGrid}>
           {renderableWidgets.map((widget) => (
-            <WidgetRenderer key={widget.widgetKey} widget={widget} onNavigateToCustomers={onNavigateToCustomers} />
+            <WidgetRenderer key={widget.widgetKey} widget={widget} onNavigateToCustomers={customerDirectoryNavigation} />
           ))}
         </div>
       )}
