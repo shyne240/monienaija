@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { CustomerPersonalInformationPanel } from './CustomerPersonalInformationPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
 export interface DirectoryCustomer {
@@ -68,33 +69,6 @@ interface EligibilitySummary {
   statusChangedAt: string | Date;
 }
 
-interface ProfileSummary {
-  displayName: string | null;
-  legalName: string | null;
-  dateOfBirth: string | null;
-  nationality: string | null;
-}
-
-interface AddressSummary {
-  id: string;
-  type: string;
-  lineOne: string;
-  lineTwo?: string | null;
-  city: string;
-  state: string;
-  country: string;
-  postalCode?: string | null;
-  isPrimary: boolean;
-}
-
-interface ContactSummary {
-  id: string;
-  type: string;
-  value: string;
-  isPrimary: boolean;
-  verifiedAt: string | Date | null;
-}
-
 interface SafeResult<T> {
   value: T | null;
   status?: number;
@@ -107,12 +81,6 @@ interface OverviewData {
   transactions: SafeResult<TransactionList>;
   wallets: SafeResult<{ data: Array<Omit<WalletSummary, 'balanceMinor'>> }>;
   balances: Record<string, SafeResult<{ balanceMinor: string | number; currency: string }>>;
-}
-
-interface PersonalData {
-  profile: SafeResult<ProfileSummary>;
-  addresses: SafeResult<AddressSummary[]> | null;
-  contacts: SafeResult<ContactSummary[]> | null;
 }
 
 const CUSTOMER_STATUSES: Record<string, string> = {
@@ -176,9 +144,7 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'personal'>('overview');
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
-  const [personal, setPersonal] = useState<PersonalData | null>(null);
-  const [personalLoading, setPersonalLoading] = useState(false);
-  const [showContactValues, setShowContactValues] = useState(false);
+  const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -239,43 +205,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
     return () => {
       active = false;
     };
-  }, [customer.id, scopesKey]);
+  }, [customer.id, scopesKey, overviewReloadVersion]);
 
-  useEffect(() => {
-    if (activeTab !== 'personal') return;
-    let active = true;
-    const customerPath = encodeURIComponent(customer.id);
-    setPersonalLoading(true);
-    setShowContactValues(false);
-
-    const profilePromise = hasFunction('customer.view')
-      ? safeGet<ProfileSummary>(`/customers/${customerPath}/profile`)
-      : Promise.resolve({ value: null });
-    const addressPromise = hasFunction('customer.view_address')
-      ? safeGet<AddressSummary[]>(`/customers/${customerPath}/addresses`)
-      : Promise.resolve(null);
-    const contactPromise = hasFunction('customer.view_contact_methods')
-      ? safeGet<ContactSummary[]>(`/customers/${customerPath}/contact-methods`)
-      : Promise.resolve(null);
-
-    Promise.all([profilePromise, addressPromise, contactPromise]).then(([profile, addresses, contacts]) => {
-      if (!active) return;
-      setPersonal({ profile, addresses, contacts });
-      setPersonalLoading(false);
-    }).catch(() => {
-      if (!active) return;
-      setPersonal({
-        profile: { value: null },
-        addresses: hasFunction('customer.view_address') ? { value: null } : null,
-        contacts: hasFunction('customer.view_contact_methods') ? { value: null } : null,
-      });
-      setPersonalLoading(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [activeTab, customer.id, scopesKey]);
 
   const customerName = displayName(customer);
   const phone = overview?.phone.value;
@@ -509,70 +440,15 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
         </section>
       ) : (
         <section id="customer-personal-panel" role="tabpanel" aria-labelledby="customer-personal-tab" className="cm-workspace-content">
-          {personalLoading && <div className="cm-panel cm-loading-panel">Loading authorized profile and contact details…</div>}
-          {!personalLoading && personal && (
-            <div className="cm-personal-grid">
-              <article className="cm-card cm-card-wide">
-                <div className="cm-card-heading"><div><p className="cm-eyebrow">PROFILE</p><h2>Personal information</h2></div></div>
-                {!hasFunction('customer.view') ? <p className="cm-muted">Profile information is restricted to authorized customer viewers.</p>
-                  : personal.profile.value ? (
-                    <dl className="cm-detail-grid">
-                      <div><dt>Display name</dt><dd>{personal.profile.value.displayName || 'Not recorded'}</dd></div>
-                      <div><dt>Legal name</dt><dd>{personal.profile.value.legalName || 'Not recorded'}</dd></div>
-                      <div><dt>Date of birth</dt><dd>{personal.profile.value.dateOfBirth ? formatDate(personal.profile.value.dateOfBirth) : 'Not recorded'}</dd></div>
-                      <div><dt>Nationality</dt><dd>{personal.profile.value.nationality || 'Not recorded'}</dd></div>
-                    </dl>
-                  ) : personal.profile.status === 404 ? <p className="cm-empty-state">No personal profile has been recorded.</p>
-                    : <p className="cm-muted">Personal information is unavailable.</p>}
-              </article>
-
-              <article className="cm-card">
-                <div className="cm-card-heading">
-                  <div><p className="cm-eyebrow">CONTACT METHODS</p><h2>Phones and email</h2></div>
-                  {hasFunction('customer.view_contact_methods') && personal.contacts?.value && personal.contacts.value.length > 0 && (
-                    <button className="cm-button cm-button-secondary" type="button" aria-pressed={showContactValues} onClick={() => setShowContactValues((value) => !value)}>
-                      {showContactValues ? 'Mask values' : 'Show values'}
-                    </button>
-                  )}
-                </div>
-                {!hasFunction('customer.view_contact_methods') ? <p className="cm-muted">Contact details are restricted to authorized contact-method viewers.</p>
-                  : personal.contacts?.value?.length ? (
-                    <ul className="cm-record-list">
-                      {personal.contacts.value.map((contact) => (
-                        <li key={contact.id}>
-                          <div>
-                            <strong>{contact.type}</strong>
-                            <span className="cm-secondary-line">{contact.isPrimary ? 'Primary' : 'Additional'} · {contact.verifiedAt ? 'Verified' : 'Not verified'}</span>
-                          </div>
-                          <span className="cm-record-value">{showContactValues ? contact.value : maskContactValue(contact.value)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : personal.contacts?.status === 404 || personal.contacts?.value?.length === 0
-                    ? <p className="cm-empty-state">No phone number or email has been recorded.</p>
-                    : <p className="cm-muted">Contact information is unavailable.</p>}
-              </article>
-
-              <article className="cm-card cm-card-wide">
-                <div className="cm-card-heading"><div><p className="cm-eyebrow">ADDRESSES</p><h2>Recorded addresses</h2></div></div>
-                {!hasFunction('customer.view_address') ? <p className="cm-muted">Address details are restricted to authorized address viewers.</p>
-                  : personal.addresses?.value?.length ? (
-                    <div className="cm-address-grid">
-                      {personal.addresses.value.map((address) => (
-                        <div className="cm-address-item" key={address.id}>
-                          <div className="cm-address-title"><strong>{address.type}</strong>{address.isPrimary && <span className="cm-chip">Primary</span>}</div>
-                          <p>{address.lineOne}{address.lineTwo ? `, ${address.lineTwo}` : ''}</p>
-                          <p>{address.city}, {address.state} {address.postalCode || ''}</p>
-                          <p>{address.country}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : personal.addresses?.status === 404 || personal.addresses?.value?.length === 0
-                    ? <p className="cm-empty-state">No address has been recorded.</p>
-                    : <p className="cm-muted">Address information is unavailable.</p>}
-              </article>
-            </div>
-          )}
+          <CustomerPersonalInformationPanel
+            customerId={customer.id}
+            onProfileUpdated={(profile) => onCustomerUpdated({
+              ...customer,
+              displayName: profile.displayName,
+              legalName: profile.legalName,
+            })}
+            onVerificationUpdated={() => setOverviewReloadVersion((version) => version + 1)}
+          />
         </section>
       )}
 

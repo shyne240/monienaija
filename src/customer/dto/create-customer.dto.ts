@@ -8,11 +8,13 @@ function trim(value: unknown): unknown {
 }
 
 export class CreateCustomerDto {
+  /** Optional on the workforce form; the service generates a non-phone-derived reference. */
   @IsString()
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) => trim(value))
   @MinLength(1)
   @MaxLength(160)
-  reference!: string;
+  reference?: string;
 
   @IsEnum(CustomerType)
   type!: CustomerType;

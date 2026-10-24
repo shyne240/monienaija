@@ -14,6 +14,27 @@ export class CreateProfileDto {
   @MaxLength(200)
   legalName?: string;
 
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(100)
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(100)
+  middleName?: string;
+
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(100)
+  lastName?: string;
+
   @IsISO8601({ strict: true })
   @IsOptional()
   dateOfBirth?: string;

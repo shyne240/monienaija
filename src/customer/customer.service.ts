@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -7,9 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS } from '../customer-registration/customer-registration.constants';
+import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
+import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import { maskCustomerReference } from './customer-privacy';
 import { ContactMethodType, CustomerKycStatus, CustomerStatus } from './customer.enums';
 import { Customer } from './customer.entity';
@@ -25,7 +28,11 @@ import type {
   CreateIdentityDocumentCommand,
   CreateKycAssessmentCommand,
   CreateProfileCommand,
+  UpdateAddressCommand,
+  UpdateContactCommand,
   UpdateCustomerCommand,
+  UpdateIdentityDocumentCommand,
+  UpdateProfileCommand,
 } from './customer.types';
 
 @Injectable()
@@ -48,7 +55,9 @@ export class CustomerService {
   ) {}
 
   async create(command: CreateCustomerCommand): Promise<Customer> {
-    const reference = this.normalizeReference(command.reference);
+    const reference = this.normalizeReference(
+      command.reference ?? `mn-cus-${randomBytes(12).toString('hex')}`,
+    );
     const actor = this.normalizeActor(command.actor);
     if (command.status && command.status !== CustomerStatus.DRAFT) {
       throw new BadRequestException('Manual customer creation must start in DRAFT status');
@@ -162,6 +171,16 @@ export class CustomerService {
       if (existing) {
         throw new ConflictException('Customer already has an active profile');
       }
+      const firstName = command.firstName
+        ? this.normalizeText(command.firstName, 'firstName', 100)
+        : null;
+      const middleName = command.middleName
+        ? this.normalizeText(command.middleName, 'middleName', 100)
+        : null;
+      const lastName = command.lastName
+        ? this.normalizeText(command.lastName, 'lastName', 100)
+        : null;
+      const composedLegalName = [firstName, middleName, lastName].filter(Boolean).join(' ');
       const profile = await repository.save(
         repository.create({
           id: randomUUID(),
@@ -169,7 +188,10 @@ export class CustomerService {
           displayName: this.normalizeText(command.displayName, 'displayName', 200),
           legalName: command.legalName
             ? this.normalizeText(command.legalName, 'legalName', 200)
-            : null,
+            : composedLegalName || null,
+          firstName,
+          middleName,
+          lastName,
           dateOfBirth: command.dateOfBirth ?? null,
           nationality: command.nationality?.trim().toUpperCase() ?? null,
           isActive: true,
@@ -183,9 +205,96 @@ export class CustomerService {
         'CREATED',
         actor,
         undefined,
-        this.serializableValues(profile),
+        {
+          changedFields: [
+            'displayName',
+            'legalName',
+            'firstName',
+            'middleName',
+            'lastName',
+            'dateOfBirth',
+            'nationality',
+          ],
+        },
       );
       return profile;
+    });
+  }
+
+  async updateProfile(customerId: string, command: UpdateProfileCommand): Promise<CustomerProfile> {
+    this.assertUuid(customerId, 'customerId');
+    const actor = this.normalizeActor(command.actor);
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireCustomer(manager, customerId);
+      const repository = manager.getRepository(CustomerProfile);
+      const profile = await repository.findOne({
+        where: { customerId, isActive: true, deletedAt: IsNull() },
+      });
+      if (!profile) {
+        throw new NotFoundException(`Active profile for customer ${customerId} was not found`);
+      }
+
+      const changedFields: string[] = [];
+      if (command.displayName !== undefined) {
+        profile.displayName = this.normalizeText(command.displayName, 'displayName', 200);
+        changedFields.push('displayName');
+      }
+      if (command.firstName !== undefined) {
+        profile.firstName = command.firstName === null
+          ? null
+          : this.normalizeText(command.firstName, 'firstName', 100);
+        changedFields.push('firstName');
+      }
+      if (command.middleName !== undefined) {
+        profile.middleName = command.middleName === null
+          ? null
+          : this.normalizeText(command.middleName, 'middleName', 100);
+        changedFields.push('middleName');
+      }
+      if (command.lastName !== undefined) {
+        profile.lastName = command.lastName === null
+          ? null
+          : this.normalizeText(command.lastName, 'lastName', 100);
+        changedFields.push('lastName');
+      }
+      if (command.legalName !== undefined) {
+        profile.legalName = command.legalName === null
+          ? null
+          : this.normalizeText(command.legalName, 'legalName', 200);
+        changedFields.push('legalName');
+      } else if (
+        command.firstName !== undefined ||
+        command.middleName !== undefined ||
+        command.lastName !== undefined
+      ) {
+        const composedLegalName = [profile.firstName, profile.middleName, profile.lastName]
+          .filter(Boolean)
+          .join(' ');
+        if (composedLegalName) profile.legalName = composedLegalName;
+      }
+      if (command.dateOfBirth !== undefined) {
+        profile.dateOfBirth = command.dateOfBirth;
+        changedFields.push('dateOfBirth');
+      }
+      if (command.nationality !== undefined) {
+        profile.nationality = command.nationality?.trim().toUpperCase() ?? null;
+        changedFields.push('nationality');
+      }
+      if (changedFields.length === 0) {
+        throw new BadRequestException('At least one profile field is required');
+      }
+
+      const saved = await repository.save(profile);
+      await this.audit(
+        manager,
+        'CUSTOMER_PROFILE',
+        saved.id,
+        'UPDATED',
+        actor,
+        { changedFields },
+        { changedFields },
+      );
+      return saved;
     });
   }
 
@@ -202,9 +311,14 @@ export class CustomerService {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
     return this.dataSource.transaction(async (manager) => {
-      await this.requireCustomer(manager, customerId);
-      const address = await manager.getRepository(CustomerAddress).save(
-        manager.getRepository(CustomerAddress).create({
+      const customer = await this.lockCustomer(manager, customerId);
+      if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+      if (command.isPrimary) {
+        await this.clearPrimaryAddresses(manager, customerId, undefined, actor);
+      }
+      const repository = manager.getRepository(CustomerAddress);
+      const address = await repository.save(
+        repository.create({
           id: randomUUID(),
           customerId,
           type: command.type,
@@ -225,9 +339,73 @@ export class CustomerService {
         'CREATED',
         actor,
         undefined,
-        this.serializableValues(address),
+        { changedFields: ['type', 'lineOne', 'lineTwo', 'city', 'state', 'country', 'postalCode', 'isPrimary'] },
       );
       return address;
+    });
+  }
+
+  async updateAddress(
+    customerId: string,
+    addressId: string,
+    command: UpdateAddressCommand,
+  ): Promise<CustomerAddress> {
+    this.assertUuid(customerId, 'customerId');
+    this.assertUuid(addressId, 'addressId');
+    const actor = this.normalizeActor(command.actor);
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await this.lockCustomer(manager, customerId);
+      if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+      const repository = manager.getRepository(CustomerAddress);
+      const address = await repository.findOne({ where: { id: addressId, customerId, deletedAt: IsNull() } });
+      if (!address) throw new NotFoundException(`Address ${addressId} was not found`);
+
+      const changedFields: string[] = [];
+      if (command.type !== undefined) { address.type = command.type; changedFields.push('type'); }
+      if (command.lineOne !== undefined) {
+        address.lineOne = this.normalizeText(command.lineOne, 'lineOne', 200);
+        changedFields.push('lineOne');
+      }
+      if (command.lineTwo !== undefined) {
+        address.lineTwo = command.lineTwo === null ? null : this.normalizeText(command.lineTwo, 'lineTwo', 200);
+        changedFields.push('lineTwo');
+      }
+      if (command.city !== undefined) {
+        address.city = this.normalizeText(command.city, 'city', 100);
+        changedFields.push('city');
+      }
+      if (command.state !== undefined) {
+        address.state = this.normalizeText(command.state, 'state', 100);
+        changedFields.push('state');
+      }
+      if (command.country !== undefined) {
+        address.country = command.country.trim().toUpperCase();
+        changedFields.push('country');
+      }
+      if (command.postalCode !== undefined) {
+        address.postalCode = command.postalCode?.trim() ?? null;
+        changedFields.push('postalCode');
+      }
+      if (command.isPrimary !== undefined) {
+        if (command.isPrimary) {
+          await this.clearPrimaryAddresses(manager, customerId, addressId, actor);
+        }
+        address.isPrimary = command.isPrimary;
+        changedFields.push('isPrimary');
+      }
+      if (changedFields.length === 0) throw new BadRequestException('At least one address field is required');
+
+      const saved = await repository.save(address);
+      await this.audit(
+        manager,
+        'CUSTOMER_ADDRESS',
+        saved.id,
+        'UPDATED',
+        actor,
+        { changedFields },
+        { changedFields },
+      );
+      return saved;
     });
   }
 
@@ -245,17 +423,22 @@ export class CustomerService {
   ): Promise<CustomerContactMethod> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
-    const normalizedValue = this.normalizeContact(command.type, command.value);
+    const normalized = this.normalizeContact(command.type, command.value);
     try {
       return await this.dataSource.transaction(async (manager) => {
-        await this.requireCustomer(manager, customerId);
-        const contact = await manager.getRepository(CustomerContactMethod).save(
-          manager.getRepository(CustomerContactMethod).create({
+        const customer = await this.lockCustomer(manager, customerId);
+        if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+        if (command.isPrimary) {
+          await this.clearPrimaryContacts(manager, customerId, command.type, undefined, actor);
+        }
+        const repository = manager.getRepository(CustomerContactMethod);
+        const contact = await repository.save(
+          repository.create({
             id: randomUUID(),
             customerId,
             type: command.type,
-            value: normalizedValue,
-            normalizedValue,
+            value: normalized.value,
+            normalizedValue: normalized.normalizedValue,
             isPrimary: command.isPrimary,
             verifiedAt: null,
             deletedAt: null,
@@ -268,13 +451,101 @@ export class CustomerService {
           'CREATED',
           actor,
           undefined,
-          this.serializableValues(contact),
+          { type: contact.type, isPrimary: contact.isPrimary, verified: false },
         );
         return contact;
       });
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException(`${command.type} contact method already exists`);
+      }
+      throw error;
+    }
+  }
+
+  async updateContactMethod(
+    customerId: string,
+    contactId: string,
+    command: UpdateContactCommand,
+  ): Promise<CustomerContactMethod> {
+    this.assertUuid(customerId, 'customerId');
+    this.assertUuid(contactId, 'contactId');
+    const actor = this.normalizeActor(command.actor);
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const customer = await this.lockCustomer(manager, customerId);
+        if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+        const repository = manager.getRepository(CustomerContactMethod);
+        const contact = await repository.findOne({
+          where: { id: contactId, customerId, deletedAt: IsNull() },
+        });
+        if (!contact) throw new NotFoundException(`Contact method ${contactId} was not found`);
+
+        const changedFields: string[] = [];
+        let valueChanged = false;
+        if (command.value !== undefined) {
+          const normalized = this.normalizeContact(contact.type, command.value);
+          valueChanged =
+            normalized.normalizedValue !== contact.normalizedValue || normalized.value !== contact.value;
+          if (valueChanged) {
+            contact.value = normalized.value;
+            contact.normalizedValue = normalized.normalizedValue;
+            changedFields.push('value');
+          }
+        }
+
+        let verifiedAt: Date | null = contact.verifiedAt;
+        if (command.verificationToken !== undefined) {
+          if (contact.type !== ContactMethodType.PHONE) {
+            throw new BadRequestException('Phone verification can only be applied to a PHONE contact');
+          }
+          const targetValue = command.value ?? contact.value;
+          const phone = normalizeNigerianPhone(targetValue);
+          verifiedAt = await this.consumePhoneVerificationToken(
+            manager,
+            phone.canonical,
+            command.verificationToken,
+          );
+          contact.value = phone.e164;
+          contact.normalizedValue = phone.canonical;
+          contact.verifiedAt = verifiedAt;
+          changedFields.push('phoneVerification');
+        } else if (valueChanged) {
+          // Changing an already verified value invalidates the old proof.
+          contact.verifiedAt = null;
+          if (contact.type === ContactMethodType.PHONE) changedFields.push('phoneVerification');
+        }
+
+        if (command.isPrimary !== undefined) {
+          if (command.isPrimary) {
+            await this.clearPrimaryContacts(manager, customerId, contact.type, contactId, actor);
+          }
+          if (contact.isPrimary !== command.isPrimary) changedFields.push('isPrimary');
+          contact.isPrimary = command.isPrimary;
+        }
+        if (changedFields.length === 0) {
+          throw new BadRequestException('At least one contact method field is required');
+        }
+
+        const saved = await repository.save(contact);
+        await this.audit(
+          manager,
+          'CUSTOMER_CONTACT_METHOD',
+          saved.id,
+          command.verificationToken !== undefined ? 'PHONE_VERIFIED' : 'UPDATED',
+          actor,
+          { changedFields },
+          {
+            changedFields,
+            isPrimary: saved.isPrimary,
+            verified: saved.verifiedAt !== null,
+          },
+        );
+        return saved;
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException(`${command.value ? 'Contact method' : 'Primary contact'} already exists`);
       }
       throw error;
     }
@@ -316,12 +587,7 @@ export class CustomerService {
           'CREATED',
           actor,
           undefined,
-          {
-            type: document.type,
-            issuingCountry: document.issuingCountry,
-            issuedAt: document.issuedAt,
-            expiresAt: document.expiresAt,
-          },
+          { changedFields: ['type', 'documentNumber', 'issuingCountry', 'issuedAt', 'expiresAt'] },
         );
         return document;
       });
@@ -330,6 +596,79 @@ export class CustomerService {
         throw new ConflictException(
           `Identity document type ${command.type} already exists for this customer`,
         );
+      }
+      throw error;
+    }
+  }
+
+  async updateIdentityDocument(
+    customerId: string,
+    documentId: string,
+    command: UpdateIdentityDocumentCommand,
+  ): Promise<CustomerIdentityDocument> {
+    this.assertUuid(customerId, 'customerId');
+    this.assertUuid(documentId, 'documentId');
+    const actor = this.normalizeActor(command.actor);
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const customer = await this.lockCustomer(manager, customerId);
+        if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+        const repository = manager.getRepository(CustomerIdentityDocument);
+        const document = await repository.findOne({
+          where: { id: documentId, customerId, deletedAt: IsNull() },
+        });
+        if (!document) throw new NotFoundException(`Identity document ${documentId} was not found`);
+
+        const changedFields: string[] = [];
+        if (command.type !== undefined && command.type !== document.type) {
+          document.type = command.type;
+          changedFields.push('type');
+        }
+        if (command.documentNumber !== undefined) {
+          const value = this.normalizeText(command.documentNumber, 'documentNumber', 160);
+          if (value !== document.documentNumber) {
+            document.documentNumber = value;
+            changedFields.push('documentNumber');
+          }
+        }
+        if (command.issuingCountry !== undefined) {
+          const value = command.issuingCountry.trim().toUpperCase();
+          if (value !== document.issuingCountry) {
+            document.issuingCountry = value;
+            changedFields.push('issuingCountry');
+          }
+        }
+        if (command.issuedAt !== undefined) {
+          if (command.issuedAt !== document.issuedAt) {
+            document.issuedAt = command.issuedAt;
+            changedFields.push('issuedAt');
+          }
+        }
+        if (command.expiresAt !== undefined) {
+          if (command.expiresAt !== document.expiresAt) {
+            document.expiresAt = command.expiresAt;
+            changedFields.push('expiresAt');
+          }
+        }
+        if (changedFields.length === 0) {
+          throw new BadRequestException('At least one identity document field is required');
+        }
+
+        const saved = await repository.save(document);
+        await this.audit(
+          manager,
+          'CUSTOMER_IDENTITY_DOCUMENT',
+          saved.id,
+          'UPDATED',
+          actor,
+          { changedFields },
+          { changedFields },
+        );
+        return saved;
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException('Identity document type already exists for this customer');
       }
       throw error;
     }
@@ -414,6 +753,107 @@ export class CustomerService {
       );
     }
     return assessment;
+  }
+
+  private async clearPrimaryAddresses(
+    manager: EntityManager,
+    customerId: string,
+    exceptId: string | undefined,
+    actor: string,
+  ): Promise<void> {
+    const repository = manager.getRepository(CustomerAddress);
+    const primaryAddresses = await repository.find({
+      where: {
+        customerId,
+        isPrimary: true,
+        deletedAt: IsNull(),
+        ...(exceptId ? { id: Not(exceptId) } : {}),
+      },
+    });
+    for (const address of primaryAddresses) {
+      address.isPrimary = false;
+      await repository.save(address);
+      await this.audit(
+        manager,
+        'CUSTOMER_ADDRESS',
+        address.id,
+        'PRIMARY_DESIGNATION_UPDATED',
+        actor,
+        { isPrimary: true },
+        { isPrimary: false },
+      );
+    }
+  }
+
+  private async clearPrimaryContacts(
+    manager: EntityManager,
+    customerId: string,
+    type: ContactMethodType,
+    exceptId: string | undefined,
+    actor: string,
+  ): Promise<void> {
+    const repository = manager.getRepository(CustomerContactMethod);
+    const primaryContacts = await repository.find({
+      where: {
+        customerId,
+        type,
+        isPrimary: true,
+        deletedAt: IsNull(),
+        ...(exceptId ? { id: Not(exceptId) } : {}),
+      },
+    });
+    for (const contact of primaryContacts) {
+      contact.isPrimary = false;
+      await repository.save(contact);
+      await this.audit(
+        manager,
+        'CUSTOMER_CONTACT_METHOD',
+        contact.id,
+        'PRIMARY_DESIGNATION_UPDATED',
+        actor,
+        { isPrimary: true },
+        { isPrimary: false },
+      );
+    }
+  }
+
+  private async consumePhoneVerificationToken(
+    manager: EntityManager,
+    normalizedPhone: string,
+    token: string,
+  ): Promise<Date> {
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
+    const challenge = await repository
+      .createQueryBuilder('challenge')
+      .where('challenge.normalized_phone = :phone', { phone: normalizedPhone })
+      .andWhere("challenge.status = 'VERIFIED'")
+      .andWhere('challenge.consumed_at IS NULL')
+      .andWhere('challenge.revoked_at IS NULL')
+      .orderBy('challenge.created_at', 'DESC')
+      .setLock('pessimistic_write')
+      .getOne();
+    const storedHash = challenge?.verificationTokenHash;
+    const storedBytes = storedHash && /^[a-f0-9]{64}$/i.test(storedHash)
+      ? Buffer.from(storedHash, 'hex')
+      : Buffer.alloc(0);
+    const suppliedBytes = Buffer.from(tokenHash, 'hex');
+    const tokenMatches = storedBytes.length === suppliedBytes.length &&
+      storedBytes.length > 0 && timingSafeEqual(storedBytes, suppliedBytes);
+    const verifiedAt = challenge?.verifiedAt;
+    const now = new Date();
+    if (
+      !challenge ||
+      !verifiedAt ||
+      !tokenMatches ||
+      verifiedAt.getTime() > now.getTime() ||
+      now.getTime() - verifiedAt.getTime() > REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS * 1000
+    ) {
+      throw new BadRequestException('Phone verification token is invalid or expired');
+    }
+    challenge.consumedAt = now;
+    await repository.save(challenge);
+    return verifiedAt;
   }
 
   private async requireCustomer(manager: EntityManager, id: string): Promise<Customer> {
@@ -533,19 +973,28 @@ export class CustomerService {
     return normalized;
   }
 
-  private normalizeContact(type: ContactMethodType, value: string): string {
+  private normalizeContact(
+    type: ContactMethodType,
+    value: string,
+  ): { value: string; normalizedValue: string } {
     if (type === ContactMethodType.EMAIL) {
       const normalized = value.trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
         throw new BadRequestException('Email contact method is invalid');
       }
-      return normalized;
+      return { value: normalized, normalizedValue: normalized };
     }
-    const normalized = value.replace(/[\s()-]/g, '');
-    if (!/^\+?[1-9]\d{7,14}$/.test(normalized)) {
-      throw new BadRequestException('Phone contact method is invalid');
+
+    try {
+      const nigerianPhone = normalizeNigerianPhone(value);
+      return { value: nigerianPhone.e164, normalizedValue: nigerianPhone.canonical };
+    } catch {
+      const normalized = value.replace(/[\s()-]/g, '');
+      if (!/^\+?[1-9]\d{7,14}$/.test(normalized)) {
+        throw new BadRequestException('Phone contact method is invalid');
+      }
+      return { value: normalized, normalizedValue: normalized };
     }
-    return normalized;
   }
 
   private serializableValues(value: object): Record<string, unknown> {

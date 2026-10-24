@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { OperationsModule } from '../operations/operations.module';
+import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
 import { Customer } from './customer.entity';
 import { CustomerAddress } from './customer-address.entity';
 import { CustomerContactMethod } from './customer-contact-method.entity';
@@ -29,6 +30,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
       CustomerIdentityDocument,
       CustomerKycAssessment,
       CustomerTransactionPin,
+      CustomerRegistrationPhoneChallenge,
     ]),
   ],
   controllers: [CustomerController],

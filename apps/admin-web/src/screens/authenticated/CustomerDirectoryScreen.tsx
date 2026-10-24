@@ -1,7 +1,8 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { CustomerRegistrationWizard } from './CustomerRegistrationWizard';
 import { maskCustomerReference } from './customer-masking';
 import { Customer360Workspace, type DirectoryCustomer } from './Customer360Workspace';
 import './customer-management.css';
@@ -70,10 +71,6 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newReference, setNewReference] = useState('');
-  const [newType, setNewType] = useState('INDIVIDUAL');
-  const [isCreating, setIsCreating] = useState(false);
-  const [createMessage, setCreateMessage] = useState<string | null>(null);
   const requestVersion = useRef(0);
 
   useEffect(() => {
@@ -145,28 +142,24 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     };
   }, [selectedCustomerId, directory]);
 
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!principal || !canCreateCustomer || isCreating) return;
-    setIsCreating(true);
-    setCreateMessage(null);
+  const handleCustomerCreated = () => {
+    setPage(1);
+    setSearch('');
+    setSearchInput('');
+    setReloadVersion((value) => value + 1);
+  };
+
+  const openRegistrationCustomer = async (customerId: string) => {
+    setCreateOpen(false);
+    setSelectionError(null);
     try {
-      const created = await ApiClient.post<DirectoryCustomer>('/customers', {
-        reference: newReference.trim(),
-        type: newType,
-        status: 'DRAFT',
-      });
-      setCreateMessage(`Draft customer created. Reference: ${maskCustomerReference(created.reference)}`);
-      setNewReference('');
-      setCreateOpen(false);
-      setPage(1);
-      setSearch('');
-      setSearchInput('');
-      setReloadVersion((value) => value + 1);
+      const customer = await ApiClient.get<DirectoryCustomer>(
+        `/internal/customers/${encodeURIComponent(customerId)}`,
+      );
+      setSelectedCustomer(customer);
     } catch {
-      setCreateMessage('The draft customer could not be created. Check the reference and try again.');
-    } finally {
-      setIsCreating(false);
+      setSelectionError('The saved customer is not available to this workforce role.');
+      setReloadVersion((value) => value + 1);
     }
   };
 
@@ -205,43 +198,21 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
             type="button"
             onClick={() => {
               setCreateOpen((value) => !value);
-              setCreateMessage(null);
             }}
             aria-expanded={createOpen}
           >
-            {createOpen ? 'Cancel draft' : 'New draft customer'}
+            {createOpen ? 'Close registration' : 'New Customer'}
           </button>
         )}
       </header>
 
-      {createMessage && <div className="cm-notice" role="status">{createMessage}</div>}
 
       {createOpen && canCreateCustomer && (
-        <form className="cm-create-panel" onSubmit={handleCreate}>
-          <div>
-            <h2>Create a draft customer</h2>
-            <p>Manual records start in DRAFT. Activation remains subject to the verified-primary-phone gate.</p>
-          </div>
-          <label>
-            Customer reference
-            <input
-              required
-              maxLength={160}
-              value={newReference}
-              onChange={(event) => setNewReference(event.target.value)}
-              placeholder="Enter an approved customer reference"
-            />
-          </label>
-          <label>
-            Customer type
-            <select value={newType} onChange={(event) => setNewType(event.target.value)}>
-              {CUSTOMER_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <button className="cm-button cm-button-primary" type="submit" disabled={isCreating}>
-            {isCreating ? 'Creating…' : 'Create draft'}
-          </button>
-        </form>
+        <CustomerRegistrationWizard
+          onClose={() => setCreateOpen(false)}
+          onCustomerCreated={handleCustomerCreated}
+          onOpenCustomer={openRegistrationCustomer}
+        />
       )}
 
       <section className="cm-panel" aria-label="Customer search and results">

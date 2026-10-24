@@ -15,7 +15,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { DataSource, EntityManager, IsNull } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 
 import { A2SecurityRateLimitService } from '../authorization/security-rate-limit.service';
 import { runSerializableWithRetry } from '../common/serializable-transaction';
@@ -26,6 +26,7 @@ import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { IdempotencyRecord } from '../operations/idempotency-record.entity';
 import { ContactMethodType, CustomerStatus, CustomerType, CustomerKycLevel, CustomerKycStatus } from '../customer/customer.enums';
+import { maskCustomerReference } from '../customer/customer-privacy';
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
 import { CustomerProfile } from '../customer/customer-profile.entity';
@@ -48,13 +49,10 @@ import {
   REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS,
 } from './customer-registration.constants';
 import { CustomerRegistrationPhoneChallenge } from './customer-registration-phone-challenge.entity';
+import { normalizeNigerianPhone } from './phone-normalization';
+import type { NormalizedNigerianPhone } from './phone-normalization';
 
-export interface NormalizedNigerianPhone {
-  /** Canonical 10-digit national significant number, e.g. 8012345678. */
-  canonical: string;
-  /** E.164 rendering, e.g. +2348012345678. */
-  e164: string;
-}
+export type { NormalizedNigerianPhone } from './phone-normalization';
 
 export interface RequestRegistrationOtpView {
   status: 'OTP_REQUEST_ACCEPTED';
@@ -144,17 +142,7 @@ export class CustomerRegistrationService {
    * +234/234/0-prefixed and bare 10-digit input, same as agent receiving-number resolution.
    */
   normalizeNigerianPhone(raw: string): NormalizedNigerianPhone {
-    const compact = raw.replace(/[\s()-]/g, '');
-    let local: string;
-    if (/^\+234\d{10}$/.test(compact)) local = compact.slice(4);
-    else if (/^234\d{10}$/.test(compact)) local = compact.slice(3);
-    else if (/^0\d{10}$/.test(compact)) local = compact.slice(1);
-    else if (/^\d{10}$/.test(compact)) local = compact;
-    else throw new BadRequestException('phone must be a valid Nigerian mobile number');
-    if (!/^[789]\d{9}$/.test(local)) {
-      throw new BadRequestException('phone must be a valid Nigerian mobile number');
-    }
-    return { canonical: local, e164: `+234${local}` };
+    return normalizeNigerianPhone(raw);
   }
 
   // ---------------------------------------------------------------- OTP request
@@ -190,11 +178,13 @@ export class CustomerRegistrationService {
       const bound = await manager.getRepository(CustomerContactMethod).findOne({
         where: {
           type: ContactMethodType.PHONE,
-          normalizedValue: phone.canonical,
+          normalizedValue: In([phone.canonical, phone.e164]),
           deletedAt: IsNull(),
         },
       });
-      if (bound) return null;
+      // A verified number remains an enumeration-safe no-op. An unverified Admin-created
+      // contact may receive an OTP so a workforce operator can complete its phone proof.
+      if (bound?.verifiedAt) return null;
 
       const active = existing.find((challenge) => challenge.status === 'ACTIVE');
       if (
@@ -432,7 +422,7 @@ export class CustomerRegistrationService {
       const bound = await manager.getRepository(CustomerContactMethod).findOne({
         where: {
           type: ContactMethodType.PHONE,
-          normalizedValue: phone.canonical,
+          normalizedValue: In([phone.canonical, phone.e164]),
           deletedAt: IsNull(),
         },
       });
@@ -468,7 +458,7 @@ export class CustomerRegistrationService {
       });
       const customer = await customerRepository.save(customerDraft);
       await this.audit(manager, 'CUSTOMER', customer.id, 'CREATED', {
-        reference: customer.reference,
+        reference: maskCustomerReference(customer.reference),
         type: customer.type,
         status: customer.status,
         kycLevel: customer.kycLevel,

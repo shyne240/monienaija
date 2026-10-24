@@ -13,7 +13,11 @@ import {
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
-import { maskCustomerReference, maskIdentityDocumentNumber } from './customer-privacy';
+import {
+  maskContactValue,
+  maskCustomerReference,
+  maskIdentityDocumentNumber,
+} from './customer-privacy';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateContactMethodDto } from './dto/create-contact-method.dto';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -21,8 +25,13 @@ import { CreateIdentityDocumentDto } from './dto/create-identity-document.dto';
 import { CreateKycAssessmentDto } from './dto/create-kyc-assessment.dto';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
+import { UpdateAddressDto } from './dto/update-address.dto';
+import { UpdateContactMethodDto } from './dto/update-contact-method.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { UpdateIdentityDocumentDto } from './dto/update-identity-document.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CustomerKycStatus, CustomerStatus } from './customer.enums';
+import { CustomerContactMethod } from './customer-contact-method.entity';
 import { CustomerIdentityDocument } from './customer-identity-document.entity';
 import { Customer } from './customer.entity';
 import { CustomerService } from './customer.service';
@@ -127,6 +136,16 @@ export class CustomerController {
     return this.customerService.createProfile(id, { ...dto, actor });
   }
 
+  @Patch(':id/profile')
+  async updateProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateProfileDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    return this.customerService.updateProfile(id, { ...dto, actor });
+  }
+
   @Post(':id/address')
   async createAddress(
     @Param('id') id: string,
@@ -137,6 +156,17 @@ export class CustomerController {
     return this.customerService.createAddress(id, { ...dto, actor });
   }
 
+  @Patch(':id/addresses/:addressId')
+  async updateAddress(
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+    @Body() dto: UpdateAddressDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    return this.customerService.updateAddress(id, addressId, { ...dto, actor });
+  }
+
   @Post(':id/contact-method')
   async createContactMethod(
     @Param('id') id: string,
@@ -144,7 +174,20 @@ export class CustomerController {
     @Req() req: AuthenticatedRequest,
   ) {
     const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
-    return this.customerService.createContactMethod(id, { ...dto, actor });
+    const contact = await this.customerService.createContactMethod(id, { ...dto, actor });
+    return this.toSafeContactMethod(contact);
+  }
+
+  @Patch(':id/contact-methods/:contactId')
+  async updateContactMethod(
+    @Param('id') id: string,
+    @Param('contactId') contactId: string,
+    @Body() dto: UpdateContactMethodDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    const contact = await this.customerService.updateContactMethod(id, contactId, { ...dto, actor });
+    return this.toSafeContactMethod(contact);
   }
 
   @Post(':id/identity-document')
@@ -163,6 +206,26 @@ export class CustomerController {
       );
     }
     const document = await this.customerService.createIdentityDocument(id, { ...dto, actor });
+    return this.toSafeIdentityDocument(document);
+  }
+
+  @Patch(':id/identity-documents/:documentId')
+  async updateIdentityDocument(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Body() dto: UpdateIdentityDocumentDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.view_identity_documents');
+    if (req.authorizationPrincipal?.type !== 'CUSTOMER') {
+      await this.auth.requireFunction(
+        req.authorizationPrincipal,
+        'kyc.review',
+        'customer',
+        ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+      );
+    }
+    const document = await this.customerService.updateIdentityDocument(id, documentId, { ...dto, actor });
     return this.toSafeIdentityDocument(document);
   }
 
@@ -374,6 +437,19 @@ export class CustomerController {
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
       deletedAt: customer.deletedAt,
+    };
+  }
+
+  private toSafeContactMethod(contact: CustomerContactMethod) {
+    return {
+      id: contact.id,
+      customerId: contact.customerId,
+      type: contact.type,
+      maskedValue: maskContactValue(contact.type, contact.value),
+      isPrimary: contact.isPrimary,
+      verifiedAt: contact.verifiedAt,
+      createdAt: contact.createdAt,
+      updatedAt: contact.updatedAt,
     };
   }
 
