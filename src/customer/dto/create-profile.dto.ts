@@ -1,50 +1,61 @@
 import { Transform } from 'class-transformer';
-import { IsISO8601, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Validate } from 'class-validator';
+
+import {
+  normalizeCustomerText,
+  normalizeIsoCountryCode,
+} from '../customer-validation';
+import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
+
+function trimText(value: unknown): unknown {
+  return typeof value === 'string' ? normalizeCustomerText(value) : value;
+}
+
+function normalizeCountry(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = normalizeIsoCountryCode(value);
+  return normalized ?? normalizeCustomerText(value).toUpperCase();
+}
 
 export class CreateProfileDto {
   @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(200)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['name', 200])
   displayName!: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MaxLength(200)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['name', 200])
   legalName?: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['name', 100])
   firstName?: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['name', 100])
   middleName?: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['name', 100])
   lastName?: string;
 
-  @IsISO8601({ strict: true })
+  @IsString()
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['dateOfBirth'])
   dateOfBirth?: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  @Matches(/^[A-Za-z]{2,3}$/)
+  @Transform(({ value }: { value: unknown }) => normalizeCountry(value))
+  @Validate(CustomerFieldPolicyConstraint, ['isoCountry'])
   nationality?: string;
-
 }

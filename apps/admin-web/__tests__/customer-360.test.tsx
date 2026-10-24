@@ -165,7 +165,7 @@ describe('Batch 1 Customer 360° workspace', () => {
 
     expect(await view.findByRole('heading', { name: 'Synthetic Customer 360' })).toBeTruthy();
     expect(await view.findByText('Ready')).toBeTruthy();
-    expect(await view.findByText('ELIGIBLE')).toBeTruthy();
+    expect((await view.findAllByText('ELIGIBLE')).length).toBe(2);
     expect((await view.findAllByText('₦3,500.50')).length).toBe(2);
     expect(await view.findByText('+234*****4321')).toBeTruthy();
     expect(await view.findByText('WALLET TRANSFER')).toBeTruthy();

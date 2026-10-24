@@ -1,5 +1,7 @@
 import { Transform } from 'class-transformer';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsString, Matches, MaxLength, MinLength, Validate } from 'class-validator';
+
+import { CustomerFieldPolicyConstraint } from '../../customer/customer-validation.constraints';
 
 export class VerifyRegistrationOtpDto {
   @IsString()
@@ -7,6 +9,7 @@ export class VerifyRegistrationOtpDto {
   @MinLength(10)
   @MaxLength(20)
   @Matches(/^[+0-9()\-\s]+$/, { message: 'phone must be a Nigerian phone number' })
+  @Validate(CustomerFieldPolicyConstraint, ['nigerianPhone'])
   phone!: string;
 
   /** 6-digit OTP. Never echoed back; never audited ('code' is a redacted sensitive key). */

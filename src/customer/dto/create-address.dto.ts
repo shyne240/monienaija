@@ -1,18 +1,24 @@
 import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, Validate } from 'class-validator';
 
+import { normalizeCustomerText, normalizeIsoCountryCode } from '../customer-validation';
+import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
 import { AddressType } from '../customer.enums';
 
-function trim(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim() : value;
+function trimText(value: unknown): unknown {
+  return typeof value === 'string' ? normalizeCustomerText(value) : value;
+}
+
+function normalizeCountry(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = normalizeIsoCountryCode(value);
+  return normalized ?? normalizeCustomerText(value).toUpperCase();
+}
+
+function optionalTrimmedText(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') return value;
+  return normalizeCustomerText(value) || undefined;
 }
 
 export class CreateAddressDto {
@@ -20,43 +26,37 @@ export class CreateAddressDto {
   type!: AddressType;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MinLength(1)
-  @MaxLength(200)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 200])
   lineOne!: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MaxLength(200)
+  @Transform(({ value }: { value: unknown }) => optionalTrimmedText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 200])
   lineTwo?: string;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MinLength(1)
-  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 100])
   city!: string;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MinLength(1)
-  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 100])
   state!: string;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  @Matches(/^[A-Za-z]{2,3}$/)
+  @Transform(({ value }: { value: unknown }) => normalizeCountry(value))
+  @Validate(CustomerFieldPolicyConstraint, ['isoCountry'])
   country!: string;
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MaxLength(20)
+  @Transform(({ value }: { value: unknown }) => optionalTrimmedText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['postalCode'])
   postalCode?: string;
 
   @IsBoolean()
   isPrimary!: boolean;
-
 }

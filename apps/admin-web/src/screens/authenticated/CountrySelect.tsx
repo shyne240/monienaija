@@ -2,6 +2,7 @@ import React from 'react';
 import Select, { type FilterOptionOption, type StylesConfig } from 'react-select';
 import * as countries from 'i18n-iso-countries';
 import englishLocale from 'i18n-iso-countries/langs/en.json';
+import { getCountryCallingCode, isSupportedCountry, type CountryCode } from 'libphonenumber-js/max';
 
 countries.registerLocale(englishLocale);
 
@@ -10,26 +11,32 @@ interface CountryOption {
   name: string;
   label: string;
   aliases: string[];
+  callingCode: string | null;
 }
 
 const commonNames = countries.getNames('en', { select: 'alias' });
 const allNames = countries.getNames('en', { select: 'all' });
-const displayNames = typeof Intl.DisplayNames === 'function'
-  ? new Intl.DisplayNames(['en'], { type: 'region' })
-  : null;
+const displayNames =
+  typeof Intl.DisplayNames === 'function'
+    ? new Intl.DisplayNames(['en'], { type: 'region' })
+    : null;
 
 export const COUNTRY_OPTIONS: CountryOption[] = Object.entries(commonNames)
   .map(([value, fallbackName]) => {
     const aliases = allNames[value] ?? [fallbackName];
-    const fullName = aliases.find((candidate) => !/^[A-Z .'-]+$/.test(candidate))
-      ?? aliases[0]
-      ?? fallbackName;
+    const fullName =
+      aliases.find((candidate) => !/^[A-Z .'-]+$/.test(candidate)) ?? aliases[0] ?? fallbackName;
     const name = displayNames?.of(value) ?? fullName;
+    const countryCode = value as CountryCode;
+    const callingCode = isSupportedCountry(countryCode)
+      ? `+${getCountryCallingCode(countryCode)}`
+      : null;
     return {
       value,
       name,
       label: `${name} (${value})`,
       aliases,
+      callingCode,
     };
   })
   .sort((left, right) => left.name.localeCompare(right.name, 'en'));
@@ -59,23 +66,33 @@ function optionForValue(value: string | null | undefined): CountryOption | null 
   const raw = value?.trim() ?? '';
   if (!raw) return null;
   const normalized = normalizeCountryCode(raw);
-  return COUNTRY_OPTIONS_BY_CODE.get(normalized) ?? {
-    value: normalized,
-    name: raw,
-    label: `Unrecognized country (${raw.toUpperCase()})`,
-    aliases: [raw],
-  };
+  return (
+    COUNTRY_OPTIONS_BY_CODE.get(normalized) ?? {
+      value: normalized,
+      name: raw,
+      label: `Unrecognized country (${raw.toUpperCase()})`,
+      aliases: [raw],
+      callingCode: null,
+    }
+  );
 }
 
 function normalizeForSearch(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase();
 }
 
-function filterCountryOption(option: FilterOptionOption<CountryOption>, inputValue: string): boolean {
+function filterCountryOption(
+  option: FilterOptionOption<CountryOption>,
+  inputValue: string,
+): boolean {
   const query = normalizeForSearch(inputValue.trim());
   if (!query) return true;
-  return [option.data.name, option.data.value, ...option.data.aliases]
-    .some((text) => normalizeForSearch(text).includes(query));
+  return [option.data.name, option.data.value, ...option.data.aliases].some((text) =>
+    normalizeForSearch(text).includes(query),
+  );
 }
 
 const selectStyles: StylesConfig<CountryOption, false> = {
@@ -125,6 +142,8 @@ export interface CountrySelectProps {
   placeholder?: string;
   ariaLabel: string;
   ariaDescribedBy?: string;
+  ariaInvalid?: boolean;
+  showCallingCode?: boolean;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -138,6 +157,8 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   placeholder = 'Search by country name or ISO code…',
   ariaLabel,
   ariaDescribedBy,
+  ariaInvalid = false,
+  showCallingCode = false,
 }) => (
   <Select<CountryOption, false>
     inputId={inputId}
@@ -145,7 +166,11 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
     value={optionForValue(value)}
     options={COUNTRY_OPTIONS}
     onChange={(option) => onChange(option?.value ?? '')}
-    getOptionLabel={(option) => option.label}
+    getOptionLabel={(option) =>
+      showCallingCode && option.callingCode
+        ? `${option.label} · ${option.callingCode}`
+        : option.label
+    }
     getOptionValue={(option) => option.value}
     filterOption={filterCountryOption}
     isSearchable
@@ -154,9 +179,12 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
     required={required}
     aria-label={ariaLabel}
     aria-describedby={ariaDescribedBy}
+    aria-invalid={ariaInvalid}
     classNamePrefix="cm-country-select"
     placeholder={placeholder}
-    noOptionsMessage={({ inputValue }) => inputValue ? 'No matching country' : 'No countries available'}
+    noOptionsMessage={({ inputValue }) =>
+      inputValue ? 'No matching country' : 'No countries available'
+    }
     menuPlacement="auto"
     menuPosition="fixed"
     menuShouldScrollIntoView

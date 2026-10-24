@@ -238,3 +238,229 @@
   .cm-record-actions { justify-content: flex-start; max-width: none; }
   .cm-editor-actions { justify-content: flex-start; }
 }
+
+/* Additive styles for customer validation and Proof of Address panels. */
+
+.cm-country-select-field .cm-country-select__control {
+  width: 100%;
+}
+
+.cm-country-select-field .cm-country-select__control input {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}
+
+.cm-country-select-field .cm-country-select__control input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.cm-country-select-field .cm-country-select__control:has(input[aria-invalid='true']) {
+  border-color: #bf6255;
+}
+
+.cm-field-error {
+  display: block;
+  margin-top: 3px;
+  color: #8a332a;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.cm-wizard-field-grid input[aria-invalid='true'],
+.cm-wizard-field-grid select[aria-invalid='true'] {
+  border-color: #bf6255;
+}
+
+.cm-wizard-field-grid input[aria-invalid='true']:focus,
+.cm-wizard-field-grid select[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(166, 61, 53, 0.12);
+}
+
+.cm-phone-field {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.cm-phone-number-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cm-phone-number-field > label,
+.cm-country-select-field > label {
+  color: #435751;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.cm-phone-field .cm-form-help {
+  grid-column: 1 / -1;
+}
+
+.cm-country-select-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.cm-country-select-field .cm-country-select__control {
+  min-height: 42px;
+}
+
+.cm-phone-number-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.cm-phone-number-field input:focus {
+  border-color: var(--cm-brand);
+  box-shadow: 0 0 0 3px rgba(11, 106, 82, 0.12);
+}
+
+.cm-phone-number-field input[aria-invalid='true'] {
+  border-color: #bf6255;
+}
+
+.cm-identity-draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cm-identity-draft {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #e5eeea;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.cm-identity-draft legend {
+  padding: 0 6px;
+  color: #34564d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cm-identity-saved-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #344a43;
+  font-size: 12px;
+}
+
+.cm-policy-notice {
+  margin: 14px 0;
+  border: 1px solid #e4d9b7;
+  border-left: 3px solid var(--cm-gold);
+  border-radius: 9px;
+  padding: 11px 13px;
+  color: #70551e;
+  background: #fffaf0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.cm-policy-notice-warning {
+  border-color: #efd0c8;
+  border-left-color: var(--cm-danger);
+  color: #7c3a32;
+  background: #fff5f2;
+}
+
+.cm-proof-address-stack {
+  display: grid;
+  gap: 15px;
+}
+
+.cm-poa-metadata-preview {
+  margin-top: 16px;
+}
+
+.cm-poa-metadata-preview label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #435751;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.cm-poa-metadata-preview input,
+.cm-poa-metadata-preview select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.cm-poa-metadata-preview input:disabled,
+.cm-poa-metadata-preview select:disabled {
+  color: #73827c;
+  background: #f2f5f3;
+  cursor: not-allowed;
+}
+
+.cm-poa-history-heading {
+  justify-content: flex-start;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.cm-poa-history-heading span:last-child {
+  font-weight: 500;
+}
+
+.cm-readiness-grid {
+  margin-top: 14px;
+}
+
+.cm-readiness-grid > div {
+  border: 1px solid #e6eeea;
+  border-radius: 10px;
+  padding: 11px;
+  background: #fbfdfc;
+}
+
+.cm-readiness-grid dd {
+  margin: 6px 0 0;
+  color: #344a43;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.cm-readiness-grid small {
+  display: block;
+  margin-top: 5px;
+  color: var(--cm-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}

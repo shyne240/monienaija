@@ -1,39 +1,49 @@
 import { Transform } from 'class-transformer';
-import {
-  IsEnum,
-  IsISO8601,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString, Validate } from 'class-validator';
 
+import { normalizeCustomerText, normalizeIsoCountryCode } from '../customer-validation';
+import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
 import { IdentityDocumentType } from '../customer.enums';
+
+function trimText(value: unknown): unknown {
+  return typeof value === 'string' ? normalizeCustomerText(value) : value;
+}
+
+function normalizeCountry(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = normalizeIsoCountryCode(value);
+  return normalized ?? normalizeCustomerText(value).toUpperCase();
+}
+
+function optionalTrimmedText(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') return value;
+  return normalizeCustomerText(value) || undefined;
+}
 
 export class CreateIdentityDocumentDto {
   @IsEnum(IdentityDocumentType)
   type!: IdentityDocumentType;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(160)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['identityDocumentNumber'])
   documentNumber!: string;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  @Matches(/^[A-Za-z]{2,3}$/)
+  @Transform(({ value }: { value: unknown }) => normalizeCountry(value))
+  @Validate(CustomerFieldPolicyConstraint, ['identityDocumentCountry'])
   issuingCountry!: string;
 
-  @IsISO8601({ strict: true })
+  @IsString()
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => optionalTrimmedText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['identityDocumentDate'])
   issuedAt?: string;
 
-  @IsISO8601({ strict: true })
+  @IsString()
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => optionalTrimmedText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['identityDocumentDate'])
   expiresAt?: string;
-
 }

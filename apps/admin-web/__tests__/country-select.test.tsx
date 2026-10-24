@@ -1,7 +1,12 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react';
 
-import { COUNTRY_OPTIONS, CountrySelect, countryNameForCode, normalizeCountryCode } from '../src/screens/authenticated/CountrySelect';
+import {
+  COUNTRY_OPTIONS,
+  CountrySelect,
+  countryNameForCode,
+  normalizeCountryCode,
+} from '../src/screens/authenticated/CountrySelect';
 
 describe('CountrySelect', () => {
   test('uses the complete ISO country dataset and normalizes saved alpha-3 codes', () => {
@@ -17,7 +22,12 @@ describe('CountrySelect', () => {
     const view = render(
       <label htmlFor="country-code-test">
         Country
-        <CountrySelect inputId="country-code-test" value="NG" onChange={onChange} ariaLabel="Country" />
+        <CountrySelect
+          inputId="country-code-test"
+          value="NG"
+          onChange={onChange}
+          ariaLabel="Country"
+        />
       </label>,
     );
 
@@ -32,12 +42,31 @@ describe('CountrySelect', () => {
     expect(onChange).toHaveBeenCalledWith('GH');
   });
 
+  test('can show calling codes for the country-aware phone selector', () => {
+    const view = render(
+      <CountrySelect
+        inputId="phone-country-test"
+        value="NG"
+        onChange={jest.fn()}
+        ariaLabel="Phone country"
+        showCallingCode
+      />,
+    );
+
+    expect(view.getByText('Nigeria (NG) · +234')).toBeTruthy();
+  });
+
   test('searches by country name and reports when no country matches', async () => {
     const onChange = jest.fn();
     const view = render(
       <label htmlFor="country-name-test">
         Country
-        <CountrySelect inputId="country-name-test" value="NG" onChange={onChange} ariaLabel="Country" />
+        <CountrySelect
+          inputId="country-name-test"
+          value="NG"
+          onChange={onChange}
+          ariaLabel="Country"
+        />
       </label>,
     );
     const input = view.getByRole('combobox', { name: 'Country' });

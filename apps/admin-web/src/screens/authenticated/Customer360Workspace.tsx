@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { CustomerPersonalInformationPanel } from './CustomerPersonalInformationPanel';
+import { CustomerProofOfAddressPanel } from './CustomerProofOfAddressPanel';
+import { CustomerTier3ReadinessPanel } from './CustomerTier3ReadinessPanel';
 import { maskContactValue, maskCustomerReference } from './customer-masking';
 
 export interface DirectoryCustomer {
@@ -141,7 +143,7 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
   const scopes = principal?.scopes ?? [];
   const hasFunction = (code: string) => scopes.includes(code);
   const scopesKey = scopes.join('|');
-  const [activeTab, setActiveTab] = useState<'overview' | 'personal'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'personal' | 'proof'>('overview');
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
@@ -206,7 +208,6 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
       active = false;
     };
   }, [customer.id, scopesKey, overviewReloadVersion]);
-
 
   const customerName = displayName(customer);
   const phone = overview?.phone.value;
@@ -303,6 +304,17 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
         >
           Personal information & contact
         </button>
+        <button
+          id="customer-proof-address-tab"
+          className={`cm-tab ${activeTab === 'proof' ? 'is-active' : ''}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'proof'}
+          aria-controls="customer-proof-address-panel"
+          onClick={() => setActiveTab('proof')}
+        >
+          Proof of Address & physical verification
+        </button>
       </div>
 
       {actionMessage && <div className="cm-notice" role="status">{actionMessage}</div>}
@@ -382,6 +394,15 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
               ) : <p className="cm-muted">{overview?.eligibility.status === 404 ? 'No eligibility decision recorded.' : hasFunction('customer.view') ? 'Eligibility summary is unavailable.' : 'Eligibility is restricted.'}</p>}
             </article>
 
+            <CustomerTier3ReadinessPanel
+              customerType={customer.type}
+              customerStatus={customer.status}
+              phoneVerified={phone ? Boolean(phone.activationGate?.verifiedPrimaryPhone) : null}
+              kycLevel={customer.kycLevel}
+              kycStatus={customer.kycStatus}
+              financialEligibility={overview?.eligibility.value?.status ?? null}
+            />
+
             <article className="cm-card cm-card-wide">
               <div className="cm-card-heading">
                 <div><p className="cm-eyebrow">WALLET</p><h2>Wallet summary</h2></div>
@@ -438,10 +459,11 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
             </article>
           </div>
         </section>
-      ) : (
+      ) : activeTab === 'personal' ? (
         <section id="customer-personal-panel" role="tabpanel" aria-labelledby="customer-personal-tab" className="cm-workspace-content">
           <CustomerPersonalInformationPanel
             customerId={customer.id}
+            customerType={customer.type}
             onProfileUpdated={(profile) => onCustomerUpdated({
               ...customer,
               displayName: profile.displayName,
@@ -449,6 +471,10 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
             })}
             onVerificationUpdated={() => setOverviewReloadVersion((version) => version + 1)}
           />
+        </section>
+      ) : (
+        <section id="customer-proof-address-panel" role="tabpanel" aria-labelledby="customer-proof-address-tab" className="cm-workspace-content">
+          <CustomerProofOfAddressPanel />
         </section>
       )}
 

@@ -1,17 +1,27 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, Validate, ValidateIf } from 'class-validator';
 
-function trim(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim() : value;
+import { normalizeCustomerText } from '../customer-validation';
+import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
+
+function trimText(value: unknown): unknown {
+  return typeof value === 'string' ? normalizeCustomerText(value) : value;
 }
 
 export class UpdateContactMethodDto {
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MinLength(1)
-  @MaxLength(255)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 255])
   value?: string;
+
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? normalizeCustomerText(value).toUpperCase() : value,
+  )
+  @Validate(CustomerFieldPolicyConstraint, ['isoAlpha2'])
+  phoneCountry?: string;
 
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsBoolean()
@@ -19,8 +29,7 @@ export class UpdateContactMethodDto {
 
   @IsString()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => trim(value))
-  @MinLength(20)
-  @MaxLength(128)
+  @Transform(({ value }: { value: unknown }) => trimText(value))
+  @Validate(CustomerFieldPolicyConstraint, ['freeText', 128])
   verificationToken?: string;
 }

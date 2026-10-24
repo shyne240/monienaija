@@ -80,12 +80,14 @@ export interface UpdateAddressCommand {
 export interface CreateContactCommand {
   type: ContactMethodType;
   value: string;
+  phoneCountry?: string;
   isPrimary: boolean;
   actor: string;
 }
 
 export interface UpdateContactCommand {
   value?: string;
+  phoneCountry?: string;
   isPrimary?: boolean;
   verificationToken?: string;
   actor: string;

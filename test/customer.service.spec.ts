@@ -160,9 +160,7 @@ describe('CustomerService', () => {
     const contactRepository = new MemoryRepository<CustomerContactMethod>(
       duplicateBy(['type', 'normalizedValue']),
     );
-    const documentRepository = new MemoryRepository<CustomerIdentityDocument>(
-      duplicateBy(['customerId', 'type', 'documentNumber']),
-    );
+    const documentRepository = new MemoryRepository<CustomerIdentityDocument>();
     const kycRepository = new MemoryRepository<CustomerKycAssessment>(
       duplicateBy(['customerId', 'isCurrent']),
     );
@@ -297,9 +295,15 @@ describe('CustomerService', () => {
       firstName: 'Changed',
       actor: 'ops',
     });
-    expect(updatedProfile).toMatchObject({ displayName: 'Synthetic New Name', firstName: 'Changed', lastName: 'Person' });
+    expect(updatedProfile).toMatchObject({
+      displayName: 'Synthetic New Name',
+      firstName: 'Changed',
+      lastName: 'Person',
+    });
     expect(updatedProfile.legalName).toBe('Changed Person');
-    const profileAudit = audit.record.mock.calls.at(-1)?.[1] as { newValues?: Record<string, unknown> };
+    const profileAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
     expect(JSON.stringify(profileAudit)).not.toContain('Synthetic New Name');
     expect(JSON.stringify(profileAudit)).not.toContain('Changed Person');
 
@@ -318,7 +322,9 @@ describe('CustomerService', () => {
       actor: 'ops',
     });
     expect(updatedAddress.lineOne).toBe('2 Synthetic Way');
-    const addressAudit = audit.record.mock.calls.at(-1)?.[1] as { newValues?: Record<string, unknown> };
+    const addressAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
     expect(JSON.stringify(addressAudit)).not.toContain('2 Synthetic Way');
 
     const contact = await service.createContactMethod(customer.id, {
@@ -335,27 +341,30 @@ describe('CustomerService', () => {
     });
     expect(updatedContact.value).toBe('+2348012340002');
     expect(updatedContact.verifiedAt).toBeNull();
-    const contactAudit = audit.record.mock.calls.at(-1)?.[1] as { newValues?: Record<string, unknown> };
+    const contactAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
     expect(JSON.stringify(contactAudit)).not.toContain('+2348012340002');
 
     const document = await service.createIdentityDocument(customer.id, {
-      type: IdentityDocumentType.NIN,
-      documentNumber: 'SYNTHETIC-IDENTITY-001',
+      type: IdentityDocumentType.INTERNATIONAL_PASSPORT,
+      documentNumber: 'SYNTHETIC-PASSPORT-001',
       issuingCountry: 'NG',
       actor: 'ops',
     });
     const updatedDocument = await service.updateIdentityDocument(customer.id, document.id, {
-      documentNumber: 'SYNTHETIC-IDENTITY-002',
+      documentNumber: 'SYNTHETIC-PASSPORT-002',
       expiresAt: '2030-01-01',
       actor: 'ops',
     });
-    expect(updatedDocument.documentNumber).toBe('SYNTHETIC-IDENTITY-002');
-    expect(updatedDocument.expiresAt).toBeNull();
-    const identityAudit = audit.record.mock.calls.at(-1)?.[1] as { newValues?: Record<string, unknown> };
-    expect(JSON.stringify(identityAudit)).not.toContain('SYNTHETIC-IDENTITY-002');
+    expect(updatedDocument.documentNumber).toBe('SYNTHETIC-PASSPORT-002');
+    const identityAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(identityAudit)).not.toContain('SYNTHETIC-PASSPORT-002');
   });
 
-  it('rejects duplicate contacts and duplicate identity type-number pairs while allowing multiple same-type documents', async () => {
+  it('allows multiple identity documents of one type and rejects duplicate type-number pairs', async () => {
     const { service } = fixture();
     const customer = await createCustomer(service);
     await service.createContactMethod(customer.id, {
@@ -373,23 +382,23 @@ describe('CustomerService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    await service.createIdentityDocument(customer.id, {
+    const firstBvn = await service.createIdentityDocument(customer.id, {
       type: IdentityDocumentType.BVN,
-      documentNumber: 'SYNTHETIC-BVN-001',
+      documentNumber: '12345678901',
       issuingCountry: 'NG',
       actor: 'ops',
     });
     const secondBvn = await service.createIdentityDocument(customer.id, {
       type: IdentityDocumentType.BVN,
-      documentNumber: 'SYNTHETIC-BVN-002',
+      documentNumber: '98765432109',
       issuingCountry: 'NG',
       actor: 'ops',
     });
-    expect(secondBvn.type).toBe(IdentityDocumentType.BVN);
+    expect(secondBvn.id).not.toBe(firstBvn.id);
     await expect(
       service.createIdentityDocument(customer.id, {
         type: IdentityDocumentType.BVN,
-        documentNumber: 'synthetic-bvn-001',
+        documentNumber: '12345678901',
         issuingCountry: 'NG',
         actor: 'ops',
       }),

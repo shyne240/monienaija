@@ -139,8 +139,8 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     ]);
     const phone = '+2348012340001';
     const secondaryPhone = '+2348012340002';
-    const syntheticIdentityNumber = 'SYNTHETIC-NIN-2A-0001';
-    const syntheticSecondIdentityNumber = 'SYNTHETIC-NIN-2A-0002';
+    const syntheticIdentityNumber = '00000000001';
+    const syntheticSecondIdentityNumber = '00000000002';
 
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers')
@@ -196,7 +196,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     expect(contact.body.maskedValue).toContain('0001');
     expect(JSON.stringify(contact.body)).not.toContain(phone);
 
-    const identity = await request(app.getHttpServer())
+    const rejectedNinDates = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/identity-document`)
       .set(auth(superAdmin.token))
       .send({
@@ -206,8 +206,20 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
         issuedAt: '2015-06-12',
         expiresAt: '2035-06-12',
       })
+      .expect(400);
+    expect(JSON.stringify(rejectedNinDates.body)).not.toContain(syntheticIdentityNumber);
+
+    const identity = await request(app.getHttpServer())
+      .post(`/api/v1/customers/${customerId}/identity-document`)
+      .set(auth(superAdmin.token))
+      .send({ type: 'NIN', documentNumber: syntheticIdentityNumber, issuingCountry: 'NG' })
       .expect(201);
-    expect(identity.body).toMatchObject({ type: 'NIN', issuingCountry: 'NG', issuedAt: null, expiresAt: null });
+    expect(identity.body).toMatchObject({
+      type: 'NIN',
+      issuingCountry: 'NG',
+      issuedAt: null,
+      expiresAt: null,
+    });
     expect(JSON.stringify(identity.body)).not.toContain(syntheticIdentityNumber);
 
     const secondIdentity = await request(app.getHttpServer())
@@ -311,18 +323,19 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .send({ type: 'MAILING', lineOne: '3 Synthetic Crescent', city: 'Abuja', state: 'FCT', country: 'NG', isPrimary: true })
       .expect(201);
 
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/${customerId}/identity-documents/${identity.body.id}`)
+      .set(auth(superAdmin.token))
+      .send({ expiresAt: '2030-01-01' })
+      .expect(400);
     const updatedIdentity = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}/identity-documents/${identity.body.id}`)
       .set(auth(superAdmin.token))
-      .send({
-        documentNumber: 'SYNTHETIC-NIN-2A-0003',
-        issuingCountry: 'NG',
-        expiresAt: '2030-01-01',
-      })
+      .send({ documentNumber: '00000000003' })
       .expect(200);
     expect(updatedIdentity.body.maskedDocumentNumber).toContain('0003');
     expect(updatedIdentity.body.expiresAt).toBeNull();
-    expect(JSON.stringify(updatedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0003');
+    expect(JSON.stringify(updatedIdentity.body)).not.toContain('00000000003');
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}/identity-documents/${identity.body.id}`)
       .set(auth(superAdmin.token))
@@ -357,8 +370,8 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     expect(storedIdentity.body).toHaveLength(2);
     expect(storedIdentity.body.find((item: any) => item.id === identity.body.id).maskedDocumentNumber).toContain('0003');
     expect(storedIdentity.body.find((item: any) => item.id === secondIdentity.body.id).maskedDocumentNumber).toContain('0002');
-    expect(JSON.stringify(storedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0003');
-    expect(JSON.stringify(storedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0002');
+    expect(JSON.stringify(storedIdentity.body)).not.toContain('00000000003');
+    expect(JSON.stringify(storedIdentity.body)).not.toContain('00000000002');
 
     const directory = await request(app.getHttpServer())
       .get('/api/v1/internal/customers?search=Synthetic%20Batch%202A%20Revised')
@@ -405,7 +418,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     expect(auditRows.some((row: any) => row.actor === superAdmin.principalId)).toBe(true);
     expect(JSON.stringify(auditRows)).not.toContain('Synthetic Batch 2A Revised');
     expect(JSON.stringify(auditRows)).not.toContain('2 Synthetic Crescent');
-    expect(JSON.stringify(auditRows)).not.toContain('SYNTHETIC-NIN-2A-0002');
+    expect(JSON.stringify(auditRows)).not.toContain('00000000002');
     expect(JSON.stringify(auditRows)).not.toContain(phone);
   }, 120_000);
 
