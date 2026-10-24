@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { maskCustomerReference } from './customer-privacy';
 import { ContactMethodType, CustomerKycStatus, CustomerStatus } from './customer.enums';
 import { Customer } from './customer.entity';
 import { CustomerAddress } from './customer-address.entity';
@@ -49,6 +50,9 @@ export class CustomerService {
   async create(command: CreateCustomerCommand): Promise<Customer> {
     const reference = this.normalizeReference(command.reference);
     const actor = this.normalizeActor(command.actor);
+    if (command.status && command.status !== CustomerStatus.DRAFT) {
+      throw new BadRequestException('Manual customer creation must start in DRAFT status');
+    }
     try {
       const customer = await this.dataSource.transaction(async (manager) => {
         const repository = manager.getRepository(Customer);
@@ -57,7 +61,7 @@ export class CustomerService {
           id: randomUUID(),
           reference,
           type: command.type,
-          status: command.status ?? CustomerStatus.DRAFT,
+          status: CustomerStatus.DRAFT,
           kycLevel: 'NONE',
           kycStatus: 'NOT_STARTED',
           version: 1,
@@ -312,7 +316,12 @@ export class CustomerService {
           'CREATED',
           actor,
           undefined,
-          this.serializableValues(document),
+          {
+            type: document.type,
+            issuingCountry: document.issuingCountry,
+            issuedAt: document.issuedAt,
+            expiresAt: document.expiresAt,
+          },
         );
         return document;
       });
@@ -545,7 +554,7 @@ export class CustomerService {
 
   private auditCustomer(customer: Customer): Record<string, unknown> {
     return {
-      reference: customer.reference,
+      reference: maskCustomerReference(customer.reference),
       type: customer.type,
       status: customer.status,
       kycLevel: customer.kycLevel,

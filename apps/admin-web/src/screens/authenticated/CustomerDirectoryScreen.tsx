@@ -1,985 +1,384 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { extractRecords, StructuredColumn, StructuredRecordTable } from '../../components/StructuredData';
+import { maskCustomerReference } from './customer-masking';
+import { Customer360Workspace, type DirectoryCustomer } from './Customer360Workspace';
+import './customer-management.css';
 
-interface Customer {
-  id: string;
-  reference: string;
-  type: string;
-  status: string;
-  actor: string;
-  createdAt: string;
+interface CustomerDirectoryResponse {
+  data: DirectoryCustomer[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }
 
-interface Wallet {
-  id: string;
-  customerId: string;
-  type: string;
-  currency: string;
-  status: string;
-  balanceMinor: number;
-}
-
-interface KycRecord {
-  id: string;
-  level: string;
-  status: string;
-  reason?: string;
-  assessedBy: string;
-  expiresAt?: string;
-  createdAt: string;
-}
-
-type PiiSection = 'addresses' | 'contactMethods' | 'identityDocuments';
-
-const PII_SECTIONS: Array<{ key: PiiSection; label: string; functionCode: string; path: string }> = [
-  { key: 'addresses', label: 'Addresses', functionCode: 'customer.view_address', path: 'addresses' },
-  { key: 'contactMethods', label: 'Contact Methods', functionCode: 'customer.view_contact_methods', path: 'contact-methods' },
-  { key: 'identityDocuments', label: 'Identity Documents', functionCode: 'customer.view_identity_documents', path: 'identity-documents' },
-];
-
-const PII_COLUMNS: Record<PiiSection, StructuredColumn[]> = {
-  addresses: [
-    { key: 'type', label: 'Type' }, { key: 'lineOne', label: 'Address' },
-    { key: 'lineTwo', label: 'Address line 2' }, { key: 'city', label: 'City' },
-    { key: 'state', label: 'State' }, { key: 'country', label: 'Country' },
-    { key: 'postalCode', label: 'Postal code' },
-  ],
-  contactMethods: [
-    { key: 'type', label: 'Type' }, { key: 'value', label: 'Value' },
-    { key: 'normalizedValue', label: 'Normalized value' }, { key: 'isPrimary', label: 'Primary' },
-    { key: 'verifiedAt', label: 'Verified at' },
-  ],
-  identityDocuments: [
-    { key: 'type', label: 'Document type' }, { key: 'documentNumber', label: 'Document number' },
-    { key: 'issuingCountry', label: 'Issuing country' }, { key: 'issuedAt', label: 'Issued at' },
-    { key: 'expiresAt', label: 'Expires at' },
-  ],
-};
-
-interface CustomerDirectoryProps {
+interface CustomerDirectoryScreenProps {
   onNavigate?: (view: string, customerId: string) => void;
   selectedCustomerId?: string;
 }
 
-export const CustomerDirectoryScreen: React.FC<CustomerDirectoryProps> = ({ onNavigate, selectedCustomerId }) => {
+const CUSTOMER_STATUSES = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'];
+const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS'];
+const KYC_LEVELS = ['NONE', 'LEVEL_1', 'LEVEL_2', 'LEVEL_3'];
+const KYC_STATUSES = ['NOT_STARTED', 'PENDING', 'APPROVED', 'REJECTED'];
+
+function formatDate(value: string | Date | null | undefined): string {
+  if (!value) return 'Not recorded';
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Not recorded'
+    : new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium' }).format(date);
+}
+
+function displayName(customer: DirectoryCustomer): string {
+  return customer.displayName?.trim() || customer.legalName?.trim() || 'Name not recorded';
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (status === 401) return 'Your session has expired. Sign in again to continue.';
+    if (status === 403) return 'Customer servicing is not available to this workforce role.';
+  }
+  return 'Customer records could not be loaded. Try again.';
+}
+
+export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = ({
+  onNavigate,
+  selectedCustomerId,
+}) => {
   const { principal } = useAuthStore();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [searchStatus, setSearchStatus] = useState('');
-  const [searchType, setSearchType] = useState('');
+  const scopes = principal?.scopes ?? [];
+  const canCreateCustomer = scopes.includes('customer.create');
+
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [type, setType] = useState('');
+  const [kycLevel, setKycLevel] = useState('');
+  const [kycStatus, setKycStatus] = useState('');
+  const [directory, setDirectory] = useState<CustomerDirectoryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newReference, setNewReference] = useState('');
+  const [newType, setNewType] = useState('INDIVIDUAL');
+  const [isCreating, setIsCreating] = useState(false);
+  const [createMessage, setCreateMessage] = useState<string | null>(null);
+  const requestVersion = useRef(0);
 
-  // Create Customer Form State
-  const [showCreate, setShowCreate] = useState(false);
-  const [reference, setReference] = useState('');
-  const [custType, setCustType] = useState('INDIVIDUAL');
-  const [createError, setCreateError] = useState('');
-  const [createSuccess, setCreateSuccess] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPage(1);
+      setSearch(searchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
-  // Selected Customer Detail State
-  const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [kyc, setKyc] = useState<KycRecord | null>(null);
-  const [detailError, setDetailError] = useState('');
-  const [piiSection, setPiiSection] = useState<PiiSection | null>(null);
-  const [piiRows, setPiiRows] = useState<Record<string, unknown>[]>([]);
-  const [piiLoading, setPiiLoading] = useState(false);
-  const [piiError, setPiiError] = useState('');
-  const piiRequestSequence = useRef(0);
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (type) params.set('type', type);
+    if (kycLevel) params.set('kycLevel', kycLevel);
+    if (kycStatus) params.set('kycStatus', kycStatus);
+    return params.toString();
+  }, [page, pageSize, search, status, type, kycLevel, kycStatus]);
 
-  // Wallet Provision State
-  const [walletCurrency, setWalletCurrency] = useState('NGN');
-  const [walletType, setWalletType] = useState('PRIMARY');
-  const [walletSuccess, setWalletSuccess] = useState('');
-
-  // KYC Assessment Form State
-  const [kycLevel, setKycLevel] = useState('LEVEL_1');
-  const [kycStatus, setKycStatus] = useState('APPROVED');
-  const [kycReason, setKycReason] = useState('');
-  const [kycSuccess, setKycSuccess] = useState('');
-
-  // Status Update State
-  const [statusSuccess, setStatusSuccess] = useState('');
-
-  // UI affordances mirror the exact catalogue function enforced by each backend operation.
-  // These checks only shape the screen; the controllers remain authoritative.
-  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
-  const canViewCustomers = hasFn('customer.view');
-  const canCreateCustomer = hasFn('customer.create');
-  const canViewWallets = hasFn('customer.view_wallets');
-  const canCreateWallet = hasFn('customer.create_wallet');
-  const canViewKyc = hasFn('kyc.view');
-  const availableKycStatuses = [
-    ...(hasFn('kyc.review') ? ['NOT_STARTED', 'PENDING'] : []),
-    ...(hasFn('kyc.approve') ? ['APPROVED'] : []),
-    ...(hasFn('kyc.reject') ? ['REJECTED'] : []),
-  ];
-  const canManageKyc = availableKycStatuses.length > 0;
-  const canActivateCustomer = hasFn('customer.activate');
-  const canSuspendCustomer = hasFn('customer.suspend');
-  const canCloseCustomer = hasFn('customer.close');
-  const canViewSupportCases = hasFn('customer.manage_support_case');
-  const canViewCustomerTransactions = hasFn('customer.view_transactions');
-  const canViewAudit = hasFn('audit.search');
-  const canViewLimits = hasFn('limit.view') || hasFn('agent.assign_limit');
-  const availablePiiSections = PII_SECTIONS.filter((section) => hasFn(section.functionCode));
-
-  const relatedActions = [
-    ...(canViewCustomerTransactions ? [{ view: 'transfers', label: 'View Transactions' }] : []),
-    ...(canViewKyc ? [{ view: 'kycQueue', label: 'Open KYC Assessment Lookup' }] : []),
-    ...(hasFn('compliance.manage_case') ? [{ view: 'complianceCases', label: 'Open Compliance Cases' }] : []),
-    ...(hasFn('risk_fraud.manage_fraud_case') ? [{ view: 'fraudCases', label: 'Open Fraud Cases' }] : []),
-    ...(canViewSupportCases ? [{ view: 'support', label: 'Open Support Tickets' }] : []),
-    ...(canViewAudit ? [{ view: 'auditEvents', label: 'View Audit Trail' }] : []),
-    ...(canViewLimits ? [{ view: 'limitAssignments', label: 'View Limit Assignments' }] : []),
-  ];
-
-  const fetchCustomers = async () => {
+  useEffect(() => {
+    let active = true;
     setIsLoading(true);
-    setError('');
-    try {
-      // GET /customers
-      const params = [];
-      if (searchStatus) params.push(`status=${searchStatus}`);
-      if (searchType) params.push(`type=${searchType}`);
-      const query = params.length > 0 ? `?${params.join('&')}` : '';
-      
-      const list = await ApiClient.get<Customer[]>(`/customers${query}`);
-      setCustomers(list || []);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to retrieve customer directory.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setError(null);
+    ApiClient.get<CustomerDirectoryResponse>(`/internal/customers?${queryString}`)
+      .then((response) => {
+        if (active) setDirectory(response);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(safeErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [queryString, reloadVersion]);
 
   useEffect(() => {
-    if (canViewCustomers) fetchCustomers();
-    else setIsLoading(false);
-  }, [searchStatus, searchType, canViewCustomers]);
-
-  // Customer 360° — if navigated from deep-link with customerId, auto-open drawer
-  useEffect(() => {
-    if (canViewCustomers && selectedCustomerId && customers.length > 0) {
-      const found = customers.find(c => c.id === selectedCustomerId);
-      if (found) handleLoadDetails(found);
-    }
-  }, [selectedCustomerId, customers]);
-
-  const handleCreateCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reference.trim()) {
-      setCreateError('Customer Reference is required');
+    const version = ++requestVersion.current;
+    if (!selectedCustomerId) {
+      setSelectionError(null);
       return;
     }
-    setCreateError('');
-    setCreateSuccess('');
 
-    try {
-      // POST /customers
-      const res = await ApiClient.post<Customer>('/customers', {
-        reference: reference.trim(),
-        type: custType,
-        status: 'ACTIVE',
-        actor: principal?.principalId || 'Back-Office Operator',
+    const listedCustomer = directory?.data?.find((customer) => customer.id === selectedCustomerId);
+    if (listedCustomer) {
+      setSelectedCustomer(listedCustomer);
+      setSelectionError(null);
+      return;
+    }
+
+    let active = true;
+    setSelectionError(null);
+    ApiClient.get<DirectoryCustomer>(`/internal/customers/${encodeURIComponent(selectedCustomerId)}`)
+      .then((customer) => {
+        if (active && version === requestVersion.current) {
+          setSelectedCustomer(customer);
+        }
+      })
+      .catch(() => {
+        if (active && version === requestVersion.current) {
+          setSelectionError('The selected customer is not available to this workforce role.');
+        }
       });
-      setCreateSuccess(`Customer created successfully! ID: ${res.id}`);
-      setReference('');
-      fetchCustomers();
-    } catch (err: any) {
-      setCreateError(err?.message || 'Failed to create customer');
-    }
-  };
+    return () => {
+      active = false;
+    };
+  }, [selectedCustomerId, directory]);
 
-  const handleLoadDetails = async (customer: Customer) => {
-    piiRequestSequence.current += 1;
-    setSelectedCust(customer);
-    setWallets([]);
-    setKyc(null);
-    setPiiSection(null);
-    setPiiRows([]);
-    setPiiError('');
-    setPiiLoading(false);
-    setDetailError('');
-    setWalletSuccess('');
-    setKycSuccess('');
-    setStatusSuccess('');
-
-    if (canViewWallets) {
-      try {
-        // GET /customers/:id/wallets requires customer.view_wallets.
-        const walletList = await ApiClient.get<Wallet[]>(`/customers/${customer.id}/wallets`);
-        setWallets(walletList || []);
-      } catch (err: any) {
-        setDetailError('Error retrieving wallet bindings: ' + (err?.message || ''));
-      }
-    }
-
-    if (canViewKyc) {
-      try {
-        // GET /customers/:id/kyc requires kyc.view.
-        const kycRecord = await ApiClient.get<KycRecord>(`/customers/${customer.id}/kyc`);
-        setKyc(kycRecord);
-      } catch {
-        // A missing assessment is a valid empty state; backend access failures remain protected.
-        setKyc(null);
-      }
-    }
-  };
-
-  const handleLoadPii = async (sectionKey: PiiSection) => {
-    if (!selectedCust) return;
-    const section = PII_SECTIONS.find((candidate) => candidate.key === sectionKey);
-    if (!section || !hasFn(section.functionCode)) return;
-
-    const requestSequence = ++piiRequestSequence.current;
-    setPiiSection(sectionKey);
-    setPiiRows([]);
-    setPiiError('');
-    setPiiLoading(true);
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!principal || !canCreateCustomer || isCreating) return;
+    setIsCreating(true);
+    setCreateMessage(null);
     try {
-      const response = await ApiClient.get(`/customers/${encodeURIComponent(selectedCust.id)}/${section.path}`);
-      if (requestSequence === piiRequestSequence.current) setPiiRows(extractRecords(response));
-    } catch (err: any) {
-      if (requestSequence === piiRequestSequence.current) setPiiError(err?.message || `Failed to load ${section.label.toLowerCase()}.`);
+      const created = await ApiClient.post<DirectoryCustomer>('/customers', {
+        reference: newReference.trim(),
+        type: newType,
+        status: 'DRAFT',
+      });
+      setCreateMessage(`Draft customer created. Reference: ${maskCustomerReference(created.reference)}`);
+      setNewReference('');
+      setCreateOpen(false);
+      setPage(1);
+      setSearch('');
+      setSearchInput('');
+      setReloadVersion((value) => value + 1);
+    } catch {
+      setCreateMessage('The draft customer could not be created. Check the reference and try again.');
     } finally {
-      if (requestSequence === piiRequestSequence.current) setPiiLoading(false);
+      setIsCreating(false);
     }
   };
 
-  const handleProvisionWallet = async () => {
-    if (!selectedCust || !canCreateWallet) return;
-    setDetailError('');
-    setWalletSuccess('');
-    try {
-      // POST /customers/:id/wallets
-      await ApiClient.post(`/customers/${selectedCust.id}/wallets`, {
-        type: walletType,
-        currency: walletCurrency,
-        status: 'ACTIVE',
-        actor: principal?.principalId || 'Back-Office Operator',
-      });
-      setWalletSuccess('NGN Wallet provisioned successfully!');
-      
-      // Reload balances only when this principal also has the wallet read function.
-      if (canViewWallets) {
-        const walletList = await ApiClient.get<Wallet[]>(`/customers/${selectedCust.id}/wallets`);
-        setWallets(walletList || []);
-      }
-    } catch (err: any) {
-      setDetailError(err?.message || 'Wallet provisioning failed');
-    }
+  const handleCustomerUpdated = (updated: DirectoryCustomer) => {
+    setSelectedCustomer(updated);
+    setDirectory((current) =>
+      current
+        ? { ...current, data: current.data.map((item) => (item.id === updated.id ? updated : item)) }
+        : current,
+    );
+    setReloadVersion((value) => value + 1);
   };
 
-  const handleUpdateKyc = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCust || !availableKycStatuses.includes(kycStatus)) return;
-    setDetailError('');
-    setKycSuccess('');
-    try {
-      // POST /customers/:id/kyc-assessment
-      const record = await ApiClient.post<KycRecord>(`/customers/${selectedCust.id}/kyc-assessment`, {
-        level: kycLevel,
-        status: kycStatus,
-        reason: kycReason.trim() || undefined,
-        assessedBy: principal?.principalId || 'Back-Office Compliance Officer',
-      });
-      setKycSuccess('KYC Assessment verified successfully!');
-      setKyc(record);
-      setKycReason('');
-    } catch (err: any) {
-      setDetailError(err?.message || 'KYC Assessment submission failed');
-    }
-  };
-
-  const handleUpdateStatus = async (newStatus: 'ACTIVE' | 'SUSPENDED' | 'CLOSED') => {
-    const canSetStatus =
-      (newStatus === 'ACTIVE' && canActivateCustomer) ||
-      (newStatus === 'SUSPENDED' && canSuspendCustomer) ||
-      (newStatus === 'CLOSED' && canCloseCustomer);
-    if (!selectedCust || !canSetStatus) return;
-    setDetailError('');
-    setStatusSuccess('');
-    try {
-      // PATCH /customers/:id
-      const res = await ApiClient.patch<Customer>(`/customers/${selectedCust.id}`, {
-        status: newStatus,
-        actor: principal?.principalId || 'Back-Office Operator',
-      });
-      setStatusSuccess(`Customer status updated to ${newStatus} successfully.`);
-      setSelectedCust(res);
-      fetchCustomers();
-    } catch (err: any) {
-      setDetailError(err?.message || 'Customer status update failed');
-    }
-  };
-
-  if (!canViewCustomers) {
-    return <div role="alert" style={styles.errorBox}>Customer profile access is not available to this workforce principal.</div>;
+  if (selectedCustomer) {
+    return (
+      <Customer360Workspace
+        customer={selectedCustomer}
+        onBack={() => setSelectedCustomer(null)}
+        onCustomerUpdated={handleCustomerUpdated}
+        onNavigate={onNavigate}
+      />
+    );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Customer Directory & Servicing</h2>
-        <p style={styles.subtitle}>Manage profiles, KYC assessment verifications, and wallet bindings</p>
-      </div>
-
-      {error && <div style={styles.errorBox}>{error}</div>}
-
-      <div style={styles.actionRow}>
-        <div style={styles.filterGroup}>
-          <select style={styles.select} value={searchStatus} onChange={(e) => setSearchStatus(e.target.value)}>
-            <option value="">All Statuses</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="SUSPENDED">SUSPENDED</option>
-            <option value="DRAFT">DRAFT</option>
-          </select>
-          <select style={styles.select} value={searchType} onChange={(e) => setSearchType(e.target.value)}>
-            <option value="">All Types</option>
-            <option value="INDIVIDUAL">INDIVIDUAL</option>
-            <option value="BUSINESS">BUSINESS</option>
-          </select>
+    <main className="customer-management">
+      <header className="cm-page-header">
+        <div>
+          <p className="cm-eyebrow">CUSTOMER SERVICING</p>
+          <h1>Customer directory</h1>
+          <p className="cm-subtitle">Search authorized customer records and open a read-first Customer 360° workspace.</p>
         </div>
-
         {canCreateCustomer && (
-          <button style={styles.createBtn} onClick={() => { setShowCreate(!showCreate); setCreateSuccess(''); setCreateError(''); }}>
-            {showCreate ? 'Close Register Form' : '➕ Register Customer'}
+          <button
+            className="cm-button cm-button-primary"
+            type="button"
+            onClick={() => {
+              setCreateOpen((value) => !value);
+              setCreateMessage(null);
+            }}
+            aria-expanded={createOpen}
+          >
+            {createOpen ? 'Cancel draft' : 'New draft customer'}
           </button>
         )}
-      </div>
+      </header>
 
-      {showCreate && canCreateCustomer && (
-        <div style={styles.formCard}>
-          <h3 style={styles.cardTitle}>Register New Customer Profile</h3>
-          {createError && <div style={styles.errorBox}>{createError}</div>}
-          {createSuccess && <div style={styles.successBox}>{createSuccess}</div>}
-          <form onSubmit={handleCreateCustomer} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Unique Customer Reference (Phone or Unique tag)</label>
-              <input
-                type="text"
-                style={styles.input}
-                placeholder="e.g. MN-08012345678"
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-              />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Select Customer Segment Type</label>
-              <select style={styles.select} value={custType} onChange={(e) => setCustType(e.target.value)}>
-                <option value="INDIVIDUAL">INDIVIDUAL</option>
-                <option value="BUSINESS">BUSINESS</option>
-              </select>
-            </div>
-            <button type="submit" style={styles.submitBtn}>Register Profile</button>
-          </form>
-        </div>
+      {createMessage && <div className="cm-notice" role="status">{createMessage}</div>}
+
+      {createOpen && canCreateCustomer && (
+        <form className="cm-create-panel" onSubmit={handleCreate}>
+          <div>
+            <h2>Create a draft customer</h2>
+            <p>Manual records start in DRAFT. Activation remains subject to the verified-primary-phone gate.</p>
+          </div>
+          <label>
+            Customer reference
+            <input
+              required
+              maxLength={160}
+              value={newReference}
+              onChange={(event) => setNewReference(event.target.value)}
+              placeholder="Enter an approved customer reference"
+            />
+          </label>
+          <label>
+            Customer type
+            <select value={newType} onChange={(event) => setNewType(event.target.value)}>
+              {CUSTOMER_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <button className="cm-button cm-button-primary" type="submit" disabled={isCreating}>
+            {isCreating ? 'Creating…' : 'Create draft'}
+          </button>
+        </form>
       )}
 
-      {/* Main Layout Split */}
-      <div style={styles.splitLayout}>
-        {/* Customer List */}
-        <div style={styles.listSection}>
-          <h3 style={styles.sectionTitle}>Registered Customers</h3>
-          {isLoading ? (
-            <p style={styles.loadingText}>Fetching profiles...</p>
-          ) : customers.length === 0 ? (
-            <p style={styles.emptyText}>No customers matching filters found.</p>
-          ) : (
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.thRow}>
-                    <th style={styles.th}>Reference</th>
-                    <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Status</th>
-                    <th style={styles.th}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {customers.map((c) => (
-                    <tr key={c.id} style={selectedCust?.id === c.id ? styles.selectedRow : styles.row}>
-                      <td style={styles.td}>{c.reference}</td>
-                      <td style={styles.td}>{c.type}</td>
-                      <td style={styles.td}>
-                        <span style={c.status === 'ACTIVE' ? styles.activeStatus : styles.inactiveStatus}>
-                          {c.status}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <button style={styles.viewBtn} onClick={() => handleLoadDetails(c)}>View & Service</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+      <section className="cm-panel" aria-label="Customer search and results">
+        <div className="cm-filter-grid">
+          <label className="cm-search-field">
+            Search
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Name, reference or authorized contact"
+              aria-label="Search customers"
+            />
+          </label>
+          <label>
+            Status
+            <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+              <option value="">All statuses</option>
+              {CUSTOMER_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label>
+            Type
+            <select value={type} onChange={(event) => { setType(event.target.value); setPage(1); }}>
+              <option value="">All types</option>
+              {CUSTOMER_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label>
+            KYC level
+            <select value={kycLevel} onChange={(event) => { setKycLevel(event.target.value); setPage(1); }}>
+              <option value="">All levels</option>
+              {KYC_LEVELS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label>
+            KYC status
+            <select value={kycStatus} onChange={(event) => { setKycStatus(event.target.value); setPage(1); }}>
+              <option value="">All KYC statuses</option>
+              {KYC_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
         </div>
 
-        {/* Selected Customer Details */}
-        {selectedCust && (
-          <div style={styles.detailsSection}>
-            <h3 style={styles.sectionTitle}>Servicing Principal: {selectedCust.reference}</h3>
-            {detailError && <div style={styles.errorBox}>{detailError}</div>}
-            
-            <div style={styles.detailsCard}>
-              <div style={styles.metaBlock}>
-                <h4 style={styles.blockTitle}>Profile Metadata</h4>
-                <p style={styles.metaItem}><strong>Customer ID:</strong> {selectedCust.id}</p>
-                <p style={styles.metaItem}><strong>Segment Type:</strong> {selectedCust.type}</p>
-                <p style={styles.metaItem}><strong>Status:</strong> {selectedCust.status}</p>
-                <p style={styles.metaItem}><strong>Registered On:</strong> {new Date(selectedCust.createdAt).toLocaleString()}</p>
-                
-                {(canActivateCustomer || canSuspendCustomer || canCloseCustomer) && (
-                  <div style={styles.statusToggleBlock}>
-                    <span style={styles.label}>Customer Profile Status:</span>
-                    <div style={styles.btnRow}>
-                      {canActivateCustomer && <button style={styles.activeBtn} onClick={() => handleUpdateStatus('ACTIVE')}>ACTIVATE</button>}
-                      {canSuspendCustomer && <button style={styles.suspendBtn} onClick={() => handleUpdateStatus('SUSPENDED')}>SUSPEND</button>}
-                      {canCloseCustomer && <button style={styles.closeBtn} onClick={() => handleUpdateStatus('CLOSED')}>CLOSE</button>}
-                    </div>
-                    {statusSuccess && <p style={styles.inlineSuccess}>{statusSuccess}</p>}
-                  </div>
-                )}
-              </div>
-
-              {/* Wallets Binding */}
-              <div style={styles.metaBlock}>
-                <h4 style={styles.blockTitle}>Preserved Wallet Bindings</h4>
-                {walletSuccess && <div style={styles.successBox}>{walletSuccess}</div>}
-                
-                {canViewWallets ? (
-                  wallets.length === 0 ? (
-                    <p style={styles.emptyText}>No active wallet bindings found.</p>
-                  ) : (
-                    wallets.map((w) => (
-                      <div key={w.id} style={styles.walletRow}>
-                        <div>
-                          <span style={styles.walletId}>ID: {w.id}</span>
-                          <span style={styles.walletMeta}>{w.type} / {w.currency} ({w.status})</span>
-                        </div>
-                        <span style={styles.walletBalance}>
-                          ₦{(w.balanceMinor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    ))
-                  )
-                ) : (
-                  <p style={styles.emptyText}>Wallet balances and bindings are not available to this role.</p>
-                )}
-
-                {canCreateWallet && (
-                  <div style={styles.provisionBlock}>
-                    <h5 style={styles.subBlockTitle}>Provision NGN Wallet</h5>
-                    <div style={styles.grid}>
-                      <select style={styles.select} value={walletType} onChange={(e) => setWalletType(e.target.value)}>
-                        <option value="PRIMARY">PRIMARY</option>
-                        <option value="SAVINGS">SAVINGS</option>
-                        <option value="BUSINESS">BUSINESS</option>
-                      </select>
-                      <button style={styles.submitBtn} onClick={handleProvisionWallet}>Provision Wallet</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* KYC Assessment */}
-              {(canViewKyc || canManageKyc) && <div style={styles.metaBlock}>
-                <h4 style={styles.blockTitle}>KYC Assessment & Verifications</h4>
-                {kycSuccess && <div style={styles.successBox}>{kycSuccess}</div>}
-
-                {!canViewKyc ? (
-                  <p style={styles.emptyText}>Existing KYC assessment details are not available to this role.</p>
-                ) : kyc ? (
-                  <div style={styles.kycInfo}>
-                    <p style={styles.metaItem}><strong>KYC Level:</strong> {kyc.level}</p>
-                    <p style={styles.metaItem}><strong>Status:</strong> <span style={kyc.status === 'APPROVED' ? styles.activeStatus : styles.inactiveStatus}>{kyc.status}</span></p>
-                    {kyc.reason && <p style={styles.metaItem}><strong>Auditing Reason:</strong> {kyc.reason}</p>}
-                    <p style={styles.metaItem}><strong>Assessed By:</strong> {kyc.assessedBy}</p>
-                  </div>
-                ) : (
-                  <p style={styles.emptyText}>No KYC verification assessment recorded.</p>
-                )}
-
-                {canManageKyc && (
-                  <form onSubmit={handleUpdateKyc} style={styles.kycForm}>
-                    <h5 style={styles.subBlockTitle}>Submit KYC Assessment</h5>
-                    <div style={styles.grid}>
-                      <select style={styles.select} value={kycLevel} onChange={(e) => setKycLevel(e.target.value)}>
-                        <option value="LEVEL_1">LEVEL 1</option>
-                        <option value="LEVEL_2">LEVEL 2</option>
-                        <option value="LEVEL_3">LEVEL 3</option>
-                      </select>
-                      <select style={styles.select} value={kycStatus} onChange={(e) => setKycStatus(e.target.value)}>
-                        {availableKycStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ ...styles.inputGroup, marginTop: '10px' }}>
-                      <label style={styles.label}>Audit Reason for Assessment Decision</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        placeholder="e.g. Identity documents successfully verified"
-                        value={kycReason}
-                        onChange={(e) => setKycReason(e.target.value)}
-                      />
-                    </div>
-                    <button type="submit" style={{ ...styles.submitBtn, marginTop: '10px' }}>Submit KYC Assessment</button>
-                  </form>
-                )}
-              </div>}
-
-              {availablePiiSections.length > 0 && (
-                <section style={styles.metaBlock} aria-label="Customer PII records">
-                  <h4 style={styles.blockTitle}>Customer PII Records</h4>
-                  <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px 0' }}>
-                    Each read is loaded on demand and shown only when its matching customer-data function is granted.
-                  </p>
-                  <div style={{ ...styles.btnRow, flexWrap: 'wrap' as const }}>
-                    {availablePiiSections.map((section) => (
-                      <button
-                        key={section.key}
-                        type="button"
-                        aria-pressed={piiSection === section.key}
-                        style={piiSection === section.key ? styles.activePiiBtn : styles.viewBtn}
-                        onClick={() => void handleLoadPii(section.key)}
-                      >
-                        {section.label}
-                      </button>
-                    ))}
-                  </div>
-                  {piiSection && (
-                    <div style={{ marginTop: 12 }}>
-                      <h5 style={styles.subBlockTitle}>{PII_SECTIONS.find((section) => section.key === piiSection)?.label}</h5>
-                      {piiSection === 'identityDocuments' && (
-                        <p style={styles.piiWarning}>Identity document numbers are returned by the existing API and displayed only for principals holding <code>customer.view_identity_documents</code>.</p>
-                      )}
-                      {piiLoading ? <p style={styles.loadingText}>Loading customer records…</p> : piiError ? (
-                        <div role="alert" style={styles.errorBox}>{piiError}</div>
-                      ) : (
-                        <StructuredRecordTable
-                          rows={piiRows}
-                          columns={PII_COLUMNS[piiSection]}
-                          showDetails={false}
-                          emptyMessage={`No ${PII_SECTIONS.find((section) => section.key === piiSection)?.label.toLowerCase()} were returned.`}
-                        />
-                      )}
-                    </div>
-                  )}
-                </section>
-              )}
-
-              {/* Customer 360° — Related Actions (deep-link hub, no UUID paste) */}
-              {onNavigate && relatedActions.length > 0 && (
-                <div style={styles.metaBlock}>
-                  <h4 style={styles.blockTitle}>🔗 Customer 360° — Related Actions</h4>
-                  <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px 0' }}>
-                    Navigate to related tasks with this customer pre-filled — no manual UUID paste required.
-                  </p>
-                  <div style={styles.relatedGrid}>
-                    {relatedActions.map((action) => (
-                      <button
-                        key={action.view}
-                        style={styles.relatedBtn}
-                        onClick={() => onNavigate(action.view, selectedCust.id)}
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
-                    Customer ID: <code style={styles.mono}>{selectedCust.id.slice(0, 8)}…</code> carried via route state — R9 eliminated.
-                  </div>
-                </div>
-              )}
-            </div>
+        {error && (
+          <div className="cm-error" role="alert">
+            <span>{error}</span>
+            <button className="cm-button cm-button-secondary" type="button" onClick={() => setReloadVersion((value) => value + 1)}>
+              Retry
+            </button>
           </div>
         )}
-      </div>
-    </div>
-  );
-};
+        {selectionError && <div className="cm-error" role="alert">{selectionError}</div>}
 
-const styles = {
-  container: {
-    padding: '24px',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-  },
-  header: {
-    marginBottom: '24px',
-  },
-  title: {
-    fontSize: '22px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    margin: '0 0 6px 0',
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#64748B',
-    margin: 0,
-  },
-  actionRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-  },
-  filterGroup: {
-    display: 'flex',
-    gap: '12px',
-  },
-  select: {
-    height: '38px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '6px',
-    padding: '0 12px',
-    fontSize: '13px',
-    backgroundColor: '#FFFFFF',
-    color: '#334155',
-  },
-  createBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: '8px',
-    border: '1px solid #E2E8F0',
-    padding: '20px',
-    marginBottom: '24px',
-    maxWidth: '600px',
-  },
-  cardTitle: {
-    fontSize: '15px',
-    fontWeight: 'bold',
-    color: '#1E293B',
-    margin: '0 0 16px 0',
-    borderBottom: '1px solid #F1F5F9',
-    paddingBottom: '8px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    marginBottom: '14px',
-  },
-  label: {
-    fontSize: '12px',
-    fontWeight: '500',
-    color: '#475569',
-    marginBottom: '6px',
-  },
-  input: {
-    height: '38px',
-    border: '1px solid #E2E8F0',
-    borderRadius: '6px',
-    padding: '0 12px',
-    fontSize: '13px',
-    color: '#1E293B',
-  },
-  submitBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '10px 16px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    alignSelf: 'flex-start',
-  },
-  errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
-    fontSize: '13px',
-    fontWeight: '500',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderColor: '#EF4444',
-  },
-  successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
-    fontSize: '13px',
-    fontWeight: '500',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderColor: '#10B981',
-  },
-  splitLayout: {
-    display: 'flex',
-    gap: '24px',
-    alignItems: 'flex-start',
-  },
-  listSection: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    padding: '20px',
-  },
-  sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-    margin: '0 0 16px 0',
-    borderBottom: '1px solid #E2E8F0',
-    paddingBottom: '8px',
-  },
-  tableWrapper: {
-    overflowX: 'auto' as const,
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-    fontSize: '13px',
-  },
-  thRow: {
-    borderBottom: '2px solid #E2E8F0',
-  },
-  th: {
-    textAlign: 'left' as const,
-    padding: '10px',
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  row: {
-    borderBottom: '1px solid #F1F5F9',
-  },
-  selectedRow: {
-    borderBottom: '1px solid #F1F5F9',
-    backgroundColor: '#F8FAFC',
-  },
-  td: {
-    padding: '12px 10px',
-    color: '#334155',
-  },
-  activeStatus: {
-    color: '#10B981',
-    fontWeight: 'bold',
-    backgroundColor: '#D1FAE5',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '11px',
-  },
-  inactiveStatus: {
-    color: '#EF4444',
-    fontWeight: 'bold',
-    backgroundColor: '#FEE2E2',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '11px',
-  },
-  viewBtn: {
-    backgroundColor: 'transparent',
-    border: '1px solid #0A3D25',
-    color: '#0A3D25',
-    borderRadius: '4px',
-    padding: '4px 8px',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  activePiiBtn: {
-    backgroundColor: '#0A3D25',
-    border: '1px solid #0A3D25',
-    color: '#FFFFFF',
-    borderRadius: '4px',
-    padding: '4px 8px',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  piiWarning: {
-    fontSize: '12px',
-    color: '#854D0E',
-    backgroundColor: '#FEFCE8',
-    border: '1px solid #FDE68A',
-    borderRadius: '6px',
-    padding: '8px',
-  },
-  detailsSection: {
-    width: '460px',
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
-    borderRadius: '8px',
-    padding: '20px',
-  },
-  detailsCard: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '20px',
-  },
-  metaBlock: {
-    borderBottom: '1px solid #F1F5F9',
-    paddingBottom: '16px',
-  },
-  blockTitle: {
-    fontSize: '14px',
-    fontWeight: 'bold',
-    color: '#1E293B',
-    margin: '0 0 12px 0',
-  },
-  metaItem: {
-    fontSize: '13px',
-    color: '#334155',
-    margin: '0 0 8px 0',
-  },
-  statusToggleBlock: {
-    marginTop: '12px',
-    paddingTop: '12px',
-    borderTop: '1px dashed #E2E8F0',
-  },
-  btnRow: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '6px',
-  },
-  activeBtn: {
-    backgroundColor: '#10B981',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '4px',
-    padding: '6px 12px',
-    fontSize: '11px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  suspendBtn: {
-    backgroundColor: '#F59E0B',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '4px',
-    padding: '6px 12px',
-    fontSize: '11px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  closeBtn: {
-    backgroundColor: '#EF4444',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '4px',
-    padding: '6px 12px',
-    fontSize: '11px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  inlineSuccess: {
-    color: '#10B981',
-    fontSize: '11px',
-    fontWeight: '600',
-    margin: '6px 0 0 0',
-  },
-  walletRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: '6px',
-    padding: '10px',
-    marginBottom: '8px',
-    border: '1px solid #E2E8F0',
-  },
-  walletId: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: '#1E293B',
-    display: 'block',
-  },
-  walletMeta: {
-    fontSize: '10px',
-    color: '#64748B',
-    display: 'block',
-  },
-  walletBalance: {
-    fontSize: '14px',
-    fontWeight: 'bold',
-    color: '#0A3D25',
-  },
-  provisionBlock: {
-    marginTop: '12px',
-    backgroundColor: '#F8FAFC',
-    borderRadius: '6px',
-    padding: '12px',
-    border: '1px dashed #CBD5E1',
-  },
-  subBlockTitle: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: '#475569',
-    margin: '0 0 8px 0',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-  },
-  kycInfo: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: '6px',
-    padding: '12px',
-    border: '1px solid #E2E8F0',
-  },
-  kycForm: {
-    marginTop: '12px',
-    backgroundColor: '#F8FAFC',
-    borderRadius: '6px',
-    padding: '12px',
-    border: '1px dashed #CBD5E1',
-  },
-  loadingText: {
-    fontSize: '13px',
-    color: '#64748B',
-    textAlign: 'center' as const,
-  },
-  emptyText: {
-    fontSize: '13px',
-    color: '#94A3B8',
-    textAlign: 'center' as const,
-    margin: '8px 0',
-  },
-  relatedGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '8px',
-  },
-  relatedBtn: {
-    padding: '8px 10px',
-    fontSize: '12px',
-    backgroundColor: '#F8FAFC',
-    border: '1px solid #E2E8F0',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-    color: '#032B14',
-    fontWeight: '600',
-  },
-  mono: {
-    fontFamily: 'monospace',
-    fontSize: '11px',
-    backgroundColor: '#F1F5F9',
-    padding: '2px 4px',
-    borderRadius: '4px',
-  },
+        <div className="cm-table-meta">
+          <span>{isLoading ? 'Loading customers…' : `${directory?.total ?? 0} customer${directory?.total === 1 ? '' : 's'}`}</span>
+          <span>Page {directory?.page ?? page} of {Math.max(directory?.totalPages ?? 0, 1)}</span>
+        </div>
+
+        <div className="cm-table-wrap">
+          <table className="cm-customer-table">
+            <thead>
+              <tr>
+                <th scope="col">Customer</th>
+                <th scope="col">Reference</th>
+                <th scope="col">Type</th>
+                <th scope="col">Status</th>
+                <th scope="col">KYC</th>
+                <th scope="col">Primary contact</th>
+                <th scope="col">Registered</th>
+                <th scope="col"><span className="cm-visually-hidden">Customer actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {!isLoading && !error && directory?.data?.length === 0 && (
+                <tr><td colSpan={8} className="cm-empty-row">No customer records match these search criteria.</td></tr>
+              )}
+              {(directory?.data ?? []).map((customer) => (
+                <tr key={customer.id}>
+                  <td>
+                    <strong>{displayName(customer)}</strong>
+                    {customer.legalName && customer.legalName !== customer.displayName && (
+                      <span className="cm-secondary-line">Legal name: {customer.legalName}</span>
+                    )}
+                  </td>
+                  <td><span className="cm-reference">{maskCustomerReference(customer.reference) || 'Reference unavailable'}</span></td>
+                  <td>{customer.type}</td>
+                  <td><span className={`cm-status cm-status-${customer.status.toLowerCase()}`}>{customer.status}</span></td>
+                  <td>
+                    <span className="cm-kyc-level">{customer.kycLevel}</span>
+                    <span className="cm-secondary-line">{customer.kycStatus}</span>
+                  </td>
+                  <td>
+                    {customer.primaryContact
+                      ? <><span>{customer.primaryContact.maskedValue}</span><span className="cm-secondary-line">{customer.primaryContact.isVerified ? 'Verified' : 'Not verified'}</span></>
+                      : scopes.includes('customer.view_contact_methods')
+                        ? 'Not recorded'
+                        : 'Restricted'}
+                  </td>
+                  <td>{formatDate(customer.createdAt)}</td>
+                  <td>
+                    <button
+                      className="cm-button cm-button-secondary cm-open-button"
+                      type="button"
+                      onClick={() => setSelectedCustomer(customer)}
+                      aria-label={`Open Customer 360° for ${displayName(customer)}`}
+                    >
+                      Open Customer 360°
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {isLoading && !directory && <tr><td colSpan={8} className="cm-empty-row">Loading customer records…</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <nav className="cm-pagination" aria-label="Customer directory pages">
+          <button
+            className="cm-button cm-button-secondary"
+            type="button"
+            disabled={isLoading || !directory?.hasPreviousPage}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            Previous
+          </button>
+          <span>Showing page {directory?.page ?? page} of {Math.max(directory?.totalPages ?? 0, 1)}</span>
+          <button
+            className="cm-button cm-button-secondary"
+            type="button"
+            disabled={isLoading || !directory?.hasNextPage}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Next
+          </button>
+        </nav>
+      </section>
+    </main>
+  );
 };

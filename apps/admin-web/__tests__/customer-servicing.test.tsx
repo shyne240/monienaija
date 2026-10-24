@@ -1,8 +1,9 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
+
 import App from '../src/App';
-import { useAuthStore } from '../src/store/auth-store';
 import { ApiClient } from '../src/services/api-client';
+import { useAuthStore } from '../src/store/auth-store';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -13,220 +14,123 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
-// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
-// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
-// dashboard. It is always the first recorded `ApiClient.get` call in these tests, so every
-// sequential `.mockResolvedValueOnce(...)` chain below is prefixed with one extra resolved value
-// to "absorb" it — this keeps each chain's remaining values aligned with the screen-specific call
-// order the rest of the test asserts on.
-const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+const customer = {
+  id: 'batch1-app-customer-001',
+  reference: 'mn-••••5678',
+  type: 'INDIVIDUAL',
+  status: 'ACTIVE',
+  kycLevel: 'LEVEL_1',
+  kycStatus: 'APPROVED',
+  displayName: 'Synthetic App Customer',
+  legalName: 'Synthetic App Customer Legal',
+  createdAt: '2026-09-10T09:00:00.000Z',
+  primaryContact: { type: 'PHONE', maskedValue: '+234*****4321', isVerified: true },
+};
 
-describe('Admin Web Portal W2 Customer & Wallet Servicing Tests', () => {
+const dashboard = {
+  templateKey: 'DEFAULT_FALLBACK',
+  displayName: 'Synthetic Workforce Dashboard',
+  description: '',
+  isFallback: true,
+  widgets: [],
+};
+
+function directoryResponse() {
+  return {
+    data: [customer],
+    total: 1,
+    page: 1,
+    limit: 20,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+}
+
+function setPrincipal() {
+  useAuthStore.setState({
+    isAuthenticated: true,
+    isLoading: false,
+    token: 'synthetic-workforce-token',
+    sessionId: 'synthetic-session',
+    principal: {
+      type: 'OPERATOR',
+      principalId: 'issuer:batch1-test-operator',
+      sessionId: 'synthetic-session',
+      audience: 'workforce-admin',
+      roles: ['OPERATIONS'],
+      scopes: [
+        'customer.view',
+        'customer.create',
+        'customer.view_address',
+        'customer.view_contact_methods',
+        'customer.view_transactions',
+        'customer.view_wallets',
+        'customer.activate',
+        'customer.suspend',
+        'customer.close',
+        'transaction.view',
+      ],
+      customerAccess: 'NONE',
+      assuranceLevel: 'MFA',
+    },
+  });
+}
+
+function mockAppReads() {
+  (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+    if (path === '/internal/a2/workforce/dashboard/my-dashboard') return Promise.resolve(dashboard);
+    if (path.startsWith('/internal/customers?')) return Promise.resolve(directoryResponse());
+    return Promise.resolve({ data: [], items: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } });
+  });
+}
+
+async function openDirectory() {
+  const view = render(<App />);
+  fireEvent.click(view.getByRole('button', { name: /Customer & KYC Servicing/ }));
+  await view.findByRole('heading', { name: 'Customer directory' });
+  return view;
+}
+
+describe('Admin Web customer servicing (application-level)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-
-    useAuthStore.setState({
-      isAuthenticated: true,
-      isLoading: false,
-      token: 'operator-bearer',
-      sessionId: 'operator-sess',
-      principal: {
-        type: 'OPERATOR',
-        principalId: 'iss:back-office-operator',
-        sessionId: 'operator-sess',
-        audience: 'workforce-admin',
-        roles: ['SUPER_ADMIN'],
-        scopes: ['customer.view','customer.create','customer.suspend','customer.activate','customer.close','customer.view_transactions','customer.view_wallets','customer.create_wallet','customer.manage_support_case','kyc.view','kyc.review','kyc.approve','kyc.reject','ledger.view','transaction.view'],
-        customerAccess: 'NONE',
-        assuranceLevel: 'MFA',
-      },
-    });
+    localStorage.clear();
+    setPrincipal();
+    mockAppReads();
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'batch1-draft-001', reference: 'mn-0000009876' });
   });
 
-  test('should load and render customer listing cleanly', async () => {
-    const mockCustomers = [
-      {
-        id: 'cust-uuid-w2-1',
-        reference: 'MN-08098765432',
-        type: 'INDIVIDUAL',
-        status: 'ACTIVE',
-        actor: 'Femi Cole',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+  test('opens the customer directory from the authenticated shell and renders scoped customer summaries', async () => {
+    const view = await openDirectory();
+    const row = await view.findByRole('row', { name: /Synthetic App Customer/ });
 
-    (ApiClient.get as jest.Mock).mockResolvedValue(mockCustomers);
-
-    const { getByText, findByText, findAllByText } = render(<App />);
-
-    // Navigate to Customer directory
-    fireEvent.click(getByText('👥 Customer & KYC Servicing'));
-
-    expect(ApiClient.get).toHaveBeenCalledWith('/customers');
-    expect(await findByText('MN-08098765432')).toBeTruthy();
-    expect((await findAllByText('INDIVIDUAL')).length).toBeGreaterThan(0);
-    expect((await findAllByText('ACTIVE')).length).toBeGreaterThan(0);
+    expect(within(row).getByText('Synthetic App Customer')).toBeTruthy();
+    expect(within(row).getByText(/Synthetic App Customer Legal/)).toBeTruthy();
+    expect(within(row).getByText('mn-••••5678')).toBeTruthy();
+    expect(within(row).getByText('+234*****4321')).toBeTruthy();
+    expect(within(row).getByText('LEVEL_1')).toBeTruthy();
+    expect(within(row).getByText('APPROVED')).toBeTruthy();
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/customers?page=1&limit=20');
+    expect(view.queryByText('mn-0000000000')).toBeNull();
   });
 
-  test('should submit customer registration payload on form submit', async () => {
-    (ApiClient.get as jest.Mock).mockResolvedValue([]);
-    (ApiClient.post as jest.Mock).mockResolvedValue({
-      id: 'new-cust-id',
-      reference: 'MN-08011112222',
+  test('submits a manual customer through the app as DRAFT and shows only the masked reference', async () => {
+    const view = await openDirectory();
+    await view.findByText('Synthetic App Customer');
+    fireEvent.click(view.getByRole('button', { name: 'New draft customer' }));
+    fireEvent.change(view.getByLabelText('Customer reference'), {
+      target: { value: 'mn-0000019876' },
     });
-
-    const { getByText, getByPlaceholderText } = render(<App />);
-
-    fireEvent.click(getByText('👥 Customer & KYC Servicing'));
-
-    // Open create form
-    fireEvent.click(getByText('➕ Register Customer'));
-
-    // Fill form
-    fireEvent.change(getByPlaceholderText('e.g. MN-08012345678'), { target: { value: 'MN-08011112222' } });
-
-    // Submit
-    fireEvent.click(getByText('Register Profile'));
+    fireEvent.click(view.getByRole('button', { name: 'Create draft' }));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/customers', {
-        reference: 'MN-08011112222',
+        reference: 'mn-0000019876',
         type: 'INDIVIDUAL',
-        status: 'ACTIVE',
-        actor: 'iss:back-office-operator',
+        status: 'DRAFT',
       });
-      expect(getByText('Customer created successfully! ID: new-cust-id')).toBeTruthy();
-    });
-  });
-
-  test('should load details, submit KYC assessment, and provision an NGN kobo wallet on detail screen', async () => {
-    const mockCustomer = {
-      id: 'cust-w2-details',
-      reference: 'MN-08011112222',
-      type: 'INDIVIDUAL',
-      status: 'ACTIVE',
-      actor: 'Femi Cole',
-      createdAt: new Date().toISOString(),
-    };
-
-    const mockWallets = [
-      {
-        id: 'wallet-w2-id',
-        customerId: 'cust-w2-details',
-        type: 'PRIMARY',
-        currency: 'NGN',
-        status: 'ACTIVE',
-        balanceMinor: 350050, // 3500.50 Naira
-      },
-    ];
-
-    const mockKyc = {
-      id: 'kyc-w2-id',
-      level: 'LEVEL_1',
-      status: 'APPROVED',
-      assessedBy: 'iss:back-office-operator',
-      createdAt: new Date().toISOString(),
-    };
-
-    (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
-      .mockResolvedValueOnce([mockCustomer]) // list customers
-      .mockResolvedValueOnce(mockWallets)    // load wallets
-      .mockResolvedValueOnce(mockKyc);       // load KYC
-
-    const { getByText, findByText, getByPlaceholderText, getAllByText } = render(<App />);
-
-    fireEvent.click(getByText('👥 Customer & KYC Servicing'));
-
-    // View details
-    expect(await findByText('View & Service')).toBeTruthy();
-    fireEvent.click(getByText('View & Service'));
-
-    // Verify wallets balance formats properly (₦3,500.50)
-    expect(await findByText('₦3,500.50')).toBeTruthy();
-    expect(await findByText('ID: wallet-w2-id')).toBeTruthy();
-
-    // Verify KYC displays
-    expect(await findByText('LEVEL_1')).toBeTruthy();
-
-    // Submit a KYC assessment update
-    (ApiClient.post as jest.Mock).mockResolvedValue({
-      id: 'kyc-new-id',
-      level: 'LEVEL_2',
-      status: 'APPROVED',
-      assessedBy: 'iss:back-office-operator',
-    });
-
-    fireEvent.change(getByPlaceholderText('e.g. Identity documents successfully verified'), {
-      target: { value: 'Level 2 documents verified' },
-    });
-
-    fireEvent.click(getAllByText('Submit KYC Assessment')[1]);
-
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-w2-details/kyc-assessment', {
-        level: 'LEVEL_1',
-        status: 'APPROVED',
-        reason: 'Level 2 documents verified',
-        assessedBy: 'iss:back-office-operator',
-      });
-      expect(getByText('KYC Assessment verified successfully!')).toBeTruthy();
-    });
-
-    // Provision NGN wallet
-    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'new-wallet-id' });
-    (ApiClient.get as jest.Mock).mockResolvedValue(mockWallets); // reload wallets on success
-
-    fireEvent.click(getByText('Provision Wallet'));
-
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-w2-details/wallets', {
-        type: 'PRIMARY',
-        currency: 'NGN',
-        status: 'ACTIVE',
-        actor: 'iss:back-office-operator',
-      });
-      expect(getByText('NGN Wallet provisioned successfully!')).toBeTruthy();
-    });
-  });
-
-  test('should submit status lock updates when suspend button is clicked', async () => {
-    const mockCustomer = {
-      id: 'cust-w2-details',
-      reference: 'MN-08011112222',
-      type: 'INDIVIDUAL',
-      status: 'ACTIVE',
-      actor: 'Femi Cole',
-      createdAt: new Date().toISOString(),
-    };
-
-    (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
-      .mockResolvedValueOnce([mockCustomer]) // list customers
-      .mockResolvedValueOnce([])             // load wallets
-      .mockResolvedValueOnce(null);          // load kyc
-
-    const { getByText, findByText } = render(<App />);
-
-    fireEvent.click(getByText('👥 Customer & KYC Servicing'));
-
-    expect(await findByText('View & Service')).toBeTruthy();
-    fireEvent.click(getByText('View & Service'));
-
-    // Trigger status update
-    (ApiClient.patch as jest.Mock).mockResolvedValue({
-      ...mockCustomer,
-      status: 'SUSPENDED',
-    });
-
-    fireEvent.click(getByText('SUSPEND'));
-
-    await waitFor(() => {
-      expect(ApiClient.patch).toHaveBeenCalledWith('/customers/cust-w2-details', {
-        status: 'SUSPENDED',
-        actor: 'iss:back-office-operator',
-      });
-      expect(getByText('Customer status updated to SUSPENDED successfully.')).toBeTruthy();
+      expect(view.getByRole('status').textContent).toContain('mn-••••9876');
     });
   });
 });

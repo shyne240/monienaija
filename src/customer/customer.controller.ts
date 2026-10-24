@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -12,6 +13,7 @@ import {
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { maskCustomerReference, maskIdentityDocumentNumber } from './customer-privacy';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateContactMethodDto } from './dto/create-contact-method.dto';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -21,6 +23,8 @@ import { CreateProfileDto } from './dto/create-profile.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { CustomerKycStatus, CustomerStatus } from './customer.enums';
+import { CustomerIdentityDocument } from './customer-identity-document.entity';
+import { Customer } from './customer.entity';
 import { CustomerService } from './customer.service';
 
 interface AuthenticatedRequest {
@@ -67,65 +71,99 @@ export class CustomerController {
   ) {}
 
   @Post()
-  create(@Body() dto: CreateCustomerDto) {
-    return this.customerService.create(dto);
+  async create(@Body() dto: CreateCustomerDto, @Req() req: AuthenticatedRequest) {
+    const actor = await this.requireWorkforceFunction(req, 'customer.create');
+    // Manual creation is always a draft. Activation remains exclusively on the lifecycle
+    // endpoint, which enforces the verified-primary-phone gate and its own function check.
+    const customer = await this.customerService.create({
+      ...dto,
+      status: CustomerStatus.DRAFT,
+      actor,
+    });
+    return this.toWorkforceCustomerView(customer);
   }
 
-  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: `list`/`get` previously had no own authorization
-  // check at all — reachable by any principal type the generic `/api/v1/customers*` route-policy
-  // allows (`CUSTOMER` SELF + any `OPERATOR/SERVICE/PRIVILEGED`), with no function-level gate,
-  // even though the catalogue's `customer.view` function ("View a customer profile and KYC
-  // tier" — the exact data these two handlers return: the bare `Customer` record) is assigned
-  // only to SUPER_ADMIN/FINANCE_AUDITOR/OPERATIONS/COMPLIANCE/CUSTOMER_SERVICE — meaning any
-  // other OPERATOR-collapsing workforce role (FINANCE_PREPARER, FINANCE_CONTROLLER,
-  // AGENT_NETWORK_MANAGER, RISK_FRAUD, TREASURY) could list/read any customer purely by virtue
-  // of its principal type (the same gap class V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 flagged and
-  // KYC-01 already closed for the KYC sub-surface).
   @Get()
   async list(@Query() query: CustomerQueryDto, @Req() req: AuthenticatedRequest) {
-    await this.requireCustomerViewFunction(req);
-    return this.customerService.list(query.status, query.type, query.page, query.limit);
+    await this.requireWorkforceFunction(req, 'customer.view');
+    const customers = await this.customerService.list(
+      query.status,
+      query.type,
+      query.page,
+      query.limit,
+    );
+    return customers.map((customer) => this.toWorkforceCustomerView(customer));
   }
 
   @Get(':id')
   async get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     await this.requireCustomerViewFunction(req);
-    return this.customerService.get(id);
+    const customer = await this.customerService.get(id);
+    return req.authorizationPrincipal?.type === 'CUSTOMER'
+      ? customer
+      : this.toWorkforceCustomerView(customer);
   }
 
-  // Lifecycle transition (S-FIX-01, audit contradiction C-3). UpdateCustomerDto carries
-  // lifecycle status only, so this route is workforce-privileged even though the other
-  // endpoints on this controller remain available to CUSTOMER SELF per the route
-  // policy. A CUSTOMER principal must not self-activate/self-unsuspend by supplying
-  // its own id; workforce-gated at route level (route-policy-registry) AND here.
+  // Lifecycle transitions remain workforce-only and independently function-gated. The actor
+  // is always taken from the authenticated principal; a request body cannot spoof audit identity.
   @Patch(':id')
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCustomerDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    await this.requireWorkforce(req, dto.status);
-    return this.customerService.updateStatus(id, dto);
+    const actor = await this.requireWorkforce(req, dto.status);
+    const customer = await this.customerService.updateStatus(id, { ...dto, actor });
+    return this.toWorkforceCustomerView(customer);
   }
 
   @Post(':id/profile')
-  createProfile(@Param('id') id: string, @Body() dto: CreateProfileDto) {
-    return this.customerService.createProfile(id, dto);
+  async createProfile(
+    @Param('id') id: string,
+    @Body() dto: CreateProfileDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    return this.customerService.createProfile(id, { ...dto, actor });
   }
 
   @Post(':id/address')
-  createAddress(@Param('id') id: string, @Body() dto: CreateAddressDto) {
-    return this.customerService.createAddress(id, dto);
+  async createAddress(
+    @Param('id') id: string,
+    @Body() dto: CreateAddressDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    return this.customerService.createAddress(id, { ...dto, actor });
   }
 
   @Post(':id/contact-method')
-  createContactMethod(@Param('id') id: string, @Body() dto: CreateContactMethodDto) {
-    return this.customerService.createContactMethod(id, dto);
+  async createContactMethod(
+    @Param('id') id: string,
+    @Body() dto: CreateContactMethodDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
+    return this.customerService.createContactMethod(id, { ...dto, actor });
   }
 
   @Post(':id/identity-document')
-  createIdentityDocument(@Param('id') id: string, @Body() dto: CreateIdentityDocumentDto) {
-    return this.customerService.createIdentityDocument(id, dto);
+  async createIdentityDocument(
+    @Param('id') id: string,
+    @Body() dto: CreateIdentityDocumentDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireCustomerWriteFunction(req, id, 'customer.view_identity_documents');
+    if (req.authorizationPrincipal?.type !== 'CUSTOMER') {
+      await this.auth.requireFunction(
+        req.authorizationPrincipal,
+        'kyc.review',
+        'customer',
+        ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+      );
+    }
+    const document = await this.customerService.createIdentityDocument(id, { ...dto, actor });
+    return this.toSafeIdentityDocument(document);
   }
 
   @Post(':id/kyc-assessment')
@@ -134,8 +172,11 @@ export class CustomerController {
     @Body() dto: CreateKycAssessmentDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    await this.requireKycFunction(req, KYC_ASSESSMENT_FUNCTION_BY_STATUS[dto.status]);
-    return this.customerService.createKycAssessment(id, dto);
+    const actor = await this.requireKycMutationFunction(
+      req,
+      KYC_ASSESSMENT_FUNCTION_BY_STATUS[dto.status],
+    );
+    return this.customerService.createKycAssessment(id, { ...dto, assessedBy: actor });
   }
 
   // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: `customer.view`'s own catalogue name/description
@@ -183,12 +224,13 @@ export class CustomerController {
   @Get(':id/identity-documents')
   async getIdentityDocuments(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     await this.requirePiiFunction(req, 'customer.view_identity_documents');
-    return this.customerService.listIdentityDocuments(id);
+    const documents = await this.customerService.listIdentityDocuments(id);
+    return documents.map((document) => this.toSafeIdentityDocument(document));
   }
 
   @Get(':id/kyc')
   async getKyc(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    await this.requireKycFunction(req, 'kyc.view');
+    await this.requireKycReadFunction(req, 'kyc.view');
     return this.customerService.getKyc(id);
   }
 
@@ -228,89 +270,124 @@ export class CustomerController {
     return principal.principalId;
   }
 
-  // V1-ADMIN-AUTHORIZATION-KYC-01: `getKyc`/`createKycAssessment` previously had no own
-  // authorization check at all — they were reachable by any principal type the generic
-  // `/api/v1/customers/*` route-policy allows (`CUSTOMER` SELF + any `OPERATOR/SERVICE/
-  // PRIVILEGED`), with zero function-level gate, even though the catalogue's `kyc.view`/
-  // `.review`/`.approve`/`.reject` functions are assigned only to SUPER_ADMIN/COMPLIANCE
-  // (plus `kyc.view` additionally to FINANCE_AUDITOR) — meaning any OPERATOR-collapsing
-  // workforce role (FINANCE_PREPARER, FINANCE_CONTROLLER, RISK_FRAUD, CUSTOMER_SERVICE,
-  // TREASURY, OPERATIONS, AGENT_NETWORK_MANAGER) could view/create KYC assessments for any
-  // customer purely by virtue of its principal type (the exact gap
-  // V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 flagged).
-  //
-  // A real CUSTOMER principal is deliberately EXEMPTED from this function check and left on
-  // its pre-existing, unchanged path (gated only by the route-policy's `customerAccess: 'SELF'`
-  // check, enforced by RuntimeAccessGuard before this controller runs, identical to the other
-  // customer sub-resource GETs on this controller — `/profile`, `/addresses`, `/identity-
-  // documents`, etc.). Catalogue functions are a workforce-only authorization unit: a CUSTOMER
-  // principal never holds any catalogue function in `principal.scopes` (see
-  // `AuthorizationService.evaluate()`/`RuntimeAccessGuard`'s CUSTOMER branch), so requiring one
-  // here would deny a customer's own pre-existing self-service reachability entirely — a
-  // business-behavior change this task is explicitly not authorized to make (no KYC redesign,
-  // no business-logic change). The gap this task closes is specifically the workforce
-  // OPERATOR-collapse over-grant, not customer self-access.
-  //
-  // No `deniedStatus` override: this is a brand-new check with no pre-existing 401 convention
-  // to preserve, so `AuthorizationService.requireFunction()`'s default behavior applies —
-  // unauthenticated is 401, an authenticated-but-under-entitled workforce principal is 403.
-  private async requireKycFunction(req: AuthenticatedRequest, functionCode: string): Promise<void> {
+  private async requireWorkforceFunction(
+    req: AuthenticatedRequest,
+    functionCode: string,
+  ): Promise<string> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER' || principal.type === 'AGENT' || principal.type === 'AGGREGATOR') {
+      throw new ForbiddenException('Workforce authorization is required');
+    }
+    return this.auth.requireFunction(
+      principal,
+      functionCode,
+      'customer',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+  }
+
+  private async requireCustomerWriteFunction(
+    req: AuthenticatedRequest,
+    customerId: string,
+    functionCode: string,
+  ): Promise<string> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'CUSTOMER') {
-      return;
+      if (principal.customerId !== customerId) {
+        throw new ForbiddenException('A customer may only update their own profile data');
+      }
+      return principal.customerId;
     }
-    await this.auth.requireFunction(principal, functionCode, 'kyc', ['OPERATOR', 'SERVICE', 'PRIVILEGED']);
+    return this.requireWorkforceFunction(req, functionCode);
   }
 
-  // V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01: identical exemption/gating pattern to
-  // `requireKycFunction` above. A real CUSTOMER principal is deliberately EXEMPTED and left on
-  // its pre-existing, unchanged path (gated only by the route-policy's `customerAccess: 'SELF'`
-  // check, enforced by RuntimeAccessGuard before this controller runs) — catalogue functions are
-  // a workforce-only authorization unit, a CUSTOMER principal never holds one in
-  // `principal.scopes`, so requiring one here would deny a customer's own pre-existing
-  // self-service reachability entirely (not this task's objective, and not authorized). The gap
-  // closed is specifically the workforce OPERATOR-collapse over-grant on `list`/`get`/
-  // `getProfile`. No `deniedStatus` override: these are brand-new checks with no pre-existing 401
-  // convention to preserve — unauthenticated is 401, an authenticated-but-under-entitled
-  // workforce principal is 403 (AuthorizationService.requireFunction()'s default behavior).
   private async requireCustomerViewFunction(req: AuthenticatedRequest): Promise<void> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'CUSTOMER') {
-      return;
-    }
-    await this.auth.requireFunction(principal, 'customer.view', 'customer', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    if (principal.type === 'CUSTOMER') return;
+    await this.auth.requireFunction(
+      principal,
+      'customer.view',
+      'customer',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 
-  // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01: identical exemption/gating pattern
-  // to `requireCustomerViewFunction`/`requireKycFunction` above, parameterized by the specific
-  // PII function code for each of `/addresses`, `/contact-methods`, `/identity-documents`. A
-  // real CUSTOMER principal is deliberately EXEMPTED and left on its pre-existing, unchanged
-  // path (gated only by the route-policy's `customerAccess: 'SELF'` check, enforced by
-  // RuntimeAccessGuard before this controller runs) — catalogue functions are a workforce-only
-  // authorization unit, a CUSTOMER principal never holds one in `principal.scopes`, so
-  // requiring one here would deny a customer's own pre-existing self-service reachability
-  // entirely (not this task's objective, and not authorized: no change to CUSTOMER
-  // self-service, ownership checks, response shape, or business logic). No `deniedStatus`
-  // override: these are brand-new checks with no pre-existing 401 convention to preserve —
-  // unauthenticated is 401, an authenticated-but-under-entitled workforce principal is 403
-  // (AuthorizationService.requireFunction()'s default behavior — FUNCTION_MISSING never
-  // collapses into 401).
-  private async requirePiiFunction(req: AuthenticatedRequest, functionCode: string): Promise<void> {
+  private async requirePiiFunction(
+    req: AuthenticatedRequest,
+    functionCode: string,
+  ): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') return;
+    await this.auth.requireFunction(
+      principal,
+      functionCode,
+      'customer',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+  }
+
+  private async requireKycReadFunction(
+    req: AuthenticatedRequest,
+    functionCode: string,
+  ): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') return;
+    await this.auth.requireFunction(
+      principal,
+      functionCode,
+      'kyc',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+  }
+
+  private async requireKycMutationFunction(
+    req: AuthenticatedRequest,
+    functionCode: string,
+  ): Promise<string> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'CUSTOMER') {
-      return;
+      throw new ForbiddenException('KYC assessment changes require an authorized workforce principal');
     }
-    await this.auth.requireFunction(principal, functionCode, 'customer', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      principal,
+      functionCode,
+      'kyc',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+  }
+
+  private toWorkforceCustomerView(customer: Customer) {
+    return {
+      id: customer.id,
+      reference: maskCustomerReference(customer.reference),
+      type: customer.type,
+      status: customer.status,
+      kycLevel: customer.kycLevel,
+      kycStatus: customer.kycStatus,
+      version: customer.version,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      deletedAt: customer.deletedAt,
+    };
+  }
+
+  private toSafeIdentityDocument(document: CustomerIdentityDocument) {
+    return {
+      id: document.id,
+      customerId: document.customerId,
+      type: document.type,
+      maskedDocumentNumber: maskIdentityDocumentNumber(document.documentNumber),
+      issuingCountry: document.issuingCountry,
+      issuedAt: document.issuedAt,
+      expiresAt: document.expiresAt,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+    };
   }
 }

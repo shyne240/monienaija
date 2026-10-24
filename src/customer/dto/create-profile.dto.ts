@@ -26,9 +26,4 @@ export class CreateProfileDto {
   @Matches(/^[A-Za-z]{2,3}$/)
   nationality?: string;
 
-  @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(160)
-  actor!: string;
 }

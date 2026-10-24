@@ -16,9 +16,4 @@ export class CreateContactMethodDto {
   @IsBoolean()
   isPrimary!: boolean;
 
-  @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(160)
-  actor!: string;
 }

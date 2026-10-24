@@ -14,8 +14,10 @@ import { DataSource, IsNull, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
-import { ContactMethodType } from '../customer/customer.enums';
+import { ContactMethodType, CustomerStatus } from '../customer/customer.enums';
+import { maskContactValue, maskCustomerReference, maskPhoneNumber } from '../customer/customer-privacy';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { CustomerDirectoryQueryDto } from './dto/customer-directory-query.dto';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { CustomerTransactionHistoryService } from '../customer-app/customer-transaction-history.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -40,32 +42,148 @@ export class AdminCustomerController {
   ) {}
 
   @Get()
-  async list(
-    @Req() req: AuthenticatedRequest,
-    @Query('page') pageRaw?: string,
-    @Query('limit') limitRaw?: string,
-    @Query('status') status?: string,
-    @Query('type') type?: string,
-  ) {
+  async list(@Req() req: AuthenticatedRequest, @Query() query: CustomerDirectoryQueryDto) {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view');
-    const page = Math.max(1, Number.parseInt(pageRaw ?? '1', 10) || 1);
-    const rawLimit = Number.parseInt(limitRaw ?? '20', 10) || 20;
-    const limit = Math.min(100, Math.max(1, rawLimit));
-    const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
-    if (status) where['status'] = status;
-    if (type) where['type'] = type;
+    const principal = req.authorizationPrincipal;
+    const canViewContactMethods = Boolean(
+      principal?.scopes.includes('customer.view_contact_methods'),
+    );
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const parameters: unknown[] = [];
+    const predicates = ["(customer.deleted_at IS NULL OR customer.status = 'CLOSED')"];
+    const addPredicate = (sql: string, value: unknown) => {
+      parameters.push(value);
+      predicates.push(sql.replace('?', `$${parameters.length}`));
+    };
 
-    const [data, total] = await this.repo.findAndCount({
-      where: Object.keys(where).length ? (where as never) : {},
-      order: { createdAt: 'DESC' } as never,
-      skip,
-      take: limit,
-    });
+    if (query.status) addPredicate('customer.status = ?', query.status);
+    if (query.type) addPredicate('customer.customer_type = ?', query.type);
+    if (query.kycLevel) addPredicate('customer.kyc_level = ?', query.kycLevel);
+    if (query.kycStatus) addPredicate('customer.kyc_status = ?', query.kycStatus);
 
-    return { data, total, page, limit };
+    if (query.search) {
+      const searchPattern = `%${query.search}%`;
+      parameters.push(searchPattern);
+      const searchParameter = `$${parameters.length}`;
+      const searchFields = [
+        `COALESCE(profile.display_name, '') ILIKE ${searchParameter}`,
+        `COALESCE(profile.legal_name, '') ILIKE ${searchParameter}`,
+        `customer.reference ILIKE ${searchParameter} AND customer.reference !~* '^mn-[0-9]{6,15}$'`,
+      ];
+      if (canViewContactMethods) {
+        searchFields.push(
+          `EXISTS (
+            SELECT 1 FROM customer_contact_methods searched_contact
+            WHERE searched_contact.customer_id = customer.id
+              AND searched_contact.deleted_at IS NULL
+              AND (searched_contact.value ILIKE ${searchParameter}
+                OR searched_contact.normalized_value ILIKE ${searchParameter})
+          )`,
+        );
+      }
+      predicates.push(`(${searchFields.join(' OR ')})`);
+    }
+
+    const contactJoin = canViewContactMethods
+      ? `LEFT JOIN LATERAL (
+          SELECT contact.type, contact.value, contact.verified_at
+          FROM customer_contact_methods contact
+          WHERE contact.customer_id = customer.id
+            AND contact.deleted_at IS NULL
+            AND contact.is_primary = TRUE
+          ORDER BY contact.is_primary DESC,
+            CASE WHEN contact.type = 'PHONE' THEN 0 ELSE 1 END,
+            contact.created_at DESC,
+            contact.id DESC
+          LIMIT 1
+        ) primary_contact ON TRUE`
+      : '';
+    const contactProjection = canViewContactMethods
+      ? `primary_contact.type AS "contactType",
+        primary_contact.value AS "contactValue",
+        primary_contact.verified_at AS "contactVerifiedAt"`
+      : `NULL::text AS "contactType",
+        NULL::text AS "contactValue",
+        NULL::timestamptz AS "contactVerifiedAt"`;
+    const fromAndJoins = `
+      FROM customers customer
+      LEFT JOIN customer_profiles profile
+        ON profile.customer_id = customer.id
+        AND profile.is_active = TRUE
+        AND profile.deleted_at IS NULL
+      ${contactJoin}
+    `;
+    const whereSql = predicates.join(' AND ');
+    const countRows = (await this.dataSource.query(
+      `SELECT COUNT(DISTINCT customer.id)::text AS total ${fromAndJoins} WHERE ${whereSql}`,
+      parameters,
+    )) as Array<{ total: string }>;
+    const total = Number(countRows[0]?.total ?? '0');
+    const offset = (page - 1) * limit;
+    const rows = (await this.dataSource.query(
+      `SELECT
+        customer.id::text AS id,
+        customer.reference AS reference,
+        customer.customer_type AS type,
+        customer.status AS status,
+        customer.kyc_level AS "kycLevel",
+        customer.kyc_status AS "kycStatus",
+        customer.created_at AS "createdAt",
+        profile.display_name AS "displayName",
+        profile.legal_name AS "legalName",
+        ${contactProjection}
+      ${fromAndJoins}
+      WHERE ${whereSql}
+      ORDER BY customer.created_at DESC, customer.id DESC
+      LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
+      [...parameters, limit, offset],
+    )) as Array<{
+      id: string;
+      reference: string;
+      type: string;
+      status: string;
+      kycLevel: string;
+      kycStatus: string;
+      createdAt: Date;
+      displayName: string | null;
+      legalName: string | null;
+      contactType: string | null;
+      contactValue: string | null;
+      contactVerifiedAt: Date | null;
+    }>;
+
+    const data = rows.map((row) => ({
+      id: row.id,
+      reference: maskCustomerReference(row.reference),
+      type: row.type,
+      status: row.status,
+      kycLevel: row.kycLevel,
+      kycStatus: row.kycStatus,
+      createdAt: row.createdAt,
+      displayName: row.displayName,
+      legalName: row.legalName,
+      primaryContact:
+        canViewContactMethods && row.contactType && row.contactValue
+          ? {
+              type: row.contactType,
+              maskedValue: maskContactValue(row.contactType, row.contactValue),
+              isVerified: row.contactVerifiedAt !== null,
+            }
+          : null,
+    }));
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPreviousPage: page > 1,
+    };
   }
 
   @Get(':id')
@@ -73,9 +191,20 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view');
     this.assertUuid(id, 'id');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
-    return this.toSafeCustomer(customer);
+    const profiles = (await this.dataSource.query(
+      `SELECT display_name, legal_name
+       FROM customer_profiles
+       WHERE customer_id = $1 AND is_active = TRUE AND deleted_at IS NULL
+       LIMIT 1`,
+      [id],
+    )) as Array<{ display_name: string | null; legal_name: string | null }>;
+    return {
+      ...this.toSafeCustomer(customer),
+      displayName: profiles[0]?.display_name ?? null,
+      legalName: profiles[0]?.legal_name ?? null,
+    };
   }
 
   // ──────────────────────────────────────────────
@@ -92,10 +221,23 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view_transactions');
     this.assertUuid(id, 'id');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
-    // Reuse authoritative unified history — centralized aggregation, safe projection already enforced
-    return this.transactionHistoryService.listUnified({ customerId: id, page, limit, type });
+    // Reuse authoritative unified history, but remove raw counterparty contact values at this
+    // workforce boundary. The shared history service is also used by customer self-service.
+    const history = await this.transactionHistoryService.listUnified({
+      customerId: id,
+      page,
+      limit,
+      type,
+    });
+    return {
+      ...history,
+      items: history.items.map((item) => ({
+        ...item,
+        counterparty: this.maskCounterpartyContact(item.counterparty),
+      })),
+    };
   }
 
   // ──────────────────────────────────────────────
@@ -106,7 +248,7 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view_wallets');
     this.assertUuid(id, 'id');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
     // Use existing wallet architecture (WalletAccount) — safe projection (no ledgerAccountId, no creationIdempotencyKey)
     const wallets: Array<{
@@ -145,7 +287,7 @@ export class AdminCustomerController {
     await this.requireFunction(req, 'customer.view_wallets');
     this.assertUuid(id, 'id');
     this.assertUuid(walletId, 'walletId');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
     const wallet = await this.walletRepo.findOne({ where: { id: walletId } as never });
     if (!wallet || (wallet as any).customerId !== id) {
@@ -177,7 +319,7 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
     this.assertUuid(id, 'id');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
     const p = page ? Number.parseInt(page, 10) : 1;
     const l = limit ? Number.parseInt(limit, 10) : 20;
@@ -202,7 +344,7 @@ export class AdminCustomerController {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.view');
     this.assertUuid(id, 'id');
-    const customer = await this.repo.findOne({ where: { id } as never });
+    const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
     const contacts = await this.dataSource.getRepository(CustomerContactMethod).find({
       where: { customerId: id, type: ContactMethodType.PHONE, deletedAt: IsNull() },
@@ -223,11 +365,56 @@ export class AdminCustomerController {
     };
   }
 
+  private async findVisibleCustomer(id: string): Promise<Customer> {
+    const customer = await this.repo.findOne({ where: { id } as never, withDeleted: true });
+    if (!customer || (customer.deletedAt && customer.status !== CustomerStatus.CLOSED)) {
+      throw new NotFoundException('Customer not found');
+    }
+    return customer;
+  }
+
+  private maskCounterpartyContact(counterparty: unknown): Record<string, unknown> | null {
+    if (!counterparty || typeof counterparty !== 'object' || Array.isArray(counterparty)) {
+      return null;
+    }
+
+    const safe = { ...(counterparty as Record<string, unknown>) };
+    const sensitiveFields = [
+      'phone',
+      'phoneNumber',
+      'email',
+      'emailAddress',
+      'contactValue',
+      'receivingNumber',
+      'beneficiaryPhone',
+      'accountNumber',
+      'receiving_number',
+      'beneficiary_phone',
+      'account_number',
+    ];
+    let maskedContact: string | null = null;
+
+    for (const field of sensitiveFields) {
+      const value = safe[field];
+      if (maskedContact === null && typeof value === 'string') {
+        if (field === 'accountNumber' || field === 'account_number') {
+          const digits = value.replace(/\D/g, '');
+          maskedContact = digits.length >= 4 ? `••••••${digits.slice(-4)}` : '••••';
+        } else if (field === 'email' || field === 'emailAddress') {
+          maskedContact = maskContactValue('EMAIL', value);
+        } else {
+          maskedContact = maskPhoneNumber(value);
+        }
+      }
+      delete safe[field];
+    }
+
+    if (maskedContact) safe.maskedContact = maskedContact;
+    return safe;
+  }
+
   private maskPhone(normalizedValue: string): string {
-    // Canonical 10-digit NSN → +234*****XXXX; non-canonical legacy values masked minimally.
-    if (/^\d{10}$/.test(normalizedValue)) return `+234*****${normalizedValue.slice(-4)}`;
-    if (normalizedValue.length <= 4) return '****';
-    return `****${normalizedValue.slice(-4)}`;
+    return maskPhoneNumber(normalizedValue);
   }
 
   private requireWorkforce(req: AuthenticatedRequest): string {
@@ -276,7 +463,7 @@ export class AdminCustomerController {
     } = customer as any;
     return {
       id,
-      reference,
+      reference: maskCustomerReference(reference),
       type,
       status,
       kycLevel,

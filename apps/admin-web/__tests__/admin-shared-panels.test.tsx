@@ -120,40 +120,69 @@ describe('Admin Web shared-screen improvements', () => {
     });
   });
 
-  test('Customer PII reads are lazy and displayed only for the exact granted function', async () => {
+  test('Customer 360 does not expose identity documents or request unrelated PII', async () => {
     setPrincipal(['COMPLIANCE'], ['customer.view', 'customer.view_identity_documents']);
-    const customer = { id: 'cust-1', reference: 'MN-001', type: 'INDIVIDUAL', status: 'ACTIVE', actor: 'issuer:COMPLIANCE', createdAt: '2026-10-23T10:00:00.000Z' };
+    const customer = {
+      id: 'synthetic-customer-pii-001',
+      reference: 'MN-CUSTOMER-0001',
+      type: 'INDIVIDUAL',
+      status: 'ACTIVE',
+      kycLevel: 'LEVEL_1',
+      kycStatus: 'APPROVED',
+      displayName: 'Synthetic PII Customer',
+      legalName: 'Synthetic PII Customer Legal',
+      createdAt: '2026-10-23T10:00:00.000Z',
+    };
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/customers') return Promise.resolve([customer]);
-      if (path === '/customers/cust-1/identity-documents') return Promise.resolve([{ type: 'NIN', documentNumber: '12345678901', issuingCountry: 'NG' }]);
-      return Promise.resolve([]);
+      if (path.startsWith('/internal/customers?')) {
+        return Promise.resolve({ data: [customer], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false, hasPreviousPage: false });
+      }
+      if (path.endsWith('/phone-verification')) {
+        return Promise.resolve({ customerId: customer.id, customerStatus: 'ACTIVE', phones: [], activationGate: { verifiedPrimaryPhone: false } });
+      }
+      if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'READY', onboardingStatus: 'COMPLETED', missing: [] });
+      if (path.endsWith('/eligibility')) return Promise.resolve({ status: 'ELIGIBLE', statusChangedAt: '2026-10-23T10:00:00.000Z' });
+      return Promise.resolve({ data: [], items: [] });
     });
 
     const view = render(<CustomerDirectoryScreen />);
-    fireEvent.click(await view.findByText('View & Service'));
-    expect(await view.findByText('Identity Documents')).toBeTruthy();
-    expect(view.queryByText('Addresses')).toBeNull();
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-1/identity-documents');
+    fireEvent.click(await view.findByRole('button', { name: /Open Customer 360° for Synthetic PII Customer/ }));
+    expect(await view.findByRole('heading', { name: 'Synthetic PII Customer' })).toBeTruthy();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
 
-    fireEvent.click(view.getByRole('button', { name: 'Identity Documents' }));
-    expect(await view.findByText('12345678901')).toBeTruthy();
-    expect(ApiClient.get).toHaveBeenCalledWith('/customers/cust-1/identity-documents');
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-1/addresses');
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-1/contact-methods');
+    fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
+    expect(await view.findByText('Address details are restricted to authorized address viewers.')).toBeTruthy();
+    expect(view.getByText('Contact details are restricted to authorized contact-method viewers.')).toBeTruthy();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/addresses`);
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/contact-methods`);
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
   });
 
-  test('Customer PII sections remain absent without their dedicated catalogue functions', async () => {
+  test('Customer PII sections remain restricted without their dedicated catalogue functions', async () => {
     setPrincipal(['ADMINISTRATOR'], ['customer.view']);
-    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path === '/customers'
-      ? Promise.resolve([{ id: 'cust-2', reference: 'MN-002', type: 'INDIVIDUAL', status: 'ACTIVE', actor: 'issuer:ADMINISTRATOR', createdAt: '2026-10-23T10:00:00.000Z' }])
-      : Promise.resolve([]));
+    const customer = {
+      id: 'synthetic-customer-pii-002',
+      reference: 'MN-CUSTOMER-0002',
+      type: 'INDIVIDUAL',
+      status: 'ACTIVE',
+      kycLevel: 'NONE',
+      kycStatus: 'NOT_STARTED',
+      displayName: 'Synthetic Restricted Customer',
+      createdAt: '2026-10-23T10:00:00.000Z',
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.startsWith('/internal/customers?')
+      ? Promise.resolve({ data: [customer], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false, hasPreviousPage: false })
+      : Promise.resolve({ data: [], items: [] }));
 
     const view = render(<CustomerDirectoryScreen />);
-    fireEvent.click(await view.findByText('View & Service'));
-    expect(view.queryByText('Customer PII Records')).toBeNull();
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-2/addresses');
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-2/contact-methods');
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-2/identity-documents');
+    fireEvent.click(await view.findByRole('button', { name: /Open Customer 360° for Synthetic Restricted Customer/ }));
+    expect(await view.findByRole('heading', { name: 'Synthetic Restricted Customer' })).toBeTruthy();
+    fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
+    expect(await view.findByText('Contact details are restricted to authorized contact-method viewers.')).toBeTruthy();
+    expect(view.getByText('Address details are restricted to authorized address viewers.')).toBeTruthy();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/addresses`);
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/contact-methods`);
+    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
   });
 
   test('Super-Admin recovery displays named result fields instead of a raw JSON string', async () => {

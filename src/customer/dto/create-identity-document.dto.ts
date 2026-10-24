@@ -36,9 +36,4 @@ export class CreateIdentityDocumentDto {
   @IsOptional()
   expiresAt?: string;
 
-  @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(160)
-  actor!: string;
 }

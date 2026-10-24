@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import type {
   DataSource,
   DeepPartial,
@@ -21,6 +21,7 @@ import {
   ContactMethodType,
   CustomerKycLevel,
   CustomerKycStatus,
+  CustomerStatus,
   CustomerType,
   IdentityDocumentType,
 } from '../src/customer/customer.enums';
@@ -200,6 +201,30 @@ describe('CustomerService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('prevents manual service creation from bypassing the DRAFT activation gate', async () => {
+    const { service } = fixture();
+    await expect(
+      service.create({
+        reference: 'manual-active-customer',
+        type: CustomerType.INDIVIDUAL,
+        status: CustomerStatus.ACTIVE,
+        actor: 'customer-ops',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('masks phone-derived customer references in customer audit records', async () => {
+    const { service, audit } = fixture();
+    await service.create({
+      reference: 'mn-0000000000',
+      type: CustomerType.INDIVIDUAL,
+      actor: 'customer-ops',
+    });
+
+    const event = audit.record.mock.calls[0]?.[1] as { newValues?: Record<string, unknown> };
+    expect(event.newValues?.reference).toBe('mn-••••0000');
+  });
+
   it('creates and audits profile, address, contact, and identity records', async () => {
     const { service, audit } = fixture();
     const customer = await createCustomer(service);
@@ -233,6 +258,11 @@ describe('CustomerService', () => {
     expect(address.customerId).toBe(customer.id);
     expect(contact.normalizedValue).toBe('customer@example.com');
     expect(document.customerId).toBe(customer.id);
+    const identityAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(identityAudit.newValues).not.toHaveProperty('documentNumber');
+    expect(JSON.stringify(identityAudit)).not.toContain(document.documentNumber);
     expect(audit.record).toHaveBeenCalledTimes(5);
   });
 
