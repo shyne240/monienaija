@@ -19,9 +19,9 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600089' : '1785753600004',
+          timestamp: this.compatible ? '1785753600092' : '1785753600004',
           name: this.compatible
-            ? 'WidenAuthorizationActorColumns1785753600089'
+            ? 'AllowMultipleCustomerIdentityDocuments1785753600092'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);

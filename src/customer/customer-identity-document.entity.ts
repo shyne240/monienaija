@@ -10,10 +10,6 @@ import {
 import { IdentityDocumentType } from './customer.enums';
 
 @Entity({ name: 'customer_identity_documents' })
-@Index('uq_customer_identity_document_type', ['customerId', 'type'], {
-  unique: true,
-  where: 'deleted_at IS NULL',
-})
 @Index('idx_customer_identity_documents_customer', ['customerId', 'deletedAt'])
 export class CustomerIdentityDocument {
   @PrimaryGeneratedColumn('uuid')

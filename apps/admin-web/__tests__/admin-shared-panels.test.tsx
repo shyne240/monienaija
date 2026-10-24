@@ -120,7 +120,7 @@ describe('Admin Web shared-screen improvements', () => {
     });
   });
 
-  test('Customer 360 does not expose identity documents or request unrelated PII', async () => {
+  test('Customer 360 loads identity documents only with the dedicated viewer scope and keeps writes separate', async () => {
     setPrincipal(['COMPLIANCE'], ['customer.view', 'customer.view_identity_documents']);
     const customer = {
       id: 'synthetic-customer-pii-001',
@@ -142,6 +142,14 @@ describe('Admin Web shared-screen improvements', () => {
       }
       if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'READY', onboardingStatus: 'COMPLETED', missing: [] });
       if (path.endsWith('/eligibility')) return Promise.resolve({ status: 'ELIGIBLE', statusChangedAt: '2026-10-23T10:00:00.000Z' });
+      if (path.endsWith('/identity-documents')) return Promise.resolve([{
+        id: 'synthetic-identity-masked',
+        type: 'NIN',
+        maskedDocumentNumber: '••••••0001',
+        issuingCountry: 'NG',
+        issuedAt: null,
+        expiresAt: null,
+      }]);
       return Promise.resolve({ data: [], items: [] });
     });
 
@@ -153,9 +161,13 @@ describe('Admin Web shared-screen improvements', () => {
     fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
     expect(await view.findByText('Address details are restricted to authorized address viewers.')).toBeTruthy();
     expect(view.getByText('Contact details are restricted to authorized contact-method viewers.')).toBeTruthy();
+    expect(await view.findByText('••••••0001')).toBeTruthy();
+    expect(view.getByText(/Identity corrections require/)).toBeTruthy();
+    expect(view.queryByRole('button', { name: 'Add document' })).toBeNull();
+    expect(view.queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/addresses`);
     expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/contact-methods`);
-    expect(ApiClient.get).not.toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
+    expect(ApiClient.get).toHaveBeenCalledWith(`/customers/${customer.id}/identity-documents`);
   });
 
   test('Customer PII sections remain restricted without their dedicated catalogue functions', async () => {

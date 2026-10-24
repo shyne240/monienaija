@@ -54,6 +54,10 @@ type IdentityType =
 type AddressType = AddressRecord['type'];
 type ContactType = ContactRecord['type'];
 
+function supportsIdentityDates(type: IdentityType): boolean {
+  return type !== 'NIN' && type !== 'BVN';
+}
+
 interface CustomerPersonalInformationPanelProps {
   customerId: string;
   onProfileUpdated: (profile: Pick<ProfileRecord, 'displayName' | 'legalName'>) => void;
@@ -410,8 +414,9 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
         type: identityForm.type,
         ...(identityForm.documentNumber.trim() ? { documentNumber: identityForm.documentNumber.trim() } : {}),
         issuingCountry: identityForm.issuingCountry.trim().toUpperCase(),
-        issuedAt: identityForm.issuedAt || null,
-        expiresAt: identityForm.expiresAt || null,
+        ...(supportsIdentityDates(identityForm.type)
+          ? { issuedAt: identityForm.issuedAt || null, expiresAt: identityForm.expiresAt || null }
+          : {}),
       };
       if (identityForm.id) {
         await ApiClient.patch(
@@ -458,8 +463,8 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           type: document.type,
           documentNumber: '',
           issuingCountry: document.issuingCountry,
-          issuedAt: document.issuedAt ?? '',
-          expiresAt: document.expiresAt ?? '',
+          issuedAt: supportsIdentityDates(document.type) ? document.issuedAt ?? '' : '',
+          expiresAt: supportsIdentityDates(document.type) ? document.expiresAt ?? '' : '',
         }
       : { id: undefined, type: 'NIN', documentNumber: '', issuingCountry: 'NG', issuedAt: '', expiresAt: '' });
   };
@@ -606,7 +611,15 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
             <ul className="cm-record-list">
               {identityDocuments.map((document) => (
                 <li key={document.id}>
-                  <div><strong>{document.type.replaceAll('_', ' ')}</strong><span className="cm-secondary-line">Issuing country: {document.issuingCountry} · {document.issuedAt ? `Issued ${document.issuedAt}` : 'Issue date not recorded'} · {document.expiresAt ? `Expires ${document.expiresAt}` : 'No expiry recorded'}</span></div>
+                  <div>
+                    <strong>{document.type.replaceAll('_', ' ')}</strong>
+                    <span className="cm-secondary-line">
+                      Issuing country: {document.issuingCountry}
+                      {supportsIdentityDates(document.type)
+                        ? ` · ${document.issuedAt ? `Issued ${document.issuedAt}` : 'Issue date not recorded'} · ${document.expiresAt ? `Expires ${document.expiresAt}` : 'No expiry recorded'}`
+                        : ' · Issue and expiry dates are not applicable'}
+                    </span>
+                  </div>
                   <div className="cm-record-actions"><span className="cm-record-value">{document.maskedDocumentNumber}</span>{canWriteIdentity && <button className="cm-text-button" type="button" onClick={() => startIdentityEdit(document)}>Edit</button>}</div>
                 </li>
               ))}
@@ -618,11 +631,21 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           <form className="cm-editor-form" onSubmit={saveIdentity}>
             <h3>{identityForm.id ? 'Correct identity metadata' : 'Add identity metadata'}</h3>
             <div className="cm-wizard-field-grid">
-              <label>Document type<select value={identityForm.type} onChange={(event) => setIdentityForm({ ...identityForm, type: event.target.value as IdentityType })}>{IDENTITY_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}</select></label>
+              <label>Document type<select value={identityForm.type} onChange={(event) => {
+                const type = event.target.value as IdentityType;
+                setIdentityForm({
+                  ...identityForm,
+                  type,
+                  issuedAt: supportsIdentityDates(type) ? identityForm.issuedAt : '',
+                  expiresAt: supportsIdentityDates(type) ? identityForm.expiresAt : '',
+                });
+              }}>{IDENTITY_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}</select></label>
               <label>Document number {identityForm.id ? <span className="cm-optional-indicator">Leave blank to keep current</span> : <span className="cm-required-indicator">Required</span>}<input type="password" autoComplete="off" maxLength={160} value={identityForm.documentNumber} onChange={(event) => setIdentityForm({ ...identityForm, documentNumber: event.target.value })} required={!identityForm.id} /></label>
               <label>Issuing country (ISO 2–3 letters)<input maxLength={3} value={identityForm.issuingCountry} onChange={(event) => setIdentityForm({ ...identityForm, issuingCountry: event.target.value.toUpperCase() })} required /></label>
-              <label>Issue date<input type="date" value={identityForm.issuedAt} onChange={(event) => setIdentityForm({ ...identityForm, issuedAt: event.target.value })} /></label>
-              <label>Expiry date<input type="date" value={identityForm.expiresAt} onChange={(event) => setIdentityForm({ ...identityForm, expiresAt: event.target.value })} /></label>
+              {supportsIdentityDates(identityForm.type) && <>
+                <label>Issue date <span className="cm-optional-indicator">Optional</span><input type="date" value={identityForm.issuedAt} onChange={(event) => setIdentityForm({ ...identityForm, issuedAt: event.target.value })} /></label>
+                <label>Expiry date <span className="cm-optional-indicator">Optional</span><input type="date" value={identityForm.expiresAt} onChange={(event) => setIdentityForm({ ...identityForm, expiresAt: event.target.value })} /></label>
+              </>}
             </div>
             <p className="cm-form-help">Existing identity values are never returned to this form. A new value is optional during correction and will be masked in responses and audit records.</p>
             <div className="cm-actions-row"><button className="cm-button cm-button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save identity details'}</button><button className="cm-button cm-button-secondary" type="button" onClick={() => setIdentityForm(null)} disabled={busy}>Cancel</button></div>

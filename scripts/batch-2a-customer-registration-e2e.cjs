@@ -57,6 +57,7 @@ let administratorPassword;
 let verificationCode;
 let syntheticPhone;
 let syntheticIdentityNumber;
+let syntheticPassportNumber;
 let syntheticDisplayName;
 let syntheticRevisedName;
 let syntheticAddress;
@@ -290,10 +291,11 @@ async function runBrowserJourney(privateKey) {
   await page.getByRole('heading', { name: 'Customer details' }).waitFor({ state: 'visible' });
 
   const tag = randomBytes(3).toString('hex').toUpperCase();
-  syntheticDisplayName = `Synthetic Batch 2A ${tag}`;
+  syntheticDisplayName = `Synthetic Batch ${tag}`;
   syntheticRevisedName = `Synthetic Batch 2A Revised ${tag}`;
   syntheticPhone = `+2348${randomInt(100000000, 999999999)}`;
   syntheticIdentityNumber = `SYNTHETIC-NIN-2A-${randomBytes(12).toString('hex').toUpperCase()}`;
+  syntheticPassportNumber = `SYNTHETIC-PASSPORT-2A-${randomBytes(12).toString('hex').toUpperCase()}`;
   syntheticAddress = `1 Synthetic Crescent ${tag}`;
   const syntheticEmail = `contact-${randomBytes(6).toString('hex')}@example.test`;
 
@@ -301,8 +303,6 @@ async function runBrowserJourney(privateKey) {
   await fill(page.getByLabel(/First name/), 'Synthetic', 'entering a synthetic first name');
   await fill(page.getByLabel(/Middle name/), 'Batch', 'entering a synthetic middle name');
   await fill(page.getByLabel(/Last name/), tag, 'entering a synthetic last name');
-  await fill(page.getByLabel(/Display name/), syntheticDisplayName, 'entering a synthetic display name');
-  await fill(page.getByLabel(/Legal name/), `Synthetic ${tag} Customer`, 'entering a synthetic legal name');
   await fill(page.getByLabel(/Date of birth/), '1991-03-17', 'entering a synthetic date of birth');
   await fill(page.getByLabel(/Nationality/), 'NG', 'entering a synthetic nationality');
 
@@ -335,22 +335,38 @@ async function runBrowserJourney(privateKey) {
   await fill(page.getByLabel(/Country/), 'NG', 'entering the synthetic country');
   await fill(page.getByLabel(/Postal code/), '00000', 'entering a synthetic postal code');
   await click(page.getByRole('button', { name: 'Save address & continue' }), 'saving the address');
-  await page.getByRole('heading', { name: 'Identity document' }).waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Identity documents' }).waitFor({ state: 'visible' });
 
   await page.getByLabel(/Identity document type/).selectOption('NIN');
+  assert.equal(await page.getByLabel(/Issue date/).count(), 0);
+  assert.equal(await page.getByLabel(/Expiry date/).count(), 0);
   await fill(page.getByLabel(/Document number/), syntheticIdentityNumber, 'entering synthetic identity metadata');
-  await fill(page.getByLabel(/Issue date/), '2015-06-12', 'entering a synthetic identity issue date');
-  await fill(page.getByLabel(/Expiry date/), '2035-06-12', 'entering a synthetic identity expiry date');
-  await click(page.getByRole('button', { name: 'Save identity details & finish' }), 'saving identity metadata');
+  await click(page.getByRole('button', { name: 'Save this document' }), 'saving the first identity document independently');
+  await page.getByText(/Saved ·/).first().waitFor({ state: 'visible' });
+
+  await click(page.getByRole('button', { name: 'Add another identity document' }), 'adding another identity document');
+  await page.getByLabel(/Identity document type/).selectOption('INTERNATIONAL_PASSPORT');
+  assert.equal(await page.getByLabel(/Issue date/).count(), 1);
+  assert.equal(await page.getByLabel(/Expiry date/).count(), 1);
+  await fill(page.getByLabel(/Document number/), syntheticPassportNumber, 'entering a second synthetic identity value');
+  await fill(page.getByLabel(/Issue date/), '2015-06-12', 'entering a synthetic passport issue date');
+  await fill(page.getByLabel(/Expiry date/), '2035-06-12', 'entering a synthetic passport expiry date');
+  await click(page.getByRole('button', { name: 'Save this document' }), 'saving the second identity document independently');
+  await page.getByText(/Saved ·/).last().waitFor({ state: 'visible' });
+  await click(page.getByRole('button', { name: 'Continue to registration summary' }), 'continuing after independent identity-document saves');
   await page.getByText(/The customer remains/).waitFor({ state: 'visible' });
   const summary = await page.locator('body').innerText();
   assert.match(summary, /DRAFT/);
   assert.match(summary, /No activation or ledger wallet creation was requested/);
   assert.ok(!summary.includes(syntheticIdentityNumber));
+  assert.ok(!summary.includes(syntheticPassportNumber));
   assert.ok(!summary.includes(syntheticPhone));
-  pass('profile, contact, address and masked identity metadata saved as DRAFT');
+  pass('profile, contact, address and two independently saved masked identity documents stayed DRAFT');
 
-  await click(page.getByRole('button', { name: 'Open Customer 360°', exact: true }), 'opening the saved Customer 360 workspace');
+  await click(page.getByRole('button', { name: 'Return to directory', exact: true }), 'returning to the directory after registration');
+  await fill(page.getByLabel('Search customers'), syntheticDisplayName, 'checking the directory name immediately after profile save');
+  await page.getByRole('button', { name: `Open Customer 360° for ${syntheticDisplayName}` }).waitFor({ state: 'visible', timeout: CHECKPOINT_TIMEOUT });
+  await click(page.getByRole('button', { name: `Open Customer 360° for ${syntheticDisplayName}` }), 'opening the newly listed customer in Customer 360');
   await page.locator('.cm-workspace .cm-profile-heading h1').waitFor({ state: 'visible', timeout: CHECKPOINT_TIMEOUT });
   await page.getByRole('heading', { name: syntheticDisplayName, exact: true }).waitFor({ state: 'visible' });
   await page.getByRole('tab', { name: 'Overview' }).waitFor({ state: 'visible' });
@@ -360,6 +376,7 @@ async function runBrowserJourney(privateKey) {
   assert.match(overviewText, /Draft/);
   assert.ok(!overviewText.includes(syntheticPhone));
   assert.ok(!overviewText.includes(syntheticIdentityNumber));
+  assert.ok(!overviewText.includes(syntheticPassportNumber));
 
   const profileCard = page.locator('article.cm-card').filter({
     has: page.getByRole('heading', { name: 'Profile overview' }),
@@ -398,14 +415,17 @@ async function runBrowserJourney(privateKey) {
   const identityCard = page.locator('article.cm-card').filter({
     has: page.getByRole('heading', { name: 'Supported identity metadata' }),
   });
-  await click(identityCard.locator('li').getByRole('button', { name: 'Edit' }), 'opening identity correction');
+  const passportRow = identityCard.locator('li').filter({ hasText: 'INTERNATIONAL PASSPORT' });
+  assert.equal(await identityCard.locator('li').count(), 2);
+  await click(passportRow.getByRole('button', { name: 'Edit' }), 'opening the selected passport correction');
   const maskedNumberInput = identityCard.getByLabel(/Document number/);
   assert.equal(await maskedNumberInput.inputValue(), '');
-  await fill(identityCard.getByLabel(/Expiry date/), '2036-06-12', 'correcting identity expiry metadata');
+  await fill(identityCard.getByLabel(/Expiry date/), '2036-06-12', 'correcting passport expiry metadata');
   await click(identityCard.getByRole('button', { name: 'Save identity details' }), 'saving identity correction');
   await page.getByRole('status').filter({ hasText: 'Identity metadata saved' }).waitFor({ state: 'visible' });
   const correctedText = await page.locator('body').innerText();
   assert.ok(!correctedText.includes(syntheticIdentityNumber));
+  assert.ok(!correctedText.includes(syntheticPassportNumber));
   assert.ok(!correctedText.includes(syntheticPhone));
   pass('authorized profile, address and identity corrections persisted without revealing sensitive values');
 
@@ -423,6 +443,7 @@ async function runBrowserJourney(privateKey) {
   assert.ok(refreshedText.includes(syntheticRevisedName));
   assert.ok(refreshedText.includes('2036-06-12'));
   assert.ok(!refreshedText.includes(syntheticIdentityNumber));
+  assert.ok(!refreshedText.includes(syntheticPassportNumber));
   assert.ok(!refreshedText.includes(syntheticPhone));
   pass('directory and C360 reflected persisted corrections after browser refresh');
 
@@ -515,6 +536,7 @@ async function runBrowserJourney(privateKey) {
   assert.deepEqual(restrictedStatusCodes, { identity: 403, create: 403 });
   const restrictedView = await page.locator('body').innerText();
   assert.ok(!restrictedView.includes(syntheticIdentityNumber));
+  assert.ok(!restrictedView.includes(syntheticPassportNumber));
   assert.ok(!restrictedView.includes(syntheticPhone));
   pass('Customer Service UI hid creation/edit/identity controls; backend returned 403 for create and identity reads');
 }

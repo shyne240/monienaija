@@ -14,7 +14,13 @@ import { REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS } from '../customer-registr
 import { CustomerRegistrationPhoneChallenge } from '../customer-registration/customer-registration-phone-challenge.entity';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import { maskCustomerReference } from './customer-privacy';
-import { ContactMethodType, CustomerKycStatus, CustomerStatus } from './customer.enums';
+import {
+  ContactMethodType,
+  CustomerKycStatus,
+  CustomerStatus,
+  CustomerType,
+  IdentityDocumentType,
+} from './customer.enums';
 import { Customer } from './customer.entity';
 import { CustomerAddress } from './customer-address.entity';
 import { CustomerContactMethod } from './customer-contact-method.entity';
@@ -28,6 +34,7 @@ import type {
   CreateIdentityDocumentCommand,
   CreateKycAssessmentCommand,
   CreateProfileCommand,
+  CreateRegistrationProfileCommand,
   UpdateAddressCommand,
   UpdateContactCommand,
   UpdateCustomerCommand,
@@ -156,6 +163,46 @@ export class CustomerService {
           : this.auditCustomer(saved),
       );
       return saved;
+    });
+  }
+
+  async createRegistrationProfile(
+    customerId: string,
+    command: CreateRegistrationProfileCommand,
+  ): Promise<CustomerProfile> {
+    this.assertUuid(customerId, 'customerId');
+    const customer = await this.get(customerId);
+
+    if (customer.type === CustomerType.INDIVIDUAL) {
+      if (command.businessName?.trim()) {
+        throw new BadRequestException('businessName is only valid for BUSINESS registration');
+      }
+      const firstName = this.normalizeText(command.firstName ?? '', 'firstName', 100);
+      const middleName = command.middleName?.trim()
+        ? this.normalizeText(command.middleName, 'middleName', 100)
+        : undefined;
+      const lastName = this.normalizeText(command.lastName ?? '', 'lastName', 100);
+      const displayName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+      return this.createProfile(customerId, {
+        displayName,
+        legalName: displayName,
+        firstName,
+        middleName,
+        lastName,
+        dateOfBirth: command.dateOfBirth,
+        nationality: command.nationality,
+        actor: command.actor,
+      });
+    }
+
+    if ([command.firstName, command.middleName, command.lastName].some((name) => name?.trim())) {
+      throw new BadRequestException('Use businessName instead of individual name fields for BUSINESS registration');
+    }
+    const businessName = this.normalizeText(command.businessName ?? '', 'businessName', 200);
+    return this.createProfile(customerId, {
+      displayName: businessName,
+      legalName: businessName,
+      actor: command.actor,
     });
   }
 
@@ -565,18 +612,30 @@ export class CustomerService {
   ): Promise<CustomerIdentityDocument> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
+    const documentNumber = this.normalizeText(command.documentNumber, 'documentNumber', 160);
     try {
       return await this.dataSource.transaction(async (manager) => {
-        await this.requireCustomer(manager, customerId);
-        const document = await manager.getRepository(CustomerIdentityDocument).save(
-          manager.getRepository(CustomerIdentityDocument).create({
+        // Serialize writes for one customer so two concurrent requests cannot race past the
+        // type+number duplicate check after removing the old one-document-per-type index.
+        const customer = await this.lockCustomer(manager, customerId);
+        if (!customer) throw new NotFoundException(`Customer ${customerId} was not found`);
+        const repository = manager.getRepository(CustomerIdentityDocument);
+        if (
+          await this.hasIdentityDocumentDuplicate(repository, customerId, command.type, documentNumber)
+        ) {
+          throw new ConflictException('An identity document with this type and number already exists for this customer');
+        }
+
+        const supportsDates = this.identityDocumentSupportsDates(command.type);
+        const document = await repository.save(
+          repository.create({
             id: randomUUID(),
             customerId,
             type: command.type,
-            documentNumber: this.normalizeText(command.documentNumber, 'documentNumber', 160),
+            documentNumber,
             issuingCountry: command.issuingCountry.trim().toUpperCase(),
-            issuedAt: command.issuedAt ?? null,
-            expiresAt: command.expiresAt ?? null,
+            issuedAt: supportsDates ? command.issuedAt ?? null : null,
+            expiresAt: supportsDates ? command.expiresAt ?? null : null,
             deletedAt: null,
           }),
         );
@@ -593,9 +652,7 @@ export class CustomerService {
       });
     } catch (error) {
       if (this.isUniqueViolation(error)) {
-        throw new ConflictException(
-          `Identity document type ${command.type} already exists for this customer`,
-        );
+        throw new ConflictException('An identity document with this type and number already exists for this customer');
       }
       throw error;
     }
@@ -620,16 +677,30 @@ export class CustomerService {
         if (!document) throw new NotFoundException(`Identity document ${documentId} was not found`);
 
         const changedFields: string[] = [];
+        const nextType = command.type ?? document.type;
+        const nextDocumentNumber = command.documentNumber === undefined
+          ? document.documentNumber
+          : this.normalizeText(command.documentNumber, 'documentNumber', 160);
+        if (
+          (nextType !== document.type || nextDocumentNumber !== document.documentNumber) &&
+          await this.hasIdentityDocumentDuplicate(
+            repository,
+            customerId,
+            nextType,
+            nextDocumentNumber,
+            document.id,
+          )
+        ) {
+          throw new ConflictException('An identity document with this type and number already exists for this customer');
+        }
+
         if (command.type !== undefined && command.type !== document.type) {
           document.type = command.type;
           changedFields.push('type');
         }
-        if (command.documentNumber !== undefined) {
-          const value = this.normalizeText(command.documentNumber, 'documentNumber', 160);
-          if (value !== document.documentNumber) {
-            document.documentNumber = value;
-            changedFields.push('documentNumber');
-          }
+        if (command.documentNumber !== undefined && nextDocumentNumber !== document.documentNumber) {
+          document.documentNumber = nextDocumentNumber;
+          changedFields.push('documentNumber');
         }
         if (command.issuingCountry !== undefined) {
           const value = command.issuingCountry.trim().toUpperCase();
@@ -638,14 +709,22 @@ export class CustomerService {
             changedFields.push('issuingCountry');
           }
         }
-        if (command.issuedAt !== undefined) {
-          if (command.issuedAt !== document.issuedAt) {
+
+        if (!this.identityDocumentSupportsDates(nextType)) {
+          if (document.issuedAt !== null) {
+            document.issuedAt = null;
+            changedFields.push('issuedAt');
+          }
+          if (document.expiresAt !== null) {
+            document.expiresAt = null;
+            changedFields.push('expiresAt');
+          }
+        } else {
+          if (command.issuedAt !== undefined && command.issuedAt !== document.issuedAt) {
             document.issuedAt = command.issuedAt;
             changedFields.push('issuedAt');
           }
-        }
-        if (command.expiresAt !== undefined) {
-          if (command.expiresAt !== document.expiresAt) {
+          if (command.expiresAt !== undefined && command.expiresAt !== document.expiresAt) {
             document.expiresAt = command.expiresAt;
             changedFields.push('expiresAt');
           }
@@ -668,7 +747,7 @@ export class CustomerService {
       });
     } catch (error) {
       if (this.isUniqueViolation(error)) {
-        throw new ConflictException('Identity document type already exists for this customer');
+        throw new ConflictException('An identity document with this type and number already exists for this customer');
       }
       throw error;
     }
@@ -963,6 +1042,32 @@ export class CustomerService {
 
   private normalizeActor(actor: string): string {
     return this.normalizeText(actor, 'actor', 160);
+  }
+
+  private async hasIdentityDocumentDuplicate(
+    repository: Repository<CustomerIdentityDocument>,
+    customerId: string,
+    type: IdentityDocumentType,
+    documentNumber: string,
+    exceptId?: string,
+  ): Promise<boolean> {
+    const candidates = await repository.find({
+      where: { customerId, type, deletedAt: IsNull() },
+    });
+    const candidateKey = this.identityDocumentNumberKey(documentNumber);
+    return candidates.some(
+      (candidate) =>
+        candidate.id !== exceptId &&
+        this.identityDocumentNumberKey(candidate.documentNumber) === candidateKey,
+    );
+  }
+
+  private identityDocumentNumberKey(value: string): string {
+    return value.normalize('NFKC').replace(/\s+/g, '').toUpperCase();
+  }
+
+  private identityDocumentSupportsDates(type: IdentityDocumentType): boolean {
+    return type !== IdentityDocumentType.NIN && type !== IdentityDocumentType.BVN;
   }
 
   private normalizeText(value: string, field: string, max: number): string {

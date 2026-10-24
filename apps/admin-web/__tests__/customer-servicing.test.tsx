@@ -145,7 +145,7 @@ describe('Batch 1 customer directory', () => {
     });
   });
 
-  test('opens the complete registration wizard and creates a DRAFT without asking for a reference', async () => {
+  test('opens the complete registration wizard and creates a structured-name DRAFT without asking for a reference', async () => {
     const created = {
       id: 'cust-created',
       reference: 'mn-cus-0123456789abcdef01234567',
@@ -160,25 +160,35 @@ describe('Batch 1 customer directory', () => {
     };
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
       if (path === '/customers') return Promise.resolve(created);
-      if (path.endsWith('/profile')) return Promise.resolve({ displayName: 'Synthetic New Customer' });
+      if (path.endsWith('/registration-profile')) return Promise.resolve({ displayName: 'Synthetic New Customer' });
       return Promise.resolve({});
     });
-    (ApiClient.patch as jest.Mock).mockRejectedValue(Object.assign(new Error('missing profile'), { status: 404 }));
 
     const view = render(<CustomerDirectoryScreen />);
     await view.findByText('Synthetic Directory Alpha');
     fireEvent.click(view.getByRole('button', { name: 'New Customer' }));
     expect(await view.findByRole('heading', { name: 'Customer details' })).toBeTruthy();
     expect(view.queryByLabelText('Customer reference')).toBeNull();
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect(view.queryByLabelText(/Legal name/)).toBeNull();
+    expect((view.getByLabelText(/First name/) as HTMLInputElement).required).toBe(true);
+    expect((view.getByLabelText(/Middle name/) as HTMLInputElement).required).toBe(false);
+    expect((view.getByLabelText(/Last name/) as HTMLInputElement).required).toBe(true);
 
-    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Synthetic New Customer' } });
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Middle name/), { target: { value: 'New' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
     fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/customers', { type: 'INDIVIDUAL' });
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-created/profile', expect.objectContaining({
-        displayName: 'Synthetic New Customer',
-      }));
+      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-created/registration-profile', {
+        firstName: 'Synthetic',
+        middleName: 'New',
+        lastName: 'Customer',
+        dateOfBirth: undefined,
+        nationality: 'NG',
+      });
       expect(view.getByLabelText(/Primary phone number/)).toBeTruthy();
     });
   });

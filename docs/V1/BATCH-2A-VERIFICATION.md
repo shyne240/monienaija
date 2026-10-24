@@ -47,3 +47,20 @@ $env:DB_ADMIN_NAME = "postgres"
 $env:PG_TEST_CONCURRENCY = "1"
 npm run test:pg -- test/batch-2a-customer-registration.integration.spec.ts
 ```
+
+## Registration and identity correction pass
+
+- Individual registration now requires structured first and last names; middle name is optional, and display/legal names are derived. Business registration uses `businessName`. The workforce-only `/customers/:id/registration-profile` endpoint validates the type-aware payload while the legacy profile endpoints remain compatible.
+- Identity records are saved independently, can coexist for one customer (including multiple documents of one type), and are corrected by their selected record ID. Duplicate type/normalized-number pairs return a conflict. Saved-document deletion remains unavailable.
+- NIN/BVN issue and expiry dates are hidden, cleared, omitted from requests, and enforced as `NULL` by the service. Migration `1785753600092-AllowMultipleCustomerIdentityDocuments` removes the obsolete one-document-per-type index and clears existing inapplicable NIN/BVN dates; its down migration refuses to recreate the old index if duplicates exist.
+- Profile save triggers a fresh directory query; the authenticated browser script checks the name in the directory before and after a full refresh.
+
+The integration checks also confirm that identity submission does not promote KYC, activation remains blocked before phone verification, OTP verification leaves the customer DRAFT, and no wallet is created.
+
+Verification performed for this correction pass:
+
+- `npm run build` (backend) and `npx tsc --noEmit --incremental false` (backend): passed.
+- `npm run ts:check`, `npm run build`, and `npm test -- --runInBand` in `apps/admin-web`: passed (16 suites, 103 tests).
+- Focused backend unit tests: passed (15 tests across `customer.service.spec.ts` and `production-readiness.spec.ts`).
+- Real-PostgreSQL Batch 2A integration and production-readiness/migration-sync tests: passed (2 suites, 5 tests); migration head is `1785753600092`.
+- The browser E2E was attempted with a disposable `*_e2e` database after migrations, but no browser assertions ran: this Linux sandbox lacks `libnspr4.so`, required by the pinned Chromium runtime. Install the host Chromium runtime libraries as described above, then rerun `npm run test:e2e:batch-2a` to complete authenticated browser verification.

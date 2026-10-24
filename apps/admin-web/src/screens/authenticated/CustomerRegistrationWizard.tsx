@@ -1,4 +1,4 @@
-import React, { FormEvent, useMemo, useState } from 'react';
+import React, { FormEvent, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -51,13 +51,24 @@ interface IdentityRecord {
   expiresAt: string | null;
 }
 
+interface IdentityDraft {
+  localId: string;
+  type: IdentityType;
+  documentNumber: string;
+  issuingCountry: string;
+  issuedAt: string;
+  expiresAt: string;
+  saved: IdentityRecord | null;
+  outcome: { kind: 'success' | 'error'; message: string } | null;
+}
+
 interface CustomerRegistrationWizardProps {
   onClose: () => void;
   onCustomerCreated: (customer: CreatedCustomer) => void;
   onOpenCustomer: (customerId: string) => void;
 }
 
-const STEPS = ['Customer details', 'Contact & verification', 'Residential address', 'Identity document'];
+const STEPS = ['Customer details', 'Contact & verification', 'Residential address', 'Identity documents'];
 const IDENTITY_TYPES: IdentityType[] = [
   'BVN',
   'NIN',
@@ -66,6 +77,14 @@ const IDENTITY_TYPES: IdentityType[] = [
   'VOTERS_CARD',
   'BUSINESS_REGISTRATION',
 ];
+
+function supportsIdentityDates(type: IdentityType): boolean {
+  return type !== 'NIN' && type !== 'BVN';
+}
+
+function identityDocumentNumberKey(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, '').toUpperCase();
+}
 
 function requestStatus(error: unknown): number | null {
   if (error && typeof error === 'object' && 'status' in error) {
@@ -103,13 +122,12 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
 
   const [step, setStep] = useState(0);
   const [customer, setCustomer] = useState<CreatedCustomer | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
   const [customerType, setCustomerType] = useState<CustomerType>('INDIVIDUAL');
+  const [businessName, setBusinessName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [displayNameEdited, setDisplayNameEdited] = useState(false);
-  const [legalName, setLegalName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [nationality, setNationality] = useState('NG');
 
@@ -132,23 +150,41 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   const [postalCode, setPostalCode] = useState('');
   const [address, setAddress] = useState<AddressRecord | null>(null);
 
-  const [identityType, setIdentityType] = useState<IdentityType>('NIN');
-  const [documentNumber, setDocumentNumber] = useState('');
-  const [issuingCountry, setIssuingCountry] = useState('NG');
-  const [issuedAt, setIssuedAt] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
-  const [identityDocument, setIdentityDocument] = useState<IdentityRecord | null>(null);
+  const [identityDocuments, setIdentityDocuments] = useState<IdentityDraft[]>([{
+    localId: 'identity-0',
+    type: 'NIN',
+    documentNumber: '',
+    issuingCountry: 'NG',
+    issuedAt: '',
+    expiresAt: '',
+    saved: null,
+    outcome: null,
+  }]);
+  const nextIdentityDraftId = useRef(1);
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const progress = useMemo(() => (step >= STEPS.length ? 'Complete' : `${step + 1} of ${STEPS.length}`), [step]);
-  const derivedDisplayName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+  const derivedDisplayName = [firstName, middleName, lastName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ');
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving) return;
+    const validName = customerType === 'BUSINESS'
+      ? Boolean(businessName.trim())
+      : Boolean(firstName.trim() && lastName.trim());
+    if (!validName) {
+      setError(customerType === 'BUSINESS'
+        ? 'Enter a business name to continue.'
+        : 'First name and last name are required to continue.');
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setNotice(null);
@@ -160,33 +196,45 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         onCustomerCreated(savedCustomer);
       }
 
+      const displayName = customerType === 'BUSINESS' ? businessName.trim() : derivedDisplayName;
       const profile = {
-        displayName: displayName.trim() || derivedDisplayName,
-        firstName: firstName.trim() || undefined,
-        middleName: middleName.trim() || undefined,
-        lastName: lastName.trim() || undefined,
-        legalName: legalName.trim() || undefined,
-        dateOfBirth: dateOfBirth || undefined,
-        nationality: nationality.trim().toUpperCase() || undefined,
+        displayName,
+        legalName: displayName,
+        firstName: customerType === 'INDIVIDUAL' ? firstName.trim() : undefined,
+        middleName: customerType === 'INDIVIDUAL' ? middleName.trim() || undefined : undefined,
+        lastName: customerType === 'INDIVIDUAL' ? lastName.trim() : undefined,
+        dateOfBirth: customerType === 'INDIVIDUAL' ? dateOfBirth || undefined : undefined,
+        nationality: customerType === 'INDIVIDUAL' ? nationality.trim().toUpperCase() || undefined : undefined,
       };
-      if (!profile.displayName) {
-        setError('Enter a display name, or enter a first or last name to create one automatically.');
-        return;
-      }
+      const registrationProfile = customerType === 'BUSINESS'
+        ? { businessName: businessName.trim() }
+        : {
+            firstName: firstName.trim(),
+            middleName: middleName.trim() || undefined,
+            lastName: lastName.trim(),
+            dateOfBirth: dateOfBirth || undefined,
+            nationality: nationality.trim().toUpperCase() || undefined,
+          };
 
-      try {
+      if (profileSaved) {
         await ApiClient.patch(`/customers/${encodeURIComponent(savedCustomer.id)}/profile`, profile);
-      } catch (updateError) {
-        if (requestStatus(updateError) !== 404) throw updateError;
+      } else {
         try {
-          await ApiClient.post(`/customers/${encodeURIComponent(savedCustomer.id)}/profile`, profile);
+          await ApiClient.post(
+            `/customers/${encodeURIComponent(savedCustomer.id)}/registration-profile`,
+            registrationProfile,
+          );
         } catch (createError) {
+          // A retry after a lost response may find that the registration profile was committed.
+          // In that case, update that same profile rather than creating or overwriting another.
           if (requestStatus(createError) !== 409) throw createError;
           await ApiClient.patch(`/customers/${encodeURIComponent(savedCustomer.id)}/profile`, profile);
         }
       }
-      setDisplayName(profile.displayName);
-      setDisplayNameEdited(true);
+      setProfileSaved(true);
+      // The first notification exposes the DRAFT row; this second refresh happens after the
+      // profile projection is persisted, so Directory no longer remains at "Name not recorded".
+      onCustomerCreated(savedCustomer);
       setNotice('Customer profile saved. The record remains DRAFT.');
       setStep(1);
     } catch (saveError) {
@@ -374,57 +422,93 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     }
   };
 
-  const saveIdentityDocument = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!customer || isSaving) return;
-    if (!documentNumber.trim() && !identityDocument) {
-      setStep(4);
-      setNotice('Identity document skipped. You can add it later from Customer 360° if authorized.');
-      setError(null);
+  const addIdentityDocument = () => {
+    const sequence = nextIdentityDraftId.current++;
+    setIdentityDocuments((current) => [...current, {
+      localId: `identity-${sequence}`,
+      type: 'NIN',
+      documentNumber: '',
+      issuingCountry: 'NG',
+      issuedAt: '',
+      expiresAt: '',
+      saved: null,
+      outcome: null,
+    }]);
+  };
+
+  const removeUnsavedIdentityDocument = (localId: string) => {
+    setIdentityDocuments((current) => current.filter((item) => item.localId !== localId || item.saved));
+  };
+
+  const saveIdentityDocument = async (localId: string) => {
+    const document = identityDocuments.find((item) => item.localId === localId);
+    if (!customer || isSaving || !document || document.saved) return;
+    const normalizedNumber = identityDocumentNumberKey(document.documentNumber);
+    if (!normalizedNumber) {
+      setIdentityDocuments((current) => current.map((item) => item.localId === localId
+        ? { ...item, outcome: { kind: 'error', message: 'Enter a document number before saving.' } }
+        : item));
       return;
     }
-    if (
-      identityDocument &&
-      !documentNumber.trim() &&
-      identityType === identityDocument.type &&
-      issuingCountry.trim().toUpperCase() === identityDocument.issuingCountry &&
-      issuedAt === (identityDocument.issuedAt ?? '') &&
-      expiresAt === (identityDocument.expiresAt ?? '')
-    ) {
-      setStep(4);
-      setNotice('No identity-document changes were needed.');
-      setError(null);
+    const duplicateDraft = identityDocuments.some((item) =>
+      item.localId !== localId &&
+      !item.saved &&
+      item.type === document.type &&
+      Boolean(item.documentNumber.trim()) &&
+      identityDocumentNumberKey(item.documentNumber) === normalizedNumber,
+    );
+    if (duplicateDraft) {
+      setIdentityDocuments((current) => current.map((item) => item.localId === localId
+        ? { ...item, outcome: { kind: 'error', message: 'This document type and number is already entered above.' } }
+        : item));
       return;
     }
+
     setIsSaving(true);
-    setError(null);
     setNotice(null);
+    setIdentityDocuments((current) => current.map((item) => item.localId === localId
+      ? { ...item, outcome: null }
+      : item));
     try {
       const body = {
-        type: identityType,
-        ...(documentNumber.trim() ? { documentNumber: documentNumber.trim() } : {}),
-        issuingCountry: issuingCountry.trim().toUpperCase(),
-        issuedAt: issuedAt || undefined,
-        expiresAt: expiresAt || undefined,
+        type: document.type,
+        documentNumber: document.documentNumber.trim(),
+        issuingCountry: document.issuingCountry.trim().toUpperCase(),
+        ...(supportsIdentityDates(document.type)
+          ? { issuedAt: document.issuedAt || undefined, expiresAt: document.expiresAt || undefined }
+          : {}),
       };
-      const saved = identityDocument
-        ? await ApiClient.patch<IdentityRecord>(
-            `/customers/${encodeURIComponent(customer.id)}/identity-documents/${encodeURIComponent(identityDocument.id)}`,
-            body,
-          )
-        : await ApiClient.post<IdentityRecord>(
-            `/customers/${encodeURIComponent(customer.id)}/identity-document`,
-            body,
-          );
-      setIdentityDocument(saved);
-      setDocumentNumber('');
-      setNotice('Identity document metadata saved. The document number is masked in the result.');
-      setStep(4);
+      const saved = await ApiClient.post<IdentityRecord>(
+        `/customers/${encodeURIComponent(customer.id)}/identity-document`,
+        body,
+      );
+      setIdentityDocuments((current) => current.map((item) => item.localId === localId
+        ? {
+            ...item,
+            documentNumber: '',
+            saved,
+            outcome: { kind: 'success', message: `Saved · ${saved.maskedDocumentNumber}` },
+          }
+        : item));
+      setNotice('Identity document saved independently. Its number is masked in the result.');
     } catch (saveError) {
-      setError(safeSaveError(saveError));
+      setIdentityDocuments((current) => current.map((item) => item.localId === localId
+        ? { ...item, outcome: { kind: 'error', message: safeSaveError(saveError) } }
+        : item));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const skipRemainingIdentityDocuments = () => {
+    const unsavedCount = identityDocuments.filter((item) => !item.saved && item.documentNumber.trim()).length;
+    setError(null);
+    setNotice(unsavedCount
+      ? `${unsavedCount} unsaved document entr${unsavedCount === 1 ? 'y was' : 'ies were'} not sent. You can return to review them.`
+      : identityDocuments.some((item) => item.saved)
+        ? 'No additional identity documents were added.'
+        : 'Identity documents skipped. You can add them later from Customer 360° if authorized.');
+    setStep(4);
   };
 
   const advanceWithoutAddress = () => {
@@ -443,41 +527,43 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         <form className="cm-wizard-form" onSubmit={saveProfile}>
           <div className="cm-wizard-field-grid">
             <label>Customer type <span className="cm-required-indicator">Required</span>
-              <select value={customerType} onChange={(event) => setCustomerType(event.target.value as CustomerType)} disabled={Boolean(customer)}>
+              <select value={customerType} onChange={(event) => {
+                const type = event.target.value as CustomerType;
+                setCustomerType(type);
+                setBusinessName('');
+                setFirstName('');
+                setMiddleName('');
+                setLastName('');
+                setDateOfBirth('');
+                setNationality(type === 'INDIVIDUAL' ? 'NG' : '');
+              }} disabled={Boolean(customer)}>
                 <option value="INDIVIDUAL">Individual</option>
                 <option value="BUSINESS">Business</option>
               </select>
             </label>
-            <label>First name <span className="cm-optional-indicator">Optional</span>
-              <input maxLength={100} value={firstName} onChange={(event) => setFirstName(event.target.value)} autoComplete="given-name" />
-            </label>
-            <label>Middle name <span className="cm-optional-indicator">Optional</span>
-              <input maxLength={100} value={middleName} onChange={(event) => setMiddleName(event.target.value)} autoComplete="additional-name" />
-            </label>
-            <label>Last name <span className="cm-optional-indicator">Optional</span>
-              <input maxLength={100} value={lastName} onChange={(event) => setLastName(event.target.value)} autoComplete="family-name" />
-            </label>
-            <label>Display name <span className="cm-required-indicator">Required</span>
-              <input
-                maxLength={200}
-                value={displayName}
-                onChange={(event) => { setDisplayNameEdited(true); setDisplayName(event.target.value); }}
-                onBlur={() => { if (!displayNameEdited && derivedDisplayName) setDisplayName(derivedDisplayName); }}
-                autoComplete="name"
-                required={!derivedDisplayName}
-              />
-            </label>
-            <label>Legal name <span className="cm-optional-indicator">Optional</span>
-              <input maxLength={200} value={legalName} onChange={(event) => setLegalName(event.target.value)} />
-            </label>
-            <label>Date of birth <span className="cm-optional-indicator">Optional</span>
-              <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} />
-            </label>
-            <label>Nationality (ISO 2–3 letters) <span className="cm-optional-indicator">Optional</span>
-              <input maxLength={3} value={nationality} onChange={(event) => setNationality(event.target.value.toUpperCase())} />
-            </label>
+            {customerType === 'INDIVIDUAL' ? <>
+              <label>First name <span className="cm-required-indicator">Required</span>
+                <input maxLength={100} value={firstName} onChange={(event) => setFirstName(event.target.value)} autoComplete="given-name" required />
+              </label>
+              <label>Middle name <span className="cm-optional-indicator">Optional</span>
+                <input maxLength={100} value={middleName} onChange={(event) => setMiddleName(event.target.value)} autoComplete="additional-name" />
+              </label>
+              <label>Last name <span className="cm-required-indicator">Required</span>
+                <input maxLength={100} value={lastName} onChange={(event) => setLastName(event.target.value)} autoComplete="family-name" required />
+              </label>
+              <label>Date of birth <span className="cm-optional-indicator">Optional</span>
+                <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} />
+              </label>
+              <label>Nationality (ISO 2–3 letters) <span className="cm-optional-indicator">Optional</span>
+                <input maxLength={3} value={nationality} onChange={(event) => setNationality(event.target.value.toUpperCase())} />
+              </label>
+            </> : (
+              <label>Business name <span className="cm-required-indicator">Required</span>
+                <input maxLength={200} value={businessName} onChange={(event) => setBusinessName(event.target.value)} autoComplete="organization" required />
+              </label>
+            )}
           </div>
-          <p className="cm-form-help">Customer reference is generated automatically. Display name is required by the existing profile API; structured name parts, date of birth and nationality are optional.</p>
+          <p className="cm-form-help">Customer reference is generated automatically. Individual display and legal names are generated from the structured name fields; business registration uses the business name.</p>
           <div className="cm-actions-row">
             <button className="cm-button cm-button-primary" type="submit" disabled={isSaving}>
               {isSaving ? 'Saving…' : customer ? 'Save profile & continue' : 'Create DRAFT & continue'}
@@ -585,34 +671,94 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         );
       }
       return (
-        <form className="cm-wizard-form" onSubmit={saveIdentityDocument}>
-          <div className="cm-wizard-field-grid">
-            <label>Identity document type
-              <select value={identityType} onChange={(event) => setIdentityType(event.target.value as IdentityType)}>
-                {IDENTITY_TYPES.map((value) => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}
-              </select>
-            </label>
-            <label>Document number <span className="cm-required-indicator">Required if adding</span>
-              <input type="password" autoComplete="off" maxLength={160} value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} aria-describedby="cm-document-number-note" />
-            </label>
-            <label>Issuing country (ISO 2–3 letters)
-              <input maxLength={3} value={issuingCountry} onChange={(event) => setIssuingCountry(event.target.value.toUpperCase())} />
-            </label>
-            <label>Issue date <span className="cm-optional-indicator">Optional</span>
-              <input type="date" value={issuedAt} onChange={(event) => setIssuedAt(event.target.value)} />
-            </label>
-            <label>Expiry date <span className="cm-optional-indicator">Optional</span>
-              <input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
-            </label>
+        <div className="cm-wizard-form">
+          <p className="cm-form-help">Identity documents are optional and save independently. NIN and BVN do not use issue or expiry dates; other document dates are optional.</p>
+          <div className="cm-identity-draft-list">
+            {identityDocuments.map((document, index) => (
+              <fieldset className="cm-card cm-identity-draft" key={document.localId}>
+                <legend>Identity document {index + 1}</legend>
+                {document.saved ? (
+                  <div className="cm-identity-saved-result" role="status">
+                    <strong>{document.saved.type.replaceAll('_', ' ')}</strong>
+                    <span>{document.saved.maskedDocumentNumber} · Saved</span>
+                    <span className="cm-secondary-line">Issuing country: {document.saved.issuingCountry}</span>
+                    {supportsIdentityDates(document.saved.type) && (document.saved.issuedAt || document.saved.expiresAt) && (
+                      <span className="cm-secondary-line">
+                        {document.saved.issuedAt ? `Issued ${document.saved.issuedAt}` : ''}
+                        {document.saved.issuedAt && document.saved.expiresAt ? ' · ' : ''}
+                        {document.saved.expiresAt ? `Expires ${document.saved.expiresAt}` : ''}
+                      </span>
+                    )}
+                    <p className="cm-form-help">Saved documents cannot be removed here. Authorized corrections are available in Customer 360°.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="cm-wizard-field-grid">
+                      <label>Identity document type
+                        <select value={document.type} onChange={(event) => {
+                          const type = event.target.value as IdentityType;
+                          setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                            ? {
+                                ...item,
+                                type,
+                                issuedAt: supportsIdentityDates(type) ? item.issuedAt : '',
+                                expiresAt: supportsIdentityDates(type) ? item.expiresAt : '',
+                                outcome: null,
+                              }
+                            : item));
+                        }}>
+                          {IDENTITY_TYPES.map((value) => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}
+                        </select>
+                      </label>
+                      <label>Document number <span className="cm-required-indicator">Required to save</span>
+                        <input type="password" autoComplete="off" maxLength={160} value={document.documentNumber} onChange={(event) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                          ? { ...item, documentNumber: event.target.value, outcome: null }
+                          : item))} aria-describedby={`cm-document-number-note-${document.localId}`} />
+                      </label>
+                      <label>Issuing country (ISO 2–3 letters)
+                        <input maxLength={3} value={document.issuingCountry} onChange={(event) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                          ? { ...item, issuingCountry: event.target.value.toUpperCase(), outcome: null }
+                          : item))} />
+                      </label>
+                      {supportsIdentityDates(document.type) && <>
+                        <label>Issue date <span className="cm-optional-indicator">Optional</span>
+                          <input type="date" value={document.issuedAt} onChange={(event) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                            ? { ...item, issuedAt: event.target.value }
+                            : item))} />
+                        </label>
+                        <label>Expiry date <span className="cm-optional-indicator">Optional</span>
+                          <input type="date" value={document.expiresAt} onChange={(event) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                            ? { ...item, expiresAt: event.target.value }
+                            : item))} />
+                        </label>
+                      </>}
+                    </div>
+                    <p id={`cm-document-number-note-${document.localId}`} className="cm-form-help">Document numbers are sent only to the authorized API, are never placed in audit metadata, and are masked in all read and save responses.</p>
+                    {document.outcome && (
+                      <p className={document.outcome.kind === 'success' ? 'cm-notice' : 'cm-error'} role={document.outcome.kind === 'success' ? 'status' : 'alert'}>
+                        {document.outcome.message}
+                      </p>
+                    )}
+                    <div className="cm-actions-row">
+                      <button className="cm-button cm-button-primary" type="button" onClick={() => void saveIdentityDocument(document.localId)} disabled={isSaving || !document.documentNumber.trim()}>
+                        {isSaving ? 'Saving…' : 'Save this document'}
+                      </button>
+                      <button className="cm-button cm-button-secondary" type="button" onClick={() => removeUnsavedIdentityDocument(document.localId)} disabled={isSaving}>Remove unsaved entry</button>
+                    </div>
+                  </>
+                )}
+              </fieldset>
+            ))}
           </div>
-          <p id="cm-document-number-note" className="cm-form-help">Document numbers are sent only to the authorized API, are never placed in audit metadata, and are masked in all read and save responses.</p>
           <div className="cm-actions-row">
-            <button className="cm-button cm-button-primary" type="submit" disabled={isSaving || (!identityDocument && !documentNumber.trim())}>{isSaving ? 'Saving…' : identityDocument ? 'Save identity details' : 'Save identity details & finish'}</button>
-            <button className="cm-button cm-button-secondary" type="button" onClick={() => { setError(null); setStep(4); }}>Skip identity document</button>
+            <button className="cm-button cm-button-secondary" type="button" onClick={addIdentityDocument} disabled={isSaving}>Add another identity document</button>
+            <button className="cm-button cm-button-primary" type="button" onClick={skipRemainingIdentityDocuments} disabled={isSaving}>
+              {identityDocuments.some((item) => item.saved) ? 'Continue to registration summary' : 'Skip identity documents'}
+            </button>
             <button className="cm-button cm-button-secondary" type="button" onClick={() => setStep(2)} disabled={isSaving}>Back</button>
             {customer && <button className="cm-text-button" type="button" onClick={finishLater} disabled={isSaving}>Save and finish later</button>}
           </div>
-        </form>
+        </div>
       );
     }
 
@@ -622,7 +768,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           <span className="cm-summary-check" aria-hidden="true">✓</span>
           <div>
             <p className="cm-eyebrow">REGISTRATION SAVED</p>
-            <h3>{displayName || derivedDisplayName || 'Customer profile saved'}</h3>
+            <h3>{(customerType === 'BUSINESS' ? businessName.trim() : derivedDisplayName) || 'Customer profile saved'}</h3>
             <p className="cm-muted">The customer remains <strong>DRAFT</strong>. No activation or ledger wallet creation was requested.</p>
           </div>
         </div>
@@ -632,8 +778,18 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           <div><dt>Primary phone</dt><dd>{phoneContact?.maskedValue ?? 'Not saved'} · {phoneContact?.verifiedAt ? 'Verified' : 'Unverified'}</dd></div>
           <div><dt>Email</dt><dd>{emailContact?.maskedValue ?? (email.trim() ? 'Saved' : 'Not recorded')}</dd></div>
           <div><dt>Address</dt><dd>{address ? 'Saved as primary' : 'Not recorded'}</dd></div>
-          <div><dt>Identity document</dt><dd>{identityDocument ? `${identityDocument.type.replaceAll('_', ' ')} · ${identityDocument.maskedDocumentNumber}` : canManageIdentity ? 'Not recorded' : 'Restricted for this role'}</dd></div>
+          <div><dt>Identity documents</dt><dd>{canManageIdentity
+            ? identityDocuments.filter((item) => item.saved).length
+              ? identityDocuments.filter((item) => item.saved).map((item) => `${item.saved?.type.replaceAll('_', ' ')} · ${item.saved?.maskedDocumentNumber}`).join(', ')
+              : 'Not recorded'
+            : 'Restricted for this role'}</dd></div>
         </dl>
+        {canManageIdentity && identityDocuments.some((item) => !item.saved && item.documentNumber.trim()) && (
+          <div className="cm-summary-warning" role="status">
+            Unsaved identity-document entries were not sent. Review, save, or remove them before closing if needed.
+            <button className="cm-text-button" type="button" onClick={() => setStep(3)}>Review identity documents</button>
+          </div>
+        )}
         {!phoneContact?.verifiedAt && <p className="cm-summary-warning">Activation stays blocked until an authorized workflow verifies a primary phone. Continue later in Customer 360°.</p>}
         <div className="cm-actions-row">
           {customer && <button className="cm-button cm-button-primary" type="button" onClick={() => onOpenCustomer(customer.id)}>Open Customer 360°</button>}

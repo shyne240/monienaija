@@ -97,6 +97,7 @@ function mockCustomerReads() {
         { id: 'contact-2', type: 'EMAIL', value: fullEmail, isPrimary: false, verifiedAt: null },
       ]);
     }
+    if (path.endsWith('/identity-documents')) return Promise.resolve([]);
     return Promise.resolve({ data: [], items: [] });
   });
 }
@@ -184,6 +185,7 @@ describe('Batch 1 Customer 360° workspace', () => {
       if (path.endsWith('/onboarding-readiness')) return Promise.resolve({ status: 'NOT_READY', onboardingStatus: null, missing: [] });
       if (path.endsWith('/eligibility')) return Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
       if (path.endsWith('/phone-verification')) return Promise.resolve({ phones: [], activationGate: { verifiedPrimaryPhone: false } });
+      if (path.endsWith('/identity-documents')) return Promise.resolve([]);
       return Promise.resolve({ items: [], data: [] });
     });
     const view = render(
@@ -191,9 +193,10 @@ describe('Batch 1 Customer 360° workspace', () => {
     );
     await view.findByRole('heading', { name: 'Synthetic Customer 360' });
     fireEvent.click(view.getByRole('tab', { name: 'Personal information & contact' }));
-    expect(await view.findByText('No personal profile has been recorded.')).toBeTruthy();
-    expect(view.getByText('No phone number or email has been recorded.')).toBeTruthy();
-    expect(view.getByText('No address has been recorded.')).toBeTruthy();
+    expect(await view.findByText('No profile is recorded yet.')).toBeTruthy();
+    expect(view.getByText('No phone number or email is recorded.')).toBeTruthy();
+    expect(view.getByText('No address is recorded.')).toBeTruthy();
+    expect(view.getByText('No identity document is recorded.')).toBeTruthy();
   });
 
   test('lifecycle changes require confirmation and use the authenticated principal context', async () => {

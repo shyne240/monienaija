@@ -123,20 +123,47 @@ describe('Batch 1 customer directory', () => {
     });
   });
 
-  test('manual creation asks for a reference and always submits a draft, never an active customer', async () => {
+  test('manual creation starts DRAFT-only with required structured names and no user-supplied reference', async () => {
+    const created = {
+      id: 'cust-created',
+      reference: 'mn-cus-0123456789abcdef01234567',
+      type: 'INDIVIDUAL',
+      status: 'DRAFT',
+      kycLevel: 'NONE',
+      kycStatus: 'NOT_STARTED',
+      version: 1,
+      createdAt: '2026-10-24T12:00:00.000Z',
+      updatedAt: '2026-10-24T12:00:00.000Z',
+      deletedAt: null,
+    };
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
+      if (path === '/customers') return Promise.resolve(created);
+      if (path.endsWith('/registration-profile')) return Promise.resolve({ displayName: 'Synthetic Draft Customer' });
+      return Promise.resolve({});
+    });
+
     const view = render(<CustomerDirectoryScreen />);
     await view.findByText('Synthetic Directory Alpha');
-    fireEvent.click(view.getByRole('button', { name: 'New draft customer' }));
-    fireEvent.change(view.getByLabelText('Customer reference'), { target: { value: 'mn-0000019876' } });
-    fireEvent.click(view.getByRole('button', { name: 'Create draft' }));
+    fireEvent.click(view.getByRole('button', { name: 'New Customer' }));
+    expect(await view.findByRole('heading', { name: 'Customer details' })).toBeTruthy();
+    expect(view.queryByLabelText('Customer reference')).toBeNull();
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect(view.queryByLabelText(/Legal name/)).toBeNull();
+    expect((view.getByLabelText(/First name/) as HTMLInputElement).required).toBe(true);
+    expect((view.getByLabelText(/Middle name/) as HTMLInputElement).required).toBe(false);
+    expect((view.getByLabelText(/Last name/) as HTMLInputElement).required).toBe(true);
+
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Draft Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
 
     await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/customers', {
-        reference: 'mn-0000019876',
-        type: 'INDIVIDUAL',
-        status: 'DRAFT',
-      });
-      expect(view.getByText('Draft customer created. Reference: mn-••••9876')).toBeTruthy();
+      expect(ApiClient.post).toHaveBeenCalledWith('/customers', { type: 'INDIVIDUAL' });
+      expect(ApiClient.post).toHaveBeenCalledWith('/customers/cust-created/registration-profile', expect.objectContaining({
+        firstName: 'Synthetic',
+        lastName: 'Draft Customer',
+      }));
+      expect(view.getByLabelText(/Primary phone number/)).toBeTruthy();
     });
   });
 

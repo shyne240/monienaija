@@ -161,7 +161,7 @@ describe('CustomerService', () => {
       duplicateBy(['type', 'normalizedValue']),
     );
     const documentRepository = new MemoryRepository<CustomerIdentityDocument>(
-      duplicateBy(['customerId', 'type']),
+      duplicateBy(['customerId', 'type', 'documentNumber']),
     );
     const kycRepository = new MemoryRepository<CustomerKycAssessment>(
       duplicateBy(['customerId', 'isCurrent']),
@@ -350,11 +350,12 @@ describe('CustomerService', () => {
       actor: 'ops',
     });
     expect(updatedDocument.documentNumber).toBe('SYNTHETIC-IDENTITY-002');
+    expect(updatedDocument.expiresAt).toBeNull();
     const identityAudit = audit.record.mock.calls.at(-1)?.[1] as { newValues?: Record<string, unknown> };
     expect(JSON.stringify(identityAudit)).not.toContain('SYNTHETIC-IDENTITY-002');
   });
 
-  it('rejects duplicate contacts and identity-document types', async () => {
+  it('rejects duplicate contacts and duplicate identity type-number pairs while allowing multiple same-type documents', async () => {
     const { service } = fixture();
     const customer = await createCustomer(service);
     await service.createContactMethod(customer.id, {
@@ -374,14 +375,21 @@ describe('CustomerService', () => {
 
     await service.createIdentityDocument(customer.id, {
       type: IdentityDocumentType.BVN,
-      documentNumber: '12345678901',
+      documentNumber: 'SYNTHETIC-BVN-001',
       issuingCountry: 'NG',
       actor: 'ops',
     });
+    const secondBvn = await service.createIdentityDocument(customer.id, {
+      type: IdentityDocumentType.BVN,
+      documentNumber: 'SYNTHETIC-BVN-002',
+      issuingCountry: 'NG',
+      actor: 'ops',
+    });
+    expect(secondBvn.type).toBe(IdentityDocumentType.BVN);
     await expect(
       service.createIdentityDocument(customer.id, {
         type: IdentityDocumentType.BVN,
-        documentNumber: '98765432109',
+        documentNumber: 'synthetic-bvn-001',
         issuingCountry: 'NG',
         actor: 'ops',
       }),

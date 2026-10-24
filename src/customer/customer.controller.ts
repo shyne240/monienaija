@@ -24,6 +24,7 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { CreateIdentityDocumentDto } from './dto/create-identity-document.dto';
 import { CreateKycAssessmentDto } from './dto/create-kyc-assessment.dto';
 import { CreateProfileDto } from './dto/create-profile.dto';
+import { CreateRegistrationProfileDto } from './dto/create-registration-profile.dto';
 import { CustomerQueryDto } from './dto/customer-query.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateContactMethodDto } from './dto/update-contact-method.dto';
@@ -134,6 +135,16 @@ export class CustomerController {
   ) {
     const actor = await this.requireCustomerWriteFunction(req, id, 'customer.create');
     return this.customerService.createProfile(id, { ...dto, actor });
+  }
+
+  @Post(':id/registration-profile')
+  async createRegistrationProfile(
+    @Param('id') id: string,
+    @Body() dto: CreateRegistrationProfileDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireWorkforceFunction(req, 'customer.create');
+    return this.customerService.createRegistrationProfile(id, { ...dto, actor });
   }
 
   @Patch(':id/profile')

@@ -140,6 +140,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const phone = '+2348012340001';
     const secondaryPhone = '+2348012340002';
     const syntheticIdentityNumber = 'SYNTHETIC-NIN-2A-0001';
+    const syntheticSecondIdentityNumber = 'SYNTHETIC-NIN-2A-0002';
 
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers')
@@ -198,10 +199,29 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const identity = await request(app.getHttpServer())
       .post(`/api/v1/customers/${customerId}/identity-document`)
       .set(auth(superAdmin.token))
-      .send({ type: 'NIN', documentNumber: syntheticIdentityNumber, issuingCountry: 'NG' })
+      .send({
+        type: 'NIN',
+        documentNumber: syntheticIdentityNumber,
+        issuingCountry: 'NG',
+        issuedAt: '2015-06-12',
+        expiresAt: '2035-06-12',
+      })
       .expect(201);
-    expect(identity.body).toMatchObject({ type: 'NIN', issuingCountry: 'NG' });
+    expect(identity.body).toMatchObject({ type: 'NIN', issuingCountry: 'NG', issuedAt: null, expiresAt: null });
     expect(JSON.stringify(identity.body)).not.toContain(syntheticIdentityNumber);
+
+    const secondIdentity = await request(app.getHttpServer())
+      .post(`/api/v1/customers/${customerId}/identity-document`)
+      .set(auth(superAdmin.token))
+      .send({ type: 'NIN', documentNumber: syntheticSecondIdentityNumber, issuingCountry: 'NG' })
+      .expect(201);
+    expect(secondIdentity.body.id).not.toBe(identity.body.id);
+    const duplicateIdentity = await request(app.getHttpServer())
+      .post(`/api/v1/customers/${customerId}/identity-document`)
+      .set(auth(superAdmin.token))
+      .send({ type: 'NIN', documentNumber: syntheticIdentityNumber.toLowerCase(), issuingCountry: 'NG' })
+      .expect(409);
+    expect(JSON.stringify(duplicateIdentity.body)).not.toContain(syntheticIdentityNumber);
 
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}`)
@@ -212,7 +232,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .get(`/api/v1/customers/${customerId}`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(stillDraft.body.status).toBe('DRAFT');
+    expect(stillDraft.body).toMatchObject({ status: 'DRAFT', kycLevel: 'NONE', kycStatus: 'NOT_STARTED' });
 
     const walletCountBefore = await dataSource.query(
       'SELECT COUNT(*)::int AS count FROM wallet_accounts WHERE customer_id = $1',
@@ -247,7 +267,11 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .get(`/api/v1/customers/${customerId}`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(stillDraftAfterVerification.body.status).toBe('DRAFT');
+    expect(stillDraftAfterVerification.body).toMatchObject({
+      status: 'DRAFT',
+      kycLevel: 'NONE',
+      kycStatus: 'NOT_STARTED',
+    });
     const walletCountAfter = await dataSource.query(
       'SELECT COUNT(*)::int AS count FROM wallet_accounts WHERE customer_id = $1',
       [customerId],
@@ -290,10 +314,20 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     const updatedIdentity = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${customerId}/identity-documents/${identity.body.id}`)
       .set(auth(superAdmin.token))
-      .send({ documentNumber: 'SYNTHETIC-NIN-2A-0002', issuingCountry: 'NG' })
+      .send({
+        documentNumber: 'SYNTHETIC-NIN-2A-0003',
+        issuingCountry: 'NG',
+        expiresAt: '2030-01-01',
+      })
       .expect(200);
-    expect(updatedIdentity.body.maskedDocumentNumber).toContain('0002');
-    expect(JSON.stringify(updatedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0002');
+    expect(updatedIdentity.body.maskedDocumentNumber).toContain('0003');
+    expect(updatedIdentity.body.expiresAt).toBeNull();
+    expect(JSON.stringify(updatedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0003');
+    await request(app.getHttpServer())
+      .patch(`/api/v1/customers/${customerId}/identity-documents/${identity.body.id}`)
+      .set(auth(superAdmin.token))
+      .send({ documentNumber: syntheticSecondIdentityNumber })
+      .expect(409);
 
     const storedProfile = await request(app.getHttpServer())
       .get(`/api/v1/customers/${customerId}/profile`)
@@ -320,7 +354,10 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
       .get(`/api/v1/customers/${customerId}/identity-documents`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(storedIdentity.body[0].maskedDocumentNumber).toContain('0002');
+    expect(storedIdentity.body).toHaveLength(2);
+    expect(storedIdentity.body.find((item: any) => item.id === identity.body.id).maskedDocumentNumber).toContain('0003');
+    expect(storedIdentity.body.find((item: any) => item.id === secondIdentity.body.id).maskedDocumentNumber).toContain('0002');
+    expect(JSON.stringify(storedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0003');
     expect(JSON.stringify(storedIdentity.body)).not.toContain('SYNTHETIC-NIN-2A-0002');
 
     const directory = await request(app.getHttpServer())
@@ -370,5 +407,92 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
     expect(JSON.stringify(auditRows)).not.toContain('2 Synthetic Crescent');
     expect(JSON.stringify(auditRows)).not.toContain('SYNTHETIC-NIN-2A-0002');
     expect(JSON.stringify(auditRows)).not.toContain(phone);
+  }, 120_000);
+
+  it('enforces type-aware registration names and returns the saved name in fresh directory projections', async () => {
+    await truncateAllTables(dataSource);
+    const [superAdmin, administrator] = await Promise.all([
+      createRoleSession('SUPER_ADMIN'),
+      createRoleSession('ADMINISTRATOR'),
+    ]);
+
+    const individual = await request(app.getHttpServer())
+      .post('/api/v1/customers')
+      .set(auth(superAdmin.token))
+      .send({ type: 'INDIVIDUAL' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/customers/${individual.body.id}/registration-profile`)
+      .set(auth(superAdmin.token))
+      .send({ firstName: 'Synthetic' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/v1/customers/${individual.body.id}/registration-profile`)
+      .set(auth(superAdmin.token))
+      .send({ lastName: 'Individual' })
+      .expect(400);
+
+    const individualProfile = await request(app.getHttpServer())
+      .post(`/api/v1/customers/${individual.body.id}/registration-profile`)
+      .set(auth(superAdmin.token))
+      .send({ firstName: 'Synthetic', lastName: 'Individual' })
+      .expect(201);
+    expect(individualProfile.body).toMatchObject({
+      firstName: 'Synthetic',
+      middleName: null,
+      lastName: 'Individual',
+      displayName: 'Synthetic Individual',
+      legalName: 'Synthetic Individual',
+    });
+
+    const business = await request(app.getHttpServer())
+      .post('/api/v1/customers')
+      .set(auth(superAdmin.token))
+      .send({ type: 'BUSINESS' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/customers/${business.body.id}/registration-profile`)
+      .set(auth(superAdmin.token))
+      .send({ firstName: 'Not', lastName: 'A Business Name' })
+      .expect(400);
+    const businessProfile = await request(app.getHttpServer())
+      .post(`/api/v1/customers/${business.body.id}/registration-profile`)
+      .set(auth(superAdmin.token))
+      .send({ businessName: 'Synthetic Example Operations Ltd' })
+      .expect(201);
+    expect(businessProfile.body).toMatchObject({
+      displayName: 'Synthetic Example Operations Ltd',
+      legalName: 'Synthetic Example Operations Ltd',
+      firstName: null,
+      middleName: null,
+      lastName: null,
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/customers/${business.body.id}/registration-profile`)
+      .set(auth(administrator.token))
+      .send({ businessName: 'Unauthorized Update' })
+      .expect(403);
+
+    for (let refresh = 0; refresh < 2; refresh += 1) {
+      const directory = await request(app.getHttpServer())
+        .get('/api/v1/internal/customers?search=Synthetic%20Individual')
+        .set(auth(superAdmin.token))
+        .expect(200);
+      expect(directory.body.data.find((item: any) => item.id === individual.body.id)).toMatchObject({
+        status: 'DRAFT',
+        displayName: 'Synthetic Individual',
+        legalName: 'Synthetic Individual',
+      });
+    }
+
+    const businessDirectory = await request(app.getHttpServer())
+      .get('/api/v1/internal/customers?search=Synthetic%20Example%20Operations')
+      .set(auth(superAdmin.token))
+      .expect(200);
+    expect(businessDirectory.body.data[0]).toMatchObject({
+      id: business.body.id,
+      type: 'BUSINESS',
+      displayName: 'Synthetic Example Operations Ltd',
+    });
   }, 120_000);
 });

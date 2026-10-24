@@ -64,14 +64,26 @@ describe('CustomerRegistrationWizard', () => {
       }
       return Promise.resolve({});
     });
-    (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
+    let identitySave = 0;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body?: Record<string, unknown>) => {
       if (path === '/customers') return Promise.resolve(createdCustomer);
-      if (path.endsWith('/profile')) return Promise.resolve({ displayName: 'Synthetic New Customer' });
+      if (path.endsWith('/registration-profile')) return Promise.resolve({ displayName: 'Synthetic Batch Customer' });
       if (path.endsWith('/contact-method')) return Promise.resolve({ id: 'synthetic-phone-contact', type: 'PHONE', maskedValue: '+234*****0001', isPrimary: true, verifiedAt: null });
       if (path === '/customers/registration/otp') return Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' });
       if (path === '/customers/registration/otp/verify') return Promise.resolve({ verificationToken: 'synthetic-one-time-verification-token' });
       if (path.endsWith('/address')) return Promise.resolve({ id: 'synthetic-address', type: 'RESIDENTIAL', isPrimary: true });
-      if (path.endsWith('/identity-document')) return Promise.resolve({ id: 'synthetic-identity', type: 'NIN', maskedDocumentNumber: '••••••0001', issuingCountry: 'NG' });
+      if (path.endsWith('/identity-document')) {
+        identitySave += 1;
+        const type = String(body?.type ?? 'NIN');
+        return Promise.resolve({
+          id: `synthetic-identity-${identitySave}`,
+          type,
+          maskedDocumentNumber: `••••••000${identitySave}`,
+          issuingCountry: body?.issuingCountry ?? 'NG',
+          issuedAt: body?.issuedAt ?? null,
+          expiresAt: body?.expiresAt ?? null,
+        });
+      }
       return Promise.resolve({});
     });
   });
@@ -88,14 +100,27 @@ describe('CustomerRegistrationWizard', () => {
       />,
     );
 
-    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Synthetic New Customer' } });
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect(view.queryByLabelText(/Legal name/)).toBeNull();
+    expect((view.getByLabelText(/First name/) as HTMLInputElement).required).toBe(true);
+    expect((view.getByLabelText(/Last name/) as HTMLInputElement).required).toBe(true);
+    expect((view.getByLabelText(/Middle name/) as HTMLInputElement).required).toBe(false);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Middle name/), { target: { value: 'Batch' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.change(view.getByLabelText(/Date of birth/), { target: { value: '1990-06-12' } });
     fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
     await view.findByLabelText(/Primary phone number/);
 
     expect(ApiClient.post).toHaveBeenCalledWith('/customers', { type: 'INDIVIDUAL' });
-    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/profile', expect.objectContaining({
-      displayName: 'Synthetic New Customer',
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/registration-profile', expect.objectContaining({
+      firstName: 'Synthetic',
+      middleName: 'Batch',
+      lastName: 'Customer',
+      dateOfBirth: '1990-06-12',
+      nationality: 'NG',
     }));
+    expect(onCustomerCreated).toHaveBeenCalledTimes(2);
     expect(onCustomerCreated).toHaveBeenCalledWith(createdCustomer);
     expect(view.getByText(/Draft reference:/)).toBeTruthy();
 
@@ -121,15 +146,45 @@ describe('CustomerRegistrationWizard', () => {
     fireEvent.change(view.getByLabelText(/^City/), { target: { value: 'Abuja' } });
     fireEvent.change(view.getByLabelText(/State \/ province/), { target: { value: 'FCT' } });
     fireEvent.click(view.getByRole('button', { name: 'Save address & continue' }));
-    await view.findByLabelText(/Document number/);
+    await view.findByRole('heading', { name: 'Identity documents' });
+    expect(view.queryByLabelText(/Issue date/)).toBeNull();
+    expect(view.queryByLabelText(/Expiry date/)).toBeNull();
     fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-NIN-0001' } });
-    fireEvent.click(view.getByRole('button', { name: 'Save identity details & finish' }));
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByText('••••••0001 · Saved')).toBeTruthy();
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/identity-document', expect.objectContaining({
+      type: 'NIN',
+      documentNumber: 'SYNTHETIC-NIN-0001',
+      issuingCountry: 'NG',
+    }));
+    const ninSave = (ApiClient.post as jest.Mock).mock.calls.find(([path, body]) =>
+      path.endsWith('/identity-document') && body.type === 'NIN');
+    expect(ninSave?.[1]).not.toHaveProperty('issuedAt');
+    expect(ninSave?.[1]).not.toHaveProperty('expiresAt');
+
+    fireEvent.click(view.getByRole('button', { name: 'Add another identity document' }));
+    fireEvent.change(view.getByLabelText(/Identity document type/), { target: { value: 'INTERNATIONAL_PASSPORT' } });
+    expect(view.getByLabelText(/Issue date/)).toBeTruthy();
+    expect(view.getByLabelText(/Expiry date/)).toBeTruthy();
+    expect((view.getByLabelText(/Issue date/) as HTMLInputElement).required).toBe(false);
+    expect((view.getByLabelText(/Expiry date/) as HTMLInputElement).required).toBe(false);
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-PASSPORT-0002' } });
+    fireEvent.change(view.getByLabelText(/Issue date/), { target: { value: '2015-06-12' } });
+    fireEvent.change(view.getByLabelText(/Expiry date/), { target: { value: '2035-06-12' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByText('••••••0002 · Saved')).toBeTruthy();
+    const passportSave = (ApiClient.post as jest.Mock).mock.calls.find(([path, body]) =>
+      path.endsWith('/identity-document') && body.type === 'INTERNATIONAL_PASSPORT');
+    expect(passportSave?.[1]).toMatchObject({ issuedAt: '2015-06-12', expiresAt: '2035-06-12' });
+
+    fireEvent.click(view.getByRole('button', { name: 'Continue to registration summary' }));
     await view.findByRole('heading', { name: 'Registration summary' });
 
     expect(view.getByText('DRAFT', { exact: true })).toBeTruthy();
     expect(view.getByText(/No activation or ledger wallet creation was requested/)).toBeTruthy();
-    expect(view.getByText(/NIN · ••••••0001/)).toBeTruthy();
+    expect(view.getByText(/NIN · ••••••0001, INTERNATIONAL PASSPORT · ••••••0002/)).toBeTruthy();
     expect(view.queryByText('SYNTHETIC-NIN-0001')).toBeNull();
+    expect(view.queryByText('SYNTHETIC-PASSPORT-0002')).toBeNull();
     expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/address', expect.objectContaining({
       lineOne: '1 Synthetic Crescent',
       city: 'Abuja',
@@ -146,5 +201,85 @@ describe('CustomerRegistrationWizard', () => {
 
     fireEvent.click(view.getByRole('button', { name: 'Open Customer 360°' }));
     await waitFor(() => expect(onOpenCustomer).toHaveBeenCalledWith('synthetic-customer-id'));
+  });
+
+  test('uses the business name workflow and permits skipping all identity documents', async () => {
+    const view = render(
+      <CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />,
+    );
+    fireEvent.change(view.getByLabelText(/Customer type/), { target: { value: 'BUSINESS' } });
+    expect(view.queryByLabelText(/First name/)).toBeNull();
+    expect(view.queryByLabelText(/Last name/)).toBeNull();
+    expect(view.queryByLabelText(/Display name/)).toBeNull();
+    expect(view.queryByLabelText(/Legal name/)).toBeNull();
+    expect((view.getByLabelText(/Business name/) as HTMLInputElement).required).toBe(true);
+    fireEvent.change(view.getByLabelText(/Business name/), { target: { value: 'Synthetic Business Ltd' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/registration-profile', {
+      businessName: 'Synthetic Business Ltd',
+    });
+
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target: { value: '+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save contact details' }));
+    await waitFor(() => expect((view.getByRole('button', { name: 'Continue to address' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(view.getByRole('button', { name: 'Continue to address' }));
+    fireEvent.click(view.getByRole('button', { name: 'Skip address' }));
+    await view.findByRole('heading', { name: 'Identity documents' });
+    fireEvent.click(view.getByRole('button', { name: 'Skip identity documents' }));
+    await view.findByRole('heading', { name: 'Registration summary' });
+    expect(view.getByRole('heading', { name: 'Synthetic Business Ltd' })).toBeTruthy();
+    expect(view.getAllByText('Not recorded').length).toBeGreaterThan(0);
+    expect((ApiClient.post as jest.Mock).mock.calls.filter(([path]) => path.endsWith('/identity-document'))).toHaveLength(0);
+  });
+
+  test('keeps a successful document when a later independent save fails and allows removing the unsaved entry', async () => {
+    const defaultPost = (ApiClient.post as jest.Mock).getMockImplementation();
+    let identitySaveCount = 0;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body?: Record<string, unknown>) => {
+      if (path.endsWith('/identity-document')) {
+        identitySaveCount += 1;
+        if (identitySaveCount === 2) {
+          return Promise.reject(Object.assign(new Error('conflict'), { status: 409 }));
+        }
+        return Promise.resolve({
+          id: 'synthetic-identity-saved',
+          type: 'NIN',
+          maskedDocumentNumber: '••••••0001',
+          issuingCountry: 'NG',
+          issuedAt: null,
+          expiresAt: null,
+        });
+      }
+      return defaultPost?.(path, body);
+    });
+
+    const view = render(
+      <CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />,
+    );
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target: { value: '+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save contact details' }));
+    await waitFor(() => expect((view.getByRole('button', { name: 'Continue to address' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(view.getByRole('button', { name: 'Continue to address' }));
+    fireEvent.click(view.getByRole('button', { name: 'Skip address' }));
+    await view.findByRole('heading', { name: 'Identity documents' });
+
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-NIN-FIRST' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByText('••••••0001 · Saved')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Add another identity document' }));
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-NIN-SECOND' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByRole('alert')).toBeTruthy();
+    expect(view.getByText('••••••0001 · Saved')).toBeTruthy();
+    expect((view.getByLabelText(/Document number/) as HTMLInputElement).value).toBe('SYNTHETIC-NIN-SECOND');
+    fireEvent.click(view.getByRole('button', { name: 'Remove unsaved entry' }));
+    expect(view.getByText('••••••0001 · Saved')).toBeTruthy();
+    expect((ApiClient.post as jest.Mock).mock.calls.filter(([path]) => path.endsWith('/identity-document'))).toHaveLength(2);
+    expect(ApiClient.patch).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import { CustomerPersonalInformationPanel } from '../src/screens/authenticated/CustomerPersonalInformationPanel';
 import { ApiClient } from '../src/services/api-client';
@@ -133,17 +133,112 @@ describe('CustomerPersonalInformationPanel', () => {
     fireEvent.click(view.getAllByRole('button', { name: 'Edit' })[1]);
     const documentNumber = view.getByLabelText(/Document number/);
     expect((documentNumber as HTMLInputElement).value).toBe('');
+    expect(view.queryByLabelText(/Issue date/)).toBeNull();
+    expect(view.queryByLabelText(/Expiry date/)).toBeNull();
     fireEvent.change(documentNumber, { target: { value: 'SYNTHETIC-DOCUMENT-0002' } });
     fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
 
     await waitFor(() => {
       expect(ApiClient.patch).toHaveBeenCalledWith('/customers/synthetic-customer-id/identity-documents/synthetic-identity', expect.objectContaining({
         documentNumber: 'SYNTHETIC-DOCUMENT-0002',
+        type: 'NIN',
       }));
+      const identityCorrection = (ApiClient.patch as jest.Mock).mock.calls.find(([path]) =>
+        path.endsWith('/identity-documents/synthetic-identity'));
+      expect(identityCorrection?.[1]).not.toHaveProperty('issuedAt');
+      expect(identityCorrection?.[1]).not.toHaveProperty('expiresAt');
       expect(state.getIdentity().maskedDocumentNumber).toBe('••••••0002');
     });
     expect(view.queryByText('SYNTHETIC-DOCUMENT-0002')).toBeNull();
     expect(await view.findByText('••••••0002')).toBeTruthy();
+  });
+
+  test('lists multiple identity documents and corrects only the selected saved record', async () => {
+    const state = setReadMocks();
+    const documents = [
+      state.getIdentity(),
+      { ...state.getIdentity(), id: 'synthetic-identity-second', maskedDocumentNumber: '••••••0002' },
+    ];
+    const originalGet = (ApiClient.get as jest.Mock).getMockImplementation();
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+      path.endsWith('/identity-documents') ? Promise.resolve(documents) : originalGet?.(path));
+    (ApiClient.patch as jest.Mock).mockImplementation((path: string, body: Record<string, unknown>) => {
+      const matched = path.match(/identity-documents\/([^/]+)$/);
+      if (matched) {
+        const index = documents.findIndex((document) => document.id === matched[1]);
+        documents[index] = { ...documents[index], ...body, maskedDocumentNumber: '••••••0003' };
+        return Promise.resolve(documents[index]);
+      }
+      return Promise.resolve({});
+    });
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: Record<string, unknown>) => {
+      if (path.endsWith('/identity-document')) {
+        const added = {
+          id: 'synthetic-identity-added',
+          type: body.type,
+          maskedDocumentNumber: '••••••0004',
+          issuingCountry: body.issuingCountry,
+          issuedAt: null,
+          expiresAt: null,
+        };
+        documents.unshift(added as typeof documents[number]);
+        return Promise.resolve(added);
+      }
+      return Promise.resolve({});
+    });
+
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    const identityHeading = await view.findByRole('heading', { name: 'Supported identity metadata' });
+    const identityCard = identityHeading.closest('article');
+    expect(identityCard).not.toBeNull();
+    expect(within(identityCard as HTMLElement).getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
+
+    fireEvent.click(within(identityCard as HTMLElement).getAllByRole('button', { name: 'Edit' })[1]);
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-SECOND-UPDATED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
+    await waitFor(() => expect(ApiClient.patch).toHaveBeenCalledWith(
+      '/customers/synthetic-customer-id/identity-documents/synthetic-identity-second',
+      expect.objectContaining({ documentNumber: 'SYNTHETIC-SECOND-UPDATED' }),
+    ));
+    expect(documents.find((document) => document.id === 'synthetic-identity')?.maskedDocumentNumber).toBe('••••••0001');
+    expect(documents.find((document) => document.id === 'synthetic-identity-second')?.maskedDocumentNumber).toBe('••••••0003');
+    const refreshedIdentityCard = (await view.findByRole('heading', { name: 'Supported identity metadata' })).closest('article') as HTMLElement;
+
+    fireEvent.click(within(refreshedIdentityCard).getByRole('button', { name: 'Add document' }));
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-NEW-0004' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
+    expect(await view.findByText('••••••0004')).toBeTruthy();
+    expect(documents).toHaveLength(3);
+    const finalIdentityCard = (await view.findByRole('heading', { name: 'Supported identity metadata' })).closest('article') as HTMLElement;
+    expect(within(finalIdentityCard).queryByRole('button', { name: /delete/i })).toBeNull();
+  });
+
+  test('shows optional date inputs only for supported document types and clears them for BVN', async () => {
+    setReadMocks();
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+
+    await view.findAllByText('••••••0001');
+    fireEvent.click(view.getAllByRole('button', { name: 'Edit' })[1]);
+    fireEvent.change(view.getByLabelText(/Document type/), { target: { value: 'INTERNATIONAL_PASSPORT' } });
+    const issueDate = view.getByLabelText(/Issue date/) as HTMLInputElement;
+    const expiryDate = view.getByLabelText(/Expiry date/) as HTMLInputElement;
+    expect(issueDate.required).toBe(false);
+    expect(expiryDate.required).toBe(false);
+    fireEvent.change(issueDate, { target: { value: '2015-06-12' } });
+    fireEvent.change(expiryDate, { target: { value: '2035-06-12' } });
+
+    fireEvent.change(view.getByLabelText(/Document type/), { target: { value: 'BVN' } });
+    expect(view.queryByLabelText(/Issue date/)).toBeNull();
+    expect(view.queryByLabelText(/Expiry date/)).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
+
+    await waitFor(() => {
+      const identityCorrection = (ApiClient.patch as jest.Mock).mock.calls.find(([path]) =>
+        path.endsWith('/identity-documents/synthetic-identity'));
+      expect(identityCorrection?.[1]).toMatchObject({ type: 'BVN' });
+      expect(identityCorrection?.[1]).not.toHaveProperty('issuedAt');
+      expect(identityCorrection?.[1]).not.toHaveProperty('expiresAt');
+    });
   });
 
   test('uses the existing OTP endpoints and attaches a one-time proof through an authorized contact update', async () => {

@@ -31,6 +31,17 @@ export interface CreateProfileCommand {
   actor: string;
 }
 
+/** Type-aware payload for the Admin manual-registration workflow only. */
+export interface CreateRegistrationProfileCommand {
+  businessName?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  nationality?: string;
+  actor: string;
+}
+
 export interface UpdateProfileCommand {
   displayName?: string;
   legalName?: string | null;
