@@ -2,6 +2,7 @@ import React, { FormEvent, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { CountrySelect, countryNameForCode, isNigeriaIdentityType, normalizeCountryCode } from './CountrySelect';
 
 type CustomerType = 'INDIVIDUAL' | 'BUSINESS';
 type ContactType = 'PHONE' | 'EMAIL';
@@ -204,7 +205,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         middleName: customerType === 'INDIVIDUAL' ? middleName.trim() || undefined : undefined,
         lastName: customerType === 'INDIVIDUAL' ? lastName.trim() : undefined,
         dateOfBirth: customerType === 'INDIVIDUAL' ? dateOfBirth || undefined : undefined,
-        nationality: customerType === 'INDIVIDUAL' ? nationality.trim().toUpperCase() || undefined : undefined,
+        nationality: customerType === 'INDIVIDUAL' ? normalizeCountryCode(nationality) || undefined : undefined,
       };
       const registrationProfile = customerType === 'BUSINESS'
         ? { businessName: businessName.trim() }
@@ -213,7 +214,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             middleName: middleName.trim() || undefined,
             lastName: lastName.trim(),
             dateOfBirth: dateOfBirth || undefined,
-            nationality: nationality.trim().toUpperCase() || undefined,
+            nationality: normalizeCountryCode(nationality) || undefined,
           };
 
       if (profileSaved) {
@@ -402,7 +403,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         lineTwo: lineTwo.trim() || undefined,
         city: city.trim(),
         state: stateOrProvince.trim(),
-        country: country.trim().toUpperCase(),
+        country: normalizeCountryCode(country),
         postalCode: postalCode.trim() || undefined,
         isPrimary: true,
       };
@@ -473,7 +474,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       const body = {
         type: document.type,
         documentNumber: document.documentNumber.trim(),
-        issuingCountry: document.issuingCountry.trim().toUpperCase(),
+        issuingCountry: isNigeriaIdentityType(document.type) ? 'NG' : normalizeCountryCode(document.issuingCountry),
         ...(supportsIdentityDates(document.type)
           ? { issuedAt: document.issuedAt || undefined, expiresAt: document.expiresAt || undefined }
           : {}),
@@ -554,8 +555,16 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
               <label>Date of birth <span className="cm-optional-indicator">Optional</span>
                 <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} />
               </label>
-              <label>Nationality (ISO 2–3 letters) <span className="cm-optional-indicator">Optional</span>
-                <input maxLength={3} value={nationality} onChange={(event) => setNationality(event.target.value.toUpperCase())} />
+              <label htmlFor="registration-nationality">
+                Nationality <span className="cm-optional-indicator">Optional</span>
+                <CountrySelect
+                  inputId="registration-nationality"
+                  name="nationality"
+                  value={nationality}
+                  onChange={setNationality}
+                  clearable
+                  ariaLabel="Nationality"
+                />
               </label>
             </> : (
               <label>Business name <span className="cm-required-indicator">Required</span>
@@ -638,8 +647,16 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             <label>State / province <span className="cm-required-indicator">Required if saving</span>
               <input maxLength={100} value={stateOrProvince} onChange={(event) => setStateOrProvince(event.target.value)} autoComplete="address-level1" />
             </label>
-            <label>Country (ISO 2–3 letters) <span className="cm-required-indicator">Required if saving</span>
-              <input maxLength={3} value={country} onChange={(event) => setCountry(event.target.value.toUpperCase())} autoComplete="country" />
+            <label htmlFor="registration-address-country">
+              Country <span className="cm-required-indicator">Required if saving</span>
+              <CountrySelect
+                inputId="registration-address-country"
+                name="country"
+                value={country}
+                onChange={setCountry}
+                required
+                ariaLabel="Country"
+              />
             </label>
             <label>Postal code <span className="cm-optional-indicator">Optional</span>
               <input maxLength={20} value={postalCode} onChange={(event) => setPostalCode(event.target.value)} autoComplete="postal-code" />
@@ -681,7 +698,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                   <div className="cm-identity-saved-result" role="status">
                     <strong>{document.saved.type.replaceAll('_', ' ')}</strong>
                     <span>{document.saved.maskedDocumentNumber} · Saved</span>
-                    <span className="cm-secondary-line">Issuing country: {document.saved.issuingCountry}</span>
+                    <span className="cm-secondary-line">Issuing country: {countryNameForCode(document.saved.issuingCountry)}</span>
                     {supportsIdentityDates(document.saved.type) && (document.saved.issuedAt || document.saved.expiresAt) && (
                       <span className="cm-secondary-line">
                         {document.saved.issuedAt ? `Issued ${document.saved.issuedAt}` : ''}
@@ -701,6 +718,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                             ? {
                                 ...item,
                                 type,
+                                issuingCountry: isNigeriaIdentityType(type) ? 'NG' : item.issuingCountry || 'NG',
                                 issuedAt: supportsIdentityDates(type) ? item.issuedAt : '',
                                 expiresAt: supportsIdentityDates(type) ? item.expiresAt : '',
                                 outcome: null,
@@ -715,10 +733,22 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
                           ? { ...item, documentNumber: event.target.value, outcome: null }
                           : item))} aria-describedby={`cm-document-number-note-${document.localId}`} />
                       </label>
-                      <label>Issuing country (ISO 2–3 letters)
-                        <input maxLength={3} value={document.issuingCountry} onChange={(event) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
-                          ? { ...item, issuingCountry: event.target.value.toUpperCase(), outcome: null }
-                          : item))} />
+                      <label htmlFor={`identity-issuing-country-${document.localId}`}>
+                        Issuing country
+                        {isNigeriaIdentityType(document.type)
+                          ? <span className="cm-optional-indicator">Read-only · Nigeria (NG) for NIN/BVN</span>
+                          : <span className="cm-required-indicator">Required</span>}
+                        <CountrySelect
+                          inputId={`identity-issuing-country-${document.localId}`}
+                          name={`issuing-country-${document.localId}`}
+                          value={isNigeriaIdentityType(document.type) ? 'NG' : document.issuingCountry}
+                          ariaLabel="Issuing country"
+                          onChange={(issuingCountry) => setIdentityDocuments((current) => current.map((item) => item.localId === document.localId
+                            ? { ...item, issuingCountry, outcome: null }
+                            : item))}
+                          required
+                          disabled={isNigeriaIdentityType(document.type)}
+                        />
                       </label>
                       {supportsIdentityDates(document.type) && <>
                         <label>Issue date <span className="cm-optional-indicator">Optional</span>

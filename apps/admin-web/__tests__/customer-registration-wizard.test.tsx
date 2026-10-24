@@ -203,6 +203,70 @@ describe('CustomerRegistrationWizard', () => {
     await waitFor(() => expect(onOpenCustomer).toHaveBeenCalledWith('synthetic-customer-id'));
   });
 
+  test('searches countries by ISO code or name, persists alpha-2 values, and fixes NIN/BVN to Nigeria', async () => {
+    const view = render(
+      <CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />,
+    );
+
+    expect(view.getByText('Nigeria (NG)')).toBeTruthy();
+    const chooseCountry = async (label: string, query: string, optionName: string) => {
+      const input = view.getByRole('combobox', { name: label });
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: query } });
+      fireEvent.click(await view.findByRole('option', { name: optionName }));
+    };
+
+    await chooseCountry('Nationality', 'US', 'United States (US)');
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Country' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/registration-profile', expect.objectContaining({
+      nationality: 'US',
+    }));
+
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target: { value: '+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save contact details' }));
+    const continueToAddress = await view.findByRole('button', { name: 'Continue to address' });
+    await waitFor(() => expect((continueToAddress as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(continueToAddress);
+    expect(view.getByText('Nigeria (NG)')).toBeTruthy();
+    fireEvent.change(view.getByLabelText(/Address line 1/), { target: { value: '1 Synthetic Crescent' } });
+    fireEvent.change(view.getByLabelText(/^City/), { target: { value: 'Abuja' } });
+    fireEvent.change(view.getByLabelText(/State \/ province/), { target: { value: 'FCT' } });
+    await chooseCountry('Country', 'Kenya', 'Kenya (KE)');
+    fireEvent.click(view.getByRole('button', { name: 'Save address & continue' }));
+    await view.findByRole('heading', { name: 'Identity documents' });
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/address', expect.objectContaining({ country: 'KE' }));
+
+    const ninIssuingCountry = view.container.querySelector<HTMLInputElement>('input[id^="identity-issuing-country-"]');
+    expect(ninIssuingCountry).not.toBeNull();
+    expect(ninIssuingCountry?.disabled).toBe(true);
+    expect(view.getByText('Nigeria (NG)')).toBeTruthy();
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-NIN-0001' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByText('••••••0001 · Saved')).toBeTruthy();
+
+    fireEvent.click(view.getByRole('button', { name: 'Add another identity document' }));
+    fireEvent.change(view.getByLabelText(/Identity document type/), { target: { value: 'INTERNATIONAL_PASSPORT' } });
+    const passportIssuingCountry = view.container.querySelector<HTMLInputElement>('input[id^="identity-issuing-country-"]');
+    expect(passportIssuingCountry).not.toBeNull();
+    expect(passportIssuingCountry?.disabled).toBe(false);
+    await chooseCountry('Issuing country', 'GB', 'United Kingdom (GB)');
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: 'SYNTHETIC-PASSPORT-0002' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save this document' }));
+    expect(await view.findByText('••••••0002 · Saved')).toBeTruthy();
+
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/identity-document', expect.objectContaining({
+      type: 'NIN',
+      issuingCountry: 'NG',
+    }));
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/synthetic-customer-id/identity-document', expect.objectContaining({
+      type: 'INTERNATIONAL_PASSPORT',
+      issuingCountry: 'GB',
+    }));
+  });
+
   test('uses the business name workflow and permits skipping all identity documents', async () => {
     const view = render(
       <CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />,

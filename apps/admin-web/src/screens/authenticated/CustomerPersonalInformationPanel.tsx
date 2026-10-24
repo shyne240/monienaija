@@ -3,6 +3,7 @@ import React, { FormEvent, useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { maskContactValue } from './customer-masking';
+import { CountrySelect, countryNameForCode, isNigeriaIdentityType, normalizeCountryCode } from './CountrySelect';
 
 interface ProfileRecord {
   displayName: string;
@@ -116,7 +117,7 @@ const IDENTITY_TYPES: IdentityType[] = [
 ];
 
 function emptyProfile(): ProfileFormState {
-  return { displayName: '', legalName: '', firstName: '', middleName: '', lastName: '', dateOfBirth: '', nationality: '' };
+  return { displayName: '', legalName: '', firstName: '', middleName: '', lastName: '', dateOfBirth: '', nationality: 'NG' };
 }
 
 function emptyAddress(): AddressFormState {
@@ -151,14 +152,15 @@ function normalizedPhone(value: string): string {
 }
 
 function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
+  if (!profile) return emptyProfile();
   return {
-    displayName: profile?.displayName ?? '',
-    legalName: profile?.legalName ?? '',
-    firstName: profile?.firstName ?? '',
-    middleName: profile?.middleName ?? '',
-    lastName: profile?.lastName ?? '',
-    dateOfBirth: profile?.dateOfBirth ?? '',
-    nationality: profile?.nationality ?? '',
+    displayName: profile.displayName,
+    legalName: profile.legalName ?? '',
+    firstName: profile.firstName ?? '',
+    middleName: profile.middleName ?? '',
+    lastName: profile.lastName ?? '',
+    dateOfBirth: profile.dateOfBirth ?? '',
+    nationality: normalizeCountryCode(profile.nationality),
   };
 }
 
@@ -256,7 +258,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       middleName: profileForm.middleName.trim() || null,
       lastName: profileForm.lastName.trim() || null,
       dateOfBirth: profileForm.dateOfBirth || null,
-      nationality: profileForm.nationality.trim().toUpperCase() || null,
+      nationality: normalizeCountryCode(profileForm.nationality) || null,
     };
     try {
       let saved: ProfileRecord;
@@ -290,7 +292,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       lineTwo: addressForm.lineTwo.trim() || null,
       city: addressForm.city.trim(),
       state: addressForm.state.trim(),
-      country: addressForm.country.trim().toUpperCase(),
+      country: normalizeCountryCode(addressForm.country),
       postalCode: addressForm.postalCode.trim() || null,
     };
     try {
@@ -413,7 +415,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       const body = {
         type: identityForm.type,
         ...(identityForm.documentNumber.trim() ? { documentNumber: identityForm.documentNumber.trim() } : {}),
-        issuingCountry: identityForm.issuingCountry.trim().toUpperCase(),
+        issuingCountry: isNigeriaIdentityType(identityForm.type) ? 'NG' : normalizeCountryCode(identityForm.issuingCountry),
         ...(supportsIdentityDates(identityForm.type)
           ? { issuedAt: identityForm.issuedAt || null, expiresAt: identityForm.expiresAt || null }
           : {}),
@@ -444,7 +446,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       lineTwo: address.lineTwo ?? '',
       city: address.city,
       state: address.state,
-      country: address.country,
+      country: normalizeCountryCode(address.country),
       postalCode: address.postalCode ?? '',
       isPrimary: address.isPrimary,
     } : emptyAddress());
@@ -462,7 +464,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           id: document.id,
           type: document.type,
           documentNumber: '',
-          issuingCountry: document.issuingCountry,
+          issuingCountry: isNigeriaIdentityType(document.type) ? 'NG' : normalizeCountryCode(document.issuingCountry),
           issuedAt: supportsIdentityDates(document.type) ? document.issuedAt ?? '' : '',
           expiresAt: supportsIdentityDates(document.type) ? document.expiresAt ?? '' : '',
         }
@@ -495,7 +497,17 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                 <label>Middle name <span className="cm-optional-indicator">Optional</span><input maxLength={100} value={profileForm.middleName} onChange={(event) => setProfileForm({ ...profileForm, middleName: event.target.value })} /></label>
                 <label>Last name <span className="cm-optional-indicator">Optional</span><input maxLength={100} value={profileForm.lastName} onChange={(event) => setProfileForm({ ...profileForm, lastName: event.target.value })} /></label>
                 <label>Date of birth <span className="cm-optional-indicator">Optional</span><input type="date" value={profileForm.dateOfBirth} onChange={(event) => setProfileForm({ ...profileForm, dateOfBirth: event.target.value })} /></label>
-                <label>Nationality (ISO 2–3 letters) <span className="cm-optional-indicator">Optional</span><input maxLength={3} value={profileForm.nationality} onChange={(event) => setProfileForm({ ...profileForm, nationality: event.target.value.toUpperCase() })} /></label>
+                <label htmlFor="c360-profile-nationality">
+                  Nationality <span className="cm-optional-indicator">Optional</span>
+                  <CountrySelect
+                    inputId="c360-profile-nationality"
+                    name="nationality"
+                    value={profileForm.nationality}
+                    onChange={(nationality) => setProfileForm({ ...profileForm, nationality })}
+                    clearable
+                    ariaLabel="Nationality"
+                  />
+                </label>
               </div>
               {!canWriteProfile && <p className="cm-muted">This role may view but cannot correct profile information.</p>}
               <div className="cm-actions-row"><button className="cm-button cm-button-primary" type="submit" disabled={busy || !canWriteProfile}>{busy ? 'Saving…' : 'Save profile'}</button><button className="cm-button cm-button-secondary" type="button" onClick={() => setProfileEditing(false)} disabled={busy}>Cancel</button></div>
@@ -508,7 +520,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               <div><dt>Middle name</dt><dd>{profile.middleName || 'Not recorded'}</dd></div>
               <div><dt>Last name</dt><dd>{profile.lastName || 'Not recorded'}</dd></div>
               <div><dt>Date of birth</dt><dd>{profile.dateOfBirth || 'Not recorded'}</dd></div>
-              <div><dt>Nationality</dt><dd>{profile.nationality || 'Not recorded'}</dd></div>
+              <div><dt>Nationality</dt><dd>{countryNameForCode(profile.nationality)}</dd></div>
             </dl>
           ) : profileStatus === 404 ? <p className="cm-empty-state">No profile is recorded yet.</p>
             : <p className="cm-muted">Profile information could not be loaded.</p>}
@@ -576,7 +588,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                   <div className="cm-address-title"><strong>{address.type}</strong>{address.isPrimary && <span className="cm-chip">Primary</span>}{canWriteAddress && <button className="cm-text-button" type="button" onClick={() => startAddressEdit(address)}>Edit</button>}</div>
                   <p>{address.lineOne}{address.lineTwo ? `, ${address.lineTwo}` : ''}</p>
                   <p>{address.city}, {address.state} {address.postalCode || ''}</p>
-                  <p>{address.country}</p>
+                  <p>{countryNameForCode(address.country)}</p>
                 </div>
               ))}
             </div>
@@ -592,7 +604,17 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               <label>Address line 2<input maxLength={200} value={addressForm.lineTwo} onChange={(event) => setAddressForm({ ...addressForm, lineTwo: event.target.value })} /></label>
               <label>City<input maxLength={100} value={addressForm.city} onChange={(event) => setAddressForm({ ...addressForm, city: event.target.value })} required /></label>
               <label>State / province<input maxLength={100} value={addressForm.state} onChange={(event) => setAddressForm({ ...addressForm, state: event.target.value })} required /></label>
-              <label>Country (ISO 2–3 letters)<input maxLength={3} value={addressForm.country} onChange={(event) => setAddressForm({ ...addressForm, country: event.target.value.toUpperCase() })} required /></label>
+              <label htmlFor="c360-address-country">
+                Country <span className="cm-required-indicator">Required</span>
+                <CountrySelect
+                  inputId="c360-address-country"
+                  name="country"
+                  value={addressForm.country}
+                  onChange={(country) => setAddressForm({ ...addressForm, country })}
+                  required
+                  ariaLabel="Country"
+                />
+              </label>
               <label>Postal code<input maxLength={20} value={addressForm.postalCode} onChange={(event) => setAddressForm({ ...addressForm, postalCode: event.target.value })} /></label>
               <label className="cm-checkbox-label"><input type="checkbox" checked={addressForm.isPrimary} onChange={(event) => setAddressForm({ ...addressForm, isPrimary: event.target.checked })} /> Mark as primary</label>
             </div>
@@ -614,7 +636,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                   <div>
                     <strong>{document.type.replaceAll('_', ' ')}</strong>
                     <span className="cm-secondary-line">
-                      Issuing country: {document.issuingCountry}
+                      Issuing country: {countryNameForCode(document.issuingCountry)}
                       {supportsIdentityDates(document.type)
                         ? ` · ${document.issuedAt ? `Issued ${document.issuedAt}` : 'Issue date not recorded'} · ${document.expiresAt ? `Expires ${document.expiresAt}` : 'No expiry recorded'}`
                         : ' · Issue and expiry dates are not applicable'}
@@ -636,12 +658,27 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
                 setIdentityForm({
                   ...identityForm,
                   type,
+                  issuingCountry: isNigeriaIdentityType(type) ? 'NG' : identityForm.issuingCountry || 'NG',
                   issuedAt: supportsIdentityDates(type) ? identityForm.issuedAt : '',
                   expiresAt: supportsIdentityDates(type) ? identityForm.expiresAt : '',
                 });
               }}>{IDENTITY_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}</select></label>
               <label>Document number {identityForm.id ? <span className="cm-optional-indicator">Leave blank to keep current</span> : <span className="cm-required-indicator">Required</span>}<input type="password" autoComplete="off" maxLength={160} value={identityForm.documentNumber} onChange={(event) => setIdentityForm({ ...identityForm, documentNumber: event.target.value })} required={!identityForm.id} /></label>
-              <label>Issuing country (ISO 2–3 letters)<input maxLength={3} value={identityForm.issuingCountry} onChange={(event) => setIdentityForm({ ...identityForm, issuingCountry: event.target.value.toUpperCase() })} required /></label>
+              <label htmlFor="c360-identity-country">
+                Issuing country
+                {isNigeriaIdentityType(identityForm.type)
+                  ? <span className="cm-optional-indicator">Read-only · Nigeria (NG) for NIN/BVN</span>
+                  : <span className="cm-required-indicator">Required</span>}
+                <CountrySelect
+                  inputId="c360-identity-country"
+                  name="issuingCountry"
+                  value={isNigeriaIdentityType(identityForm.type) ? 'NG' : identityForm.issuingCountry}
+                  ariaLabel="Issuing country"
+                  onChange={(issuingCountry) => setIdentityForm({ ...identityForm, issuingCountry })}
+                  required
+                  disabled={isNigeriaIdentityType(identityForm.type)}
+                />
+              </label>
               {supportsIdentityDates(identityForm.type) && <>
                 <label>Issue date <span className="cm-optional-indicator">Optional</span><input type="date" value={identityForm.issuedAt} onChange={(event) => setIdentityForm({ ...identityForm, issuedAt: event.target.value })} /></label>
                 <label>Expiry date <span className="cm-optional-indicator">Optional</span><input type="date" value={identityForm.expiresAt} onChange={(event) => setIdentityForm({ ...identityForm, expiresAt: event.target.value })} /></label>

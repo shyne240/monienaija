@@ -125,6 +125,109 @@ describe('CustomerPersonalInformationPanel', () => {
     expect(await view.findByText('Synthetic Revised Customer')).toBeTruthy();
   });
 
+  test('defaults new Customer 360 profile, address, and NIN identity forms to Nigeria', async () => {
+    setReadMocks();
+    const originalGet = (ApiClient.get as jest.Mock).getMockImplementation();
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) =>
+      path.endsWith('/profile')
+        ? Promise.reject(Object.assign(new Error('not found'), { status: 404 }))
+        : originalGet?.(path));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+
+    const profileHeading = await view.findByRole('heading', { name: 'Personal information' });
+    const profileCard = profileHeading.closest('article') as HTMLElement;
+    fireEvent.click(within(profileCard).getByRole('button', { name: 'Add profile' }));
+    expect(view.getByText('Nigeria (NG)')).toBeTruthy();
+
+    const addressHeading = await view.findByRole('heading', { name: 'Residential and mailing addresses' });
+    const addressCard = addressHeading.closest('article') as HTMLElement;
+    fireEvent.click(within(addressCard).getByRole('button', { name: 'Add address' }));
+    expect(within(addressCard).getByText('Nigeria (NG)')).toBeTruthy();
+    fireEvent.click(within(addressCard).getByRole('button', { name: 'Cancel' }));
+
+    const identityHeading = await view.findByRole('heading', { name: 'Supported identity metadata' });
+    const identityCard = identityHeading.closest('article') as HTMLElement;
+    fireEvent.click(within(identityCard).getByRole('button', { name: 'Add document' }));
+    expect(within(identityCard).getByText('Nigeria (NG)')).toBeTruthy();
+    expect(view.container.querySelector<HTMLInputElement>('#c360-identity-country')?.disabled).toBe(true);
+  });
+
+  test('displays saved country codes as full names and preserves them in profile, address, and identity edits', async () => {
+    setReadMocks();
+    const originalGet = (ApiClient.get as jest.Mock).getMockImplementation();
+    const savedAddress = {
+      id: 'synthetic-address-country',
+      type: 'RESIDENTIAL',
+      lineOne: '1 Synthetic Crescent',
+      lineTwo: null,
+      city: 'Abuja',
+      state: 'FCT',
+      country: 'GBR',
+      postalCode: null,
+      isPrimary: true,
+    };
+    const savedPassport = {
+      id: 'synthetic-identity',
+      type: 'INTERNATIONAL_PASSPORT',
+      maskedDocumentNumber: '••••••0001',
+      issuingCountry: 'GBR',
+      issuedAt: '2015-06-12',
+      expiresAt: '2035-06-12',
+    };
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/profile')) return Promise.resolve({ ...profileInitial, nationality: 'USA' });
+      if (path.endsWith('/addresses')) return Promise.resolve([savedAddress]);
+      if (path.endsWith('/identity-documents')) return Promise.resolve([savedPassport]);
+      return originalGet?.(path);
+    });
+
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    const profileHeading = await view.findByRole('heading', { name: 'Personal information' });
+    const profileCard = profileHeading.closest('article') as HTMLElement;
+    expect(within(profileCard).getByText('United States')).toBeTruthy();
+    expect(within(profileCard).queryByText('USA')).toBeNull();
+
+    const addressHeading = await view.findByRole('heading', { name: 'Residential and mailing addresses' });
+    const addressCard = addressHeading.closest('article') as HTMLElement;
+    expect(within(addressCard).getByText('United Kingdom')).toBeTruthy();
+    const identityHeading = await view.findByRole('heading', { name: 'Supported identity metadata' });
+    const identityCard = identityHeading.closest('article') as HTMLElement;
+    expect(within(identityCard).getByText(/Issuing country: United Kingdom/)).toBeTruthy();
+
+    const initialReadCount = (ApiClient.get as jest.Mock).mock.calls.length;
+    fireEvent.click(within(profileCard).getByRole('button', { name: 'Edit profile' }));
+    expect(view.getByText('United States (US)')).toBeTruthy();
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Synthetic Country Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save profile' }));
+    await waitFor(() => expect(ApiClient.patch).toHaveBeenCalledWith(
+      '/customers/synthetic-customer-id/profile',
+      expect.objectContaining({ nationality: 'US' }),
+    ));
+    await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.length).toBeGreaterThan(initialReadCount));
+    await waitFor(() => expect(view.queryByText('Loading authorized personal-information sections…')).toBeNull());
+
+    const refreshedAddressCard = (await view.findByRole('heading', { name: 'Residential and mailing addresses' })).closest('article') as HTMLElement;
+    const readsAfterProfile = (ApiClient.get as jest.Mock).mock.calls.length;
+    fireEvent.click(within(refreshedAddressCard).getByRole('button', { name: 'Edit' }));
+    expect(view.getByText('United Kingdom (GB)')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Save address' }));
+    await waitFor(() => expect(ApiClient.patch).toHaveBeenCalledWith(
+      '/customers/synthetic-customer-id/addresses/synthetic-address-country',
+      expect.objectContaining({ country: 'GB' }),
+    ));
+    await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.length).toBeGreaterThan(readsAfterProfile));
+    await waitFor(() => expect(view.queryByText('Loading authorized personal-information sections…')).toBeNull());
+
+    const refreshedIdentityCard = (await view.findByRole('heading', { name: 'Supported identity metadata' })).closest('article') as HTMLElement;
+    fireEvent.click(within(refreshedIdentityCard).getByRole('button', { name: 'Edit' }));
+    expect(view.getByText('United Kingdom (GB)')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
+    await waitFor(() => expect(ApiClient.patch).toHaveBeenCalledWith(
+      '/customers/synthetic-customer-id/identity-documents/synthetic-identity',
+      expect.objectContaining({ issuingCountry: 'GB' }),
+    ));
+  });
+
   test('keeps identity values masked and never pre-fills a sensitive document number for correction', async () => {
     const state = setReadMocks();
     const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
@@ -188,6 +291,7 @@ describe('CustomerPersonalInformationPanel', () => {
     });
 
     const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    const initialReadCount = (ApiClient.get as jest.Mock).mock.calls.length;
     const identityHeading = await view.findByRole('heading', { name: 'Supported identity metadata' });
     const identityCard = identityHeading.closest('article');
     expect(identityCard).not.toBeNull();
@@ -202,6 +306,8 @@ describe('CustomerPersonalInformationPanel', () => {
     ));
     expect(documents.find((document) => document.id === 'synthetic-identity')?.maskedDocumentNumber).toBe('••••••0001');
     expect(documents.find((document) => document.id === 'synthetic-identity-second')?.maskedDocumentNumber).toBe('••••••0003');
+    await waitFor(() => expect((ApiClient.get as jest.Mock).mock.calls.length).toBeGreaterThan(initialReadCount));
+    await waitFor(() => expect(view.queryByText('Loading authorized personal-information sections…')).toBeNull());
     const refreshedIdentityCard = (await view.findByRole('heading', { name: 'Supported identity metadata' })).closest('article') as HTMLElement;
 
     fireEvent.click(within(refreshedIdentityCard).getByRole('button', { name: 'Add document' }));
@@ -230,12 +336,16 @@ describe('CustomerPersonalInformationPanel', () => {
     fireEvent.change(view.getByLabelText(/Document type/), { target: { value: 'BVN' } });
     expect(view.queryByLabelText(/Issue date/)).toBeNull();
     expect(view.queryByLabelText(/Expiry date/)).toBeNull();
+    const bvnIssuingCountry = view.container.querySelector<HTMLInputElement>('#c360-identity-country');
+    expect(bvnIssuingCountry).not.toBeNull();
+    expect(bvnIssuingCountry?.disabled).toBe(true);
+    expect(view.getByText('Nigeria (NG)')).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
 
     await waitFor(() => {
       const identityCorrection = (ApiClient.patch as jest.Mock).mock.calls.find(([path]) =>
         path.endsWith('/identity-documents/synthetic-identity'));
-      expect(identityCorrection?.[1]).toMatchObject({ type: 'BVN' });
+      expect(identityCorrection?.[1]).toMatchObject({ type: 'BVN', issuingCountry: 'NG' });
       expect(identityCorrection?.[1]).not.toHaveProperty('issuedAt');
       expect(identityCorrection?.[1]).not.toHaveProperty('expiresAt');
     });

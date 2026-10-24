@@ -187,6 +187,9 @@
 .cm-wizard-field-grid label, .cm-otp-form label { display: flex; flex-direction: column; gap: 7px; color: #435751; font-size: 11px; font-weight: 750; }
 .cm-wizard-field-grid input, .cm-wizard-field-grid select, .cm-otp-form input { width: 100%; min-height: 42px; border: 1px solid #cedbd6; border-radius: 9px; padding: 0 11px; color: var(--cm-ink); background: #fff; font: inherit; font-size: 13px; outline: none; }
 .cm-wizard-field-grid input:focus, .cm-wizard-field-grid select:focus, .cm-otp-form input:focus { border-color: var(--cm-brand); box-shadow: 0 0 0 3px rgba(11, 106, 82, .12); }
+.cm-wizard-field-grid .cm-country-select__control { width: 100%; }
+.cm-wizard-field-grid .cm-country-select__control input { min-height: 0; border: 0; border-radius: 0; padding: 0; color: inherit; background: transparent; font: inherit; outline: none; box-shadow: none; }
+.cm-wizard-field-grid .cm-country-select__control input:focus { border: 0; box-shadow: none; }
 .cm-required-indicator, .cm-optional-indicator { margin-left: 5px; color: #61756d; font-size: 9px; font-weight: 650; }
 .cm-required-indicator { color: #94652a; }
 .cm-form-help { margin: 0; color: var(--cm-muted); font-size: 11px; line-height: 1.55; }
