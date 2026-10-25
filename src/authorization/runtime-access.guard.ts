@@ -103,7 +103,7 @@ export class RuntimeAccessGuard implements CanActivate {
           }
           try {
             const custValidation = await this.sessionService.validate({ token });
-            if (custValidation.valid && (custValidation as any).principal) {
+            if (custValidation.valid && custValidation.principal) {
               throw new ForbiddenException('Customer not allowed on workforce route');
             }
           } catch (inner) {
@@ -116,6 +116,14 @@ export class RuntimeAccessGuard implements CanActivate {
 
       request.authorizationPrincipal = principal;
       this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
+
+      if (route.policy?.requiredFunctions?.length) {
+        const decision = await this.authorizationService.authorize(principal, route.policy, {
+          type: route.resourceType,
+        });
+        request.authorizationDecision = decision;
+        if (!decision.allowed) throw new ForbiddenException('Authorization denied');
+      }
 
       // V1-HARDEN-01 Part D: the route-policy-registry declares an explicit
       // `policy.allowedPrincipalTypes` for most WORKFORCE_SESSION routes (several internal
@@ -227,7 +235,10 @@ export class RuntimeAccessGuard implements CanActivate {
     // policy, so this cannot grant access beyond what each route already declared allowed.
     if (!principal && this.workforceConfig.enabled) {
       try {
-        principal = await this.workforceSessions.validate(token, this.workforceConfig.internalAudience);
+        principal = await this.workforceSessions.validate(
+          token,
+          this.workforceConfig.internalAudience,
+        );
       } catch {
         // Not a valid A2 workforce session — fall through to the next session type.
       }
@@ -252,7 +263,7 @@ export class RuntimeAccessGuard implements CanActivate {
       id: route.resourceId,
       customerId: route.customerId,
       agentId: principal.agentId ?? route.agentId,
-      aggregatorId: (principal as any).aggregatorId ?? (route as any).aggregatorId,
+      aggregatorId: principal.aggregatorId ?? (route as { aggregatorId?: string }).aggregatorId,
     });
     request.authorizationDecision = decision;
     if (!decision.allowed) {
@@ -266,7 +277,10 @@ export class RuntimeAccessGuard implements CanActivate {
    * for whom this field is `undefined` (every non-workforce principal type, and any workforce
    * principal holding zero recognized roles) is never vacuously treated as read-only.
    */
-  private denyUnsafeMethodForReadOnlyPrincipal(principal: AuthorizationPrincipal, method: string): void {
+  private denyUnsafeMethodForReadOnlyPrincipal(
+    principal: AuthorizationPrincipal,
+    method: string,
+  ): void {
     if (principal.readOnlyPrincipal === true && !SAFE_HTTP_METHODS.has(method.toUpperCase())) {
       throw new ForbiddenException('Read-only principal may not perform this operation');
     }

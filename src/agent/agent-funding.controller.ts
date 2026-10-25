@@ -1,7 +1,18 @@
-import { Body, Controller, HttpCode, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Get,
+  Param,
+  Post,
+  Req,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { AgentFundingService } from './agent-funding.service';
-import { FundAgentDto, DefundAgentDto } from './dto/fund-agent.dto';
+import { AgentFundingGovernanceService } from './agent-funding-governance.service';
+import { FundAgentDto, DefundAgentDto, RequestAgentFundingDto } from './dto/fund-agent.dto';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
 interface AuthenticatedRequest {
@@ -11,7 +22,44 @@ interface AuthenticatedRequest {
 
 @Controller('internal')
 export class AgentFundingController {
-  constructor(private readonly fundingService: AgentFundingService) {}
+  constructor(
+    private readonly fundingService: AgentFundingService,
+    private readonly governance: AgentFundingGovernanceService,
+  ) {}
+
+  @Get('agents/:agentId/funding-requests')
+  async fundingRequests(@Param('agentId') agentId: string, @Req() req: AuthenticatedRequest,
+    @Query('idempotencyKey') key?: string) {
+    return this.governance.list(agentId, this.requirePrivileged(req).principal, key);
+  }
+
+  @Post('agents/:agentId/fund-request')
+  async requestFunding(
+    @Param('agentId') agentId: string,
+    @Body() dto: RequestAgentFundingDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.governance.request(
+      { ...dto, agentId },
+      'FUND',
+      this.requirePrivileged(req).principal,
+      dto.reason,
+    );
+  }
+
+  @Post('agents/:agentId/defund-request')
+  async requestDefunding(
+    @Param('agentId') agentId: string,
+    @Body() dto: RequestAgentFundingDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.governance.request(
+      { ...dto, agentId },
+      'DEFUND',
+      this.requirePrivileged(req).principal,
+      dto.reason,
+    );
+  }
 
   @Post('agents/:agentId/fund')
   @HttpCode(201)
@@ -23,6 +71,7 @@ export class AgentFundingController {
     const { principal, actor } = this.requirePrivileged(req);
     return this.fundingService.fund({
       agentId,
+      approvalId: dto.approvalId,
       amountMinor: dto.amountMinor,
       currency: dto.currency,
       idempotencyKey: dto.idempotencyKey,
@@ -45,6 +94,7 @@ export class AgentFundingController {
     const { principal, actor } = this.requirePrivileged(req);
     return this.fundingService.defund({
       agentId,
+      approvalId: dto.approvalId,
       amountMinor: dto.amountMinor,
       currency: dto.currency,
       idempotencyKey: dto.idempotencyKey,
@@ -113,7 +163,10 @@ export class AgentFundingController {
     });
   }
 
-  private requirePrivileged(req: AuthenticatedRequest): { principal: AuthorizationPrincipal; actor: string } {
+  private requirePrivileged(req: AuthenticatedRequest): {
+    principal: AuthorizationPrincipal;
+    actor: string;
+  } {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'AGENT' || principal.type === 'CUSTOMER') {

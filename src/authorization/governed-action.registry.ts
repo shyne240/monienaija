@@ -141,8 +141,21 @@ export const LEDGER_JOURNAL_REVERSAL_ACTION = rule(
   [],
 );
 
+export const AGENT_FUNDING_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> =
+  Object.fromEntries(
+    ['FUND', 'DEFUND'].map((direction) => {
+      const code = direction === 'FUND' ? 'agent.fund' : 'agent.defund';
+      const definition = {
+        ...rule(`AGENT_${direction}`, 'AGENT', code, code),
+        initiatingRoles: ['AGENT_NETWORK_MANAGER'],
+      };
+      return [definition.action, definition];
+    }),
+  );
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
+  ...AGENT_FUNDING_ACTIONS,
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
 };
 

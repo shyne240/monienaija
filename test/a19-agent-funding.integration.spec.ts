@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unused-vars, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unused-vars */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
-import { AgentFundingService } from '../src/agent/agent-funding.service';
+import { approvedAgentFunding } from './support/approved-agent-funding';
 import { AggregatorService } from '../src/aggregator/aggregator.service';
 import { AggregatorAgentRelationshipService } from '../src/aggregator/aggregator-agent-relationship.service';
 import { AgentClassService } from '../src/agent/agent-class.service';
@@ -19,7 +19,7 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
 describe('A19 Agent Funding (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
-  let fundingService: AgentFundingService;
+  let governedFunding: ReturnType<typeof approvedAgentFunding>;
   let aggregatorService: AggregatorService;
   let relationshipService: AggregatorAgentRelationshipService;
   let classService: AgentClassService;
@@ -75,7 +75,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
-    fundingService = moduleRef.get(AgentFundingService);
+    governedFunding = approvedAgentFunding(app, privilegedPrincipal as never);
     aggregatorService = moduleRef.get(AggregatorService);
     relationshipService = moduleRef.get(AggregatorAgentRelationshipService);
     classService = moduleRef.get(AgentClassService);
@@ -151,7 +151,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const poolId = await getPoolId();
     const beforePool = await getBalance(poolId);
     const beforeAgent = await getBalance(walletLedgerId);
-    const res = await fundingService.fund({
+    const res = await governedFunding.fund({
       agentId,
       amountMinor: '5000',
       currency: 'NGN',
@@ -180,9 +180,9 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 2. valid defunding where V1 requires it
   it('2. valid defunding', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '8000', currency: 'NGN', idempotencyKey: `fund-def-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '8000', currency: 'NGN', idempotencyKey: `fund-def-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const before = await getBalance(walletLedgerId);
-    const res = await fundingService.defund({ agentId, amountMinor: '3000', currency: 'NGN', idempotencyKey: `defund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const res = await governedFunding.defund({ agentId, amountMinor: '3000', currency: 'NGN', idempotencyKey: `defund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(res.status).toBe('COMPLETED');
     const after = await getBalance(walletLedgerId);
     expect(after).toBe(before - 3000n);
@@ -192,7 +192,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   it('3. correct source account for funding is pool', async () => {
     const { agentId } = await createActiveAgent();
     const poolId = await getPoolId();
-    const res = await fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `src-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const res = await governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `src-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const lines: Array<{ ledger_account_id: string; direction: string }> = await dataSource.query(`SELECT ledger_account_id, direction FROM ledger_lines WHERE journal_id=$1`, [res.journalId]);
     const debit = lines.find((l) => l.direction === 'DEBIT')!;
     expect(debit.ledger_account_id).toBe(poolId);
@@ -201,7 +201,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 4. correct Agent destination
   it('4. correct Agent destination is wallet', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    const res = await fundingService.fund({ agentId, amountMinor: '1200', currency: 'NGN', idempotencyKey: `dst-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const res = await governedFunding.fund({ agentId, amountMinor: '1200', currency: 'NGN', idempotencyKey: `dst-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const lines: Array<{ ledger_account_id: string; direction: string }> = await dataSource.query(`SELECT ledger_account_id, direction FROM ledger_lines WHERE journal_id=$1`, [res.journalId]);
     const credit = lines.find((l) => l.direction === 'CREDIT')!;
     expect(credit.ledger_account_id).toBe(walletLedgerId);
@@ -210,7 +210,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 5. balanced journal already covered but explicit
   it('5. balanced journal', async () => {
     const { agentId } = await createActiveAgent();
-    const res = await fundingService.fund({ agentId, amountMinor: '2500', currency: 'NGN', idempotencyKey: `bal-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const res = await governedFunding.fund({ agentId, amountMinor: '2500', currency: 'NGN', idempotencyKey: `bal-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const rows: Array<{ debit: string; credit: string }> = await dataSource.query(
       `SELECT SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE 0 END)::text AS debit, SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE 0 END)::text AS credit FROM ledger_lines WHERE journal_id=$1`,
       [res.journalId],
@@ -224,14 +224,14 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const { agentId } = await createActiveAgent();
     // Agent has 0, try to defund 1000 → should fail (ledger negative check)
     await expect(
-      fundingService.defund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `over-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.defund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `over-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/balance|negative|overdraft/i);
     // Fund 1000 then defund 1000 should succeed, defund extra 1 should fail
-    await fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `fund-over-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
-    const ok = await fundingService.defund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `def-over2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `fund-over-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const ok = await governedFunding.defund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `def-over2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(ok.status).toBe('COMPLETED');
     await expect(
-      fundingService.defund({ agentId, amountMinor: '1', currency: 'NGN', idempotencyKey: `over3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.defund({ agentId, amountMinor: '1', currency: 'NGN', idempotencyKey: `over3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/balance|negative|overdraft/i);
   });
 
@@ -239,7 +239,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   it('7. insufficient funds rejected', async () => {
     const { agentId } = await createActiveAgent();
     await expect(
-      fundingService.defund({ agentId, amountMinor: '5000', currency: 'NGN', idempotencyKey: `insuf-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.defund({ agentId, amountMinor: '5000', currency: 'NGN', idempotencyKey: `insuf-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow();
   });
 
@@ -248,10 +248,10 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
     const key = `idem-${randomUUID()}`;
     const before = await getBalance(walletLedgerId);
-    const r1 = await fundingService.fund({ agentId, amountMinor: '4000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
+    const r1 = await governedFunding.fund({ agentId, amountMinor: '4000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(r1.status).toBe('COMPLETED');
     const after1 = await getBalance(walletLedgerId);
-    const r2 = await fundingService.fund({ agentId, amountMinor: '4000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
+    const r2 = await governedFunding.fund({ agentId, amountMinor: '4000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(r2.status).toBe('REPLAYED');
     expect(r2.journalId).toBe(r1.journalId);
     const after2 = await getBalance(walletLedgerId);
@@ -267,8 +267,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const key = `concur-${randomUUID()}`;
     const before = await getBalance(walletLedgerId);
     const results = await Promise.allSettled([
-      fundingService.fund({ agentId, amountMinor: '6000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
-      fundingService.fund({ agentId, amountMinor: '6000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, amountMinor: '6000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, amountMinor: '6000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
     ]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled') as Array<PromiseFulfilledResult<any>>;
     const rejected = results.filter((r) => r.status === 'rejected');
@@ -287,9 +287,9 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   it('10. idempotency mismatch rejected', async () => {
     const { agentId } = await createActiveAgent();
     const key = `mismatch-${randomUUID()}`;
-    await fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
     await expect(
-      fundingService.fund({ agentId, amountMinor: '2000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, amountMinor: '2000', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/already|conflict|mismatch|exists/i);
   });
 
@@ -298,9 +298,9 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const { agentId } = await createActiveAgent();
     // Suspend agent
     await dataSource.query(`UPDATE agents SET status='SUSPENDED' WHERE id=$1`, [agentId]);
-    await expect(fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `life-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow(/SUSPENDED|not.*active|suspended/i);
+    await expect(governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `life-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow(/SUSPENDED|not.*active|suspended/i);
     await dataSource.query(`UPDATE agents SET status='TERMINATED' WHERE id=$1`, [agentId]);
-    await expect(fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `life2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow(/TERMINATED|not.*active/i);
+    await expect(governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `life2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow(/TERMINATED|not.*active/i);
     // Also PENDING
     const cls = await classService.create({ reference: `cls-life-${randomUUID().slice(0, 8)}`, code: `LIF-${randomUUID().slice(0, 6)}`, name: 'Life', isActive: true, applicableServices: ['AGENT_FUNDING'] as any, actor: 'test-actor' });
     const appEnt = await appService.create({ agentClassId: cls.id, applicantReference: `h-life-${randomUUID()}`, businessName: 'Life', contactEmail: `life-${randomUUID().slice(0, 6)}@test.com`, actor: 'applicant' });
@@ -317,11 +317,11 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     // Suspend aggregator
     await aggregatorService.suspend(aggId, 'test-actor');
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `agg-life-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `agg-life-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/SUSPENDED|Aggreg.*SUSPENDED/i);
     await aggregatorService.terminate(aggId, 'test-actor');
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `agg-life2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `agg-life2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/TERMINATED/i);
   });
 
@@ -331,22 +331,22 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const aggId = await createActiveAggregator();
     // No relationship → should reject when funding via aggregator
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/relationship/i);
     // Create relationship then suspend it → reject
     await relationshipService.assign({ aggregatorId: aggId, agentId, actor: 'test-actor' });
     await relationshipService.suspend({ aggregatorId: aggId, agentId, actor: 'test-actor' });
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/relationship/i);
     // Reactivate and succeed
     await relationshipService.reactivate({ aggregatorId: aggId, agentId, actor: 'test-actor' });
-    const ok = await fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const ok = await governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(ok.status).toBe('COMPLETED');
     // Terminate relationship → reject
     await relationshipService.unassign({ aggregatorId: aggId, agentId, actor: 'test-actor' });
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel4-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `rel4-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/relationship/i);
   });
 
@@ -354,17 +354,17 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   it('14. unauthorized principal rejected', async () => {
     const { agentId } = await createActiveAgent();
     await expect(
-      fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth-${randomUUID()}`, principal: agentPrincipal(agentId), actor: agentId }),
-    ).rejects.toThrow(/Agent principal cannot fund/i);
+      governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth-${randomUUID()}`, principal: agentPrincipal(agentId), actor: agentId }),
+    ).rejects.toThrow(/PRINCIPAL_TYPE_DENIED/i);
     await expect(
-      fundingService.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth2-${randomUUID()}`, principal: customerPrincipal, actor: customerPrincipal.principalId }),
-    ).rejects.toThrow(/Customer principal/i);
+      governedFunding.fund({ agentId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth2-${randomUUID()}`, principal: customerPrincipal, actor: customerPrincipal.principalId }),
+    ).rejects.toThrow(/PRINCIPAL_TYPE_DENIED/i);
     // Aggregator principal trying to fund without relationship should also be rejected (but our service checks relationship)
     const aggId = await createActiveAggregator();
     const aggPrinc = aggregatorPrincipal(aggId);
     // No relationship, should be rejected due to relationship
     await expect(
-      fundingService.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth3-${randomUUID()}`, principal: aggPrinc, actor: aggId }),
+      governedFunding.fund({ agentId, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `unauth3-${randomUUID()}`, principal: aggPrinc, actor: aggId }),
     ).rejects.toThrow(/relationship/i);
   });
 
@@ -373,12 +373,12 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const { agentId } = await createActiveAgent();
     const fakeAgg = randomUUID();
     await expect(
-      fundingService.fund({ agentId, aggregatorId: fakeAgg, amountMinor: '1000', currency: 'NGN', idempotencyKey: `invrel-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, aggregatorId: fakeAgg, amountMinor: '1000', currency: 'NGN', idempotencyKey: `invrel-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/not found/i);
     const fakeAgent = randomUUID();
     const aggId = await createActiveAggregator();
     await expect(
-      fundingService.fund({ agentId: fakeAgent, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `invrel2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId: fakeAgent, aggregatorId: aggId, amountMinor: '1000', currency: 'NGN', idempotencyKey: `invrel2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toThrow(/not found|relationship/i);
   });
 
@@ -386,7 +386,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   it('16. no direct balance mutation', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
     const before = await getBalance(walletLedgerId);
-    await fundingService.fund({ agentId, amountMinor: '7000', currency: 'NGN', idempotencyKey: `nomut-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '7000', currency: 'NGN', idempotencyKey: `nomut-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const after = await getBalance(walletLedgerId);
     expect(after).toBe(before + 7000n);
     // Ensure ledger_lines were created and no wallet balance column exists
@@ -399,7 +399,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 17. audit contains no secrets
   it('17. audit contains no secrets', async () => {
     const { agentId } = await createActiveAgent();
-    const res = await fundingService.fund({ agentId, amountMinor: '1234', currency: 'NGN', idempotencyKey: `audit-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const res = await governedFunding.fund({ agentId, amountMinor: '1234', currency: 'NGN', idempotencyKey: `audit-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const audits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_id=$1 AND (entity_type='AGENT_FUNDING' OR entity_type='AGENT_DEFUNDING') ORDER BY created_at DESC LIMIT 1`, [res.journalId]);
     expect(audits.length).toBe(1);
     const serial = JSON.stringify(audits).toLowerCase();
@@ -418,9 +418,9 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const before1 = await getBalance(w1);
     const before2 = await getBalance(w2);
     const beforeTotal = beforePool + before1 + before2;
-    await fundingService.fund({ agentId: agent1, amountMinor: '3000', currency: 'NGN', idempotencyKey: `cons-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
-    await fundingService.fund({ agentId: agent2, amountMinor: '2000', currency: 'NGN', idempotencyKey: `cons2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
-    await fundingService.defund({ agentId: agent1, amountMinor: '1000', currency: 'NGN', idempotencyKey: `cons3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId: agent1, amountMinor: '3000', currency: 'NGN', idempotencyKey: `cons-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId: agent2, amountMinor: '2000', currency: 'NGN', idempotencyKey: `cons2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.defund({ agentId: agent1, amountMinor: '1000', currency: 'NGN', idempotencyKey: `cons3-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const afterPool = await getBalance(poolId);
     const after1 = await getBalance(w1);
     const after2 = await getBalance(w2);
@@ -437,11 +437,11 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const before = await getBalance(walletLedgerId);
     const key = `atomic-${randomUUID()}`;
     // Valid fund
-    await fundingService.fund({ agentId, amountMinor: '1500', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '1500', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' });
     const after1 = await getBalance(walletLedgerId);
     expect(after1).toBe(before + 1500n);
     // Duplicate with same key but different amount should not create new journal nor change balance
-    await expect(fundingService.fund({ agentId, amountMinor: '9999', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow();
+    await expect(governedFunding.fund({ agentId, amountMinor: '9999', currency: 'NGN', idempotencyKey: key, principal: privilegedPrincipal, actor: 'test-actor' })).rejects.toThrow();
     const after2 = await getBalance(walletLedgerId);
     expect(after2).toBe(after1);
     const count: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals WHERE id IN (SELECT journal_id FROM ledger_lines WHERE ledger_account_id=$1)`, [walletLedgerId]);
@@ -454,8 +454,9 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089)$/);
+    const declaredHead = dataSource.migrations.map(m => m.name ?? m.constructor.name).sort((a, b) => Number(a.match(/\d{13}$/)?.[0]) - Number(b.match(/\d{13}$/)?.[0])).at(-1)!;
+    expect(latest[0]!.timestamp).toBe(declaredHead.match(/\d{13}$/)![0]);
+    expect(latest[0]!.name).toBe(declaredHead);
     const pool: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
     expect(pool.length).toBe(1);
   });
@@ -463,7 +464,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 21. production readiness
   it('21. production readiness', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089)$/);
+    const declaredHead = dataSource.migrations.map(m => m.name ?? m.constructor.name).sort((a, b) => Number(a.match(/\d{13}$/)?.[0]) - Number(b.match(/\d{13}$/)?.[0])).at(-1)!;
+    expect(latest[0]!.timestamp).toBe(declaredHead.match(/\d{13}$/)![0]);
+    expect(latest[0]!.name).toBe(declaredHead);
   });
 });

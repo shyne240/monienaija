@@ -38,6 +38,7 @@ import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service'
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
 import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.service';
 import { CashToCashTransfer } from './cash-to-cash.entity';
+import { AgentFundingGovernanceService } from './agent-funding-governance.service';
 import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
 import { AgentAppController } from './agent-app.controller';
@@ -73,7 +74,13 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     FeeRulesModule,
     CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
     CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
-    TypeOrmModule.forFeature([Agent, AgentClass, AgentApplication, AgentReceivingNumber, CashToCashTransfer]),
+    TypeOrmModule.forFeature([
+      Agent,
+      AgentClass,
+      AgentApplication,
+      AgentReceivingNumber,
+      CashToCashTransfer,
+    ]),
     forwardRef(() => AgentAuthenticationModule),
   ],
   controllers: [
@@ -108,6 +115,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashExpiryService,
     AgentLifecycleService,
     AgentFundingService,
+    AgentFundingGovernanceService,
     AgentDeskOtpService, // V1-AGENT-MFA-API-01 — canonical-challenge issuance for desk flows
   ],
   exports: [
@@ -125,6 +133,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
     AgentFundingService,
+    AgentFundingGovernanceService,
   ],
 })
 export class AgentModule {}

@@ -8,6 +8,7 @@ import { AuthorizationRoleFunction } from './authorization-role-function.entity'
 export interface CatalogueRoleResolution {
   /** The subset of the input role keys that exist as ACTIVE rows in `authorization_roles`. */
   recognizedRoleKeys: readonly string[];
+  disabledRoleKeys?: readonly string[];
   /** Union of ACTIVE `authorization_role_functions.function_code` across the recognized roles, regardless of access type. */
   functionCodes: readonly string[];
   /** True if ANY recognized role carries `administrative_capability = true` (generalizes the old single-literal FINANCE_ADMIN reservation). */
@@ -56,11 +57,13 @@ export class AuthorizationCatalogueRuntimeService {
       return EMPTY_RESOLUTION;
     }
 
-    const roles = await this.roleRepo.find({
-      where: { roleKey: In(unique), isActive: true } as never,
+    const configuredRoles = await this.roleRepo.find({
+      where: { roleKey: In(unique) } as never,
     });
+    const roles = configuredRoles.filter((r) => r.isActive);
+    const disabledRoleKeys = configuredRoles.filter((r) => !r.isActive).map((r) => r.roleKey);
     if (roles.length === 0) {
-      return EMPTY_RESOLUTION;
+      return { ...EMPTY_RESOLUTION, disabledRoleKeys };
     }
 
     const roleIds = roles.map((r) => r.id);
@@ -70,6 +73,7 @@ export class AuthorizationCatalogueRuntimeService {
 
     return {
       recognizedRoleKeys: roles.map((r) => r.roleKey).sort(),
+      disabledRoleKeys,
       functionCodes: [...new Set(assignments.map((a) => a.functionCode))].sort(),
       hasAdministrativeCapability: roles.some((r) => r.administrativeCapability),
       allRecognizedRolesReadOnly: roles.every((r) => r.readOnly),

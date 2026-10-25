@@ -13,6 +13,8 @@ export interface RequestPrivilegedActionCommand {
   resource: AuthorizationResource;
   actionFingerprint: string;
   reason: string;
+  /** Server-derived instruction evidence for independent checker review. */
+  requestDetails?: Readonly<Record<string, unknown>>;
   actor?: string;
   approvalScope?: string;
   expiresInSeconds?: number;

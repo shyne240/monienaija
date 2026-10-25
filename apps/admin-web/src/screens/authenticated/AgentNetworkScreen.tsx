@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { AgentFundingPanel } from './AgentFundingPanel';
 
 interface Agent {
   id: string;
@@ -112,6 +113,7 @@ export const AgentNetworkScreen: React.FC = () => {
           <div style={drawerBody}>
             <div><strong>ID:</strong> {selected.id}</div>
             <div><strong>Class:</strong> {selected.agentClassId}</div>
+            <AgentFundingPanel key={selected.id} agentId={selected.id} />
             {detailError && <div style={errBox}>{detailError}</div>}
             {position ? <div style={card}><strong>Financial Position (NGN ledger-derived)</strong><div>Wallet: {position.walletExists ? position.walletId : 'none'} — Balance: {(Number(position.balanceMinor)/100).toLocaleString()} NGN</div></div> : <div style={loadingBox}>Loading position…</div>}
             {canLifecycle && <div style={actionRow} aria-label="Granted agent lifecycle actions">

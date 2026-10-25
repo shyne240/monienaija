@@ -18,7 +18,10 @@ import { Repository } from 'typeorm';
 
 import { AgentAuthenticationService } from './agent-authentication.service';
 import { AgentAuthenticationExecutionService } from './agent-authentication-execution.service';
-import { AgentAuthenticationSessionService, DEFAULT_AGENT_SESSION_AUDIENCE } from './agent-authentication-session.service';
+import {
+  AgentAuthenticationSessionService,
+  DEFAULT_AGENT_SESSION_AUDIENCE,
+} from './agent-authentication-session.service';
 import { AgentPasswordHashVerificationService } from './agent-password-hash-verification.service';
 import { AgentLoginDto } from './dto/agent-login.dto';
 import { SetTransactionPinDto } from './dto/set-transaction-pin.dto';
@@ -151,6 +154,7 @@ export class AgentAuthenticationController {
       dto.agentId,
       auth.credentialId,
       {
+        expectedPasswordVersion: auth.passwordVersion,
         passwordHash: newHash,
         hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
         actor: dto.agentId,
@@ -247,6 +251,7 @@ export class AgentAuthenticationController {
       pinHash,
       hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
       pinVersion: 1,
+      createOnly: true,
       actor: principal.agentId!,
     });
     // Never return pin or pinHash
@@ -271,7 +276,10 @@ export class AgentAuthenticationController {
   // docs/V1/V1-AGENT-05-TRANSACTION-PIN-SECURITY-01.md).
   @Post('me/transaction-pin/change')
   @HttpCode(200)
-  async changeTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: ChangeTransactionPinDto) {
+  async changeTransactionPin(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ChangeTransactionPinDto,
+  ) {
     const principal = this.requireAgentPrincipal(req);
     const agentId = principal.agentId!;
     if (!/^\d{4,12}$/.test(dto.currentPin)) {
@@ -283,47 +291,30 @@ export class AgentAuthenticationController {
     if (dto.currentPin === dto.newPin) {
       throw new BadRequestException('newPin must be different from currentPin');
     }
-    const existing = await this.agentAuthenticationService.getTransactionPin(agentId);
-    if (!existing) {
-      throw new BadRequestException(
-        'No Transaction PIN is set for this agent. Use agents/me/transaction-pin to create one.',
-      );
-    }
-    if (existing.accountLocked) {
-      // Cannot bypass lockout via the change flow — recovery requires support (no in-app bypass).
-      throw new ForbiddenException('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.');
-    }
-    // Proof of knowledge of the CURRENT PIN — same verify/lockout path used
-    // for Cash-In/Cash-Out/Cash-to-Cash authorization (increments the same
-    // failedCount, same 5-attempt lockout, same PIN_FAILED/PIN_VERIFIED
-    // audit events; no new hashing/lockout system introduced).
-    const outcome = await this.agentAuthenticationService.verifyTransactionPin(
-      agentId,
-      { pin: dto.currentPin, actor: agentId },
-      this.verificationService,
-    );
-    if (!outcome.verified) {
-      if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
-        throw new ForbiddenException(
-          'Transaction PIN is now locked due to too many failed attempts. Contact support to proceed.',
-        );
-      }
-      throw new UnauthorizedException('Current PIN is incorrect');
-    }
-    // Current PIN proven — rotate to the new PIN (PBKDF2, fresh salt). This
-    // reuses setTransactionPin's existing UPDATE branch, which also resets
-    // failedCount/accountLocked to a clean state and writes a PIN_ROTATED
-    // audit event — no new storage logic required.
     const salt = randomBytes(16);
     const iterations = 10000;
     const derived = this.pbkdf2Hash(dto.newPin, salt, iterations);
-    const pinHash = `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
-    const result = await this.agentAuthenticationService.setTransactionPin(agentId, {
-      pinHash,
-      hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
-      pinVersion: existing.pinVersion + 1,
-      actor: agentId,
-    });
+    const outcome = await this.agentAuthenticationService.changeTransactionPin(
+      agentId,
+      dto.currentPin,
+      {
+        pinHash: `PBKDF2$sha256$${iterations}$${salt.toString('base64url')}$${derived.toString('base64url')}`,
+        hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
+        pinVersion: 1,
+        actor: agentId,
+      },
+      this.verificationService,
+    );
+    if (!outcome.verified || !outcome.pin) {
+      if (outcome.locked)
+        throw new ForbiddenException(
+          'Transaction PIN is locked due to too many failed attempts. Contact support to proceed.',
+        );
+      if (outcome.failureReason === 'PIN_NOT_FOUND')
+        throw new BadRequestException('No Transaction PIN is set for this agent.');
+      throw new UnauthorizedException('Current PIN is incorrect');
+    }
+    const result = outcome.pin;
     // Never return pin or pinHash
     return {
       agentId: result.agentId,
@@ -334,7 +325,10 @@ export class AgentAuthenticationController {
 
   @Post('me/transaction-pin/verify')
   @HttpCode(200)
-  async verifyTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: VerifyTransactionPinDto) {
+  async verifyTransactionPin(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: VerifyTransactionPinDto,
+  ) {
     const principal = this.requireAgentPrincipal(req);
     if (!/^\d{4,12}$/.test(dto.pin)) {
       return { verified: false, reason: 'INVALID_FORMAT' };
@@ -348,7 +342,11 @@ export class AgentAuthenticationController {
     if (outcome.verified) {
       return { verified: true };
     }
-    return { verified: false, reason: outcome.failureReason ?? 'MISMATCH', locked: outcome.locked ?? false };
+    return {
+      verified: false,
+      reason: outcome.failureReason ?? 'MISMATCH',
+      locked: outcome.locked ?? false,
+    };
   }
 
   private requireAgentPrincipal(req: AuthenticatedRequest): AuthorizationPrincipal {

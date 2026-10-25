@@ -21,6 +21,7 @@ import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.se
 import type { A2WorkforceConfigurationV1, A2MakerCheckerRuleV1 } from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { governedAction } from './governed-action.registry';
+import { ApprovalDecisionDto, ApprovalRejectionDto } from './approval-decision.dto';
 interface R extends FastifyRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
   requestContext?: { correlationId: string };
@@ -183,7 +184,7 @@ export class A2WorkforceAdministrationController {
   }
   @Post('approvals/:id/approve') async approve(
     @Param('id') approvalId: string,
-    @Body() b: { comment?: string },
+    @Body() b: ApprovalDecisionDto,
     @Req() r: R,
   ) {
     const principal = this.principal(r),
@@ -211,7 +212,7 @@ export class A2WorkforceAdministrationController {
       [principal.principalId, principal.sessionId ?? 'none', approval.actionType],
       r.requestContext?.correlationId ?? 'unknown',
     );
-    return this.approvals.approve({ approvalId, principal, ...b });
+    return this.approvals.approve({ approvalId, principal, comment: b.comment });
   }
   /**
    * Maker-checker rejection surface (same decide() machinery as approve, with the established
@@ -220,7 +221,7 @@ export class A2WorkforceAdministrationController {
    */
   @Post('approvals/:id/reject') async reject(
     @Param('id') approvalId: string,
-    @Body() b: { comment?: string; reason?: string },
+    @Body() b: ApprovalRejectionDto,
     @Req() r: R,
   ) {
     const principal = this.principal(r),

@@ -5,6 +5,7 @@
  * payload) — key order never matters, any payload difference changes the hash.
  */
 import {
+  AGENT_FUNDING_ACTIONS,
   COMMERCIAL_RULE_ACTIONS,
   GOVERNED_ACTIONS,
   LEDGER_JOURNAL_REVERSAL_ACTION,
@@ -14,7 +15,7 @@ import {
 } from '../src/authorization/governed-action.registry';
 
 describe('governed-action registry (P0-A/P0-B)', () => {
-  it('registers exactly the eight Decision-2 commercial actions and LEDGER_JOURNAL_REVERSAL', () => {
+  it('registers commercial, ledger reversal and ordinary Agent funding actions', () => {
     expect(Object.keys(COMMERCIAL_RULE_ACTIONS).sort()).toEqual(
       [
         'COMMISSION_RULE_CREATE',
@@ -28,7 +29,12 @@ describe('governed-action registry (P0-A/P0-B)', () => {
       ].sort(),
     );
     expect(Object.keys(GOVERNED_ACTIONS).sort()).toEqual(
-      [...Object.keys(COMMERCIAL_RULE_ACTIONS), 'LEDGER_JOURNAL_REVERSAL'].sort(),
+      [
+        ...Object.keys(COMMERCIAL_RULE_ACTIONS),
+        'LEDGER_JOURNAL_REVERSAL',
+        'AGENT_FUND',
+        'AGENT_DEFUND',
+      ].sort(),
     );
     // Decision 2 explicitly keeps agent.assign_limit ungoverned and limit.modify out of this P0.
     expect(isGovernedAction('AGENT_ASSIGN_LIMIT')).toBe(false);
@@ -36,14 +42,38 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('LEDGER_JOURNAL_REVERSAL')).toBe(true);
   });
 
-  it('carries the Decision-2 policy values verbatim on every action', () => {
-    for (const definition of Object.values(GOVERNED_ACTIONS)) {
+  it('preserves the approved finance maker/checker policy for commercial actions and reversals', () => {
+    for (const definition of [
+      ...Object.values(COMMERCIAL_RULE_ACTIONS),
+      LEDGER_JOURNAL_REVERSAL_ACTION,
+    ] as const) {
       expect(definition.initiatingRoles).toEqual(['FINANCE_PREPARER']);
       expect(definition.approvingRoles).toEqual(['FINANCE_CONTROLLER']);
       expect(definition.minimumApprovals).toBe(1);
       expect(definition.selfApprovalProhibited).toBe(true);
       expect(definition.mfaRequired).toBe(true);
       expect(definition.minimumAssurance).toBe('MFA');
+    }
+  });
+
+  it('requires the approved Agent Network Manager / Finance Controller separation for funding', () => {
+    for (const [action, code] of [
+      ['AGENT_FUND', 'agent.fund'],
+      ['AGENT_DEFUND', 'agent.defund'],
+    ] as const) {
+      expect(AGENT_FUNDING_ACTIONS[action]).toMatchObject({
+        action,
+        resourceType: 'AGENT',
+        initiatingRoles: ['AGENT_NETWORK_MANAGER'],
+        approvingRoles: ['FINANCE_CONTROLLER'],
+        initiatingFunctionCodes: [code],
+        approvingFunctionCodes: [code],
+        approvalScope: code,
+        minimumApprovals: 1,
+        selfApprovalProhibited: true,
+        mfaRequired: true,
+        minimumAssurance: 'MFA',
+      });
     }
   });
 
@@ -126,7 +156,12 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         base.payload,
       );
       expect(
-        governedChangeFingerprint('FEE_RULE_MODIFY', base.resourceType, base.resourceId, base.payload),
+        governedChangeFingerprint(
+          'FEE_RULE_MODIFY',
+          base.resourceType,
+          base.resourceId,
+          base.payload,
+        ),
       ).not.toBe(original);
       expect(
         governedChangeFingerprint(base.action, 'COMMISSION_RULE', base.resourceId, base.payload),

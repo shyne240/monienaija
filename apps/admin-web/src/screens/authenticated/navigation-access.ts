@@ -123,7 +123,7 @@ export function canAccessAdminView(
     case 'approvalsInbox':
       // The implemented approval actions are assigned to FINANCE_CONTROLLER by the existing
       // maker-checker rules, and the approval service also checks privileged:approve.
-      return roles.includes('FINANCE_CONTROLLER') && has('privileged:approve');
+      return roles.includes('FINANCE_CONTROLLER') && hasAny('privileged:approve', 'agent.fund', 'agent.defund');
     case 'superAdminRecovery':
       return has('workforce.super_admin.recover');
     case 'systemHealth':

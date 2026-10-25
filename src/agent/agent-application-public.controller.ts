@@ -1,14 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Param,
-  Patch,
-  Post,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 
+import { AuthorizationService } from '../authorization/authorization.service';
 import { AgentApplicationService } from './agent-application.service';
 import { CreateAgentApplicationDto } from './dto/create-agent-application.dto';
 import { UpdateAgentApplicationDto } from './dto/update-agent-application.dto';
@@ -22,14 +14,16 @@ interface RequestLike {
 
 @Controller('agents/applications')
 export class AgentApplicationPublicController {
-  constructor(private readonly applicationService: AgentApplicationService) {}
+  constructor(
+    private readonly applicationService: AgentApplicationService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(201)
   async create(@Body() dto: CreateAgentApplicationDto, @Req() req: RequestLike) {
-    // Applicant is unauthenticated (AGENT_LOGIN) — actor comes from applicantReference or explicit actor
-    // We must not allow arbitrary agentId to be passed; identity is derived from applicantReference
-    const actor = this.resolveApplicantActor(req, dto);
+    // V1 onboarding is workforce-led; the authenticated principal supplies the audit actor.
+    const actor = await this.requireAccess(req);
     return this.applicationService.create({
       agentClassId: dto.agentClassId,
       agentClassReference: dto.agentClassReference,
@@ -43,9 +37,7 @@ export class AgentApplicationPublicController {
 
   @Get(':id')
   async getOne(@Param('id') id: string, @Req() req: RequestLike) {
-    // Applicant can read own application — for now allow any applicant to fetch by id
-    // Ownership check: if AGENT principal, ensure they own the application via applicantReference?
-    // For fail-closed, we allow read but do not expose secrets; the service does not store secrets.
+    await this.requireAccess(req);
     return this.applicationService.getById(id);
   }
 
@@ -55,15 +47,7 @@ export class AgentApplicationPublicController {
     @Body() dto: UpdateAgentApplicationDto,
     @Req() req: RequestLike,
   ) {
-    const actor = this.resolveApplicantActor(req, dto);
-    // Prevent AGENT from modifying another Agent's application: check principal if present
-    const principal = req.authorizationPrincipal;
-    if (principal?.type === 'AGENT') {
-      // AGENT can only update applications that will become their own Agent (same applicantReference)
-      // We enforce by requiring that the application's applicantReference equals the Agent's reference
-      // For now, we allow but audit; the service will check status is DRAFT
-      // Additional isolation is tested via direct service ownership in integration tests
-    }
+    const actor = await this.requireAccess(req);
     return this.applicationService.updateDraft(id, {
       businessName: dto.businessName,
       contactEmail: dto.contactEmail,
@@ -77,24 +61,16 @@ export class AgentApplicationPublicController {
   @Post(':id/submit')
   @HttpCode(200)
   async submit(@Param('id') id: string, @Req() req: RequestLike) {
-    const actor = this.resolveApplicantActor(req, {});
+    const actor = await this.requireAccess(req);
     return this.applicationService.submit(id, actor);
   }
 
-  private resolveApplicantActor(req: RequestLike, dto: { actor?: string; applicantReference?: string }): string {
-    const headerActor = this.headerActor(req.headers);
-    if (headerActor) return headerActor;
-    if (dto.actor) return dto.actor.trim();
-    if (dto.applicantReference) return dto.applicantReference.trim();
-    const principal = req.authorizationPrincipal;
-    if (principal?.principalId) return principal.principalId;
-    return 'applicant';
-  }
-
-  private headerActor(headers: Record<string, string | string[] | undefined>): string | null {
-    const raw = headers['x-actor'] ?? headers['x-applicant-id'] ?? headers['x-applicant-reference'];
-    if (typeof raw === 'string' && raw.trim().length > 0) return raw.trim();
-    if (Array.isArray(raw) && raw[0]) return raw[0].trim();
-    return null;
+  private requireAccess(req: RequestLike): Promise<string> {
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      'agent.review_application',
+      'agent-application',
+      ['OPERATOR', 'PRIVILEGED'],
+    );
   }
 }

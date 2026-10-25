@@ -7,6 +7,7 @@ import type { DataSource } from 'typeorm';
 import { AuditEvent } from '../src/operations/audit-event.entity';
 import { AuditService } from '../src/operations/audit.service';
 import { A2WorkforceOidcService } from '../src/authorization/workforce-oidc.service';
+import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -185,7 +186,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
     // recognize nothing, leaving role/type resolution on the legacy config path this file
     // already exercises.
     const catalogue = {
-      resolveForRoleKeys: async () => ({
+      resolveForRoleKeys: () => Promise.resolve({
         recognizedRoleKeys: [],
         functionCodes: [],
         hasAdministrativeCapability: false,
@@ -199,6 +200,34 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
       config,
     );
   }, 180000);
+
+  // Successful lifecycle fixtures now need an active role; roleless sessions are rejected.
+  async function establishSession(
+    evidence: Awaited<ReturnType<A2WorkforceOidcService['validate']>>,
+  ) {
+    const now = new Date();
+    await dataSource.getRepository(A2FinanceRoleAssignment).save({
+      id: randomUUID(),
+      assignmentReference: randomUUID(),
+      assignmentVersion: 1,
+      principalId: evidence.principalId,
+      roleKey: 'FINANCE_AUDITOR',
+      scopes: [],
+      status: 'ACTIVE',
+      initiatedScope: 'SUPER_ADMIN_SCOPE',
+      interim: true,
+      effectiveFrom: new Date(now.getTime() - 60000),
+      effectiveTo: new Date(now.getTime() + 3600000),
+      assignedBy: 'test',
+      assignedAt: now,
+      revokedBy: null,
+      revokedAt: null,
+      bootstrapReference: null,
+      approvalIds: [],
+      auditReferences: [],
+    });
+    return sessions.establish(evidence);
+  }
 
   afterAll(async () => {
     if (jwks) await new Promise<void>((resolve) => jwks.close(() => resolve()));
@@ -220,7 +249,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('rejects a session token presented to the wrong audience', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     await expect(
       sessions.validate(session.accessToken, 'some-other-audience'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -272,7 +301,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('establishes a workforce session row in real PostgreSQL', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     expect(session.accessToken).toBeTruthy();
     expect(session.tokenType).toBe('Bearer');
 
@@ -284,7 +313,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('validates an established session token', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     const validated = await sessions.validate(session.accessToken, config.internalAudience);
     expect(validated.principalId).toBe(evidence.principalId);
     expect(validated.assuranceLevel).toBe('MFA');
@@ -292,7 +321,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('revokes a session and refuses it afterwards', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     await sessions.revoke(session.sessionId, session.principal, 'integration revocation');
     await expect(
       sessions.validate(session.accessToken, config.internalAudience),
@@ -307,7 +336,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('refuses an expired session token', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     await dataSource.query(
       `UPDATE a2_workforce_sessions SET expires_at = now() - interval '1 hour'`,
     );
@@ -318,7 +347,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
 
   it('never persists the raw session token', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    const session = await establishSession(evidence);
     const rows: Array<Record<string, unknown>> = await dataSource.query(
       'SELECT * FROM a2_workforce_sessions',
     );

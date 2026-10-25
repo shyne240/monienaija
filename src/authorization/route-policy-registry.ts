@@ -288,8 +288,42 @@ export class RoutePolicyRegistry {
     if (path === '/api/v1/agents/applications' || path.startsWith('/api/v1/agents/applications/')) {
       return {
         public: false,
-        authenticationMode: 'AGENT_LOGIN',
+        authenticationMode: 'WORKFORCE_SESSION',
         resourceType: 'agent-application',
+      };
+    }
+
+    if (
+      /^\/api\/v1\/internal\/(?:agents\/[^/]+\/(?:outlets|terminals)|outlets(?:\/|$)|terminals(?:\/|$))/.test(
+        path,
+      )
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-outlet',
+        policy: {
+          resourceType: 'agent-outlet',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: [method === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
+          customerAccess: 'NONE',
+        },
+      };
+    }
+
+    if (/^\/api\/v1\/internal\/agents\/[^/]+\/receiving-number$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent',
+        policy: {
+          resourceType: 'agent',
+          action: 'agent.view',
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE',
+        },
       };
     }
 
@@ -481,7 +515,9 @@ export class RoutePolicyRegistry {
     // depth alongside AdminSupportCredentialsController's own check).
     if (
       method === 'POST' &&
-      /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(path)
+      /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(
+        path,
+      )
     ) {
       return {
         public: false,

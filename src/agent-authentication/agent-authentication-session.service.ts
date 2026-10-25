@@ -5,8 +5,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { AgentAuthenticationCredential } from './agent-authentication-credential.entity';
 import { AgentAuthenticationSession } from './agent-authentication-session.entity';
-import { AgentAuthenticationSessionStatus } from './agent-authentication.enums';
+import {
+  AgentAuthenticationSessionStatus,
+  AgentAuthenticationCredentialStatus,
+} from './agent-authentication.enums';
 import type { AgentAuthenticationExecutionResult } from './agent-authentication-execution.service';
 
 export const DEFAULT_AGENT_SESSION_AUDIENCE = 'agent-api';
@@ -40,7 +44,8 @@ export interface RevokeAgentAuthenticationSessionCommand {
   now?: Date;
 }
 
-export interface RotateAgentAuthenticationSessionCommand extends RevokeAgentAuthenticationSessionCommand {
+export interface RotateAgentAuthenticationSessionCommand
+  extends RevokeAgentAuthenticationSessionCommand {
   ttlSeconds?: number;
 }
 
@@ -79,7 +84,13 @@ export interface AgentAuthenticationSessionView {
 export interface AgentAuthenticationSessionValidation {
   valid: boolean;
   principal?: AgentAuthenticatedPrincipal;
-  reason?: 'MISSING_TOKEN' | 'MALFORMED_TOKEN' | 'NOT_FOUND' | 'REVOKED' | 'EXPIRED' | 'WRONG_AUDIENCE';
+  reason?:
+    | 'MISSING_TOKEN'
+    | 'MALFORMED_TOKEN'
+    | 'NOT_FOUND'
+    | 'REVOKED'
+    | 'EXPIRED'
+    | 'WRONG_AUDIENCE';
 }
 
 @Injectable()
@@ -91,7 +102,9 @@ export class AgentAuthenticationSessionService {
     private readonly auditService: AuditService,
   ) {}
 
-  async issue(command: IssueAgentAuthenticationSessionCommand): Promise<AgentAuthenticationSessionToken> {
+  async issue(
+    command: IssueAgentAuthenticationSessionCommand,
+  ): Promise<AgentAuthenticationSessionToken> {
     this.assertSuccessfulAuthentication(command.authentication);
     const actor = this.normalizeActor(command.actor);
     const audience = this.normalizeAudience(command.audience ?? DEFAULT_AGENT_SESSION_AUDIENCE);
@@ -102,6 +115,25 @@ export class AgentAuthenticationSessionService {
     const tokenHash = this.hashToken(accessToken);
 
     const session = await this.dataSource.transaction(async (manager) => {
+      const credential = await manager.getRepository(AgentAuthenticationCredential).findOne({
+        where: {
+          id: this.requiredCredentialId(command.authentication),
+          agentId: command.authentication.agentId,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const eligibilityTime = command.now ?? new Date();
+      if (
+        !credential ||
+        credential.deletedAt !== null ||
+        credential.status !== AgentAuthenticationCredentialStatus.ACTIVE ||
+        credential.accountLocked ||
+        credential.rotationRequired ||
+        credential.passwordVersion !== command.authentication.passwordVersion ||
+        (credential.passwordExpiresAt !== null && credential.passwordExpiresAt <= eligibilityTime)
+      ) {
+        throw new BadRequestException('Credential is no longer available for session issuance');
+      }
       const repository = manager.getRepository(AgentAuthenticationSession);
       const saved = await repository.save(
         repository.create({
@@ -132,7 +164,9 @@ export class AgentAuthenticationSessionService {
     return this.toToken(accessToken, session);
   }
 
-  async validate(command: ValidateAgentAuthenticationSessionCommand): Promise<AgentAuthenticationSessionValidation> {
+  async validate(
+    command: ValidateAgentAuthenticationSessionCommand,
+  ): Promise<AgentAuthenticationSessionValidation> {
     const token = this.normalizeToken(command.token);
     if (!token) {
       return { valid: false, reason: 'MISSING_TOKEN' };
@@ -166,12 +200,32 @@ export class AgentAuthenticationSessionService {
       return { valid: false, reason: 'EXPIRED' };
     }
 
-    session.lastSeenAt = now;
-    await this.sessionRepository.save(session);
+    const credential = await this.dataSource
+      .getRepository(AgentAuthenticationCredential)
+      .findOne({ where: { id: session.credentialId, agentId: session.agentId } });
+    if (
+      !credential ||
+      credential.deletedAt !== null ||
+      credential.status !== AgentAuthenticationCredentialStatus.ACTIVE ||
+      credential.rotationRequired ||
+      credential.accountLocked ||
+      (credential.passwordExpiresAt !== null && credential.passwordExpiresAt <= now) ||
+      session.issuedAt < credential.passwordChangedAt
+    ) {
+      return { valid: false, reason: 'REVOKED' };
+    }
+    // Never save a stale session snapshot: a concurrent revocation must not be overwritten.
+    const updated = await this.sessionRepository.update(
+      { id: session.id, status: AgentAuthenticationSessionStatus.ACTIVE },
+      { lastSeenAt: now },
+    );
+    if (!updated.affected) return { valid: false, reason: 'REVOKED' };
     return { valid: true, principal: this.toPrincipal(session) };
   }
 
-  async revoke(command: RevokeAgentAuthenticationSessionCommand): Promise<AgentAuthenticationSessionValidation> {
+  async revoke(
+    command: RevokeAgentAuthenticationSessionCommand,
+  ): Promise<AgentAuthenticationSessionValidation> {
     const validation = await this.validate({
       token: command.token,
       audience: DEFAULT_AGENT_SESSION_AUDIENCE,
@@ -279,7 +333,10 @@ export class AgentAuthenticationSessionService {
     return authentication.credentialId;
   }
 
-  private toToken(accessToken: string, session: AgentAuthenticationSession): AgentAuthenticationSessionToken {
+  private toToken(
+    accessToken: string,
+    session: AgentAuthenticationSession,
+  ): AgentAuthenticationSessionToken {
     return {
       accessToken,
       tokenType: 'Bearer',
@@ -344,8 +401,14 @@ export class AgentAuthenticationSessionService {
 
   private normalizeTtl(value: number | undefined): number {
     if (value === undefined) return DEFAULT_AGENT_SESSION_TTL_SECONDS;
-    if (!Number.isSafeInteger(value) || value < MIN_AGENT_SESSION_TTL_SECONDS || value > MAX_AGENT_SESSION_TTL_SECONDS) {
-      throw new BadRequestException(`ttlSeconds must be an integer between ${MIN_AGENT_SESSION_TTL_SECONDS} and ${MAX_AGENT_SESSION_TTL_SECONDS}`);
+    if (
+      !Number.isSafeInteger(value) ||
+      value < MIN_AGENT_SESSION_TTL_SECONDS ||
+      value > MAX_AGENT_SESSION_TTL_SECONDS
+    ) {
+      throw new BadRequestException(
+        `ttlSeconds must be an integer between ${MIN_AGENT_SESSION_TTL_SECONDS} and ${MAX_AGENT_SESSION_TTL_SECONDS}`,
+      );
     }
     return value;
   }
@@ -354,11 +417,18 @@ export class AgentAuthenticationSessionService {
     if (value === undefined) return null;
     const reason = value.trim();
     if (!reason) return null;
-    if (reason.length > 500) throw new BadRequestException('reason must contain 1 to 500 characters');
+    if (reason.length > 500)
+      throw new BadRequestException('reason must contain 1 to 500 characters');
     return reason;
   }
 
-  private async audit(manager: EntityManager, session: AgentAuthenticationSession, action: string, actor: string, newValues: Record<string, unknown>): Promise<void> {
+  private async audit(
+    manager: EntityManager,
+    session: AgentAuthenticationSession,
+    action: string,
+    actor: string,
+    newValues: Record<string, unknown>,
+  ): Promise<void> {
     await this.auditService.record(manager, {
       entityType: 'AGENT_AUTHENTICATION_SESSION',
       entityId: session.id,

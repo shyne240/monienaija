@@ -125,6 +125,7 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'customer.archive_proof_of_address', domain: 'CUSTOMER', name: 'Archive Proof of Address document', description: 'Archive a previously withdrawn Proof of Address document with a recorded reason.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Archive is a retention/lifecycle action only; it does not delete customer or KYC records.' },
 
   // -------------------------------------------------------------------- AGENT
+  { functionCode: 'agent.manage_classes', domain: 'AGENT', name: 'Manage agent classes', description: 'Manage Agent class policy and service eligibility.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.view', domain: 'AGENT', name: 'View agent profile', description: 'View an agent profile and status.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.review_application', domain: 'AGENT', name: 'Review agent application', description: 'Review/approve/reject an agent network application.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.activate', domain: 'AGENT', name: 'Activate agent', description: 'Activate an agent.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
@@ -362,6 +363,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'customer.withdraw_proof_of_address', EXECUTE),
   nowAssign('SUPER_ADMIN', 'customer.archive_proof_of_address', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'agent.manage_classes', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.review_application', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.activate', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.suspend', EXECUTE),
@@ -522,6 +524,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
 
   // ------------------------------------------------------- AGENT_NETWORK_MANAGER
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.view', VIEW),
+  nowAssign('AGENT_NETWORK_MANAGER', 'agent.manage_classes', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.review_application', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.activate', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.suspend', EXECUTE),

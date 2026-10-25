@@ -35,10 +35,13 @@ import { IdempotencyService } from '../operations/idempotency.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
-import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
+import { AgentFundingGovernanceService } from './agent-funding-governance.service';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { AgentStatus } from './agent.enums';
 import { AgentService } from './agent-service.enum';
@@ -50,6 +53,7 @@ const FUNDING_POOL_CODE = 'AGENT_FUNDING_POOL-NGN';
 const RETENTION_SECONDS = 86_400;
 
 export interface FundingInput {
+  approvalId?: string;
   agentId: string;
   aggregatorId?: string; // if present, funding via Aggregator relationship
   amountMinor: string;
@@ -94,6 +98,7 @@ export class AgentFundingService {
     private readonly auditService: AuditService,
     private readonly walletService: WalletService,
     private readonly capabilityService: AgentServiceCapabilityService,
+    private readonly governance: AgentFundingGovernanceService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
     // V1-COMMERCIAL-DECISION-03E — AGENT_FUNDING / AGENT_DEFUNDING commercial snapshot wiring.
@@ -120,11 +125,16 @@ export class AgentFundingService {
     return this.executeFunding(input, 'DEFUND');
   }
 
-  private async executeFunding(input: FundingInput, direction: 'FUND' | 'DEFUND'): Promise<FundingResult> {
+  private async executeFunding(
+    input: FundingInput,
+    direction: 'FUND' | 'DEFUND',
+  ): Promise<FundingResult> {
     const agentId = input.agentId?.trim();
-    if (!agentId || !UUID_PATTERN.test(agentId)) throw new BadRequestException('agentId must be a UUID');
+    if (!agentId || !UUID_PATTERN.test(agentId))
+      throw new BadRequestException('agentId must be a UUID');
     const aggregatorId = input.aggregatorId?.trim();
-    if (aggregatorId && !UUID_PATTERN.test(aggregatorId)) throw new BadRequestException('aggregatorId must be a UUID');
+    if (aggregatorId && !UUID_PATTERN.test(aggregatorId))
+      throw new BadRequestException('aggregatorId must be a UUID');
 
     const currency = normalizeCurrency(input.currency ?? 'NGN');
     if (currency !== 'NGN') throw new BadRequestException('currency must be NGN');
@@ -133,13 +143,20 @@ export class AgentFundingService {
     const amountString = amount.toString();
 
     const idempotencyKey = input.idempotencyKey?.trim();
-    if (!idempotencyKey || idempotencyKey.length > 255) throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+    if (!idempotencyKey || idempotencyKey.length > 255)
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
 
-    const reference = input.reference?.trim() ? input.reference.trim() : `${direction}-${idempotencyKey}`;
+    const reference = input.reference?.trim()
+      ? input.reference.trim()
+      : `${direction}-${idempotencyKey}`;
     if (reference.length > 255) throw new BadRequestException('reference too long');
 
     const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
-    const description = input.description?.trim() ? input.description.trim() : `${direction} ${amountString} NGN for Agent ${agentId}${aggregatorId ? ` via Aggregator ${aggregatorId}` : ' via platform'}`;
+    const description = input.description?.trim()
+      ? input.description.trim()
+      : `${direction} ${amountString} NGN for Agent ${agentId}${aggregatorId ? ` via Aggregator ${aggregatorId}` : ' via platform'}`;
 
     const actor = input.actor?.trim();
     if (!actor || actor.length > 160) throw new BadRequestException('actor is required');
@@ -147,49 +164,76 @@ export class AgentFundingService {
     const principal = input.principal;
     if (!principal || !principal.type) throw new UnauthorizedException('principal is required');
 
-    // Authorization: deny CUSTOMER and AGENT (SELF), allow WORKFORCE privileged and AGGREGATOR with relationship
+    // Phase 1 governs direct ordinary-Agent funding only. Aggregator-attributed
+    // funding remains outside this authorized change and keeps its existing checks.
+    if (!aggregatorId) {
+      await this.governance.assertExecutor(principal, direction);
+      if (!input.approvalId)
+        throw new ForbiddenException('approvalId is required for Agent funding/defunding');
+    }
     const principalType = principal.type.toUpperCase();
-    if (principalType === 'CUSTOMER') throw new ForbiddenException('Customer principal cannot fund Agents');
-    if (principalType === 'AGENT') throw new ForbiddenException('Agent principal cannot fund Agents');
+    if (principalType === 'CUSTOMER')
+      throw new ForbiddenException('Customer principal cannot fund Agents');
+    if (principalType === 'AGENT')
+      throw new ForbiddenException('Agent principal cannot fund Agents');
 
     let isAggregatorFunding = false;
     if (principalType === 'AGGREGATOR') {
       isAggregatorFunding = true;
-      if (!aggregatorId) throw new BadRequestException('aggregatorId is required for Aggregator funding');
-      if (principal.aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
-      if (principal.aggregatorAccess !== 'SELF') throw new ForbiddenException('Aggregator requires SELF access');
+      if (!aggregatorId)
+        throw new BadRequestException('aggregatorId is required for Aggregator funding');
+      if (principal.aggregatorId !== aggregatorId)
+        throw new ForbiddenException('Aggregator principal mismatch');
+      if (principal.aggregatorAccess !== 'SELF')
+        throw new ForbiddenException('Aggregator requires SELF access');
       // Verify aggregator exists and ACTIVE
-      const aggRows: Array<{ id: string; status: string; deleted_at: string | null }> = await this.dataSource.query(
-        `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
-        [aggregatorId],
-      );
+      const aggRows: Array<{ id: string; status: AggregatorStatus; deleted_at: string | null }> =
+        await this.dataSource.query(
+          `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
+          [aggregatorId],
+        );
       const agg = aggRows[0];
-      if (!agg || agg.deleted_at !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
-      if (agg.status !== AggregatorStatus.ACTIVE) throw new ForbiddenException(`Aggregator ${aggregatorId} is ${agg.status} and cannot fund`);
+      if (!agg || agg.deleted_at !== null)
+        throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
+      if (agg.status !== AggregatorStatus.ACTIVE)
+        throw new ForbiddenException(`Aggregator ${aggregatorId} is ${agg.status} and cannot fund`);
       // Verify relationship ACTIVE
       const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
         `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
         [aggregatorId, agentId],
       );
-      if (relRows.length === 0) throw new ForbiddenException(`No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`);
-    } else if (['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'WORKFORCE'].includes(principalType) || principalType === 'WORKFORCE_SESSION' || principalType === 'WORKFORCE') {
+      if (relRows.length === 0)
+        throw new ForbiddenException(
+          `No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`,
+        );
+    } else if (
+      ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'WORKFORCE'].includes(principalType) ||
+      principalType === 'WORKFORCE_SESSION' ||
+      principalType === 'WORKFORCE'
+    ) {
       // Workforce privileged — allow internal funding for any ACTIVE Agent. If aggregatorId provided with workforce, also verify relationship but not required.
       // We treat any non-AGGREGATOR non-CUSTOMER non-AGENT as workforce-like if it has privileged access.
       // For strictness, check that principal has privileged type via runtime guard, but here we allow.
       if (aggregatorId) {
         // If workforce is funding via aggregator context, verify aggregator and relationship as above (but aggregator may be any)
-        const aggRows: Array<{ id: string; status: string; deleted_at: string | null }> = await this.dataSource.query(
-          `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
-          [aggregatorId],
-        );
+        const aggRows: Array<{ id: string; status: AggregatorStatus; deleted_at: string | null }> =
+          await this.dataSource.query(
+            `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
+            [aggregatorId],
+          );
         const agg = aggRows[0];
-        if (!agg || agg.deleted_at !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
-        if (agg.status !== AggregatorStatus.ACTIVE) throw new ForbiddenException(`Aggregator ${aggregatorId} is ${agg.status}`);
+        if (!agg || agg.deleted_at !== null)
+          throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
+        if (agg.status !== AggregatorStatus.ACTIVE)
+          throw new ForbiddenException(`Aggregator ${aggregatorId} is ${agg.status}`);
         const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
           `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
           [aggregatorId, agentId],
         );
-        if (relRows.length === 0) throw new ForbiddenException(`No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`);
+        if (relRows.length === 0)
+          throw new ForbiddenException(
+            `No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`,
+          );
         isAggregatorFunding = true;
       }
     } else {
@@ -197,22 +241,37 @@ export class AgentFundingService {
     }
 
     // Agent lifecycle and capability
-    const agentRows: Array<{ id: string; status: string; deleted_at: string | null; agent_class_id: string | null }> = await this.dataSource.query(
+    const agentRows: Array<{
+      id: string;
+      status: AgentStatus;
+      deleted_at: string | null;
+      agent_class_id: string | null;
+    }> = await this.dataSource.query(
       `SELECT id, status, deleted_at, agent_class_id FROM agents WHERE id=$1 LIMIT 1`,
       [agentId],
     );
     const agent = agentRows[0];
-    if (!agent || agent.deleted_at !== null) throw new NotFoundException(`Agent ${agentId} not found`);
-    if (agent.status !== AgentStatus.ACTIVE) throw new ForbiddenException(`Agent ${agentId} is ${agent.status} and cannot be funded`);
+    if (!agent || agent.deleted_at !== null)
+      throw new NotFoundException(`Agent ${agentId} not found`);
+    if (agent.status !== AgentStatus.ACTIVE)
+      throw new ForbiddenException(`Agent ${agentId} is ${agent.status} and cannot be funded`);
     // Check capability
-    const expectedService = direction === 'FUND' ? AgentService.AGENT_FUNDING : AgentService.AGENT_DEFUNDING;
+    const expectedService =
+      direction === 'FUND' ? AgentService.AGENT_FUNDING : AgentService.AGENT_DEFUNDING;
     const cap = await this.capabilityService.evaluate(agentId, expectedService);
-    if (!cap.allowed) throw new ForbiddenException(`Agent does not have ${expectedService} capability: ${cap.reason}`);
+    if (!cap.allowed)
+      throw new ForbiddenException(
+        `Agent does not have ${expectedService} capability: ${cap.reason}`,
+      );
 
     // Fetch funding pool account (must exist via migration)
-    const poolRows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM ledger_accounts WHERE code=$1 LIMIT 1`, [FUNDING_POOL_CODE]);
+    const poolRows: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code=$1 LIMIT 1`,
+      [FUNDING_POOL_CODE],
+    );
     const pool = poolRows[0];
-    if (!pool) throw new NotFoundException('Funding pool ledger account not found — migration missing');
+    if (!pool)
+      throw new NotFoundException('Funding pool ledger account not found — migration missing');
 
     // Ensure Agent wallet exists
     const agentWallet = await this.ensureWalletAccount(agentId, 'NGN');
@@ -220,12 +279,28 @@ export class AgentFundingService {
     const lines =
       direction === 'FUND'
         ? [
-            { accountId: pool.id, direction: LedgerEntryDirection.DEBIT as const, amountMinor: amountString },
-            { accountId: agentWallet.ledgerAccountId, direction: LedgerEntryDirection.CREDIT as const, amountMinor: amountString },
+            {
+              accountId: pool.id,
+              direction: LedgerEntryDirection.DEBIT as const,
+              amountMinor: amountString,
+            },
+            {
+              accountId: agentWallet.ledgerAccountId,
+              direction: LedgerEntryDirection.CREDIT as const,
+              amountMinor: amountString,
+            },
           ]
         : [
-            { accountId: agentWallet.ledgerAccountId, direction: LedgerEntryDirection.DEBIT as const, amountMinor: amountString },
-            { accountId: pool.id, direction: LedgerEntryDirection.CREDIT as const, amountMinor: amountString },
+            {
+              accountId: agentWallet.ledgerAccountId,
+              direction: LedgerEntryDirection.DEBIT as const,
+              amountMinor: amountString,
+            },
+            {
+              accountId: pool.id,
+              direction: LedgerEntryDirection.CREDIT as const,
+              amountMinor: amountString,
+            },
           ];
 
     const requestHash = this.computeRequestHash({
@@ -237,9 +312,11 @@ export class AgentFundingService {
       reference,
       correlationId: correlationId ?? null,
       isAggregatorFunding,
+      ...(!aggregatorId ? { approvalId: input.approvalId } : {}),
     });
 
-    const scope = direction === 'FUND' ? `agent-funding.v1:${agentId}` : `agent-defunding.v1:${agentId}`;
+    const scope =
+      direction === 'FUND' ? `agent-funding.v1:${agentId}` : `agent-defunding.v1:${agentId}`;
 
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
       try {
@@ -252,11 +329,19 @@ export class AgentFundingService {
           });
 
           if (reservation.kind === 'REPLAY') {
+            if (!aggregatorId) {
+              await this.governance.assertReplay(manager, input, direction, principal, input.approvalId);
+            }
             const existing = reservation.record;
             const body = existing.responseBody as unknown as FundingResult | null;
             const resourceId = existing.resourceId;
             if (body && body.journalId) {
-              return { ...body, status: 'REPLAYED' as const, replayed: true, createdAt: existing.updatedAt } as FundingResult;
+              return {
+                ...body,
+                status: 'REPLAYED' as const,
+                replayed: true,
+                createdAt: existing.updatedAt,
+              } as FundingResult;
             }
             if (resourceId) {
               return {
@@ -277,9 +362,27 @@ export class AgentFundingService {
             throw new ConflictException('Idempotency replay missing resource linkage');
           }
 
+          if (!aggregatorId)
+            await this.governance.consume(manager, input, direction, principal, input.approvalId);
+          if (!aggregatorId) {
+            // Lifecycle is checked in the posting transaction as well as preflight.
+            const eligible = await manager.query<
+              Array<{ status: AgentStatus; deleted_at: Date | null }>
+            >(`SELECT status, deleted_at FROM agents WHERE id=$1 FOR UPDATE`, [agentId]);
+            if (
+              !eligible[0] ||
+              eligible[0].status !== AgentStatus.ACTIVE ||
+              eligible[0].deleted_at !== null
+            ) {
+              throw new ForbiddenException('Agent is not active');
+            }
+          }
           // Re-verify wallet inside tx for pessimistic lock semantics (fetch again)
-          const walletInTx = await manager.getRepository(WalletAccount).findOne({ where: { customerId: agentId, currency: 'NGN' } });
-          if (!walletInTx) throw new NotFoundException(`Agent wallet for ${agentId} not found in transaction`);
+          const walletInTx = await manager
+            .getRepository(WalletAccount)
+            .findOne({ where: { customerId: agentId, currency: 'NGN' } });
+          if (!walletInTx)
+            throw new NotFoundException(`Agent wallet for ${agentId} not found in transaction`);
 
           // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
           let limitIdempotencyKey: string | null = null;
@@ -314,8 +417,12 @@ export class AgentFundingService {
               });
             } catch (error) {
               if (error instanceof HttpException) {
-                const resp: any = error.getResponse();
-                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                const response = error.getResponse();
+                const resp =
+                  typeof response === 'object'
+                    ? (response as { error?: string; code?: string })
+                    : null;
+                const code = resp?.error || resp?.code;
                 if (code && String(code).startsWith('LIMIT_')) throw error;
               }
               throw error;
@@ -345,6 +452,7 @@ export class AgentFundingService {
                 idempotencyKey,
                 requestHash,
                 actor,
+                ...(!aggregatorId ? { approvalId: input.approvalId } : {}),
               },
               lines: lines.map((l) => ({
                 accountId: l.accountId,
@@ -355,16 +463,26 @@ export class AgentFundingService {
           } catch (e) {
             if (limitIdempotencyKey && this.limitEnforcementService) {
               try {
-                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
-              } catch {}
+                await this.limitEnforcementService.releaseReservationsWithManager(
+                  manager,
+                  limitIdempotencyKey,
+                );
+              } catch {
+                /* Outer transaction remains authoritative. */
+              }
             }
             throw e;
           }
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
             try {
-              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
-            } catch {}
+              await this.limitEnforcementService.commitReservationsWithManager(
+                manager,
+                limitIdempotencyKey,
+              );
+            } catch {
+              /* Outer transaction remains authoritative. */
+            }
           }
 
           // — V1-COMMERCIAL-DECISION-03E: record the immutable commercial decision snapshot inside
@@ -415,7 +533,14 @@ export class AgentFundingService {
           await this.auditService.record(manager, {
             entityType: direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING',
             entityId: journalId,
-            action: direction === 'FUND' ? (isAggregatorFunding ? 'AGGREGATOR_AGENT_FUNDED' : 'AGENT_FUNDED') : (isAggregatorFunding ? 'AGGREGATOR_AGENT_DEFUNDED' : 'AGENT_DEFUNDED'),
+            action:
+              direction === 'FUND'
+                ? isAggregatorFunding
+                  ? 'AGGREGATOR_AGENT_FUNDED'
+                  : 'AGENT_FUNDED'
+                : isAggregatorFunding
+                  ? 'AGGREGATOR_AGENT_DEFUNDED'
+                  : 'AGENT_DEFUNDED',
             actor,
             correlationId,
             newValues: {
@@ -519,9 +644,9 @@ export class AgentFundingService {
           principalAmountMinor: ctx.amountMinor,
           currency: ctx.currency,
         }),
-      // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
-      agentId: ctx.agentId,
-      aggregatorId: ctx.aggregatorId,
+        // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
+        agentId: ctx.agentId,
+        aggregatorId: ctx.aggregatorId,
       };
     } else {
       feeDecision = {
@@ -541,7 +666,10 @@ export class AgentFundingService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];

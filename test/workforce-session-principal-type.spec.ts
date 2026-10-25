@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 
@@ -77,6 +77,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     const sessionRepo = {
       findOne: jest.fn().mockResolvedValue(opts.sessionRow),
       save: jest.fn().mockImplementation(async (row: any) => row),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const assignmentRepo = {
       find: jest.fn().mockResolvedValue(opts.assignments),
@@ -121,7 +122,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     };
   }
 
-  it('resolves to OPERATOR when the principal holds no SUPER_ADMIN assignment', async () => {
+  it('rejects a workforce session with no valid role assignment', async () => {
     const config = buildConfig([
       role('SUPER_ADMIN'),
       role('FINANCE_PREPARER'),
@@ -132,10 +133,9 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
       sessionRow: activeSessionRow('workforce-user-1'),
       assignments: [], // no active finance role assignment at all
     });
-    const principal = await service.validate('any-token', 'workforce-admin');
-    expect(principal.type).toBe('OPERATOR');
-    expect(principal.type).not.toBe('SUPPORT');
-    expect(principal.type).not.toBe('SERVICE');
+    await expect(service.validate('any-token', 'workforce-admin')).rejects.toThrow(
+      'No valid workforce roles',
+    );
   });
 
   it('resolves to OPERATOR for a non-admin active role (e.g. FINANCE_AUDITOR)', async () => {

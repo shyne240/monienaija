@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import request = require('supertest');
 
 import { AppModule } from '../src/app.module';
-import { AgentFundingService } from '../src/agent/agent-funding.service';
+import { approvedAgentFunding } from './support/approved-agent-funding';
 import { AgentClassService } from '../src/agent/agent-class.service';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
 import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
@@ -36,7 +36,7 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
 describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (real PG)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
-  let fundingService: AgentFundingService;
+  let governedFunding: ReturnType<typeof approvedAgentFunding>;
   let classService: AgentClassService;
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
@@ -95,7 +95,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
-    fundingService = moduleRef.get(AgentFundingService);
+    governedFunding = approvedAgentFunding(app, privilegedPrincipal as never);
     classService = moduleRef.get(AgentClassService);
     appService = moduleRef.get(AgentApplicationService);
     lifecycleService = moduleRef.get(AgentLifecycleService);
@@ -194,7 +194,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const agentBefore = await balanceOf(walletLedgerId);
     const poolBefore = await balanceOf(poolAccountId);
     const idem = `c03e-01-${randomUUID()}`;
-    const res = await fundingService.fund({
+    const res = await governedFunding.fund({
       agentId, amountMinor: '30000', currency: 'NGN', idempotencyKey: idem,
       principal: privilegedPrincipal, actor: 'test-actor',
     });
@@ -261,11 +261,11 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const { agentId, walletLedgerId } = await createActiveAgent();
     const idem = `c03e-02-${randomUUID()}`;
     const payload = { agentId, amountMinor: '15000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' };
-    const first = await fundingService.fund(payload);
+    const first = await governedFunding.fund(payload);
     expect(first.status).toBe('COMPLETED');
     const journalsAfterFirst: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
 
-    const replay = await fundingService.fund({ ...payload });
+    const replay = await governedFunding.fund({ ...payload });
     expect(replay.replayed).toBe(true);
     expect(replay.journalId).toBe(first.journalId);
 
@@ -278,10 +278,10 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
   it('03. funding key clash: same key different payload rejected (409), snapshot count unchanged', async () => {
     const { agentId } = await createActiveAgent();
     const idem = `c03e-03-${randomUUID()}`;
-    const first = await fundingService.fund({ agentId, amountMinor: '10000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
+    const first = await governedFunding.fund({ agentId, amountMinor: '10000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(first.status).toBe('COMPLETED');
     await expect(
-      fundingService.fund({ agentId, amountMinor: '10001', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, amountMinor: '10001', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toMatchObject({ status: 409 });
     expect(await snapshotsFor({ idempotencyKey: `agent-funding:${agentId}:${idem}` })).toHaveLength(1);
   });
@@ -297,7 +297,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const idem = `c03e-04-${randomUUID()}`;
 
     await expect(
-      fundingService.fund({
+      governedFunding.fund({
         agentId, amountMinor: '25000', currency: 'NGN', idempotencyKey: idem,
         principal: privilegedPrincipal, actor: 'test-actor',
         _simulateFailureAfterJournal: true, // fails AFTER snapshot, BEFORE commit
@@ -314,7 +314,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     expect((await dataSource.query(`SELECT id FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`, [`agent-funding.v1:${agentId}`, idem])).length).toBe(0);
 
     // clean retry — no stranded side effects
-    const retry = await fundingService.fund({ agentId, amountMinor: '25000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
+    const retry = await governedFunding.fund({ agentId, amountMinor: '25000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(retry.status).toBe('COMPLETED');
     expect(await snapshotsFor({ idempotencyKey: `agent-funding:${agentId}:${idem}` })).toHaveLength(1); // exactly one
     expect(await balanceOf(walletLedgerId)).toBe(25000n);
@@ -329,7 +329,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const poolBefore = await balanceOf(poolAccountId);
     const idem = `c03e-05-${randomUUID()}`;
     await expect(
-      fundingService.fund({ agentId, amountMinor: '30000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.fund({ agentId, amountMinor: '30000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toMatchObject({ status: 422 });
 
     expect(await snapshotsFor({ idempotencyKey: `agent-funding:${agentId}:${idem}` })).toHaveLength(0);
@@ -342,7 +342,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
   it('06. successful defunding creates exactly one FINAL snapshot (AGENT OUTGOING); wallet→pool accounting unchanged', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '50000', currency: 'NGN', idempotencyKey: `c03e-06-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '50000', currency: 'NGN', idempotencyKey: `c03e-06-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     const profile = `P03E_${randomUUID().slice(0, 6).toUpperCase()}`;
     await seedAgentLimitProfile(profile, agentId);
@@ -350,7 +350,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
     const poolBefore = await balanceOf(poolAccountId);
     const idem = `c03e-06-${randomUUID()}`;
-    const res = await fundingService.defund({
+    const res = await governedFunding.defund({
       agentId, amountMinor: '18000', currency: 'NGN', idempotencyKey: idem,
       principal: privilegedPrincipal, actor: 'test-actor',
     });
@@ -398,34 +398,34 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
   it('07. defunding replay + key clash: REPLAYED converges; conflicting payload rejected; one snapshot', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '40000', currency: 'NGN', idempotencyKey: `c03e-07-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '40000', currency: 'NGN', idempotencyKey: `c03e-07-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     const idem = `c03e-07-${randomUUID()}`;
     const payload = { agentId, amountMinor: '9000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' };
-    const first = await fundingService.defund(payload);
+    const first = await governedFunding.defund(payload);
     expect(first.status).toBe('COMPLETED');
-    const replay = await fundingService.defund({ ...payload });
+    const replay = await governedFunding.defund({ ...payload });
     expect(replay.replayed).toBe(true);
     expect(replay.journalId).toBe(first.journalId);
     expect(await snapshotsFor({ journalId: first.journalId })).toHaveLength(1); // NOT duplicated
     expect(await balanceOf(walletLedgerId)).toBe(31000n); // debited once
 
     await expect(
-      fundingService.defund({ ...payload, amountMinor: '9001' }),
+      governedFunding.defund({ ...payload, amountMinor: '9001' }),
     ).rejects.toMatchObject({ status: 409 });
     expect(await snapshotsFor({ idempotencyKey: `agent-defunding:${agentId}:${idem}` })).toHaveLength(1);
   });
 
   it('08. defunding rollback: forced failure after snapshot rolls back everything; clean retry succeeds exactly once', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '60000', currency: 'NGN', idempotencyKey: `c03e-08-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '60000', currency: 'NGN', idempotencyKey: `c03e-08-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     const journalsBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
     const poolBefore = await balanceOf(poolAccountId);
     const idem = `c03e-08-${randomUUID()}`;
 
     await expect(
-      fundingService.defund({
+      governedFunding.defund({
         agentId, amountMinor: '20000', currency: 'NGN', idempotencyKey: idem,
         principal: privilegedPrincipal, actor: 'test-actor',
         _simulateFailureAfterJournal: true, // fails AFTER snapshot, BEFORE commit
@@ -440,7 +440,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     expect(await balanceOf(walletLedgerId)).toBe(60000n); // unchanged
     expect(await balanceOf(poolAccountId)).toBe(poolBefore);
 
-    const retry = await fundingService.defund({ agentId, amountMinor: '20000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
+    const retry = await governedFunding.defund({ agentId, amountMinor: '20000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' });
     expect(retry.status).toBe('COMPLETED');
     expect(await snapshotsFor({ idempotencyKey: `agent-defunding:${agentId}:${idem}` })).toHaveLength(1); // exactly one
     expect(await balanceOf(walletLedgerId)).toBe(40000n);
@@ -448,7 +448,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
   it('09. defunding limit rejection + no-overdraft: 422s, no snapshot, no stranded reservation, balance never negative', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '25000', currency: 'NGN', idempotencyKey: `c03e-09-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '25000', currency: 'NGN', idempotencyKey: `c03e-09-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     // (a) limit rejection first
     const profile = `P03E_${randomUUID().slice(0, 6).toUpperCase()}`;
@@ -456,7 +456,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     await seedAgentLimitRule(profile, 'AGENT_DEFUNDING', 'DAILY_AMOUNT', '10000'); // tighter than attempted
     const idemLimit = `c03e-09a-${randomUUID()}`;
     await expect(
-      fundingService.defund({ agentId, amountMinor: '15000', currency: 'NGN', idempotencyKey: idemLimit, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.defund({ agentId, amountMinor: '15000', currency: 'NGN', idempotencyKey: idemLimit, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toMatchObject({ status: 422 });
     expect(await snapshotsFor({ idempotencyKey: `agent-defunding:${agentId}:${idemLimit}` })).toHaveLength(0);
     expect((await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [idemLimit])).length).toBe(0);
@@ -464,7 +464,7 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     // (b) overdraft rejection (beyond balance) — existing ledger protection unchanged
     const idemOver = `c03e-09b-${randomUUID()}`;
     await expect(
-      fundingService.defund({ agentId, amountMinor: '25001', currency: 'NGN', idempotencyKey: idemOver, principal: privilegedPrincipal, actor: 'test-actor' }),
+      governedFunding.defund({ agentId, amountMinor: '25001', currency: 'NGN', idempotencyKey: idemOver, principal: privilegedPrincipal, actor: 'test-actor' }),
     ).rejects.toMatchObject({ status: 422 });
     expect(await snapshotsFor({ idempotencyKey: `agent-defunding:${agentId}:${idemOver}` })).toHaveLength(0);
 
@@ -480,10 +480,10 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     const payload = { agentId, amountMinor: '12000', currency: 'NGN', idempotencyKey: idem, principal: privilegedPrincipal, actor: 'test-actor' };
 
     const settled = await Promise.allSettled([
-      fundingService.fund({ ...payload }),
-      fundingService.fund({ ...payload }),
-      fundingService.fund({ ...payload }),
-      fundingService.fund({ ...payload }),
+      governedFunding.fund({ ...payload }),
+      governedFunding.fund({ ...payload }),
+      governedFunding.fund({ ...payload }),
+      governedFunding.fund({ ...payload }),
     ]);
     // fulfilled outcomes must be COMPLETED or REPLAYED (any rejection is a benign conflict/serialization
     // failure — the invariants below are what actually matter)
@@ -504,11 +504,11 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
   it('11. concurrent defunding respects balance: no overdraft, no duplicate snapshots, successes match balance exactly', async () => {
     const { agentId, walletLedgerId } = await createActiveAgent();
-    await fundingService.fund({ agentId, amountMinor: '50000', currency: 'NGN', idempotencyKey: `c03e-11-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    await governedFunding.fund({ agentId, amountMinor: '50000', currency: 'NGN', idempotencyKey: `c03e-11-seed-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     const keys = [1, 2, 3, 4].map(() => `c03e-11-${randomUUID()}`);
     const settled = await Promise.allSettled(
-      keys.map((k) => fundingService.defund({ agentId, amountMinor: '20000', currency: 'NGN', idempotencyKey: k, principal: privilegedPrincipal, actor: 'test-actor' })),
+      keys.map((k) => governedFunding.defund({ agentId, amountMinor: '20000', currency: 'NGN', idempotencyKey: k, principal: privilegedPrincipal, actor: 'test-actor' })),
     );
     const succeeded = settled.filter((r) => r.status === 'fulfilled').length;
     const rejected = settled.filter((r) => r.status === 'rejected').length;
@@ -547,8 +547,8 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
     );
 
     const { agentId, walletLedgerId } = await createActiveAgent();
-    const fund = await fundingService.fund({ agentId, amountMinor: '18000', currency: 'NGN', idempotencyKey: `c03e-12f-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
-    const defund = await fundingService.defund({ agentId, amountMinor: '7000', currency: 'NGN', idempotencyKey: `c03e-12d-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const fund = await governedFunding.fund({ agentId, amountMinor: '18000', currency: 'NGN', idempotencyKey: `c03e-12f-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const defund = await governedFunding.defund({ agentId, amountMinor: '7000', currency: 'NGN', idempotencyKey: `c03e-12d-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
 
     const fundSnaps = await snapshotsFor({ journalId: fund.journalId });
     expect(fundSnaps).toHaveLength(1);
@@ -598,8 +598,8 @@ describe('V1-COMMERCIAL-DECISION-03E AGENT_FUNDING/DEFUNDING snapshot wiring (re
 
   it('13. both snapshots immutable + exact wiring boundary + canonical product identities', async () => {
     const { agentId } = await createActiveAgent();
-    const fund = await fundingService.fund({ agentId, amountMinor: '8000', currency: 'NGN', idempotencyKey: `c03e-13f-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
-    const defund = await fundingService.defund({ agentId, amountMinor: '3000', currency: 'NGN', idempotencyKey: `c03e-13d-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const fund = await governedFunding.fund({ agentId, amountMinor: '8000', currency: 'NGN', idempotencyKey: `c03e-13f-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
+    const defund = await governedFunding.defund({ agentId, amountMinor: '3000', currency: 'NGN', idempotencyKey: `c03e-13d-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor' });
     const fundSnap = (await snapshotsFor({ journalId: fund.journalId }))[0];
     const defundSnap = (await snapshotsFor({ journalId: defund.journalId }))[0];
     for (const snap of [fundSnap, defundSnap]) {

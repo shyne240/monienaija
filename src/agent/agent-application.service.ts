@@ -3,12 +3,11 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { Agent } from './agent.entity';
@@ -77,7 +76,7 @@ export class AgentApplicationService {
         repo.create({
           id: randomUUID(),
           reference,
-          agentClassId: agentClass!.id,
+          agentClassId: agentClass.id,
           status: AgentApplicationStatus.DRAFT,
           applicantReference,
           businessName,
@@ -123,10 +122,7 @@ export class AgentApplicationService {
       if (command.expectedVersion !== undefined && command.expectedVersion !== app.version) {
         throw new ConflictException('Application version is stale');
       }
-      // Applicant ownership: createdBy must match actor for draft updates (applicant self-service)
-      // Privileged callers are enforced at controller layer; service enforces that AGENT cannot modify another Agent's application
-      // For now, allow any actor that matches createdBy, otherwise require privileged check at controller.
-      // We enforce that if actor looks like an Agent principalId (uuid), it must own nothing else; but we delegate to controller.
+      // HTTP entry points require authenticated workforce application-review authority.
       const previous = this.values(app);
       if (command.businessName !== undefined) app.businessName = this.normalizeOptionalText(command.businessName, 'businessName', 320);
       if (command.contactEmail !== undefined) app.contactEmail = this.normalizeOptionalText(command.contactEmail, 'contactEmail', 320);
@@ -315,7 +311,7 @@ export class AgentApplicationService {
   }
 
   private async audit(
-    manager: import('typeorm').EntityManager,
+    manager: EntityManager,
     entityType: string,
     entityId: string,
     action: string,

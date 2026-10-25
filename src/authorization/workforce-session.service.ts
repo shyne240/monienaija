@@ -39,6 +39,7 @@ export class A2WorkforceSessionService {
     const token = randomBytes(32).toString('base64url'),
       expires = new Date(now.getTime() + this.config.sessionTtlSeconds * 1000),
       resolved = await this.resolve(e.principalId, now);
+    if (resolved.roles.length === 0) throw new UnauthorizedException('No valid workforce roles');
     const row = await this.dataSource.transaction(async (m) => {
       const r = m.getRepository(A2WorkforceSession),
         s = await r.save(
@@ -105,10 +106,15 @@ export class A2WorkforceSessionService {
       throw new UnauthorizedException('Invalid workforce session');
     }
     const resolved = await this.resolve(s.principalId, now);
+    if (resolved.roles.length === 0) throw new UnauthorizedException('No valid workforce roles');
     s.roles = resolved.roles;
     s.scopes = resolved.scopes;
     s.lastSeenAt = now;
-    await r.save(s);
+    const updated = await r.update(
+      { id: s.id, status: 'ACTIVE' },
+      { roles: s.roles, scopes: s.scopes, lastSeenAt: now },
+    );
+    if (!updated.affected) throw new UnauthorizedException('Invalid workforce session');
     return this.principal(s, resolved);
   }
   async revoke(
@@ -198,7 +204,9 @@ export class A2WorkforceSessionService {
     const rows = await this.dataSource
       .getRepository(A2FinanceRoleAssignment)
       .find({ where: { principalId, status: 'ACTIVE' } });
-    const legacyDefs = new Map(this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]));
+    const legacyDefs = new Map(
+      this.config.roles.filter((r) => r.enabled).map((r) => [r.roleKey, r]),
+    );
     const active = rows.filter((a) => a.effectiveFrom <= now && a.effectiveTo > now);
     const activeRoleKeys = [...new Set(active.map((a) => a.roleKey))];
 
@@ -209,7 +217,9 @@ export class A2WorkforceSessionService {
     // it), identical to the old behaviour of silently dropping assignment rows config.roles did
     // not recognize.
     const recognizedRoleKeys = activeRoleKeys.filter(
-      (k) => legacyDefs.has(k) || catalogue.recognizedRoleKeys.includes(k),
+      (k) =>
+        !catalogue.disabledRoleKeys?.includes(k) &&
+        (legacyDefs.has(k) || catalogue.recognizedRoleKeys.includes(k)),
     );
     const legacyScopes = recognizedRoleKeys.flatMap((k) => legacyDefs.get(k)?.scopes ?? []);
     const legacyAdministrative = recognizedRoleKeys.some(
@@ -226,7 +236,10 @@ export class A2WorkforceSessionService {
         catalogue.allRecognizedRolesReadOnly,
     };
   }
-  private principal(s: A2WorkforceSession, resolved: ResolvedPrincipalRoles): AuthorizationPrincipal {
+  private principal(
+    s: A2WorkforceSession,
+    resolved: ResolvedPrincipalRoles,
+  ): AuthorizationPrincipal {
     return {
       // V1-ADMIN-AUTHORIZATION-RUNTIME-01: generalized from the hardcoded
       // `roles.includes('FINANCE_ADMIN')` literal to the catalogue's (or, as fallback, legacy

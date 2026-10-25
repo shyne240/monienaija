@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -40,6 +45,7 @@ export interface AgentIssueInitialCredentialCommand {
 }
 
 export interface AgentRotateInitialPasswordCommand {
+  expectedPasswordVersion?: number;
   passwordHash: string;
   hashAlgorithm: AgentPasswordHashAlgorithm;
   actor: string;
@@ -54,6 +60,7 @@ export interface AgentSetPinCommand {
   pinHash: string;
   hashAlgorithm: AgentPasswordHashAlgorithm;
   pinVersion: number;
+  createOnly?: boolean;
   actor: string;
 }
 
@@ -82,7 +89,10 @@ export class AgentAuthenticationService {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
     const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
-    const passwordExpiresAt = this.parseOptionalDate(command.passwordExpiresAt, 'passwordExpiresAt');
+    const passwordExpiresAt = this.parseOptionalDate(
+      command.passwordExpiresAt,
+      'passwordExpiresAt',
+    );
     if (!Object.values(AgentPasswordHashAlgorithm).includes(command.hashAlgorithm)) {
       throw new BadRequestException('hashAlgorithm is invalid');
     }
@@ -114,7 +124,15 @@ export class AgentAuthenticationService {
           version: 1,
         }),
       );
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', credential.id, 'CREATED', actor, undefined, this.credentialValues(credential));
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        credential.id,
+        'CREATED',
+        actor,
+        undefined,
+        this.credentialValues(credential),
+      );
       return credential;
     });
   }
@@ -141,9 +159,14 @@ export class AgentAuthenticationService {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
     const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
-    const passwordExpiresAt = this.parseOptionalDate(command.passwordExpiresAt, 'passwordExpiresAt');
+    const passwordExpiresAt = this.parseOptionalDate(
+      command.passwordExpiresAt,
+      'passwordExpiresAt',
+    );
     if (!passwordExpiresAt) {
-      throw new BadRequestException('passwordExpiresAt is required for temporary credential issuance');
+      throw new BadRequestException(
+        'passwordExpiresAt is required for temporary credential issuance',
+      );
     }
     if (passwordExpiresAt.getTime() <= Date.now()) {
       throw new BadRequestException('passwordExpiresAt must be in the future');
@@ -154,8 +177,22 @@ export class AgentAuthenticationService {
     return this.dataSource.transaction(async (manager) => {
       const agent = await this.requireAgent(manager.getRepository(Agent), agentId);
       this.requireActiveAgent(agent);
-      const credential = await this.persistIssuedCredential(manager, agentId, passwordHash, command.hashAlgorithm, passwordExpiresAt);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', credential.id, 'CREDENTIALS_ISSUED', actor, undefined, this.credentialValues(credential));
+      const credential = await this.persistIssuedCredential(
+        manager,
+        agentId,
+        passwordHash,
+        command.hashAlgorithm,
+        passwordExpiresAt,
+      );
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        credential.id,
+        'CREDENTIALS_ISSUED',
+        actor,
+        undefined,
+        this.credentialValues(credential),
+      );
       return credential;
     });
   }
@@ -174,9 +211,14 @@ export class AgentAuthenticationService {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
     const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
-    const passwordExpiresAt = this.parseOptionalDate(command.passwordExpiresAt, 'passwordExpiresAt');
+    const passwordExpiresAt = this.parseOptionalDate(
+      command.passwordExpiresAt,
+      'passwordExpiresAt',
+    );
     if (!passwordExpiresAt) {
-      throw new BadRequestException('passwordExpiresAt is required for temporary credential issuance');
+      throw new BadRequestException(
+        'passwordExpiresAt is required for temporary credential issuance',
+      );
     }
     if (passwordExpiresAt.getTime() <= Date.now()) {
       throw new BadRequestException('passwordExpiresAt must be in the future');
@@ -188,7 +230,10 @@ export class AgentAuthenticationService {
       const agent = await this.requireAgent(manager.getRepository(Agent), agentId);
       this.requireActiveAgent(agent);
       const repo = manager.getRepository(AgentAuthenticationCredential);
-      const previous = await repo.findOne({ where: { agentId } });
+      const previous = await repo.findOne({
+        where: { agentId },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!previous || previous.deletedAt !== null) {
         throw new NotFoundException('Agent has no authentication credential to reissue');
       }
@@ -196,9 +241,32 @@ export class AgentAuthenticationService {
       previous.status = AgentAuthenticationCredentialStatus.REVOKED;
       previous.deletedAt = new Date();
       await repo.save(previous);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', previous.id, 'REVOKED', actor, previousValues, this.credentialValues(previous));
-      const credential = await this.persistIssuedCredential(manager, agentId, passwordHash, command.hashAlgorithm, passwordExpiresAt);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', credential.id, 'CREDENTIALS_REISSUED', actor, undefined, this.credentialValues(credential));
+      await this.invalidateCredentialSessions(manager, previous.id);
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        previous.id,
+        'REVOKED',
+        actor,
+        previousValues,
+        this.credentialValues(previous),
+      );
+      const credential = await this.persistIssuedCredential(
+        manager,
+        agentId,
+        passwordHash,
+        command.hashAlgorithm,
+        passwordExpiresAt,
+      );
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        credential.id,
+        'CREDENTIALS_REISSUED',
+        actor,
+        undefined,
+        this.credentialValues(credential),
+      );
       return { credential, previousCredentialId: previous.id };
     });
   }
@@ -229,7 +297,11 @@ export class AgentAuthenticationService {
       const credential = await this.requireCredential(repo, agentId, credentialId);
       if (
         credential.status !== AgentAuthenticationCredentialStatus.ACTIVE ||
-        credential.rotationRequired !== true
+        credential.rotationRequired !== true ||
+        credential.accountLocked ||
+        (credential.passwordExpiresAt !== null && credential.passwordExpiresAt <= new Date()) ||
+        (command.expectedPasswordVersion !== undefined &&
+          credential.passwordVersion !== command.expectedPasswordVersion)
       ) {
         throw new ConflictException('Credential rotation is not pending');
       }
@@ -245,7 +317,16 @@ export class AgentAuthenticationService {
       credential.lockedAt = null;
       credential.lockReason = null;
       const saved = await repo.save(credential);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', saved.id, 'PASSWORD_ROTATED', actor, previousValues, this.credentialValues(saved));
+      await this.invalidateCredentialSessions(manager, credential.id);
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        saved.id,
+        'PASSWORD_ROTATED',
+        actor,
+        previousValues,
+        this.credentialValues(saved),
+      );
       return saved;
     });
   }
@@ -277,12 +358,24 @@ export class AgentAuthenticationService {
         credential.lockReason = reason ?? 'Maximum failed authentication attempts reached';
       }
       const saved = await manager.getRepository(AgentAuthenticationCredential).save(credential);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', saved.id, 'FAILED_AUTHENTICATION_RECORDED', actor, previous, this.credentialValues(saved));
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        saved.id,
+        'FAILED_AUTHENTICATION_RECORDED',
+        actor,
+        previous,
+        this.credentialValues(saved),
+      );
       return saved;
     });
   }
 
-  async unlockCredential(agentId: string, credentialId: string, actor: string): Promise<AgentAuthenticationCredential> {
+  async unlockCredential(
+    agentId: string,
+    credentialId: string,
+    actor: string,
+  ): Promise<AgentAuthenticationCredential> {
     this.assertUuid(agentId, 'agentId');
     this.assertUuid(credentialId, 'credentialId');
     const normalizedActor = this.normalizeActor(actor);
@@ -301,14 +394,25 @@ export class AgentAuthenticationService {
       credential.lockedAt = null;
       credential.lockReason = null;
       const saved = await manager.getRepository(AgentAuthenticationCredential).save(credential);
-      await this.audit(manager, 'AGENT_AUTHENTICATION_CREDENTIAL', saved.id, 'ACCOUNT_UNLOCKED', normalizedActor, previous, this.credentialValues(saved));
+      await this.audit(
+        manager,
+        'AGENT_AUTHENTICATION_CREDENTIAL',
+        saved.id,
+        'ACCOUNT_UNLOCKED',
+        normalizedActor,
+        previous,
+        this.credentialValues(saved),
+      );
       return saved;
     });
   }
 
   // Transaction PIN — Agent-owned, separate from login credential
 
-  async setTransactionPin(agentId: string, command: AgentSetPinCommand): Promise<AgentTransactionPin> {
+  async setTransactionPin(
+    agentId: string,
+    command: AgentSetPinCommand,
+  ): Promise<AgentTransactionPin> {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
     const pinHash = this.normalizeHash(command.pinHash, 'pinHash');
@@ -321,9 +425,13 @@ export class AgentAuthenticationService {
     return this.dataSource.transaction(async (manager) => {
       await this.requireAgent(manager.getRepository(Agent), agentId);
       const pinRepo = manager.getRepository(AgentTransactionPin);
-      let pin = await pinRepo.findOne({ where: { agentId } });
+      let pin = await pinRepo.findOne({ where: { agentId }, lock: { mode: 'pessimistic_write' } });
       const now = new Date();
       if (pin && pin.deletedAt === null) {
+        if (command.createOnly)
+          throw new ConflictException(
+            'A Transaction PIN already exists. Use Change Transaction PIN.',
+          );
         // rotate
         const previous = this.pinValues(pin);
         pin.pinHash = pinHash;
@@ -335,7 +443,15 @@ export class AgentAuthenticationService {
         pin.lockedAt = null;
         pin.lockReason = null;
         const saved = await pinRepo.save(pin);
-        await this.audit(manager, 'AGENT_TRANSACTION_PIN', saved.id, 'PIN_ROTATED', actor, previous, this.pinValues(saved));
+        await this.audit(
+          manager,
+          'AGENT_TRANSACTION_PIN',
+          saved.id,
+          'PIN_ROTATED',
+          actor,
+          previous,
+          this.pinValues(saved),
+        );
         return saved;
       }
       pin = await pinRepo.save(
@@ -353,7 +469,15 @@ export class AgentAuthenticationService {
           version: 1,
         }),
       );
-      await this.audit(manager, 'AGENT_TRANSACTION_PIN', pin.id, 'PIN_CREATED', actor, undefined, this.pinValues(pin));
+      await this.audit(
+        manager,
+        'AGENT_TRANSACTION_PIN',
+        pin.id,
+        'PIN_CREATED',
+        actor,
+        undefined,
+        this.pinValues(pin),
+      );
       return pin;
     });
   }
@@ -361,7 +485,9 @@ export class AgentAuthenticationService {
   async verifyTransactionPin(
     agentId: string,
     command: AgentVerifyPinCommand,
-    verificationService: { verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean } },
+    verificationService: {
+      verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean };
+    },
   ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
     this.assertUuid(agentId, 'agentId');
     const actor = this.normalizeActor(command.actor);
@@ -369,49 +495,96 @@ export class AgentAuthenticationService {
     if (typeof pin !== 'string' || pin.length === 0 || pin.length > 1024) {
       return { verified: false, failureReason: 'INVALID_PIN' };
     }
-    const stored = await this.pinRepository.findOne({ where: { agentId } });
-    if (!stored || stored.deletedAt !== null) {
-      return { verified: false, failureReason: 'PIN_NOT_FOUND' };
-    }
-    if (stored.accountLocked) {
-      return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
-    }
-    const result = verificationService.verify(pin, stored.hashAlgorithm, stored.pinHash);
-    if (result.verified) {
-      await this.dataSource.transaction(async (manager) => {
-        const fresh = await manager.getRepository(AgentTransactionPin).findOne({ where: { id: stored.id } });
-        if (!fresh) return;
-        if (fresh.failedCount > 0) {
-          fresh.failedCount = 0;
-          await manager.getRepository(AgentTransactionPin).save(fresh);
-        }
-        await this.audit(manager, 'AGENT_TRANSACTION_PIN', stored.id, 'PIN_VERIFIED', actor, undefined, {
-          agentId,
-          pinVersion: stored.pinVersion,
-          outcome: 'VERIFIED',
-        } as unknown as Record<string, unknown>);
-      });
-      return { verified: true };
-    }
-    await this.dataSource.transaction(async (manager) => {
-      const pinRepo = manager.getRepository(AgentTransactionPin);
-      const fresh = await pinRepo.findOne({ where: { id: stored.id } });
-      if (!fresh) return;
-      const previous = this.pinValues(fresh);
-      fresh.failedCount += 1;
-      if (fresh.failedCount >= MAX_FAILED_PINS) {
-        fresh.accountLocked = true;
-        fresh.lockedAt ??= new Date();
-        fresh.lockReason = 'Maximum failed PIN attempts reached';
-      }
-      const saved = await pinRepo.save(fresh);
-      await this.audit(manager, 'AGENT_TRANSACTION_PIN', saved.id, 'PIN_FAILED', actor, previous, this.pinValues(saved));
+    return this.dataSource.transaction(async (manager) => {
+      const stored = await manager
+        .getRepository(AgentTransactionPin)
+        .findOne({ where: { agentId }, lock: { mode: 'pessimistic_write' } });
+      return this.verifyPinWithManager(manager, stored, pin, actor, verificationService);
     });
-    const reloaded = await this.pinRepository.findOne({ where: { agentId } });
-    if (reloaded?.accountLocked) {
-      return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
+  }
+
+  private async verifyPinWithManager(
+    manager: EntityManager,
+    stored: AgentTransactionPin | null,
+    pin: string,
+    actor: string,
+    verifier: {
+      verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean };
+    },
+  ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
+    if (!stored || stored.deletedAt !== null)
+      return { verified: false, failureReason: 'PIN_NOT_FOUND' };
+    if (stored.accountLocked) return { verified: false, locked: true, failureReason: 'PIN_LOCKED' };
+    const previous = this.pinValues(stored);
+    const verified = verifier.verify(pin, stored.hashAlgorithm, stored.pinHash).verified;
+    if (verified) stored.failedCount = 0;
+    else {
+      stored.failedCount += 1;
+      if (stored.failedCount >= MAX_FAILED_PINS) {
+        stored.accountLocked = true;
+        stored.lockedAt = new Date();
+        stored.lockReason = 'Maximum failed PIN attempts reached';
+      }
     }
-    return { verified: false, failureReason: 'MISMATCH' };
+    await manager.getRepository(AgentTransactionPin).save(stored);
+    await this.audit(
+      manager,
+      'AGENT_TRANSACTION_PIN',
+      stored.id,
+      verified ? 'PIN_VERIFIED' : 'PIN_FAILED',
+      actor,
+      previous,
+      this.pinValues(stored),
+    );
+    return {
+      verified,
+      locked: stored.accountLocked,
+      ...(verified ? {} : { failureReason: stored.accountLocked ? 'PIN_LOCKED' : 'MISMATCH' }),
+    };
+  }
+
+  async changeTransactionPin(
+    agentId: string,
+    currentPin: string,
+    command: AgentSetPinCommand,
+    verifier: {
+      verify: (pin: string, alg: AgentPasswordHashAlgorithm, hash: string) => { verified: boolean };
+    },
+  ): Promise<{
+    verified: boolean;
+    locked?: boolean;
+    failureReason?: string;
+    pin?: AgentTransactionPin;
+  }> {
+    this.assertUuid(agentId, 'agentId');
+    const actor = this.normalizeActor(command.actor);
+    const pinHash = this.normalizeHash(command.pinHash, 'pinHash');
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentTransactionPin);
+      const stored = await repo.findOne({
+        where: { agentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const outcome = await this.verifyPinWithManager(manager, stored, currentPin, actor, verifier);
+      // Return failures, so the attempt counter commits before the HTTP layer throws.
+      if (!outcome.verified || !stored) return outcome;
+      const previous = this.pinValues(stored);
+      stored.pinHash = pinHash;
+      stored.hashAlgorithm = command.hashAlgorithm;
+      stored.pinVersion += 1;
+      stored.lastChangedAt = new Date();
+      const saved = await repo.save(stored);
+      await this.audit(
+        manager,
+        'AGENT_TRANSACTION_PIN',
+        stored.id,
+        'PIN_ROTATED',
+        actor,
+        previous,
+        this.pinValues(saved),
+      );
+      return { verified: true, pin: saved };
+    });
   }
 
   async getTransactionPin(agentId: string): Promise<AgentTransactionPin | null> {
@@ -419,6 +592,25 @@ export class AgentAuthenticationService {
     const pin = await this.pinRepository.findOne({ where: { agentId } });
     if (!pin || pin.deletedAt !== null) return null;
     return pin;
+  }
+
+  private async invalidateCredentialSessions(
+    manager: EntityManager,
+    credentialId: string,
+  ): Promise<void> {
+    await manager.query(
+      `UPDATE agent_authentication_sessions SET status='REVOKED', revoked_at=NOW(), revoke_reason='Credential invalidated', updated_at=NOW() WHERE credential_id=$1 AND status='ACTIVE'`,
+      [credentialId],
+    );
+    await this.audit(
+      manager,
+      'AGENT_AUTHENTICATION_CREDENTIAL',
+      credentialId,
+      'CREDENTIAL_SESSIONS_INVALIDATED',
+      'credential-lifecycle',
+      undefined,
+      { credentialId },
+    );
   }
 
   // Helpers
@@ -489,22 +681,40 @@ export class AgentAuthenticationService {
   }
 
   private async requireAgent(repository: Repository<Agent>, agentId: string): Promise<Agent> {
-    const agent = await repository.findOne({ where: { id: agentId } });
+    const agent = await repository.findOne({
+      where: { id: agentId },
+      lock: { mode: 'pessimistic_write' },
+    });
     if (!agent || agent.deletedAt !== null) {
       throw new NotFoundException(`Agent ${agentId} was not found`);
     }
     return agent;
   }
 
-  private async requireCredential(repository: Repository<AgentAuthenticationCredential>, agentId: string, credentialId: string): Promise<AgentAuthenticationCredential> {
-    const credential = await repository.findOne({ where: { id: credentialId, agentId } });
+  private async requireCredential(
+    repository: Repository<AgentAuthenticationCredential>,
+    agentId: string,
+    credentialId: string,
+  ): Promise<AgentAuthenticationCredential> {
+    const credential = await repository.findOne({
+      where: { id: credentialId, agentId },
+      lock: { mode: 'pessimistic_write' },
+    });
     if (!credential || credential.deletedAt !== null) {
       throw new NotFoundException(`Credential ${credentialId} was not found for agent ${agentId}`);
     }
     return credential;
   }
 
-  private async audit(manager: EntityManager, entityType: string, entityId: string, action: string, actor: string, previousValues?: Record<string, unknown>, newValues?: Record<string, unknown>): Promise<void> {
+  private async audit(
+    manager: EntityManager,
+    entityType: string,
+    entityId: string,
+    action: string,
+    actor: string,
+    previousValues?: Record<string, unknown>,
+    newValues?: Record<string, unknown>,
+  ): Promise<void> {
     await this.auditService.record(manager, {
       entityType,
       entityId,
@@ -537,17 +747,23 @@ export class AgentAuthenticationService {
     return hash;
   }
 
-  private normalizeOptionalText(value: string | undefined, field: string, max: number): string | undefined {
+  private normalizeOptionalText(
+    value: string | undefined,
+    field: string,
+    max: number,
+  ): string | undefined {
     if (value === undefined) return undefined;
     const normalized = value.trim();
-    if (!normalized || normalized.length > max) throw new BadRequestException(`${field} must contain 1 to ${max} characters`);
+    if (!normalized || normalized.length > max)
+      throw new BadRequestException(`${field} must contain 1 to ${max} characters`);
     return normalized;
   }
 
   private parseOptionalDate(value: string | undefined, field: string): Date | null {
     if (value === undefined) return null;
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) throw new BadRequestException(`${field} must be a valid date`);
+    if (Number.isNaN(parsed.getTime()))
+      throw new BadRequestException(`${field} must be a valid date`);
     return parsed;
   }
 }

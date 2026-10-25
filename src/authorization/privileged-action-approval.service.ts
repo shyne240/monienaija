@@ -46,6 +46,10 @@ export class PrivilegedActionApprovalService {
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
+    return this.dataSource.transaction((manager) => this.requestInTransaction(manager, command));
+  }
+
+  async requestInTransaction(manager: EntityManager, command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
     const actionFingerprint = this.normalizeFingerprint(command.actionFingerprint);
     const reason = this.normalizeText(command.reason, 'reason', 500);
     const approvalScope = this.normalizeText(
@@ -64,7 +68,7 @@ export class PrivilegedActionApprovalService {
 
     const now = command.now ?? new Date();
     const expiresAt = new Date(now.getTime() + this.normalizeTtl(command.expiresInSeconds) * 1000);
-    const saved = await this.dataSource.transaction(async (manager) => {
+    const saved = await (async () => {
       const repository = manager.getRepository(PrivilegedActionApproval);
       const approval = await repository.save(
         repository.create({
@@ -74,7 +78,12 @@ export class PrivilegedActionApprovalService {
           resourceId: command.resource.id ?? null,
           customerId: command.resource.customerId ?? command.principal.customerId ?? null,
           actionFingerprint,
-          policy: command.policy as unknown as Record<string, unknown>,
+          policy: {
+            ...command.policy,
+            ...(command.requestDetails
+              ? { requestDetails: redactRecord(command.requestDetails) }
+              : {}),
+          } as unknown as Record<string, unknown>,
           approvalScope,
           requiredAssurance: command.policy.minimumAssurance ?? 'MFA',
           requesterPrincipalId: command.principal.principalId,
@@ -119,7 +128,7 @@ export class PrivilegedActionApprovalService {
         },
       );
       return approval;
-    });
+    })();
     return { approved: false, approval: this.toView(saved), authorization, reason: 'REQUESTED' };
   }
 
@@ -132,44 +141,50 @@ export class PrivilegedActionApprovalService {
   }
 
   async cancel(command: DecidePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApproval(command.approvalId);
-    if (!approval) return { approved: false, reason: 'NOT_FOUND' };
-    if (approval.requesterPrincipalId !== command.principal.principalId) {
-      return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
-    }
-    if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
-      return {
-        approved: false,
-        approval: this.toView(approval),
-        reason: this.statusReason(approval.status),
-      };
-    }
-    const now = command.now ?? new Date();
-    approval.status = PrivilegedActionApprovalStatus.CANCELLED;
-    approval.cancelledAt = now;
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
-      await this.audit(
-        manager,
-        result,
-        'PRIVILEGED_ACTION_CANCELLED',
-        command.principal.principalId,
-        {
-          comment: command.comment ?? null,
-        },
-      );
-      await this.securityEvent(
-        manager,
-        result,
-        SecurityEventType.PRIVILEGED_ACTION_CANCELLED,
-        command.principal.principalId,
-        {
-          comment: command.comment ?? null,
-        },
-      );
-      return result;
+    return this.dataSource.transaction<PrivilegedActionDecision>(async (manager) => {
+      const approval = await this.findApprovalIn(manager, command.approvalId);
+      if (!approval) return { approved: false, reason: 'NOT_FOUND' };
+      if (approval.requesterPrincipalId !== command.principal.principalId) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'APPROVAL_SCOPE_MISSING',
+        };
+      }
+      if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: this.statusReason(approval.status),
+        };
+      }
+      const now = command.now ?? new Date();
+      approval.status = PrivilegedActionApprovalStatus.CANCELLED;
+      approval.cancelledAt = now;
+      const saved = await (async () => {
+        const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
+        await this.audit(
+          manager,
+          result,
+          'PRIVILEGED_ACTION_CANCELLED',
+          command.principal.principalId,
+          {
+            comment: command.comment ?? null,
+          },
+        );
+        await this.securityEvent(
+          manager,
+          result,
+          SecurityEventType.PRIVILEGED_ACTION_CANCELLED,
+          command.principal.principalId,
+          {
+            comment: command.comment ?? null,
+          },
+        );
+        return result;
+      })();
+      return { approved: false, approval: this.toView(saved), reason: 'CANCELLED' };
     });
-    return { approved: false, approval: this.toView(saved), reason: 'CANCELLED' };
   }
 
   async consume(command: ConsumePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -366,65 +381,73 @@ export class PrivilegedActionApprovalService {
     command: DecidePrivilegedActionCommand,
     approve: boolean,
   ): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApproval(command.approvalId);
-    if (!approval) return { approved: false, reason: 'NOT_FOUND' };
-    const now = command.now ?? new Date();
-    if (await this.expireIfNeeded(approval, now)) {
-      return { approved: false, approval: this.toView(approval), reason: 'EXPIRED' };
-    }
-    if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
-      return {
-        approved: false,
-        approval: this.toView(approval),
-        reason: this.statusReason(approval.status),
-      };
-    }
-    if (approval.requesterPrincipalId === command.principal.principalId) {
-      return {
-        approved: false,
-        approval: this.toView(approval),
-        reason: 'SELF_APPROVAL_FORBIDDEN',
-      };
-    }
-    if (!command.principal.scopes.includes(approval.approvalScope)) {
-      return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
-    }
-    if (approval.requiredAssurance === 'MFA' && command.principal.assuranceLevel !== 'MFA') {
-      return { approved: false, approval: this.toView(approval), reason: 'MFA_REQUIRED' };
-    }
+    // Decide under the same row lock as consumption: a stale checker must never
+    // overwrite CONSUMED (or another decision) after waiting for a concurrent writer.
+    return this.dataSource.transaction<PrivilegedActionDecision>(async (manager) => {
+      const approval = await this.findApprovalIn(manager, command.approvalId);
+      if (!approval) return { approved: false, reason: 'NOT_FOUND' };
+      const now = command.now ?? new Date();
+      if (await this.expireIfNeededIn(manager, approval, now)) {
+        return { approved: false, approval: this.toView(approval), reason: 'EXPIRED' };
+      }
+      if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: this.statusReason(approval.status),
+        };
+      }
+      if (approval.requesterPrincipalId === command.principal.principalId) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'SELF_APPROVAL_FORBIDDEN',
+        };
+      }
+      if (!command.principal.scopes.includes(approval.approvalScope)) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'APPROVAL_SCOPE_MISSING',
+        };
+      }
+      if (approval.requiredAssurance === 'MFA' && command.principal.assuranceLevel !== 'MFA') {
+        return { approved: false, approval: this.toView(approval), reason: 'MFA_REQUIRED' };
+      }
 
-    approval.status = approve
-      ? PrivilegedActionApprovalStatus.APPROVED
-      : PrivilegedActionApprovalStatus.REJECTED;
-    approval.approvedBy = approve ? command.principal.principalId : null;
-    approval.approverSessionId = approve ? (command.principal.sessionId ?? null) : null;
-    approval.approvedAt = approve ? now : null;
-    approval.rejectedAt = approve ? null : now;
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
-      await this.audit(
-        manager,
-        result,
-        approve ? 'PRIVILEGED_ACTION_APPROVED' : 'PRIVILEGED_ACTION_REJECTED',
-        command.principal.principalId,
-        { comment: command.comment ?? null, status: result.status },
-      );
-      await this.securityEvent(
-        manager,
-        result,
-        approve
-          ? SecurityEventType.PRIVILEGED_ACTION_APPROVED
-          : SecurityEventType.PRIVILEGED_ACTION_REJECTED,
-        command.principal.principalId,
-        { status: result.status },
-      );
-      return result;
+      approval.status = approve
+        ? PrivilegedActionApprovalStatus.APPROVED
+        : PrivilegedActionApprovalStatus.REJECTED;
+      approval.approvedBy = approve ? command.principal.principalId : null;
+      approval.approverSessionId = approve ? (command.principal.sessionId ?? null) : null;
+      approval.approvedAt = approve ? now : null;
+      approval.rejectedAt = approve ? null : now;
+      const saved = await (async () => {
+        const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
+        await this.audit(
+          manager,
+          result,
+          approve ? 'PRIVILEGED_ACTION_APPROVED' : 'PRIVILEGED_ACTION_REJECTED',
+          command.principal.principalId,
+          { comment: command.comment ?? null, status: result.status },
+        );
+        await this.securityEvent(
+          manager,
+          result,
+          approve
+            ? SecurityEventType.PRIVILEGED_ACTION_APPROVED
+            : SecurityEventType.PRIVILEGED_ACTION_REJECTED,
+          command.principal.principalId,
+          { status: result.status },
+        );
+        return result;
+      })();
+      return {
+        approved: approve,
+        approval: this.toView(saved),
+        reason: approve ? 'APPROVED' : 'REJECTED',
+      };
     });
-    return {
-      approved: approve,
-      approval: this.toView(saved),
-      reason: approve ? 'APPROVED' : 'REJECTED',
-    };
   }
 
   private async findApproval(approvalId: string): Promise<PrivilegedActionApproval | null> {
@@ -438,7 +461,9 @@ export class PrivilegedActionApprovalService {
     approvalId: string,
   ): Promise<PrivilegedActionApproval | null> {
     if (!UUID_PATTERN.test(approvalId)) return null;
-    return manager.getRepository(PrivilegedActionApproval).findOne({ where: { id: approvalId } });
+    return manager
+      .getRepository(PrivilegedActionApproval)
+      .findOne({ where: { id: approvalId }, lock: { mode: 'pessimistic_write' } });
   }
 
   private requiresExpiry(approval: PrivilegedActionApproval, now: Date): boolean {
@@ -518,7 +543,7 @@ export class PrivilegedActionApprovalService {
     }
   }
 
-  private toView(approval: PrivilegedActionApproval): PrivilegedActionApprovalView {
+  toView(approval: PrivilegedActionApproval): PrivilegedActionApprovalView {
     return {
       id: approval.id,
       actionType: approval.actionType,

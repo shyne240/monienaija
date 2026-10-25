@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { AgentFundingPanel } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canApprove =
     principal?.roles.includes('FINANCE_CONTROLLER') === true &&
     (principal?.scopes.includes('privileged:approve') ?? false);
+  const canFund = principal?.roles.includes('FINANCE_CONTROLLER') === true &&
+    principal.scopes.some(code => ['agent.fund', 'agent.defund'].includes(code));
   const [approvalId, setApprovalId] = useState('');
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -28,9 +31,11 @@ export const ApprovalsScreen: React.FC = () => {
 
     try {
       // Both decision routes exist; the backend remains authoritative for the checker policy.
-      await ApiClient.post(`/internal/a2/workforce/approvals/${approvalId.trim()}/${action}`, {
+      const decision = await ApiClient.post<{ reason?: string }>(`/internal/a2/workforce/approvals/${approvalId.trim()}/${action}`, {
         comment: comment.trim() || undefined,
       });
+      if (decision?.reason !== (action === 'approve' ? 'APPROVED' : 'REJECTED'))
+        throw new Error(decision?.reason || 'Approval decision is not confirmed');
       setSuccess(action);
       setApprovalId('');
       setComment('');
@@ -47,7 +52,7 @@ export const ApprovalsScreen: React.FC = () => {
     void handleDecision('approve');
   };
 
-  if (!canApprove) {
+  if (!canApprove && !canFund) {
     return (
       <div style={styles.container} role="alert">
         <div style={styles.errorBox}>The configured checker role <code>FINANCE_CONTROLLER</code> and <code>privileged:approve</code> are required for these approval actions.</div>
@@ -57,6 +62,7 @@ export const ApprovalsScreen: React.FC = () => {
 
   return (
     <div style={styles.container}>
+      <AgentFundingPanel />
       <div style={styles.header}>
         <h2 style={styles.title}>Privileged Approvals (Maker-Checker)</h2>
         <p style={styles.subtitle}>Execute authorized check verifications and system overrides</p>
@@ -69,13 +75,13 @@ export const ApprovalsScreen: React.FC = () => {
         </p>
       </div>
       <div style={styles.fundingNote}>
-        Agent funding requests use their dedicated rejection workflow so approval and request state change atomically. This generic rejection action intentionally rejects funding approval IDs; it does not replace that workflow.
+        Review direct Agent funding instructions in the funding panel. Its decisions use the existing independent-checker authorization.
       </div>
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
       {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Privileged action checked and approved successfully!' : 'Approval decision recorded as rejected successfully.'}</div>}
 
-      <div style={styles.card}>
+      {canApprove && <div style={styles.card}>
         <h3 style={styles.cardTitle}>Submit Checker Decision</h3>
         <form onSubmit={handleApproveSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
@@ -110,7 +116,7 @@ export const ApprovalsScreen: React.FC = () => {
             </button>
           </div>
         </form>
-      </div>
+      </div>}
     </div>
   );
 };
