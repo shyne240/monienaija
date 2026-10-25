@@ -63,7 +63,18 @@ describe('Customer Proof of Address policy-neutral persistence', () => {
       .map((check) => check.name)
       .filter((checkName): checkName is string => Boolean(checkName));
     expect(entityCheckNames.length).toBeGreaterThan(0);
+    const checksAddedBy0094 = new Set([
+      'chk_customer_poa_document_status',
+      'chk_customer_poa_scanner_result',
+      'chk_customer_poa_available_requires_clean_scan',
+      'chk_customer_poa_withdrawal_metadata',
+      'chk_customer_poa_archive_metadata',
+      'chk_customer_poa_idempotency_hash',
+    ]);
     for (const checkName of entityCheckNames) {
+      // This specification intentionally validates the immutable 0093 migration; lifecycle
+      // constraints added by 0094 have their own additive-migration specification.
+      if (checksAddedBy0094.has(checkName)) continue;
       expect(sql).toContain(`constraint ${checkName.toLowerCase()}`);
     }
 

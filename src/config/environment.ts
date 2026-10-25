@@ -40,6 +40,22 @@ export const environmentSchema = z
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
+    // Secure PoA uploads are inert unless explicitly enabled. Local disk/key-file storage is
+    // development/test only; production requires S3-compatible storage and a managed keyring.
+    POA_UPLOADS_ENABLED: booleanFromEnvironment.default(false),
+    POA_MAX_UPLOAD_BYTES: z.coerce.number().int().min(1).max(10_485_760).default(10_485_760),
+    POA_STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
+    POA_LOCAL_STORAGE_ROOT: z.string().trim().min(1).max(2048).default('./data/private-poa/objects'),
+    POA_ENCRYPTION_KEY_FILE: z.string().trim().min(1).max(2048).default('./data/private-poa/encryption.key'),
+    POA_ENCRYPTION_KEYRING_JSON: optionalEnvironmentJson,
+    POA_ENCRYPTION_ACTIVE_KEY_VERSION: z.string().trim().regex(/^[A-Za-z0-9._-]{1,64}$/).default('v1'),
+    POA_CLAMAV_HOST: z.string().trim().min(1).max(255).default('127.0.0.1'),
+    POA_CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+    POA_CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
+    POA_S3_BUCKET: optionalEnvironmentString,
+    POA_S3_REGION: optionalEnvironmentString,
+    POA_S3_ENDPOINT: optionalEnvironmentUrl,
+    POA_S3_FORCE_PATH_STYLE: booleanFromEnvironment.default(false),
     // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting configuration.
     // All optional; absence means the commercial accounting layer is inert (legacy evidence-only
     // posture). When enabled, treatment/timing must be explicit — the selected values are
@@ -200,6 +216,83 @@ export const environmentSchema = z
           path: ['ROBASE_API_KEY'],
           message: 'ROBASE_API_KEY must be a Robase live key (robe_ prefix, see docs.robase.dev)',
         });
+      }
+    }
+
+    if (config.POA_UPLOADS_ENABLED) {
+      if (config.POA_STORAGE_PROVIDER === 'local' && !['development', 'test'].includes(config.NODE_ENV)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['POA_STORAGE_PROVIDER'],
+          message: 'The local Proof of Address storage adapter is restricted to development/test',
+        });
+      }
+      if (config.POA_STORAGE_PROVIDER === 's3') {
+        if (!config.POA_S3_BUCKET || !config.POA_S3_REGION) {
+          context.addIssue({
+            code: 'custom',
+            path: ['POA_S3_BUCKET'],
+            message: 'POA_S3_BUCKET and POA_S3_REGION are required when S3 storage is enabled',
+          });
+        }
+        if (!config.POA_ENCRYPTION_KEYRING_JSON) {
+          context.addIssue({
+            code: 'custom',
+            path: ['POA_ENCRYPTION_KEYRING_JSON'],
+            message: 'An operator-managed POA_ENCRYPTION_KEYRING_JSON is required for S3 storage',
+          });
+        }
+      }
+      if (config.NODE_ENV === 'production' && config.POA_STORAGE_PROVIDER !== 's3') {
+        context.addIssue({
+          code: 'custom',
+          path: ['POA_STORAGE_PROVIDER'],
+          message: 'Production Proof of Address uploads require the S3-compatible storage adapter',
+        });
+      }
+      if (config.POA_STORAGE_PROVIDER === 'local' && config.POA_ENCRYPTION_KEYRING_JSON) {
+        context.addIssue({
+          code: 'custom',
+          path: ['POA_ENCRYPTION_KEYRING_JSON'],
+          message: 'Use the persistent local key file with the development-only local storage adapter',
+        });
+      }
+      if (config.POA_ENCRYPTION_KEYRING_JSON) {
+        try {
+          const keyring: unknown = JSON.parse(config.POA_ENCRYPTION_KEYRING_JSON);
+          if (!keyring || typeof keyring !== 'object' || Array.isArray(keyring)) {
+            throw new Error('not a key map');
+          }
+          const entries = Object.entries(keyring as Record<string, unknown>);
+          if (!entries.some(([version]) => version === config.POA_ENCRYPTION_ACTIVE_KEY_VERSION)) {
+            context.addIssue({
+              code: 'custom',
+              path: ['POA_ENCRYPTION_ACTIVE_KEY_VERSION'],
+              message: 'The active Proof of Address encryption-key version must exist in the keyring',
+            });
+          }
+          for (const [version, encodedKey] of entries) {
+            const decoded = typeof encodedKey === 'string' ? Buffer.from(encodedKey, 'base64') : Buffer.alloc(0);
+            if (
+              !/^[A-Za-z0-9._-]{1,64}$/.test(version) ||
+              decoded.length !== 32 ||
+              decoded.toString('base64') !== encodedKey
+            ) {
+              context.addIssue({
+                code: 'custom',
+                path: ['POA_ENCRYPTION_KEYRING_JSON'],
+                message: 'Every Proof of Address keyring entry must be a versioned, 32-byte base64 key',
+              });
+              break;
+            }
+          }
+        } catch {
+          context.addIssue({
+            code: 'custom',
+            path: ['POA_ENCRYPTION_KEYRING_JSON'],
+            message: 'POA_ENCRYPTION_KEYRING_JSON must be a JSON object of versioned base64 keys',
+          });
+        }
       }
     }
 

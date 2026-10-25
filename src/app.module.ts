@@ -14,6 +14,7 @@ import { AggregatorModule } from './aggregator/aggregator.module';
 import { OutletModule } from './outlet/outlet.module';
 import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerProofOfAddressModule } from './customer-proof-of-address/customer-proof-of-address.module';
 import { CustomerRegistrationModule } from './customer-registration/customer-registration.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
@@ -147,6 +148,7 @@ import { WalletModule } from './wallet/wallet.module';
     AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
+    CustomerProofOfAddressModule,
     CustomerRegistrationModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,

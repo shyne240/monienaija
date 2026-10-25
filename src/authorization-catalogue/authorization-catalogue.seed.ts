@@ -116,6 +116,13 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'customer.view_address', domain: 'CUSTOMER', name: 'View customer address', description: 'View a customer physical/mailing address.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'customer.view_contact_methods', domain: 'CUSTOMER', name: 'View customer contact methods', description: 'View a customer phone/email contact methods.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'customer.view_identity_documents', domain: 'CUSTOMER', name: 'View customer identity documents', description: 'View a customer identity document records, including document numbers.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, notes: 'Decision V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-DECISION-01: SUPER_ADMIN/COMPLIANCE only — explicitly narrower than customer.view, including FINANCE_AUDITOR exclusion.' },
+  // Secure PoA document functions are intentionally distinct from documentary approval and
+  // physical verification. Clean malware scanning only enables controlled content access.
+  { functionCode: 'customer.view_proof_of_address_metadata', domain: 'CUSTOMER', name: 'View Proof of Address metadata', description: 'View submitted Proof of Address metadata and revision history for a customer.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Metadata access never approves evidence, completes physical verification, changes Tier 3, or changes wallet status.' },
+  { functionCode: 'customer.upload_proof_of_address', domain: 'CUSTOMER', name: 'Upload Proof of Address document', description: 'Submit or replace a customer Proof of Address document for malware scanning and controlled review.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Upload does not itself verify or approve the document.' },
+  { functionCode: 'customer.download_proof_of_address', domain: 'CUSTOMER', name: 'Preview or download Proof of Address document', description: 'Access the content of a malware-clean Proof of Address document for a customer.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Quarantined, withdrawn, superseded, and archived document content is not served.' },
+  { functionCode: 'customer.withdraw_proof_of_address', domain: 'CUSTOMER', name: 'Withdraw Proof of Address document', description: 'Withdraw a submitted Proof of Address document with a recorded reason.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Withdrawal is a document-lifecycle action only; it does not change KYC, Tier 3, or wallet status.' },
+  { functionCode: 'customer.archive_proof_of_address', domain: 'CUSTOMER', name: 'Archive Proof of Address document', description: 'Archive a previously withdrawn Proof of Address document with a recorded reason.', sensitivity: SENSITIVE, v1Status: IMPLEMENTED, assignable: true, auditorVisible: false, notes: 'Archive is a retention/lifecycle action only; it does not delete customer or KYC records.' },
 
   // -------------------------------------------------------------------- AGENT
   { functionCode: 'agent.view', domain: 'AGENT', name: 'View agent profile', description: 'View an agent profile and status.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
@@ -349,6 +356,11 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'customer.view_address', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.view_contact_methods', VIEW),
   nowAssign('SUPER_ADMIN', 'customer.view_identity_documents', VIEW),
+  nowAssign('SUPER_ADMIN', 'customer.view_proof_of_address_metadata', VIEW),
+  nowAssign('SUPER_ADMIN', 'customer.upload_proof_of_address', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'customer.download_proof_of_address', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'customer.withdraw_proof_of_address', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'customer.archive_proof_of_address', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.view', VIEW),
   nowAssign('SUPER_ADMIN', 'agent.review_application', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.activate', EXECUTE),
@@ -492,6 +504,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   // V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01
   nowAssign('OPERATIONS', 'customer.view_address', VIEW),
   nowAssign('OPERATIONS', 'customer.view_contact_methods', VIEW),
+  nowAssign('OPERATIONS', 'customer.view_proof_of_address_metadata', VIEW),
+  nowAssign('OPERATIONS', 'customer.upload_proof_of_address', EXECUTE),
+  nowAssign('OPERATIONS', 'customer.withdraw_proof_of_address', EXECUTE),
   nowAssign('OPERATIONS', 'aggregator.view', VIEW),
   nowAssign('OPERATIONS', 'aggregator.manage', EXECUTE),
   nowAssign('OPERATIONS', 'workforce.user.view', VIEW),
@@ -533,6 +548,9 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('COMPLIANCE', 'customer.view_address', VIEW),
   nowAssign('COMPLIANCE', 'customer.view_contact_methods', VIEW),
   nowAssign('COMPLIANCE', 'customer.view_identity_documents', VIEW),
+  nowAssign('COMPLIANCE', 'customer.view_proof_of_address_metadata', VIEW),
+  nowAssign('COMPLIANCE', 'customer.download_proof_of_address', EXECUTE),
+  nowAssign('COMPLIANCE', 'customer.archive_proof_of_address', EXECUTE),
 
   // ------------------------------------------------------------------- RISK_FRAUD
   nowAssign('RISK_FRAUD', 'risk_fraud.manage_fraud_case', EXECUTE),

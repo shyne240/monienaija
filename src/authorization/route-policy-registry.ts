@@ -154,6 +154,31 @@ export class RoutePolicyRegistry {
         },
       };
     }
+    // Secure Proof of Address documents are workforce-only and never inherit the customer
+    // self-service policy. The controller additionally requires the dedicated catalogue
+    // function for each metadata, upload, content, withdrawal, and archive operation.
+    if (/^\/api\/v1\/customers\/[^/]+\/proof-of-address(?:\/.*)?$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-proof-of-address',
+        resourceId: input.params?.submissionId,
+        customerId: input.params?.customerId,
+        policy: {
+          resourceType: 'customer-proof-of-address',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          // Workforce principals do not carry customerAccess=ANY; SELF is the established
+          // workforce route scope here (the principal-type allowlist excludes customer self-service).
+          // The controller also requires a dedicated PoA function and the service scopes every row
+          // by both customerId and submissionId.
+          customerAccess: 'SELF',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Bare /customers list + create (no :id segment). This is the same admin/back-office
     // customer-servicing surface as the generic `/customers/:id` branch below (same
     // allowedPrincipalTypes, already declared there) but listing/creating customers never

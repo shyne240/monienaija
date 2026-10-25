@@ -4,6 +4,31 @@ export enum CustomerProofOfAddressReviewStatus {
   REJECTED = 'REJECTED',
 }
 
+/** File safety/lifecycle state is deliberately separate from documentary review. */
+export enum CustomerProofOfAddressDocumentStatus {
+  QUARANTINED = 'QUARANTINED',
+  AVAILABLE = 'AVAILABLE',
+  SUPERSEDED = 'SUPERSEDED',
+  WITHDRAWN = 'WITHDRAWN',
+  ARCHIVED = 'ARCHIVED',
+}
+
+export enum CustomerProofOfAddressScannerResult {
+  CLEAN = 'CLEAN',
+  INFECTED = 'INFECTED',
+  UNAVAILABLE = 'UNAVAILABLE',
+  ERROR = 'ERROR',
+}
+
+export enum CustomerProofOfAddressDocumentHistoryAction {
+  UPLOADED = 'UPLOADED',
+  SCAN_CLEAN = 'SCAN_CLEAN',
+  QUARANTINED = 'QUARANTINED',
+  SUPERSEDED = 'SUPERSEDED',
+  WITHDRAWN = 'WITHDRAWN',
+  ARCHIVED = 'ARCHIVED',
+}
+
 export enum CustomerProofOfAddressHistoryAction {
   SUBMITTED = 'SUBMITTED',
   RESUBMITTED = 'RESUBMITTED',

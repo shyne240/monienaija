@@ -26,6 +26,50 @@ describe('validateEnvironment', () => {
     });
   });
 
+  it('keeps secure PoA uploads disabled by default with the documented 10 MB cap', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      POA_UPLOADS_ENABLED: false,
+      POA_MAX_UPLOAD_BYTES: 10_485_760,
+      POA_STORAGE_PROVIDER: 'local',
+      POA_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+    });
+  });
+
+  it('restricts enabled local PoA storage to development/test', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        NOTIFICATION_SMS_PROVIDER: 'robase',
+        ROBASE_API_KEY: `robe_${'a'.repeat(60)}`,
+        POA_UPLOADS_ENABLED: 'true',
+        POA_STORAGE_PROVIDER: 'local',
+      }),
+    ).toThrow('Invalid environment configuration');
+  });
+
+  it('accepts production S3 PoA configuration only with a valid persistent versioned keyring', () => {
+    const base = {
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      NOTIFICATION_SMS_PROVIDER: 'robase',
+      ROBASE_API_KEY: `robe_${'a'.repeat(60)}`,
+      POA_UPLOADS_ENABLED: 'true',
+      POA_STORAGE_PROVIDER: 's3',
+      POA_S3_BUCKET: 'private-customer-documents',
+      POA_S3_REGION: 'af-south-1',
+      POA_ENCRYPTION_KEYRING_JSON: JSON.stringify({ v1: Buffer.alloc(32, 9).toString('base64') }),
+    };
+    expect(validateEnvironment(base)).toMatchObject({
+      POA_UPLOADS_ENABLED: true,
+      POA_STORAGE_PROVIDER: 's3',
+      POA_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+    });
+    expect(() =>
+      validateEnvironment({ ...base, POA_ENCRYPTION_KEYRING_JSON: undefined }),
+    ).toThrow('Invalid environment configuration');
+  });
+
   it('fails fast when required database configuration is absent', () => {
     expect(() => validateEnvironment({ ...validEnvironment, DB_PASSWORD: '' })).toThrow(
       'Invalid environment configuration',
