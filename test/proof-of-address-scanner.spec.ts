@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { once } from 'node:events';
 import { createServer, type Server, type Socket } from 'node:net';
 
@@ -14,6 +15,7 @@ describe('ClamAvMalwareScanner', () => {
       });
     }
     server = undefined;
+    jest.restoreAllMocks();
   });
 
   it.each([
@@ -62,7 +64,39 @@ describe('ClamAvMalwareScanner', () => {
     await expect(result).resolves.toBe('CLEAN');
   });
 
-  it('fails closed when the ClamAV service is unavailable', async () => {
+  it('keeps the TCP connection open after the terminal frame until ClamAV replies', async () => {
+    let clientHalfClosed = false;
+    let finObservedBeforeReply = false;
+    server = createServer({ allowHalfOpen: true }, (socket) => {
+      let request = Buffer.alloc(0);
+      let responseScheduled = false;
+      socket.on('end', () => {
+        clientHalfClosed = true;
+      });
+      socket.on('data', (chunk) => {
+        request = Buffer.concat([request, chunk]);
+        if (!responseScheduled && isCompleteInstreamRequest(request)) {
+          responseScheduled = true;
+          setTimeout(() => {
+            finObservedBeforeReply = clientHalfClosed;
+            if (finObservedBeforeReply) {
+              socket.destroy();
+            } else {
+              socket.end(Buffer.from('stream: OK\0', 'ascii'));
+            }
+          }, 30);
+        }
+      });
+    });
+    const port = await listen(server);
+    const scanner = new ClamAvMalwareScanner(configuration(port));
+
+    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('CLEAN');
+    expect(finObservedBeforeReply).toBe(false);
+  });
+
+  it('fails closed and logs safe connection diagnostics when the ClamAV service is unavailable', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     server = createServer();
     const port = await listen(server);
     await new Promise<void>((resolve, reject) => {
@@ -70,10 +104,21 @@ describe('ClamAvMalwareScanner', () => {
     });
 
     const scanner = new ClamAvMalwareScanner(configuration(port));
-    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('UNAVAILABLE');
+    const documentBytes = Buffer.from('sensitive-document-content');
+    await expect(scanner.scan(documentBytes)).resolves.toBe('UNAVAILABLE');
+    expect(warn).toHaveBeenCalledTimes(1);
+    const diagnostic = warn.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(diagnostic).toMatchObject({
+      event: 'poa.clamav.scan_failure',
+      cause: 'connection_error',
+      reason: 'socket_error',
+      phase: 'connect',
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(documentBytes.toString());
   });
 
-  it('fails closed when ClamAV does not respond before the timeout', async () => {
+  it('fails closed with distinct timeout diagnostics', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     let completeRequestReceived = false;
     let peerSocket: Socket | undefined;
     server = createServer({ allowHalfOpen: true }, (socket) => {
@@ -90,10 +135,17 @@ describe('ClamAvMalwareScanner', () => {
 
     await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('UNAVAILABLE');
     expect(completeRequestReceived).toBe(true);
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      event: 'poa.clamav.scan_failure',
+      cause: 'timeout',
+      reason: 'socket_inactivity_timeout',
+      phase: 'response',
+    });
     peerSocket?.destroy();
   });
 
-  it('rejects malformed null-terminated responses', async () => {
+  it('rejects malformed responses with protocol diagnostics', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     server = createServer((socket) => {
       let request = Buffer.alloc(0);
       socket.on('data', (chunk) => {
@@ -105,9 +157,16 @@ describe('ClamAvMalwareScanner', () => {
 
     const scanner = new ClamAvMalwareScanner(configuration(port));
     await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('ERROR');
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      event: 'poa.clamav.scan_failure',
+      cause: 'protocol_error',
+      reason: 'unrecognized_response',
+      phase: 'response',
+    });
   });
 
-  it('rejects an incomplete clean-looking response without its null terminator', async () => {
+  it('rejects an incomplete clean-looking response with closure diagnostics', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     server = createServer((socket) => {
       let request = Buffer.alloc(0);
       socket.on('data', (chunk) => {
@@ -119,6 +178,12 @@ describe('ClamAvMalwareScanner', () => {
 
     const scanner = new ClamAvMalwareScanner(configuration(port));
     await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('ERROR');
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      event: 'poa.clamav.scan_failure',
+      cause: 'unexpected_socket_closure',
+      reason: 'incomplete_response',
+      phase: 'response',
+    });
   });
 });
 
