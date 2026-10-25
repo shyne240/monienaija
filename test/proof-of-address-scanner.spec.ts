@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { createServer, type Server } from 'node:net';
+import { createServer, type Server, type Socket } from 'node:net';
 
 import type { ProofOfAddressConfiguration } from '../src/customer-proof-of-address/customer-proof-of-address.config';
 import { ClamAvMalwareScanner } from '../src/customer-proof-of-address/clamav-malware-scanner.service';
@@ -17,46 +17,121 @@ describe('ClamAvMalwareScanner', () => {
   });
 
   it.each([
-    [Buffer.concat([Buffer.from('stream: OK', 'ascii'), Buffer.from([0])]), 'CLEAN'],
-    [
-      Buffer.concat([Buffer.from('stream: Eicar-Test-Signature FOUND', 'ascii'), Buffer.from([0])]),
-      'INFECTED',
-    ],
-  ] as const)('parses an explicit ClamAV response', async (reply, expected) => {
-    server = createServer((socket) => {
+    [Buffer.from('stream: OK\0', 'ascii'), 'CLEAN'],
+    [Buffer.from('stream: Eicar-Test-Signature FOUND\0', 'ascii'), 'INFECTED'],
+  ] as const)(
+    'returns the result from an explicit null-terminated response',
+    async (reply, expected) => {
+      server = createServer((socket) => {
+        let request = Buffer.alloc(0);
+        socket.on('data', (chunk) => {
+          request = Buffer.concat([request, chunk]);
+          if (isCompleteInstreamRequest(request)) socket.end(reply);
+        });
+      });
+      const port = await listen(server);
+
+      const scanner = new ClamAvMalwareScanner(configuration(port));
+      await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe(expected);
+    },
+  );
+
+  it('waits for the complete null-terminated response before returning clean', async () => {
+    server = createServer({ allowHalfOpen: true }, (socket) => {
       let request = Buffer.alloc(0);
+      let responseStarted = false;
       socket.on('data', (chunk) => {
         request = Buffer.concat([request, chunk]);
-        if (isCompleteInstreamRequest(request)) socket.end(reply);
+        if (!responseStarted && isCompleteInstreamRequest(request)) {
+          responseStarted = true;
+          socket.write(Buffer.from('stream: OK', 'ascii'));
+          setTimeout(() => socket.end(Buffer.from([0])), 30);
+        }
       });
     });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    if (!address || typeof address === 'string')
-      throw new Error('Expected a TCP test-server address');
+    const port = await listen(server);
+    const scanner = new ClamAvMalwareScanner(configuration(port));
 
-    const scanner = new ClamAvMalwareScanner(configuration(address.port));
-    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe(expected);
+    let settled = false;
+    const result = scanner.scan(Buffer.from('small-document')).then((value) => {
+      settled = true;
+      return value;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    await expect(result).resolves.toBe('CLEAN');
   });
 
   it('fails closed when the ClamAV service is unavailable', async () => {
     server = createServer();
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    if (!address || typeof address === 'string')
-      throw new Error('Expected a TCP test-server address');
+    const port = await listen(server);
     await new Promise<void>((resolve, reject) => {
       server?.close((error) => (error ? reject(error) : resolve()));
     });
 
-    const scanner = new ClamAvMalwareScanner(configuration(address.port));
+    const scanner = new ClamAvMalwareScanner(configuration(port));
     await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('UNAVAILABLE');
+  });
+
+  it('fails closed when ClamAV does not respond before the timeout', async () => {
+    let completeRequestReceived = false;
+    let peerSocket: Socket | undefined;
+    server = createServer({ allowHalfOpen: true }, (socket) => {
+      peerSocket = socket;
+      let request = Buffer.alloc(0);
+      socket.on('data', (chunk) => {
+        request = Buffer.concat([request, chunk]);
+        completeRequestReceived = isCompleteInstreamRequest(request);
+        // Deliberately leave the response unanswered after consuming the full request.
+      });
+    });
+    const port = await listen(server);
+    const scanner = new ClamAvMalwareScanner(configuration(port, 50));
+
+    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('UNAVAILABLE');
+    expect(completeRequestReceived).toBe(true);
+    peerSocket?.destroy();
+  });
+
+  it('rejects malformed null-terminated responses', async () => {
+    server = createServer((socket) => {
+      let request = Buffer.alloc(0);
+      socket.on('data', (chunk) => {
+        request = Buffer.concat([request, chunk]);
+        if (isCompleteInstreamRequest(request)) socket.end(Buffer.from('stream: MAYBE\0', 'ascii'));
+      });
+    });
+    const port = await listen(server);
+
+    const scanner = new ClamAvMalwareScanner(configuration(port));
+    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('ERROR');
+  });
+
+  it('rejects an incomplete clean-looking response without its null terminator', async () => {
+    server = createServer((socket) => {
+      let request = Buffer.alloc(0);
+      socket.on('data', (chunk) => {
+        request = Buffer.concat([request, chunk]);
+        if (isCompleteInstreamRequest(request)) socket.end(Buffer.from('stream: OK', 'ascii'));
+      });
+    });
+    const port = await listen(server);
+
+    const scanner = new ClamAvMalwareScanner(configuration(port));
+    await expect(scanner.scan(Buffer.from('small-document'))).resolves.toBe('ERROR');
   });
 });
 
-function configuration(port: number): ProofOfAddressConfiguration {
+async function listen(testServer: Server): Promise<number> {
+  testServer.listen(0, '127.0.0.1');
+  await once(testServer, 'listening');
+  const address = testServer.address();
+  if (!address || typeof address === 'string')
+    throw new Error('Expected a TCP test-server address');
+  return address.port;
+}
+
+function configuration(port: number, clamavTimeoutMs = 1000): ProofOfAddressConfiguration {
   return {
     enabled: true,
     nodeEnv: 'test',
@@ -67,15 +142,16 @@ function configuration(port: number): ProofOfAddressConfiguration {
     encryptionActiveKeyVersion: 'v1',
     clamavHost: '127.0.0.1',
     clamavPort: port,
-    clamavTimeoutMs: 1000,
+    clamavTimeoutMs,
     s3ForcePathStyle: false,
   };
 }
 
 function isCompleteInstreamRequest(request: Buffer): boolean {
-  const marker = Buffer.concat([Buffer.from('nINSTREAM', 'ascii'), Buffer.from([0])]);
+  const marker = Buffer.from('zINSTREAM\0', 'ascii');
   const markerOffset = request.indexOf(marker);
-  if (markerOffset < 0) return false;
+  if (markerOffset !== 0) return false;
+
   let offset = markerOffset + marker.length;
   while (offset + 4 <= request.length) {
     const length = request.readUInt32BE(offset);
