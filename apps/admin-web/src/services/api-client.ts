@@ -7,6 +7,11 @@ export interface ApiClientOptions {
   signal?: AbortSignal;
 }
 
+export interface ApiRequestOptions {
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+}
+
 export class ApiError extends Error {
   constructor(
     public override readonly message: string,
@@ -26,72 +31,109 @@ export class NetworkError extends Error {
   }
 }
 
-export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
-  const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-  };
+function requestHeaders(contentType?: string, accept = 'application/json'): Record<string, string> {
+  const headers: Record<string, string> = { Accept: accept };
+  if (contentType) headers['Content-Type'] = contentType;
 
   const token = localStorage.getItem('admin_workforce_token');
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
 
-  if (options.idempotencyKey) {
-    headers['idempotency-key'] = options.idempotencyKey;
-  }
+function clearExpiredSession(status: number): void {
+  if (status !== 401) return;
+  localStorage.removeItem('admin_workforce_token');
+  localStorage.removeItem('admin_workforce_principal');
+  localStorage.removeItem('admin_workforce_session_id');
+}
 
+async function readResponseData(response: Response): Promise<any> {
+  const contentType = response.headers.get('content-type');
+  if (contentType?.includes('application/json')) return response.json();
+  const text = await response.text();
+  return text ? { message: text } : null;
+}
+
+function apiErrorFrom(response: Response, data: any): ApiError {
+  const message = data?.message || `Request failed with status ${response.status}`;
+  const code = data?.code || data?.error || 'UNKNOWN_ERROR';
+  const validationErrors = data?.validationErrors || data?.errors || undefined;
+  clearExpiredSession(response.status);
+  return new ApiError(
+    Array.isArray(message) ? message.join(', ') : String(message),
+    response.status,
+    code,
+    validationErrors,
+  );
+}
+
+function asNetworkError(error: unknown): NetworkError | ApiError {
+  if (error instanceof ApiError || error instanceof NetworkError) return error;
+  return new NetworkError(error instanceof Error ? error.message : 'Network request failed');
+}
+
+export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
+  const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   const config: RequestInit = {
     method: options.method || 'GET',
-    headers,
+    headers: requestHeaders('application/json'),
     signal: options.signal,
   };
 
-  if (options.body !== undefined) {
-    config.body = JSON.stringify(options.body);
+  if (options.idempotencyKey) {
+    (config.headers as Record<string, string>)['idempotency-key'] = options.idempotencyKey;
   }
+  if (options.body !== undefined) config.body = JSON.stringify(options.body);
 
   try {
     const response = await fetch(url, config);
-
-    let data: any = null;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      if (text) {
-        data = { message: text };
-      }
-    }
-
-    if (!response.ok) {
-      const status = response.status;
-      const message = data?.message || `Request failed with status ${status}`;
-      const code = data?.code || data?.error || 'UNKNOWN_ERROR';
-      const validationErrors = data?.validationErrors || data?.errors || undefined;
-
-      if (status === 401) {
-        localStorage.removeItem('admin_workforce_token');
-        localStorage.removeItem('admin_workforce_principal');
-        localStorage.removeItem('admin_workforce_session_id');
-      }
-
-      throw new ApiError(
-        Array.isArray(message) ? message.join(', ') : String(message),
-        status,
-        code,
-        validationErrors,
-      );
-    }
-
+    const data = await readResponseData(response);
+    if (!response.ok) throw apiErrorFrom(response, data);
     return data as T;
   } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
+    throw asNetworkError(error);
+  }
+}
+
+async function requestForm<T>(
+  endpoint: string,
+  body: FormData,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
+  const headers = requestHeaders();
+  if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+      signal: options.signal,
+    });
+    const data = await readResponseData(response);
+    if (!response.ok) throw apiErrorFrom(response, data);
+    return data as T;
+  } catch (error) {
+    throw asNetworkError(error);
+  }
+}
+
+async function requestBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<Blob> {
+  const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: requestHeaders(undefined, 'application/pdf, image/jpeg, image/png'),
+      signal: options.signal,
+    });
+    if (!response.ok) {
+      const data = await readResponseData(response);
+      throw apiErrorFrom(response, data);
     }
-    throw new NetworkError(error instanceof Error ? error.message : 'Network request failed');
+    return await response.blob();
+  } catch (error) {
+    throw asNetworkError(error);
   }
 }
 
@@ -99,11 +141,22 @@ export const ApiClient = {
   get: <T>(endpoint: string, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'GET' }),
 
-  post: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'POST', body }),
+  post: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'POST', body }),
 
-  patch: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
-    request<T>(endpoint, { ...options, method: 'PATCH', body }),
+  postForm: <T>(endpoint: string, body: FormData, options?: ApiRequestOptions) =>
+    requestForm<T>(endpoint, body, options),
+
+  getBlob: (endpoint: string, options?: ApiRequestOptions) => requestBlob(endpoint, options),
+
+  patch: <T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<ApiClientOptions, 'method' | 'body'>,
+  ) => request<T>(endpoint, { ...options, method: 'PATCH', body }),
 
   put: <T>(endpoint: string, body?: unknown, options?: Omit<ApiClientOptions, 'method' | 'body'>) =>
     request<T>(endpoint, { ...options, method: 'PUT', body }),

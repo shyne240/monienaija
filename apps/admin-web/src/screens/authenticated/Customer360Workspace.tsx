@@ -474,7 +474,7 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
         </section>
       ) : (
         <section id="customer-proof-address-panel" role="tabpanel" aria-labelledby="customer-proof-address-tab" className="cm-workspace-content">
-          <CustomerProofOfAddressPanel />
+          <CustomerProofOfAddressPanel customerId={customer.id} />
         </section>
       )}
 

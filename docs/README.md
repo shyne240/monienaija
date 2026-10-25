@@ -29,6 +29,7 @@ artifacts live in [`archive/`](archive/README.md) and are *not* current requirem
 
 - Customer app backend contract (OTP auth, session, PIN, history, profile): [`V1/A23-CUSTOMER-APP-CONTRACT.md`](V1/A23-CUSTOMER-APP-CONTRACT.md)
 - Agent app backend contract (lifecycle, capabilities, receiving numbers, float): [`V1/A21-AGENT-APP-CONTRACT.md`](V1/A21-AGENT-APP-CONTRACT.md)
+- Secure Proof of Address uploads — Windows local setup, private storage/key handling, ClamAV, and manual tests: [`customer-proof-of-address-windows-setup.md`](customer-proof-of-address-windows-setup.md)
 - UAT family cards (Customer 40 / Agent 20): [`uat/V1-UAT-MASTER-01.md`](uat/V1-UAT-MASTER-01.md)
 - Agent onboarding decision lineage lives in [`archive/v1-implementation/`](archive/v1-implementation/)
 
