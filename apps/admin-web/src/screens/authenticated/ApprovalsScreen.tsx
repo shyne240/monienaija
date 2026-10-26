@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
+import { AgentFundingPanel } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canApprove =
     principal?.roles.includes('FINANCE_CONTROLLER') === true &&
     (principal?.scopes.includes('privileged:approve') ?? false);
+  const canReviewFunding =
+    principal?.roles.includes('FINANCE_CONTROLLER') === true &&
+    ((principal?.scopes.includes('agent.fund') ?? false) ||
+      (principal?.scopes.includes('agent.defund') ?? false));
+  const [selectedFundingAgentId, setSelectedFundingAgentId] = useState('');
+  const [selectedFundingKey, setSelectedFundingKey] = useState<string | undefined>(undefined);
   const [approvalId, setApprovalId] = useState('');
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -71,6 +79,22 @@ export const ApprovalsScreen: React.FC = () => {
       <div style={styles.fundingNote}>
         Agent funding requests use their dedicated rejection workflow so approval and request state change atomically. This generic rejection action intentionally rejects funding approval IDs; it does not replace that workflow.
       </div>
+
+      {canReviewFunding && (
+        <div style={{ marginBottom: 24 }}>
+          <PendingFundingApprovalsQueue
+            canReviewFunding={canReviewFunding}
+            onSelectRequest={(targetAgentId, idemKey) => {
+              setSelectedFundingAgentId(targetAgentId);
+              setSelectedFundingKey(idemKey);
+            }}
+          />
+          <AgentFundingPanel
+            agentId={selectedFundingAgentId || undefined}
+            initialIdempotencyKey={selectedFundingKey}
+          />
+        </div>
+      )}
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
       {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Privileged action checked and approved successfully!' : 'Approval decision recorded as rejected successfully.'}</div>}

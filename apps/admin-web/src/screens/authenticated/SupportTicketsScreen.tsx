@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { AgentTransactionPinSupportPanel } from '../../components/AgentTransactionPinSupportPanel';
 
 interface Ticket {
   id: string;
+  reference?: string;
+  category?: string;
   status: string;
   priority?: string;
   subject?: string;
-  customerId?: string;
-  agentId?: string;
+  customerId?: string | null;
+  agentId?: string | null;
   assignedTo?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -33,10 +36,15 @@ const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
   CLOSED: [],
 };
 
-export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
+export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string; initialAgentId?: string }> = ({
+  initialCustomerId,
+  initialAgentId,
+}) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('customer.manage_support_case') ?? false;
   const customerFilter = initialCustomerId || '';
+  const [agentIdDraft, setAgentIdDraft] = useState(initialAgentId || '');
+  const [appliedAgentFilter, setAppliedAgentFilter] = useState(initialAgentId || '');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -46,6 +54,7 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [detailErr, setDetailErr] = useState('');
   const [msgBody, setMsgBody] = useState('');
+  const [isInternalNote, setIsInternalNote] = useState(false);
   const [msgRes, setMsgRes] = useState('');
   const [assignedToInput, setAssignedToInput] = useState('');
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -60,6 +69,7 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
       const query = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
       if (status) query.set('status', status);
       if (customerFilter) query.set('customerId', customerFilter);
+      if (appliedAgentFilter.trim()) query.set('agentId', appliedAgentFilter.trim());
       const response: any = await ApiClient.get(`/internal/support/tickets?${query.toString()}`);
       const rows = Array.isArray(response) ? response : Array.isArray(response?.items) ? response.items : Array.isArray(response?.data) ? response.data : [];
       setTickets(rows);
@@ -74,7 +84,7 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
   useEffect(() => {
     if (canView) void fetchList();
     else setLoading(false);
-  }, [page, status, customerFilter, canView]);
+  }, [page, status, customerFilter, appliedAgentFilter, canView]);
 
   const fetchMessages = async (ticketId: string) => {
     setMessagesLoading(true);
@@ -162,9 +172,13 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
     setDetailErr('');
     setMsgRes('');
     try {
-      await ApiClient.post(`/internal/support/tickets/${selected.id}/messages`, { body: msgBody.trim(), isInternal: false });
+      await ApiClient.post(`/internal/support/tickets/${selected.id}/messages`, {
+        body: msgBody.trim(),
+        isInternal: isInternalNote,
+      });
       setMsgBody('');
-      setMsgRes('Customer-visible message added.');
+      setMsgRes(isInternalNote ? 'Internal note added.' : 'Customer-visible message added.');
+      setIsInternalNote(false);
       await fetchMessages(selected.id);
     } catch (err: any) {
       setDetailErr(err?.message || 'Message failed');
@@ -178,10 +192,50 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
   return (
     <div style={wrap}>
       <h2 style={h2}>🎧 Support Tickets</h2>
-      <p style={sub}>Workforce ticket queue. View ticket history, assign an operator, update status, and add customer-visible messages using existing internal support endpoints.</p>
+      <p style={sub}>Workforce ticket queue. View customer and agent support tickets, filter by Agent ID, assign an operator, update status, and record messages using existing internal support endpoints.</p>
       {initialCustomerId && <div style={contextNote}>🔗 Customer context: <code>{initialCustomerId}</code> — results are filtered by the backend <code>customerId</code> query.</div>}
+      {appliedAgentFilter && (
+        <div style={contextNote} data-testid="support-agent-filter-banner">
+          🏪 Agent filter active: <code>{appliedAgentFilter}</code> — results are filtered by backend <code>agentId</code>.
+        </div>
+      )}
       <div style={filters}>
         <label>Status <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">All</option><option value="OPEN">OPEN</option><option value="IN_PROGRESS">IN_PROGRESS</option><option value="RESOLVED">RESOLVED</option><option value="CLOSED">CLOSED</option></select></label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          Agent ID
+          <input
+            aria-label="Filter by Agent ID"
+            placeholder="Agent UUID"
+            value={agentIdDraft}
+            onChange={(event) => setAgentIdDraft(event.target.value)}
+            style={{ ...input, minWidth: 160, padding: '6px 8px' }}
+          />
+        </label>
+        <button
+          type="button"
+          style={smallBtn}
+          disabled={loading}
+          onClick={() => {
+            setAppliedAgentFilter(agentIdDraft.trim());
+            setPage(1);
+          }}
+        >
+          Filter Agent
+        </button>
+        {appliedAgentFilter && (
+          <button
+            type="button"
+            style={smallBtn}
+            disabled={loading}
+            onClick={() => {
+              setAgentIdDraft('');
+              setAppliedAgentFilter('');
+              setPage(1);
+            }}
+          >
+            Clear Agent
+          </button>
+        )}
         <button type="button" onClick={() => void fetchList()} style={btn} disabled={loading}>Refresh</button>
       </div>
       {error && <div style={errBox} role="alert">{error}</div>}
@@ -189,12 +243,19 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
         <div style={empty}>No tickets for this filter. Tickets are created from customer/agent support flows.</div>
       ) : (
         <table style={table}>
-          <thead><tr><th>ID</th><th>Status</th><th>Customer/Agent</th><th>Created</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Status</th><th>Category</th><th>Customer/Agent</th><th>Created</th><th></th></tr></thead>
           <tbody>{tickets.map((ticket) => (
             <tr key={ticket.id}>
-              <td style={mono}>{ticket.id.slice(0, 8)}…</td>
+              <td style={mono}>{ticket.reference || `${ticket.id.slice(0, 8)}…`}</td>
               <td><span style={badge(ticket.status)}>{ticket.status}</span></td>
-              <td>{ticket.customerId?.slice(0, 8) || ticket.agentId?.slice(0, 8) || '—'}</td>
+              <td>{ticket.category ? <code>{ticket.category}</code> : '—'}</td>
+              <td>
+                {ticket.agentId ? (
+                  <span><strong>AGENT</strong> · <code>{ticket.agentId.slice(0, 8)}</code></span>
+                ) : ticket.customerId ? (
+                  <span>CUSTOMER · <code>{ticket.customerId.slice(0, 8)}</code></span>
+                ) : '—'}
+              </td>
               <td>{ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : '—'}</td>
               <td><button type="button" onClick={() => void open(ticket)} style={smallBtn}>View</button></td>
             </tr>
@@ -209,11 +270,25 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
 
       {selected && (
         <section style={drawer} aria-label="Support ticket detail">
-          <div style={drawerHead}><strong>Ticket {selected.id.slice(0, 8)}</strong><button type="button" onClick={() => setSelected(null)} style={smallBtn}>Close</button></div>
+          <div style={drawerHead}><strong>Ticket {selected.reference || selected.id.slice(0, 8)}</strong><button type="button" onClick={() => setSelected(null)} style={smallBtn}>Close</button></div>
           <div style={drawerBody}>
-            <div><strong>Status:</strong> {selected.status} {selected.priority && <>· Priority {selected.priority}</>}</div>
+            <div><strong>Status:</strong> {selected.status} {selected.priority && <>· Priority {selected.priority}</>} {selected.category && <>· Category <code>{selected.category}</code></>}</div>
             <div><strong>Subject:</strong> {selected.subject || '—'}</div>
+            <div>
+              <strong>Principal:</strong>{' '}
+              {selected.agentId ? (
+                <span>Agent <code>{selected.agentId}</code></span>
+              ) : selected.customerId ? (
+                <span>Customer <code>{selected.customerId}</code></span>
+              ) : '—'}
+            </div>
             <div><strong>Assigned:</strong> {selected.assignedTo || 'unassigned'}</div>
+            {selected.agentId && (selected.category === 'PIN' || /pin/i.test(selected.subject ?? '')) && (
+              <AgentTransactionPinSupportPanel
+                agentId={selected.agentId}
+                canManageSupport={canView}
+              />
+            )}
             {detailErr && <div style={errBox} role="alert">{detailErr}</div>}
             {msgRes && <div style={successBox} role="status">{msgRes}</div>}
 
@@ -253,6 +328,15 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string }> = ({
 
             <form onSubmit={addMessage} style={formRow} aria-label="Add customer-visible message">
               <input value={msgBody} onChange={(event) => setMsgBody(event.target.value)} placeholder="Add customer-visible message…" style={input} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  aria-label="Internal operator note"
+                  checked={isInternalNote}
+                  onChange={(event) => setIsInternalNote(event.target.checked)}
+                />
+                Internal note
+              </label>
               <button type="submit" style={btn} disabled={!msgBody.trim() || selected.status === 'CLOSED'}>Send</button>
             </form>
             {selected.status === 'CLOSED' && <div style={helpText}>Closed tickets cannot receive new messages.</div>}
