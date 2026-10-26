@@ -471,7 +471,12 @@ describe('V1-ADMIN-AUTHORIZATION-CUSTOMER-READ-01 — customer read function aut
 
   it('A12. identity-document writes require both approved functions and responses/audits omit raw numbers', async () => {
     const customerId = await createBareCustomer();
-    const documentNumber = 'SYNTHETIC-IDENTITY-987654321';
+    // ARENA 3 fixture fix: a NIN document number must be exactly 11 digits (hardened
+    // identity-document field policy). The previous 'SYNTHETIC-IDENTITY-…' value was
+    // rejected 400 by the ValidationPipe BEFORE the controller-level function check,
+    // masking the 403 authorization proof this test exists for. The synthetic 11-digit
+    // NIN below keeps the last-4 mask assertions ('••••••4321') unchanged.
+    const documentNumber = '12345674321';
     const body = { type: 'NIN', documentNumber, issuingCountry: 'NG', actor: 'forged-document-actor' };
     const operations = await tokenForRole('OPERATIONS');
     const denied = await request(app.getHttpServer())

@@ -609,29 +609,25 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
   // =====================================================================================
 
   describe('G. FINANCE_ADMIN is not a live role (Task 22 invariant, reverified here)', () => {
-    it('G1. a principal assigned the legacy FINANCE_ADMIN role key resolves to zero roles/scopes and is denied everywhere', async () => {
-      const token = await tokenForRole('FINANCE_ADMIN');
-      const agentId = await createActiveAgent();
-      const customerId = await createActiveCustomer();
+    it('G1. a principal whose only assignment is the legacy FINANCE_ADMIN role key cannot establish a workforce session at all', async () => {
+      // ARENA 3 fixture fix (Task-22 invariant, hardened enforcement point): the real
+      // A2WorkforceSessionService.resolve()/establish() now fails closed with
+      // 'No valid workforce roles' (401) when a principal holds no recognized catalogue
+      // role — so a legacy FINANCE_ADMIN-only principal can no longer obtain a session
+      // token in the first place. That is a strictly EARLIER enforcement of the same
+      // invariant this test proves (FINANCE_ADMIN resolves to zero roles/scopes and is
+      // denied everywhere): there is no token to present to any endpoint. Asserting the
+      // session-establishment refusal is the faithful, strongest available proof.
+      await expect(tokenForRole('FINANCE_ADMIN')).rejects.toThrow('No valid workforce roles');
 
+      // And unauthenticated requests to the same migrated gates stay 401 (section H
+      // boundary): the legacy role cannot reach a 403-only surface by skipping the
+      // session, because no credential exists to present.
+      const agentId = await createActiveAgent();
       const suspendAgent = await request(app.getHttpServer())
         .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
-        .set(auth(token))
         .send({ reason: 'x' });
-      expect(suspendAgent.status).toBe(403);
-
-      const suspendCustomer = await request(app.getHttpServer())
-        .patch(`/api/v1/customers/${customerId}`)
-        .set(auth(token))
-        .send({ status: 'SUSPENDED', actor: 'x' });
-      // See C3's comment: FUNCTION_MISSING denials are 403, not 401.
-      expect(suspendCustomer.status).toBe(403);
-
-      const provisionWorkforce = await request(app.getHttpServer())
-        .post('/api/v1/internal/admin/support/workforce-users')
-        .set(auth(token))
-        .send({ username: `should-be-denied-${Date.now()}` });
-      expect(provisionWorkforce.status).toBe(403);
+      expect(suspendAgent.status).toBe(401);
     });
   });
 
