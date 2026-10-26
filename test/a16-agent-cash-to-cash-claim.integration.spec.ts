@@ -1856,4 +1856,22 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect(rows[0]).toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
   });
 
+  it('49. HTTP claim and receipt recovery reject unauthenticated requests without settlement', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7500');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 'unauthenticated-http');
+    const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const claim = await app.inject({
+      method: 'POST', url: '/api/v1/agents/cash-to-cash/claim',
+      payload: { transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 'unauthenticated-http', idempotencyKey: randomUUID() },
+    });
+    expect(claim.statusCode).toBe(401);
+    const recovery = await app.inject({ method: 'GET', url: `/api/v1/agents/cash-to-cash/claims/${transferId}` });
+    expect(recovery.statusCode).toBe(401);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect((await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+      .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+  });
+
 });
