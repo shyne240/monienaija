@@ -649,6 +649,136 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     warnSpy.mockRestore();
     errSpy.mockRestore();
   });
+
+  test('Agent-cash PIN invalid (401) and PIN locked (401) translate to specific PIN messages without session purge', async () => {
+    mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
+    mockApi.agentCashToCashClaim.mockRejectedValueOnce(apiError('Agent PIN invalid: PIN_INVALID', 401));
+    const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
+
+    await waitForClaimForm(getByTestId);
+    fireEvent.press(getByTestId('c2c-claim-method-cash'));
+    fireEvent.press(getByTestId('mfa-request-button'));
+    await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
+
+    // Client-side PIN format validation blocks malformed PIN before API call
+    fireEvent.changeText(getByTestId('c2c-claim-code-input'), '87654321');
+    fireEvent.changeText(getByTestId('c2c-claim-otp-input'), '123456');
+    fireEvent.changeText(getByTestId('c2c-claim-agent-pin-input'), '12');
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+    expect(getByTestId('c2c-claim-confirm-error').props.children).toBe(
+      'Agent transaction PIN must be 4 to 12 numeric digits',
+    );
+    expect(mockApi.agentCashToCashClaim).not.toHaveBeenCalled();
+
+    // Server 401 PIN_INVALID
+    fireEvent.changeText(getByTestId('c2c-claim-agent-pin-input'), '9999');
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+    await waitFor(() =>
+      expect(getByTestId('c2c-claim-confirm-error').props.children).toBe(
+        'Incorrect transaction PIN. Try again.',
+      ),
+    );
+    expect(getByTestId('c2c-claim-agent-pin-input').props.value).toBe('');
+
+    // Server 401 PIN_LOCKED
+    mockApi.agentCashToCashClaim.mockRejectedValueOnce(apiError('Agent PIN is locked', 401));
+    fireEvent.changeText(getByTestId('c2c-claim-code-input'), '87654321');
+    fireEvent.changeText(getByTestId('c2c-claim-otp-input'), '123456');
+    fireEvent.changeText(getByTestId('c2c-claim-agent-pin-input'), '9999');
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+    await waitFor(() =>
+      expect(getByTestId('c2c-claim-confirm-error').props.children).toBe(
+        'Your transaction PIN is locked. Contact support.',
+      ),
+    );
+  });
+
+  test('Agent-cash 403 capability and KYC assessment denials map to cash-payout-specific guidance', async () => {
+    expect(
+      describeCashToCashClaimError(
+        apiError('Cash payout requires a current approved Customer KYC assessment', 403),
+      ),
+    ).toContain('Cash payout requires a current approved Customer KYC assessment');
+    expect(
+      describeCashToCashClaimError(
+        apiError('Agent does not have CASH_TO_CASH capability', 403),
+      ),
+    ).toBe('This Agent is not currently authorized for Cash-to-Cash cash redemption.');
+  });
+
+  test('post-submit lost response: recovers committed claim receipt automatically when POST fails ambiguously', async () => {
+    mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
+    const netErr = new Error('socket hang up');
+    (netErr as any).name = 'NetworkError';
+    mockApi.agentCashToCashClaim.mockRejectedValueOnce(netErr);
+    const recoveredCashResult = { ...cashClaimResult, status: 'REPLAYED' as const, replayed: true };
+    mockApi.getAgentCashToCashClaim
+      .mockRejectedValueOnce(apiError('Not found', 404))
+      .mockResolvedValueOnce(recoveredCashResult);
+
+    const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
+    await waitForClaimForm(getByTestId);
+    fireEvent.press(getByTestId('c2c-claim-method-cash'));
+    fireEvent.press(getByTestId('mfa-request-button'));
+    await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
+
+    fireEvent.changeText(getByTestId('c2c-claim-code-input'), '87654321');
+    fireEvent.changeText(getByTestId('c2c-claim-otp-input'), '123456');
+    fireEvent.changeText(getByTestId('c2c-claim-agent-pin-input'), '1234');
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith({
+        index: 0,
+        routes: [
+          {
+            name: 'CashToCashClaimSuccess',
+            params: {
+              result: recoveredCashResult,
+              customerDisplay: 'Emeka Obi',
+              customerReceivingNumber: '8012345678',
+            },
+          },
+        ],
+      }),
+    );
+  });
+
+  test('post-submit total network blackout blocks blind re-submission until Check claim status resolves', async () => {
+    mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
+    const netErr = new Error('offline');
+    (netErr as any).name = 'NetworkError';
+    mockApi.agentCashToCashClaim.mockRejectedValueOnce(netErr);
+    const recoveredWalletResult = { ...claimResult, status: 'REPLAYED' as const, replayed: true };
+    mockApi.getAgentCashToCashClaim
+      .mockRejectedValueOnce(apiError('Not found', 404)) // initial mount
+      .mockRejectedValueOnce(netErr) // post-submit auto-recovery while still offline
+      .mockResolvedValueOnce(recoveredWalletResult); // manual Check claim status once back online
+
+    const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
+    await waitForClaimForm(getByTestId);
+    fireEvent.press(getByTestId('mfa-request-button'));
+    await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
+
+    fireEvent.changeText(getByTestId('c2c-claim-code-input'), '87654321');
+    fireEvent.changeText(getByTestId('c2c-claim-otp-input'), '123456');
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+
+    await waitFor(() => expect(getByTestId('c2c-claim-post-submit-recovery-card')).toBeTruthy());
+    // Re-submission is disabled while recovery state is unknown
+    fireEvent.press(getByTestId('c2c-claim-submit'));
+    expect(mockApi.agentCashToCashClaim).toHaveBeenCalledTimes(1);
+
+    // Operator checks status once connectivity resumes -> receipt recovered
+    fireEvent.press(getByTestId('c2c-claim-post-submit-recovery-button'));
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          routes: [expect.objectContaining({ name: 'CashToCashClaimSuccess' })],
+        }),
+      ),
+    );
+  });
 });
 
 describe('Cash→Cash Claim — Step 3: Customer-Wallet Credit Receipt', () => {

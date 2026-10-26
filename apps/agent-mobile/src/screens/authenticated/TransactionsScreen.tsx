@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
@@ -26,6 +26,7 @@ import type { RootStackParamList } from '../../navigation/types';
  */
 
 const PAGE_LIMIT = 20;
+const MAX_BACKEND_LIMIT = 100;
 
 const FILTERS: ReadonlyArray<{ label: string; type: AgentHistoryType | undefined }> = [
   { label: 'All', type: undefined },
@@ -40,8 +41,13 @@ const FILTERS: ReadonlyArray<{ label: string; type: AgentHistoryType | undefined
 export const TransactionsScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { agentId } = useAuthStore();
+  const queryClient = useQueryClient();
   const [activeType, setActiveType] = useState<AgentHistoryType | undefined>(undefined);
   const [pageLimit, setPageLimit] = useState(PAGE_LIMIT);
+  const [overflowPage, setOverflowPage] = useState(1);
+  const [overflowItems, setOverflowItems] = useState<AgentHistoryItem[]>([]);
+  const [overflowHasNext, setOverflowHasNext] = useState<boolean | null>(null);
+  const [loadingOverflow, setLoadingOverflow] = useState(false);
 
   const historyQuery = useQuery({
     queryKey: ['agent-transactions', agentId, activeType ?? 'ALL', pageLimit],
@@ -51,18 +57,70 @@ export const TransactionsScreen: React.FC = () => {
     staleTime: 30_000,
   });
 
-  const items = useMemo(() => historyQuery.data?.items ?? [], [historyQuery.data]);
-  const pagination = historyQuery.data?.pagination;
+  useEffect(() => {
+    setOverflowPage(1);
+    setOverflowItems([]);
+    setOverflowHasNext(null);
+  }, [agentId, activeType]);
 
-  const loadMore = () => {
-    if (pagination?.hasNextPage) {
-      setPageLimit((n) => n + PAGE_LIMIT);
+  const items = useMemo(() => {
+    const first = historyQuery.data?.items ?? [];
+    if (overflowItems.length === 0) return first;
+    const seen = new Set(first.map((row) => row.id));
+    const merged = [...first];
+    for (const row of overflowItems) {
+      if (!seen.has(row.id)) {
+        seen.add(row.id);
+        merged.push(row);
+      }
+    }
+    return merged;
+  }, [historyQuery.data, overflowItems]);
+
+  const pagination = historyQuery.data?.pagination;
+  const hasNextPage = overflowHasNext ?? pagination?.hasNextPage ?? false;
+
+  const loadMore = async () => {
+    if (!hasNextPage || loadingOverflow) return;
+    if (pageLimit < MAX_BACKEND_LIMIT) {
+      setPageLimit((n) => Math.min(MAX_BACKEND_LIMIT, n + PAGE_LIMIT));
+      return;
+    }
+    const nextPage = overflowPage + 1;
+    setLoadingOverflow(true);
+    try {
+      const next = await getAgentTransactions({
+        page: nextPage,
+        limit: MAX_BACKEND_LIMIT,
+        type: activeType,
+      });
+      queryClient.setQueryData(
+        ['agent-transactions', agentId, activeType ?? 'ALL', MAX_BACKEND_LIMIT, nextPage],
+        next,
+      );
+      setOverflowPage(nextPage);
+      setOverflowItems((prev) => [...prev, ...next.items]);
+      setOverflowHasNext(next.pagination.hasNextPage);
+    } catch {
+      // Keep current items intact; user can tap Load more again.
+    } finally {
+      setLoadingOverflow(false);
     }
   };
 
   const selectFilter = (type: AgentHistoryType | undefined) => {
     setActiveType(type);
     setPageLimit(PAGE_LIMIT);
+    setOverflowPage(1);
+    setOverflowItems([]);
+    setOverflowHasNext(null);
+  };
+
+  const handleRefresh = () => {
+    setOverflowPage(1);
+    setOverflowItems([]);
+    setOverflowHasNext(null);
+    void historyQuery.refetch();
   };
 
   const openReceipt = (item: AgentHistoryItem) => {
@@ -117,7 +175,7 @@ export const TransactionsScreen: React.FC = () => {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => <TransactionRow item={item} onPress={() => openReceipt(item)} />}
         refreshControl={
-          <RefreshControl refreshing={historyQuery.isRefetching} onRefresh={() => historyQuery.refetch()} />
+          <RefreshControl refreshing={historyQuery.isRefetching} onRefresh={handleRefresh} />
         }
         ListEmptyComponent={
           <View style={styles.empty} testID="history-empty">
@@ -130,8 +188,14 @@ export const TransactionsScreen: React.FC = () => {
           </View>
         }
         ListFooterComponent={
-          pagination?.hasNextPage ? (
-            <Button label="Load more" variant="outline" onPress={loadMore} testID="history-load-more" />
+          hasNextPage ? (
+            <Button
+              label={loadingOverflow ? 'Loading…' : 'Load more'}
+              loading={loadingOverflow}
+              variant="outline"
+              onPress={() => void loadMore()}
+              testID="history-load-more"
+            />
           ) : null
         }
       />

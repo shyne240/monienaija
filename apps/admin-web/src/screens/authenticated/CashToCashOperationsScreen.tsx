@@ -68,6 +68,8 @@ export const CashToCashOperationsScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('transaction.view') ?? false;
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [searchRevision, setSearchRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<CashToCashResponse | null>(null);
   const [selected, setSelected] = useState<CashToCashOperation | null>(null);
@@ -98,8 +100,8 @@ export const CashToCashOperationsScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    if (canView) void load(page, filters);
-  }, [canView, page]);
+    if (canView) void load(page, appliedFilters);
+  }, [canView, page, searchRevision]);
 
   const changeFilter = (key: keyof Filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -107,8 +109,16 @@ export const CashToCashOperationsScreen: React.FC = () => {
 
   const search = (event: React.FormEvent) => {
     event.preventDefault();
-    if (page !== 1) setPage(1);
-    void load(1, filters);
+    setAppliedFilters({ ...filters });
+    setPage(1);
+    setSearchRevision((current) => current + 1);
+  };
+
+  const resetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
+    setPage(1);
+    setSearchRevision((current) => current + 1);
   };
 
   const statusStyle = (status: string): React.CSSProperties => ({
@@ -127,7 +137,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
           <h2 style={styles.title}>Cash-to-Cash Operations</h2>
           <p style={styles.subtitle}>Paginated, read-only investigation and receipt references for Agent V1 transfers.</p>
         </div>
-        <button type="button" style={styles.button} onClick={() => void load(page, filters)} disabled={loading}>
+        <button type="button" style={styles.button} onClick={() => void load(page, appliedFilters)} disabled={loading}>
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </header>
@@ -154,6 +164,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
           <input aria-label="Reference" style={styles.input} value={filters.reference} onChange={(event) => changeFilter('reference', event.target.value)} placeholder="Exact reference" />
         </label>
         <button type="submit" style={styles.primaryButton} disabled={loading}>Search</button>
+        <button type="button" style={styles.button} disabled={loading} onClick={resetFilters}>Reset</button>
       </form>
 
       {error && <div style={styles.error} role="alert">{error}</div>}

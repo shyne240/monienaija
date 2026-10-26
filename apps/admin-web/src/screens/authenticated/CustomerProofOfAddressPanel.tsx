@@ -272,6 +272,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   const currentCustomerId = useRef(customerId);
+  const loadedIdentityRef = useRef<string | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -305,18 +306,25 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    setLoading(canViewMetadata);
+    const identityKey = `${customerId}::${scopesKey}`;
+    const isHardReset = loadedIdentityRef.current !== identityKey;
+    loadedIdentityRef.current = identityKey;
+
     setLoadingMore(false);
-    setCapabilities(null);
     setCapabilitiesError(null);
-    setAddresses([]);
     setAddressError(null);
-    setDocuments([]);
-    setDocumentPage(1);
-    setDocumentTotal(0);
-    setListLoaded(false);
     setDocumentError(null);
     setHistoryByDocument({});
+
+    if (isHardReset) {
+      setLoading(canViewMetadata);
+      setCapabilities(null);
+      setAddresses([]);
+      setDocuments([]);
+      setDocumentPage(1);
+      setDocumentTotal(0);
+      setListLoaded(false);
+    }
 
     if (!canViewMetadata) {
       setLoading(false);

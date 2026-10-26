@@ -61,4 +61,17 @@ describe('RotateCredentialScreen (mandatory first-login rotation)', () => {
     const { getByText } = render(<RotateCredentialScreen />);
     expect(getByText('Credential rotation is not pending')).toBeTruthy();
   });
+
+  test('Back to Sign In clears typed passwords and exits pending rotation state', () => {
+    const { getByTestId } = render(<RotateCredentialScreen />);
+    fireEvent.changeText(getByTestId('current-password-input'), 'temporary-1');
+    fireEvent.changeText(getByTestId('new-password-input'), 'new-secret-9');
+    fireEvent.changeText(getByTestId('confirm-password-input'), 'new-secret-9');
+
+    fireEvent.press(getByTestId('rotate-cancel-button'));
+    expect(useAuthStore.getState().pendingRotation).toBeNull();
+    expect(getByTestId('current-password-input').props.value).toBe('');
+    expect(getByTestId('new-password-input').props.value).toBe('');
+    expect(getByTestId('confirm-password-input').props.value).toBe('');
+  });
 });

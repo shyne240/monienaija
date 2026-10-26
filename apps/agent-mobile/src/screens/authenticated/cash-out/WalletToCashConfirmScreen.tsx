@@ -16,6 +16,7 @@ import {
   type AgentCashOutResult,
   type AgentMfaChallenge,
 } from '../../../services/agent-api';
+import { isChallengeExpired } from '../../../services/mfa-challenge';
 import { formatNairaFromMinor } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth-store';
 import {
@@ -127,6 +128,10 @@ export const WalletToCashConfirmScreen: React.FC = () => {
       setClientError('Send customer verification code first');
       return;
     }
+    if (isChallengeExpired(challenge)) {
+      setClientError('Customer verification code has expired. Request a new code.');
+      return;
+    }
     if (!otp.trim()) {
       setClientError('Enter the customer one-time verification code');
       return;
@@ -214,6 +219,10 @@ export const WalletToCashConfirmScreen: React.FC = () => {
           onChallengeReady={(issued) => {
             setChallenge(issued);
             setClientError('');
+          }}
+          onChallengeInvalidated={() => {
+            setChallenge(null);
+            setOtp('');
           }}
           testID="w2c-mfa-card"
         />

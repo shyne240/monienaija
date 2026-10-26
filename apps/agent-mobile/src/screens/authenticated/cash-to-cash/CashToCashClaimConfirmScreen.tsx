@@ -17,6 +17,7 @@ import {
   type AgentCashToCashClaimResult,
   type AgentMfaChallenge,
 } from '../../../services/agent-api';
+import { isChallengeExpired } from '../../../services/mfa-challenge';
 import { newIdempotencyKey } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -50,9 +51,55 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   const [recoveryStatus, setRecoveryStatus] = useState<'CHECKING' | 'READY' | 'ERROR'>('CHECKING');
   const [recoveryError, setRecoveryError] = useState('');
   const [recoveryAttempt, setRecoveryAttempt] = useState(0);
+  const [postSubmitRecoveryUnknown, setPostSubmitRecoveryUnknown] = useState(false);
+  const [postSubmitChecking, setPostSubmitChecking] = useState(false);
+  const submitInFlightRef = useRef(false);
 
   // Exactly ONE idempotency key per attempt (survives navigation + retries).
   const idempotencyKeyRef = useRef<string>(newIdempotencyKey('c2c-claim'));
+
+  const completeClaimSuccess = (result: AgentCashToCashClaimResult) => {
+    setTransferCode('');
+    setOtp('');
+    setAgentPin('');
+    setPostSubmitRecoveryUnknown(false);
+    // Server-authoritative query invalidation
+    void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
+    void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
+    void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'CashToCashClaimSuccess',
+          params: {
+            result,
+            customerDisplay: customer.display,
+            customerReceivingNumber: customer.receivingNumber,
+          },
+        },
+      ],
+    });
+  };
+
+  const checkPostSubmitClaimRecovery = async (triggerError?: unknown) => {
+    if (!agentId) return;
+    setPostSubmitChecking(true);
+    try {
+      const recovered = await getAgentCashToCashClaim(transferId);
+      completeClaimSuccess(recovered);
+    } catch (lookupError: unknown) {
+      if (isApiNotFound(lookupError)) {
+        // Confirmed not claimed by this Agent — safe to retry with a fresh/current credential.
+        setPostSubmitRecoveryUnknown(false);
+      } else if (!triggerError || isAmbiguousClaimError(triggerError)) {
+        // Both submission and recovery lookup were indeterminate; block blind re-submission.
+        setPostSubmitRecoveryUnknown(true);
+      }
+    } finally {
+      setPostSubmitChecking(false);
+    }
+  };
 
   const claimMutation = useMutation<AgentCashToCashClaimResult, unknown, void>({
     mutationFn: () => {
@@ -72,31 +119,15 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       });
     },
     onSuccess: (result) => {
-      setTransferCode('');
-      setOtp('');
-      setAgentPin('');
-      // Server-authoritative query invalidation
-      void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
-      void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
-      void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'CashToCashClaimSuccess',
-            params: {
-              result,
-              customerDisplay: customer.display,
-              customerReceivingNumber: customer.receivingNumber,
-            },
-          },
-        ],
-      });
+      completeClaimSuccess(result);
     },
-    onError: () => {
+    onError: async (err) => {
       setTransferCode('');
       setOtp('');
       setAgentPin('');
+      if (shouldRecoverAfterClaimError(err)) {
+        await checkPostSubmitClaimRecovery(err);
+      }
     },
   });
 
@@ -157,8 +188,16 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   }, []);
 
   const handleSubmit = () => {
+    if (postSubmitRecoveryUnknown) {
+      setClientError('Confirm whether the previous claim attempt completed before submitting again.');
+      return;
+    }
     if (!challenge) {
       setClientError('Send beneficiary verification code first');
+      return;
+    }
+    if (isChallengeExpired(challenge)) {
+      setClientError('Customer verification code has expired. Request a new code.');
       return;
     }
     if (!transferCode.trim()) {
@@ -169,12 +208,24 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       setClientError('Enter the customer one-time verification code');
       return;
     }
-    if (redemptionMethod === 'AGENT_CASH' && !agentPin.trim()) {
-      setClientError('Enter your Agent transaction PIN for cash payout');
-      return;
+    if (redemptionMethod === 'AGENT_CASH') {
+      if (!agentPin.trim()) {
+        setClientError('Enter your Agent transaction PIN for cash payout');
+        return;
+      }
+      if (!/^\d{4,12}$/.test(agentPin)) {
+        setClientError('Agent transaction PIN must be 4 to 12 numeric digits');
+        return;
+      }
     }
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setClientError('');
-    claimMutation.mutate();
+    claimMutation.mutate(undefined, {
+      onSettled: () => {
+        submitInFlightRef.current = false;
+      },
+    });
   };
 
   const failureText = clientError
@@ -269,14 +320,18 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
 
             {/* Step 2A: Customer OTP Challenge */}
             <MfaChallengeCard
-          customerId={customer.customerId}
-          purpose="CASH_TO_CASH_CLAIM"
-          onChallengeReady={(issued) => {
-            setChallenge(issued);
-            setClientError('');
-          }}
-          testID="c2c-claim-mfa-card"
-        />
+              customerId={customer.customerId}
+              purpose="CASH_TO_CASH_CLAIM"
+              onChallengeReady={(issued) => {
+                setChallenge(issued);
+                setClientError('');
+              }}
+              onChallengeInvalidated={() => {
+                setChallenge(null);
+                setOtp('');
+              }}
+              testID="c2c-claim-mfa-card"
+            />
 
         {/* Step 2B: Credentials & Authorization */}
         <Card style={styles.card}>
@@ -304,11 +359,12 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
               <Input
                 autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType="number-pad"
                 secureTextEntry
                 label="Agent transaction PIN"
-                placeholder="Enter your PIN"
+                placeholder="••••"
                 value={agentPin}
-                maxLength={255}
+                maxLength={12}
                 testID="c2c-claim-agent-pin-input"
                 onChangeText={(text) => {
                   setAgentPin(text);
@@ -343,8 +399,25 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             <Text style={styles.errorText} testID="c2c-claim-confirm-error">{failureText}</Text>
           )}
 
+          {postSubmitRecoveryUnknown && (
+            <View style={styles.recoveryNoticeBox} testID="c2c-claim-post-submit-recovery-card">
+              <Text style={styles.recoveryNoticeText} testID="c2c-claim-post-submit-recovery-text">
+                The previous submission response was lost and claim status could not be verified yet.
+                Check claim status before requesting a new OTP or submitting again.
+              </Text>
+              <Button
+                label={postSubmitChecking ? 'Checking…' : 'Check claim status'}
+                loading={postSubmitChecking}
+                variant="outline"
+                onPress={() => void checkPostSubmitClaimRecovery()}
+                testID="c2c-claim-post-submit-recovery-button"
+              />
+            </View>
+          )}
+
           <Button
             loading={claimMutation.isPending}
+            disabled={postSubmitRecoveryUnknown || postSubmitChecking}
             label={claimMutation.isPending ? 'Processing Claim…' : 'Execute Claim'}
             onPress={handleSubmit}
             testID="c2c-claim-submit"
@@ -364,6 +437,33 @@ function isApiNotFound(error: unknown): boolean {
     error.name === 'ApiError' &&
     (error as Error & { status?: number }).status === 404
   );
+}
+
+function isAmbiguousClaimError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  if (error.name === 'NetworkError') return true;
+  if (error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status ?? 0;
+    return status >= 500 || status === 408 || status === 429;
+  }
+  return true;
+}
+
+function shouldRecoverAfterClaimError(error: unknown): boolean {
+  if (isAmbiguousClaimError(error)) return true;
+  if (error instanceof Error && error.name === 'ApiError') {
+    const status = (error as Error & { status?: number }).status;
+    if (
+      status === 409 &&
+      /already claimed|concurrent retries|TRANSACTION_CONTENTION_RETRY_EXHAUSTED/i.test(error.message)
+    ) {
+      return true;
+    }
+    if (status === 400 && /OTP already used|REPLAYED/i.test(error.message)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 interface SummaryRowProps {
@@ -465,6 +565,18 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
     marginBottom: theme.spacing.sm,
+  },
+  recoveryNoticeBox: {
+    backgroundColor: theme.colors.feedback.warningLight,
+    borderRadius: 8,
+    padding: theme.spacing.sm,
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  recoveryNoticeText: {
+    color: theme.colors.neutral.charcoal,
+    fontSize: theme.typography.sizes.xs,
+    lineHeight: 17,
   },
   button: { marginTop: theme.spacing.xs },
 });

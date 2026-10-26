@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../theme';
@@ -21,7 +21,24 @@ export const RotateCredentialScreen: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationError, setValidationError] = useState('');
 
-  const { rotateCredentials, isLoading, error, clearError } = useAuthStore();
+  const { rotateCredentials, cancelRotation, isLoading, error, clearError } = useAuthStore();
+
+  useEffect(
+    () => () => {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    },
+    [],
+  );
+
+  const handleCancel = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setValidationError('');
+    cancelRotation();
+  };
 
   const handleRotation = async () => {
     if (!currentPassword) {
@@ -126,6 +143,14 @@ export const RotateCredentialScreen: React.FC = () => {
             style={styles.button}
             testID="rotate-button"
             onPress={handleRotation}
+          />
+          <Button
+            disabled={isLoading}
+            label="Back to Sign In"
+            variant="outline"
+            style={styles.button}
+            testID="rotate-cancel-button"
+            onPress={handleCancel}
           />
         </View>
       </ScrollView>

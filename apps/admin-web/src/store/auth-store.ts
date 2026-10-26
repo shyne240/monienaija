@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ApiClient } from '../services/api-client';
+import { ApiClient, onWorkforceSessionExpired } from '../services/api-client';
 
 export interface WorkforcePrincipal {
   type: 'PRIVILEGED' | 'OPERATOR';
@@ -176,3 +176,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+if (typeof onWorkforceSessionExpired === 'function') {
+  onWorkforceSessionExpired(() => {
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      token: null,
+      sessionId: null,
+      principal: null,
+      error: 'Your workforce session has expired. Please sign in again.',
+    });
+  });
+}

@@ -40,11 +40,34 @@ function requestHeaders(contentType?: string, accept = 'application/json'): Reco
   return headers;
 }
 
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+export function onWorkforceSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
 function clearExpiredSession(status: number): void {
   if (status !== 401) return;
+  const hadSession = Boolean(
+    localStorage.getItem('admin_workforce_token') ||
+      localStorage.getItem('admin_workforce_session_id'),
+  );
   localStorage.removeItem('admin_workforce_token');
   localStorage.removeItem('admin_workforce_principal');
   localStorage.removeItem('admin_workforce_session_id');
+  if (hadSession) {
+    sessionExpiredListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch {
+        // Listener errors must never mask API errors.
+      }
+    });
+  }
 }
 
 async function readResponseData(response: Response): Promise<any> {

@@ -204,4 +204,27 @@ describe('Agent funding maker-checker panel', () => {
     expect((noMfa.getByRole('button', { name: 'Load funding instructions' }) as HTMLButtonElement).disabled).toBe(true);
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
+
+  test('blocks self-approval when checker matches maker and handles EXPIRED approval status cleanly', async () => {
+    // Same principalId as requesterPrincipalId ('maker-1') -> self-approval blocked
+    setPrincipal('FINANCE_CONTROLLER', 'maker-1', ['agent.fund']);
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce([fundingRequest('REQUESTED')]);
+
+    const selfCheck = render(<AgentFundingPanel agentId="agent-1" />);
+    fireEvent.click(selfCheck.getByRole('button', { name: 'Load funding instructions' }));
+    fireEvent.click(await selfCheck.findByRole('button', { name: new RegExp(`${REQUEST_ID}.*REQUESTED`) }));
+    expect(await selfCheck.findByText(/Self-approval blocked/i)).toBeTruthy();
+    expect(selfCheck.queryByRole('button', { name: 'Approve funding instruction' })).toBeNull();
+    selfCheck.unmount();
+
+    // EXPIRED approval -> cannot approve or execute, surfaces expiry notice
+    setPrincipal('FINANCE_CONTROLLER', 'checker-2', ['agent.fund']);
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce([fundingRequest('EXPIRED', 'PENDING')]);
+    const expiredView = render(<AgentFundingPanel agentId="agent-1" />);
+    fireEvent.click(expiredView.getByRole('button', { name: 'Load funding instructions' }));
+    fireEvent.click(await expiredView.findByRole('button', { name: new RegExp(`${REQUEST_ID}.*EXPIRED`) }));
+    expect(await expiredView.findByText(/Approval window expired/i)).toBeTruthy();
+    expect(expiredView.queryByRole('button', { name: 'Approve funding instruction' })).toBeNull();
+    expect(expiredView.queryByRole('button', { name: 'Execute approved instruction' })).toBeNull();
+  });
 });

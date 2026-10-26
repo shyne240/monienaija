@@ -58,12 +58,19 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const [message, setMessage] = useState('');
-  const key = `monienaija.agent-funding.v1:${principal?.principalId}:${agentId}`;
+  const trimmedAgentId = agentId.trim();
+  const key = `monienaija.agent-funding.v1:${principal?.principalId}:${trimmedAgentId}`;
   const isMaker = principal?.roles.includes('AGENT_NETWORK_MANAGER') === true;
   const isChecker = principal?.roles.includes('FINANCE_CONTROLLER') === true;
   const hasFunction = (value: 'FUND' | 'DEFUND') =>
     principal?.scopes.includes(value === 'FUND' ? 'agent.fund' : 'agent.defund') === true;
   const mfa = principal?.assuranceLevel === 'MFA';
+
+  useEffect(() => {
+    if (suppliedAgentId !== undefined) {
+      setAgentId(suppliedAgentId);
+    }
+  }, [suppliedAgentId]);
 
   useEffect(() => {
     setItems([]);
@@ -73,12 +80,12 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
     try {
       const stored = localStorage.getItem(key);
       const candidate = stored ? (JSON.parse(stored) as Instruction) : null;
-      setDraft(candidate?.agentId === agentId ? candidate : null);
+      setDraft(candidate?.agentId === trimmedAgentId ? candidate : null);
     } catch {
       setDraft(null);
       setMessage('Recovery storage is unreadable. Resolve previous instructions before creating another.');
     }
-  }, [key, agentId]);
+  }, [key, trimmedAgentId]);
 
   if ((!isMaker && !isChecker) || (!hasFunction('FUND') && !hasFunction('DEFUND'))) return null;
 
@@ -100,10 +107,10 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
   }
 
   async function load(instructionKey?: string) {
-    if (!agentId) throw new Error('Agent ID is required');
+    if (!trimmedAgentId) throw new Error('Agent ID is required');
     const query = instructionKey ? `?idempotencyKey=${encodeURIComponent(instructionKey)}` : '';
     const rows = await ApiClient.get<FundingRequest[]>(
-      `/internal/agents/${agentId}/funding-requests${query}`,
+      `/internal/agents/${encodeURIComponent(trimmedAgentId)}/funding-requests${query}`,
     );
     setItems(rows);
     const selectedRow = rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
@@ -115,18 +122,18 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
 
   async function initiate() {
     if (!isMaker || !mfa || !hasFunction(direction)) return;
-    if (!agentId || !/^[1-9]\d*$/.test(amount) || !reason.trim()) {
+    if (!trimmedAgentId || !/^[1-9]\d*$/.test(amount.trim()) || !reason.trim()) {
       throw new Error('Agent ID, positive integer kobo amount and reason are required');
     }
     const instruction = draft ?? {
-      agentId,
+      agentId: trimmedAgentId,
       direction,
-      amountMinor: amount,
+      amountMinor: amount.trim(),
       currency: 'NGN' as const,
       idempotencyKey: crypto.randomUUID(),
       reason: reason.trim(),
     };
-    if (instruction.agentId !== agentId || instruction.direction !== direction) {
+    if (instruction.agentId !== trimmedAgentId || instruction.direction !== direction) {
       throw new Error('Retained instruction does not match the selected Agent and direction');
     }
     // Persist before sending; storage failure must stop the request rather than lose recovery data.
@@ -134,7 +141,7 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
     setDraft(instruction);
     const { direction: requestedDirection, agentId: target, ...body } = instruction;
     const created = await ApiClient.post<FundingRequest>(
-      `/internal/agents/${target}/${requestedDirection.toLowerCase()}-request`,
+      `/internal/agents/${encodeURIComponent(target)}/${requestedDirection.toLowerCase()}-request`,
       body,
     );
     setSelected(created);
@@ -189,7 +196,7 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
       !reviewed ||
       !hasFunction(selected.direction)
     ) return;
-    if (selected.agentId !== agentId) throw new Error('Agent does not match the approved instruction');
+    if (selected.agentId !== trimmedAgentId) throw new Error('Agent does not match the approved instruction');
 
     // The server executes the immutable, persisted request by ID; the client cannot alter the
     // amount, target, metadata or ledger details at execution time.
@@ -232,7 +239,7 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
           <input aria-label="Funding Agent ID" value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={busy} />
         </label>
       )}
-      <button disabled={busy || !agentId || !mfa} onClick={() => void guarded(() => load())}>
+      <button disabled={busy || !trimmedAgentId || !mfa} onClick={() => void guarded(() => load())}>
         Load funding instructions
       </button>
 
@@ -305,6 +312,12 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
             Maker: {selected.requesterPrincipalId}
           </p>
           <p>Business reason: {selected.reason}</p>
+          {selected.approvalStatus === 'EXPIRED' && (
+            <p role="note">Approval window expired — this instruction cannot be approved or executed.</p>
+          )}
+          {isChecker && selected.approvalStatus === 'REQUESTED' && selected.requesterPrincipalId === principal?.principalId && (
+            <p role="note">Self-approval blocked: an independent FINANCE_CONTROLLER checker must review this instruction.</p>
+          )}
           <label>
             <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} disabled={busy} />
             I reviewed this Agent, amount, direction and business reason

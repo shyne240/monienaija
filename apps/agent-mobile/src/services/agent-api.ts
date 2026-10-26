@@ -598,6 +598,9 @@ export function describeCashToCashClaimError(error: unknown): string {
       if (/Idempotency key/i.test(msg)) {
         return 'Idempotency conflict. Retry with a new attempt.';
       }
+      if (/concurrent retries|TRANSACTION_CONTENTION_RETRY_EXHAUSTED/i.test(msg)) {
+        return 'High activity slowed this claim. Check claim status before retrying.';
+      }
       return error.message;
     }
     if (status === 403) {
@@ -619,6 +622,12 @@ export function describeCashToCashClaimError(error: unknown): string {
       if (/Transfer code/i.test(msg)) {
         return 'Transfer code is invalid. Check the code and try again.';
       }
+      if (/Agent PIN is locked|Transaction PIN is locked/i.test(msg)) {
+        return 'Your transaction PIN is locked. Contact support.';
+      }
+      if (/Agent PIN invalid|Transaction PIN invalid/i.test(msg)) {
+        return 'Incorrect transaction PIN. Try again.';
+      }
       return 'Authentication required. Try again.';
     }
     if (status === 400) {
@@ -628,7 +637,7 @@ export function describeCashToCashClaimError(error: unknown): string {
       if (/OTP invalid|OTP verification failed|MISMATCH/i.test(msg)) {
         return 'Customer verification code (OTP) is invalid. Check the code and try again.';
       }
-      if (/OTP already used/i.test(msg)) {
+      if (/OTP already used|REPLAYED/i.test(msg)) {
         return 'Customer verification code (OTP) has already been used. Request a new code.';
       }
       if (/Beneficiary phone/i.test(msg)) {

@@ -228,4 +228,67 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     expect(canAccessAdminView('cashToCashOps', ['transaction.view'], ['OPERATIONS'])).toBe(true);
     expect(canAccessAdminView('cashToCashOps', [], ['SUPER_ADMIN'])).toBe(false);
   });
+
+  test('credential panel clears one-time secret when switching agents and handles 409 initial-already-exists cleanly', async () => {
+    setPrincipal(['agent.manage_credentials']);
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({
+      agentId: 'agent-1',
+      credentialId: 'cred-1',
+      temporaryPassword: 'secret-for-agent-1',
+      rotationRequired: true,
+      passwordExpiresAt: '2026-10-29T10:00:00.000Z',
+      deliveryNotice: 'Deliver out-of-band.',
+    });
+
+    const view = render(<AgentCredentialPanel agentId="agent-1" agentStatus="ACTIVE" canManage />);
+    fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
+    expect((await view.findByTestId('temporary-agent-password')).textContent).toBe('secret-for-agent-1');
+
+    // Switching selected agent must wipe the previous agent's one-time secret immediately
+    view.rerender(<AgentCredentialPanel agentId="agent-2" agentStatus="ACTIVE" canManage />);
+    expect(view.queryByTestId('temporary-agent-password')).toBeNull();
+
+    // 409 Conflict when initial credential already exists gives clear reissue guidance
+    const conflict = Object.assign(new Error('Initial credential already exists for this Agent'), { status: 409 });
+    (ApiClient.post as jest.Mock).mockRejectedValueOnce(conflict);
+    fireEvent.click(view.getByRole('button', { name: 'Issue initial credential' }));
+    const alertText = (await view.findByRole('alert')).textContent ?? '';
+    expect(alertText).toContain('Use "Reissue + invalidate sessions"');
+    expect(alertText).not.toContain('The result may be uncertain');
+  });
+
+  test('Cash-to-Cash search from page 2 issues a single page-1 query and Reset clears filters', async () => {
+    setPrincipal(['transaction.view']);
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      data: [transfer],
+      total: 25,
+      page: 1,
+      limit: 20,
+      totalPages: 2,
+    });
+
+    const view = render(<CashToCashOperationsScreen />);
+    await view.findByText('••••••0123');
+    fireEvent.click(view.getByRole('button', { name: 'Next' }));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=2&limit=20'),
+    );
+
+    (ApiClient.get as jest.Mock).mockClear();
+    fireEvent.change(view.getByLabelText('Status'), { target: { value: 'EXPIRED' } });
+    fireEvent.click(view.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/admin/cash-to-cash/transfers?page=1&limit=20&status=EXPIRED',
+      ),
+    );
+    expect(ApiClient.get).toHaveBeenCalledTimes(1);
+
+    (ApiClient.get as jest.Mock).mockClear();
+    fireEvent.click(view.getByRole('button', { name: 'Reset' }));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/admin/cash-to-cash/transfers?page=1&limit=20'),
+    );
+  });
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -69,16 +69,20 @@ export const CreateSupportTicketScreen: React.FC = () => {
   );
   const [clientError, setClientError] = useState('');
   const [createdTicket, setCreatedTicket] = useState<AgentSupportTicket | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const idempotencyFingerprintRef = useRef<string>('');
 
   const createMutation = useMutation<AgentSupportTicket, unknown, CreateAgentSupportTicketInput>({
     mutationFn: (input) => createAgentSupportTicket(input),
     onSuccess: (data) => {
+      idempotencyKeyRef.current = null;
       setCreatedTicket(data);
       void queryClient.invalidateQueries({ queryKey: ['agent-support-tickets', agentId] });
     },
   });
 
   const handleSubmit = () => {
+    if (createMutation.isPending) return;
     setClientError('');
 
     const trimmedSubject = subject.trim();
@@ -102,12 +106,25 @@ export const CreateSupportTicketScreen: React.FC = () => {
       return;
     }
 
+    const fingerprint = JSON.stringify([
+      category,
+      priority,
+      trimmedSubject,
+      trimmedDesc,
+      relatedTransferId.trim(),
+      route.params?.fundingRequestId ?? '',
+    ]);
+    if (!idempotencyKeyRef.current || idempotencyFingerprintRef.current !== fingerprint) {
+      idempotencyKeyRef.current = `sup-ticket-${agentId || 'agent'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      idempotencyFingerprintRef.current = fingerprint;
+    }
+
     const payload: CreateAgentSupportTicketInput = {
       subject: trimmedSubject,
       category,
       description: trimmedDesc,
       priority,
-      idempotencyKey: `sup-ticket-${agentId || 'agent'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      idempotencyKey: idempotencyKeyRef.current,
     };
 
     if (relatedTransferId.trim()) {

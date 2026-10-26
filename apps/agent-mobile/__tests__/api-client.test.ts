@@ -1,5 +1,6 @@
 import { ApiClient, ApiError, NetworkError, AGENT_SESSION_KEYS, setBaseUrl, getBaseUrl } from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
+import { useAuthStore } from '../src/store/auth-store';
 
 describe('Agent Mobile API client', () => {
   const fetchMock = jest.fn();
@@ -49,15 +50,30 @@ describe('Agent Mobile API client', () => {
     expect((config.headers as Record<string, string>)['idempotency-key']).toBe('idem-123');
   });
 
-  test('401 purges the stored agent session (fail-closed back to login)', async () => {
+  test('401 purges the stored agent session and transitions authStore to unauthenticated', async () => {
     await SecureStorage.set(AGENT_SESSION_KEYS.token, 'stale-token');
     await SecureStorage.set(AGENT_SESSION_KEYS.sessionData, '{"x":1}');
+    useAuthStore.setState({
+      isAuthenticated: true,
+      agentId: 'agent-1',
+      session: {
+        accessToken: 'stale-token',
+        tokenType: 'Bearer',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        agentId: 'agent-1',
+        sessionId: 'sess-1',
+      },
+      error: null,
+    });
     fetchMock.mockResolvedValue(jsonResponse(401, { message: 'expired' }));
 
     await expect(ApiClient.get('api/v1/agents/me')).rejects.toMatchObject({ status: 401 });
 
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.token)).toBeNull();
     expect(await SecureStorage.get(AGENT_SESSION_KEYS.sessionData)).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().error).toBe('Your session has expired. Please log in again.');
   });
 
   test('cash-in-style 401 with preserveSessionOn401 keeps the stored session (PIN failure ≠ expiry)', async () => {

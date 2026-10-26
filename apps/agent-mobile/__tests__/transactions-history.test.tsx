@@ -276,5 +276,59 @@ describe('TransactionsScreen (unified Agent history)', () => {
       </QueryClientProvider>,
     );
     expect(missingView.getByTestId('history-receipt-missing')).toBeTruthy();
+
+    // Tapping Reload from transaction history fetches from server and recovers the receipt
+    mockApi.getAgentTransactions.mockResolvedValueOnce(pageOf([{ ...c2cRow, id: 'not-cached' }]));
+    fireEvent.press(missingView.getByTestId('history-receipt-reload'));
+    await waitFor(() => expect(missingView.getByTestId('history-receipt')).toBeTruthy());
+  });
+
+  test('B.load-more paginates cleanly past 100 rows using page=2, limit=100 without triggering backend reset', async () => {
+    const makeRows = (prefix: string, count: number): AgentHistoryItem[] =>
+      Array.from({ length: count }, (_, idx) => ({ ...cashInRow, id: `${prefix}-${idx}` }));
+
+    mockApi.getAgentTransactions.mockImplementation(({ page, limit }: { page: number; limit: number }) => {
+      if (page === 1 && limit < 100) {
+        return Promise.resolve({
+          items: makeRows(`p1-${limit}`, limit),
+          pagination: { page: 1, limit, total: 105, totalPages: 2, hasNextPage: true },
+        });
+      }
+      if (page === 1 && limit === 100) {
+        return Promise.resolve({
+          items: makeRows('p1-100', 100),
+          pagination: { page: 1, limit: 100, total: 105, totalPages: 2, hasNextPage: true },
+        });
+      }
+      return Promise.resolve({
+        items: makeRows('p2-100', 5),
+        pagination: { page: 2, limit: 100, total: 105, totalPages: 2, hasNextPage: false },
+      });
+    });
+
+    const { getByTestId, queryByTestId } = wrap(<TransactionsScreen />);
+    // Step limit from 20 -> 40 -> 60 -> 80 -> 100
+    for (const expectedLimit of [40, 60, 80, 100]) {
+      await waitFor(() => expect(getByTestId('history-load-more')).toBeTruthy());
+      fireEvent.press(getByTestId('history-load-more'));
+      await waitFor(() =>
+        expect(mockApi.getAgentTransactions).toHaveBeenCalledWith(
+          expect.objectContaining({ page: 1, limit: expectedLimit }),
+        ),
+      );
+    }
+
+    // Next load-more must request page: 2, limit: 100 (NEVER limit: 120)
+    await waitFor(() => expect(getByTestId('history-load-more')).toBeTruthy());
+    fireEvent.press(getByTestId('history-load-more'));
+    await waitFor(() =>
+      expect(mockApi.getAgentTransactions).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, limit: 100 }),
+      ),
+    );
+    expect(mockApi.getAgentTransactions).not.toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 120 }),
+    );
+    await waitFor(() => expect(queryByTestId('history-load-more')).toBeNull());
   });
 });

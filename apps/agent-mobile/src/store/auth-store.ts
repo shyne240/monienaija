@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { AGENT_SESSION_KEYS, purgeAgentSessionFromStorage } from '../services/api-client';
+import { AGENT_SESSION_KEYS, onSessionPurged, purgeAgentSessionFromStorage } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
 import {
   agentLogin,
@@ -113,7 +113,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  cancelRotation: () => set({ pendingRotation: null }),
+  cancelRotation: () => set({ pendingRotation: null, error: null }),
 
   logout: async () => {
     set({ isLoading: true });
@@ -184,3 +184,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+onSessionPurged(() => {
+  const current = useAuthStore.getState();
+  if (current.isAuthenticated || current.session) {
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      session: null,
+      agentId: null,
+      pendingRotation: null,
+      error: 'Your session has expired. Please log in again.',
+    });
+  }
+});

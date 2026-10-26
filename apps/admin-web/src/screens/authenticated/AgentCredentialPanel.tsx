@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 
@@ -11,6 +11,12 @@ interface TemporaryCredential {
   deliveryNotice: string;
 }
 
+function statusOf(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object' || !('status' in error)) return undefined;
+  const status = Number((error as { status?: unknown }).status);
+  return Number.isFinite(status) ? status : undefined;
+}
+
 export const AgentCredentialPanel: React.FC<{
   agentId: string;
   agentStatus: string;
@@ -19,8 +25,20 @@ export const AgentCredentialPanel: React.FC<{
   const [credential, setCredential] = useState<TemporaryCredential | null>(null);
   const [busy, setBusy] = useState(false);
   const [initialIssued, setInitialIssued] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setCredential(null);
+    setInitialIssued(false);
+    setCopied(false);
+    setError('');
+    setMessage('');
+    return () => {
+      setCredential(null);
+    };
+  }, [agentId]);
 
   if (!canManage) return null;
 
@@ -33,22 +51,45 @@ export const AgentCredentialPanel: React.FC<{
     setBusy(true);
     setError('');
     setMessage('');
+    setCopied(false);
     setCredential(null);
     try {
       const endpoint = `/internal/admin/agents/${encodeURIComponent(agentId)}/credentials${reissue ? '/reissue' : ''}`;
       const result = await ApiClient.post<TemporaryCredential>(endpoint);
       setCredential(result);
-      if (!reissue) setInitialIssued(true);
+      setInitialIssued(true);
       setMessage(reissue
         ? 'Credential reissued. The previous credential and its active sessions were invalidated.'
         : 'Initial temporary credential issued.');
     } catch (requestError) {
-      setError(
-        `${requestError instanceof Error ? requestError.message : 'Credential request failed.'} ` +
-          'The result may be uncertain. Do not reissue again until the Agent access state is checked.',
-      );
+      const status = statusOf(requestError);
+      const rawMessage = requestError instanceof Error ? requestError.message : 'Credential request failed.';
+      if (!reissue && status === 409) {
+        setInitialIssued(true);
+        setError(
+          `${rawMessage} Use "Reissue + invalidate sessions" if the Agent requires a replacement temporary password.`,
+        );
+      } else if (status === 400 || status === 403 || status === 404 || status === 409) {
+        setError(rawMessage);
+      } else {
+        setError(
+          `${rawMessage} The result may be uncertain. Do not reissue again until the Agent access state is checked.`,
+        );
+      }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const copySecret = async () => {
+    if (!credential?.temporaryPassword) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(credential.temporaryPassword);
+        setCopied(true);
+      }
+    } catch {
+      setCopied(false);
     }
   };
 
@@ -62,8 +103,13 @@ export const AgentCredentialPanel: React.FC<{
         <div style={styles.note}>Credential issuance is available only for an ACTIVE Agent.</div>
       ) : (
         <div style={styles.actions}>
-          <button type="button" style={styles.button} disabled={busy} onClick={() => void issue(false)}>
-            {busy ? 'Working…' : 'Issue initial credential'}
+          <button
+            type="button"
+            style={styles.button}
+            disabled={busy || initialIssued}
+            onClick={() => void issue(false)}
+          >
+            {busy ? 'Working…' : initialIssued ? 'Initial credential issued' : 'Issue initial credential'}
           </button>
           <button type="button" style={styles.reissueButton} disabled={busy} onClick={() => void issue(true)}>
             Reissue + invalidate sessions
@@ -74,11 +120,21 @@ export const AgentCredentialPanel: React.FC<{
       {message && <div style={styles.success} role="status">{message}</div>}
       {credential && (
         <div style={styles.secretCard} aria-label="One-time temporary credential">
-          <div><strong>One-time temporary password</strong></div>
+          <div><strong>One-time temporary password</strong> (Agent <code>{credential.agentId}</code>)</div>
           <code style={styles.secret} data-testid="temporary-agent-password">{credential.temporaryPassword}</code>
+          <div><strong>Credential ID:</strong> <code>{credential.credentialId}</code> · <strong>Rotation required:</strong> {credential.rotationRequired ? 'Yes (first login)' : 'No'}</div>
           <div><strong>Expires:</strong> {credential.passwordExpiresAt ? new Date(credential.passwordExpiresAt).toLocaleString() : 'Not provided'}</div>
           <div>{credential.deliveryNotice}</div>
-          <button type="button" style={styles.button} onClick={() => setCredential(null)}>Hide one-time value</button>
+          <div style={styles.actions}>
+            {typeof navigator !== 'undefined' && navigator.clipboard && (
+              <button type="button" style={styles.button} onClick={() => void copySecret()}>
+                {copied ? 'Copied' : 'Copy one-time value'}
+              </button>
+            )}
+            <button type="button" style={styles.button} onClick={() => { setCredential(null); setCopied(false); }}>
+              Hide one-time value
+            </button>
+          </div>
         </div>
       )}
     </section>

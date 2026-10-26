@@ -1,4 +1,5 @@
 import { ApiClient, ApiError } from '../src/services/api-client';
+import { useAuthStore } from '../src/store/auth-store';
 
 describe('Admin API client multipart and private-content requests', () => {
   const originalFetch = globalThis.fetch;
@@ -80,5 +81,35 @@ describe('Admin API client multipart and private-content requests', () => {
     expect(localStorage.getItem('admin_workforce_token')).toBeNull();
     expect(localStorage.getItem('admin_workforce_principal')).toBeNull();
     expect(localStorage.getItem('admin_workforce_session_id')).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().error).toBe(
+      'Your workforce session has expired. Please sign in again.',
+    );
+  });
+
+  test('401 without an active stored session does not overwrite unauthenticated login error state', async () => {
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      token: null,
+      sessionId: null,
+      principal: null,
+      error: null,
+    });
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ message: 'Invalid local administrator credentials', code: 'UNAUTHORIZED' }),
+    } as unknown as Response);
+
+    await expect(
+      ApiClient.post('/internal/a2/workforce/local-admin-sessions', {
+        email: 'admin@monienaija.local',
+        password: 'wrong',
+      }),
+    ).rejects.toThrow('Invalid local administrator credentials');
+    expect(useAuthStore.getState().error).toBeNull();
   });
 });
