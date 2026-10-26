@@ -42,12 +42,24 @@ export const TransactionReceiptScreen: React.FC = () => {
     setReloading(true);
     setReloadError('');
     try {
-      const response = await getAgentTransactions({ page: 1, limit: 100, type: filter });
-      queryClient.setQueryData(
-        ['agent-transactions', agentId, filter ?? 'ALL', 100],
-        response,
-      );
-      const hit = response.items.find((item) => item.id === itemId);
+      const MAX_RELOAD_PAGES = 5;
+      const PAGE_LIMIT = 100;
+      let hit: AgentHistoryItem | undefined;
+
+      for (let page = 1; page <= MAX_RELOAD_PAGES; page += 1) {
+        const response = await getAgentTransactions({ page, limit: PAGE_LIMIT, type: filter });
+        queryClient.setQueryData(
+          page === 1
+            ? ['agent-transactions', agentId, filter ?? 'ALL', PAGE_LIMIT]
+            : ['agent-transactions', agentId, filter ?? 'ALL', PAGE_LIMIT, page],
+          response,
+        );
+        hit = response.items.find((item) => item.id === itemId);
+        if (hit || !response.pagination.hasNextPage) {
+          break;
+        }
+      }
+
       if (hit) {
         setReloadedItem(hit);
       } else {

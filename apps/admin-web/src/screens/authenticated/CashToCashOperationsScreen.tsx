@@ -64,9 +64,28 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 }
 
+interface LedgerJournalLineView {
+  id: string;
+  accountId: string;
+  direction: 'DEBIT' | 'CREDIT';
+  amountMinor: string;
+}
+
+interface LedgerJournalView {
+  id: string;
+  status: string;
+  currency: string;
+  accountingUnit: string;
+  reference?: string;
+  description?: string;
+  createdAt: string;
+  lines: LedgerJournalLineView[];
+}
+
 export const CashToCashOperationsScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('transaction.view') ?? false;
+  const canViewLedger = principal?.scopes.includes('ledger.view') ?? false;
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
   const [searchRevision, setSearchRevision] = useState(0);
@@ -75,6 +94,10 @@ export const CashToCashOperationsScreen: React.FC = () => {
   const [selected, setSelected] = useState<CashToCashOperation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [inspectedJournal, setInspectedJournal] = useState<LedgerJournalView | null>(null);
+  const [inspectedJournalLabel, setInspectedJournalLabel] = useState('');
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState('');
 
   const load = async (targetPage: number, selectedFilters: Filters) => {
     if (!canView) return;
@@ -102,6 +125,28 @@ export const CashToCashOperationsScreen: React.FC = () => {
   useEffect(() => {
     if (canView) void load(page, appliedFilters);
   }, [canView, page, searchRevision]);
+
+  useEffect(() => {
+    setInspectedJournal(null);
+    setInspectedJournalLabel('');
+    setJournalError('');
+  }, [selected?.id]);
+
+  const inspectJournal = async (journalId: string, label: string) => {
+    if (!canViewLedger || !journalId || journalLoading) return;
+    setJournalLoading(true);
+    setJournalError('');
+    setInspectedJournalLabel(label);
+    try {
+      const journal = await ApiClient.get<LedgerJournalView>(`/ledger/journals/${encodeURIComponent(journalId)}`);
+      setInspectedJournal(journal);
+    } catch (err) {
+      setInspectedJournal(null);
+      setJournalError(err instanceof Error ? err.message : 'Unable to load ledger journal.');
+    } finally {
+      setJournalLoading(false);
+    }
+  };
 
   const changeFilter = (key: keyof Filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -211,13 +256,99 @@ export const CashToCashOperationsScreen: React.FC = () => {
             <div><dt>Beneficiary</dt><dd>{selected.beneficiaryPhoneMasked} (masked)</dd></div>
             <div><dt>Principal / fee / VAT / total</dt><dd>{formatMinor(selected.principalMinor, selected.currency)} / {formatMinor(selected.feeMinor, selected.currency)} / {formatMinor(selected.vatMinor, selected.currency)} / {formatMinor(selected.totalMinor, selected.currency)}</dd></div>
             <div><dt>Redemption method</dt><dd>{selected.redemptionMethod ?? 'Not recorded / legacy'}</dd></div>
-            <div><dt>Initiation journal</dt><dd><code>{selected.journalId}</code></dd></div>
-            <div><dt>Claim journal</dt><dd>{selected.claimJournalId ? <code>{selected.claimJournalId}</code> : '—'}</dd></div>
+            <div>
+              <dt>Initiation journal</dt>
+              <dd>
+                <code>{selected.journalId}</code>
+                {canViewLedger && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      style={styles.smallButton}
+                      disabled={journalLoading}
+                      onClick={() => void inspectJournal(selected.journalId, 'Initiation journal')}
+                    >
+                      Inspect initiation journal
+                    </button>
+                  </>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Claim journal</dt>
+              <dd>
+                {selected.claimJournalId ? (
+                  <>
+                    <code>{selected.claimJournalId}</code>
+                    {canViewLedger && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          style={styles.smallButton}
+                          disabled={journalLoading}
+                          onClick={() => void inspectJournal(selected.claimJournalId!, 'Claim journal')}
+                        >
+                          Inspect claim journal
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : '—'}
+              </dd>
+            </div>
             <div><dt>Claimant customer</dt><dd>{selected.claimantCustomerId ? <code>{selected.claimantCustomerId}</code> : '—'}</dd></div>
             <div><dt>Reference / claim reference</dt><dd>{selected.reference || '—'} / {selected.claimReference || '—'}</dd></div>
             <div><dt>Created / claimed / expired</dt><dd>{formatDate(selected.createdAt)} / {formatDate(selected.claimedAt)} / {formatDate(selected.expiredAt)}</dd></div>
             <div><dt>Expiry deadline</dt><dd>{formatDate(selected.expiresAt)}</dd></div>
           </dl>
+          {canViewLedger && (journalLoading || journalError || inspectedJournal) && (
+            <div style={{ marginTop: 14, padding: 12, border: '1px solid #E2E8F0', borderRadius: 6, background: '#F8FAFC' }} data-testid="c2c-inspected-journal">
+              {journalLoading && <div>Loading ledger journal…</div>}
+              {journalError && <div style={styles.error} role="alert">{journalError}</div>}
+              {inspectedJournal && (() => {
+                const totalDebits = inspectedJournal.lines
+                  .filter((l) => l.direction === 'DEBIT')
+                  .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
+                const totalCredits = inspectedJournal.lines
+                  .filter((l) => l.direction === 'CREDIT')
+                  .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
+                const balanced = totalDebits === totalCredits;
+                return (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8, fontSize: 12 }}>
+                      <strong>{inspectedJournalLabel}: <code>{inspectedJournal.id}</code></strong>
+                      <span>
+                        Status: <strong>{inspectedJournal.status}</strong> ·{' '}
+                        <span style={balanced ? styles.claimed : styles.expired}>
+                          {balanced ? 'BALANCED' : 'UNBALANCED'}
+                        </span>
+                      </span>
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>Direction</th>
+                          <th style={{ textAlign: 'left' }}>Ledger Account</th>
+                          <th style={{ textAlign: 'right' }}>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inspectedJournal.lines.map((line) => (
+                          <tr key={line.id}>
+                            <td><strong>{line.direction}</strong></td>
+                            <td><code>{line.accountId}</code></td>
+                            <td style={{ textAlign: 'right' }}>{formatMinor(line.amountMinor, inspectedJournal.currency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </section>
       )}
     </div>

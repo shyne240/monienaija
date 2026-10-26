@@ -44,13 +44,55 @@ interface FundingResult {
   journalId: string;
 }
 
-export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: string }) {
+interface CheckerHandoffToken {
+  agentId: string;
+  requestId?: string;
+  approvalId?: string;
+  idempotencyKey?: string;
+  direction?: 'FUND' | 'DEFUND';
+  amountMinor?: string;
+  currency?: string;
+}
+
+export function parseCheckerHandoffInput(raw: string): { agentId: string; idempotencyKey?: string } | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<CheckerHandoffToken>;
+      if (typeof parsed.agentId === 'string' && parsed.agentId.trim()) {
+        return {
+          agentId: parsed.agentId.trim(),
+          idempotencyKey:
+            typeof parsed.idempotencyKey === 'string' && parsed.idempotencyKey.trim()
+              ? parsed.idempotencyKey.trim()
+              : undefined,
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  return { agentId: trimmed };
+}
+
+export function AgentFundingPanel({
+  agentId: suppliedAgentId,
+  initialIdempotencyKey,
+}: {
+  agentId?: string;
+  initialIdempotencyKey?: string;
+}) {
   const { principal } = useAuthStore();
   const [agentId, setAgentId] = useState(suppliedAgentId ?? '');
   const [direction, setDirection] = useState<'FUND' | 'DEFUND'>('FUND');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [handoffInput, setHandoffInput] = useState('');
+  const [handoffCopied, setHandoffCopied] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [draft, setDraft] = useState<Instruction | null>(null);
   const [items, setItems] = useState<FundingRequest[]>([]);
   const [selected, setSelected] = useState<FundingRequest | null>(null);
@@ -66,28 +108,34 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
     principal?.scopes.includes(value === 'FUND' ? 'agent.fund' : 'agent.defund') === true;
   const mfa = principal?.assuranceLevel === 'MFA';
 
+  const pendingAutoLoadRef = useRef<{ agentId: string; idempotencyKey?: string } | null>(null);
+
   useEffect(() => {
     if (suppliedAgentId !== undefined) {
+      if (initialIdempotencyKey && suppliedAgentId.trim()) {
+        pendingAutoLoadRef.current = {
+          agentId: suppliedAgentId.trim(),
+          idempotencyKey: initialIdempotencyKey,
+        };
+      }
       setAgentId(suppliedAgentId);
     }
-  }, [suppliedAgentId]);
+  }, [suppliedAgentId, initialIdempotencyKey]);
 
-  useEffect(() => {
-    setItems([]);
-    setSelected(null);
+  async function loadForAgent(targetAgentId: string, instructionKey?: string) {
+    if (!targetAgentId) throw new Error('Agent ID is required');
+    const query = instructionKey ? `?idempotencyKey=${encodeURIComponent(instructionKey)}` : '';
+    const rows = await ApiClient.get<FundingRequest[]>(
+      `/internal/agents/${encodeURIComponent(targetAgentId)}/funding-requests${query}`,
+    );
+    setItems(rows);
+    const selectedRow = rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
+    setSelected(selectedRow);
     setReviewed(false);
-    setMessage('');
-    try {
-      const stored = localStorage.getItem(key);
-      const candidate = stored ? (JSON.parse(stored) as Instruction) : null;
-      setDraft(candidate?.agentId === trimmedAgentId ? candidate : null);
-    } catch {
-      setDraft(null);
-      setMessage('Recovery storage is unreadable. Resolve previous instructions before creating another.');
-    }
-  }, [key, trimmedAgentId]);
-
-  if ((!isMaker && !isChecker) || (!hasFunction('FUND') && !hasFunction('DEFUND'))) return null;
+    setRejectionReason('');
+    setHandoffCopied(false);
+    if (!rows.length) setMessage('No visible instruction found. Keep any recovery key until its outcome is resolved.');
+  }
 
   async function guarded(task: () => Promise<void>) {
     if (inFlight.current) return;
@@ -106,18 +154,46 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
     }
   }
 
-  async function load(instructionKey?: string) {
-    if (!trimmedAgentId) throw new Error('Agent ID is required');
-    const query = instructionKey ? `?idempotencyKey=${encodeURIComponent(instructionKey)}` : '';
-    const rows = await ApiClient.get<FundingRequest[]>(
-      `/internal/agents/${encodeURIComponent(trimmedAgentId)}/funding-requests${query}`,
-    );
-    setItems(rows);
-    const selectedRow = rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
-    setSelected(selectedRow);
+  useEffect(() => {
+    setItems([]);
+    setSelected(null);
     setReviewed(false);
-    setRejectionReason('');
-    if (!rows.length) setMessage('No visible instruction found. Keep any recovery key until its outcome is resolved.');
+    setHandoffCopied(false);
+    setMessage('');
+    try {
+      const stored = localStorage.getItem(key);
+      const candidate = stored ? (JSON.parse(stored) as Instruction) : null;
+      setDraft(candidate?.agentId === trimmedAgentId ? candidate : null);
+    } catch {
+      setDraft(null);
+      setMessage('Recovery storage is unreadable. Resolve previous instructions before creating another.');
+    }
+    const autoLoad = pendingAutoLoadRef.current;
+    if (autoLoad && autoLoad.agentId === trimmedAgentId && mfa) {
+      pendingAutoLoadRef.current = null;
+      void guarded(() => loadForAgent(trimmedAgentId, autoLoad.idempotencyKey));
+    }
+  }, [key, trimmedAgentId]);
+
+  if ((!isMaker && !isChecker) || (!hasFunction('FUND') && !hasFunction('DEFUND'))) return null;
+
+  async function load(instructionKey?: string) {
+    return loadForAgent(trimmedAgentId, instructionKey);
+  }
+
+  function applyCheckerHandoff() {
+    const parsed = parseCheckerHandoffInput(handoffInput);
+    if (!parsed) {
+      setMessage('Enter a valid Maker handoff JSON package or Agent ID.');
+      return;
+    }
+    setHandoffInput('');
+    if (parsed.agentId === trimmedAgentId) {
+      void guarded(() => loadForAgent(parsed.agentId, parsed.idempotencyKey));
+      return;
+    }
+    pendingAutoLoadRef.current = parsed;
+    setAgentId(parsed.agentId);
   }
 
   async function initiate() {
@@ -229,10 +305,46 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
     selected?.approvalStatus === 'CONSUMED' &&
     selected.checkerPrincipalId === principal?.principalId;
 
+  const visibleItems = items.filter((row) =>
+    statusFilter === 'ALL' ? true : row.approvalStatus === statusFilter,
+  );
+  const handoffToken = selected
+    ? JSON.stringify({
+        agentId: selected.agentId,
+        requestId: selected.id,
+        approvalId: selected.approvalId,
+        idempotencyKey: selected.idempotencyKey,
+        direction: selected.direction,
+        amountMinor: selected.amountMinor,
+        currency: selected.currency,
+      })
+    : null;
+
   return (
     <section aria-label="Agent funding workflow" style={{ border: '1px solid #CBD5E1', padding: 16, marginTop: 16 }}>
       <h3>Agent funding and defunding</h3>
       {!mfa && <p role="alert">Sign in with MFA before initiating, reviewing or executing funding.</p>}
+      {isChecker && !suppliedAgentId && (
+        <div style={{ marginBottom: 10 }}>
+          <label>
+            Maker handoff token or Agent ID
+            <input
+              aria-label="Checker handoff token"
+              placeholder='Paste {"agentId":...,"idempotencyKey":...} or Agent UUID'
+              value={handoffInput}
+              onChange={(event) => setHandoffInput(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy || !handoffInput.trim() || !mfa}
+            onClick={applyCheckerHandoff}
+          >
+            Apply handoff &amp; load
+          </button>
+        </div>
+      )}
       {!suppliedAgentId && (
         <label>
           Agent ID
@@ -294,10 +406,29 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
         </div>
       )}
 
+      {items.length > 0 && (
+        <label>
+          Filter approval state
+          <select
+            aria-label="Filter funding approval status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            disabled={busy}
+          >
+            <option value="ALL">All instructions</option>
+            <option value="REQUESTED">REQUESTED</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="CONSUMED">CONSUMED</option>
+            <option value="REJECTED">REJECTED</option>
+            <option value="EXPIRED">EXPIRED</option>
+          </select>
+        </label>
+      )}
+
       <ul>
-        {items.map((row) => (
+        {visibleItems.map((row) => (
           <li key={row.id}>
-            <button disabled={busy} onClick={() => { setSelected(row); setReviewed(false); setRejectionReason(''); }}>
+            <button disabled={busy} onClick={() => { setSelected(row); setReviewed(false); setRejectionReason(''); setHandoffCopied(false); }}>
               {row.id} — {row.direction} — {row.status} / {row.approvalStatus}
             </button>
           </li>
@@ -312,6 +443,22 @@ export function AgentFundingPanel({ agentId: suppliedAgentId }: { agentId?: stri
             Maker: {selected.requesterPrincipalId}
           </p>
           <p>Business reason: {selected.reason}</p>
+          {handoffToken && ['REQUESTED', 'APPROVED'].includes(selected.approvalStatus) && (
+            <div style={{ margin: '8px 0', padding: 8, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              <strong>Checker handoff package:</strong>{' '}
+              <code data-testid="funding-checker-handoff-token">{handoffToken}</code>{' '}
+              {typeof navigator !== 'undefined' && navigator.clipboard && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(handoffToken).then(() => setHandoffCopied(true)).catch(() => setHandoffCopied(false));
+                  }}
+                >
+                  {handoffCopied ? 'Copied handoff' : 'Copy checker handoff'}
+                </button>
+              )}
+            </div>
+          )}
           {selected.approvalStatus === 'EXPIRED' && (
             <p role="note">Approval window expired — this instruction cannot be approved or executed.</p>
           )}

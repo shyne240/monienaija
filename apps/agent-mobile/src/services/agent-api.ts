@@ -1,4 +1,4 @@
-import { ApiClient } from './api-client';
+import { ApiClient, isBearerSessionExpired401Message } from './api-client';
 
 /**
  * Agent Mobile — typed bindings for the exact backend contracts
@@ -412,7 +412,13 @@ export function describeCashToCashError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
     const status = (error as Error & { status?: number }).status;
     if (status === 401) {
+      if (isBearerSessionExpired401Message(error.message)) {
+        return 'Your session has expired. Please log in again.';
+      }
       if (/locked/i.test(error.message)) return 'Your transaction PIN is locked. Contact support.';
+      if (/PIN_NOT_FOUND/i.test(error.message)) {
+        return 'No transaction PIN is set for your account. Set your Transaction PIN in Account settings first.';
+      }
       return 'Incorrect transaction PIN. Try again.';
     }
     if (status === 403) {
@@ -473,6 +479,9 @@ export function describeCashOutError(error: unknown): string {
     const status = (error as Error & { status?: number }).status;
     const msg = error.message;
     if (status === 401) {
+      if (isBearerSessionExpired401Message(msg)) {
+        return 'Your session has expired. Please log in again.';
+      }
       if (/Customer PIN is locked|Customer.*locked/i.test(msg)) {
         return 'Customer transaction PIN is locked. Ask the customer to contact support.';
       }
@@ -481,6 +490,9 @@ export function describeCashOutError(error: unknown): string {
       }
       if (/Agent PIN is locked|locked/i.test(msg)) {
         return 'Your agent transaction PIN is locked. Contact support.';
+      }
+      if (/PIN_NOT_FOUND/i.test(msg)) {
+        return 'No transaction PIN is set for your account. Set your Transaction PIN in Account settings first.';
       }
       if (/Agent PIN|PIN invalid/i.test(msg)) {
         return 'Agent transaction PIN is incorrect. Try again.';
@@ -619,11 +631,17 @@ export function describeCashToCashClaimError(error: unknown): string {
       return 'You are not permitted to claim this transfer.';
     }
     if (status === 401) {
+      if (isBearerSessionExpired401Message(msg)) {
+        return 'Your session has expired. Please log in again.';
+      }
       if (/Transfer code/i.test(msg)) {
         return 'Transfer code is invalid. Check the code and try again.';
       }
       if (/Agent PIN is locked|Transaction PIN is locked/i.test(msg)) {
         return 'Your transaction PIN is locked. Contact support.';
+      }
+      if (/PIN_NOT_FOUND/i.test(msg)) {
+        return 'No transaction PIN is set for your account. Set your Transaction PIN in Account settings first.';
       }
       if (/Agent PIN invalid|Transaction PIN invalid/i.test(msg)) {
         return 'Incorrect transaction PIN. Try again.';
@@ -863,6 +881,9 @@ export function describeTransactionPinError(error: unknown): string {
     const status = (error as Error & { status?: number }).status;
     const msg = error.message || '';
     if (status === 401) {
+      if (isBearerSessionExpired401Message(msg)) {
+        return 'Your session has expired. Please log in again.';
+      }
       if (/format/i.test(msg) || /invalid pin/i.test(msg)) {
         return 'Invalid PIN format. PIN must be 4 to 12 numeric digits.';
       }

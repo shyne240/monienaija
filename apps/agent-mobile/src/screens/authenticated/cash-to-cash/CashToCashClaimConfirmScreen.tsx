@@ -43,9 +43,12 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [challenge, setChallenge] = useState<AgentMfaChallenge | null>(null);
+  const [mfaInvalidatedRevision, setMfaInvalidatedRevision] = useState(0);
   const [transferCode, setTransferCode] = useState('');
   const [otp, setOtp] = useState('');
   const [redemptionMethod, setRedemptionMethod] = useState<'CUSTOMER_WALLET' | 'AGENT_CASH'>('CUSTOMER_WALLET');
+  const [lockedRedemptionMethod, setLockedRedemptionMethod] = useState<'CUSTOMER_WALLET' | 'AGENT_CASH' | null>(null);
+  const [rollbackRetryReady, setRollbackRetryReady] = useState(false);
   const [agentPin, setAgentPin] = useState('');
   const [clientError, setClientError] = useState('');
   const [recoveryStatus, setRecoveryStatus] = useState<'CHECKING' | 'READY' | 'ERROR'>('CHECKING');
@@ -87,14 +90,18 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     setPostSubmitChecking(true);
     try {
       const recovered = await getAgentCashToCashClaim(transferId);
+      setRollbackRetryReady(false);
       completeClaimSuccess(recovered);
     } catch (lookupError: unknown) {
       if (isApiNotFound(lookupError)) {
-        // Confirmed not claimed by this Agent — safe to retry with a fresh/current credential.
+        // Confirmed not claimed by this Agent — safe to retry with the same idempotencyKey + redemptionMethod
+        // and a fresh OTP if the previous challenge was already consumed.
         setPostSubmitRecoveryUnknown(false);
+        setRollbackRetryReady(true);
       } else if (!triggerError || isAmbiguousClaimError(triggerError)) {
         // Both submission and recovery lookup were indeterminate; block blind re-submission.
         setPostSubmitRecoveryUnknown(true);
+        setRollbackRetryReady(false);
       }
     } finally {
       setPostSubmitChecking(false);
@@ -125,7 +132,12 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       setTransferCode('');
       setOtp('');
       setAgentPin('');
+      if (isOtpChallengeInvalidatedError(err)) {
+        setChallenge(null);
+        setMfaInvalidatedRevision((rev) => rev + 1);
+      }
       if (shouldRecoverAfterClaimError(err)) {
+        setLockedRedemptionMethod(redemptionMethod);
         await checkPostSubmitClaimRecovery(err);
       }
     },
@@ -254,12 +266,27 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
           <View style={styles.methodOptions}>
             <Pressable
               accessibilityRole="radio"
-              accessibilityState={{ checked: redemptionMethod === 'CUSTOMER_WALLET' }}
+              accessibilityState={{
+                checked: redemptionMethod === 'CUSTOMER_WALLET',
+                disabled:
+                  claimMutation.isPending ||
+                  postSubmitChecking ||
+                  postSubmitRecoveryUnknown ||
+                  (lockedRedemptionMethod !== null && lockedRedemptionMethod !== 'CUSTOMER_WALLET'),
+              }}
               style={[
                 styles.methodOption,
                 redemptionMethod === 'CUSTOMER_WALLET' && styles.methodOptionSelected,
               ]}
               onPress={() => {
+                if (
+                  claimMutation.isPending ||
+                  postSubmitChecking ||
+                  postSubmitRecoveryUnknown ||
+                  (lockedRedemptionMethod !== null && lockedRedemptionMethod !== 'CUSTOMER_WALLET')
+                ) {
+                  return;
+                }
                 setRedemptionMethod('CUSTOMER_WALLET');
                 setAgentPin('');
                 setClientError('');
@@ -271,12 +298,27 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             </Pressable>
             <Pressable
               accessibilityRole="radio"
-              accessibilityState={{ checked: redemptionMethod === 'AGENT_CASH' }}
+              accessibilityState={{
+                checked: redemptionMethod === 'AGENT_CASH',
+                disabled:
+                  claimMutation.isPending ||
+                  postSubmitChecking ||
+                  postSubmitRecoveryUnknown ||
+                  (lockedRedemptionMethod !== null && lockedRedemptionMethod !== 'AGENT_CASH'),
+              }}
               style={[
                 styles.methodOption,
                 redemptionMethod === 'AGENT_CASH' && styles.methodOptionSelected,
               ]}
               onPress={() => {
+                if (
+                  claimMutation.isPending ||
+                  postSubmitChecking ||
+                  postSubmitRecoveryUnknown ||
+                  (lockedRedemptionMethod !== null && lockedRedemptionMethod !== 'AGENT_CASH')
+                ) {
+                  return;
+                }
                 setRedemptionMethod('AGENT_CASH');
                 setClientError('');
               }}
@@ -291,6 +333,31 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
               ? 'Cash payout requires a current approved Customer KYC assessment. A stored identity-document row without a recorded review is not proof of verified identity. Physical cash handover is operationally separate from this ledger settlement.'
               : 'Wallet redemption credits the beneficiary Customer wallet. No physical cash is paid as part of this settlement.'}
           </Text>
+          {lockedRedemptionMethod !== null && (
+            <View style={{ marginTop: theme.spacing.sm, gap: theme.spacing.xs }}>
+              <Text style={styles.methodNotice} testID="c2c-claim-method-locked-notice">
+                Payout method ({lockedRedemptionMethod === 'AGENT_CASH' ? 'Agent cash payout' : 'Customer wallet'}) and idempotency key are locked to protect retry safety after an interrupted or rolled-back attempt.
+              </Text>
+              {rollbackRetryReady && !postSubmitRecoveryUnknown && !postSubmitChecking && !claimMutation.isPending && (
+                <>
+                  <Text style={styles.helper} testID="c2c-claim-rollback-retry-notice">
+                    No committed claim was found on the server. Request a fresh customer OTP code if the previous code was already used, then retry with the same payout method.
+                  </Text>
+                  <Button
+                    label="Change payout method (new attempt)"
+                    variant="outline"
+                    onPress={() => {
+                      setLockedRedemptionMethod(null);
+                      setRollbackRetryReady(false);
+                      idempotencyKeyRef.current = newIdempotencyKey('c2c-claim');
+                      setClientError('');
+                    }}
+                    testID="c2c-claim-unlock-method-button"
+                  />
+                </>
+              )}
+            </View>
+          )}
         </Card>
 
         {recoveryStatus === 'CHECKING' && (
@@ -322,6 +389,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
             <MfaChallengeCard
               customerId={customer.customerId}
               purpose="CASH_TO_CASH_CLAIM"
+              invalidatedRevision={mfaInvalidatedRevision}
+              disabled={postSubmitRecoveryUnknown || postSubmitChecking || claimMutation.isPending}
               onChallengeReady={(issued) => {
                 setChallenge(issued);
                 setClientError('');
@@ -447,6 +516,15 @@ function isAmbiguousClaimError(error: unknown): boolean {
     return status >= 500 || status === 408 || status === 429;
   }
   return true;
+}
+
+function isOtpChallengeInvalidatedError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'ApiError' &&
+    (error as Error & { status?: number }).status === 400 &&
+    /OTP already used|OTP expired|Invalid OTP challenge/i.test(error.message)
+  );
 }
 
 function shouldRecoverAfterClaimError(error: unknown): boolean {

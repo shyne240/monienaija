@@ -48,6 +48,7 @@ export const TransactionsScreen: React.FC = () => {
   const [overflowItems, setOverflowItems] = useState<AgentHistoryItem[]>([]);
   const [overflowHasNext, setOverflowHasNext] = useState<boolean | null>(null);
   const [loadingOverflow, setLoadingOverflow] = useState(false);
+  const [overflowError, setOverflowError] = useState('');
 
   const historyQuery = useQuery({
     queryKey: ['agent-transactions', agentId, activeType ?? 'ALL', pageLimit],
@@ -61,6 +62,7 @@ export const TransactionsScreen: React.FC = () => {
     setOverflowPage(1);
     setOverflowItems([]);
     setOverflowHasNext(null);
+    setOverflowError('');
   }, [agentId, activeType]);
 
   const items = useMemo(() => {
@@ -88,6 +90,7 @@ export const TransactionsScreen: React.FC = () => {
     }
     const nextPage = overflowPage + 1;
     setLoadingOverflow(true);
+    setOverflowError('');
     try {
       const next = await getAgentTransactions({
         page: nextPage,
@@ -101,8 +104,8 @@ export const TransactionsScreen: React.FC = () => {
       setOverflowPage(nextPage);
       setOverflowItems((prev) => [...prev, ...next.items]);
       setOverflowHasNext(next.pagination.hasNextPage);
-    } catch {
-      // Keep current items intact; user can tap Load more again.
+    } catch (err) {
+      setOverflowError(describeApiError(err));
     } finally {
       setLoadingOverflow(false);
     }
@@ -114,12 +117,14 @@ export const TransactionsScreen: React.FC = () => {
     setOverflowPage(1);
     setOverflowItems([]);
     setOverflowHasNext(null);
+    setOverflowError('');
   };
 
   const handleRefresh = () => {
     setOverflowPage(1);
     setOverflowItems([]);
     setOverflowHasNext(null);
+    setOverflowError('');
     void historyQuery.refetch();
   };
 
@@ -189,13 +194,23 @@ export const TransactionsScreen: React.FC = () => {
         }
         ListFooterComponent={
           hasNextPage ? (
-            <Button
-              label={loadingOverflow ? 'Loading…' : 'Load more'}
-              loading={loadingOverflow}
-              variant="outline"
-              onPress={() => void loadMore()}
-              testID="history-load-more"
-            />
+            <View style={{ gap: theme.spacing.xs }}>
+              {overflowError ? (
+                <Text
+                  style={{ color: theme.colors.feedback.error, fontSize: theme.typography.sizes.sm }}
+                  testID="history-overflow-error"
+                >
+                  {overflowError}
+                </Text>
+              ) : null}
+              <Button
+                label={loadingOverflow ? 'Loading…' : 'Load more'}
+                loading={loadingOverflow}
+                variant="outline"
+                onPress={() => void loadMore()}
+                testID="history-load-more"
+              />
+            </View>
           ) : null
         }
       />

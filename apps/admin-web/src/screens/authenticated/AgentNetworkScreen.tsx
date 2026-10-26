@@ -3,6 +3,9 @@ import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { AgentFundingPanel } from './AgentFundingPanel';
 import { AgentCredentialPanel } from './AgentCredentialPanel';
+import { AgentClassAssignmentPanel, type AgentClassOption } from '../../components/AgentClassAssignmentPanel';
+import { AgentUnifiedHistoryPanel } from '../../components/AgentUnifiedHistoryPanel';
+import { AgentTransactionPinSupportPanel } from '../../components/AgentTransactionPinSupportPanel';
 
 interface Agent {
   id: string;
@@ -38,8 +41,41 @@ interface AgentApplicationRecord {
   applicantReference: string;
   businessName: string | null;
   contactEmail: string | null;
+  payload?: Record<string, unknown> | null;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  version?: number;
   agentId: string | null;
   rejectionReason: string | null;
+  createdAt: string;
+}
+
+interface LimitCatalogOption {
+  code: string;
+  name?: string;
+  isActive?: boolean;
+}
+
+interface WalletTransferRow {
+  id: string;
+  direction?: string;
+  amountMinor: string;
+  currency: string;
+  status: string;
+  reference?: string | null;
+  createdAt: string;
+}
+
+interface AgentCashToCashRow {
+  id: string;
+  beneficiaryPhoneMasked: string;
+  principalMinor: string;
+  currency: string;
+  status: string;
+  redemptionMethod: string | null;
+  reference: string | null;
   createdAt: string;
 }
 
@@ -128,6 +164,10 @@ export const AgentNetworkScreen: React.FC = () => {
   const canReviewApplications = hasFn('agent.review_application');
   const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals');
   const canAssignLimit = hasFn('agent.assign_limit');
+  const canManageClasses = hasFn('agent.manage_classes');
+  const canViewLimitCatalog = hasFn('limit.view');
+  const canViewTransactions = hasFn('transaction.view');
+  const canManageSupport = hasFn('customer.manage_support_case');
 
   const lifecycleFunctions = {
     suspend: 'agent.suspend',
@@ -184,8 +224,22 @@ export const AgentNetworkScreen: React.FC = () => {
   const [applicationsError, setApplicationsError] = useState('');
   const [applicationsMsg, setApplicationsMsg] = useState('');
   const [applications, setApplications] = useState<AgentApplicationRecord[]>([]);
+  const [applicationStatusFilter, setApplicationStatusFilter] = useState('');
+  const [inspectedApplication, setInspectedApplication] = useState<AgentApplicationRecord | null>(null);
+  const [inspectAppLoading, setInspectAppLoading] = useState(false);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [applicationBusyId, setApplicationBusyId] = useState<string | null>(null);
+
+  // On-demand catalogs & transaction observability
+  const [classCatalog, setClassCatalog] = useState<AgentClassOption[]>([]);
+  const [classCatalogLoading, setClassCatalogLoading] = useState(false);
+  const [limitCatalog, setLimitCatalog] = useState<LimitCatalogOption[]>([]);
+  const [limitCatalogLoading, setLimitCatalogLoading] = useState(false);
+  const [agentHistoryLoaded, setAgentHistoryLoaded] = useState(false);
+  const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
+  const [agentHistoryError, setAgentHistoryError] = useState('');
+  const [walletTransfers, setWalletTransfers] = useState<WalletTransferRow[]>([]);
+  const [agentC2CRows, setAgentC2CRows] = useState<AgentCashToCashRow[]>([]);
 
   const fetchAgents = async () => {
     if (!canView) {
@@ -249,7 +303,63 @@ export const AgentNetworkScreen: React.FC = () => {
     setLimitsError('');
     setLimitsMsg('');
     setNewLimitProfileCode('');
+    setAgentHistoryLoaded(false);
+    setAgentHistoryError('');
+    setWalletTransfers([]);
+    setAgentC2CRows([]);
     await loadPosition(a.id);
+  };
+
+  const loadClassCatalog = async () => {
+    if (!canView || classCatalogLoading) return;
+    setClassCatalogLoading(true);
+    try {
+      const res: any = await ApiClient.get('/internal/agents/classes');
+      const rows = Array.isArray(res) ? res : res?.data || [];
+      setClassCatalog(rows);
+    } catch (e: any) {
+      setActionErr(e?.message || 'Failed to load Agent class catalog');
+    } finally {
+      setClassCatalogLoading(false);
+    }
+  };
+
+  const loadLimitCatalog = async () => {
+    if (!canViewLimitCatalog || limitCatalogLoading) return;
+    setLimitCatalogLoading(true);
+    try {
+      const res: any = await ApiClient.get('/internal/limit-profiles');
+      const rows = Array.isArray(res) ? res : res?.data || res?.items || [];
+      setLimitCatalog(rows);
+    } catch (e: any) {
+      setLimitsError(e?.message || 'Failed to load limit profile catalog');
+    } finally {
+      setLimitCatalogLoading(false);
+    }
+  };
+
+  const loadAgentTransactions = async (agentId: string, walletId: string | null) => {
+    if (!canViewTransactions || agentHistoryLoading) return;
+    setAgentHistoryLoading(true);
+    setAgentHistoryError('');
+    try {
+      const c2cPromise = ApiClient.get<any>(
+        `/internal/admin/cash-to-cash/transfers?page=1&limit=10&agentId=${encodeURIComponent(agentId)}`,
+      );
+      const walletPromise = walletId
+        ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`)
+        : Promise.resolve({ items: [] });
+      const [c2cRes, walletRes] = await Promise.all([c2cPromise, walletPromise]);
+      setAgentC2CRows(Array.isArray(c2cRes?.data) ? c2cRes.data : Array.isArray(c2cRes) ? c2cRes : []);
+      setWalletTransfers(
+        Array.isArray(walletRes?.items) ? walletRes.items : Array.isArray(walletRes?.data) ? walletRes.data : [],
+      );
+      setAgentHistoryLoaded(true);
+    } catch (e: any) {
+      setAgentHistoryError(e?.message || 'Failed to load Agent transaction records');
+    } finally {
+      setAgentHistoryLoading(false);
+    }
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
@@ -469,6 +579,22 @@ export const AgentNetworkScreen: React.FC = () => {
     }
   };
 
+  const inspectApplication = async (applicationId: string) => {
+    if (!canReviewApplications || inspectAppLoading) return;
+    setInspectAppLoading(true);
+    setApplicationsError('');
+    try {
+      const detail = await ApiClient.get<AgentApplicationRecord>(
+        `/internal/agents/applications/${encodeURIComponent(applicationId)}`,
+      );
+      setInspectedApplication(detail);
+    } catch (e: any) {
+      setApplicationsError(e?.message || 'Failed to load application details');
+    } finally {
+      setInspectAppLoading(false);
+    }
+  };
+
   const loadApplications = async () => {
     if (!canReviewApplications) return;
     setApplicationsLoading(true);
@@ -569,22 +695,41 @@ export const AgentNetworkScreen: React.FC = () => {
             <div>
               <h3 style={h3}>Agent Onboarding Applications</h3>
               <p style={smallMuted}>
-                Review submitted applications, record approval or rejection decisions, and activate approved Ordinary Agents.
+                Review submitted applications, inspect submitted application details, record approval or rejection decisions, and activate approved Ordinary Agents.
               </p>
             </div>
-            <button
-              type="button"
-              style={btn}
-              disabled={applicationsLoading}
-              onClick={() => void loadApplications()}
-            >
-              {applicationsLoading ? 'Loading…' : applicationsLoaded ? 'Refresh applications' : 'Load applications'}
-            </button>
+            <div style={actionRow}>
+              {applicationsLoaded && (
+                <select
+                  aria-label="Filter applications by status"
+                  value={applicationStatusFilter}
+                  onChange={(e) => setApplicationStatusFilter(e.target.value)}
+                  style={inlineInput}
+                >
+                  <option value="">All application states</option>
+                  <option value="SUBMITTED">SUBMITTED</option>
+                  <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                  <option value="APPROVED">APPROVED</option>
+                  <option value="REJECTED">REJECTED</option>
+                </select>
+              )}
+              <button
+                type="button"
+                style={btn}
+                disabled={applicationsLoading}
+                onClick={() => void loadApplications()}
+              >
+                {applicationsLoading ? 'Loading…' : applicationsLoaded ? 'Refresh applications' : 'Load applications'}
+              </button>
+            </div>
           </div>
           {applicationsError && <div style={errBox} role="alert">{applicationsError}</div>}
           {applicationsMsg && <div style={successBox} role="status">{applicationsMsg}</div>}
-          {applicationsLoaded && (
-            applications.length === 0 ? (
+          {applicationsLoaded && (() => {
+            const visibleApps = applications.filter((a) =>
+              applicationStatusFilter ? a.status === applicationStatusFilter : true,
+            );
+            return visibleApps.length === 0 ? (
               <div style={empty}>No Agent onboarding applications found.</div>
             ) : (
               <table style={table}>
@@ -598,10 +743,11 @@ export const AgentNetworkScreen: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {applications.map((app) => {
+                  {visibleApps.map((app) => {
                     const busy = applicationBusyId === app.id;
                     const canReviewOrDecide = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
                     const canActivateFromApp = app.status === 'APPROVED' && !app.agentId;
+                    const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
                     return (
                       <tr key={app.id}>
                         <td style={cell}>
@@ -613,10 +759,20 @@ export const AgentNetworkScreen: React.FC = () => {
                           {app.contactEmail && <div style={smallMuted}>{app.contactEmail}</div>}
                           {app.rejectionReason && <div style={smallMuted}>Rejected: {app.rejectionReason}</div>}
                         </td>
-                        <td style={cell}><code>{app.agentClassId}</code></td>
+                        <td style={cell}>
+                          {matchedClass ? `${matchedClass.name} (${matchedClass.code})` : <code>{app.agentClassId}</code>}
+                        </td>
                         <td style={cell}><span style={badge(app.status)}>{app.status}</span></td>
                         <td style={cell}>
                           <div style={actionRow}>
+                            <button
+                              type="button"
+                              style={smallBtn}
+                              disabled={inspectAppLoading}
+                              onClick={() => void inspectApplication(app.id)}
+                            >
+                              Inspect details
+                            </button>
                             {app.status === 'SUBMITTED' && (
                               <button
                                 type="button"
@@ -665,6 +821,18 @@ export const AgentNetworkScreen: React.FC = () => {
                                 Activate agent
                               </button>
                             )}
+                            {app.agentId && (
+                              <button
+                                type="button"
+                                style={smallBtn}
+                                onClick={() => {
+                                  const found = agents.find((item) => item.id === app.agentId);
+                                  if (found) void openDetail(found);
+                                }}
+                              >
+                                Open agent
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -672,7 +840,43 @@ export const AgentNetworkScreen: React.FC = () => {
                   })}
                 </tbody>
               </table>
-            )
+            );
+          })()}
+
+          {inspectedApplication && (
+            <div style={{ ...card, marginTop: 12 }} data-testid="inspected-agent-application">
+              <div style={sectionHead}>
+                <strong>Application Detail — {inspectedApplication.reference}</strong>
+                <button type="button" style={smallBtn} onClick={() => setInspectedApplication(null)}>
+                  Close detail
+                </button>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div>
+                  <strong>Applicant:</strong> {inspectedApplication.applicantReference} ·{' '}
+                  <strong>Business:</strong> {inspectedApplication.businessName || '—'} ·{' '}
+                  <strong>Email:</strong> {inspectedApplication.contactEmail || '—'}
+                </div>
+                <div>
+                  <strong>Status:</strong> {inspectedApplication.status} ·{' '}
+                  <strong>Class ID:</strong> <code>{inspectedApplication.agentClassId}</code>
+                  {inspectedApplication.version != null && <> · <strong>Version:</strong> {inspectedApplication.version}</>}
+                </div>
+                {inspectedApplication.payload && Object.keys(inspectedApplication.payload).length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <strong>Submitted Questionnaire / Evidence Metadata:</strong>
+                    <ul style={compactList}>
+                      {Object.entries(inspectedApplication.payload).map(([k, v]) => (
+                        <li key={k} style={compactListItem}>
+                          <span><code>{k}</code></span>
+                          <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </section>
       )}
@@ -776,7 +980,31 @@ export const AgentNetworkScreen: React.FC = () => {
           </div>
           <div style={drawerBody}>
             <div><strong>ID:</strong> <code>{selected.id}</code></div>
-            <div><strong>Class:</strong> {selected.agentClassId ? <code>{selected.agentClassId}</code> : 'None assigned'}</div>
+            <div>
+              <strong>Class:</strong>{' '}
+              {(() => {
+                const matched = classCatalog.find((c) => c.id === selected.agentClassId);
+                return matched
+                  ? `${matched.name} (${matched.code})`
+                  : selected.agentClassId
+                    ? <code>{selected.agentClassId}</code>
+                    : 'None assigned';
+              })()}{' '}
+              <button
+                type="button"
+                style={smallBtn}
+                disabled={classCatalogLoading}
+                onClick={() => void loadClassCatalog()}
+              >
+                {classCatalogLoading ? 'Loading classes…' : classCatalog.length > 0 ? 'Refresh class catalog' : 'Resolve class name'}
+              </button>
+            </div>
+            <AgentClassAssignmentPanel
+              agentId={selected.id}
+              currentClassId={selected.agentClassId}
+              availableClasses={classCatalog}
+              canManageClasses={canManageClasses}
+            />
 
             {detailError && <div style={errBox} role="alert">{detailError}</div>}
             {position ? (
@@ -1141,6 +1369,22 @@ export const AgentNetworkScreen: React.FC = () => {
 
                   {canAssignLimit && (
                     <form onSubmit={assignAgentLimit} style={actionRow} aria-label="Assign agent limit form">
+                      {canViewLimitCatalog && limitCatalog.length > 0 && (
+                        <select
+                          aria-label="Select catalog limit profile"
+                          value={newLimitProfileCode}
+                          onChange={(e) => setNewLimitProfileCode(e.target.value)}
+                          style={inlineInput}
+                          disabled={limitsBusy}
+                        >
+                          <option value="">Choose catalog profile…</option>
+                          {limitCatalog.map((profile) => (
+                            <option key={profile.code} value={profile.code}>
+                              {profile.code}{profile.name ? ` — ${profile.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <input
                         aria-label="Agent limit profile code"
                         placeholder="Profile code (e.g. AGENT_STANDARD)"
@@ -1149,6 +1393,16 @@ export const AgentNetworkScreen: React.FC = () => {
                         style={inlineInput}
                         disabled={limitsBusy}
                       />
+                      {canViewLimitCatalog && (
+                        <button
+                          type="button"
+                          style={smallBtn}
+                          disabled={limitCatalogLoading}
+                          onClick={() => void loadLimitCatalog()}
+                        >
+                          {limitCatalogLoading ? 'Loading catalog…' : 'Load limit catalog'}
+                        </button>
+                      )}
                       <button type="submit" style={smallBtn} disabled={limitsBusy}>
                         Assign limit profile
                       </button>
@@ -1157,6 +1411,82 @@ export const AgentNetworkScreen: React.FC = () => {
                 </div>
               )}
             </section>
+
+            {canViewTransactions && (
+              <section style={card} aria-label="Agent transaction and Cash-to-Cash visibility">
+                <div style={sectionHead}>
+                  <strong>Agent Transaction &amp; Cash-to-Cash Visibility</strong>
+                  <button
+                    type="button"
+                    style={smallBtn}
+                    disabled={agentHistoryLoading}
+                    onClick={() => void loadAgentTransactions(selected.id, position?.walletId ?? null)}
+                  >
+                    {agentHistoryLoading
+                      ? 'Loading…'
+                      : agentHistoryLoaded
+                        ? 'Refresh Agent transactions'
+                        : 'Load Agent transactions'}
+                  </button>
+                </div>
+                {agentHistoryError && <div style={errBox} role="alert">{agentHistoryError}</div>}
+                {agentHistoryLoaded && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div>
+                      <strong>Wallet Transfers ({walletTransfers.length})</strong>
+                      {!position?.walletId ? (
+                        <div style={smallMuted}>No NGN wallet allocated yet for wallet-transfer lookup.</div>
+                      ) : walletTransfers.length === 0 ? (
+                        <div style={smallMuted}>No wallet transfers recorded on wallet <code>{position.walletId}</code>.</div>
+                      ) : (
+                        <ul style={compactList}>
+                          {walletTransfers.map((tx) => (
+                            <li key={tx.id} style={compactListItem}>
+                              <span>
+                                <code>{tx.reference || tx.id.slice(0, 8)}</code> · {tx.direction || 'TRANSFER'} ·{' '}
+                                <strong>{formatMinor(tx.amountMinor, tx.currency)}</strong>
+                              </span>
+                              <span style={badge(tx.status)}>{tx.status}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div>
+                      <strong>Cash-to-Cash Transfers ({agentC2CRows.length})</strong>
+                      {agentC2CRows.length === 0 ? (
+                        <div style={smallMuted}>No Cash-to-Cash transfers found for this Agent.</div>
+                      ) : (
+                        <ul style={compactList}>
+                          {agentC2CRows.map((row) => (
+                            <li key={row.id} style={compactListItem}>
+                              <span>
+                                <code>{row.reference || row.id.slice(0, 8)}</code> · {row.beneficiaryPhoneMasked} ·{' '}
+                                <strong>{formatMinor(row.principalMinor, row.currency)}</strong>
+                                {row.redemptionMethod ? ` (${row.redemptionMethod})` : ''}
+                              </span>
+                              <span style={badge(row.status)}>{row.status}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <AgentUnifiedHistoryPanel
+                  agentId={selected.id}
+                  canViewTransactions={canViewTransactions}
+                />
+              </section>
+            )}
+
+            {canManageSupport && (
+              <AgentTransactionPinSupportPanel
+                agentId={selected.id}
+                canManageSupport={canManageSupport}
+              />
+            )}
           </div>
         </div>
       )}

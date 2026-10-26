@@ -57,6 +57,12 @@ export function onSessionPurged(listener: () => void): () => void {
   };
 }
 
+export function isBearerSessionExpired401Message(message: string): boolean {
+  return /^(Agent )?authentication required$|^Agent principal is required$|^Invalid or expired session$|^Session expired$/i.test(
+    message.trim(),
+  );
+}
+
 export async function purgeAgentSessionFromStorage(notify = false): Promise<void> {
   await SecureStorage.remove(AGENT_SESSION_KEYS.token);
   await SecureStorage.remove(AGENT_SESSION_KEYS.agentId);
@@ -122,13 +128,18 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
       const code = data?.code || data?.error || 'UNKNOWN_ERROR';
       const validationErrors = data?.validationErrors || data?.errors || undefined;
 
-      if (status === 401 && !options.preserveSessionOn401) {
+      const normalizedMessage = Array.isArray(message) ? message.join(', ') : String(message);
+
+      if (
+        status === 401 &&
+        (!options.preserveSessionOn401 || isBearerSessionExpired401Message(normalizedMessage))
+      ) {
         // Expired or revoked agent session — fail closed back to login.
         await purgeAgentSessionFromStorage(true);
       }
 
       throw new ApiError(
-        Array.isArray(message) ? message.join(', ') : String(message),
+        normalizedMessage,
         status,
         code,
         validationErrors,

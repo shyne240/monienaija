@@ -61,6 +61,21 @@ function formatJson(value: unknown | null): string {
   return value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
 }
 
+function summarizeConfiguredServices(value: unknown | null): string {
+  if (value === null || value === undefined) return 'Not configured';
+  if (Array.isArray(value)) {
+    const names = value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+    return names.length > 0 ? `Configured (${names.join(', ')})` : 'Configured ([])';
+  }
+  if (typeof value === 'object') {
+    const keys = Object.entries(value as Record<string, unknown>)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([k]) => k);
+    return keys.length > 0 ? `Configured (${keys.join(', ')})` : 'Configured';
+  }
+  return 'Configured';
+}
+
 function toForm(agentClass: AgentClassRecord): AgentClassForm {
   return {
     reference: agentClass.reference ?? '',
@@ -227,6 +242,14 @@ export const AgentClassesScreen: React.FC = () => {
       <div style={styles.notice} role="note">
         Class fields are policy-bearing configuration. This screen does not infer KYC rules, document evidence, service eligibility, or limits. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes begin inactive.
       </div>
+      {!canManage && (
+        <div style={styles.governanceBanner} role="note" data-testid="agent-classes-readonly-governance">
+          <strong>Read-Only Governance Mode:</strong> Your principal holds <code>agent.view</code> without{' '}
+          <code>agent.manage_classes</code>. Backend dependency (ARENA 3): seeded workforce role grants for{' '}
+          <code>agent.manage_classes</code> in <code>authorization-catalogue.seed.ts</code> are required before
+          standard governance roles can create or edit classes.
+        </div>
+      )}
       {error && <div style={styles.error} role="alert">{error}</div>}
       {message && <div style={styles.success} role="status">{message}</div>}
 
@@ -242,7 +265,7 @@ export const AgentClassesScreen: React.FC = () => {
                   <td><strong>{item.reference}</strong><br /><code>{item.code}</code></td>
                   <td>{item.name}</td>
                   <td><span style={item.isActive ? styles.active : styles.inactive}>{item.isActive ? 'ACTIVE' : 'INACTIVE'}</span></td>
-                  <td>{item.applicableServices == null ? 'Not configured' : 'Configured'}</td>
+                  <td>{summarizeConfiguredServices(item.applicableServices)}</td>
                   <td>{item.applicableLimits == null ? 'Not configured' : 'Configured'}</td>
                   <td>{item.version}</td>
                   <td><button type="button" onClick={() => chooseClass(item)} style={styles.smallButton}>{canManage ? 'Review / edit' : 'Review'}</button></td>
@@ -311,6 +334,7 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: { margin: 0, color: '#64748B', fontSize: 13 },
   headerActions: { display: 'flex', gap: 8 },
   notice: { margin: '18px 0', padding: 12, border: '1px solid #FCD34D', borderRadius: 8, background: '#FFFBEB', color: '#78350F', fontSize: 13, lineHeight: 1.5 },
+  governanceBanner: { margin: '0 0 14px', padding: 11, border: '1px solid #BFDBFE', borderRadius: 8, background: '#EFF6FF', color: '#1E3A8A', fontSize: 12, lineHeight: 1.5 },
   primaryButton: { padding: '9px 14px', border: '1px solid #0A3D25', borderRadius: 6, color: '#fff', background: '#0A3D25', cursor: 'pointer', fontWeight: 700 },
   secondaryButton: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', color: '#1E293B', cursor: 'pointer' },
   smallButton: { padding: '5px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', cursor: 'pointer' },
