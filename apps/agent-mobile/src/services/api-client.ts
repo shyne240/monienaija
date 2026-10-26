@@ -58,7 +58,7 @@ export function onSessionPurged(listener: () => void): () => void {
 }
 
 export function isBearerSessionExpired401Message(message: string): boolean {
-  return /^(Agent )?authentication required$|^Agent principal is required$|^Invalid or expired session$|^Session expired$/i.test(
+  return /^(Agent )?authentication required$|^Agent principal is required$|^Invalid or expired session$|^Session expired$|^A current Agent session is required( for this claim)?$|^Agent session expired or revoked( during claim)?$/i.test(
     message.trim(),
   );
 }

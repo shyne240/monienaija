@@ -622,6 +622,9 @@ export function describeCashToCashClaimError(error: unknown): string {
       if (/current approved Customer KYC assessment/i.test(msg)) {
         return 'Cash payout requires a current approved Customer KYC assessment. Request a KYC review if needed; physical cash handover is separate.';
       }
+      if (/Wallet redemption KYC assessment.*expired/i.test(msg)) {
+        return 'Beneficiary wallet KYC assessment is not approved or has expired. A current approved KYC assessment is required for wallet redemption.';
+      }
       if (/identity not verified|KYC/i.test(msg)) {
         return 'Beneficiary identity is not verified. Customer KYC approval is required for wallet redemption.';
       }
@@ -636,6 +639,9 @@ export function describeCashToCashClaimError(error: unknown): string {
       }
       if (/Transfer code/i.test(msg)) {
         return 'Transfer code is invalid. Check the code and try again.';
+      }
+      if (/PIN changed or was revoked/i.test(msg)) {
+        return 'Your transaction PIN was changed or revoked while processing this claim. Re-enter your current PIN in a new attempt.';
       }
       if (/Agent PIN is locked|Transaction PIN is locked/i.test(msg)) {
         return 'Your transaction PIN is locked. Contact support.';

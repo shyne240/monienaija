@@ -216,6 +216,10 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
       setClientError('Enter the secret transfer code');
       return;
     }
+    if (!/^\d{1,20}$/.test(transferCode.trim())) {
+      setClientError('Transfer code must contain 1 to 20 numeric digits');
+      return;
+    }
     if (!otp.trim()) {
       setClientError('Enter the customer one-time verification code');
       return;

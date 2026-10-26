@@ -14,9 +14,8 @@ import {
   type ResolvedCustomerRecipientView,
 } from '../../../services/agent-api';
 import { canonicalizePhoneNumber } from './CashToCashRecipientScreen';
+import { classifyCashToCashClaimIdentifier } from './cash-to-cash-reference-handoff.plan';
 import type { RootStackParamList } from '../../../navigation/types';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Cash→Cash Claim Assist — Step 1: Beneficiary Identification & Transfer ID (V1-AGENT-MOBILE-09 / CLM-1..2).
@@ -54,8 +53,15 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
       return;
     }
 
-    const tid = transferIdInput.trim();
-    if (!tid || !UUID_PATTERN.test(tid)) {
+    const classified = classifyCashToCashClaimIdentifier(transferIdInput);
+    if (classified.kind === 'TRANSFER_REFERENCE') {
+      setClientError(
+        'You entered a receipt reference (CASH_TO_CASH-… / C2C-…). Current claim verification requires the 36-character Transfer ID (UUID format).',
+      );
+      setCustomer(null);
+      return;
+    }
+    if (classified.kind !== 'UUID') {
       setClientError('Enter a valid Transfer ID (UUID format)');
       setCustomer(null);
       return;
@@ -75,8 +81,14 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
       setClientError('This customer account is not active and cannot claim transfers.');
       return;
     }
-    const tid = transferIdInput.trim();
-    if (!tid || !UUID_PATTERN.test(tid)) {
+    const classified = classifyCashToCashClaimIdentifier(transferIdInput);
+    if (classified.kind === 'TRANSFER_REFERENCE') {
+      setClientError(
+        'You entered a receipt reference (CASH_TO_CASH-… / C2C-…). Current claim verification requires the 36-character Transfer ID (UUID format).',
+      );
+      return;
+    }
+    if (classified.kind !== 'UUID') {
       setClientError('Enter a valid Transfer ID (UUID format)');
       return;
     }
@@ -87,7 +99,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
     }
     navigation.navigate('CashToCashClaimConfirm', {
       customer,
-      transferId: tid,
+      transferId: classified.normalized,
       beneficiaryPhone: canonical,
     });
   };
@@ -128,7 +140,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
             label="Transfer ID"
             placeholder="e.g. 12345678-1234-1234-1234-1234567890ab"
             value={transferIdInput}
-            maxLength={36}
+            maxLength={64}
             testID="c2c-claim-transfer-id-input"
             onChangeText={(text) => {
               setTransferIdInput(text);
