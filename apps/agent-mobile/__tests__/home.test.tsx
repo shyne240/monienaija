@@ -62,6 +62,16 @@ const capabilitiesFixture = {
   ],
 };
 
+const cashToCashCapabilitiesFixture = {
+  ...capabilitiesFixture,
+  permittedServices: ['CASH_IN', 'CASH_TO_CASH'],
+  evaluations: capabilitiesFixture.evaluations.map((evaluation) =>
+    evaluation.canonicalService === 'CASH_TO_CASH'
+      ? { ...evaluation, allowed: true, reason: null }
+      : evaluation,
+  ),
+};
+
 const receivingFixture = {
   id: 'recv-1',
   agentId: 'agent-uuid-1',
@@ -124,6 +134,19 @@ describe('HomeScreen (real Agent operating context)', () => {
     expect(getByText('2348000001')).toBeTruthy();
     expect(getByTestId('capability-state-cash-in')).toBeTruthy();
     expect(getByText('Enabled')).toBeTruthy();
+  });
+
+  test('Cash-to-Cash claim entry describes both supported settlement methods', async () => {
+    mockApi.getAgentProfile.mockResolvedValue(profileFixture);
+    mockApi.getAgentFinancialPosition.mockResolvedValue(financialFixture);
+    mockApi.getAgentCapabilities.mockResolvedValue(cashToCashCapabilitiesFixture);
+    mockApi.getAgentReceivingNumber.mockResolvedValue(receivingFixture);
+
+    const { getByTestId, getByText, queryByText } = wrap(<HomeScreen />);
+    await waitFor(() => expect(getByTestId('nav-cash-to-cash-claim')).toBeTruthy());
+    expect(getByText('Cash→Cash — assist beneficiary claim')).toBeTruthy();
+    expect(getByTestId('c2c-redemption-method-note').props.children).toMatch(/Customer wallet or the claiming Agent.*NGN float for cash payout/);
+    expect(queryByText(/physical cash payout is not available/i)).toBeNull();
   });
 
   test('failure: financial-position failure shows retry and does not invent a balance', async () => {

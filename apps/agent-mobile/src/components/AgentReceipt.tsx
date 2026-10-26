@@ -127,7 +127,7 @@ export function receiptFromCashToCashResult(
 
   const note = replayed
     ? 'Idempotent replay — this matched an earlier successful submission; a new transfer was NOT created.'
-    : 'Funds are reserved. The supported Agent-assisted redemption credits an eligible Customer wallet; it does not authorize a physical cash payout.';
+    : 'Funds are reserved. An eligible claim can credit the beneficiary Customer wallet or the claiming Agent’s NGN float for cash payout; physical cash handover is separate from this ledger settlement.';
 
   return {
     heading: 'Cash→Cash Receipt',
@@ -301,7 +301,9 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
   }
 
   const footerNote = item.type === 'CASH_TO_CASH_CLAIM'
-    ? 'This Agent-assisted redemption credited the beneficiary Customer wallet. It does not authorize a physical cash payout.'
+    ? item.direction === 'CREDIT'
+      ? 'The claiming Agent float was credited. Physical cash handover is separate from this ledger settlement and is not recorded in this receipt.'
+      : 'The beneficiary Customer wallet was credited. No physical cash payout is included in this settlement.'
     : 'Values are server-recorded entries from your Agent history.';
 
   return {

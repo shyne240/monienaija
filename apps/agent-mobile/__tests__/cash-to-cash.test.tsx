@@ -127,12 +127,14 @@ describe('Cash→Cash — Step 1: Beneficiary Phone Screen (C2C-1)', () => {
 
   test('optional verification: 404 from resolver confirms unregistered beneficiary (expected for C2C)', async () => {
     mockApi.resolveAgentRecipient.mockRejectedValue(apiError('Recipient not found', 404));
-    const { getByTestId, getByText } = wrap(<CashToCashRecipientScreen />);
+    const { getAllByText, getByTestId, getByText } = wrap(<CashToCashRecipientScreen />);
     fireEvent.changeText(getByTestId('beneficiary-phone-input'), '08012345678');
     fireEvent.press(getByTestId('beneficiary-verify-button'));
 
     await waitFor(() => expect(getByTestId('beneficiary-unregistered-card')).toBeTruthy());
     expect(getByText(/This phone is unregistered/)).toBeTruthy();
+    expect(getAllByText(/claiming Agent's/).length).toBeGreaterThan(0);
+    expect(getAllByText(/cash payout/).length).toBeGreaterThan(0);
 
     fireEvent.press(getByTestId('beneficiary-continue'));
     expect(mockNavigate).toHaveBeenCalledWith('CashToCashAmount', {
@@ -194,8 +196,8 @@ describe('Cash→Cash — Step 2: Amount Entry Screen (C2C-2)', () => {
     fireEvent.changeText(getByTestId('c2c-amount-input'), '5000');
     expect(getByText(/You will send ₦5,000.00 NGN/)).toBeTruthy();
     expect(getByText(/principal reserved as unclaimed funds/)).toBeTruthy();
-    expect(getByText(/eligible Customer wallet/)).toBeTruthy();
-    expect(getByText(/Physical cash payout is not included/)).toBeTruthy();
+    expect(getByText(/claiming Agent's NGN float for cash payout/)).toBeTruthy();
+    expect(getByText(/physical cash handover is separate from this ledger settlement/i)).toBeTruthy();
 
     fireEvent.press(getByTestId('c2c-amount-continue'));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
@@ -226,6 +228,7 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
     expect(getByTestId('c2c-confirm-summary-card')).toBeTruthy();
     expect(getByText('8012345678')).toBeTruthy();
     expect(getByText('₦5,000.00 NGN')).toBeTruthy();
+    expect(getByText(/claiming Agent's NGN float for cash payout/)).toBeTruthy();
   });
 
   test('request construction: sends agentPin and contract body with preserveSessionOn401', async () => {
@@ -413,6 +416,7 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
     expect(getByTestId('c2c-transfer-code-card')).toBeTruthy();
     expect(getByTestId('c2c-transfer-code').props.children).toBe('TRANSFER_CODE_778899');
     expect(getByText(/DISPLAY-ONCE CODE/)).toBeTruthy();
+    expect(getByText(/Agent-cash mode also requires the claiming Agent's CASH_TO_CASH capability and transaction PIN/)).toBeTruthy();
 
     // Handover was consumed:
     expect(consumePendingTransferCode()).toBeNull();

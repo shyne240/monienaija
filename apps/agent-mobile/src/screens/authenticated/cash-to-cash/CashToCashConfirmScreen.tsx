@@ -162,10 +162,10 @@ export const CashToCashConfirmScreen: React.FC = () => {
             value={`${formatNairaFromMinor(amountMinor)} NGN`}
             testID="c2c-confirm-amount"
           />
-          <Text style={styles.note} testID="c2c-wallet-redemption-notice">
-            The server debits this amount from your Agent float to reserve the principal. The beneficiary
-            can use the transfer code with an Agent to credit an eligible Customer wallet. The current
-            claim flow does not authorize a physical cash payout.
+          <Text style={styles.note} testID="c2c-settlement-method-notice">
+            The server debits this amount from your Agent float and reserves the principal. At claim,
+            settlement can credit the beneficiary Customer wallet or the claiming Agent's NGN float for
+            cash payout. Physical cash handover is separate from this ledger settlement.
           </Text>
         </Card>
 

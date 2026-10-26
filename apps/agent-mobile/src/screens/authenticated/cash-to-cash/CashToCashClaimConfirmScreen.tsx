@@ -28,6 +28,7 @@ import type { RootStackParamList } from '../../../navigation/types';
  * 1. Customer OTP issued via backend challenge (POST /agents/me/mfa-challenges with CASH_TO_CASH_CLAIM).
  * 2. Secret transfer code provided by beneficiary.
  * 3. Customer OTP entered on the device.
+ * 4. Agent-cash mode additionally requires the claimant Agent's CASH_TO_CASH capability and PIN.
  *
  * All credentials are sent directly in the POST body to /agents/cash-to-cash/claim.
  * Transfer code and OTP are NEVER persisted, NEVER logged, NEVER put in navigation params,
@@ -192,7 +193,8 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
           <SummaryRow label="Beneficiary Phone" value={customer.receivingNumber} testID="c2c-claim-summary-phone" />
           <SummaryRow label="Transfer ID" value={transferId} testID="c2c-claim-summary-transfer-id" />
           <Text style={styles.note} testID="c2c-redemption-method-intro">
-            Select the beneficiary&apos;s payout method below. Cash payout requires an authorized current KYC approval and your Agent transaction PIN.
+            Select how this claim will settle below. Cash payout requires a current approved Customer
+            KYC assessment and your Agent transaction PIN.
           </Text>
         </Card>
 
@@ -259,9 +261,9 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
 
         {recoveryStatus === 'READY' && (
           <>
-            <Text style={styles.helper} testID="c2c-claim-wallet-only-note">
+            <Text style={styles.helper} testID="c2c-claim-method-note">
               {redemptionMethod === 'AGENT_CASH'
-                ? 'Cash payout is available only with current approved KYC and your transaction PIN. Cash handover is separate from the float-credit ledger entry.'
+                ? 'Cash payout requires a current approved Customer KYC assessment and your transaction PIN. Physical cash handover is separate from the Agent-float ledger credit.'
                 : 'Wallet credit only. No physical cash is paid as part of this settlement.'}
             </Text>
 

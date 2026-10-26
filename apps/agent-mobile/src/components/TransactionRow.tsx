@@ -19,7 +19,6 @@ const TYPE_LABEL: Record<string, string> = {
   CASH_IN: 'Cash→Wallet',
   CASH_OUT: 'Wallet→Cash',
   CASH_TO_CASH: 'Cash→Cash sent',
-  CASH_TO_CASH_CLAIM: 'Cash→Cash wallet claim',
   AGENT_FUNDING: 'Agent Funding',
   AGENT_DEFUNDING: 'Agent Defunding',
 };
@@ -54,7 +53,9 @@ interface TransactionRowProps {
 }
 
 export const TransactionRow: React.FC<TransactionRowProps> = ({ item, onPress, testID }) => {
-  const typeLabel = TYPE_LABEL[item.type] ?? item.type;
+  const typeLabel = item.type === 'CASH_TO_CASH_CLAIM'
+    ? item.direction === 'CREDIT' ? 'Cash→Cash cash payout' : 'Cash→Cash wallet claim'
+    : TYPE_LABEL[item.type] ?? item.type;
   const sign = historyDirectionSign(item.direction);
   const amountText = `${sign}${formatNairaFromMinor(item.amountMinor)}`;
   const hasFee = item.feeMinor !== undefined && item.feeMinor !== null && item.feeMinor !== '0';

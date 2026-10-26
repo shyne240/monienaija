@@ -159,7 +159,7 @@ describe('TransactionsScreen (unified Agent history)', () => {
     expect(queryByText(/internal-aggregator-uuid-77/)).toBeNull();
   });
 
-  test('B.filter chips issue server-side type filters including wallet claims', async () => {
+  test('B.filter chips issue server-side type filters including Cash-to-Cash claims', async () => {
     mockApi.getAgentTransactions.mockResolvedValue(pageOf([cashInRow]));
     const { getByTestId } = wrap(<TransactionsScreen />);
     await waitFor(() => expect(getByTestId('filter-cash_in')).toBeTruthy());
@@ -183,11 +183,28 @@ describe('TransactionsScreen (unified Agent history)', () => {
     const { getAllByText, getByTestId, getByText, queryByText } = wrap(<TransactionsScreen />);
 
     await waitFor(() => expect(getByTestId('transaction-row-claim-journal-internal-uuid-4')).toBeTruthy());
-    expect(getAllByText('Cash→Cash wallet claim')).toHaveLength(2); // filter chip + row label
+    expect(getByText('Cash→Cash claim')).toBeTruthy(); // generic filter includes both redemption methods
+    expect(getByText('Cash→Cash wallet claim')).toBeTruthy(); // wallet-specific row label
     expect(getByText('₦4,500.00')).toBeTruthy();
     expect(queryByText(/[+−]₦4,500\.00/)).toBeNull();
     expect(getByText('Customer · beneficiary 08030000123')).toBeTruthy();
     expect(getByText('Ref: CASH_TO_CASH_CLAIM-claim-44')).toBeTruthy();
+  });
+
+  test('B.Agent-cash history labels the float credit as cash payout', async () => {
+    const agentCashClaimRow = {
+      ...c2cClaimRow,
+      id: 'claim-agent-float-internal-uuid-5',
+      direction: 'CREDIT' as const,
+      narration: 'Cash-to-Cash cash payout',
+    };
+    mockApi.getAgentTransactions.mockResolvedValue(pageOf([agentCashClaimRow]));
+    const { getByTestId, getByText } = wrap(<TransactionsScreen />);
+
+    await waitFor(() => expect(getByTestId('transaction-row-claim-agent-float-internal-uuid-5')).toBeTruthy());
+    expect(getByText('Cash→Cash cash payout')).toBeTruthy();
+    expect(getByText('+₦4,500.00')).toBeTruthy();
+    expect(getByText('Cash→Cash claim')).toBeTruthy();
   });
 
   test('B.load-more enlarges the page limit while server reports hasNextPage', async () => {

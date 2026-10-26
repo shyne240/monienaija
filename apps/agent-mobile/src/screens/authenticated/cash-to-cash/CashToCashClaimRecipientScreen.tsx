@@ -23,7 +23,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  *
  * The agent enters the beneficiary's phone number and the Transfer ID.
  * Backend recipient resolution endpoint verifies the beneficiary is a registered ACTIVE customer.
- * Only CUSTOMER accounts with ACTIVE status are eligible to claim Cash→Cash transfers.
+ * Only registered, ACTIVE Customer accounts can claim. Settlement may credit the Customer wallet
+ * or the claiming Agent's float; physical cash handover is separate from the ledger settlement.
  * Internal database IDs, ledger accounts, and request hashes are never displayed.
  */
 export const CashToCashClaimRecipientScreen: React.FC = () => {
@@ -96,10 +97,11 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Cash→Cash Wallet Redemption</Text>
-        <Text style={styles.helper} testID="c2c-wallet-redemption-notice">
-          Assist the named beneficiary to credit their Customer wallet from an existing Cash→Cash
-          transfer. This flow does not authorize physical cash payout.
+        <Text style={styles.title}>Cash→Cash Claim Assistance</Text>
+        <Text style={styles.helper} testID="c2c-settlement-method-notice">
+          Assist the named Customer with a Cash→Cash claim. An eligible claim can credit the
+          beneficiary's Customer wallet or the claiming Agent's NGN float for cash payout. Physical
+          cash handover is separate from the ledger settlement.
         </Text>
 
         <Card style={styles.card}>

@@ -39,8 +39,8 @@ export const CashToCashClaimSuccessScreen: React.FC = () => {
         <Text style={styles.heroSubtitle}>
           {cashPayout
             ? replayed
-              ? 'Recovered ledger settlement only. Check the separate physical handover status before taking any further action.'
-              : 'The unclaimed liability was debited and your Agent NGN float credited. Hand physical cash to the verified beneficiary separately.'
+              ? 'This receipt confirms only the ledger settlement; it does not record whether physical cash was handed over.'
+              : 'The unclaimed liability was debited and your Agent NGN float credited. Physical cash handover is separate from this ledger settlement.'
             : replayed
               ? 'This is a recovered or repeated receipt. No new Customer wallet credit was created.'
               : 'The transfer principal was credited to the beneficiary Customer wallet. This transaction did not pay physical cash.'}

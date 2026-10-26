@@ -33,9 +33,9 @@ export function canonicalizePhoneNumber(input: string): string | null {
  * Cash→Cash — Step 1: Beneficiary Phone (V1-AGENT-MOBILE-07 / C2C-1).
  *
  * The agent enters the beneficiary's Nigerian phone number.
- * The sender's physical cash is reserved for later wallet redemption by an eligible Customer.
+ * The sender's cash is collected while the transfer principal is reserved for an eligible Customer's claim.
  * If verified via the resolver, AGENT recipients are strictly blocked (backend rule).
- * Unregistered recipients remain valid initiation targets but must register before wallet redemption.
+ * Unregistered recipients remain valid initiation targets but must register before a claim can be completed.
  * Never exposes internal database or customer IDs.
  */
 export const CashToCashRecipientScreen: React.FC = () => {
@@ -101,10 +101,10 @@ export const CashToCashRecipientScreen: React.FC = () => {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Send cash to beneficiary</Text>
-        <Text style={styles.helper} testID="c2c-wallet-redemption-notice">
-          Collect the sender&apos;s physical cash and enter the recipient&apos;s phone number. The transfer code
-          supports an Agent-assisted credit to an eligible Customer wallet. Physical cash payout is not
-          available through this flow.
+        <Text style={styles.helper} testID="c2c-settlement-method-notice">
+          Collect the sender&apos;s physical cash and enter the recipient&apos;s phone number. At claim,
+          settlement can credit the beneficiary Customer wallet or the claiming Agent&apos;s NGN float for
+          cash payout. Physical cash handover is separate from this ledger settlement.
         </Text>
 
         <Card style={styles.card}>
@@ -152,9 +152,9 @@ export const CashToCashRecipientScreen: React.FC = () => {
           <Card style={styles.card} testID="beneficiary-unregistered-card">
             <Text style={styles.sectionTitle}>Unregistered Beneficiary</Text>
             <Text style={styles.infoText}>
-              This phone is unregistered. The recipient must register and become eligible before the
-              transfer can be credited to a Customer wallet. Physical cash payout is not available through
-              the current claim flow.
+              This phone is unregistered. The recipient must register and become eligible before a claim
+              can be completed. An eligible claim can credit the Customer wallet or the claiming Agent's
+              NGN float for cash payout; physical handover is separate from ledger settlement.
             </Text>
           </Card>
         )}

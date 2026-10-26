@@ -25,8 +25,8 @@ import type { RootStackParamList } from '../../../navigation/types';
  * - On component unmount / screen exit, all transferCode references are cleared.
  * - Replay responses honestly show that the transfer was already recorded and
  *   that the transfer code was issued only on initial creation.
- * - The supported claim route credits an eligible Customer wallet; this screen must
- *   not imply or authorize a physical cash handout.
+ * - A claim may credit the Customer wallet or the claiming Agent's float; physical cash
+ *   handover is separate from and not recorded by this ledger settlement.
  */
 export const CashToCashSuccessScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -57,7 +57,7 @@ export const CashToCashSuccessScreen: React.FC = () => {
         <Text style={styles.heroSubtitle}>
           {replayed
             ? 'This submission matched an earlier one (idempotent replay) — no new transfer was created.'
-            : 'Funds are reserved. Share the transfer code with the beneficiary for Agent-assisted credit to an eligible Customer wallet; this flow does not pay physical cash.'}
+            : 'Funds are reserved. An eligible claim can credit the beneficiary Customer wallet or the claiming Agent’s NGN float for cash payout. Physical cash handover is separate from this ledger settlement.'}
         </Text>
       </View>
 
@@ -70,10 +70,11 @@ export const CashToCashSuccessScreen: React.FC = () => {
           </Text>
           <View style={styles.warningBox}>
             <Text style={styles.warningText}>
-              DISPLAY-ONCE CODE: Share this code ONLY with the beneficiary ({result.beneficiaryPhone}).
-              They must present this code with the matching Customer verification flow to credit their
-              eligible Customer wallet. This code does not authorize physical cash payout. It is never
-              stored and cannot be viewed again after leaving this screen.
+              DISPLAY-ONCE CODE: Share this code ONLY with the named beneficiary ({result.beneficiaryPhone}).
+              The code must be used with the required verification in the claim flow. Agent-cash mode also
+              requires the claiming Agent's CASH_TO_CASH capability and transaction PIN. The code alone
+              does not authorize physical cash handover. It is never stored and cannot be viewed again
+              after leaving this screen.
             </Text>
           </View>
         </Card>

@@ -220,13 +220,14 @@ export const HomeScreen: React.FC = () => {
             testID="nav-cash-to-cash"
           />
           <Button
-            label="Cash→Cash — Agent-assisted wallet redemption"
+            label="Cash→Cash — assist beneficiary claim"
             variant="outline"
             onPress={() => navigation.navigate('CashToCashClaim')}
             testID="nav-cash-to-cash-claim"
           />
           <Text style={styles.helper} testID="c2c-redemption-method-note">
-            Wallet credit only. Physical cash payout is not available through the current claim flow.
+            Claims can credit the beneficiary&apos;s Customer wallet or the claiming Agent&apos;s NGN float for
+            cash payout. Physical cash handover is separate from ledger settlement.
           </Text>
         </>
       )}

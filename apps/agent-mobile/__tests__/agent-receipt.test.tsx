@@ -112,6 +112,8 @@ describe('Shared Agent receipt renderer', () => {
     expect(getByText('₦5,000.00 NGN')).toBeTruthy();
     expect(getByText('8098765000')).toBeTruthy();
     expect(getByText('CASH_TO_CASH-c2c-xyz')).toBeTruthy();
+    expect(getByText(/eligible claim can credit the beneficiary Customer wallet or the claiming Agent’s NGN float for cash payout/)).toBeTruthy();
+    expect(getByText(/physical cash handover is separate from this ledger settlement/i)).toBeTruthy();
 
     // transferCode must NOT be anywhere in rendered text, view model, or share text:
     expect(queryByText(/SECRET_CODE_9999/)).toBeNull();
@@ -203,8 +205,36 @@ describe('Shared Agent receipt renderer', () => {
     expect(getByText('₦4,500.00 NGN')).toBeTruthy();
     expect(getByText('Processed')).toBeTruthy();
     expect(getByText('Cash→Cash wallet redemption')).toBeTruthy();
-    expect(getByText(/does not authorize a physical cash payout/)).toBeTruthy();
+    expect(getByText(/No physical cash payout is included in this settlement/)).toBeTruthy();
     expect(getByText('Customer · beneficiary 08030000123')).toBeTruthy();
+  });
+
+  test('C3c: history-derived Agent-cash receipt identifies float credit and separate handover', () => {
+    const item: AgentHistoryItem = {
+      id: 'cash-claim-history-internal-uuid',
+      type: 'CASH_TO_CASH_CLAIM',
+      status: 'COMPLETED',
+      amountMinor: '450000',
+      currency: 'NGN',
+      direction: 'CREDIT',
+      createdAt: '2026-06-04T11:30:00.000Z',
+      completedAt: '2026-06-04T11:30:01.000Z',
+      reference: 'CASH_TO_CASH_CLAIM-cash-44',
+      narration: 'Cash-to-Cash cash payout',
+      feeMinor: '0',
+      counterparty: { type: 'CUSTOMER', beneficiaryPhone: '08030000123' },
+      commission: null,
+      failureCode: null,
+      failureMessage: null,
+    };
+    const receipt = receiptFromHistoryItem(item);
+    const { getByTestId, getByText } = render(<AgentReceipt receipt={receipt} />);
+
+    expect(getByTestId('receipt-heading').props.children).toBe('Cash→Cash cash payout Receipt');
+    expect(getByText('+₦4,500.00 NGN')).toBeTruthy();
+    expect(getByText(/claiming Agent float was credited/)).toBeTruthy();
+    expect(getByText(/Physical cash handover is separate/)).toBeTruthy();
+    expect(receipt.shareText).not.toMatch(/supervisor|workforce approval/i);
   });
 
   test('C4: missing optional fields are omitted gracefully', () => {

@@ -84,9 +84,10 @@ export const CashToCashAmountScreen: React.FC = () => {
         </Card>
 
         <Text style={styles.footerNote}>
-          Your Agent balance will be debited and the principal reserved as unclaimed funds until the
-          beneficiary completes Agent-assisted credit to an eligible Customer wallet. Physical cash
-          payout is not included. Limits and authorization are decided by the server.
+          Your Agent float is debited and the principal reserved as unclaimed funds until claim. An
+          eligible claim can credit the beneficiary Customer wallet or the claiming Agent's NGN float for
+          cash payout; physical cash handover is separate from this ledger settlement. Limits and
+          authorization are decided by the server.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

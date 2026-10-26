@@ -116,6 +116,8 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     await waitFor(() => expect(getByTestId('c2c-claim-customer-card')).toBeTruthy());
+    expect(getByText('Cash→Cash Claim Assistance')).toBeTruthy();
+    expect(getByText(/beneficiary's Customer wallet or the claiming Agent's NGN float for cash payout/)).toBeTruthy();
     expect(getByText('Emeka Obi')).toBeTruthy();
     expect(getByText('8012345678')).toBeTruthy();
     expect(getByText('Account status: ACTIVE')).toBeTruthy();
@@ -323,7 +325,10 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
     await waitForClaimForm(getByTestId);
     fireEvent.press(getByTestId('c2c-claim-method-cash'));
     expect(getByTestId('c2c-claim-method-cash').props.accessibilityState.checked).toBe(true);
-    expect(getByText(/current approved Customer KYC assessment/)).toBeTruthy();
+    expect(getByTestId('c2c-claim-method-note').props.children).toMatch(/current approved Customer KYC assessment/);
+    const methodIntro = getByTestId('c2c-redemption-method-intro').props.children as string;
+    expect(methodIntro).toMatch(/current approved Customer KYC assessment/);
+    expect(methodIntro).not.toMatch(/authorized|supervisor|workforce/i);
     fireEvent.press(getByTestId('mfa-request-button'));
     await waitFor(() => expect(getByTestId('mfa-ready-title')).toBeTruthy());
 

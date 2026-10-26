@@ -58,7 +58,7 @@ const PURPOSE_COPY: Record<MfaChallengePurpose, { title: string; summary: string
   CASH_TO_CASH_CLAIM: {
     title: 'Recipient Verification',
     summary:
-      'To credit the beneficiary’s Customer wallet from this Cash-to-Cash transfer, the customer must confirm a one-time code sent to their phone.',
+      'To claim this Cash-to-Cash transfer, the beneficiary must confirm a one-time code sent to their phone.',
   },
 };
 
