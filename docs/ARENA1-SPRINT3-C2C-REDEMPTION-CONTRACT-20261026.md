@@ -1,5 +1,7 @@
 # ARENA 1 — Sprint 3 Cash-to-Cash redemption handoff
 
+> Follow-up approval: the owner subsequently approved a six-digit number + sender-phone locator (not the 128-bit proposal below). The [implemented approved contract](APPROVED-C2C-SIX-DIGIT-REDEMPTION-CONTRACT.md) supersedes this report's blocked status and proposed API. The original investigation and evidence about nonunique display references remain valid.
+
 ## Decision: contract blocked; do not reinterpret an ambiguous reference
 
 **Status: verified investigation, regression evidence and concrete proposal delivered. No new reference-based claim route is implemented or approved.** The handoff remains a UAT blocker until the UUID handoff is surfaced using the existing contract or a new public locator contract is approved.
