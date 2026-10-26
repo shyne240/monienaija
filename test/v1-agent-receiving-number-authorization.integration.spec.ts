@@ -350,4 +350,40 @@ describe('V1-SPRINT2-AUTHZ-01 Agent receiving-number authorization (real Postgre
       .set(headers(auditorToken))
       .expect(200);
   });
+
+  // Guard-regression pin: the :id extraction must NOT apply under the literal /agents/me/*
+  // subtree, where an `:id` param is never an Agent id (e.g. support tickets/:id). Before
+  // this pin the naive extraction turned the support-ticket owner's legitimate reads into
+  // SELF-mismatch 403s (caught by v1-007-support-ticket; pinned here at the route-policy
+  // boundary as well).
+  it('leaves /agents/me/support ticket routes resource-unbound (owner keeps access)', async () => {
+    const owner = await createActiveAgentWithNumber();
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/agents/me/support/tickets')
+      .set(headers(owner.token))
+      .send({
+        category: 'OTHER',
+        subject: 'Receiving-number authz regression pin',
+        description: 'Ensures /agents/me/* :id params are not bound as Agent ids.',
+      })
+      .expect(201);
+    const ticketId = created.body.id as string;
+    expect(ticketId).toBeTruthy();
+    const fetched = await request(app.getHttpServer())
+      .get(`/api/v1/agents/me/support/tickets/${ticketId}`)
+      .set(headers(owner.token))
+      .expect(200);
+    expect(fetched.body.id).toBe(ticketId);
+    await request(app.getHttpServer())
+      .post(`/api/v1/agents/me/support/tickets/${ticketId}/messages`)
+      .set(headers(owner.token))
+      .send({ body: 'Follow-up message from the owner.' })
+      .expect(201);
+    // The other Agent still may not read it (controller-level ownership → 404 per V1-007).
+    const other = await createActiveAgentWithNumber();
+    await request(app.getHttpServer())
+      .get(`/api/v1/agents/me/support/tickets/${ticketId}`)
+      .set(headers(other.token))
+      .expect(404);
+  });
 });

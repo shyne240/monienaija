@@ -911,12 +911,21 @@ export class RoutePolicyRegistry {
       // passed, letting any authenticated Agent read any other Agent's receiving number
       // (docs/V1/A21-AGENT-APP-CONTRACT.md:42-43 requires 403/404 when :id differs from
       // principal.agentId). Extracting `params.id` makes checkAgentScope compare the
-      // session Agent against the resource Agent and deny cross-Agent reads. Literal
-      // /agents/me* routes carry no `id` param and are unaffected.
+      // session Agent against the resource Agent and deny cross-Agent reads.
+      //
+      // Extraction is deliberately restricted to non-`me` paths: under the literal
+      // /agents/me/* subtree an `:id` parameter is NEVER an Agent id — e.g.
+      // /agents/me/support/tickets/:id carries a TICKET id (support-agent.controller),
+      // and binding it as the resource Agent would deny the legitimate owner (observed
+      // as 404→403 drift in v1-007-support-ticket before this guard was added). The only
+      // other parameterized non-me surface, /agents/applications/:id, is handled by its
+      // own explicit branch above and never reaches here.
+      const addressesAgentById =
+        !!input.params?.id && !path.startsWith('/api/v1/agents/me');
       return {
         public: false,
         resourceType: 'agent',
-        ...(input.params?.id ? { agentId: input.params.id } : {}),
+        ...(addressesAgentById ? { agentId: input.params!.id } : {}),
         policy: {
           resourceType: 'agent',
           action: `${method}:${path}`,
