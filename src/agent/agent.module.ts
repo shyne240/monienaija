@@ -127,6 +127,10 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
     AgentFundingService,
+    // V1-SPRINT3-AGENT-HISTORY-API-01: exported for the workforce investigation read
+    // (AdminAgentController GET /internal/agents/:id/transactions). Read-only projection;
+    // no new mutation surface is exposed.
+    AgentTransactionHistoryService,
   ],
 })
 export class AgentModule {}

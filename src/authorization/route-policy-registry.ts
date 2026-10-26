@@ -351,6 +351,31 @@ export class RoutePolicyRegistry {
     // Aggregator self routes (if later authentication is introduced) would be handled here.
     // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
 
+    // V1-SPRINT3-AGENT-HISTORY-API-01 (ARENA 3): workforce read of an Agent's unified
+    // transaction history (AdminAgentController). Same gate as the internal receiving-number
+    // read below and the sibling agent investigation reads: catalogue function agent.view.
+    // SUPPORT is excluded (it holds no agent-domain functions by policy). Declared here for
+    // defense in depth; the controller enforces the identical gate via requireFunction.
+    if (
+      method === 'GET' &&
+      /^\/api\/v1\/internal\/agents\/[^/]+\/transactions$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-transaction-history',
+        policy: {
+          resourceType: 'agent-transaction-history',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // V1-SPRINT2-AUTHZ-01 (ARENA 3): internal Agent receiving-number reads.
     // docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md §"Applications and function
     // permissions": "Internal receiving-number reads require agent.view." Previously this
