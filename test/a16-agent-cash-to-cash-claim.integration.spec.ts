@@ -2093,4 +2093,41 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     },
   );
 
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S2 authenticated HTTP %s claim replay and recovery settle only once', async (redemptionMethod) => {
+      const amount = '8400';
+      const { transferId, phone, transferCode } = await initiateTransfer(amount);
+      const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const login = await app.inject({ method: 'POST', url: '/api/v1/agents/sessions',
+        payload: { agentId: claimant.agent.id, password: 'login-password' } });
+      expect(login.statusCode).toBe(200);
+      const headers = { authorization: `Bearer ${login.json().accessToken}` };
+      const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
+      const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const { challengeId } = await createMfaChallenge(customerId, 's2-http-positive');
+      const payload = { transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 's2-http-positive', idempotencyKey: randomUUID(), redemptionMethod,
+        ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
+      };
+      const claim = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim', headers, payload });
+      expect(claim.statusCode).toBe(200);
+      expect(claim.json()).toMatchObject({ status: 'COMPLETED', redemptionMethod, transferId });
+      const replay = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim', headers, payload });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({ status: 'REPLAYED', journalId: claim.json().journalId, replayed: true });
+      const receipt = await app.inject({ method: 'GET', url: `/api/v1/agents/cash-to-cash/claims/${transferId}`, headers });
+      expect(receipt.statusCode).toBe(200);
+      expect(receipt.json()).toMatchObject({ journalId: claim.json().journalId, redemptionMethod, transferId, replayed: true });
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor)
+        .toBe((BigInt(before.balanceMinor)+BigInt(amount)).toString());
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor)
+        .toBe((BigInt(liability.balanceMinor)-BigInt(amount)).toString());
+      expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${payload.idempotencyKey}`])).toHaveLength(1);
+    },
+  );
+
 });
