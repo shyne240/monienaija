@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -59,6 +60,37 @@ export class AgentFundingController {
       'DEFUND',
       dto.reason,
     );
+  }
+
+  /**
+   * V1-SPRINT2-FUNDING-INBOX-01: global checker inbox — read-only discovery of funding and
+   * defunding requests awaiting independent review, with server-side filtering and
+   * pagination. Restricted to the Decision 7 checker identity (non-SUPER_ADMIN
+   * FINANCE_CONTROLLER, MFA, agent.fund + agent.defund APPROVE grants) by both the route
+   * policy and AgentFundingService.assertCheckerPrincipal. The caller's own maker requests
+   * are excluded server-side. Grants no Agent Network function and mutates nothing.
+   */
+  @Get('agents/funding-requests')
+  async listGlobalFundingRequests(
+    @Query('status') status: string | undefined,
+    @Query('direction') direction: string | undefined,
+    @Query('page') page: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const principal = await this.requireFundingChecker(req);
+    if (status !== undefined && !['PENDING', 'REJECTED', 'EXECUTED'].includes(status)) {
+      throw new BadRequestException("status must be one of PENDING, REJECTED, EXECUTED");
+    }
+    if (direction !== undefined && !['FUND', 'DEFUND'].includes(direction)) {
+      throw new BadRequestException("direction must be one of FUND, DEFUND");
+    }
+    return this.fundingService.listGlobalFundingRequests(principal, {
+      ...(status !== undefined ? { status: status as 'PENDING' | 'REJECTED' | 'EXECUTED' } : {}),
+      ...(direction !== undefined ? { direction: direction as 'FUND' | 'DEFUND' } : {}),
+      ...(page !== undefined ? { page: Number(page) } : {}),
+      ...(limit !== undefined ? { limit: Number(limit) } : {}),
+    });
   }
 
   @Get('agents/:agentId/funding-requests')

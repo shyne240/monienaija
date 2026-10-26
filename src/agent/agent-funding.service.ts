@@ -447,6 +447,90 @@ export class AgentFundingService {
     });
   }
 
+  /**
+   * V1-SPRINT2-FUNDING-INBOX-01 (ARENA 3): global, READ-ONLY discovery of Agent
+   * funding/defunding work for the independent checker side of Decision 7.
+   *
+   * Why this exists: the only list read before this method was per-Agent
+   * (GET /internal/agents/:agentId/funding-requests), so a FINANCE_CONTROLLER could not
+   * discover which requests across the network were awaiting independent approval without
+   * enumerating Agent ids — and FINANCE_CONTROLLER deliberately holds no agent.view or any
+   * other Agent Network function (see authorization-catalogue.seed.ts). This inbox gives
+   * the checker exactly the discovery it needs and nothing more.
+   *
+   * Authorization (double-gated, mirroring the execute/reject routes):
+   *  - Route policy (route-policy-registry.ts): WORKFORCE_SESSION,
+   *    OPERATOR/SERVICE/PRIVILEGED principal types, requiredRoles ['FINANCE_CONTROLLER'],
+   *    requiredFunctions ['agent.fund','agent.defund'] (APPROVE-level catalogue grants).
+   *  - Service: assertCheckerPrincipal() — the identical Decision 7 checker policy
+   *    (non-SUPER_ADMIN FINANCE_CONTROLLER, MFA assurance, both approving functions).
+   *
+   * Maker-checker separation is preserved and strengthened server-side: rows whose maker
+   * is the calling principal are always excluded (a maker can never approve their own
+   * request, so their own requests are not approvable work for them, and this inbox must
+   * not become a maker-side tracker). The method mutates nothing, grants no function, and
+   * confers no approval or execution capability; approve/execute/reject remain separate,
+   * independently authorized POST routes.
+   */
+  async listGlobalFundingRequests(
+    principal: AuthorizationPrincipal,
+    options: {
+      status?: 'PENDING' | 'REJECTED' | 'EXECUTED';
+      direction?: 'FUND' | 'DEFUND';
+      page?: number;
+      limit?: number;
+    } = {},
+  ): Promise<{ items: AgentFundingRequestView[]; page: number; limit: number; total: number }> {
+    this.assertCheckerPrincipal(principal);
+
+    const page = options.page ?? 1;
+    const limit = options.limit ?? 20;
+    if (!Number.isInteger(page) || page < 1) {
+      throw new BadRequestException('page must be an integer >= 1');
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      throw new BadRequestException('limit must be an integer between 1 and 50');
+    }
+    const status = options.status ?? null;
+    const direction = options.direction ?? null;
+
+    const whereClause = `WHERE r.maker_principal_id <> $1
+          AND ($2::text IS NULL OR r.status=$2)
+          AND ($3::text IS NULL OR r.direction=$3)`;
+    const countRows = databaseRows<{ cnt: string }>(await this.dataSource.query(
+      `SELECT count(*)::text AS cnt
+         FROM agent_funding_requests r
+         JOIN privileged_action_approvals a ON a.id=r.approval_id
+        ${whereClause}`,
+      [principal.principalId, status, direction],
+    ));
+    const rows = databaseRows<AgentFundingRequestDbRow>(await this.dataSource.query(
+      `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
+              a.expires_at AS approval_expires_at, a.reason AS approval_reason,
+              a.action_type AS approval_action_type,
+              a.resource_type AS approval_resource_type, a.resource_id AS approval_resource_id,
+              a.requester_principal_id AS approval_requester_principal_id,
+              a.policy AS approval_policy
+         FROM agent_funding_requests r
+         JOIN privileged_action_approvals a ON a.id=r.approval_id
+        ${whereClause}
+        ORDER BY r.created_at DESC, r.id DESC
+        LIMIT $4 OFFSET $5`,
+      [principal.principalId, status, direction, limit, (page - 1) * limit],
+    ));
+
+    const items = rows.map((row) => {
+      const view = this.toFundingRequestView(row);
+      // Same recovery rule as the per-Agent list: the completed journal reference is only
+      // exposed to the checker whose identity is recorded on the posting.
+      if (row.status === 'EXECUTED' && row.checker_principal_id !== principal.principalId) {
+        view.journalId = null;
+      }
+      return view;
+    });
+    return { items, page, limit, total: Number(countRows[0]?.cnt ?? '0') };
+  }
+
   async rejectFundingRequest(
     requestId: string,
     principal: AuthorizationPrincipal,
