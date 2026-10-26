@@ -423,7 +423,7 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
   test('server error translations: KYC identity not verified (403)', async () => {
     mockApi.requestAgentMfaChallenge.mockResolvedValue(mfaChallenge);
     mockApi.agentCashToCashClaim.mockRejectedValue(
-      apiError('Claimant identity not verified (KYC not APPROVED and no identity document)', 403),
+      apiError('Claimant identity not verified (KYC not APPROVED)', 403),
     );
     const { getByTestId } = wrap(<CashToCashClaimConfirmScreen />);
 
@@ -437,7 +437,7 @@ describe('Cash→Cash Claim — Step 2: Confirmation & Multi-party Verification'
 
     await waitFor(() =>
       expect(getByTestId('c2c-claim-confirm-error').props.children).toBe(
-        'Beneficiary identity is not verified. KYC approval or an identity document is required for wallet redemption.',
+        'Beneficiary identity is not verified. Customer KYC approval is required for wallet redemption.',
       ),
     );
   });

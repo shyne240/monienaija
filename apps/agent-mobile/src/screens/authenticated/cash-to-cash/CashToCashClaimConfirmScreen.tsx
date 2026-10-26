@@ -235,7 +235,7 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
           </View>
           <Text style={styles.methodNotice} testID="c2c-claim-method-notice">
             {redemptionMethod === 'AGENT_CASH'
-              ? 'Cash payout requires a current approved Customer KYC assessment by an authorized workforce reviewer. A stored identity-document row alone is not enough. After settlement, hand the physical cash to the verified beneficiary separately.'
+              ? 'Cash payout requires a current approved Customer KYC assessment. A stored identity-document row without a recorded review is not proof of verified identity. Physical cash handover is operationally separate from this ledger settlement.'
               : 'Wallet redemption credits the beneficiary Customer wallet. No physical cash is paid as part of this settlement.'}
           </Text>
         </Card>

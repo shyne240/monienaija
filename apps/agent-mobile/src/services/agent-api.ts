@@ -604,11 +604,11 @@ export function describeCashToCashClaimError(error: unknown): string {
       if (/locked/i.test(msg)) {
         return 'Transfer code is locked due to too many failed attempts.';
       }
-      if (/current supervisor-approved Customer KYC assessment|authorized workforce/i.test(msg)) {
-        return 'Cash payout requires a current Customer KYC approval by an authorized workforce approver. Use wallet redemption or request a KYC review.';
+      if (/current approved Customer KYC assessment/i.test(msg)) {
+        return 'Cash payout requires a current approved Customer KYC assessment. Request a KYC review if needed; physical cash handover is separate.';
       }
       if (/identity not verified|KYC/i.test(msg)) {
-        return 'Beneficiary identity is not verified. KYC approval or an identity document is required for wallet redemption.';
+        return 'Beneficiary identity is not verified. Customer KYC approval is required for wallet redemption.';
       }
       if (/Agent.*(eligible|class|permit)|CASH_TO_CASH/i.test(msg)) {
         return 'This Agent is not currently authorized for Cash-to-Cash cash redemption.';

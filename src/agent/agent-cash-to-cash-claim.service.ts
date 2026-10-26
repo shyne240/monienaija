@@ -203,10 +203,11 @@ export class AgentCashToCashClaimService {
       // OWN wallet by presenting their own valid OTP (which agent-desk-otp always issues to the
       // `customerId`'s own verified phone, never to an arbitrary target phone). Fail closed.
       await this.assertClaimantOwnsBeneficiaryPhone(this.dataSource, customerId, canonicalPhone);
-      // Cash payout requires the existing supervisor-approved KYC decision; wallet redemption
-      // retains the established V1 KYC/document-row gate. Both checks run before OTP consumption.
+      // A document row records submission, not review or verification. Wallet redemption therefore
+      // fails closed unless the Customer's authoritative KYC status is APPROVED. Cash payout uses
+      // the current assessment gate below. Both checks run before OTP consumption.
       if (redemptionMethod === 'AGENT_CASH') {
-        await this.assertCurrentSupervisorApprovedKyc(this.dataSource, customerId);
+        await this.assertCurrentApprovedKyc(this.dataSource, customerId);
       } else {
         const custRows: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await this.dataSource.query(
           `SELECT id, status, kyc_status, deleted_at FROM customers WHERE id=$1 LIMIT 1`,
@@ -216,11 +217,7 @@ export class AgentCashToCashClaimService {
         if (!customer || customer.deleted_at !== null) throw new NotFoundException(`Customer ${customerId} not found`);
         if (customer.status !== 'ACTIVE') throw new NotFoundException(`Customer ${customerId} not found`);
         if (customer.kyc_status !== 'APPROVED') {
-          const docRows: Array<{ id: string }> = await this.dataSource.query(
-            `SELECT id FROM customer_identity_documents WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-            [customerId],
-          );
-          if (docRows.length === 0) throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED and no identity document)');
+          throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED)');
         }
       }
       // Transfer code verification before OTP (timing-safe, not consuming OTP if code wrong)
@@ -508,13 +505,11 @@ export class AgentCashToCashClaimService {
           if (customer2.status !== 'ACTIVE') throw new NotFoundException(`Customer ${customerId} not found`);
           let kycApprovalEvidence: { assessmentId: string; assessedBy: string } | null = null;
           if (redemptionMethod === 'AGENT_CASH') {
-            kycApprovalEvidence = await this.assertCurrentSupervisorApprovedKyc(manager, customerId);
+            kycApprovalEvidence = await this.assertCurrentApprovedKyc(manager, customerId);
           } else if (customer2.kyc_status !== 'APPROVED') {
-            const docRows: Array<{ id: string }> = await manager.query(
-              `SELECT id FROM customer_identity_documents WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-              [customerId],
-            );
-            if (docRows.length === 0) throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED and no identity document)');
+            // Re-check the authoritative status inside the settlement transaction; an identity
+            // document row alone has no review state and is not proof of verified identity.
+            throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED)');
           }
 
           // Code already verified outside, but re-verify inside with timingSafeEqual for binding (in case hash changed)
@@ -676,7 +671,7 @@ export class AgentCashToCashClaimService {
                 claimantAgentId,
                 destinationOwnerId: settlementWalletOwnerId,
                 identityVerificationMethod: redemptionMethod === 'AGENT_CASH'
-                  ? 'CURRENT_KYC_APPROVED_BY_AUTHORIZED_WORKFORCE'
+                  ? 'CURRENT_APPROVED_KYC_ASSESSMENT'
                   : null,
                 kycAssessmentId: kycApprovalEvidence?.assessmentId ?? null,
                 kycAssessedBy: kycApprovalEvidence?.assessedBy ?? null,
@@ -777,7 +772,7 @@ export class AgentCashToCashClaimService {
               claimantAgentId,
               destinationOwnerId: settlementWalletOwnerId,
               identityVerificationMethod: redemptionMethod === 'AGENT_CASH'
-                ? 'CURRENT_KYC_APPROVED_BY_AUTHORIZED_WORKFORCE'
+                ? 'CURRENT_APPROVED_KYC_ASSESSMENT'
                 : null,
               kycAssessmentId: kycApprovalEvidence?.assessmentId ?? null,
               kycAssessedBy: kycApprovalEvidence?.assessedBy ?? null,
@@ -1177,14 +1172,13 @@ export class AgentCashToCashClaimService {
   }
 
   /**
-   * Cash payout uses the existing authorized KYC approval as its supervisor step. The
-   * CustomerController maps APPROVED assessments to the distinct `kyc.approve` function and
-   * allows only workforce principals; assessed_by stores that authorized principal ID, but the
-   * assessment schema does not retain a more specific supervisor job title. The identity-document
-   * table has no review/in-person evidence state, so a bare document row is insufficient for cash.
-   * Respect the assessment's explicit expires_at when present; no new age/freshness window is added.
+   * Cash payout requires a current approved Customer KYC assessment. `assessed_by` is preserved
+   * as audit provenance, but the schema does not classify the actor type or prove human review or
+   * in-person inspection; a `SERVICE` actor must not be represented as a human supervisor. The
+   * identity-document table has no review state, so a bare document row is not verification evidence.
+   * Respect explicit `expires_at` when present; no new age/freshness window is added.
    */
-  private async assertCurrentSupervisorApprovedKyc(
+  private async assertCurrentApprovedKyc(
     queryable: { query: (sql: string, params?: unknown[]) => Promise<any[]> },
     customerId: string,
   ): Promise<{ assessmentId: string; assessedBy: string }> {
@@ -1224,7 +1218,7 @@ export class AgentCashToCashClaimService {
       row.assessment_unexpired !== true ||
       !row.assessed_by?.trim()
     ) {
-      throw new ForbiddenException('Cash payout requires a current Customer KYC assessment approved by authorized workforce');
+      throw new ForbiddenException('Cash payout requires a current approved Customer KYC assessment');
     }
     return { assessmentId: row.assessment_id, assessedBy: row.assessed_by };
   }

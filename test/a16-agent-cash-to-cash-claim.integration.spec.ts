@@ -179,7 +179,11 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     return { customerId, wallet };
   }
 
-  async function createCurrentKycApproval(customerId: string, expiresAt?: string) {
+  async function createCurrentKycApproval(
+    customerId: string,
+    expiresAt?: string,
+    assessedBy = 'test-kyc-approver',
+  ) {
     await customerService.createKycAssessment(customerId, {
       level: 'LEVEL_1' as any,
       status: 'PENDING' as any,
@@ -188,7 +192,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     return customerService.createKycAssessment(customerId, {
       level: 'LEVEL_1' as any,
       status: 'APPROVED' as any,
-      assessedBy: 'test-kyc-approver',
+      assessedBy,
       ...(expiresAt ? { expiresAt } : {}),
     } as any);
   }
@@ -646,21 +650,30 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     })).rejects.toThrow(/identity not verified/i);
   });
 
-  // 17. identity succeeds with NIN document even if KYC not APPROVED
-  it('17. identity succeeds with document', async () => {
+  // 17. an unreviewed identity-document row is not proof of verified identity
+  it('17. identity document alone fails closed when KYC is not APPROVED', async () => {
     const { phone, transferId, transferCode } = await initiateTransfer('2600');
     const { customerId } = await createBeneficiaryCustomer(phone, false, true);
-    const { challengeId } = await createMfaChallenge(customerId, 'doc-ok-otp');
-    const res = await claimService.execute({
+    const { challengeId } = await createMfaChallenge(customerId, 'doc-only-otp');
+    await expect(claimService.execute({
       transferId,
       beneficiaryPhone: phone,
       transferCode,
       customerId,
       mfaChallengeId: challengeId,
-      otp: 'doc-ok-otp',
+      otp: 'doc-only-otp',
       idempotencyKey: `claim-17-${randomUUID()}`,
-    });
-    expect(res.status).toBe('COMPLETED');
+    })).rejects.toThrow(/identity not verified.*KYC not APPROVED/i);
+    const challengeState: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM mfa_challenges WHERE id=$1`,
+      [challengeId],
+    );
+    expect(challengeState[0]!.status).toBe('ACTIVE');
+    const transferState: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
+      [transferId],
+    );
+    expect(transferState[0]!.status).toBe('UNCLAIMED');
   });
 
   // 18. no mutation on invalid phone
@@ -1470,7 +1483,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
       redemptionMethod: 'AGENT_CASH',
       agentPin: '1234',
-    })).rejects.toThrow(/current Customer KYC assessment approved by authorized workforce/i);
+    })).rejects.toThrow(/current approved Customer KYC assessment/i);
     const challengeState1: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM mfa_challenges WHERE id=$1`,
       [challenge1.challengeId],
@@ -1492,7 +1505,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
       redemptionMethod: 'AGENT_CASH',
       agentPin: '1234',
-    })).rejects.toThrow(/current Customer KYC assessment approved by authorized workforce/i);
+    })).rejects.toThrow(/current approved Customer KYC assessment/i);
     const challengeState2: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM mfa_challenges WHERE id=$1`,
       [challenge2.challengeId],
@@ -1614,7 +1627,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         claimantPrincipal: agentPrincipal(claimant.id) as any,
         redemptionMethod: 'AGENT_CASH',
         agentPin: '1234',
-      })).rejects.toThrow(/current Customer KYC assessment approved by authorized workforce/i);
+      })).rejects.toThrow(/current approved Customer KYC assessment/i);
     } finally {
       verifySpy2.mockRestore();
     }
@@ -1697,5 +1710,49 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       `SELECT count(*)::text AS count FROM ledger_journals`,
     );
     expect(BigInt(afterJournals[0]!.count)).toBe(BigInt(beforeJournals[0]!.count) + 1n);
+  });
+
+  it('46. records SERVICE KYC provenance without implying human-supervisor review', async () => {
+    const amount = '5100';
+    const { transferId, phone, transferCode } = await initiateTransfer(amount);
+    const { customerId } = await createBeneficiaryCustomer(phone, false);
+    const assessment = await createCurrentKycApproval(customerId, undefined, 'SERVICE');
+    const { agent: claimant } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    const challenge = await createMfaChallenge(customerId, 'service-kyc-cash-otp');
+
+    const result = await claimService.execute({
+      transferId,
+      beneficiaryPhone: phone,
+      transferCode,
+      customerId,
+      mfaChallengeId: challenge.challengeId,
+      otp: challenge.otp,
+      idempotencyKey: `service-kyc-cash-${randomUUID()}`,
+      claimantPrincipal: agentPrincipal(claimant.id) as any,
+      redemptionMethod: 'AGENT_CASH',
+      agentPin: '1234',
+    });
+
+    const journalRows: Array<{ metadata: any }> = await dataSource.query(
+      `SELECT metadata FROM ledger_journals WHERE id=$1`,
+      [result.journalId],
+    );
+    expect(journalRows[0]!.metadata).toMatchObject({
+      identityVerificationMethod: 'CURRENT_APPROVED_KYC_ASSESSMENT',
+      kycAssessmentId: assessment.id,
+      kycAssessedBy: 'SERVICE',
+    });
+    expect(journalRows[0]!.metadata.identityVerificationMethod).not.toMatch(/human|supervisor|workforce/i);
+
+    const auditRows: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events
+       WHERE entity_type='AGENT_CASH_TO_CASH_CLAIM' AND entity_id=$1`,
+      [result.journalId],
+    );
+    expect(auditRows[0]!.new_values.identityVerificationMethod).toBe('CURRENT_APPROVED_KYC_ASSESSMENT');
+    expect(auditRows[0]!.new_values.kycAssessedBy).toBe('SERVICE');
   });
 });

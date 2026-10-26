@@ -305,7 +305,10 @@ describe('Agent operating-context API bindings', () => {
         'Transfer code is locked due to too many failed attempts.',
       );
       expect(describeCashToCashClaimError(new ApiError('Claimant identity not verified', 403))).toBe(
-        'Beneficiary identity is not verified. KYC approval or an identity document is required for wallet redemption.',
+        'Beneficiary identity is not verified. Customer KYC approval is required for wallet redemption.',
+      );
+      expect(describeCashToCashClaimError(new ApiError('Cash payout requires a current approved Customer KYC assessment', 403))).toBe(
+        'Cash payout requires a current approved Customer KYC assessment. Request a KYC review if needed; physical cash handover is separate.',
       );
       expect(describeCashToCashClaimError(new ApiError('Transfer has expired', 409))).toBe(
         'This Cash→Cash transfer has expired and cannot be claimed.',
