@@ -2144,13 +2144,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     const beforeAgent = await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId);
     const key = `http-recovery-${randomUUID()}`;
 
-    const password = `Agent-recovery-${randomUUID()}`;
-    await dataSource.query(
-      `INSERT INTO agent_authentication_credentials
-         (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
-       VALUES ($1, $2, 'PBKDF2', 1, NOW(), 'ACTIVE')`,
-      [claimant.id, hashPin(password)],
-    );
+    // Integration reconciliation (ARENA 3): createActiveAgentWithServicesAndPin now provisions
+    // the ACTIVE login credential and session itself (ARENA 1's session-PIN-binding work), and
+    // uq_agent_authentication_credentials_active_agent allows exactly one ACTIVE credential per
+    // Agent — so this test logs in with the helper's credential instead of inserting its own.
+    // All recovery/isolation assertions below are ARENA 4's, unchanged.
+    const password = 'login-password';
     const login = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/sessions',
@@ -2235,13 +2234,9 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect(creditTotal).toBe(BigInt(amount));
 
     const otherAgent = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
-    const otherPassword = `Agent-other-${randomUUID()}`;
-    await dataSource.query(
-      `INSERT INTO agent_authentication_credentials
-         (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
-       VALUES ($1, $2, 'PBKDF2', 1, NOW(), 'ACTIVE')`,
-      [otherAgent.agent.id, hashPin(otherPassword)],
-    );
+    // Same reconciliation as above: use the helper-provisioned credential (one ACTIVE
+    // credential per Agent is enforced by the schema).
+    const otherPassword = 'login-password';
     const otherLogin = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/sessions',
