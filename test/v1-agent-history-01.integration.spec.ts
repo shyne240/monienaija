@@ -284,6 +284,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   }
 
   /** Real agent login (a21 convention): credential insert + POST /agents/sessions. */
+  const agentSessions = new Map<string, string>();
   async function agentLoginToken(agentId: string, password = 'correct-password'): Promise<string> {
     await dataSource.query(
       `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
@@ -293,12 +294,17 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .post('/api/v1/agents/sessions')
       .send({ agentId, password })
       .expect(200);
+    const [session] = await dataSource.query(
+      `SELECT id FROM agent_authentication_sessions WHERE agent_id=$1 ORDER BY issued_at DESC LIMIT 1`, [agentId],
+    );
+    agentSessions.set(agentId, session.id);
     return login.body.accessToken as string;
   }
 
   function agentPrincipal(agentId: string) {
     return {
       type: 'AGENT' as const,
+      sessionId: agentSessions.get(agentId),
       agentId,
       principalId: agentId,
       roles: [],
