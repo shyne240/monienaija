@@ -1,0 +1,9 @@
+# A2T11 Interim Finance Role, Entitlement, and Bootstrap Contract
+
+Finance role definitions are deployment configuration containing key, display name, description, enabled state, exact scopes/actions, MFA, approval capability, maker/checker eligibility, and administrative capability. Initial keys are `FINANCE_PREPARER`, `FINANCE_CONTROLLER`, `FINANCE_ADMIN`, and `FINANCE_AUDITOR`; no assignment is seeded and OIDC claims are ignored.
+
+Assignments bind stable A2 principal, configured role/scope set, explicit UTC effective window, assigning principal, approval/bootstrap evidence, status/version, audit references, and `interim=true`. They are revocable and exported deterministically for B9.
+
+The sole initial bootstrap is an externally signed compact RS256 JWS over recursively key-sorted, whitespace-free UTF-8 JSON with canonical millisecond UTC timestamps. Dedicated configured bootstrap keys are selected by `kid`, environment-bound, validity/revocation checked, and separate from OIDC keys. Payload contains schema/environment/issuer/subject/principal/`FINANCE_ADMIN`/exact allowlisted scopes/window/audience/change reference/nonce/issued-expiry/key reference. Authenticated issuer+subject, principal, MFA, environment, audience, role, scopes, signature, key, window, and canonical payload must match. Nonce consumption is unique; replay/conflict fails closed.
+
+The bootstrap administrator cannot self-assign, change own scopes, assign another administrator, or create roles/scopes. They may directly create only the first assignment of each configured non-admin role to another authenticated principal. Subsequent assignments and normal revocations use configurable maker/checker rules and existing A2 approvals for `FINANCE_ROLE_ASSIGN` and `FINANCE_ROLE_REVOKE`, resource `A2_FINANCE_ROLE_ASSIGNMENT`, deterministic reference, exact semantic fingerprint, distinct approval count, MFA, and self-approval prohibition.

@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import multipart from '@fastify/multipart';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Logger } from 'nestjs-pino';
 import type { FastifyRequest } from 'fastify';
@@ -22,6 +23,18 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
   const logger = app.get(Logger);
+  if (environment.POA_UPLOADS_ENABLED) {
+    await app.register(multipart, {
+      attachFieldsToBody: false,
+      throwFileSizeLimit: true,
+      limits: {
+        files: 1,
+        fields: 8,
+        parts: 9,
+        fileSize: environment.POA_MAX_UPLOAD_BYTES,
+      },
+    });
+  }
   const requestTracker = app.get(RequestTrackerService);
   const readinessService = app.get(ProductionReadinessService);
   const governanceService = app.get(GovernanceService);

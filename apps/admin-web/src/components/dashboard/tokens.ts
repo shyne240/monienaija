@@ -1,0 +1,21 @@
+/** Shared style tokens matching the existing Admin Web brand palette (see Layout.tsx/DashboardScreen.tsx). */
+export const colors = {
+  brandDark: '#032B14',
+  brandGreen: '#0A3D25',
+  brandGold: '#FFB703',
+  pageBg: '#F8FAFC',
+  cardBg: '#FFFFFF',
+  border: '#E2E8F0',
+  borderLight: '#F1F5F9',
+  textPrimary: '#0F172A',
+  textSecondary: '#334155',
+  textMuted: '#64748B',
+  textFaint: '#94A3B8',
+  success: '#10B981',
+  successBg: '#D1FAE5',
+  danger: '#EF4444',
+  dangerBg: '#FEE2E2',
+  warning: '#F59E0B',
+  warningBg: '#FEF3C7',
+  infoBg: '#E6F0EB',
+};

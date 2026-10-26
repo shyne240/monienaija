@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -64,6 +64,7 @@ export class MfaExecutionService {
     const challengeHash = this.normalizeHash(command.challengeHash, 'challengeHash');
     const now = command.now ?? new Date();
     const ttlSeconds = this.normalizeTtl(command.ttlSeconds);
+    const purpose = this.normalizePurpose(command.purpose);
     const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
 
     const challenge = await this.dataSource.transaction(async (manager) => {
@@ -102,6 +103,7 @@ export class MfaExecutionService {
           sessionId: command.principal.sessionId,
           challengeHash,
           status: MfaChallengeStatus.ACTIVE,
+          purpose,
           issuedAt: now,
           expiresAt,
           verifiedAt: null,
@@ -176,6 +178,18 @@ export class MfaExecutionService {
         return this.failedChallenge(command.principal, expired.id, 'EXPIRED', expired);
       }
 
+      // V1-AGENT-MFA-API-01 — purpose binding enforcement. A purpose-bound challenge
+      // presented to a consumer declaring a different (or absent) expected purpose is
+      // denied. NULL-purpose (legacy) challenges remain purpose-generic — unchanged
+      // behavior for everything issued before this feature.
+      if (
+        challenge.purpose !== null &&
+        challenge.purpose !== undefined &&
+        challenge.purpose !== command.expectedPurpose
+      ) {
+        return this.failedChallenge(command.principal, challenge.id, 'WRONG_PURPOSE', challenge);
+      }
+
       const enrollment = await manager.getRepository(MfaEnrollment).findOne({
         where: { id: challenge.enrollmentId, customerId: challenge.customerId },
       });
@@ -197,7 +211,7 @@ export class MfaExecutionService {
         return this.failedChallenge(command.principal, challenge.id, 'MFA_UNAVAILABLE', challenge);
       }
 
-      if (!this.sameHash(challenge.challengeHash, command.providedHash)) {
+      if (!this.challengeMatches(challenge.challengeHash, command.providedHash)) {
         await this.audit(manager, challenge.id, 'MFA_CHALLENGE', 'FAILED', actor, {
           customerId: challenge.customerId,
           enrollmentId: challenge.enrollmentId,
@@ -395,6 +409,7 @@ export class MfaExecutionService {
       sessionId: challenge.sessionId,
       methodType,
       status: challenge.status,
+      purpose: challenge.purpose ?? null,
       issuedAt: challenge.issuedAt,
       expiresAt: challenge.expiresAt,
     };
@@ -481,6 +496,48 @@ export class MfaExecutionService {
     const leftBuffer = Buffer.from(left, 'utf8');
     const rightBuffer = Buffer.from(right, 'utf8');
     return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+  }
+
+  /**
+   * V1-AGENT-MFA-API-01 — challenge comparand matching with two supported storage
+   * formats, strictly additive:
+   *  - LEGACY/raw comparand (pre-feature convention; tests + previously issued
+   *    challenges): direct timing-safe equality with the presented value.
+   *  - 'PBKDF2$sha256$<iterations>$<salt b64url>$<hash b64url>': salted PBKDF2 digest of
+   *    the OTP (no plaintext OTP persisted at rest — registration-family convention).
+   * The presented value semantics are unchanged: consumers always present the raw OTP.
+   */
+  private challengeMatches(stored: string, provided: string): boolean {
+    if (stored.startsWith('PBKDF2$')) {
+      const parts = stored.split('$');
+      if (parts.length !== 5 || parts[0] !== 'PBKDF2' || parts[1] !== 'sha256') {
+        return false;
+      }
+      const iterations = Number(parts[2]);
+      if (!Number.isSafeInteger(iterations) || iterations < 1 || iterations > 1_000_000) {
+        return false;
+      }
+      try {
+        const salt = Buffer.from(parts[3]!, 'base64url');
+        const expected = Buffer.from(parts[4]!, 'base64url');
+        if (salt.length === 0 || expected.length === 0) return false;
+        const derived = pbkdf2Sync(provided, salt, iterations, expected.length, 'sha256');
+        return expected.length === derived.length && timingSafeEqual(expected, derived);
+      } catch {
+        return false;
+      }
+    }
+    return this.sameHash(stored, provided);
+  }
+
+  private normalizePurpose(value: string | undefined): string | null {
+    if (value === undefined) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.length > 64 || /\s/.test(trimmed)) {
+      throw new BadRequestException('purpose is invalid');
+    }
+    return trimmed;
   }
 
   private normalizeTtl(value: number | undefined): number {

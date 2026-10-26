@@ -8,6 +8,11 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { PaymentModule } from '../payment/payment.module';
 import { PilotControlModule } from '../pilot/pilot-control.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
+import { CommercialDecisionModule } from '../commercial-decision/commercial-decision.module';
+import { FeeRulesModule } from '../fee-rules/fee-rules.module';
+import { CommissionModule } from '../commission/commission.module';
+import { CommercialAccountingModule } from '../commercial-accounting/commercial-accounting.module';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { Transfer } from './transfer.entity';
@@ -36,6 +41,14 @@ import { WalletTransactionController } from './wallet-transaction.controller';
     PaymentModule,
     PilotControlModule,
     WalletModule,
+    LimitCatalogModule,
+    // V1-COMMERCIAL-DECISION-02 — pilot snapshot wiring for WALLET_TRANSFER:
+    // read-only fee resolution + immutable commercial decision snapshot inside the
+    // existing SERIALIZABLE transfer transaction. No charging, no fee engine wiring.
+    CommercialDecisionModule,
+    FeeRulesModule,
+    CommissionModule, // V1-COMMERCIAL-IMPLEMENTATION-02 — CommissionEngine for flow snapshot sites
+    CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
     TypeOrmModule.forFeature([Transfer, WalletAccount, LedgerJournal]),
   ],
   controllers: [TransferController, WalletTransactionController],

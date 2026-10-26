@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
 import { Customer } from '../customer/customer.entity';
 import { CustomerOnboarding } from '../customer-onboarding/customer-onboarding.entity';
 import { OperationsModule } from '../operations/operations.module';
@@ -14,6 +15,7 @@ import { CustomerRestriction } from './customer-restriction.entity';
 
 @Module({
   imports: [
+    AuthorizationModule,
     OperationsModule,
     TypeOrmModule.forFeature([
       Customer,

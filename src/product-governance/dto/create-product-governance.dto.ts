@@ -19,6 +19,13 @@ function trim(value: unknown): unknown {
 }
 
 export class CreateProductGovernanceDto {
+  /** Maker justification — fingerprint-bound with the change (P0-A). */
+  @IsString()
+  @Transform(({ value }: { value: unknown }) => trim(value))
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+
   @IsEnum(ProductGovernanceKind)
   kind!: ProductGovernanceKind;
 

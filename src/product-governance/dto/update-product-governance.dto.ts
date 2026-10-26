@@ -4,6 +4,13 @@ import { IsEnum, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'cl
 import { ProductGovernanceStatus } from '../product-governance.enums';
 
 export class UpdateProductGovernanceDto {
+  /** Maker justification — fingerprint-bound with the change (P0-A). */
+  @IsString()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+
   @IsString()
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))

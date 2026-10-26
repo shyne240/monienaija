@@ -8,10 +8,20 @@ export type RootStackParamList = {
   // Authenticated screens
   Home: undefined;
   SendMoney: undefined;
-  FundWallet: undefined;
-  Withdraw: undefined;
   Transactions: undefined;
   Profile: undefined;
+  TransactionPin: undefined;
+  Support: undefined;
+  CreateSupportTicket:
+    | undefined
+    | {
+        category?: string;
+        subject?: string;
+        description?: string;
+        relatedTransferId?: string;
+        fundingRequestId?: string;
+      };
+  SupportTicketDetail: { ticketId: string };
 };
 
 declare global {

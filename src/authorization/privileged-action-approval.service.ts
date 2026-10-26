@@ -9,6 +9,7 @@ import { AuditService } from '../operations/audit.service';
 import { SecurityEventHistory } from '../customer-authentication/security-event-history.entity';
 import { SecurityEventType } from '../customer-authentication/customer-authentication.enums';
 import { AuthorizationService } from './authorization.service';
+import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
 import type { AuthorizationPrincipal } from './authorization.types';
 import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from './privileged-action-approval.enums';
@@ -46,16 +47,49 @@ export class PrivilegedActionApprovalService {
   }
 
   async request(command: RequestPrivilegedActionCommand): Promise<PrivilegedActionDecision> {
+    return this.dataSource.transaction((manager) => this.requestInTransaction(manager, command));
+  }
+
+  /** Create an approval inside a domain transaction that also persists its request record. */
+  async requestInTransaction(
+    manager: EntityManager,
+    command: RequestPrivilegedActionCommand,
+  ): Promise<PrivilegedActionDecision> {
     const actionFingerprint = this.normalizeFingerprint(command.actionFingerprint);
     const reason = this.normalizeText(command.reason, 'reason', 500);
+    const approvalId = command.id?.trim() || randomUUID();
+    if (!UUID_PATTERN.test(approvalId)) {
+      throw new BadRequestException('approval id must be a UUID');
+    }
+    const registeredAction = governedAction(command.policy.action);
     const approvalScope = this.normalizeText(
-      command.approvalScope ?? 'privileged:approve',
+      registeredAction?.approvalScope ?? command.approvalScope ?? 'privileged:approve',
       'approvalScope',
       160,
     );
+    if (registeredAction && command.resource.type !== registeredAction.resourceType) {
+      return { approved: false, reason: 'RESOURCE_TYPE_MISMATCH' };
+    }
+    const policy = registeredAction
+      ? {
+          ...command.policy,
+          resourceType: registeredAction.resourceType,
+          action: registeredAction.action,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'] as const,
+          requiredRoles: registeredAction.initiatingRoles,
+          requiredFunctions: registeredAction.initiatingFunctionCodes,
+          minimumAssurance: registeredAction.minimumAssurance,
+        }
+      : command.policy;
+    const safeRequestDetails = command.requestDetails
+      ? redactRecord(command.requestDetails)
+      : undefined;
+    const recordedPolicy = safeRequestDetails
+      ? { ...policy, requestDetails: safeRequestDetails }
+      : policy;
     const authorization = await this.authorizationService.authorize(
       command.principal,
-      command.policy,
+      recordedPolicy,
       command.resource,
     );
     if (!authorization.allowed) {
@@ -64,63 +98,60 @@ export class PrivilegedActionApprovalService {
 
     const now = command.now ?? new Date();
     const expiresAt = new Date(now.getTime() + this.normalizeTtl(command.expiresInSeconds) * 1000);
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const repository = manager.getRepository(PrivilegedActionApproval);
-      const approval = await repository.save(
-        repository.create({
-          id: randomUUID(),
-          actionType: command.policy.action,
-          resourceType: command.resource.type,
-          resourceId: command.resource.id ?? null,
-          customerId: command.resource.customerId ?? command.principal.customerId ?? null,
-          actionFingerprint,
-          policy: command.policy as unknown as Record<string, unknown>,
-          approvalScope,
-          requiredAssurance: command.policy.minimumAssurance ?? 'MFA',
-          requesterPrincipalId: command.principal.principalId,
-          requesterSessionId: command.principal.sessionId ?? null,
-          approvedBy: null,
-          approverSessionId: null,
-          reason,
-          status: PrivilegedActionApprovalStatus.REQUESTED,
-          isEmergency: false,
-          requestedAt: now,
-          expiresAt,
-          approvedAt: null,
-          rejectedAt: null,
-          cancelledAt: null,
-          consumedAt: null,
-          version: 1,
-        }),
-      );
-      await this.audit(
-        manager,
-        approval,
-        'PRIVILEGED_ACTION_REQUESTED',
-        command.principal.principalId,
-        {
-          actionType: approval.actionType,
-          resourceType: approval.resourceType,
-          resourceId: approval.resourceId,
-          customerId: approval.customerId,
-          approvalScope: approval.approvalScope,
-          requiredAssurance: approval.requiredAssurance,
-          expiresAt: approval.expiresAt,
-        },
-      );
-      await this.securityEvent(
-        manager,
-        approval,
-        SecurityEventType.PRIVILEGED_ACTION_REQUESTED,
-        command.principal.principalId,
-        {
-          actionType: approval.actionType,
-          resourceType: approval.resourceType,
-        },
-      );
-      return approval;
-    });
-    return { approved: false, approval: this.toView(saved), authorization, reason: 'REQUESTED' };
+    const repository = manager.getRepository(PrivilegedActionApproval);
+    const approval = await repository.save(
+      repository.create({
+        id: approvalId,
+        actionType: command.policy.action,
+        resourceType: command.resource.type,
+        resourceId: command.resource.id ?? null,
+        customerId: command.resource.customerId ?? command.principal.customerId ?? null,
+        actionFingerprint,
+        policy: recordedPolicy as unknown as Record<string, unknown>,
+        approvalScope,
+        requiredAssurance: policy.minimumAssurance ?? 'MFA',
+        requesterPrincipalId: command.principal.principalId,
+        requesterSessionId: command.principal.sessionId ?? null,
+        approvedBy: null,
+        approverSessionId: null,
+        reason,
+        status: PrivilegedActionApprovalStatus.REQUESTED,
+        isEmergency: false,
+        requestedAt: now,
+        expiresAt,
+        approvedAt: null,
+        rejectedAt: null,
+        cancelledAt: null,
+        consumedAt: null,
+        version: 1,
+      }),
+    );
+    await this.audit(
+      manager,
+      approval,
+      'PRIVILEGED_ACTION_REQUESTED',
+      command.principal.principalId,
+      {
+        actionType: approval.actionType,
+        resourceType: approval.resourceType,
+        resourceId: approval.resourceId,
+        customerId: approval.customerId,
+        approvalScope: approval.approvalScope,
+        requiredAssurance: approval.requiredAssurance,
+        expiresAt: approval.expiresAt,
+      },
+    );
+    await this.securityEvent(
+      manager,
+      approval,
+      SecurityEventType.PRIVILEGED_ACTION_REQUESTED,
+      command.principal.principalId,
+      {
+        actionType: approval.actionType,
+        resourceType: approval.resourceType,
+      },
+    );
+    return { approved: false, approval: this.toView(approval), authorization, reason: 'REQUESTED' };
   }
 
   async approve(command: DecidePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -132,44 +163,50 @@ export class PrivilegedActionApprovalService {
   }
 
   async cancel(command: DecidePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApproval(command.approvalId);
-    if (!approval) return { approved: false, reason: 'NOT_FOUND' };
-    if (approval.requesterPrincipalId !== command.principal.principalId) {
-      return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
-    }
-    if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
-      return {
-        approved: false,
-        approval: this.toView(approval),
-        reason: this.statusReason(approval.status),
-      };
-    }
-    const now = command.now ?? new Date();
-    approval.status = PrivilegedActionApprovalStatus.CANCELLED;
-    approval.cancelledAt = now;
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
+    return this.dataSource.transaction<PrivilegedActionDecision>(async (manager) => {
+      // Read the current lifecycle state only after acquiring the same row lock used by approve,
+      // reject, and consume. Saving a pre-transaction entity can overwrite a decision that
+      // committed while this cancellation was waiting for the lock.
+      const approval = await this.findApprovalIn(manager, command.approvalId, true);
+      if (!approval) return { approved: false, reason: 'NOT_FOUND' };
+      if (approval.requesterPrincipalId !== command.principal.principalId) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: 'APPROVAL_SCOPE_MISSING',
+        };
+      }
+      if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
+        return {
+          approved: false,
+          approval: this.toView(approval),
+          reason: this.statusReason(approval.status),
+        };
+      }
+
+      const now = command.now ?? new Date();
+      if (await this.expireIfNeededIn(manager, approval, now)) {
+        return { approved: false, approval: this.toView(approval), reason: 'EXPIRED' };
+      }
+      approval.status = PrivilegedActionApprovalStatus.CANCELLED;
+      approval.cancelledAt = now;
+      const saved = await manager.getRepository(PrivilegedActionApproval).save(approval);
       await this.audit(
         manager,
-        result,
+        saved,
         'PRIVILEGED_ACTION_CANCELLED',
         command.principal.principalId,
-        {
-          comment: command.comment ?? null,
-        },
+        { comment: command.comment ?? null },
       );
       await this.securityEvent(
         manager,
-        result,
+        saved,
         SecurityEventType.PRIVILEGED_ACTION_CANCELLED,
         command.principal.principalId,
-        {
-          comment: command.comment ?? null,
-        },
+        { comment: command.comment ?? null },
       );
-      return result;
+      return { approved: false, approval: this.toView(saved), reason: 'CANCELLED' };
     });
-    return { approved: false, approval: this.toView(saved), reason: 'CANCELLED' };
   }
 
   async consume(command: ConsumePrivilegedActionCommand): Promise<PrivilegedActionDecision> {
@@ -191,7 +228,7 @@ export class PrivilegedActionApprovalService {
     manager: EntityManager,
     command: ConsumePrivilegedActionCommand,
   ): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApprovalIn(manager, command.approvalId);
+    const approval = await this.findApprovalIn(manager, command.approvalId, true);
     if (!approval) return { approved: false, reason: 'NOT_FOUND' };
     const now = command.now ?? new Date();
     const expired = await this.expireIfNeededIn(manager, approval, now);
@@ -203,10 +240,37 @@ export class PrivilegedActionApprovalService {
         reason: this.statusReason(approval.status),
       };
     }
-    if (
+    const registeredAction = governedAction(command.actionType);
+    if (registeredAction && !['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)) {
+      return { approved: false, approval: this.toView(approval), reason: 'PRINCIPAL_TYPE_DENIED' };
+    }
+    if (registeredAction && this.isAgentFundingAction(command.actionType)) {
+      // Agent funding is stricter than the established privileged:execute consume rule: only
+      // the independent FINANCE_CONTROLLER who approved the request may execute it. In
+      // particular, SUPER_ADMIN can never substitute for the checker.
+      if (command.principal.roles.includes('SUPER_ADMIN')) {
+        return { approved: false, approval: this.toView(approval), reason: 'SUPER_ADMIN_NOT_ALLOWED' };
+      }
+      if (!registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))) {
+        return { approved: false, approval: this.toView(approval), reason: 'ROLE_MISSING' };
+      }
+      if (
+        !registeredAction.approvingFunctionCodes.every((functionCode) =>
+          command.principal.scopes.includes(functionCode),
+        )
+      ) {
+        return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
+      }
+      if (approval.approvedBy !== command.principal.principalId) {
+        return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
+      }
+    } else if (
       approval.approvedBy !== command.principal.principalId &&
       !command.principal.scopes.includes('privileged:execute')
     ) {
+      // Preserve the established consume contract for other privileged actions: the
+      // recorded checker may execute directly, or a separately authorized privileged:execute
+      // principal may consume the already-approved change.
       return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
     }
     if (
@@ -366,10 +430,31 @@ export class PrivilegedActionApprovalService {
     command: DecidePrivilegedActionCommand,
     approve: boolean,
   ): Promise<PrivilegedActionDecision> {
-    const approval = await this.findApproval(command.approvalId);
+    return this.dataSource.transaction((manager) =>
+      this.decideInTransaction(manager, command, approve),
+    );
+  }
+
+  /**
+   * Transaction-aware decision path used by dedicated workflows that must commit the approval
+   * decision together with their own state transition (for example agent funding rejection).
+   */
+  async rejectInTransaction(
+    manager: EntityManager,
+    command: DecidePrivilegedActionCommand,
+  ): Promise<PrivilegedActionDecision> {
+    return this.decideInTransaction(manager, command, false);
+  }
+
+  private async decideInTransaction(
+    manager: EntityManager,
+    command: DecidePrivilegedActionCommand,
+    approve: boolean,
+  ): Promise<PrivilegedActionDecision> {
+    const approval = await this.findApprovalIn(manager, command.approvalId, true);
     if (!approval) return { approved: false, reason: 'NOT_FOUND' };
     const now = command.now ?? new Date();
-    if (await this.expireIfNeeded(approval, now)) {
+    if (await this.expireIfNeededIn(manager, approval, now)) {
       return { approved: false, approval: this.toView(approval), reason: 'EXPIRED' };
     }
     if (approval.status !== PrivilegedActionApprovalStatus.REQUESTED) {
@@ -386,6 +471,31 @@ export class PrivilegedActionApprovalService {
         reason: 'SELF_APPROVAL_FORBIDDEN',
       };
     }
+    const registeredAction = governedAction(approval.actionType);
+    if (registeredAction) {
+      if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(command.principal.type)) {
+        return { approved: false, approval: this.toView(approval), reason: 'PRINCIPAL_TYPE_DENIED' };
+      }
+      if (
+        this.isAgentFundingAction(approval.actionType) &&
+        command.principal.roles.includes('SUPER_ADMIN')
+      ) {
+        return { approved: false, approval: this.toView(approval), reason: 'SUPER_ADMIN_NOT_ALLOWED' };
+      }
+      if (!registeredAction.approvingRoles.some((role) => command.principal.roles.includes(role))) {
+        return { approved: false, approval: this.toView(approval), reason: 'ROLE_MISSING' };
+      }
+      if (
+        !registeredAction.approvingFunctionCodes.every((functionCode) =>
+          command.principal.scopes.includes(functionCode),
+        )
+      ) {
+        return { approved: false, approval: this.toView(approval), reason: 'FUNCTION_MISSING' };
+      }
+      if (approval.resourceType !== registeredAction.resourceType) {
+        return { approved: false, approval: this.toView(approval), reason: 'RESOURCE_TYPE_MISMATCH' };
+      }
+    }
     if (!command.principal.scopes.includes(approval.approvalScope)) {
       return { approved: false, approval: this.toView(approval), reason: 'APPROVAL_SCOPE_MISSING' };
     }
@@ -400,31 +510,32 @@ export class PrivilegedActionApprovalService {
     approval.approverSessionId = approve ? (command.principal.sessionId ?? null) : null;
     approval.approvedAt = approve ? now : null;
     approval.rejectedAt = approve ? null : now;
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
-      await this.audit(
-        manager,
-        result,
-        approve ? 'PRIVILEGED_ACTION_APPROVED' : 'PRIVILEGED_ACTION_REJECTED',
-        command.principal.principalId,
-        { comment: command.comment ?? null, status: result.status },
-      );
-      await this.securityEvent(
-        manager,
-        result,
-        approve
-          ? SecurityEventType.PRIVILEGED_ACTION_APPROVED
-          : SecurityEventType.PRIVILEGED_ACTION_REJECTED,
-        command.principal.principalId,
-        { status: result.status },
-      );
-      return result;
-    });
+    const result = await manager.getRepository(PrivilegedActionApproval).save(approval);
+    await this.audit(
+      manager,
+      result,
+      approve ? 'PRIVILEGED_ACTION_APPROVED' : 'PRIVILEGED_ACTION_REJECTED',
+      command.principal.principalId,
+      { comment: command.comment ?? null, status: result.status },
+    );
+    await this.securityEvent(
+      manager,
+      result,
+      approve
+        ? SecurityEventType.PRIVILEGED_ACTION_APPROVED
+        : SecurityEventType.PRIVILEGED_ACTION_REJECTED,
+      command.principal.principalId,
+      { status: result.status },
+    );
     return {
       approved: approve,
-      approval: this.toView(saved),
+      approval: this.toView(result),
       reason: approve ? 'APPROVED' : 'REJECTED',
     };
+  }
+
+  private isAgentFundingAction(actionType: string): boolean {
+    return Object.values(AGENT_FUNDING_ACTIONS).some((action) => action.action === actionType);
   }
 
   private async findApproval(approvalId: string): Promise<PrivilegedActionApproval | null> {
@@ -436,9 +547,15 @@ export class PrivilegedActionApprovalService {
   private async findApprovalIn(
     manager: EntityManager,
     approvalId: string,
+    lockForUpdate = false,
   ): Promise<PrivilegedActionApproval | null> {
     if (!UUID_PATTERN.test(approvalId)) return null;
-    return manager.getRepository(PrivilegedActionApproval).findOne({ where: { id: approvalId } });
+    const query = manager
+      .getRepository(PrivilegedActionApproval)
+      .createQueryBuilder('approval')
+      .where('approval.id = :approvalId', { approvalId });
+    if (lockForUpdate) query.setLock('pessimistic_write');
+    return query.getOne();
   }
 
   private requiresExpiry(approval: PrivilegedActionApproval, now: Date): boolean {
@@ -479,14 +596,6 @@ export class PrivilegedActionApprovalService {
     );
   }
 
-  private async expireIfNeeded(approval: PrivilegedActionApproval, now: Date): Promise<boolean> {
-    if (!this.requiresExpiry(approval, now)) {
-      return false;
-    }
-    await this.dataSource.transaction((manager) => this.applyExpiry(manager, approval, now));
-    return true;
-  }
-
   /** Transaction-aware variant of {@link expireIfNeeded}. */
   private async expireIfNeededIn(
     manager: EntityManager,
@@ -518,7 +627,7 @@ export class PrivilegedActionApprovalService {
     }
   }
 
-  private toView(approval: PrivilegedActionApproval): PrivilegedActionApprovalView {
+  toView(approval: PrivilegedActionApproval): PrivilegedActionApprovalView {
     return {
       id: approval.id,
       actionType: approval.actionType,

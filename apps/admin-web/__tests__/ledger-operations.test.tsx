@@ -12,6 +12,13 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
+// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
+// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
+// dashboard — always the first recorded call. Prefixed onto every sequential
+// `.mockResolvedValueOnce(...)` chain below so the rest of each chain still lines up with the
+// ledger screen's own call order.
+const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+
 describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
   const mockAccounts = [
     {
@@ -38,8 +45,8 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         principalId: 'iss:back-office-controller',
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
-        roles: ['FINANCE_CONTROLLER'], // Checker-eligible
-        scopes: ['privileged:approve'],
+        roles: ['SUPER_ADMIN'],
+        scopes: ['ledger.view','transaction.view','reporting.transaction_summary.view','privileged:execute'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -84,6 +91,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal); // journal audit
 
@@ -95,7 +103,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
     fireEvent.click(getByText('Audit Journal'));
 
-    expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/ledger/journals/journal-uuid-999');
+    expect(ApiClient.get).toHaveBeenNthCalledWith(3, '/ledger/journals/journal-uuid-999');
 
     expect(await findByText('Pilot Wallet Funding')).toBeTruthy();
     expect(await findByText('acc-uuid-debit')).toBeTruthy();
@@ -103,7 +111,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     expect((await findAllByText('₦500.00')).length).toBeGreaterThan(0); // verify debit column
   });
 
-  test('should submit controller direct journal reversal override on click', async () => {
+  test('should execute controller reversal only with an approved maker-checker request id (P0-B)', async () => {
     const mockJournal = {
       id: 'journal-uuid-999',
       status: 'POSTED',
@@ -114,6 +122,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal) // journal audit
       .mockResolvedValueOnce({ ...mockJournal, status: 'REVERSED' }) // reload journal
@@ -129,10 +138,13 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
     fireEvent.click(getByText('Audit Journal'));
 
-    // Trigger reversal
-    expect(await findByText('Sign & Execute Reversal')).toBeTruthy();
+    // Trigger governed reversal execution
+    expect(await findByText('Execute Approved Reversal')).toBeTruthy();
     fireEvent.change(getByPlaceholderText('e.g. Correct posting duplicate entry'), { target: { value: 'Reversing Pilot Funding' } });
-    fireEvent.click(getByText('Sign & Execute Reversal'));
+    fireEvent.change(getByPlaceholderText('e.g. 3f2c1a00-... (from the approved reversal request)'), {
+      target: { value: '3f2c1a00-0000-0000-0000-000000000abc' },
+    });
+    fireEvent.click(getByText('Execute Approved Reversal'));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith(
@@ -140,15 +152,49 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         {
           idempotencyKey: expect.stringContaining('rev-journal-uuid-999-'),
           reason: 'Reversing Pilot Funding',
+          approvalId: '3f2c1a00-0000-0000-0000-000000000abc',
         },
         expect.any(Object)
       );
-      expect(getByText('Journal reversal compensating entry executed successfully!')).toBeTruthy();
+      expect(getByText('Governed journal reversal executed from the approved request.')).toBeTruthy();
     });
   });
 
-  test('should submit preparer approval maker request on click instead of direct execution', async () => {
-    // Set active principal role to Preparer (Maker)
+  test('should reject controller reversal when no approved maker-checker request id is supplied', async () => {
+    const mockJournal = {
+      id: 'journal-uuid-999',
+      status: 'POSTED',
+      currency: 'NGN',
+      accountingUnit: 'LAGOS_BRANCH',
+      description: 'Pilot Wallet Funding',
+      lines: [],
+    };
+
+    (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(mockJournal);
+
+    (ApiClient.post as jest.Mock).mockResolvedValue({});
+
+    const { getByText, getByPlaceholderText, findByText } = render(<App />);
+
+    fireEvent.click(getByText('📖 Ledger & Reversals'));
+    fireEvent.change(getByPlaceholderText('e.g. ecd61345-...'), { target: { value: 'journal-uuid-999' } });
+    fireEvent.click(getByText('Audit Journal'));
+
+    expect(await findByText('Execute Approved Reversal')).toBeTruthy();
+    fireEvent.change(getByPlaceholderText('e.g. Correct posting duplicate entry'), { target: { value: 'No approval supplied' } });
+    fireEvent.click(getByText('Execute Approved Reversal'));
+
+    await waitFor(() => {
+      expect(getByText('Approved maker-checker request ID (approvalId) is required.')).toBeTruthy();
+    });
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  test('should submit preparer reversal maker request to the domain endpoint (no mock fingerprint)', async () => {
+    // Set active principal role to Preparer (Maker) — ledger.reverse / finance:prepare initiates; never executes
     useAuthStore.setState({
       principal: {
         type: 'OPERATOR',
@@ -156,7 +202,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
         sessionId: 'preparer-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_PREPARER'],
-        scopes: ['finance:prepare'],
+        scopes: ['ledger.view','ledger.post','ledger.reverse','finance:prepare','transaction.view','reporting.transaction_summary.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -172,10 +218,18 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     };
 
     (ApiClient.get as jest.Mock)
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB) // Dashboard my-dashboard fetch on mount
       .mockResolvedValueOnce([]) // accounts list
       .mockResolvedValueOnce(mockJournal); // journal audit
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: false, reason: 'REQUESTED' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      approvalId: 'req-uuid-1',
+      status: 'REQUESTED',
+      actionType: 'LEDGER_JOURNAL_REVERSAL',
+      resourceType: 'LEDGER_JOURNAL',
+      resourceId: 'journal-uuid-999',
+      actionFingerprint: 'a'.repeat(64),
+    });
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
@@ -191,14 +245,17 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
     fireEvent.click(getByText('Request Reversal Approval'));
 
     await waitFor(() => {
+      // P0-B: the maker leg posts the actual reversal request to the domain endpoint; the
+      // backend derives the deterministic fingerprint (the client never sends one).
       expect(ApiClient.post).toHaveBeenCalledWith(
-        '/internal/a2/workforce/approvals/request',
-        expect.objectContaining({
-          action: 'FINANCE_CONTROL_POLICY_ACTIVATE',
-          reason: 'Preparer Reversal Request',
-        })
+        '/ledger/journals/journal-uuid-999/reversal-request',
+        { reason: 'Preparer Reversal Request' },
       );
-      expect(getByText('Privileged reversal maker request created. Requires checking signature.')).toBeTruthy();
+      expect(ApiClient.post).not.toHaveBeenCalledWith(
+        '/internal/a2/workforce/approvals/request',
+        expect.anything(),
+      );
+      expect(getByText('Reversal maker request created (request ID req-uuid-1). Awaiting independent FINANCE_CONTROLLER approval.')).toBeTruthy();
     });
   });
 });

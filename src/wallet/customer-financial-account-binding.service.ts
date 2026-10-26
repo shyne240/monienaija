@@ -312,6 +312,13 @@ export class CustomerFinancialAccountBindingService {
         if (this.isRetryableTransactionError(error) && attempt < 2) {
           continue;
         }
+        if (this.isRetryableTransactionError(error)) {
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock still occurring. Surface the structured,
+          // client-retryable conflict below instead of the raw QueryFailedError.
+          await this.recordFailureAudit(normalized, error);
+          throw this.transactionContentionExhaustedException();
+        }
         await this.recordFailureAudit(normalized, error);
         if (
           this.isConstraintViolation(
@@ -353,7 +360,7 @@ export class CustomerFinancialAccountBindingService {
       }
     }
 
-    throw new ConflictException('The account binding could not complete after concurrent retries');
+    throw this.transactionContentionExhaustedException();
   }
 
   private async executeInTransaction(
@@ -835,6 +842,18 @@ export class CustomerFinancialAccountBindingService {
   private subordinateProvisioningKey(customerId: string, currency: string): string {
     const digest = createHash('sha256').update(`${customerId}|${currency}`).digest('hex');
     return `A3-WALLET-PROVISION-V1:${digest}`;
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'The account binding could not complete after concurrent retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryableTransactionError(error: unknown): boolean {

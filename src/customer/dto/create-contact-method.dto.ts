@@ -1,6 +1,8 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, Validate } from 'class-validator';
 
+import { normalizeCustomerText } from '../customer-validation';
+import { CustomerFieldPolicyConstraint } from '../customer-validation.constraints';
 import { ContactMethodType } from '../customer.enums';
 
 export class CreateContactMethodDto {
@@ -8,17 +10,20 @@ export class CreateContactMethodDto {
   type!: ContactMethodType;
 
   @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(255)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? normalizeCustomerText(value) : value,
+  )
+  @Validate(CustomerFieldPolicyConstraint, ['contactValue'])
   value!: string;
+
+  @IsString()
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? normalizeCustomerText(value).toUpperCase() : value,
+  )
+  @Validate(CustomerFieldPolicyConstraint, ['isoAlpha2'])
+  phoneCountry?: string;
 
   @IsBoolean()
   isPrimary!: boolean;
-
-  @IsString()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
-  @MinLength(1)
-  @MaxLength(160)
-  actor!: string;
 }

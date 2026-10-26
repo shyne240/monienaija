@@ -9,7 +9,13 @@ import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { AgentModule } from './agent/agent.module';
+import { AggregatorModule } from './aggregator/aggregator.module';
+import { OutletModule } from './outlet/outlet.module';
+import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerProofOfAddressModule } from './customer-proof-of-address/customer-proof-of-address.module';
+import { CustomerRegistrationModule } from './customer-registration/customer-registration.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
 import { CustomerComplianceModule } from './customer-compliance/customer-compliance.module';
@@ -68,6 +74,23 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
+import { AdminModule } from './admin/admin.module';
+import { CapabilityRegistryModule } from './capability-registry/capability.module';
+import { AuthorizationCatalogueModule } from './authorization-catalogue/authorization-catalogue.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
+import { CommissionModule } from './commission/commission.module';
+import { CommercialAccountingModule } from './commercial-accounting/commercial-accounting.module';
+import { RewardModule } from './reward/reward.module';
+import { FeeRulesModule } from './fee-rules/fee-rules.module';
+import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from './product-catalog/product-catalog.module';
+import { CustomerAppModule } from './customer-app/customer-app.module';
+import { CustomerFundingModule } from './customer-funding/customer-funding.module';
+import { NotificationModule } from './notification/notification.module';
+import { SupportModule } from './support/support.module';
+import { SupportAuthenticationModule } from './support-authentication/support-authentication.module';
+import { LocalAdminAuthenticationModule } from './local-admin-authentication/local-admin-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -87,15 +110,26 @@ import { WalletModule } from './wallet/wallet.module';
             'req.headers.cookie',
             'req.headers.x-api-key',
             'req.body.password',
+            'req.body.currentPassword',
+            'req.body.newPassword',
+            'req.body.temporaryPassword',
             'req.body.passwordHash',
+            'req.body.pin',
+            'req.body.customerPin',
+            'req.body.agentPin',
+            'req.body.otp',
+            'req.body.pinHash',
             'req.body.token',
             'req.body.tokenHash',
             'req.body.accessToken',
+            'req.body.applicantAccessToken',
             'req.body.refreshToken',
             'req.body.secret',
             'req.body.code',
             'req.body.codeHash',
             'req.body.challengeHash',
+            'req.body.transferCode',
+            'req.body.transferCodeHash',
             'req.body.providedHash',
             'req.body.deviceFingerprintHash',
             'req.body.fingerprintHash',
@@ -110,8 +144,14 @@ import { WalletModule } from './wallet/wallet.module';
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    AgentModule,
+    AggregatorModule,
+    OutletModule,
+    AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
+    CustomerProofOfAddressModule,
+    CustomerRegistrationModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,
     CustomerComplianceModule,
@@ -169,6 +209,23 @@ import { WalletModule } from './wallet/wallet.module';
     VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
+    AdminModule,
+    CapabilityRegistryModule,
+    AuthorizationCatalogueModule,
+    DashboardModule,
+    CommercialDecisionModule,
+    CommissionModule,
+    CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
+    RewardModule,
+    FeeRulesModule,
+    LimitCatalogModule,
+    ProductCatalogModule,
+    CustomerAppModule,
+    CustomerFundingModule,
+    NotificationModule,
+    SupportModule,
+    SupportAuthenticationModule,
+    LocalAdminAuthenticationModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })
