@@ -1,8 +1,31 @@
+import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const appRoot = __dirname;
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    {
+      name: 'admin-web-shared-deps',
+      resolveId(source, importer, options) {
+        if (
+          importer &&
+          !importer.startsWith(appRoot) &&
+          !source.startsWith('.') &&
+          !source.startsWith('\0') &&
+          !path.isAbsolute(source)
+        ) {
+          return this.resolve(source, path.join(appRoot, 'index.html'), {
+            ...options,
+            skipSelf: true,
+          });
+        }
+        return null;
+      },
+    },
+    react(),
+  ],
   server: {
     port: 5173,
     host: '0.0.0.0', // Bind to 0.0.0.0 as required by Agent preview configurations

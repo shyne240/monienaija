@@ -87,8 +87,15 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [assignmentFilters, setAssignmentFilters] = useState({
+    subjectType: '',
+    subjectId: '',
+    limitProfileCode: '',
+    isActive: '',
+  });
   const [agentId, setAgentId] = useState('');
   const [profileCode, setProfileCode] = useState('');
+  const [toggleBusyId, setToggleBusyId] = useState<string | null>(null);
   const [result, setResult] = useState('');
   const [resultErr, setResultErr] = useState('');
   const [usageFilters, setUsageFilters] = useState<UsageFilters>(INITIAL_USAGE_FILTERS);
@@ -100,13 +107,22 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   const [usageError, setUsageError] = useState('');
   const [reservationError, setReservationError] = useState('');
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = async (overrideFilters?: typeof assignmentFilters) => {
     setLoading(true);
     setError('');
     try {
-      const endpoint = initialCustomerId
-        ? `/internal/limit-assignments/customer/${encodeURIComponent(initialCustomerId)}`
-        : '/internal/limit-assignments';
+      let endpoint: string;
+      if (initialCustomerId) {
+        endpoint = `/internal/limit-assignments/customer/${encodeURIComponent(initialCustomerId)}`;
+      } else {
+        const activeFilters = overrideFilters ?? assignmentFilters;
+        const query = new URLSearchParams();
+        Object.entries(activeFilters).forEach(([key, value]) => {
+          if (value.trim()) query.set(key, value.trim());
+        });
+        const qs = query.toString();
+        endpoint = qs ? `/internal/limit-assignments?${qs}` : '/internal/limit-assignments';
+      }
       const response: any = await ApiClient.get(endpoint);
       setAssignments(response.data || response.items || (Array.isArray(response) ? response : []));
     } catch (err: any) {
@@ -175,6 +191,28 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
     }
   };
 
+  const handleToggleAgentAssignment = async (assignment: any) => {
+    if (!canAssignAgent || assignment.subjectType !== 'AGENT' || toggleBusyId) return;
+    setResult('');
+    setResultErr('');
+    setToggleBusyId(assignment.id);
+    try {
+      await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
+        subjectType: 'AGENT',
+        isActive: !assignment.isActive,
+        version: assignment.version ?? 1,
+      });
+      setResult(
+        `Agent limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`,
+      );
+      void fetchAssignments();
+    } catch (err: any) {
+      setResultErr(err?.message || 'Failed to update Agent limit assignment');
+    } finally {
+      setToggleBusyId(null);
+    }
+  };
+
   if (!canView) return <div style={wrap} role="alert"><div style={denied}>Viewing limit assignments requires <code>limit.view</code> or <code>agent.assign_limit</code>.</div></div>;
 
   return (
@@ -182,18 +220,100 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       <h2 style={h2}>📏 Limit Assignments</h2>
       <p style={sub}>View existing assignments. Creating an agent assignment is available only with <code>agent.assign_limit</code>; catalogue definitions are managed separately.</p>
       {initialCustomerId && <div style={note}>Showing assignments for customer <code>{initialCustomerId}</code>.{onBackToCustomer && <> <button type="button" onClick={onBackToCustomer} style={smallLink}>Back to Customer 360°</button></>}</div>}
+      {!initialCustomerId && (
+        <form
+          aria-label="Assignment filters"
+          onSubmit={(event) => { event.preventDefault(); void fetchAssignments(); }}
+          style={filterGrid}
+        >
+          <label style={fieldLabel}>Assignment subject type
+            <select
+              aria-label="Assignment subject type"
+              value={assignmentFilters.subjectType}
+              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, subjectType: event.target.value }))}
+              style={input}
+            >
+              <option value="">All subjects</option>
+              <option value="AGENT">AGENT</option>
+              <option value="AGENT_CLASS">AGENT_CLASS</option>
+              <option value="CUSTOMER">CUSTOMER</option>
+              <option value="SEGMENT">SEGMENT</option>
+            </select>
+          </label>
+          <label style={fieldLabel}>Assignment subject UUID
+            <input
+              aria-label="Assignment subject UUID"
+              value={assignmentFilters.subjectId}
+              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, subjectId: event.target.value }))}
+              placeholder="Agent or customer UUID"
+              style={input}
+            />
+          </label>
+          <label style={fieldLabel}>Assignment profile code
+            <input
+              aria-label="Assignment profile code"
+              value={assignmentFilters.limitProfileCode}
+              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, limitProfileCode: event.target.value }))}
+              placeholder="e.g. AGENT_STANDARD"
+              style={input}
+            />
+          </label>
+          <label style={fieldLabel}>Assignment active state
+            <select
+              aria-label="Assignment active state"
+              value={assignmentFilters.isActive}
+              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, isActive: event.target.value }))}
+              style={input}
+            >
+              <option value="">All states</option>
+              <option value="true">Active only</option>
+              <option value="false">Inactive only</option>
+            </select>
+          </label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="submit" style={btn} disabled={loading}>Filter assignments</button>
+            <button
+              type="button"
+              style={btn}
+              disabled={loading}
+              onClick={() => {
+                const cleared = { subjectType: '', subjectId: '', limitProfileCode: '', isActive: '' };
+                setAssignmentFilters(cleared);
+                void fetchAssignments(cleared);
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </form>
+      )}
       {error && <div style={errBox} role="alert">{error}</div>}
       {loading ? <div style={loadingBox}>Loading assignments…</div> : assignments.length === 0 ? (
         <div style={empty}>No matching limit assignments.</div>
       ) : (
         <table style={table}>
-          <thead><tr><th>Subject</th><th>Profile</th><th>Active</th><th>Effective</th></tr></thead>
+          <thead><tr><th>Subject</th><th>Profile</th><th>Active</th><th>Version</th><th>Effective</th>{canAssignAgent && <th>Action</th>}</tr></thead>
           <tbody>{assignments.map((assignment: any) => (
             <tr key={assignment.id}>
-              <td style={mono}>{assignment.subjectType}: {assignment.subjectId?.slice(0, 8) || assignment.segmentCode || '-'}</td>
+              <td style={mono}>{assignment.subjectType}: {assignment.subjectId || assignment.segmentCode || '-'}</td>
               <td>{assignment.limitProfileCode || '-'}</td>
               <td><span style={badge(assignment.isActive ? 'ACTIVE' : 'INACTIVE')}>{assignment.isActive ? 'ACTIVE' : 'INACTIVE'}</span></td>
+              <td>{assignment.version ?? 1}</td>
               <td>{assignment.effectiveFrom ? new Date(assignment.effectiveFrom).toLocaleString() : '-'}</td>
+              {canAssignAgent && (
+                <td>
+                  {assignment.subjectType === 'AGENT' ? (
+                    <button
+                      type="button"
+                      style={smallLink}
+                      disabled={toggleBusyId === assignment.id}
+                      onClick={() => void handleToggleAgentAssignment(assignment)}
+                    >
+                      {assignment.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                  ) : '—'}
+                </td>
+              )}
             </tr>
           ))}</tbody>
         </table>

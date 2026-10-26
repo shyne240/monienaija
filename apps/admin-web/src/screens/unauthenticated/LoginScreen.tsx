@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { DEV_AUTH_MOCK } from '../../config';
 
@@ -14,6 +14,14 @@ export const LoginScreen: React.FC = () => {
 
   const { loginWithPassword, login, bootstrap, isLoading, error, clearError } = useAuthStore();
 
+  useEffect(() => {
+    return () => {
+      setPassword('');
+      setTokenInput('');
+      setBootstrapInput('');
+    };
+  }, []);
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
@@ -26,6 +34,7 @@ export const LoginScreen: React.FC = () => {
 
     try {
       await loginWithPassword(email, password);
+      setPassword('');
     } catch {
       // Handled by store
     }
