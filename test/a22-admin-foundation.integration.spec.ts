@@ -90,7 +90,11 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-        assuranceLevel: 'PASSWORD',
+        // Governance flows (Decision 7 agent funding, maker-checker) require an MFA-assured
+        // workforce session. Role-scoped tokens model a real MFA-established session; the
+        // legacy role-less token keeps its prior PASSWORD assurance so non-governance
+        // assertions are unchanged. The application control itself is not relaxed.
+        assuranceLevel: roleKey ? 'MFA' : 'PASSWORD',
       } as any;
     },
   };
@@ -319,10 +323,16 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     const agentId = await createActiveAgent();
     const token = workforceToken('OPERATOR', 'AGENT_NETWORK_MANAGER');
     const journalsBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    // ARENA 3 fixture fix: maker initiation is the /fund-request endpoint. The legacy
+    // "two safe modes" behaviour of POST /fund (create a maker request when no approvalId
+    // is supplied) was hardened away: /fund without an independently approved, fingerprint-
+    // bound approvalId is now correctly rejected 403. The governance invariant this test
+    // proves — PENDING until independent approval, zero journals at initiation — is asserted
+    // against the real maker endpoint.
     const fundRes = await request(app.getHttpServer())
-      .post(`/api/v1/internal/agents/${agentId}/fund`)
+      .post(`/api/v1/internal/agents/${agentId}/fund-request`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ amountMinor: '100000', currency: 'NGN', reference: `fund-a22-${randomUUID().slice(0, 8)}`, idempotencyKey: `idem-a22-${randomUUID()}` })
+      .send({ amountMinor: '100000', currency: 'NGN', reference: `fund-a22-${randomUUID().slice(0, 8)}`, idempotencyKey: `idem-a22-${randomUUID()}`, reason: 'A22 maker initiation must remain pending until independent approval' })
       .expect(201);
     expect(fundRes.body.status).toBe('PENDING');
     expect(fundRes.body.journalId).toBeNull();
@@ -333,9 +343,13 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     expect(requestRows).toEqual([{ status: 'PENDING', journal_id: null }]);
     const journalsAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
     expect(journalsAfter[0]!.count).toBe(journalsBefore[0]!.count);
-    // Financial reads should not mutate
+    // Financial reads should not mutate.
+    // ARENA 3 fixture fix: the reconciliation read is performed with a TREASURY token —
+    // per Decision 6 the TREASURY role holds exactly `reconciliation.view`. Reusing the
+    // AGENT_NETWORK_MANAGER funding-maker token for this read is correctly denied 403 by
+    // the catalogue-backed route policy; the denial is the control working as designed.
     const reconBefore = Number(journalsAfter[0]!.count);
-    await request(app.getHttpServer()).get('/api/v1/internal/reconciliation/report').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app.getHttpServer()).get('/api/v1/internal/reconciliation/report').set('Authorization', `Bearer ${workforceToken('OPERATOR', 'TREASURY')}`).expect(200);
     const journalsAfterRecon: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
     expect(Number(journalsAfterRecon[0]!.count)).toBe(reconBefore);
   });

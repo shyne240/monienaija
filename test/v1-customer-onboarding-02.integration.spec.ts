@@ -104,7 +104,11 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
   };
 
   const nextPhone = (() => {
-    let counter = 500_000_000;
+    // ARENA 3 fixture fix: the previous 500_000_000 base produced '0850000000x' numbers.
+    // The 0850 prefix is not a valid Nigerian mobile prefix, so the hardened registration
+    // phone policy rejects them with 400. The 110_000_000 base produces '0811000000x'
+    // (valid 811 mobile range) with the same uniqueness properties.
+    let counter = 110_000_000;
     return () => `0${8}${String(counter++).slice(0, 9)}`;
   })();
 
@@ -271,10 +275,16 @@ describe('V1-CUSTOMER-ONBOARDING-02 verified-phone activation (real PostgreSQL)'
     );
     expect(audits).toHaveLength(1);
     expect(audits[0].entity_type).toBe('CUSTOMER');
-    expect(audits[0].actor).toBe('workforce-activation');
+    // ARENA 3 fixture fix: the audit actor is attributed from the authenticated session,
+    // never from the client-supplied `actor` body field (same anti-spoofing invariant the
+    // Batch 1/Batch 2A suites assert). The OPERATOR session principal is recorded.
+    expect(audits[0].actor).toBe('workforce-operator-1');
     expect(audits[0].previous_values.status).toBe('DRAFT');
     expect(audits[0].new_values.status).toBe('ACTIVE');
-    expect(audits[0].new_values.reference).toBe(`mn-8${first.phone.slice(2)}`);
+    // ARENA 3 fixture fix: the activation audit records the PII-minimized reference
+    // ('mn-••••' + last four of the national number), never the full phone-derived
+    // reference. Assert the hardened masked form.
+    expect(audits[0].new_values.reference).toBe(`mn-••••${first.phone.slice(-4)}`);
     expect(audits[0].new_values.activationGate).toEqual({ verifiedPrimaryPhone: true });
     expect(audits[0].occurred_at).toBeTruthy();
 

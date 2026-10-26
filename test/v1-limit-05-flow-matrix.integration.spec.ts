@@ -126,7 +126,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     customerAccess: 'NONE',
     agentAccess: 'NONE',
     aggregatorAccess: 'NONE',
-    assuranceLevel: 'PASSWORD',
+    assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
   };
   const supportMaker: any = {
     type: 'SUPPORT',

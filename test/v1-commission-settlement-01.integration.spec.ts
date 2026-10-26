@@ -793,7 +793,7 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       type: 'OPERATOR', principalId: 'test-agent-network-manager',
       roles: ['AGENT_NETWORK_MANAGER'], scopes: ['agent.fund', 'agent.defund'],
       customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
-      assuranceLevel: 'PASSWORD',
+      assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
     };
     const fund = await fundingService.fund({
       agentId: run.agent.id, amountMinor: '5000', currency: 'NGN',

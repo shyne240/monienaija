@@ -414,19 +414,38 @@ describe('A18 Aggregator Foundation (real PostgreSQL)', () => {
   it('21. migration chain', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
-    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090)$/);
+    // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
+    // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
+    // legitimately advanced through SecureAgentApplicationAccess1785753600095 before the
+    // verified baseline f90f6ea; same fix pattern as the A17 correction (ARENA 1, d461915).
+    const appliedMigrations: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(appliedMigrations.map((migration) => migration.name).sort()).toEqual(
+      [...configuredMigrations].sort(),
+    );
+    expect(await dataSource.showMigrations()).toBe(false);
     const aggCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregators'::regclass AND conname='chk_aggregators_status'`);
     expect(aggCheck.length).toBe(1);
     const relCheck: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='aggregator_agent_assignments'::regclass AND conname='chk_aggregator_agent_status'`);
     expect(relCheck.length).toBe(1);
   });
 
-  // 22. production readiness
-  it('22. production readiness', async () => {
-    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090)$/);
+  // 22. migration readiness (not a claim of overall production readiness — ARENA 3,
+  // mirroring the A17 correction: the configured chain must be fully applied)
+  it('22. configured migration chain is fully applied', async () => {
+    // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
+    // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
+    // legitimately advanced through SecureAgentApplicationAccess1785753600095 before the
+    // verified baseline f90f6ea; same fix pattern as the A17 correction (ARENA 1, d461915).
+    const appliedMigrations: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(appliedMigrations.map((migration) => migration.name).sort()).toEqual(
+      [...configuredMigrations].sort(),
+    );
+    expect(await dataSource.showMigrations()).toBe(false);
   });
 });

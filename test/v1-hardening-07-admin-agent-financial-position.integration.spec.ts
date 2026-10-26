@@ -317,7 +317,17 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
   it('16. 66 migrations preserved', async () => {
     const rows: Array<{count:string}> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
-    const latest: Array<{name:string, timestamp:string}> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090']).toContain(latest[0]!.timestamp);
+    // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
+    // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
+    // legitimately advanced through SecureAgentApplicationAccess1785753600095 before the
+    // verified baseline f90f6ea; same fix pattern as the A17 correction (ARENA 1, d461915).
+    const appliedMigrations: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(appliedMigrations.map((migration) => migration.name).sort()).toEqual(
+      [...configuredMigrations].sort(),
+    );
+    expect(await dataSource.showMigrations()).toBe(false);
   });
 });

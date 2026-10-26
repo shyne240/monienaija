@@ -739,7 +739,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-        assuranceLevel: 'PASSWORD',
+        assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
       },
       actor: 'test-actor',
     });
@@ -751,9 +751,18 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   it('migration count is 65 and settlement account exists', async () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
-    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090)$/);
+    // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
+    // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
+    // legitimately advanced through SecureAgentApplicationAccess1785753600095 before the
+    // verified baseline f90f6ea; same fix pattern as the A17 correction (ARENA 1, d461915).
+    const appliedMigrations: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY timestamp ASC`,
+    );
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(appliedMigrations.map((migration) => migration.name).sort()).toEqual(
+      [...configuredMigrations].sort(),
+    );
+    expect(await dataSource.showMigrations()).toBe(false);
     const settlement: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN'`);
     expect(settlement.length).toBe(1);
     const fundingTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='customer_funding_requests'`);

@@ -97,11 +97,13 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(usage!.name).toBe('CreateLimitUsages1785753600069');
     // product catalogue (0071) also remains in the chain
     expect(migs.some((m) => m.timestamp === '1785753600071')).toBe(true);
-    // head moved forward with the V1-ADMIN-AUTHORIZATION-RUNTIME-01 bootstrap-role-check
-    // constraint rename (0084)
-    const last = migs[migs.length - 1];
-    expect(last.timestamp).toBe('1785753600090');
-    expect(last.name).toBe('CreateAgentFundingRequests1785753600090');
+    // ARENA 3 (PostgreSQL regression triage): the head is no longer pinned at 0090 — the
+    // configured chain legitimately advanced through SecureAgentApplicationAccess1785753600095.
+    // Compare the applied chain against the configured migrations (A17 fix pattern, d461915).
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(migs.map((migration) => migration.name).sort()).toEqual([...configuredMigrations].sort());
+    expect(await dataSource.showMigrations()).toBe(false);
+    expect(migs.some((m) => m.timestamp === '1785753600090' && m.name === 'CreateAgentFundingRequests1785753600090')).toBe(true);
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_usages','limit_reservations','limit_profiles','limit_rules','limit_assignments') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(expect.arrayContaining(['limit_usages','limit_reservations']));
     const checks: Array<{ conname: string }> = await dataSource.query(`SELECT conname FROM pg_constraint WHERE conrelid='limit_usages'::regclass`);

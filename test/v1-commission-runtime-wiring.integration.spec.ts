@@ -208,7 +208,10 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     customerAccess: 'NONE',
     agentAccess: 'NONE',
     aggregatorAccess: 'NONE',
-    assuranceLevel: 'PASSWORD',
+    // Decision 7 requires an MFA-assured AGENT_NETWORK_MANAGER to initiate agent funding
+    // (AgentFundingService.assertMakerPrincipal). A PASSWORD-assured fixture is rejected by
+    // design; the control is correct, so the fixture must model a real MFA-assured session.
+    assuranceLevel: 'MFA',
   };
 
   beforeAll(async () => {

@@ -134,10 +134,16 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
 
   // ── Migration & chain ──
   it('01. Migration count and chain intact (additive chain)', async () => {
+    // ARENA 3 (PostgreSQL regression triage): the hard-coded 91-migration count predates
+    // migrations 0091-0095 (chain head SecureAgentApplicationAccess1785753600095, present
+    // since before the verified baseline). Compare against the configured chain instead.
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
     const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
-    expect(Number(rows[0]!.cnt)).toBe(91);
+    expect(Number(rows[0]!.cnt)).toBe(configuredMigrations.length);
     const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
-    expect(files.length).toBe(91);
+    expect(files.length).toBe(configuredMigrations.length);
+    expect(files.map((file) => file.name).sort()).toEqual([...configuredMigrations].sort());
+    expect(await dataSource.showMigrations()).toBe(false);
     expect(files.some((f) => f.name.includes('1785753600075'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600074'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600072'))).toBe(true);
@@ -149,9 +155,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(files.some((f) => f.name.includes('1785753600066'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600065'))).toBe(true);
     expect(files.some((f) => f.name.includes('1785753600000'))).toBe(true);
-    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(latest[0]!.timestamp).toBe('1785753600090');
-    expect(latest[0]!.name).toBe('CreateAgentFundingRequests1785753600090');
+    expect(files.some((f) => f.name === 'CreateAgentFundingRequests1785753600090')).toBe(true);
+    expect(files.some((f) => f.name === 'SecureAgentApplicationAccess1785753600095')).toBe(true);
   });
 
   // ── Seed counts V1/V2 ──

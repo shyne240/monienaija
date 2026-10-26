@@ -67,6 +67,26 @@ Quality gates: `npm run lint` · `npm run format:check` · `npm run build` · `n
 (financial integration suites run against real PostgreSQL; run ≤5 suites per jest process when
 running the full battery).
 
+### PostgreSQL regression battery (`npm run test:pg`)
+
+The real-PostgreSQL integration suites require (1) a reachable local PostgreSQL and (2) the
+local-development workforce configuration (an enabled `SUPER_ADMIN` role in
+`A2_FINANCE_ROLES_JSON`, the maker-checker rules and rate-limit categories). Without (2), the
+admin/authorization/governance suites correctly fail closed with `SUPER_ADMIN role is disabled
+or undefined in configuration` — an environment defect, not an application defect.
+
+Reproducible local setup (ARENA 3 integration baseline):
+
+```bash
+node scripts/prepare-pg-test-env.js   # writes .env from .env.example + the committed
+                                      # v1-workforce-bootstrap.env.template (public placeholders)
+node scripts/embedded-pg.js &         # embedded PostgreSQL 18 on 127.0.0.1:5432
+npm run test:pg                       # batched runner; keep PG_TEST_CONCURRENCY=1 on <8GB RAM
+```
+
+On 4GB-class sandboxes keep `PG_TEST_CONCURRENCY=1`: at the default of 2 the batch processes
+are OOM-killed mid-run (observed as batches exiting with a null code), which corrupts results.
+
 ## Deploy / bootstrap / pilot
 
 - Deployment inputs & production gate: [`docs/deployment/DEPLOYMENT.md`](docs/deployment/DEPLOYMENT.md)

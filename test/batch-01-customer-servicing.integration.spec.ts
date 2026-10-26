@@ -59,7 +59,11 @@ const workforceConfig: A2WorkforceConfigurationV1 = {
   trustedProxyAddresses: ['127.0.0.1'],
 } as A2WorkforceConfigurationV1;
 
-const syntheticPhone = (suffix: string) => `+234000000${suffix}`;
+// ARENA 3 fixture fix: '+234000000xxxx' is not a valid Nigerian mobile number and is
+// rejected (400) by the hardened customer field policy on HTTP contact-method creation.
+// '+234811000xxxx' is a syntactically valid NG mobile range; masking/search assertions
+// below were updated consistently (canonical national number = '811000' + suffix).
+const syntheticPhone = (suffix: string) => `+234811000${suffix}`;
 
 describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', () => {
   let dataSource: DataSource;
@@ -121,7 +125,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
         legalName: 'Batch One Alpha Legal',
         createdAt: new Date('2026-10-20T12:00:00.000Z'),
         phone: syntheticPhone('1234'),
-        normalizedPhone: '0000001234',
+        normalizedPhone: '8110001234',
         phonePrimary: true,
         phoneVerified: true,
         dateOfBirth: '1992-01-02',
@@ -137,7 +141,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
         legalName: 'Batch One Beta Legal',
         createdAt: new Date('2026-10-21T12:00:00.000Z'),
         phone: syntheticPhone('5678'),
-        normalizedPhone: '0000005678',
+        normalizedPhone: '8110005678',
         phonePrimary: true,
         phoneVerified: false,
       }),
@@ -150,7 +154,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
         legalName: 'Batch One Gamma Legal',
         createdAt: new Date('2026-10-22T12:00:00.000Z'),
         phone: syntheticPhone('8888'),
-        normalizedPhone: '0000008888',
+        normalizedPhone: '8110008888',
         phonePrimary: false,
         phoneVerified: false,
       }),
@@ -339,13 +343,13 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       kycStatus: 'APPROVED',
       displayName: 'Batch One Alpha',
       legalName: 'Batch One Alpha Legal',
-      primaryContact: { type: 'PHONE', maskedValue: '******1234', isVerified: true },
+      primaryContact: { type: 'PHONE', maskedValue: '+234*****1234', isVerified: true },
     });
     expect(new Date(alpha.body.data[0].createdAt).toISOString()).toBe('2026-10-20T12:00:00.000Z');
     expect(JSON.stringify(alpha.body)).not.toContain(syntheticPhone('1234'));
 
     const contactSearch = await request(app.getHttpServer())
-      .get('/api/v1/internal/customers?search=0000001234')
+      .get('/api/v1/internal/customers?search=8110001234')
       .set(auth(superAdmin.token))
       .expect(200);
     expect(contactSearch.body.data.map((item: any) => item.id)).toContain(customers.alpha.id);
@@ -376,7 +380,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .expect(200);
     expect(limitedContact.body.data.find((item: any) => item.id === customers.alpha.id).primaryContact).toBeNull();
     const hiddenPhoneSearch = await request(app.getHttpServer())
-      .get('/api/v1/internal/customers?search=0000001234')
+      .get('/api/v1/internal/customers?search=8110001234')
       .set(auth(administrator.token))
       .expect(200);
     expect(hiddenPhoneSearch.body.data).toHaveLength(0);
@@ -419,7 +423,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .get(`/api/v1/internal/customers/${customers.alpha.id}/phone-verification`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(phoneVerification.body.phones[0]).toMatchObject({ isPrimary: true, maskedValue: '******1234' });
+    expect(phoneVerification.body.phones[0]).toMatchObject({ isPrimary: true, maskedValue: '+234*****1234' });
     expect(JSON.stringify(phoneVerification.body)).not.toContain(syntheticPhone('1234'));
 
     const safeCustomer = await request(app.getHttpServer())
@@ -458,7 +462,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       displayName: 'Synthetic Counterparty',
       createdAt: new Date('2026-10-18T12:00:00.000Z'),
       phone: syntheticPhone('4321'),
-      normalizedPhone: '0000004321',
+      normalizedPhone: '8110004321',
       phonePrimary: true,
       phoneVerified: false,
     });
@@ -497,9 +501,9 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .set(auth(superAdmin.token))
       .expect(200);
     expect(transactions.body.items).toHaveLength(1);
-    expect(transactions.body.items[0].counterparty.maskedContact).toBe('******4321');
+    expect(transactions.body.items[0].counterparty.maskedContact).toBe('+234*****4321');
     expect(JSON.stringify(transactions.body)).not.toContain(syntheticPhone('4321'));
-    expect(JSON.stringify(transactions.body)).not.toContain('0000004321');
+    expect(JSON.stringify(transactions.body)).not.toContain('8110004321');
     await request(app.getHttpServer())
       .get(`/api/v1/internal/customers/${customers.alpha.id}/transactions`)
       .set(auth(administrator.token))

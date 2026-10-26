@@ -182,7 +182,10 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
         city: 'Abuja',
         state: 'FCT',
         country: 'NG',
-        postalCode: '00000',
+        // ARENA 3 fixture fix: '00000' is not a valid Nigerian postal code (NG codes are
+        // six digits); the hardened address field policy rejects it with 400. 900211 is a
+        // real Abuja (FCT) code consistent with the city/state above.
+        postalCode: '900211',
         isPrimary: true,
       })
       .expect(201);

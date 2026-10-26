@@ -125,35 +125,53 @@ export class ProductCatalogService {
 
   async updateProduct(code: string, input: ProductUpdateInput, actor: string): Promise<ProductSafeProjection> {
     const normalizedCode = this.normalizeCode(code);
-    const product = await this.repo.findOne({ where: { code: normalizedCode } as never });
-    if (!product) throw new NotFoundException(`Product ${normalizedCode} not found`);
-    this.assertVersion(product.version, input.version);
+    // ARENA 3 (PostgreSQL regression triage, V1-COMMERCIAL-02 suite test 08 — verified
+    // application defect, not a test defect): TypeORM's @VersionColumn is NOT enforced by
+    // repo.save(); it only increments the column (OptimisticLockVersionMismatchError is
+    // raised solely on explicitly version-locked reads). The previous read → assertVersion
+    // → save sequence therefore allowed two concurrent writers presenting the SAME expected
+    // version to both commit — a lost update (observed: both promises fulfilled at versions
+    // n+1 and n+2 instead of exactly one winner and one 409). Locking the product row for
+    // the duration of the version check + write makes the documented optimistic-concurrency
+    // contract deterministic: the second writer now re-reads the winner's committed version
+    // and is rejected by assertVersion with the same 409 as the sequential stale-version
+    // replay. This strengthens the governance control; nothing is relaxed.
+    const { saved, previous } = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Product);
+      const product = await repository.findOne({
+        where: { code: normalizedCode } as never,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!product) throw new NotFoundException(`Product ${normalizedCode} not found`);
+      this.assertVersion(product.version, input.version);
 
-    if (input.name !== undefined) product.name = this.requireName(input.name);
-    if (input.description !== undefined) product.description = input.description?.trim() || null;
-    if (input.domain !== undefined) product.domain = this.assertEnum(input.domain, ProductDomain, 'domain');
-    if (input.status !== undefined) product.status = this.assertEnum(input.status, ProductStatus, 'status');
-    if (input.enabled !== undefined) {
-      if (typeof input.enabled !== 'boolean') throw new BadRequestException('enabled must be a boolean');
-      product.enabled = input.enabled;
-    }
-    if (input.configurationStatus !== undefined) {
-      product.configurationStatus = this.assertEnum(input.configurationStatus, ProductConfigurationStatus, 'configurationStatus');
-    }
-    product.updatedBy = actor;
-
-    const previous = this.productValues({ ...product, version: input.version } as Product);
-    try {
-      const saved = (await this.repo.save(product as never)) as unknown as Product;
-      await this.audit('UPDATED', actor, previous, this.productValues(saved));
-      return this.toSafe(saved);
-    } catch (e) {
-      // VersionColumn optimistic lock or concurrent unique race
-      if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
-        throw new ConflictException('Product version conflict — stale version');
+      if (input.name !== undefined) product.name = this.requireName(input.name);
+      if (input.description !== undefined) product.description = input.description?.trim() || null;
+      if (input.domain !== undefined) product.domain = this.assertEnum(input.domain, ProductDomain, 'domain');
+      if (input.status !== undefined) product.status = this.assertEnum(input.status, ProductStatus, 'status');
+      if (input.enabled !== undefined) {
+        if (typeof input.enabled !== 'boolean') throw new BadRequestException('enabled must be a boolean');
+        product.enabled = input.enabled;
       }
-      throw e;
-    }
+      if (input.configurationStatus !== undefined) {
+        product.configurationStatus = this.assertEnum(input.configurationStatus, ProductConfigurationStatus, 'configurationStatus');
+      }
+      product.updatedBy = actor;
+
+      const previousValues = this.productValues({ ...product, version: input.version } as Product);
+      try {
+        const persisted = (await repository.save(product as never)) as unknown as Product;
+        return { saved: persisted, previous: previousValues };
+      } catch (e) {
+        // VersionColumn optimistic lock or concurrent unique race
+        if (this.isVersionConflict(e) || this.isUniqueViolation(e)) {
+          throw new ConflictException('Product version conflict — stale version');
+        }
+        throw e;
+      }
+    });
+    await this.audit('UPDATED', actor, previous, this.productValues(saved));
+    return this.toSafe(saved);
   }
 
   async getProduct(code: string): Promise<ProductSafeProjection> {

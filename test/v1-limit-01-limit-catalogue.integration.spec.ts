@@ -97,32 +97,14 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     const migs: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp ASC`);
     expect(migs.length).toBeGreaterThanOrEqual(68);
     expect(migs.some((m) => m.timestamp === '1785753600067')).toBe(true);
-    const last = migs[migs.length - 1];
-    // after V1-COMMISSION-01 the head is 0073; earlier heads remain accepted for backward compatibility
-    expect(['1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600075') expect(last.name).toBe('AddTransferFeeColumns1785753600075');
-    if (last.timestamp === '1785753600076') expect(last.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
-    else if (last.timestamp === '1785753600077') expect(last.name).toBe('AddAgentCredentialRotation1785753600077');
-    else if (last.timestamp === '1785753600078') expect(last.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
-    else if (last.timestamp === '1785753600079') expect(last.name).toBe('AddCustomerCredentialRotation1785753600079');
-    else if (last.timestamp === '1785753600080') expect(last.name).toBe('AddMfaChallengePurpose1785753600080');
-    else if (last.timestamp === '1785753600081') expect(last.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
-    else if (last.timestamp === '1785753600082') expect(last.name).toBe('CreateLocalAdminAuthentication1785753600082');
-    else if (last.timestamp === '1785753600083') expect(last.name).toBe('CreateAuthorizationCatalogue1785753600083');
-    else if (last.timestamp === '1785753600084') expect(last.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
-    else if (last.timestamp === '1785753600085') expect(last.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
-    else if (last.timestamp === '1785753600086') expect(last.name).toBe('CreateRoleDefinitionGovernance1785753600086');
-    else if (last.timestamp === '1785753600087') expect(last.name).toBe('CreateDashboardPlatform1785753600087');
-    else if (last.timestamp === '1785753600090') expect(last.name).toBe('CreateAgentFundingRequests1785753600090');
-    else if (last.timestamp === '1785753600089') expect(last.name).toBe('WidenAuthorizationActorColumns1785753600089');
-    else if (last.timestamp === '1785753600074') expect(last.name).toBe('CreateRewardRules1785753600074');
-    else if (last.timestamp === '1785753600073') expect(last.name).toBe('CreateCommissionRules1785753600073');
-    else if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');
-    else if (last.timestamp === '1785753600071') expect(last.name).toBe('CreateProductCatalogue1785753600071');
-    else if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
-    else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
-    else if (last.timestamp === '1785753600068') expect(last.name).toBe('CreateLimitAssignments1785753600068');
-    else expect(last.name).toBe('CreateLimitProfileCatalogue1785753600067');
+    // ARENA 3 (PostgreSQL regression triage): the head-timestamp allowlist and per-head
+    // name ladder stopped at 0090 while the configured chain legitimately advanced through
+    // SecureAgentApplicationAccess1785753600095. Compare the applied chain against the
+    // configured migrations instead of a stale hard-coded ceiling (A17 fix pattern, d461915).
+    const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
+    expect(migs.map((migration) => migration.name).sort()).toEqual([...configuredMigrations].sort());
+    expect(await dataSource.showMigrations()).toBe(false);
+    expect(migs.some((m) => m.timestamp === '1785753600067' && m.name === 'CreateLimitProfileCatalogue1785753600067')).toBe(true);
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename)).toEqual(['limit_profiles','limit_rules']);
     // checks constraints exist — named chk_* per audit spec where justified
