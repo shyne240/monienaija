@@ -697,16 +697,22 @@ export class AgentCashToCashClaimService {
           }
 
           if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
-            try {
-              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKeyForClaim);
-            } catch {}
+            // Limit usage and settlement must commit together. A failed usage update must
+            // roll back the journal, not silently permit a payout with unaccounted limits.
+            await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKeyForClaim);
           }
 
           // Update transfer to CLAIMED
-          await manager.query(
-            `UPDATE cash_to_cash_transfers SET status='CLAIMED', claimed_at=NOW(), claimant_customer_id=$1, claim_journal_id=$2, claim_idempotency_key=$3, claim_reference=$4, failed_attempts=0, is_locked=FALSE, locked_at=NULL, lock_reason=NULL, updated_at=NOW() WHERE id=$5`,
+          // Ledger/account locks or limit evaluation may have waited beyond the earlier
+          // deadline check. Gate the terminal transition on the database wall clock too;
+          // rejection rolls back the journal and limit usage in this transaction.
+          const settled: Array<{ id: string }> = await manager.query(
+            `WITH settled AS (UPDATE cash_to_cash_transfers SET status='CLAIMED', claimed_at=clock_timestamp(), claimant_customer_id=$1, claim_journal_id=$2, claim_idempotency_key=$3, claim_reference=$4, failed_attempts=0, is_locked=FALSE, locked_at=NULL, lock_reason=NULL, updated_at=NOW() WHERE id=$5 AND status='UNCLAIMED' AND expires_at > clock_timestamp() RETURNING id) SELECT id FROM settled`,
             [customerId, journalId, idempotencyKey, reference, transferId],
           );
+          if (settled.length !== 1) {
+            throw new ConflictException('Transfer has expired and cannot be claimed');
+          }
 
           // — V1-COMMERCIAL-DECISION-03C: record the immutable commercial decision snapshot for
           // the CLAIM operation inside this same SERIALIZABLE transaction, after the claim journal

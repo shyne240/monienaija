@@ -5,6 +5,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
+import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 import { AppModule } from '../src/app.module';
 import { AgentService } from '../src/agent/agent-service.enum';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
@@ -45,6 +46,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   let customerService: CustomerService;
   let agentHistoryService: AgentTransactionHistoryService;
   let customerHistoryService: CustomerTransactionHistoryService;
+  let limitService: LimitEnforcementService;
 
   let systemLedgerAccountId: string;
   let unclaimedLedgerAccountId: string;
@@ -60,6 +62,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+    limitService = moduleRef.get(LimitEnforcementService);
     cashToCashService = moduleRef.get(AgentCashToCashService);
     claimService = moduleRef.get(AgentCashToCashClaimService);
     classService = moduleRef.get(AgentClassService);
@@ -1755,4 +1758,102 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect(auditRows[0]!.new_values.identityVerificationMethod).toBe('CURRENT_APPROVED_KYC_ASSESSMENT');
     expect(auditRows[0]!.new_values.kycAssessedBy).toBe('SERVICE');
   });
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    '47. %s rolls back settlement when limit usage cannot commit',
+    async (redemptionMethod) => {
+      const { transferId, phone, transferCode } = await initiateTransfer('7300');
+      const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
+      const beforeDestination = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const { challengeId } = await createMfaChallenge(customerId, 'limit-commit-failure');
+      const idempotencyKey = `limit-commit-failure-${randomUUID()}`;
+      const spy = jest.spyOn(limitService, 'commitReservationsWithManager')
+        .mockRejectedValueOnce(new Error('Limit usage write failed'));
+      try {
+        await expect(claimService.execute({
+          transferId, beneficiaryPhone: phone, transferCode, customerId,
+          mfaChallengeId: challengeId, otp: 'limit-commit-failure', idempotencyKey,
+          redemptionMethod, claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
+          agentPin: redemptionMethod === 'AGENT_CASH' ? '1234' : undefined,
+        })).rejects.toThrow('Limit usage write failed');
+        expect(spy).toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+      const rows = await dataSource.query(
+        `SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId],
+      );
+      expect(rows[0]).toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor)
+        .toBe(beforeDestination.balanceMinor);
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor)
+        .toBe(beforeLiability.balanceMinor);
+      expect(await dataSource.query(
+        `SELECT id FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`,
+        [`cash-to-cash-claim.v1:${transferId}`, idempotencyKey],
+      )).toEqual([]);
+      expect(await dataSource.query(
+        `SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${idempotencyKey}`],
+      )).toEqual([]);
+
+      // OTP consumption intentionally survives a posting rollback. A fresh purpose-bound
+      // challenge can retry the same financial request/key; do not reactivate a used OTP.
+      const retry = await createMfaChallenge(customerId, 'limit-commit-retry');
+      const recovered = await claimService.execute({
+        transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: retry.challengeId, otp: 'limit-commit-retry', idempotencyKey,
+        redemptionMethod, claimantPrincipal: agentPrincipal(claimant.agent.id) as any,
+        agentPin: redemptionMethod === 'AGENT_CASH' ? '1234' : undefined,
+      });
+      expect(recovered.status).toBe('COMPLETED');
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor)
+        .toBe((BigInt(beforeDestination.balanceMinor) + 7300n).toString());
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor)
+        .toBe((BigInt(beforeLiability.balanceMinor) - 7300n).toString());
+      expect(await dataSource.query(
+        `SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${idempotencyKey}`],
+      )).toHaveLength(1);
+    },
+  );
+
+  it('48. rolls back a journal if the deadline passes while posting waits', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7400');
+    const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 'posting-deadline');
+    const beforeWallet = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const post = ledgerService.postJournalInTransaction.bind(ledgerService);
+    const spy = jest.spyOn(ledgerService, 'postJournalInTransaction').mockImplementationOnce(async (manager, command) => {
+      // Keep PostgreSQL's real clock: expire only after the initial locked-row check,
+      // then wait as a contended ledger account could before completing the posting.
+      await manager.query(
+        `UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp() + INTERVAL '100 milliseconds' WHERE id=$1`,
+        [transferId],
+      );
+      await manager.query(`SELECT pg_sleep(0.15)`);
+      return post(manager, command);
+    });
+    const idempotencyKey = `posting-deadline-${randomUUID()}`;
+    try {
+      await expect(claimService.execute({
+        transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 'posting-deadline', idempotencyKey,
+      })).rejects.toThrow(/expired/i);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(beforeWallet.balanceMinor);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(beforeLiability.balanceMinor);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+      [`claim:${transferId}:${idempotencyKey}`])).toEqual([]);
+    const rows = await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    expect(rows[0]).toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+  });
+
 });
