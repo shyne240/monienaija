@@ -293,11 +293,20 @@ export class RuntimeAccessGuard implements CanActivate {
 
     request.authorizationPrincipal = principal;
     this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
+    // V1-SPRINT2-AUTHZ-01 (ARENA 3): `route.agentId` is the *resource* Agent addressed by
+    // the URL (extracted by RoutePolicyRegistry from route params); `principal.agentId` is
+    // the *caller's* own Agent identity from its session. For resource-addressed Agent
+    // routes the SELF policy must compare the caller against the requested resource, so the
+    // route-extracted id must win. The previous order (`principal.agentId ?? route.agentId`)
+    // made every AGENT-principal SELF check vacuous — the caller was only ever compared
+    // with itself. No registry branch set route.agentId before this fix, so the reordering
+    // alone changes nothing for any pre-existing route; it activates the resource binding
+    // for GET /api/v1/agents/:id/receiving-number (A21 contract SELF rule).
     const decision = await this.authorizationService.authorize(principal, route.policy, {
       type: route.resourceType,
       id: route.resourceId,
       customerId: route.customerId,
-      agentId: principal.agentId ?? route.agentId,
+      agentId: route.agentId ?? principal.agentId,
       aggregatorId: principal.aggregatorId ?? route.aggregatorId,
     });
     request.authorizationDecision = decision;

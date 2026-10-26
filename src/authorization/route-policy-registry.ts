@@ -351,6 +351,35 @@ export class RoutePolicyRegistry {
     // Aggregator self routes (if later authentication is introduced) would be handled here.
     // A18 does not expose aggregator login; foundation only. See AggregatorService docs.
 
+    // V1-SPRINT2-AUTHZ-01 (ARENA 3): internal Agent receiving-number reads.
+    // docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md §"Applications and function
+    // permissions": "Internal receiving-number reads require agent.view." Previously this
+    // route fell through to the generic /api/v1/internal/ branch below, which admits ANY
+    // workforce principal type (including SUPPORT) with no catalogue function at all —
+    // insufficient authorization for an Agent funding-identifier read. SUPPORT is excluded
+    // here (it holds no agent-domain functions by policy, see
+    // support-authentication.service.ts principalFor) and the read is bound to the
+    // agent.view catalogue function, matching the classes GET gate below.
+    if (
+      method === 'GET' &&
+      /^\/api\/v1\/internal\/agents\/[^/]+\/receiving-number$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-receiving-number',
+        policy: {
+          resourceType: 'agent-receiving-number',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     if (
       /^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)
     ) {
@@ -391,6 +420,34 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: [functionCode],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // V1-SPRINT2-FUNDING-INBOX-01 (ARENA 3): global checker inbox for Agent funding work.
+    // Read-only cross-Agent discovery for the independent FINANCE_CONTROLLER checker side
+    // of Decision 7 — mirrors the requiredRoles/requiredFunctions gate of the
+    // execute/reject branches below and is re-checked inside AgentFundingService
+    // (assertCheckerPrincipal). Deliberately does NOT require or confer agent.view or any
+    // other Agent Network function; the maker's own requests are excluded server-side so
+    // maker-checker independence is preserved.
+    if (
+      method === 'GET' &&
+      path === '/api/v1/internal/agents/funding-requests'
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'agent-funding-request',
+        policy: {
+          resourceType: 'agent-funding-request',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredRoles: ['FINANCE_CONTROLLER'],
+          requiredFunctions: ['agent.fund', 'agent.defund'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -845,9 +902,21 @@ export class RoutePolicyRegistry {
     if (path.startsWith('/api/v1/agents/')) {
       // /agents/me and /agents/me/* are strictly AGENT SELF via agentAccess
       // No arbitrary agentId param is trusted; identity comes from session.
+      //
+      // V1-SPRINT2-AUTHZ-01 (ARENA 3): routes that DO address a specific Agent by path
+      // parameter (today: GET /api/v1/agents/:id/receiving-number) must bind the SELF
+      // policy to the *requested* Agent id, not to the caller's own id. Previously no
+      // branch ever extracted an agentId, so RuntimeAccessGuard evaluated SELF against
+      // `principal.agentId` — a comparison of the caller with itself that trivially
+      // passed, letting any authenticated Agent read any other Agent's receiving number
+      // (docs/V1/A21-AGENT-APP-CONTRACT.md:42-43 requires 403/404 when :id differs from
+      // principal.agentId). Extracting `params.id` makes checkAgentScope compare the
+      // session Agent against the resource Agent and deny cross-Agent reads. Literal
+      // /agents/me* routes carry no `id` param and are unaffected.
       return {
         public: false,
         resourceType: 'agent',
+        ...(input.params?.id ? { agentId: input.params.id } : {}),
         policy: {
           resourceType: 'agent',
           action: `${method}:${path}`,

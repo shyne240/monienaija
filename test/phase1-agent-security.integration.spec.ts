@@ -2,7 +2,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 import request = require('supertest');
 import { AppModule } from '../src/app.module';
@@ -627,71 +627,68 @@ describe('Phase 1 ordinary Agent security (real PostgreSQL and HTTP)', () => {
     );
   });
 
-  it('class mutations require agent.manage_classes and do not inherit application-review grants', async () => {
-    const a = await agent();
+  it('class mutations require agent.manage_classes, seeded to AGENT_NETWORK_MANAGER and SUPER_ADMIN only', async () => {
+    // V1-SPRINT2-AUTHZ-01: the owner/policy decision that was pending when this test was
+    // first written is now recorded in
+    // docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md §"Applications and function
+    // permissions": agent.manage_classes is granted "to the existing Agent Network Manager
+    // and Super Admin owners by the bootstrap catalogue seeder". The seed now carries those
+    // grants, so the previous expectations (seeded grant absent, maker denied until a
+    // test-only grant is injected) are replaced by the approved policy: the entitled maker
+    // succeeds; every non-entitled role stays denied; the grant is never inherited from
+    // agent.review_application and never broader than the two documented owners.
     const classesPath = '/api/v1/internal/agents/classes';
 
-    // AGENT_NETWORK_MANAGER already has agent.review_application, but that function must
-    // not authorize class eligibility changes. OPERATIONS has no class-management grant.
-    await request(app.getHttpServer())
-      .post(classesPath)
-      .set(headers(maker.token))
-      .send({ name: 'Denied class create' })
-      .expect(403);
-    await request(app.getHttpServer())
-      .patch(`${classesPath}/${a.cls.id}`)
-      .set(headers(maker.token))
-      .send({ name: 'Denied class update', expectedVersion: 1 })
-      .expect(403);
+    const fn = await ds
+      .getRepository(AuthorizationFunction)
+      .findOneByOrFail({ functionCode: 'agent.manage_classes' });
+    const roleFunctions = ds.getRepository(AuthorizationRoleFunction);
+    const grants = await roleFunctions.findBy({ functionCode: fn.functionCode, isActive: true });
+    const grantedRoleIds = grants.map((g) => g.roleId);
+    const grantedRoleKeys = (
+      await ds.getRepository(AuthorizationRole).findBy({ id: In(grantedRoleIds) })
+    )
+      .map((r) => r.roleKey)
+      .sort();
+    expect(grantedRoleKeys).toEqual(['AGENT_NETWORK_MANAGER', 'SUPER_ADMIN']);
+    expect(grants.every((g) => g.accessType === 'EXECUTE')).toBe(true);
+
+    // Negative: roles without the grant are denied — OPERATIONS holds no agent-domain
+    // function at all, and FINANCE_CONTROLLER holds agent.review-adjacent funding
+    // functions but must never inherit class eligibility management.
     await request(app.getHttpServer())
       .post(classesPath)
       .set(headers(operations.token))
       .send({ name: 'Operations class create' })
       .expect(403);
+    await request(app.getHttpServer())
+      .patch(`${classesPath}/${(await agent()).cls.id}`)
+      .set(headers(operations.token))
+      .send({ name: 'Operations class update', expectedVersion: 1 })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(classesPath)
+      .set(headers(checker.token))
+      .send({ name: 'Checker class create' })
+      .expect(403);
 
-    const role = await ds
-      .getRepository(AuthorizationRole)
-      .findOneByOrFail({ roleKey: 'AGENT_NETWORK_MANAGER' });
-    const fn = await ds
-      .getRepository(AuthorizationFunction)
-      .findOneByOrFail({ functionCode: 'agent.manage_classes' });
-    const roleFunctions = ds.getRepository(AuthorizationRoleFunction);
-    expect(
-      await roleFunctions.findOneBy({ roleId: role.id, functionCode: fn.functionCode }),
-    ).toBeNull();
-
-    // Test-only grant proves the route/controller positively honor the new function. It is
-    // removed immediately and is deliberately not part of the system role seed.
-    const grant = await roleFunctions.save(
-      roleFunctions.create({
-        roleId: role.id,
-        functionCode: fn.functionCode,
-        accessType: 'EXECUTE',
-        isActive: true,
-        assignedBy: 'phase1-test-only',
-        assignedAt: new Date(),
-      }),
-    );
-    try {
-      const created = await request(app.getHttpServer())
-        .post(classesPath)
-        .set(headers(maker.token))
-        .send({
-          reference: `PHASE1-${randomUUID()}`,
-          code: `P1CLASS-${randomUUID().slice(0, 8)}`,
-          name: 'Explicitly authorized class',
-        })
-        .expect(201);
-      expect(created.body.name).toBe('Explicitly authorized class');
-      const updated = await request(app.getHttpServer())
-        .patch(`${classesPath}/${created.body.id}`)
-        .set(headers(maker.token))
-        .send({ name: 'Explicitly authorized class updated', expectedVersion: 1 })
-        .expect(200);
-      expect(updated.body.name).toBe('Explicitly authorized class updated');
-    } finally {
-      await roleFunctions.delete({ id: grant.id });
-    }
+    // Positive: the entitled AGENT_NETWORK_MANAGER maker succeeds with its seeded grant.
+    const created = await request(app.getHttpServer())
+      .post(classesPath)
+      .set(headers(maker.token))
+      .send({
+        reference: `PHASE1-${randomUUID()}`,
+        code: `P1CLASS-${randomUUID().slice(0, 8)}`,
+        name: 'Explicitly authorized class',
+      })
+      .expect(201);
+    expect(created.body.name).toBe('Explicitly authorized class');
+    const updated = await request(app.getHttpServer())
+      .patch(`${classesPath}/${created.body.id}`)
+      .set(headers(maker.token))
+      .send({ name: 'Explicitly authorized class updated', expectedVersion: 1 })
+      .expect(200);
+    expect(updated.body.name).toBe('Explicitly authorized class updated');
   });
 
   it('function-gates class and ordinary outlet administration', async () => {

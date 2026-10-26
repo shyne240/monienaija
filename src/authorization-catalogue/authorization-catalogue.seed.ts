@@ -127,7 +127,7 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   // -------------------------------------------------------------------- AGENT
   { functionCode: 'agent.view', domain: 'AGENT', name: 'View agent profile', description: 'View an agent profile and status.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.review_application', domain: 'AGENT', name: 'Review agent application', description: 'Review/approve/reject an agent network application.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
-  { functionCode: 'agent.manage_classes', domain: 'AGENT', name: 'Manage agent classes', description: 'Create and update Agent class eligibility configuration. This is distinct from reviewing individual Agent applications.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true, notes: 'No system-seeded role grant is assigned pending an explicit owner/policy decision. Do not inherit agent.review_application grants; Agent classes define service eligibility, not per-Agent authorization.' },
+  { functionCode: 'agent.manage_classes', domain: 'AGENT', name: 'Manage agent classes', description: 'Create and update Agent class eligibility configuration. This is distinct from reviewing individual Agent applications.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true, notes: 'Owner decision recorded in docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md §"Applications and function permissions" and implemented by V1-SPRINT2-AUTHZ-01: seeded EXECUTE grants to AGENT_NETWORK_MANAGER and SUPER_ADMIN only. Not inherited from agent.review_application; Agent classes define service eligibility, not per-Agent authorization.' },
   { functionCode: 'agent.activate', domain: 'AGENT', name: 'Activate agent', description: 'Activate an agent.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.suspend', domain: 'AGENT', name: 'Suspend agent', description: 'Suspend an agent.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'agent.terminate', domain: 'AGENT', name: 'Terminate agent', description: 'Terminate an agent.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
@@ -364,6 +364,13 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'customer.archive_proof_of_address', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.view', VIEW),
   nowAssign('SUPER_ADMIN', 'agent.review_application', EXECUTE),
+  // V1-SPRINT2-AUTHZ-01: implements the documented owner decision — see
+  // docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md §"Applications and function
+  // permissions": "Class mutations require the new agent.manage_classes function, granted
+  // to the existing Agent Network Manager and Super Admin owners by the bootstrap
+  // catalogue seeder." Without this grant the class-mutation surface fails closed for
+  // every seeded role (no one could administer Agent class eligibility).
+  nowAssign('SUPER_ADMIN', 'agent.manage_classes', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.activate', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.suspend', EXECUTE),
   nowAssign('SUPER_ADMIN', 'agent.terminate', EXECUTE),
@@ -524,6 +531,11 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   // ------------------------------------------------------- AGENT_NETWORK_MANAGER
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.view', VIEW),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.review_application', EXECUTE),
+  // V1-SPRINT2-AUTHZ-01: documented owner decision (see SUPER_ADMIN block above and
+  // docs/V1/V1-PHASE1-AGENT-SECURITY-IMPLEMENTATION-01.md). Granted explicitly — NOT
+  // inherited from agent.review_application; roles holding only review_application
+  // (none other today) remain denied class mutations.
+  nowAssign('AGENT_NETWORK_MANAGER', 'agent.manage_classes', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.activate', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.suspend', EXECUTE),
   nowAssign('AGENT_NETWORK_MANAGER', 'agent.terminate', EXECUTE),
