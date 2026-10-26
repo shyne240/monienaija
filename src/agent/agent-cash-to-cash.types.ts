@@ -4,6 +4,7 @@ export interface AgentCashToCashInput {
   agentId: string;
   agentPrincipal: AuthorizationPrincipal;
   agentPin: string;
+  senderPhone?: string;
   beneficiaryPhone: string;
   amountMinor: string;
   currency: string;
@@ -24,8 +25,10 @@ export interface AgentCashToCashInput {
 export interface AgentCashToCashResult {
   status: 'COMPLETED' | 'REPLAYED';
   transferId: string;
+  transferNumber?: string;
   journalId: string;
   agentId: string;
+  senderPhone?: string;
   beneficiaryPhone: string;
   principalMinor: string;
   feeMinor: string;

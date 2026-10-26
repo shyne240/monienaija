@@ -13,6 +13,12 @@ function normalizeMinorUnitInput(value: unknown): unknown {
 }
 
 export class CashToCashDto {
+  // The sending customer phone, not Agent A's login/contact phone.
+  @IsString()
+  @Transform(({ value }) => trimString(value))
+  @Length(1, 20)
+  senderPhone!: string;
+
   @IsString()
   @Transform(({ value }) => trimString(value))
   @Length(1, 20)
