@@ -147,6 +147,64 @@ export class RuntimeAccessGuard implements CanActivate {
       // future task, not implemented in this one (no demonstrated exploitability; broadening it
       // would be an undemonstrated, unrelated change to the mature A2 authorization path that
       // every controller already protects on its own).
+      //
+      // V1-SPRINT3-GUARD-01 (ARENA 3): the carefully scoped slice of that recommendation
+      // implemented here enforces ONLY the catalogue gates a WORKFORCE_SESSION route policy
+      // explicitly DECLARES (requiredFunctions / requiredRoles / requiredScopes) — never the
+      // bare allowedPrincipalTypes list, which is what caused the 401→403 status drift when
+      // blanket enforcement was trialled in V1-HARDEN-01 Part D.
+      //
+      // Zero-drift proof (Sprint 3 mapping, see the Sprint 3 report): every WORKFORCE_SESSION
+      // branch that declares required* gates is backed by an equal-or-stricter controller gate
+      // today — classes (agent.view / agent.manage_classes) ≡ AgentClassController;
+      // internal receiving-number (agent.view) ≡ its controller; internal agent transactions
+      // (agent.view) ≡ AdminAgentController; funding maker POSTs (agent.fund / agent.defund)
+      // ≡ AgentFundingController.requireFunction; funding inbox/execute/reject
+      // (FINANCE_CONTROLLER + agent.fund + agent.defund) ≡ requireFundingChecker /
+      // assertCheckerPrincipal; outlets/terminals mutations (agent.manage_outlets_terminals)
+      // ≡ OutletController.requireManage; aggregator mutations (aggregator.manage) ≡
+      // AggregatorController.requireManage. So this check can only ever deny a principal the
+      // matching controller gate would deny milliseconds later — it cannot block any
+      // legitimate existing caller, and it cannot bypass a stricter controller gate (the
+      // controller still runs its own full check, including principal-type allow-lists with
+      // their documented status conventions, which are deliberately NOT duplicated here).
+      // Denial mirrors requireFunction's default: 403 `Authorization denied: <REASON>`
+      // (FUNCTION_MISSING/ROLE_MISSING/SCOPE_MISSING — identical status and message to the
+      // controller-level denial for function misses). SUPER_ADMIN keeps its explicitly
+      // approved behavior: it holds declared functions where policy grants them and is still
+      // excluded from Decision 7 funding routes by requiredRoles (403, exactly as the
+      // controllers already denied it). evaluate() (not authorize()) is used so this
+      // defense-in-depth layer adds no second audit record — the authoritative, audited
+      // decision remains the controller's requireFunction call, exactly as before.
+      const declaredPolicy = route.policy;
+      const declaresCatalogueGate =
+        !!declaredPolicy &&
+        ((declaredPolicy.requiredFunctions?.length ?? 0) > 0 ||
+          (declaredPolicy.requiredRoles?.length ?? 0) > 0 ||
+          (declaredPolicy.requiredScopes?.length ?? 0) > 0);
+      if (declaresCatalogueGate && declaredPolicy) {
+        const gateDecision = this.authorizationService.evaluate(
+          principal,
+          {
+            resourceType: declaredPolicy.resourceType,
+            action: declaredPolicy.action,
+            ...(declaredPolicy.requiredScopes
+              ? { requiredScopes: declaredPolicy.requiredScopes }
+              : {}),
+            ...(declaredPolicy.requiredRoles ? { requiredRoles: declaredPolicy.requiredRoles } : {}),
+            ...(declaredPolicy.requiredFunctions
+              ? { requiredFunctions: declaredPolicy.requiredFunctions }
+              : {}),
+            customerAccess: 'NONE',
+            agentAccess: 'NONE',
+            aggregatorAccess: 'NONE',
+          },
+          { type: route.resourceType, id: route.resourceId },
+        );
+        if (!gateDecision.allowed) {
+          throw new ForbiddenException(`Authorization denied: ${gateDecision.reason}`);
+        }
+      }
       return true;
     }
 
