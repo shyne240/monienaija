@@ -16,8 +16,10 @@
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "format:check": "prettier --check \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
     "format": "prettier --write \"{src,test}/**/*.ts\" \"*.{json,yml,yaml,md}\"",
-    "test": "jest --runInBand",
-    "test:pg": "jest --config jest.integration.config.js --runInBand",
+    "bootstrap:statement": "ts-node --transpile-only scripts/generate-bootstrap-statement.ts",
+    "recovery:statement": "ts-node --transpile-only scripts/generate-revocation-statement.ts",
+    "test": "jest --maxWorkers=2",
+    "test:pg": "node scripts/run-pg-integration-tests.js",
     "test:all": "npm run test && npm run test:pg",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",
@@ -25,22 +27,26 @@
     "migration:create": "typeorm-ts-node-commonjs migration:create src/migrations/Change",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts",
     "migration:show": "typeorm-ts-node-commonjs migration:show -d src/config/data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/data-source.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/data-source.ts",
+    "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
     "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.1.28",
+    "@sparticuz/chromium": "153.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.18.12",
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.4.1",
     "jsdom": "^30.0.1",
+    "playwright": "1.63.0",
     "prettier": "^3.6.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -54,6 +60,8 @@
     "zustand": "^5.0.15"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@fastify/multipart": "^10.1.6",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.28",
@@ -63,13 +71,19 @@
     "class-validator": "^0.14.2",
     "dotenv": "^16.6.1",
     "fastify": "^5.12.1",
+    "i18n-iso-countries": "^7.14.0",
+    "libphonenumber-js": "^1.13.15",
     "nestjs-pino": "^4.6.1",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
+    "postcode-validator": "^3.10.26",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "typeorm": "^0.3.31",
     "zod": "^4.1.12"
+  },
+  "overrides": {
+    "fastify": "$fastify"
   }
 }

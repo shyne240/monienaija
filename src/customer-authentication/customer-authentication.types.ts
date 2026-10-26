@@ -135,7 +135,28 @@ export interface AuthenticationCredentialView {
   accountLocked: boolean;
   lockedAt: Date | null;
   lockReason: string | null;
+  rotationRequired: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** V1-CUSTOMER-CREDENTIALS-01 — workforce issuance of a temporary, rotation-required
+ *  first credential. The plaintext exists only at the delivery boundary; the service
+ *  receives the already-computed hash (same split as the Agent precedent: the controller
+ *  generates/hashes, the service persists/audits). */
+export interface IssueInitialCustomerCredentialCommand {
+  passwordHash: string;
+  hashAlgorithm: PasswordHashAlgorithm;
+  passwordExpiresAt: string;
+  actor: string;
+}
+
+/** V1-CUSTOMER-CREDENTIALS-01 — mandatory first-login rotation of a workforce-issued
+ *  temporary credential. The caller must have verified the current password through
+ *  AuthenticationExecutionService first. */
+export interface RotateInitialCustomerPasswordCommand {
+  passwordHash: string;
+  hashAlgorithm: PasswordHashAlgorithm;
+  actor: string;
 }

@@ -72,6 +72,7 @@ interface TrialBalanceReport {
 
 export const ReconciliationObservabilityScreen: React.FC = () => {
   const { principal } = useAuthStore();
+  const canView = principal?.scopes.includes('reconciliation.view') ?? false;
   const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance'>('runs');
 
   // Reconciliation Runs State
@@ -84,10 +85,8 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
   const [tbLoading, setTbLoading] = useState(false);
   const [tbError, setTbError] = useState('');
 
-  // Check roles
-  const isOperator = (principal?.roles?.length ?? 0) > 0;
-
   const handleRunReconciliation = async () => {
+    if (!canView) return;
     setRunError('');
     setReport(null);
     setRunLoading(true);
@@ -104,6 +103,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
   };
 
   const handleLoadTrialBalance = async () => {
+    if (!canView) return;
     setTbError('');
     setTbReport(null);
     setTbLoading(true);
@@ -118,6 +118,14 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
       setTbLoading(false);
     }
   };
+
+  if (!canView) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>This screen requires <code>reconciliation.view</code>.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -364,6 +372,7 @@ const styles = {
     fontWeight: '500',
     color: '#64748B',
     border: 'none',
+    borderBottom: '2px solid transparent',
     backgroundColor: 'transparent',
     cursor: 'pointer',
   },

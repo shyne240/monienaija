@@ -47,15 +47,28 @@ export const LedgerOperationsScreen: React.FC = () => {
 
   // Reversal Form State
   const [reversalReason, setReversalReason] = useState('');
+  const [reversalApprovalId, setReversalApprovalId] = useState('');
   const [reversalError, setReversalError] = useState('');
   const [reversalSuccess, setReversalSuccess] = useState('');
   const [reversalLoading, setReversalLoading] = useState(false);
 
-  // Check roles permissions
-  const isPreparer = principal?.roles.includes('FINANCE_PREPARER') || principal?.roles.includes('FINANCE_ADMIN') || principal?.scopes.includes('finance:prepare');
-  const isController = principal?.roles.includes('FINANCE_CONTROLLER') || principal?.scopes.includes('privileged:approve');
+  const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
+  // The account/journal read endpoints require ledger.view; a role label or write grant does not
+  // substitute for that route function.
+  const canViewLedger = hasFn('ledger.view');
+  // Maker request endpoint requires ledger.reverse (legacy finance:prepare/ledger.post alone do
+  // not authorize this route).
+  const isPreparer = hasFn('ledger.reverse');
+  // The backend reversal executor explicitly accepts a FINANCE_CONTROLLER role or
+  // privileged:execute; keep this UI condition in lockstep with that source policy.
+  const isController =
+    principal?.roles.includes('FINANCE_CONTROLLER') === true || hasFn('privileged:execute');
 
   const fetchAccounts = async () => {
+    if (!canViewLedger) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError('');
     try {
@@ -71,11 +84,13 @@ export const LedgerOperationsScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchAccounts();
-  }, [searchCurrency]);
+    if (canViewLedger) fetchAccounts();
+    else setIsLoading(false);
+  }, [searchCurrency, canViewLedger]);
 
   const handleSearchJournal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canViewLedger) return;
     if (!searchJournalId.trim()) {
       setJournalError('Journal ID is required');
       return;
@@ -98,7 +113,7 @@ export const LedgerOperationsScreen: React.FC = () => {
   };
 
   const handleReverseJournal = async () => {
-    if (!journal) return;
+    if (!canViewLedger || !journal || (!isPreparer && !isController)) return;
     setReversalError('');
     setReversalSuccess('');
     setReversalLoading(true);
@@ -107,30 +122,38 @@ export const LedgerOperationsScreen: React.FC = () => {
 
     try {
       if (isController) {
-        // Direct checker-approved reversal: POST /ledger/journals/:id/reversal
+        // Checker-execution (P0-B): consumes the APPROVED maker-checker request. The reason
+        // must match the approved maker request exactly — it is fingerprint-bound server-side.
+        if (!reversalApprovalId.trim()) {
+          throw new Error('Approved maker-checker request ID (approvalId) is required.');
+        }
         await ApiClient.post(`/ledger/journals/${journal.id}/reversal`, {
           idempotencyKey,
-          reason: reversalReason.trim() || 'Correction Reversal',
+          reason: reversalReason.trim(),
+          approvalId: reversalApprovalId.trim(),
         }, {
           idempotencyKey,
         });
-        setReversalSuccess('Journal reversal compensating entry executed successfully!');
+        setReversalSuccess('Governed journal reversal executed from the approved request.');
         setReversalReason('');
-        
+        setReversalApprovalId('');
+
         // Reload journal to view status changes
         const res = await ApiClient.get<Journal>(`/ledger/journals/${journal.id}`);
         setJournal(res);
         fetchAccounts();
       } else if (isPreparer) {
-        // Maker request approvals
-        const fingerprint = `rev-fp-${journal.id}`;
-        await ApiClient.post('/internal/a2/workforce/approvals/request', {
-          action: 'FINANCE_CONTROL_POLICY_ACTIVATE', // Role rule assigned action
-          resource: { type: 'A2_FINANCE_ROLE_ASSIGNMENT', id: journal.id },
-          actionFingerprint: '4db33761157d636e1451c3746c9094b4c063207b4db33761157d636e1451c374', // Mock valid 64-hex SHA256 fingerprint
-          reason: reversalReason.trim() || 'Requesting reversal approval',
-        });
-        setReversalSuccess('Privileged reversal maker request created. Requires checking signature.');
+        // Maker request (P0-B): the backend computes the deterministic action fingerprint of the
+        // ACTUAL reversal request (LEDGER_JOURNAL_REVERSAL / LEDGER_JOURNAL) — the client never
+        // supplies one. The result is a PENDING maker-checker request a FINANCE_CONTROLLER must
+        // independently approve before it can be executed.
+        const request = await ApiClient.post<{ approvalId: string; actionFingerprint: string }>(
+          `/ledger/journals/${journal.id}/reversal-request`,
+          { reason: reversalReason.trim() },
+        );
+        setReversalSuccess(
+          `Reversal maker request created (request ID ${request.approvalId}). Awaiting independent FINANCE_CONTROLLER approval.`,
+        );
         setReversalReason('');
       } else {
         throw new Error('Unauthorized operational action.');
@@ -141,6 +164,14 @@ export const LedgerOperationsScreen: React.FC = () => {
       setReversalLoading(false);
     }
   };
+
+  if (!canViewLedger) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>Ledger account and journal lookup requires <code>ledger.view</code>.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -240,7 +271,7 @@ export const LedgerOperationsScreen: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {journal.lines.map((l) => (
+                    {(journal.lines || []).map((l) => (
                       <tr key={l.id} style={styles.tableRow}>
                         <td style={styles.td}>{l.accountId}</td>
                         <td style={styles.td}>
@@ -260,10 +291,10 @@ export const LedgerOperationsScreen: React.FC = () => {
 
               {journal.status === 'POSTED' && (isPreparer || isController) && (
                 <div style={styles.reversalBlock}>
-                  <h5 style={styles.reversalTitle}>Execute Compensating Reversal Entry</h5>
+                  <h5 style={styles.reversalTitle}>Governed Journal Reversal (Maker / Checker)</h5>
                   
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>Audit Reason for Reversal Override</label>
+                    <label style={styles.label}>Audit Reason for Reversal {isController ? '(must match the approved request exactly)' : ''}</label>
                     <input
                       type="text"
                       style={styles.input}
@@ -274,12 +305,26 @@ export const LedgerOperationsScreen: React.FC = () => {
                     />
                   </div>
 
+                  {isController && (
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Approved Maker-Checker Request ID</label>
+                      <input
+                        type="text"
+                        style={styles.input}
+                        placeholder="e.g. 3f2c1a00-... (from the approved reversal request)"
+                        value={reversalApprovalId}
+                        onChange={(e) => setReversalApprovalId(e.target.value)}
+                        disabled={reversalLoading}
+                      />
+                    </div>
+                  )}
+
                   <button
                     disabled={reversalLoading}
                     onClick={handleReverseJournal}
                     style={styles.reverseBtn}
                   >
-                    {reversalLoading ? 'Processing Override...' : isController ? 'Sign & Execute Reversal' : 'Request Reversal Approval'}
+                    {reversalLoading ? 'Processing...' : isController ? 'Execute Approved Reversal' : 'Request Reversal Approval'}
                   </button>
                 </div>
               )}

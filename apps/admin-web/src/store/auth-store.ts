@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { ApiClient, ApiError } from '../services/api-client';
-import { DEV_AUTH_MOCK } from '../config';
+import { ApiClient } from '../services/api-client';
 
 export interface WorkforcePrincipal {
   type: 'PRIVILEGED' | 'OPERATOR';
@@ -28,11 +27,26 @@ interface AuthState {
   sessionId: string | null;
   principal: WorkforcePrincipal | null;
   error: string | null;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
   login: (idToken: string) => Promise<void>;
   bootstrap: (statement: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => void;
   clearError: () => void;
+}
+
+function persistSession(set: (partial: Partial<AuthState>) => void, sessionData: WorkforceSession) {
+  localStorage.setItem('admin_workforce_token', sessionData.accessToken);
+  localStorage.setItem('admin_workforce_session_id', sessionData.sessionId);
+  localStorage.setItem('admin_workforce_principal', JSON.stringify(sessionData.principal));
+
+  set({
+    isAuthenticated: true,
+    isLoading: false,
+    token: sessionData.accessToken,
+    sessionId: sessionData.sessionId,
+    principal: sessionData.principal,
+  });
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -43,57 +57,44 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   principal: null,
   error: null,
 
+  // V1-ADMIN-LOCAL-LOGIN-01: the normal Admin Web login path. Authenticates against the
+  // real backend's `POST /internal/a2/workforce/local-admin-sessions` endpoint — a LOCAL
+  // DEVELOPMENT ONLY route that the backend itself refuses to serve outside
+  // NODE_ENV=development/test (see LocalAdminAuthenticationService). This establishes the
+  // same real A2 workforce session every other workforce login path produces; there is no
+  // client-side session fabrication anywhere in this store.
+  loginWithPassword: async (email: string, password: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const sessionData = await ApiClient.post<WorkforceSession>(
+        '/internal/a2/workforce/local-admin-sessions',
+        { email: email.trim(), password },
+      );
+      persistSession(set, sessionData);
+    } catch (err: any) {
+      set({
+        isLoading: false,
+        error: err?.message || 'Sign-in failed',
+        isAuthenticated: false,
+        token: null,
+        sessionId: null,
+        principal: null,
+      });
+      throw err;
+    }
+  },
+
+  // Real OIDC assertion exchange — the production workforce login path. Kept for the
+  // engineering-only "Advanced" OIDC panel (see LoginScreen) and for automated contract
+  // tests; never presented as the normal operator login. No client-side mock/fallback
+  // session is ever fabricated here — a failed exchange is a failed exchange.
   login: async (idToken: string) => {
     set({ isLoading: true, error: null });
     try {
-      let sessionData: WorkforceSession;
-
-      try {
-        // Post OIDC assertion to backend
-        const response = await ApiClient.post<WorkforceSession>('/internal/a2/workforce/sessions', {
-          idToken: idToken.trim(),
-        });
-        sessionData = response;
-      } catch (err) {
-        // Explicit Sandbox Development mock fallback
-        if (
-          DEV_AUTH_MOCK &&
-          err instanceof ApiError &&
-          (err.status === 401 || err.status === 404 || err.status === 405 || err.status === 500)
-        ) {
-          console.warn('Backend OIDC session endpoint missing or offline, using Sandbox admin mock');
-          sessionData = {
-            accessToken: 'mock-workforce-token-' + Math.random().toString(36).substr(2),
-            tokenType: 'Bearer',
-            sessionId: 'mock-workforce-session-uuid',
-            expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-            principal: {
-              type: 'PRIVILEGED',
-              principalId: 'https://identity.issuer:mock-operator-admin',
-              sessionId: 'mock-workforce-session-uuid',
-              audience: 'workforce-admin',
-              roles: ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'],
-              scopes: ['privileged:execute', 'finance:prepare', 'privileged:approve', 'finance:audit'],
-              customerAccess: 'NONE',
-              assuranceLevel: 'MFA',
-            },
-          };
-        } else {
-          throw err;
-        }
-      }
-
-      localStorage.setItem('admin_workforce_token', sessionData.accessToken);
-      localStorage.setItem('admin_workforce_session_id', sessionData.sessionId);
-      localStorage.setItem('admin_workforce_principal', JSON.stringify(sessionData.principal));
-
-      set({
-        isAuthenticated: true,
-        isLoading: false,
-        token: sessionData.accessToken,
-        sessionId: sessionData.sessionId,
-        principal: sessionData.principal,
+      const sessionData = await ApiClient.post<WorkforceSession>('/internal/a2/workforce/sessions', {
+        idToken: idToken.trim(),
       });
+      persistSession(set, sessionData);
     } catch (err: any) {
       set({
         isLoading: false,

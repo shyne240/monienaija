@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -23,10 +23,38 @@ interface FeeResult {
   totalMinor: string;
 }
 
-export const TransactionObservabilityScreen: React.FC = () => {
+interface CustomerTransaction {
+  id: string;
+  type: string;
+  status: string;
+  amountMinor: string;
+  currency: string;
+  direction: string;
+  createdAt: string;
+  completedAt: string | null;
+  reference: string | null;
+  narration: string | null;
+  feeMinor: string;
+}
+
+interface CustomerTransactionHistoryResponse {
+  items: CustomerTransaction[];
+  pagination: { page: number; limit: number; total: number; totalPages: number; hasNextPage: boolean };
+}
+
+interface TransactionObservabilityProps {
+  initialType?: string;
+  initialCustomerId?: string;
+  onBackToCustomer?: () => void;
+}
+
+export const TransactionObservabilityScreen: React.FC<TransactionObservabilityProps> = ({ initialType, initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
+  const canViewGlobalTransactions = principal?.scopes.includes('transaction.view') ?? false;
+  const canViewCustomerTransactions = principal?.scopes.includes('customer.view_transactions') ?? false;
+  const isCustomerHistoryView = Boolean(initialCustomerId) && canViewCustomerTransactions;
   const [searchTxId, setSearchTxId] = useState('');
-  const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>('TRANSFER');
+  const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>((initialType as any) || 'TRANSFER');
   const [txDetail, setTxDetail] = useState<TransactionDetail | null>(null);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState('');
@@ -40,17 +68,44 @@ export const TransactionObservabilityScreen: React.FC = () => {
   const [feeError, setFeeError] = useState('');
   const [feeLoading, setFeeLoading] = useState(false);
 
-  // Sandbox Utilities State
-  const [sandboxSuccess, setSandboxSuccess] = useState('');
-  const [sandboxError, setSandboxError] = useState('');
-  const [sandboxLoading, setSandboxLoading] = useState(false);
+  // Customer 360° uses the implemented customer-scoped unified history endpoint; a customer UUID
+  // is never treated as a transaction UUID.
+  const [historyItems, setHistoryItems] = useState<CustomerTransaction[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyType, setHistoryType] = useState('');
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyTotalPages, setHistoryTotalPages] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
-  // Check roles
-  const isController = principal?.roles.includes('FINANCE_CONTROLLER') || principal?.scopes.includes('privileged:approve');
-  const isPreparer = principal?.roles.includes('FINANCE_PREPARER') || principal?.roles.includes('FINANCE_ADMIN') || principal?.scopes.includes('finance:prepare');
+  useEffect(() => {
+    if (!isCustomerHistoryView || !initialCustomerId) return;
+    let active = true;
+    const params = new URLSearchParams({ page: String(historyPage), limit: '20' });
+    if (historyType) params.set('type', historyType);
+    setHistoryLoading(true);
+    setHistoryError('');
+    ApiClient.get<CustomerTransactionHistoryResponse>(
+      `/internal/customers/${encodeURIComponent(initialCustomerId)}/transactions?${params.toString()}`,
+    )
+      .then((response) => {
+        if (!active) return;
+        setHistoryItems(response?.items ?? []);
+        setHistoryTotal(response?.pagination?.total ?? 0);
+        setHistoryTotalPages(response?.pagination?.totalPages ?? 0);
+      })
+      .catch((err: any) => {
+        if (active) setHistoryError(err?.message || 'Failed to load customer transaction history.');
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => { active = false; };
+  }, [isCustomerHistoryView, initialCustomerId, historyPage, historyType]);
 
   const handleSearchTx = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canViewGlobalTransactions) return;
     if (!searchTxId.trim()) {
       setTxError('Transaction ID (UUID) is required');
       return;
@@ -58,8 +113,6 @@ export const TransactionObservabilityScreen: React.FC = () => {
     setTxError('');
     setTxDetail(null);
     setTxLoading(true);
-    setSandboxSuccess('');
-    setSandboxError('');
 
     try {
       let endpoint = '';
@@ -78,6 +131,7 @@ export const TransactionObservabilityScreen: React.FC = () => {
 
   const handleCalculateFee = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canViewGlobalTransactions) return;
     setFeeError('');
     setFeeResult(null);
     setFeeLoading(true);
@@ -103,55 +157,97 @@ export const TransactionObservabilityScreen: React.FC = () => {
     }
   };
 
-  const handleExecuteSandboxComplete = async () => {
-    if (!txDetail) return;
-    setSandboxError('');
-    setSandboxSuccess('');
-    setSandboxLoading(true);
-
-    try {
-      let endpoint = '';
-      if (txType === 'DEPOSIT') {
-        endpoint = `/deposits/${txDetail.id}/complete`;
-      } else if (txType === 'WITHDRAWAL') {
-        endpoint = `/withdrawals/${txDetail.id}/complete`;
-      } else {
-        throw new Error('Sandbox completion override is not applicable to P2P Transfers.');
-      }
-
-      // POST /deposits/:id/complete or /withdrawals/:id/complete
-      await ApiClient.post(endpoint);
-      setSandboxSuccess('Sandbox simulated transaction completed successfully!');
-      
-      // Reload transaction state
-      const reloadEndpoint = txType === 'DEPOSIT' ? `/deposits/${txDetail.id}` : `/withdrawals/${txDetail.id}`;
-      const res = await ApiClient.get<TransactionDetail>(reloadEndpoint);
-      setTxDetail(res);
-    } catch (err: any) {
-      console.error('SANDBOX OVERRIDE ERROR:', err);
-      setSandboxError(err?.message || 'Sandbox execution command rejected.');
-    } finally {
-      setSandboxLoading(false);
-    }
-  };
+  if (initialCustomerId ? !canViewCustomerTransactions : !canViewGlobalTransactions) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>
+          {initialCustomerId
+            ? 'Customer transaction history requires customer.view_transactions.'
+            : 'Transaction tracing requires transaction.view.'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>In-House Transaction & Fee Operations</h2>
-        <p style={styles.subtitle}>Trace transaction states, simulate fee pricing rules, and trigger sandbox overrides</p>
-      </div>
-
-      <div style={styles.gapWarning}>
-        <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Global Transactions Search Listing Unavailable</span>
-        <p style={styles.gapText}>
-          The transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.
+        <h2 style={styles.title}>{isCustomerHistoryView ? 'Customer Transaction History' : 'In-House Transaction & Fee Operations'}</h2>
+        <p style={styles.subtitle}>
+          {isCustomerHistoryView
+            ? 'Read-only, customer-scoped transaction history from the existing unified history service.'
+            : 'Read-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.'}
         </p>
+        {isCustomerHistoryView && onBackToCustomer && (
+          <button type="button" style={styles.backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button>
+        )}
       </div>
 
-      <div style={styles.splitLayout}>
+      {canViewGlobalTransactions && (
+        <div style={styles.gapWarning}>
+          <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Global Transactions Search Listing Unavailable</span>
+          <p style={styles.gapText}>
+            The transfer controller does not expose a general GET `/transfers` search list route. Querying transfers requires the absolute Transaction UUID reference.
+          </p>
+        </div>
+      )}
+
+      {isCustomerHistoryView && (
+        <section style={styles.historySection} aria-label="Customer transaction history">
+          <div style={styles.historyHeader}>
+            <div>
+              <h3 style={styles.sectionTitle}>Transactions for Customer</h3>
+              <p style={styles.historyCustomer}>Customer ID: <code>{initialCustomerId}</code></p>
+            </div>
+            <label style={styles.historyFilterLabel}>
+              Type
+              <select
+                style={styles.historyFilter}
+                value={historyType}
+                onChange={(event) => { setHistoryType(event.target.value); setHistoryPage(1); }}
+              >
+                <option value="">All transaction types</option>
+                <option value="WALLET_TRANSFER">Wallet transfer</option>
+                <option value="CASH_IN">Cash-in</option>
+                <option value="CASH_OUT">Cash-out</option>
+                <option value="CASH_TO_CASH">Cash-to-cash</option>
+                <option value="FUNDING">Funding</option>
+              </select>
+            </label>
+          </div>
+          {historyError && <div style={styles.errorBox}>{historyError}</div>}
+          {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyItems.length === 0 ? (
+            <p style={styles.historyEmpty}>No transactions found for this customer and type filter.</p>
+          ) : (
+            <div style={styles.historyTableWrap}>
+              <table style={styles.historyTable}>
+                <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th></tr></thead>
+                <tbody>
+                  {historyItems.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.type}</td>
+                      <td>{item.status}</td>
+                      <td>{item.direction}</td>
+                      <td>{item.currency} {(Number(item.amountMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      <td>{item.reference || '—'}</td>
+                      <td>{new Date(item.createdAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={styles.historyPager}>
+            <span>{historyTotal} transaction{historyTotal === 1 ? '' : 's'} · Page {historyPage}{historyTotalPages ? ` of ${historyTotalPages}` : ''}</span>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}>Previous</button>
+            <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => setHistoryPage((page) => page + 1)}>Next</button>
+          </div>
+        </section>
+      )}
+
+      {(canViewGlobalTransactions || !isCustomerHistoryView) && <div style={styles.splitLayout}>
         {/* Transaction Ingress Auditing */}
-        <div style={styles.leftSection}>
+        {canViewGlobalTransactions && <div style={styles.leftSection}>
           <h3 style={styles.sectionTitle}>Transaction Audit & Traceability</h3>
           
           <form onSubmit={handleSearchTx} style={styles.searchForm}>
@@ -204,29 +300,17 @@ export const TransactionObservabilityScreen: React.FC = () => {
                 {txDetail.completedAt && <p style={styles.metaItem}><strong>Completed:</strong> {new Date(txDetail.completedAt).toLocaleString()}</p>}
               </div>
 
-              {sandboxError && <div style={styles.errorBox}>{sandboxError}</div>}
-              {sandboxSuccess && <div style={styles.successBox}>{sandboxSuccess}</div>}
-
-              {/* Sandbox Complete override button for Deposit/Withdrawal */}
-              {(txType === 'DEPOSIT' || txType === 'WITHDRAWAL') && txDetail.status === 'PENDING' && isController && (
-                <div style={styles.sandboxUtilities}>
-                  <h5 style={styles.sandboxTitle}>⚙️ Sandbox Simulated Completion Utilities</h5>
-
-                  <button
-                    disabled={sandboxLoading}
-                    onClick={handleExecuteSandboxComplete}
-                    style={styles.sandboxActionBtn}
-                  >
-                    {sandboxLoading ? 'Processing Override...' : 'Trigger Sandbox Completion'}
-                  </button>
+              {(txType === 'DEPOSIT' || txType === 'WITHDRAWAL') && txDetail.status === 'PENDING' && (
+                <div role="note" style={styles.readOnlyNotice}>
+                  This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.
                 </div>
               )}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Fee Simulator Panel */}
-        <div style={styles.rightSection}>
+        {canViewGlobalTransactions && <div style={styles.rightSection}>
           <h3 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h3>
           <p style={styles.infoText}>Deterministic pricing fee engine simulator executing the backend math endpoint.</p>
 
@@ -303,8 +387,8 @@ export const TransactionObservabilityScreen: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      </div>}
     </div>
   );
 };
@@ -327,6 +411,82 @@ const styles = {
     fontSize: '14px',
     color: '#64748B',
     margin: 0,
+  },
+  backButton: {
+    marginTop: '10px',
+    padding: '7px 10px',
+    border: '1px solid #D1D5DB',
+    borderRadius: '6px',
+    background: '#FFFFFF',
+    color: '#334155',
+    cursor: 'pointer',
+  },
+  historySection: {
+    marginBottom: '24px',
+    padding: '20px',
+    background: '#FFFFFF',
+    border: '1px solid #E2E8F0',
+    borderRadius: '8px',
+  },
+  historyHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginBottom: '16px',
+  },
+  historyCustomer: {
+    margin: '-8px 0 0',
+    color: '#64748B',
+    fontSize: '12px',
+    wordBreak: 'break-all' as const,
+  },
+  historyFilterLabel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    color: '#475569',
+    fontSize: '12px',
+  },
+  historyFilter: {
+    minWidth: '180px',
+    height: '36px',
+    border: '1px solid #CBD5E1',
+    borderRadius: '6px',
+    padding: '0 8px',
+    background: '#FFFFFF',
+  },
+  historyTableWrap: {
+    overflowX: 'auto' as const,
+  },
+  historyTable: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    fontSize: '12px',
+    textAlign: 'left' as const,
+  },
+  historyEmpty: {
+    padding: '16px',
+    color: '#64748B',
+    background: '#F8FAFC',
+    borderRadius: '6px',
+    fontSize: '13px',
+  },
+  historyPager: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '12px',
+    color: '#64748B',
+    fontSize: '12px',
+  },
+  historyPageButton: {
+    padding: '6px 10px',
+    border: '1px solid #CBD5E1',
+    borderRadius: '5px',
+    background: '#FFFFFF',
+    cursor: 'pointer',
   },
   gapWarning: {
     backgroundColor: '#FEF3C7',
@@ -433,18 +593,6 @@ const styles = {
     borderStyle: 'solid',
     borderColor: '#EF4444',
   },
-  successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
-    fontSize: '13px',
-    fontWeight: '500',
-    padding: '12px',
-    borderRadius: '6px',
-    marginBottom: '20px',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    borderColor: '#10B981',
-  },
   txCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: '8px',
@@ -485,26 +633,15 @@ const styles = {
     padding: '2px 6px',
     borderRadius: '4px',
   },
-  sandboxUtilities: {
+  readOnlyNotice: {
     marginTop: '16px',
-    paddingTop: '16px',
-    borderTop: '1px dashed #CBD5E1',
-  },
-  sandboxTitle: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: '#D97706',
-    margin: '0 0 12px 0',
-  },
-  sandboxActionBtn: {
-    backgroundColor: '#FFB703',
-    color: '#032B14',
-    border: 'none',
+    padding: '12px',
+    border: '1px solid #F59E0B',
     borderRadius: '6px',
-    padding: '10px 16px',
+    backgroundColor: '#FFFBEB',
+    color: '#92400E',
     fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
+    lineHeight: '18px',
   },
   rightSection: {
     width: '460px',

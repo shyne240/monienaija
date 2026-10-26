@@ -137,6 +137,15 @@ export class Transfer {
   @Column({ name: 'amount_minor', type: 'bigint', transformer: bigintTransformer })
   amountMinor!: string;
 
+  // V1-COMMERCIAL-IMPLEMENTATION-01 — applied fee/VAT actually charged on this transfer.
+  // Stays '0' while no fee-revenue account exists (journals remain principal-only); the
+  // computed fee lives in the commercial decision snapshot until then.
+  @Column({ name: 'fee_minor', type: 'bigint', default: '0' })
+  feeMinor!: string;
+
+  @Column({ name: 'vat_minor', type: 'bigint', default: '0' })
+  vatMinor!: string;
+
   @Column({ type: 'varchar', length: 3 })
   currency!: string;
 

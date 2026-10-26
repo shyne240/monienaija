@@ -14,7 +14,7 @@ export const App: React.FC = () => {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.spinner}></div>
-        <p style={styles.loadingText}>Initializing MoneyNaija Admin Core...</p>
+        <p style={styles.loadingText}>Initializing MonieNaija Admin Core...</p>
       </div>
     );
   }

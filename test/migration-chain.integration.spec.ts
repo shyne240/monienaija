@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 
 import {
@@ -16,12 +18,25 @@ import {
  */
 describe('migration chain (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  const expectedMigrations = 53;
+  // V1-TEST-01: the exact migration count is derived from the filesystem rather than
+  // hardcoded. A literal number here goes stale every time a migration is added (it has
+  // already drifted twice — 67→80→81 — purely from normal feature work, with no defect in
+  // the migration chain itself each time). Counting `src/migrations/*.ts` directly proves
+  // the same invariant this suite actually cares about — "every migration that exists is
+  // discovered, runs exactly once, and nothing is silently dropped" — without requiring a
+  // manual bump on every new migration file.
+  const expectedMigrations = readdirSync(join(__dirname, '../src/migrations')).filter((f) =>
+    f.endsWith('.ts'),
+  ).length;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('migchain');
     await dataSource.initialize();
   }, 120000);
+
+  it('the filesystem migration count is sane (guards against the glob silently matching nothing)', () => {
+    expect(expectedMigrations).toBeGreaterThan(70);
+  });
 
   afterAll(async () => {
     if (dataSource) await destroyIntegrationDataSource(dataSource);

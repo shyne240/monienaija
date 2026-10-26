@@ -30,6 +30,9 @@ describe('sensitive data protection', () => {
     const value = redactRecord({
       safe: 'visible',
       passwordHash: 'password-secret',
+      temporaryPassword: 'one-time-secret',
+      applicantAccessToken: 'one-time-applicant-capability',
+      applicantAccessTokenHash: 'applicant-capability-hash',
       nested: {
         accessToken: 'token-secret',
         deviceFingerprintHash: 'device-secret',
@@ -39,14 +42,21 @@ describe('sensitive data protection', () => {
     expect(value).toEqual({
       safe: 'visible',
       passwordHash: REDACTED_VALUE,
+      temporaryPassword: REDACTED_VALUE,
+      applicantAccessToken: REDACTED_VALUE,
+      applicantAccessTokenHash: REDACTED_VALUE,
       nested: {
         accessToken: REDACTED_VALUE,
         deviceFingerprintHash: REDACTED_VALUE,
       },
       values: [{ codeHash: REDACTED_VALUE, label: 'safe-label' }],
     });
-    expect(redactSensitiveText('passwordHash=secret tokenHash=token-value safe=value')).toBe(
-      'passwordHash=[REDACTED] tokenHash=[REDACTED] safe=value',
+    expect(
+      redactSensitiveText(
+        'passwordHash=secret temporaryPassword=one-time-secret applicantAccessToken=one-time-capability tokenHash=token-value safe=value',
+      ),
+    ).toBe(
+      'passwordHash=[REDACTED] temporaryPassword=[REDACTED] applicantAccessToken=[REDACTED] tokenHash=[REDACTED] safe=value',
     );
   });
 

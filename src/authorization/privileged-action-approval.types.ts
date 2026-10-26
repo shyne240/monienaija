@@ -8,11 +8,15 @@ import type {
 import type { PrivilegedActionApprovalStatus } from './privileged-action-approval.enums';
 
 export interface RequestPrivilegedActionCommand {
+  /** Optional caller-selected UUID so a domain request and its approval can share one identity. */
+  id?: string;
   principal: AuthorizationPrincipal;
   policy: AuthorizationPolicy;
   resource: AuthorizationResource;
   actionFingerprint: string;
   reason: string;
+  /** Redacted immutable business details shown to an independent checker. */
+  requestDetails?: Record<string, unknown>;
   actor?: string;
   approvalScope?: string;
   expiresInSeconds?: number;
@@ -81,6 +85,7 @@ export interface PrivilegedActionDecision {
     | 'EXPIRED'
     | 'NOT_FOUND'
     | 'SELF_APPROVAL_FORBIDDEN'
+    | 'SUPER_ADMIN_NOT_ALLOWED'
     | 'MFA_REQUIRED'
     | 'APPROVAL_SCOPE_MISSING'
     | 'ACTION_MISMATCH'

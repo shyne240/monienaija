@@ -70,6 +70,12 @@ export class CustomerAuthenticationRuntimeService {
       };
     }
 
+    // V1-CUSTOMER-CREDENTIALS-01 — a rotation-pending temporary credential must never be
+    // exchanged for a session here either; rotation must complete first.
+    if (authentication.rotationRequired === true) {
+      return { authenticated: true, customerId, rotationRequired: true };
+    }
+
     const session = await this.authenticationSessionService.issue({
       authentication,
       actor: command.actor,
