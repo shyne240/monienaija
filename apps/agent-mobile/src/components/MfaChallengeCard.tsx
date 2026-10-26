@@ -46,6 +46,11 @@ export interface MfaChallengeCardProps {
    * transaction flow uses this (challengeId) for its execution request.
    */
   onChallengeReady?: (challenge: AgentMfaChallenge) => void;
+  /**
+   * Called when an existing challenge is superseded (re-requested) or expires
+   * so parent confirmation forms never submit a stale challengeId.
+   */
+  onChallengeInvalidated?: () => void;
   testID?: string;
 }
 
@@ -67,6 +72,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
   purpose,
   ttlSeconds,
   onChallengeReady,
+  onChallengeInvalidated,
   testID,
 }) => {
   const [challenge, setChallenge] = useState<AgentMfaChallenge | null>(null);
@@ -111,8 +117,9 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
     // Duplicate-request guard: one in-flight request at a time, always.
     if (requestMutation.isPending) return;
     setChallenge(null);
+    onChallengeInvalidated?.();
     requestMutation.mutate();
-  }, [requestMutation]);
+  }, [requestMutation, onChallengeInvalidated]);
 
   const copy = PURPOSE_COPY[purpose];
   const challengeState = challenge ? state.status : null;

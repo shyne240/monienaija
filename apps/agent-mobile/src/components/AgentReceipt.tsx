@@ -309,7 +309,12 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
   return {
     heading: `${typeLabel} Receipt`,
     stateLabel: item.status,
-    stateTone: item.status === 'COMPLETED' || item.status === 'CLAIMED' ? 'success' : 'info',
+    stateTone:
+      item.status === 'COMPLETED' || item.status === 'CLAIMED'
+        ? 'success'
+        : item.status === 'EXPIRED'
+          ? 'warning'
+          : 'info',
     lines,
     footerNote,
     shareText: buildShareText(`${typeLabel} Receipt`, item.status, lines, footerNote),

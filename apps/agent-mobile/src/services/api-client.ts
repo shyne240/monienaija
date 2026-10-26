@@ -48,10 +48,24 @@ export const AGENT_SESSION_KEYS = {
   sessionData: 'agent_session_data',
 } as const;
 
-export async function purgeAgentSessionFromStorage(): Promise<void> {
+const sessionPurgeListeners = new Set<() => void>();
+
+export function onSessionPurged(listener: () => void): () => void {
+  sessionPurgeListeners.add(listener);
+  return () => {
+    sessionPurgeListeners.delete(listener);
+  };
+}
+
+export async function purgeAgentSessionFromStorage(notify = false): Promise<void> {
   await SecureStorage.remove(AGENT_SESSION_KEYS.token);
   await SecureStorage.remove(AGENT_SESSION_KEYS.agentId);
   await SecureStorage.remove(AGENT_SESSION_KEYS.sessionData);
+  if (notify) {
+    for (const listener of sessionPurgeListeners) {
+      listener();
+    }
+  }
 }
 
 let currentBaseUrl = DEFAULT_BASE_URL;
@@ -110,7 +124,7 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
 
       if (status === 401 && !options.preserveSessionOn401) {
         // Expired or revoked agent session — fail closed back to login.
-        await purgeAgentSessionFromStorage();
+        await purgeAgentSessionFromStorage(true);
       }
 
       throw new ApiError(

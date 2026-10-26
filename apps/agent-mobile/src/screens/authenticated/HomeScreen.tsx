@@ -185,7 +185,8 @@ export const HomeScreen: React.FC = () => {
           <CapabilitiesList capabilities={capabilitiesQuery.data} testID="capabilities-list" />
         ) : null}
         <Text style={styles.helper}>
-          Transaction execution for enabled services unlocks in a later phase of this app build.
+          Enabled services unlock their transaction actions below. Disabled services remain unavailable
+          until granted to your agent class.
         </Text>
       </Card>
 
