@@ -1874,4 +1874,140 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
   });
 
+  it('50. authenticated Agent recovers the committed claim receipt after an ambiguous response and cannot read another Agent receipt', async () => {
+    const amount = '7300';
+    const { transferId, phone, transferCode } = await initiateTransfer(amount);
+    const { customerId } = await createBeneficiaryCustomer(phone, true, true);
+    await createCurrentKycApproval(customerId);
+    const { agent: claimant, wallet: claimantWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_TO_CASH],
+      '1234',
+    );
+    const { challengeId } = await createMfaChallenge(customerId, 'http-recovery-otp');
+    const beforeUnclaimed = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const beforeAgent = await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId);
+    const key = `http-recovery-${randomUUID()}`;
+
+    const password = `Agent-recovery-${randomUUID()}`;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials
+         (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1, $2, 'PBKDF2', 1, NOW(), 'ACTIVE')`,
+      [claimant.id, hashPin(password)],
+    );
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/sessions',
+      payload: { agentId: claimant.id, password },
+    });
+    expect(login.statusCode).toBe(200);
+    const token = (login.json() as { accessToken: string }).accessToken;
+    expect(token).toBeTruthy();
+
+    // Commit the claim through the authenticated HTTP endpoint, then intentionally discard
+    // the response body. Recovery must reconstruct the receipt from persisted state.
+    const claimResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/cash-to-cash/claim',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        transferId,
+        beneficiaryPhone: phone,
+        transferCode,
+        customerId,
+        mfaChallengeId: challengeId,
+        otp: 'http-recovery-otp',
+        idempotencyKey: key,
+        redemptionMethod: 'AGENT_CASH',
+        agentPin: '1234',
+      },
+    });
+    expect(claimResponse.statusCode).toBe(200);
+    // Do not read claimResponse.body: model a client whose successful response was lost.
+
+    const committed = (await dataSource.query(
+      `SELECT claim_journal_id::text AS journal_id, claim_idempotency_key
+       FROM cash_to_cash_transfers WHERE id=$1 AND status='CLAIMED'`,
+      [transferId],
+    ))[0] as { journal_id: string; claim_idempotency_key: string };
+    expect(committed).toBeDefined();
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor)
+      .toBe((BigInt(beforeUnclaimed.balanceMinor) - BigInt(amount)).toString());
+    expect((await ledgerService.getAccountBalance(claimantWallet.ledgerAccountId)).balanceMinor)
+      .toBe((BigInt(beforeAgent.balanceMinor) + BigInt(amount)).toString());
+
+    const recovered = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/cash-to-cash/claims/${transferId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(recovered.statusCode).toBe(200);
+    expect(recovered.json()).toMatchObject({
+      status: 'REPLAYED',
+      replayed: true,
+      transferId,
+      journalId: committed.journal_id,
+      amountMinor: amount,
+      currency: 'NGN',
+      redemptionMethod: 'AGENT_CASH',
+      idempotencyKey: committed.claim_idempotency_key,
+    });
+
+    const journals: Array<{ count: string; journal_id: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count, min(id::text) AS journal_id
+       FROM ledger_journals WHERE idempotency_key LIKE $1`,
+      [`claim:${transferId}:%`],
+    );
+    expect(journals[0]!.count).toBe('1');
+    expect(journals[0]!.journal_id).toBe(committed.journal_id);
+    const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> =
+      await dataSource.query(
+        `SELECT ledger_account_id::text AS ledger_account_id, direction, amount_minor::text AS amount_minor
+         FROM ledger_lines WHERE journal_id=$1`,
+        [committed.journal_id],
+      );
+    expect(lines).toHaveLength(2);
+    expect(lines).toEqual(expect.arrayContaining([
+      { ledger_account_id: unclaimedLedgerAccountId, direction: 'DEBIT', amount_minor: amount },
+      { ledger_account_id: claimantWallet.ledgerAccountId, direction: 'CREDIT', amount_minor: amount },
+    ]));
+    const debitTotal = lines.filter((line) => line.direction === 'DEBIT')
+      .reduce((sum, line) => sum + BigInt(line.amount_minor), 0n);
+    const creditTotal = lines.filter((line) => line.direction === 'CREDIT')
+      .reduce((sum, line) => sum + BigInt(line.amount_minor), 0n);
+    expect(debitTotal).toBe(BigInt(amount));
+    expect(creditTotal).toBe(BigInt(amount));
+
+    const otherAgent = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const otherPassword = `Agent-other-${randomUUID()}`;
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials
+         (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1, $2, 'PBKDF2', 1, NOW(), 'ACTIVE')`,
+      [otherAgent.agent.id, hashPin(otherPassword)],
+    );
+    const otherLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/sessions',
+      payload: { agentId: otherAgent.agent.id, password: otherPassword },
+    });
+    expect(otherLogin.statusCode).toBe(200);
+    const inaccessible = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agents/cash-to-cash/claims/${transferId}`,
+      headers: { authorization: `Bearer ${(otherLogin.json() as { accessToken: string }).accessToken}` },
+    });
+    expect(inaccessible.statusCode).toBe(404);
+
+    const history = await agentHistoryService.listUnified({ agentId: claimant.id, type: 'CASH_TO_CASH_CLAIM' });
+    expect(history.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: committed.journal_id,
+        amountMinor: amount,
+        direction: 'CREDIT',
+        status: 'COMPLETED',
+      }),
+    ]));
+  });
+
 });
