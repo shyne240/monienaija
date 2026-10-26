@@ -9,7 +9,7 @@ export class FeeController {
 
   @Post('calculate')
   @HttpCode(HttpStatus.OK)
-  calculate(@Body() dto: CalculateFeeDto) {
+  async calculate(@Body() dto: CalculateFeeDto) {
     return this.feeEngine.calculate(dto.amountMinor, dto.currency, dto);
   }
 }

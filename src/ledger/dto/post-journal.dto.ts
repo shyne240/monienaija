@@ -4,11 +4,15 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -101,9 +105,31 @@ export class ReverseJournalDto {
   @MaxLength(255)
   idempotencyKey?: string;
 
+  /** Business justification — must match the approved maker request exactly (fingerprint-bound). */
   @IsString()
-  @IsOptional()
   @Transform(({ value }: { value: unknown }) => trimString(value))
-  @MaxLength(255)
-  reason?: string;
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+
+  /** The approved maker-checker request this execution consumes. */
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  approvalId!: string;
+}
+
+/** Maker side: request a governed reversal approval (P0-B). */
+export class RequestReversalDto {
+  @IsString()
+  @Transform(({ value }: { value: unknown }) => trimString(value))
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(60)
+  @Max(86_400)
+  expiresInSeconds?: number;
 }

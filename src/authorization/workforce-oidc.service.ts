@@ -16,8 +16,28 @@ export class A2WorkforceOidcService {
   async validate(token: string, now = new Date()): Promise<A2WorkforceAssertionEvidenceV1> {
     if (!this.config.enabled) throw new UnauthorizedException('Workforce authentication disabled');
 
-    // Isolated sandbox development-only check for local acceptance testing
-    if (process.env.NODE_ENV !== 'production' && token.startsWith('mock-sandbox-token-')) {
+    // Isolated sandbox development-only check for local acceptance testing.
+    //
+    // V1-RELEASE-01: this was previously gated only by `NODE_ENV !== 'production'`, which
+    // is NOT equivalent to "never reachable in a real deployment". `staging` is a first-
+    // class value in this app's own environment schema (src/config/environment.ts), the
+    // project's own deployment docs reference a real internet-facing staging hostname
+    // (staging-api.monienaija.ng), and `NODE_ENV` is a plain runtime variable that ships
+    // unchanged inside the same production Docker image — an operator overriding it at the
+    // orchestration layer for a staging/UAT tier of the SAME build (a common "build once,
+    // configure per-environment" practice) fully reactivates this bypass there. Verified
+    // exploitable end-to-end in this audit: a caller supplying only the literal string
+    // "mock-sandbox-token-FINANCE_ADMIN" as idToken, with NODE_ENV=staging and
+    // A2_WORKFORCE_ENABLED=true (no real OIDC credentials, no signature), received a real,
+    // persisted, fully privileged workforce session (all 4 finance roles, including
+    // privileged:execute/privileged:approve) and successfully used it to provision a real
+    // SUPPORT workforce user. Narrowing the gate to exactly development/test closes the
+    // staging exposure while preserving the intended local-developer/automated-test
+    // convenience (Jest defaults NODE_ENV to 'test'; no test in this repository relies on
+    // 'staging' triggering this path).
+    const sandboxBypassAllowed =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    if (sandboxBypassAllowed && token.startsWith('mock-sandbox-token-')) {
       const parts = token.split('-');
       const role = parts[3] || 'ADMIN';
       const oidcIssuer = this.config.oidcIssuer || 'https://identity.issuer.invalid';

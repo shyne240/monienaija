@@ -12,6 +12,12 @@ jest.mock('../src/services/api-client', () => ({
   },
 }));
 
+// V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02: the Dashboard screen (the default view every test
+// below lands on first) now makes one real `ApiClient.get` call on mount to load the caller's own
+// dashboard — always the first recorded call. Prefixed onto the sequential
+// `.mockResolvedValueOnce(...)` chain below so it still lines up with this screen's own call order.
+const DASHBOARD_FETCH_STUB = { templateKey: 'DEFAULT_FALLBACK', displayName: 'Default Dashboard', description: '', isFallback: true, widgets: [] };
+
 describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -26,58 +32,46 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
         principalId: 'iss:back-office-controller',
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
-        roles: ['FINANCE_CONTROLLER'], // Checker-eligible
-        scopes: ['privileged:approve'],
+        roles: ['SUPER_ADMIN'],
+        scopes: ['transaction.view','reporting.transaction_summary.view','fee_rule.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
     });
   });
 
-  test('should load specific deposit details and execute sandbox completion successfully', async () => {
+  test('loads deposit details as read-only and never submits a sandbox settlement command', async () => {
     const mockDeposit = {
       id: 'dep-uuid-777',
       status: 'PENDING',
       currency: 'NGN',
-      amountMinor: '125000', // 1,250.00 Naira
+      amountMinor: '125000',
       createdAt: new Date().toISOString(),
       walletId: 'wallet-uuid-123',
       reference: 'dep-ref-123',
     };
 
     (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce(mockDeposit) // search load
-      .mockResolvedValueOnce({ ...mockDeposit, status: 'COMPLETED' }); // reload after complete
+      .mockResolvedValueOnce(DASHBOARD_FETCH_STUB)
+      .mockResolvedValueOnce(mockDeposit);
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'SUCCESS' });
+    const { getByText, getByPlaceholderText, findByText, queryByText } = render(<App />);
 
-    const { getByText, getByPlaceholderText, findByText, getAllByText } = render(<App />);
-
-    // Click navigation tab
-    fireEvent.click(getByText('💸 Transaction & Fee Ops'));
-
-    // Select DEPOSIT type
+    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
     const selectEl = getByText('P2P TRANSFER').parentElement as HTMLSelectElement;
     fireEvent.change(selectEl, { target: { value: 'DEPOSIT' } });
-
-    // Search Deposit
     fireEvent.change(getByPlaceholderText('e.g. 5e6f7g8h-...'), { target: { value: 'dep-uuid-777' } });
     fireEvent.click(getByText('Track'));
 
-    expect(ApiClient.get).toHaveBeenNthCalledWith(1, '/deposits/dep-uuid-777');
+    expect(ApiClient.get).toHaveBeenNthCalledWith(2, '/deposits/dep-uuid-777');
     expect(await findByText('DEPOSIT Detail View')).toBeTruthy();
     expect(await findByText('dep-ref-123')).toBeTruthy();
     expect(await findByText('PENDING')).toBeTruthy();
-
-    // Trigger Sandbox complete
-    expect(await findByText('Trigger Sandbox Completion')).toBeTruthy();
-    fireEvent.click(getByText('Trigger Sandbox Completion'));
-
-    await waitFor(() => {
-      expect(ApiClient.post).toHaveBeenCalledWith('/deposits/dep-uuid-777/complete');
-      expect(getByText('Sandbox simulated transaction completed successfully!')).toBeTruthy();
-      expect(getAllByText('COMPLETED').length).toBeGreaterThan(0);
-    });
+    expect(
+      await findByText('This view is read-only. A pending record cannot be completed here and is not evidence of external settlement.'),
+    ).toBeTruthy();
+    expect(queryByText('Trigger Sandbox Completion')).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
   });
 
   test('should run fee simulator calculations and display gross output', async () => {
@@ -91,7 +85,7 @@ describe('Admin Web Portal W4 Transaction Observability & Fee Simulator Tests', 
 
     const { getByText, getByPlaceholderText, findByText } = render(<App />);
 
-    fireEvent.click(getByText('💸 Transaction & Fee Ops'));
+    fireEvent.click(getByText('💸 Transaction & Fee Ops — Transfers (W2W)'));
 
     expect(getByText('Pricing Fee Simulator Tool')).toBeTruthy();
 

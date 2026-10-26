@@ -38,13 +38,78 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     });
   });
 
-  test('should render LoginScreen by default when unauthenticated', () => {
-    const { getByText, getByLabelText } = render(<App />);
+  test('should render a real email/password LoginScreen by default when unauthenticated', () => {
+    const { getByText, getByLabelText, queryByText } = render(<App />);
+    expect(getByLabelText('Email or username')).toBeTruthy();
+    expect(getByLabelText('Password')).toBeTruthy();
+    expect(getByText('Sign In')).toBeTruthy();
+
+    // The sandbox-token OIDC/Bootstrap workflow must not be presented as the normal login —
+    // it is hidden behind an explicit "Advanced" toggle, not shown by default.
+    expect(queryByText('OIDC Ingress Login')).toBeNull();
+    expect(queryByText('Bootstrap Authority')).toBeNull();
+    expect(queryByText('⚡ Autofill Sandbox Token')).toBeNull();
+    expect(queryByText('mock-sandbox-token-ADMIN')).toBeNull();
+  });
+
+  test('should reveal the advanced OIDC/Bootstrap panel only after an explicit toggle', () => {
+    const { getByText, queryByText } = render(<App />);
+    expect(queryByText('OIDC Ingress Login')).toBeNull();
+
+    fireEvent.click(getByText('▼ Advanced: OIDC / Bootstrap (engineering only)'));
+
     expect(getByText('OIDC Ingress Login')).toBeTruthy();
     expect(getByText('Bootstrap Authority')).toBeTruthy();
   });
 
-  test('should render Dashboard and FINANCE_ADMIN sidebar link for FINANCE_ADMIN operator', async () => {
+  test('should submit email/password to the real local-admin-sessions backend endpoint', async () => {
+    const mockSessionResponse = {
+      accessToken: 'real-backend-bearer-123',
+      tokenType: 'Bearer',
+      sessionId: 'real-session-123',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      principal: {
+        type: 'PRIVILEGED',
+        principalId: 'https://local-dev-identity.monienaija.invalid:mock-sandbox-subject',
+        sessionId: 'real-session-123',
+        audience: 'workforce-admin',
+        roles: ['FINANCE_ADMIN', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR'],
+        scopes: ['privileged:execute', 'finance:prepare', 'privileged:approve', 'finance:audit'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
+    };
+    (ApiClient.post as jest.Mock).mockResolvedValue(mockSessionResponse);
+
+    const { getByLabelText, getByText } = render(<App />);
+    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Password'), { target: { value: 'MonieNaijaAdmin123!' } });
+    fireEvent.click(getByText('Sign In'));
+
+    await waitFor(() => {
+      expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/local-admin-sessions', {
+        email: 'admin@monienaija.local',
+        password: 'MonieNaijaAdmin123!',
+      });
+      expect(getByText('System Administration Dashboard')).toBeTruthy();
+    });
+  });
+
+  test('should show a clear error and stay on LoginScreen when credentials are rejected (401)', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Invalid local administrator credentials'));
+
+    const { getByLabelText, getByText, queryByText } = render(<App />);
+    fireEvent.change(getByLabelText('Email or username'), { target: { value: 'admin@monienaija.local' } });
+    fireEvent.change(getByLabelText('Password'), { target: { value: 'wrong-password' } });
+    fireEvent.click(getByText('Sign In'));
+
+    await waitFor(() => {
+      expect(getByText('Invalid local administrator credentials')).toBeTruthy();
+    });
+    expect(queryByText('System Administration Dashboard')).toBeNull();
+  });
+
+  test('should render Dashboard and FINANCE_ADMIN sidebar link for SUPER_ADMIN operator', async () => {
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
@@ -55,8 +120,8 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         principalId: 'iss:test-admin-principal',
         sessionId: 'admin-sess',
         audience: 'workforce-admin',
-        roles: ['FINANCE_ADMIN'],
-        scopes: ['privileged:execute'],
+        roles: ['SUPER_ADMIN'],
+        scopes: ['workforce.role.assign', 'workforce.dashboard.view', 'workforce.dashboard.assign', 'customer.view', 'ledger.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -65,13 +130,14 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     const { getByText, queryByText, getAllByText } = render(<App />);
 
     expect(getByText('System Administration Dashboard')).toBeTruthy();
-    expect(getAllByText('FINANCE_ADMIN').length).toBeGreaterThan(0);
+    expect(getAllByText('SUPER_ADMIN').length).toBeGreaterThan(0);
     
-    // Admin links must be present
-    expect(getByText('🔑 Finance Role Admin')).toBeTruthy();
+    // Admin links must be present for SUPER_ADMIN
+    expect(getByText('🔑 Role Governance')).toBeTruthy();
+    expect(getByText('⚙️ Dashboard Settings')).toBeTruthy();
     
-    // Controller links must NOT be present
-    expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    // All major links present for SUPER_ADMIN
+    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
   });
 
   test('should render Dashboard and Privileged Approvals sidebar link for FINANCE_CONTROLLER operator', async () => {
@@ -86,7 +152,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['privileged:approve'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'ledger.view', 'fee_rule.view', 'privileged:approve'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -97,11 +163,12 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getByText('System Administration Dashboard')).toBeTruthy();
     expect(getAllByText('FINANCE_CONTROLLER').length).toBeGreaterThan(0);
     
-    // Controller links must be present
+    // Controller links must be present via catalogue functions
     expect(getByText('⚖️ Privileged Approvals')).toBeTruthy();
+    expect(queryByText('🔑 Role Governance')).toBeNull();
     
-    // Admin links must NOT be present
-    expect(queryByText('🔑 Finance Role Admin')).toBeNull();
+    // Customers must NOT be present for finance controller
+    expect(queryByText('👥 Customer & KYC Servicing')).toBeNull();
   });
 
   test('should render read-only Dashboard for FINANCE_AUDITOR operator without admin or controller controls', async () => {
@@ -116,7 +183,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'auditor-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_AUDITOR'],
-        scopes: ['finance:audit'],
+        scopes: ['customer.view', 'ledger.view', 'reconciliation.view', 'fee_rule.view'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },
@@ -127,9 +194,11 @@ describe('Admin Web Portal F1 Shell Tests', () => {
     expect(getByText('System Administration Dashboard')).toBeTruthy();
     expect(getAllByText('FINANCE_AUDITOR').length).toBeGreaterThan(0);
     
-    // Admin & Controller controls must NOT be present
-    expect(queryByText('🔑 Finance Role Admin')).toBeNull();
+    // Admin & Controller controls must NOT be present for auditor (read-only)
+    expect(queryByText('🔑 Role Governance')).toBeNull();
     expect(queryByText('⚖️ Privileged Approvals')).toBeNull();
+    // But ledger should be visible for auditor
+    expect(getByText('📖 Ledger & Reversals')).toBeTruthy();
   });
 
   test('should execute approvals POST trigger on form submit', async () => {
@@ -144,7 +213,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         sessionId: 'controller-sess',
         audience: 'workforce-admin',
         roles: ['FINANCE_CONTROLLER'],
-        scopes: ['privileged:approve'],
+        scopes: ['finance.control_policy.activate', 'workforce.role.assign', 'privileged:approve'],
         customerAccess: 'NONE',
         assuranceLevel: 'MFA',
       },

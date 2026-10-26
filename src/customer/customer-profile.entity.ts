@@ -25,6 +25,15 @@ export class CustomerProfile {
   @Column({ name: 'legal_name', type: 'varchar', length: 200, nullable: true })
   legalName!: string | null;
 
+  @Column({ name: 'first_name', type: 'varchar', length: 100, nullable: true })
+  firstName!: string | null;
+
+  @Column({ name: 'middle_name', type: 'varchar', length: 100, nullable: true })
+  middleName!: string | null;
+
+  @Column({ name: 'last_name', type: 'varchar', length: 100, nullable: true })
+  lastName!: string | null;
+
   @Column({ name: 'date_of_birth', type: 'date', nullable: true })
   dateOfBirth!: string | null;
 

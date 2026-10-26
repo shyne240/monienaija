@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { CustomerStatus } from '../customer/customer.enums';
 import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
@@ -18,6 +19,7 @@ import {
   AuthenticationCredentialType,
   MfaEnrollmentStatus,
   MfaMethodStatus,
+  PasswordHashAlgorithm,
   PasswordHistoryAction,
   PasswordResetRequestStatus,
   PasswordResetTokenStatus,
@@ -44,6 +46,8 @@ import type {
   UpdateRecoveryCodeCommand,
   UpdateTrustedDeviceCommand,
   IssuePasswordResetTokenCommand,
+  IssueInitialCustomerCredentialCommand,
+  RotateInitialCustomerPasswordCommand,
 } from './customer-authentication.types';
 import { MfaEnrollment } from './mfa-enrollment.entity';
 import { MfaMethod } from './mfa-method.entity';
@@ -280,6 +284,213 @@ export class CustomerAuthenticationService {
         { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
       );
       return this.toCredentialView(saved);
+    });
+  }
+
+  /**
+   * V1-CUSTOMER-CREDENTIALS-01 — workforce issuance of the first (temporary) credential for
+   * an ACTIVE customer. The controller generates the plaintext server-side (CSPRNG) and
+   * passes the computed PBKDF2 hash ONLY — the plaintext is never persisted, audited, or
+   * logged. The credential is created with rotationRequired=true and a bounded temporary
+   * expiry; the customer's first login cannot produce a session until it is rotated.
+   * Fails closed: non-ACTIVE customers and customers that already hold a live credential
+   * are rejected inside the same transaction (record + audit + history roll back together).
+   */
+  async issueInitialCredential(
+    customerId: string,
+    command: IssueInitialCustomerCredentialCommand,
+  ): Promise<CustomerAuthenticationCredential> {
+    this.assertUuid(customerId, 'customerId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    const passwordExpiresAt = this.parseOptionalDate(
+      command.passwordExpiresAt,
+      'passwordExpiresAt',
+    );
+    if (!passwordExpiresAt) {
+      throw new BadRequestException(
+        'passwordExpiresAt is required for temporary credential issuance',
+      );
+    }
+    if (passwordExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('passwordExpiresAt must be in the future');
+    }
+    if (!Object.values(PasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await this.requireCustomer(manager.getRepository(Customer), customerId);
+      this.requireActiveCustomer(customer);
+      const credential = await this.persistIssuedCredential(
+        manager,
+        customerId,
+        passwordHash,
+        command.hashAlgorithm,
+        passwordExpiresAt,
+      );
+      await this.audit(
+        manager,
+        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        credential.id,
+        'CREDENTIALS_ISSUED',
+        actor,
+        undefined,
+        this.credentialValues(credential),
+      );
+      await this.appendPasswordHistory(manager, credential, PasswordHistoryAction.CREATED, actor);
+      await this.recordSecurityEvent(
+        manager,
+        customerId,
+        credential.id,
+        SecurityEventType.CREDENTIAL_CREATED,
+        actor,
+        {},
+      );
+      return credential;
+    });
+  }
+
+  /**
+   * V1-CUSTOMER-CREDENTIALS-01 — reissues a temporary credential for a customer that
+   * already has one. The previous credential is REVOKED and soft-deleted (freeing the
+   * one-active-unique slot), and a NEW temporary rotation-required credential replaces it.
+   * Sessions bound to the previous credential are revoked by the CALLER
+   * (revokeAllForCredential) within the same request flow. Customer must be ACTIVE.
+   */
+  async reissueInitialCredential(
+    customerId: string,
+    command: IssueInitialCustomerCredentialCommand,
+  ): Promise<{ credential: CustomerAuthenticationCredential; previousCredentialId: string }> {
+    this.assertUuid(customerId, 'customerId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    const passwordExpiresAt = this.parseOptionalDate(
+      command.passwordExpiresAt,
+      'passwordExpiresAt',
+    );
+    if (!passwordExpiresAt) {
+      throw new BadRequestException(
+        'passwordExpiresAt is required for temporary credential issuance',
+      );
+    }
+    if (passwordExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('passwordExpiresAt must be in the future');
+    }
+    if (!Object.values(PasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await this.requireCustomer(manager.getRepository(Customer), customerId);
+      this.requireActiveCustomer(customer);
+      const repository = manager.getRepository(CustomerAuthenticationCredential);
+      const previous = await repository.findOne({ where: { customerId } });
+      if (!previous || previous.deletedAt !== null) {
+        throw new NotFoundException('Customer has no authentication credential to reissue');
+      }
+      const previousValues = this.credentialValues(previous);
+      previous.status = AuthenticationCredentialStatus.REVOKED;
+      previous.deletedAt = new Date();
+      await repository.save(previous);
+      await this.audit(
+        manager,
+        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        previous.id,
+        'REVOKED',
+        actor,
+        previousValues,
+        this.credentialValues(previous),
+      );
+      const credential = await this.persistIssuedCredential(
+        manager,
+        customerId,
+        passwordHash,
+        command.hashAlgorithm,
+        passwordExpiresAt,
+      );
+      await this.audit(
+        manager,
+        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        credential.id,
+        'CREDENTIALS_REISSUED',
+        actor,
+        undefined,
+        this.credentialValues(credential),
+      );
+      await this.appendPasswordHistory(manager, credential, PasswordHistoryAction.CREATED, actor);
+      await this.recordSecurityEvent(
+        manager,
+        customerId,
+        credential.id,
+        SecurityEventType.CREDENTIAL_CREATED,
+        actor,
+        {},
+      );
+      return { credential, previousCredentialId: previous.id };
+    });
+  }
+
+  /**
+   * V1-CUSTOMER-CREDENTIALS-01 — completes the mandatory first-login rotation. Callers MUST
+   * have already verified the current (temporary) password via
+   * AuthenticationExecutionService. Sets the new hash, clears the rotation flag and the
+   * temporary expiry, resets lockout counters, and advances passwordVersion. Fails closed
+   * unless the credential is ACTIVE and rotationRequired — a normal credential cannot be
+   * rotated through this path.
+   */
+  async rotateInitialPassword(
+    customerId: string,
+    credentialId: string,
+    command: RotateInitialCustomerPasswordCommand,
+  ): Promise<CustomerAuthenticationCredential> {
+    this.assertUuid(customerId, 'customerId');
+    this.assertUuid(credentialId, 'credentialId');
+    const actor = this.normalizeActor(command.actor);
+    const passwordHash = this.normalizeHash(command.passwordHash, 'passwordHash');
+    if (!Object.values(PasswordHashAlgorithm).includes(command.hashAlgorithm)) {
+      throw new BadRequestException('hashAlgorithm is invalid');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await this.requireCustomer(manager.getRepository(Customer), customerId);
+      this.requireActiveCustomer(customer);
+      const repository = manager.getRepository(CustomerAuthenticationCredential);
+      const credential = await this.requireCredential(repository, customerId, credentialId);
+      if (
+        credential.status !== AuthenticationCredentialStatus.ACTIVE ||
+        credential.rotationRequired !== true
+      ) {
+        throw new ConflictException('Credential rotation is not pending');
+      }
+      const previousValues = this.credentialValues(credential);
+      credential.passwordHash = passwordHash;
+      credential.hashAlgorithm = command.hashAlgorithm;
+      credential.passwordVersion = credential.passwordVersion + 1;
+      credential.passwordChangedAt = new Date();
+      credential.passwordExpiresAt = null;
+      credential.rotationRequired = false;
+      credential.failedAuthenticationCount = 0;
+      credential.accountLocked = false;
+      credential.lockedAt = null;
+      credential.lockReason = null;
+      const saved = await repository.save(credential);
+      await this.audit(
+        manager,
+        'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        saved.id,
+        'PASSWORD_ROTATED',
+        actor,
+        previousValues,
+        this.credentialValues(saved),
+      );
+      await this.appendPasswordHistory(manager, saved, PasswordHistoryAction.ROTATED, actor);
+      await this.recordSecurityEvent(
+        manager,
+        customerId,
+        saved.id,
+        SecurityEventType.PASSWORD_ROTATED,
+        actor,
+        { passwordVersion: saved.passwordVersion, hashAlgorithm: saved.hashAlgorithm },
+      );
+      return saved;
     });
   }
 
@@ -1108,6 +1319,49 @@ export class CustomerAuthenticationService {
     return records.find((record) => this.isNotDeleted(record.deletedAt)) ?? null;
   }
 
+  /** V1-CUSTOMER-CREDENTIALS-01 — production credentials are for ACTIVATED customers only. */
+  private requireActiveCustomer(customer: Customer): void {
+    if (customer.status !== CustomerStatus.ACTIVE) {
+      throw new ConflictException('Customer is not ACTIVE');
+    }
+  }
+
+  /** V1-CUSTOMER-CREDENTIALS-01 — persists a workforce-issued temporary credential:
+   *  rotationRequired=true, bounded expiry, initial version counters. Plaintext never seen. */
+  private async persistIssuedCredential(
+    manager: EntityManager,
+    customerId: string,
+    passwordHash: string,
+    hashAlgorithm: PasswordHashAlgorithm,
+    passwordExpiresAt: Date,
+  ): Promise<CustomerAuthenticationCredential> {
+    const repository = manager.getRepository(CustomerAuthenticationCredential);
+    const existing = await repository.findOne({ where: { customerId } });
+    if (existing && existing.deletedAt === null) {
+      throw new ConflictException('Customer already has an authentication credential');
+    }
+    return repository.save(
+      repository.create({
+        id: randomUUID(),
+        customerId,
+        type: AuthenticationCredentialType.PASSWORD,
+        passwordHash,
+        hashAlgorithm,
+        passwordVersion: 1,
+        passwordChangedAt: new Date(),
+        passwordExpiresAt,
+        status: AuthenticationCredentialStatus.ACTIVE,
+        failedAuthenticationCount: 0,
+        accountLocked: false,
+        lockedAt: null,
+        lockReason: null,
+        rotationRequired: true,
+        version: 1,
+        deletedAt: null,
+      }),
+    );
+  }
+
   private async requireCredential(
     repository: Repository<CustomerAuthenticationCredential>,
     customerId: string,
@@ -1413,6 +1667,7 @@ export class CustomerAuthenticationService {
       accountLocked: credential.accountLocked,
       lockedAt: credential.lockedAt,
       lockReason: credential.lockReason,
+      rotationRequired: credential.rotationRequired,
       version: credential.version,
       createdAt: credential.createdAt,
       updatedAt: credential.updatedAt,
@@ -1431,6 +1686,7 @@ export class CustomerAuthenticationService {
       accountLocked: credential.accountLocked,
       lockedAt: credential.lockedAt,
       lockReason: credential.lockReason,
+      rotationRequired: credential.rotationRequired,
       version: credential.version,
     };
   }

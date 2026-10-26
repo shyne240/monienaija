@@ -439,13 +439,31 @@ export class DepositService {
       try {
         return await this.dataSource.transaction('SERIALIZABLE', operation);
       } catch (error) {
-        if (!isRetryableTransactionError(error) || attempt === 2) {
+        if (!isRetryableTransactionError(error)) {
           throw error;
+        }
+        if (attempt === 2) {
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock still occurring. Surface the structured,
+          // client-retryable conflict below instead of the raw QueryFailedError.
+          throw this.transactionContentionExhaustedException();
         }
         await this.metricsService?.increment(undefined, 'retries');
       }
     }
-    throw new ConflictException('Payment operation could not complete after retries');
+    throw this.transactionContentionExhaustedException();
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'Payment operation could not complete after retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private failureException(failure: PaymentFailureDetails): HttpException {

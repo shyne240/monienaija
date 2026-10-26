@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import type {
   DataSource,
   DeepPartial,
@@ -21,6 +21,7 @@ import {
   ContactMethodType,
   CustomerKycLevel,
   CustomerKycStatus,
+  CustomerStatus,
   CustomerType,
   IdentityDocumentType,
 } from '../src/customer/customer.enums';
@@ -77,6 +78,14 @@ class MemoryRepository<T extends ObjectLiteral> {
       [...this.records.values()].filter((entity) =>
         Object.entries(conditions).every(([key, expected]) => {
           const actual = (entity as Record<string, unknown>)[key];
+          if (typeof expected === 'object' && expected !== null && '_type' in expected) {
+            const operator = expected as { _type?: string; value?: unknown; _value?: unknown };
+            if (operator._type === 'isNull') return actual === null;
+            if (operator._type === 'not') {
+              const value = operator.value ?? operator._value;
+              return actual !== value;
+            }
+          }
           return actual === expected;
         }),
       ),
@@ -151,9 +160,7 @@ describe('CustomerService', () => {
     const contactRepository = new MemoryRepository<CustomerContactMethod>(
       duplicateBy(['type', 'normalizedValue']),
     );
-    const documentRepository = new MemoryRepository<CustomerIdentityDocument>(
-      duplicateBy(['customerId', 'type']),
-    );
+    const documentRepository = new MemoryRepository<CustomerIdentityDocument>();
     const kycRepository = new MemoryRepository<CustomerKycAssessment>(
       duplicateBy(['customerId', 'isCurrent']),
     );
@@ -200,6 +207,37 @@ describe('CustomerService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('generates a non-phone-derived reference when the Admin omits one', async () => {
+    const { service } = fixture();
+    const created = await service.create({ type: CustomerType.INDIVIDUAL, actor: 'customer-ops' });
+    expect(created.status).toBe(CustomerStatus.DRAFT);
+    expect(created.reference).toMatch(/^mn-cus-[a-f0-9]{24}$/);
+  });
+
+  it('prevents manual service creation from bypassing the DRAFT activation gate', async () => {
+    const { service } = fixture();
+    await expect(
+      service.create({
+        reference: 'manual-active-customer',
+        type: CustomerType.INDIVIDUAL,
+        status: CustomerStatus.ACTIVE,
+        actor: 'customer-ops',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('masks phone-derived customer references in customer audit records', async () => {
+    const { service, audit } = fixture();
+    await service.create({
+      reference: 'mn-0000000000',
+      type: CustomerType.INDIVIDUAL,
+      actor: 'customer-ops',
+    });
+
+    const event = audit.record.mock.calls[0]?.[1] as { newValues?: Record<string, unknown> };
+    expect(event.newValues?.reference).toBe('mn-••••0000');
+  });
+
   it('creates and audits profile, address, contact, and identity records', async () => {
     const { service, audit } = fixture();
     const customer = await createCustomer(service);
@@ -233,10 +271,100 @@ describe('CustomerService', () => {
     expect(address.customerId).toBe(customer.id);
     expect(contact.normalizedValue).toBe('customer@example.com');
     expect(document.customerId).toBe(customer.id);
+    const identityAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(identityAudit.newValues).not.toHaveProperty('documentNumber');
+    expect(JSON.stringify(identityAudit)).not.toContain(document.documentNumber);
     expect(audit.record).toHaveBeenCalledTimes(5);
   });
 
-  it('rejects duplicate contacts and identity-document types', async () => {
+  it('persists profile, address, contact and identity corrections with minimal audit metadata', async () => {
+    const { service, audit } = fixture();
+    const customer = await createCustomer(service);
+    const profile = await service.createProfile(customer.id, {
+      displayName: 'Synthetic Old Name',
+      firstName: 'Synthetic',
+      lastName: 'Person',
+      dateOfBirth: '1991-01-01',
+      nationality: 'NG',
+      actor: 'ops',
+    });
+    const updatedProfile = await service.updateProfile(customer.id, {
+      displayName: 'Synthetic New Name',
+      firstName: 'Changed',
+      actor: 'ops',
+    });
+    expect(updatedProfile).toMatchObject({
+      displayName: 'Synthetic New Name',
+      firstName: 'Changed',
+      lastName: 'Person',
+    });
+    expect(updatedProfile.legalName).toBe('Changed Person');
+    const profileAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(profileAudit)).not.toContain('Synthetic New Name');
+    expect(JSON.stringify(profileAudit)).not.toContain('Changed Person');
+
+    const address = await service.createAddress(customer.id, {
+      type: AddressType.RESIDENTIAL,
+      lineOne: '1 Synthetic Way',
+      city: 'Abuja',
+      state: 'FCT',
+      country: 'NG',
+      isPrimary: true,
+      actor: 'ops',
+    });
+    const updatedAddress = await service.updateAddress(customer.id, address.id, {
+      lineOne: '2 Synthetic Way',
+      isPrimary: true,
+      actor: 'ops',
+    });
+    expect(updatedAddress.lineOne).toBe('2 Synthetic Way');
+    const addressAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(addressAudit)).not.toContain('2 Synthetic Way');
+
+    const contact = await service.createContactMethod(customer.id, {
+      type: ContactMethodType.PHONE,
+      value: '08012340001',
+      isPrimary: true,
+      actor: 'ops',
+    });
+    expect(contact.value).toBe('+2348012340001');
+    expect(contact.normalizedValue).toBe('8012340001');
+    const updatedContact = await service.updateContactMethod(customer.id, contact.id, {
+      value: '+2348012340002',
+      actor: 'ops',
+    });
+    expect(updatedContact.value).toBe('+2348012340002');
+    expect(updatedContact.verifiedAt).toBeNull();
+    const contactAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(contactAudit)).not.toContain('+2348012340002');
+
+    const document = await service.createIdentityDocument(customer.id, {
+      type: IdentityDocumentType.INTERNATIONAL_PASSPORT,
+      documentNumber: 'SYNTHETIC-PASSPORT-001',
+      issuingCountry: 'NG',
+      actor: 'ops',
+    });
+    const updatedDocument = await service.updateIdentityDocument(customer.id, document.id, {
+      documentNumber: 'SYNTHETIC-PASSPORT-002',
+      expiresAt: '2030-01-01',
+      actor: 'ops',
+    });
+    expect(updatedDocument.documentNumber).toBe('SYNTHETIC-PASSPORT-002');
+    const identityAudit = audit.record.mock.calls.at(-1)?.[1] as {
+      newValues?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(identityAudit)).not.toContain('SYNTHETIC-PASSPORT-002');
+  });
+
+  it('allows multiple identity documents of one type and rejects duplicate type-number pairs', async () => {
     const { service } = fixture();
     const customer = await createCustomer(service);
     await service.createContactMethod(customer.id, {
@@ -254,16 +382,23 @@ describe('CustomerService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    await service.createIdentityDocument(customer.id, {
+    const firstBvn = await service.createIdentityDocument(customer.id, {
       type: IdentityDocumentType.BVN,
       documentNumber: '12345678901',
       issuingCountry: 'NG',
       actor: 'ops',
     });
+    const secondBvn = await service.createIdentityDocument(customer.id, {
+      type: IdentityDocumentType.BVN,
+      documentNumber: '98765432109',
+      issuingCountry: 'NG',
+      actor: 'ops',
+    });
+    expect(secondBvn.id).not.toBe(firstBvn.id);
     await expect(
       service.createIdentityDocument(customer.id, {
         type: IdentityDocumentType.BVN,
-        documentNumber: '98765432109',
+        documentNumber: '12345678901',
         issuingCountry: 'NG',
         actor: 'ops',
       }),

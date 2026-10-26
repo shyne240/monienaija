@@ -16,7 +16,7 @@ export const WelcomeScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.icon}>👋</Text>
-        <Text style={styles.title}>Welcome to MoneyNaija</Text>
+        <Text style={styles.title}>Welcome to MonieNaija</Text>
         <Text style={styles.description}>
           Your in-house, secure, and blazing-fast financial companion. Fund wallets, send money, and withdraw easily in Nigeria.
         </Text>

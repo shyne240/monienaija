@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuthorizationModule } from '../authorization/authorization.module';
 import { Customer } from '../customer/customer.entity';
 import { CustomerAddress } from '../customer/customer-address.entity';
 import { CustomerIdentityDocument } from '../customer/customer-identity-document.entity';
@@ -16,6 +17,7 @@ import { CustomerRiskProfile } from './customer-risk-profile.entity';
 
 @Module({
   imports: [
+    AuthorizationModule,
     OperationsModule,
     TypeOrmModule.forFeature([
       Customer,

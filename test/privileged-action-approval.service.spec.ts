@@ -46,6 +46,21 @@ class MemoryRepository<T extends ObjectLiteral> {
       ) ?? null,
     );
   }
+
+  createQueryBuilder() {
+    let conditions: Partial<T> = {};
+    const queryBuilder = {
+      where(_condition: string, parameters: { approvalId: string }) {
+        conditions = { id: parameters.approvalId } as unknown as Partial<T>;
+        return this;
+      },
+      setLock() {
+        return this;
+      },
+      getOne: () => this.findOne({ where: conditions }),
+    };
+    return queryBuilder;
+  }
 }
 
 class MemoryManager {
