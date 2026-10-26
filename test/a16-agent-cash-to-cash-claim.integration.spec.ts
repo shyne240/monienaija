@@ -276,7 +276,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     });
   }
 
-  async function initiateTransfer(amount = '4000', phoneOverride?: string) {
+  async function initiateTransfer(amount = '4000', phoneOverride?: string, reference?: string) {
     const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = phoneOverride ?? `80${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -288,6 +288,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       amountMinor: amount,
       currency: 'NGN',
       idempotencyKey: `init-${randomUUID()}`,
+      reference,
     });
     return { agent, wallet, phone, transferId: res.transferId, transferCode: res.transferCode!, amount };
   }
@@ -2260,5 +2261,55 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       }),
     ]));
   });
+
+  it('S3 public references are not unique even within one sender and beneficiary', async () => {
+    const reference = `s3-public-${randomUUID()}`;
+    const first = await initiateTransfer('1000', undefined, reference);
+    const second = await cashToCashService.execute({
+      agentId: first.agent.id, agentPrincipal: agentPrincipal(first.agent.id), agentPin: '1234',
+      beneficiaryPhone: first.phone, amountMinor: '1000', currency: 'NGN',
+      reference, idempotencyKey: `s3-second-${randomUUID()}`,
+    });
+    expect(second.transferId).not.toBe(first.transferId);
+    expect(second.reference).toBe(reference);
+    const rows = await dataSource.query(
+      `SELECT id, reference, status FROM cash_to_cash_transfers WHERE agent_id=$1 AND beneficiary_phone=$2 AND reference=$3`,
+      [first.agent.id, first.phone, reference],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row: any) => row.status === 'UNCLAIMED')).toBe(true);
+  });
+
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S3 HTTP %s reference alone cannot replace the required transfer UUID', async (redemptionMethod) => {
+      const reference = `s3-handoff-${randomUUID()}`;
+      const { transferId, phone, transferCode } = await initiateTransfer('2000', undefined, reference);
+      const { customerId } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const login = await app.inject({ method: 'POST', url: '/api/v1/agents/sessions',
+        payload: { agentId: claimant.agent.id, password: 'login-password' } });
+      expect(login.statusCode).toBe(200);
+      const { challengeId } = await createMfaChallenge(customerId, 's3-handoff-otp');
+      const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const idempotencyKey = randomUUID();
+      const response = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim',
+        headers: { authorization: `Bearer ${login.json().accessToken}` },
+        payload: { reference, beneficiaryPhone: phone, transferCode, customerId, mfaChallengeId: challengeId,
+          otp: 's3-handoff-otp', idempotencyKey, redemptionMethod,
+          ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().message).toContain('transferId must be a UUID');
+      expect(response.body).not.toContain(transferId);
+      expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+      expect((await dataSource.query(`SELECT status, claim_journal_id, failed_attempts FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+        .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null, failed_attempts: 0 });
+      expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${idempotencyKey}`])).toEqual([]);
+    },
+  );
 
 });
