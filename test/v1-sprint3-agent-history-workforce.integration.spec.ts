@@ -576,6 +576,75 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
       expect((res.json() as any).message).toBe('Read-only principal may not perform this operation');
     });
 
+    it('V1-SPRINT3-SEC-SWEEP-01: gates Agent-scoped limit-assignment reads with limit.view and non-Agent writes with limit.modify', async () => {
+      // Before this fix, every limit-assignment GET passed with the bare requireWorkforce
+      // type check — TREASURY (reconciliation.view only) and OPERATIONS (no limit.*
+      // function) could read Agent-scoped limit assignments via
+      // GET /internal/limit-assignments/agent/:id, and any OPERATOR-typed role could
+      // create/patch non-Agent assignments. The sibling LimitCatalogController already
+      // gates the SAME domain with limit.view/limit.modify; this mirrors it.
+      for (const role of ['OPERATIONS', 'TREASURY']) {
+        const token = await workforceToken(role);
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/v1/internal/limit-assignments/agent/${agentId}`,
+          headers: headers(token),
+        });
+        expect([role, res.statusCode, (res.json() as any).message]).toEqual([
+          role,
+          403,
+          'Authorization denied: FUNCTION_MISSING',
+        ]);
+        const listRes = await app.inject({
+          method: 'GET',
+          url: '/api/v1/internal/limit-assignments',
+          headers: headers(token),
+        });
+        expect([role, listRes.statusCode]).toEqual([role, 403]);
+      }
+      // Catalogue limit.view holders keep (now function-gated) access.
+      for (const role of ['FINANCE_AUDITOR', 'AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER']) {
+        const token = await workforceToken(role);
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/v1/internal/limit-assignments/agent/${agentId}`,
+          headers: headers(token),
+        });
+        expect([role, res.statusCode]).toEqual([role, 200]);
+        expect((res.json() as any).total).toBe(0);
+      }
+      // Non-Agent write without limit.modify: canonical FUNCTION_MISSING 403 (payload is
+      // DTO-valid so the gate — not validation — produces the denial).
+      const opToken = await workforceToken('OPERATIONS');
+      const deniedCreate = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/limit-assignments',
+        headers: { ...headers(opToken), 'content-type': 'application/json' },
+        payload: { limitProfileCode: 'S3_P3_PROF', subjectType: 'GLOBAL' },
+      });
+      expect(deniedCreate.statusCode).toBe(403);
+      expect((deniedCreate.json() as any).message).toBe('Authorization denied: FUNCTION_MISSING');
+      // limit.modify holder passes the gate (the unknown profile code then fails in the
+      // service with 400/404 — proving gate passage without mutating any data).
+      const fcToken = await workforceToken('FINANCE_CONTROLLER');
+      const passedGate = await app.inject({
+        method: 'POST',
+        url: '/api/v1/internal/limit-assignments',
+        headers: { ...headers(fcToken), 'content-type': 'application/json' },
+        payload: { limitProfileCode: 'S3_P3_PROF', subjectType: 'GLOBAL' },
+      });
+      expect([400, 404]).toContain(passedGate.statusCode);
+      // COMPLIANCE (no limit.* function in the catalogue) is denied the same canonical way.
+      const complianceToken = await workforceToken('COMPLIANCE');
+      const complianceRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/internal/limit-assignments/agent/${agentId}`,
+        headers: headers(complianceToken),
+      });
+      expect(complianceRes.statusCode).toBe(403);
+      expect((complianceRes.json() as any).message).toBe('Authorization denied: FUNCTION_MISSING');
+    });
+
     it('keeps the Sprint 2 receiving-number gate passing for agent.view holders (no regression)', async () => {
       const token = await workforceToken('FINANCE_AUDITOR');
       const res = await app.inject({
