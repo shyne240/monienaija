@@ -8,6 +8,7 @@ import { theme } from '../../../theme';
 import { Card } from '../../../components/Card';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
+import { isBearerSessionExpired401Message } from '../../../services/api-client';
 import {
   agentCashIn,
   describeApiError,
@@ -226,7 +227,13 @@ function describeCashInError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
     const status = (error as Error & { status?: number }).status;
     if (status === 401) {
+      if (isBearerSessionExpired401Message(error.message)) {
+        return 'Your session has expired. Please log in again.';
+      }
       if (/locked/i.test(error.message)) return 'Your transaction PIN is locked. Contact support.';
+      if (/PIN_NOT_FOUND/i.test(error.message)) {
+        return 'No transaction PIN is set for your account. Set your Transaction PIN in Account settings first.';
+      }
       return 'Incorrect transaction PIN. Try again.';
     }
     if (status === 403) {

@@ -51,6 +51,13 @@ export interface MfaChallengeCardProps {
    * so parent confirmation forms never submit a stale challengeId.
    */
   onChallengeInvalidated?: () => void;
+  /**
+   * Incremented by parent when the backend rejects a submission because the
+   * issued OTP challenge was already consumed or invalidated.
+   */
+  invalidatedRevision?: number;
+  /** Disables requesting/resending a challenge while an earlier attempt outcome is unknown. */
+  disabled?: boolean;
   testID?: string;
 }
 
@@ -73,14 +80,25 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
   ttlSeconds,
   onChallengeReady,
   onChallengeInvalidated,
+  invalidatedRevision = 0,
+  disabled = false,
   testID,
 }) => {
   const [challenge, setChallenge] = useState<AgentMfaChallenge | null>(null);
+  const [consumedNotice, setConsumedNotice] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (invalidatedRevision > 0) {
+      setChallenge(null);
+      setConsumedNotice(true);
+    }
+  }, [invalidatedRevision]);
 
   const requestMutation = useMutation({
     mutationFn: () => requestAgentMfaChallenge(customerId, purpose, ttlSeconds),
     onSuccess: (issued) => {
+      setConsumedNotice(false);
       setChallenge(issued);
       setNow(Date.now());
       onChallengeReady?.(issued);
@@ -115,11 +133,12 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
 
   const request = useCallback(() => {
     // Duplicate-request guard: one in-flight request at a time, always.
-    if (requestMutation.isPending) return;
+    if (disabled || requestMutation.isPending) return;
+    setConsumedNotice(false);
     setChallenge(null);
     onChallengeInvalidated?.();
     requestMutation.mutate();
-  }, [requestMutation, onChallengeInvalidated]);
+  }, [disabled, requestMutation, onChallengeInvalidated]);
 
   const copy = PURPOSE_COPY[purpose];
   const challengeState = challenge ? state.status : null;
@@ -131,7 +150,12 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
       {state.status === 'idle' && (
         <>
           <Text style={styles.body}>{copy.summary}</Text>
-          <Button label="Send verification code" onPress={request} testID="mfa-request-button" />
+          {consumedNotice && (
+            <Text style={styles.expiredText} testID="mfa-consumed-notice">
+              The previous verification code can no longer be used. Request a fresh code for the customer.
+            </Text>
+          )}
+          <Button label="Send verification code" disabled={disabled} onPress={request} testID="mfa-request-button" />
         </>
       )}
 
@@ -172,6 +196,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
             <Button
               label="Request a new code"
               variant="outline"
+              disabled={disabled}
               onPress={request}
               testID="mfa-resend-button"
             />
@@ -184,7 +209,7 @@ export const MfaChallengeCard: React.FC<MfaChallengeCardProps> = ({
           <Text style={styles.expiredText} testID="mfa-expired">
             The verification code has expired.
           </Text>
-          <Button label="Request a new code" variant="outline" onPress={request} testID="mfa-expired-resend" />
+          <Button label="Request a new code" variant="outline" disabled={disabled} onPress={request} testID="mfa-expired-resend" />
         </>
       )}
     </Card>

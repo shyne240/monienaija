@@ -56,6 +56,7 @@ export const WalletToCashConfirmScreen: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [challenge, setChallenge] = useState<AgentMfaChallenge | null>(null);
+  const [mfaInvalidatedRevision, setMfaInvalidatedRevision] = useState(0);
   const [otp, setOtp] = useState('');
   const [customerPin, setCustomerPin] = useState('');
   const [agentPin, setAgentPin] = useState('');
@@ -107,6 +108,10 @@ export const WalletToCashConfirmScreen: React.FC = () => {
       setCustomerPin('');
       setAgentPin('');
       setOtp('');
+      if (isOtpChallengeInvalidatedError(err)) {
+        setChallenge(null);
+        setMfaInvalidatedRevision((rev) => rev + 1);
+      }
       if (agentId && !isAmbiguousOperationOutcome(err)) {
         await clearPendingAgentOperation(agentId, 'CASH_OUT');
       }
@@ -216,6 +221,8 @@ export const WalletToCashConfirmScreen: React.FC = () => {
         <MfaChallengeCard
           customerId={customer.customerId}
           purpose="WALLET_TO_CASH"
+          invalidatedRevision={mfaInvalidatedRevision}
+          disabled={cashOutMutation.isPending}
           onChallengeReady={(issued) => {
             setChallenge(issued);
             setClientError('');
@@ -303,6 +310,15 @@ export const WalletToCashConfirmScreen: React.FC = () => {
     </KeyboardAvoidingView>
   );
 };
+
+function isOtpChallengeInvalidatedError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'ApiError' &&
+    (error as Error & { status?: number }).status === 400 &&
+    /OTP already used|OTP expired|Invalid OTP challenge/i.test(error.message)
+  );
+}
 
 interface SummaryRowProps {
   label: string;

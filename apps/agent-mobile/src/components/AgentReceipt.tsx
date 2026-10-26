@@ -109,6 +109,12 @@ export function receiptFromCashToCashResult(
       value: `${formatNairaFromMinor(result.feeMinor)} ${result.currency}`,
     });
   }
+  if (result.vatMinor && result.vatMinor !== '0') {
+    lines.push({
+      label: 'VAT',
+      value: `${formatNairaFromMinor(result.vatMinor)} ${result.currency}`,
+    });
+  }
   if (result.totalMinor && result.totalMinor !== (result.principalMinor || result.amountMinor)) {
     lines.push({
       label: 'Total debited',
@@ -279,10 +285,15 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
         ? `Customer · beneficiary ${item.counterparty.beneficiaryPhone}`
         : 'Customer wallet',
     });
+  } else if (item.counterparty?.type === 'AGENT') {
+    lines.push({ label: 'Counterparty', value: 'MonieNaija Agent' });
   } else if (item.counterparty?.type === 'AGGREGATOR') {
     lines.push({ label: 'Counterparty', value: 'Aggregator' });
   } else if (item.counterparty?.type === 'WORKFORCE') {
     lines.push({ label: 'Counterparty', value: 'MonieNaija Workforce' });
+  }
+  if (item.failureMessage) {
+    lines.push({ label: 'Status detail', value: item.failureMessage });
   }
   if (item.reference) {
     lines.push({ label: 'Reference', value: item.reference, selectable: true });
@@ -304,7 +315,9 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
     ? item.direction === 'CREDIT'
       ? 'The claiming Agent float was credited. Physical cash handover is separate from this ledger settlement and is not recorded in this receipt.'
       : 'The beneficiary Customer wallet was credited. No physical cash payout is included in this settlement.'
-    : 'Values are server-recorded entries from your Agent history.';
+    : item.type === 'CASH_TO_CASH' && item.status === 'EXPIRED'
+      ? 'This Cash→Cash transfer expired before beneficiary redemption.'
+      : 'Values are server-recorded entries from your Agent history.';
 
   return {
     heading: `${typeLabel} Receipt`,
@@ -312,7 +325,7 @@ export function receiptFromHistoryItem(item: AgentHistoryItem): AgentReceiptView
     stateTone:
       item.status === 'COMPLETED' || item.status === 'CLAIMED'
         ? 'success'
-        : item.status === 'EXPIRED'
+        : item.status === 'EXPIRED' || item.status === 'FAILED' || item.status === 'REVERSED'
           ? 'warning'
           : 'info',
     lines,
