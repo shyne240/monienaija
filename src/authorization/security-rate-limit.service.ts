@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { HttpException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuditService } from '../operations/audit.service';
+import { runSerializableWithRetry } from '../common/serializable-transaction';
 import { A2SecurityRateBucket } from './workforce-authentication.entity';
 import type { A2RateLimitRuleV1 } from './workforce-authentication.types';
 @Injectable()
@@ -22,7 +23,22 @@ export class A2SecurityRateLimitService {
       .update([rule.category, ...dimensions].join('\0'))
       .digest('hex');
     try {
-      await this.ds.transaction('SERIALIZABLE', async (m) => {
+      // V1-HARDEN-01: this bucket update runs under SERIALIZABLE isolation precisely
+      // because it is a hot, shared row under concurrent load (the whole point of a rate
+      // limiter is that many requests legitimately land on the same bucket). PostgreSQL
+      // SERIALIZABLE transactions on contended rows routinely abort with a transient
+      // serialization_failure/deadlock_detected (40001/40P01) under exactly that traffic
+      // pattern — this is expected, not exceptional. Previously there was no retry: any such
+      // transient conflict fell into the catch-all below and was converted to an avoidable
+      // 503 "Security rate-limit state unavailable", even though the request should simply
+      // have been re-evaluated and (most of the time) allowed through or correctly 429'd.
+      // Reproduced directly: 10 concurrent consume() calls on a fresh bucket well under
+      // capacity produced 7 spurious 503s and only 3 successes. `runSerializableWithRetry` is
+      // the same bounded (3-attempt) retry-on-40001/40P01 helper already used elsewhere in
+      // this codebase (e.g. the A5 ledger post path, customer registration OTP verify) for
+      // exactly this class of contention; it leaves every other error (including the
+      // intentional 429 thrown below) untouched.
+      await runSerializableWithRetry(this.ds, 'a2-security-rate-limit-consume', async (m) => {
         const r = m.getRepository(A2SecurityRateBucket);
         let b = await r
           .createQueryBuilder('bucket')
@@ -60,7 +76,21 @@ export class A2SecurityRateLimitService {
         await r.save(b);
       });
     } catch (e) {
-      if (e instanceof HttpException && e.getStatus() === 429) throw e;
+      // V1-INFRA-03 Part D: live two-real-process testing against a single shared Postgres
+      // instance showed that genuine cross-process contention on a hot bucket row — the
+      // exact traffic pattern this limiter exists to handle — exhausts the bounded
+      // SERIALIZABLE retry in `runSerializableWithRetry` far more often than single-process
+      // concurrency does (reproduced: 30-70% of 10 concurrent cross-process requests on the
+      // same bucket, vs. zero spurious failures for the same volume within one process; see
+      // test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts, which only exercises
+      // in-process concurrency and therefore could not see this). `runSerializableWithRetry`
+      // already converts that exhaustion into a `ConflictException` (409) — a correctly
+      // labelled, retryable signal. Flattening it into an opaque 503 here (as before) discarded
+      // that signal and made a transient, retry-safe condition indistinguishable from the
+      // genuinely fatal 503 thrown by `validate()` for a broken rule configuration. Pass the
+      // intentional 429 and the already-correct 409 through unchanged; only truly unexpected
+      // errors still become a 503.
+      if (e instanceof HttpException && (e.getStatus() === 429 || e.getStatus() === 409)) throw e;
       throw new ServiceUnavailableException('Security rate-limit state unavailable');
     }
   }

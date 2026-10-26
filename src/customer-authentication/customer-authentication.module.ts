@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
 import { OperationsModule } from '../operations/operations.module';
 import { AuthenticationExecutionService } from './authentication-execution.service';
 import { AuthenticationSession } from './authentication-session.entity';
@@ -27,6 +28,7 @@ import { TrustedDevice } from './trusted-device.entity';
     forwardRef(() => OperationsModule),
     TypeOrmModule.forFeature([
       Customer,
+      CustomerContactMethod,
       CustomerAuthenticationCredential,
       AuthenticationSession,
       MfaChallenge,
@@ -55,6 +57,7 @@ import { TrustedDevice } from './trusted-device.entity';
     AuthenticationSessionService,
     CustomerAuthenticationRuntimeService,
     MfaExecutionService,
+    PasswordHashVerificationService,
   ],
 })
 export class CustomerAuthenticationModule {}

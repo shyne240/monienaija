@@ -1,27 +1,28 @@
 {
   "expo": {
-    "name": "MoneyNaija",
+    "name": "MonieNaija",
     "slug": "moneynaija-customer",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
+      "backgroundColor": "#0A3D25",
       "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0A3D25"
+      "resizeMode": "contain"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.monienaija.customer",
+      "buildNumber": "1"
     },
     "android": {
+      "package": "ng.monienaija.customer",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A3D25"
+        "backgroundColor": "#0A3D25",
+        "foregroundImage": "./assets/adaptive-icon.png"
       }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "icon": "./assets/icon.png"
   }
 }

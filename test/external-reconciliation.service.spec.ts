@@ -1053,7 +1053,15 @@ function makeIdempotencyRow(overrides: Record<string, unknown> = {}): Record<str
     status: 'COMPLETED',
     request_hash: SETTLEMENT_REQUEST_HASH,
     resource_id: SETTLEMENT_ID,
-    expires_at: new Date('2026-09-01T00:00:00.000Z'),
+    // V1-CUSTOMER-02: was a fixed past-relative-to-now date ('2026-09-01'),
+    // which made the idempotency hint evaluate as EXPIRED once real wall-clock
+    // time passed that date (service compares against Date.now() — see
+    // ExternalReconciliationService's idempotency hint resolution), turning a
+    // PASS fixture into a false ERROR with no change to production code. Not
+    // a real regression; fixed by deriving the expiry from "now" so the
+    // fixture always represents a currently-valid, non-expired record
+    // regardless of when the suite runs.
+    expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     ...overrides,
   };
 }

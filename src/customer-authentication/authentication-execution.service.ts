@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
+import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
+import { ContactMethodType, CustomerStatus } from '../customer/customer.enums';
 import { AuditService } from '../operations/audit.service';
 import { CustomerAuthenticationCredential } from './customer-authentication-credential.entity';
 import { AuthenticationCredentialStatus } from './customer-authentication.enums';
@@ -10,12 +12,19 @@ import { CustomerAuthenticationService } from './customer-authentication.service
 import { PasswordHashVerificationService } from './password-hash-verification.service';
 
 export interface AuthenticationExecutionCommand {
+  /**
+   * Accepts customer UUID, customer reference (e.g. mn-8012345678), or
+   * Nigerian phone number (e.g. 08012345678, +2348012345678, 8012345678).
+   */
   customerId: string;
   password: string;
   actor: string;
 }
 
-export type AuthenticationFailureReason = 'INVALID_CREDENTIALS' | 'CREDENTIAL_UNAVAILABLE';
+export type AuthenticationFailureReason =
+  | 'INVALID_CREDENTIALS'
+  | 'CREDENTIAL_UNAVAILABLE'
+  | 'CUSTOMER_STATUS_INELIGIBLE';
 
 export interface AuthenticationExecutionResult {
   authenticated: boolean;
@@ -24,6 +33,9 @@ export interface AuthenticationExecutionResult {
   passwordVersion?: number;
   failureReason?: AuthenticationFailureReason;
   accountLocked?: boolean;
+  /** Set only on successful verification of a credential that still carries the
+   *  first-login rotation flag (workforce-issued temporary credential). */
+  rotationRequired?: boolean;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,29 +52,37 @@ export class AuthenticationExecutionService {
     private readonly auditService: AuditService,
     private readonly customerAuthenticationService: CustomerAuthenticationService,
     private readonly passwordHashVerificationService: PasswordHashVerificationService,
+    @Optional()
+    @InjectRepository(CustomerContactMethod)
+    private readonly contactRepository?: Repository<CustomerContactMethod>,
   ) {}
 
   async authenticate(
     command: AuthenticationExecutionCommand,
   ): Promise<AuthenticationExecutionResult> {
-    const customerId = command.customerId.trim().toLowerCase();
-    const actor = this.normalizeActor(command.actor);
-    if (!UUID_PATTERN.test(customerId)) {
-      return this.invalidCredentials(customerId);
+    const rawIdentifier = (command.customerId ?? '').trim();
+    const actor = this.normalizeActor(command.actor || rawIdentifier || 'customer');
+
+    if (!rawIdentifier || rawIdentifier.length > 160) {
+      return this.invalidCredentials(rawIdentifier);
     }
     if (typeof command.password !== 'string' || command.password.length === 0) {
-      return this.invalidCredentials(customerId);
+      return this.invalidCredentials(rawIdentifier);
     }
     if (command.password.length > MAX_PASSWORD_LENGTH) {
-      return this.invalidCredentials(customerId);
+      return this.invalidCredentials(rawIdentifier);
     }
 
-    const customer = await this.customerRepository.findOne({ where: { id: customerId } });
+    // Resolve Customer by UUID, customer reference, or Nigerian phone number
+    const customer = await this.resolveCustomer(rawIdentifier);
     if (!customer || customer.deletedAt !== null) {
-      return this.invalidCredentials(customerId);
+      return this.invalidCredentials(rawIdentifier);
     }
 
-    const credential = await this.credentialRepository.findOne({ where: { customerId } });
+    const customerId = customer.id;
+    const credential = await this.credentialRepository.findOne({
+      where: { customerId, deletedAt: IsNull() },
+    });
     if (!credential || credential.deletedAt !== null) {
       return this.invalidCredentials(customerId);
     }
@@ -94,6 +114,20 @@ export class AuthenticationExecutionService {
       return this.invalidCredentials(customerId);
     }
 
+    // Invariant: a verified credential must not produce a session while the customer's
+    // status is not ACTIVE (e.g. DRAFT pre-activation, SUSPENDED, CLOSED).
+    if (customer.status !== CustomerStatus.ACTIVE) {
+      await this.recordStatusIneligibleAuthentication(credential, actor, customer.status);
+      return {
+        authenticated: false,
+        customerId,
+        credentialId: credential.id,
+        passwordVersion: credential.passwordVersion,
+        failureReason: 'CUSTOMER_STATUS_INELIGIBLE',
+        accountLocked: credential.accountLocked,
+      };
+    }
+
     await this.recordSuccessfulAuthentication(credential, actor);
     return {
       authenticated: true,
@@ -101,7 +135,61 @@ export class AuthenticationExecutionService {
       credentialId: credential.id,
       passwordVersion: credential.passwordVersion,
       accountLocked: false,
+      ...(credential.rotationRequired ? { rotationRequired: true } : {}),
     };
+  }
+
+  private async resolveCustomer(identifier: string): Promise<Customer | null> {
+    // 1. Direct UUID match
+    if (UUID_PATTERN.test(identifier)) {
+      const match = await this.customerRepository.findOne({
+        where: { id: identifier.toLowerCase(), deletedAt: IsNull() },
+      });
+      if (match) return match;
+    }
+
+    // 2. Customer reference match (e.g. mn-8012345678)
+    if (identifier.toLowerCase().startsWith('mn-')) {
+      const match = await this.customerRepository.findOne({
+        where: { reference: identifier.toLowerCase(), deletedAt: IsNull() },
+      });
+      if (match) return match;
+    }
+
+    // 3. Nigerian phone number match
+    const canonicalPhone = this.tryNormalizeNigerianPhone(identifier);
+    if (canonicalPhone && this.contactRepository) {
+      const contact = await this.contactRepository.findOne({
+        where: {
+          type: ContactMethodType.PHONE,
+          normalizedValue: canonicalPhone,
+          deletedAt: IsNull(),
+        },
+      });
+      if (contact) {
+        const match = await this.customerRepository.findOne({
+          where: { id: contact.customerId, deletedAt: IsNull() },
+        });
+        if (match) return match;
+      }
+    }
+
+    // 4. General reference lookup fallback
+    return this.customerRepository.findOne({
+      where: { reference: identifier.toLowerCase(), deletedAt: IsNull() },
+    });
+  }
+
+  private tryNormalizeNigerianPhone(raw: string): string | null {
+    const compact = raw.replace(/[\s()-]/g, '');
+    let local: string;
+    if (/^\+234\d{10}$/.test(compact)) local = compact.slice(4);
+    else if (/^234\d{10}$/.test(compact)) local = compact.slice(3);
+    else if (/^0\d{10}$/.test(compact)) local = compact.slice(1);
+    else if (/^\d{10}$/.test(compact)) local = compact;
+    else return null;
+    if (!/^[789]\d{9}$/.test(local)) return null;
+    return local;
   }
 
   private credentialAvailability(
@@ -134,6 +222,27 @@ export class AuthenticationExecutionService {
           hashAlgorithm: credential.hashAlgorithm,
           passwordVersion: credential.passwordVersion,
           outcome: 'AUTHENTICATED',
+        },
+      });
+    });
+  }
+
+  private async recordStatusIneligibleAuthentication(
+    credential: CustomerAuthenticationCredential,
+    actor: string,
+    status: CustomerStatus,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      await this.auditService.record(manager, {
+        entityType: 'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+        entityId: credential.id,
+        action: 'AUTHENTICATION_STATUS_INELIGIBLE',
+        actor,
+        newValues: {
+          customerId: credential.customerId,
+          credentialId: credential.id,
+          outcome: 'AUTHENTICATION_STATUS_INELIGIBLE',
+          customerStatus: status,
         },
       });
     });

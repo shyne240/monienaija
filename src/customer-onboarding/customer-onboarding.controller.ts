@@ -1,5 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
+import { AuthorizationService } from '../authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CreateCustomerAgreementDto } from './dto/create-customer-agreement.dto';
 import { CreateCustomerApprovalDecisionDto } from './dto/create-customer-approval-decision.dto';
 import { CreateCustomerOnboardingDto } from './dto/create-customer-onboarding.dto';
@@ -7,9 +18,16 @@ import { CreateCustomerOnboardingTaskDto } from './dto/create-customer-onboardin
 import { UpdateCustomerOnboardingDto } from './dto/update-customer-onboarding.dto';
 import { CustomerOnboardingService } from './customer-onboarding.service';
 
+interface AuthenticatedRequest {
+  authorizationPrincipal?: AuthorizationPrincipal;
+}
+
 @Controller('customers')
 export class CustomerOnboardingController {
-  constructor(private readonly onboardingService: CustomerOnboardingService) {}
+  constructor(
+    private readonly onboardingService: CustomerOnboardingService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post(':id/onboarding')
   createOnboarding(@Param('id') id: string, @Body() dto: CreateCustomerOnboardingDto) {
@@ -17,7 +35,8 @@ export class CustomerOnboardingController {
   }
 
   @Get(':id/onboarding')
-  getOnboarding(@Param('id') id: string) {
+  async getOnboarding(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.onboardingService.getOnboarding(id);
   }
 
@@ -32,7 +51,8 @@ export class CustomerOnboardingController {
   }
 
   @Get(':id/agreements')
-  listAgreements(@Param('id') id: string) {
+  async listAgreements(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.onboardingService.listAgreements(id);
   }
 
@@ -42,7 +62,8 @@ export class CustomerOnboardingController {
   }
 
   @Get(':id/onboarding-tasks')
-  listTasks(@Param('id') id: string) {
+  async listTasks(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.onboardingService.listTasks(id);
   }
 
@@ -52,12 +73,26 @@ export class CustomerOnboardingController {
   }
 
   @Get(':id/approval')
-  getApproval(@Param('id') id: string) {
+  async getApproval(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.onboardingService.getApproval(id);
   }
 
   @Get(':id/onboarding-readiness')
-  getReadiness(@Param('id') id: string) {
+  async getReadiness(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
     return this.onboardingService.getReadiness(id);
+  }
+
+  private async requireCustomerView(req: AuthenticatedRequest): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') return;
+    await this.auth.requireFunction(
+      principal,
+      'customer.view',
+      'customer',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

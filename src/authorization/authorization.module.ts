@@ -8,21 +8,34 @@ import { PrivilegedActionApproval } from './privileged-action-approval.entity';
 import {
   A2FinanceRoleAssignment,
   A2SecurityRateBucket,
+  A2SuperAdminRecoveryConsumption,
   A2WorkforceBootstrapConsumption,
   A2WorkforceSession,
 } from './workforce-authentication.entity';
 import { A2WorkforceAdministrationController } from './workforce-administration.controller';
+import { SuperAdminRecoveryController } from './super-admin-recovery.controller';
+import { SuperAdminRecoveryService } from './super-admin-recovery.service';
 import { A2FinanceRoleAdministrationService } from './finance-role-administration.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2WorkforceOidcService, A2_WORKFORCE_CONFIG } from './workforce-oidc.service';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { workforceConfiguration } from './workforce-configuration';
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
+import { CommercialRuleGovernanceService } from './commercial-rule-governance.service';
 import { AuthorizationGuard } from './authorization.guard';
 import { AuthorizationService } from './authorization.service';
 import { RoutePolicyRegistry } from './route-policy-registry';
+import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
 import { CustomerAuthenticationModule } from '../customer-authentication/customer-authentication.module';
+import { SupportAuthenticationModule } from '../support-authentication/support-authentication.module';
+import { AuthorizationCatalogueModule } from '../authorization-catalogue/authorization-catalogue.module';
+import { AuthorizationFunction } from '../authorization-catalogue/authorization-function.entity';
+import { AuthorizationRoleFunction } from '../authorization-catalogue/authorization-role-function.entity';
+import { AuthorizationRole } from '../authorization-catalogue/authorization-role.entity';
 import { RuntimeAccessGuard } from './runtime-access.guard';
+import { RoleDefinitionGovernanceController } from './role-definition-governance.controller';
+import { RoleDefinitionGovernanceService } from './role-definition-governance.service';
+import { RoleDefinitionProposal } from './role-definition-proposal.entity';
 
 @Module({
   imports: [
@@ -30,17 +43,43 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     // exported by CustomerAuthenticationModule. That module reaches back to this one through
     // OperationsModule, so the edge must be lazy.
     forwardRef(() => CustomerAuthenticationModule),
+    forwardRef(() => AgentAuthenticationModule),
     forwardRef(() => OperationsModule),
+    // V1-OPS-01: RuntimeAccessGuard also validates SUPPORT workforce bearer tokens.
+    // SupportAuthenticationModule has no dependency back on AuthorizationModule, so this
+    // edge does not need to be lazy.
+    SupportAuthenticationModule,
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: AuthorizationCatalogueModule has no dependency back on
+    // AuthorizationModule (verified — it only imports TypeOrmModule), so this edge does not
+    // need to be lazy either.
+    AuthorizationCatalogueModule,
     TypeOrmModule.forFeature([
       PrivilegedActionApproval,
       SecurityEventHistory,
       A2WorkforceSession,
       A2FinanceRoleAssignment,
       A2WorkforceBootstrapConsumption,
+      A2SuperAdminRecoveryConsumption,
       A2SecurityRateBucket,
+      RoleDefinitionProposal,
+      // V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01: RoleDefinitionGovernanceService
+      // needs direct repository access to these three catalogue entities (to create/modify roles
+      // and their function grants, not just read a resolved role->function set the way
+      // AuthorizationCatalogueRuntimeService does). Registering them again here is safe and
+      // standard NestJS/TypeORM practice — this creates a second, independent repository
+      // provider in this module's own scope, backed by the exact same table/DataSource as the
+      // one already registered in AuthorizationCatalogueModule; it does not duplicate the schema
+      // or any data.
+      AuthorizationFunction,
+      AuthorizationRole,
+      AuthorizationRoleFunction,
     ]),
   ],
-  controllers: [A2WorkforceAdministrationController],
+  controllers: [
+    A2WorkforceAdministrationController,
+    SuperAdminRecoveryController,
+    RoleDefinitionGovernanceController,
+  ],
   providers: [
     {
       provide: A2_WORKFORCE_CONFIG,
@@ -64,6 +103,9 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
               'A2_BOOTSTRAP_ADMIN_SCOPES_JSON',
               'A2_FINANCE_ROLES_JSON',
               'A2_MAKER_CHECKER_RULES_JSON',
+              'A2_RECOVERY_ENABLED',
+              'A2_RECOVERY_AUDIENCE',
+              'A2_RECOVERY_JWKS_JSON',
               'A2_WORKFORCE_RATE_LIMITS_JSON',
               'A2_TRUSTED_PROXY_ADDRESSES_JSON',
             ].map((name) => {
@@ -83,23 +125,30 @@ import { RuntimeAccessGuard } from './runtime-access.guard';
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,
+    SuperAdminRecoveryService,
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
+    RoleDefinitionGovernanceService,
   ],
   exports: [
+    A2_WORKFORCE_CONFIG,
     A2WorkforceOidcService,
     A2WorkforceSessionService,
     A2FinanceRoleAdministrationService,
+    SuperAdminRecoveryService,
     A2SecurityRateLimitService,
     AuthorizationGuard,
     AuthorizationService,
     PrivilegedActionApprovalService,
+    CommercialRuleGovernanceService,
     RoutePolicyRegistry,
     RuntimeAccessGuard,
+    RoleDefinitionGovernanceService,
   ],
 })
 export class AuthorizationModule {}

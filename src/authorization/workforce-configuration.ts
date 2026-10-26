@@ -47,11 +47,14 @@ const roleSchema = z
         code: 'custom',
         message: 'approval-capable roles must be MFA-required and checker-eligible',
       });
-    if (role.administrativeCapability && role.roleKey !== 'FINANCE_ADMIN')
+    // V1-ADMIN-AUTHORIZATION-RUNTIME-01: SUPER_ADMIN is the functional successor of the legacy
+    // A2T11 FINANCE_ADMIN role in this configuration (see REQUIRED_ROLES below) — the
+    // reservation itself (at most one role may hold this flag) is unchanged.
+    if (role.administrativeCapability && role.roleKey !== 'SUPER_ADMIN')
       context.addIssue({
         code: 'custom',
         path: ['administrativeCapability'],
-        message: 'is reserved for FINANCE_ADMIN in A2T11',
+        message: 'is reserved for SUPER_ADMIN in A2T11',
       });
   });
 const ruleSchema = z
@@ -144,11 +147,42 @@ const proxySchema = z
       family = isIP(address ?? '');
     return bits >= 0 && bits <= (family === 4 ? 32 : 128);
   }, 'must be an IP address or CIDR');
+// V1-ADMIN-AUTHORIZATION-RUNTIME-01: as of the authorization-catalogue runtime migration, this
+// role vocabulary is NO LONGER the organizational role authority — `authorization_roles`
+// (src/authorization-catalogue/) is, with eleven roles (V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-
+// IMPLEMENTATION-01 added the eleventh, ADMINISTRATOR). This configuration is retained, unchanged
+// in shape, purely as the legacy scope-compatibility & maker-checker/rate-limit configuration
+// vocabulary for exactly the five roles that still need it: SUPER_ADMIN (renamed from
+// FINANCE_ADMIN — see workforce-configuration docs), FINANCE_PREPARER, FINANCE_CONTROLLER,
+// FINANCE_AUDITOR, and ADMINISTRATOR are the only roles the out-of-scope B1/B2F
+// commercial-accounting maker/checker framework (src/policy/b2f-finance-control*.ts) and
+// PrivilegedActionApprovalService's legacy `privileged:*`/`finance:*` scope strings read directly
+// off `principal.roles`/`principal.scopes`, AND the only roles whose own assignment (not the
+// authority the role carries once held — that is 100% catalogue-governed) still needs this
+// legacy FINANCE_ROLE_ASSIGN/REVOKE maker/checker vocabulary (ADMINISTRATOR's assignment stays
+// SUPER_ADMIN-gated exactly like the three Finance roles — see GOVERNANCE-DECISIONS-01 Decision 2
+// item 5). The other six catalogue roles (OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE,
+// RISK_FRAUD, CUSTOMER_SERVICE, TREASURY) have no legacy scope/maker-checker/rate-limit semantics
+// to provide and therefore have, and need, no entry here — they are instead assigned/revoked
+// through the new, dedicated, direct-EXECUTE `workforce.role.assign_operational`/
+// `.revoke_operational` action, gated by a database CHECK constraint, not this legacy
+// vocabulary — see A2FinanceRoleAdministrationService and
+// A2WorkforceSessionService.resolve(), which resolves role membership against the catalogue
+// independently of this list.
 const REQUIRED_ROLES = [
-    'FINANCE_ADMIN',
+    'SUPER_ADMIN',
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
     'FINANCE_AUDITOR',
+    // V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01: ADMINISTRATOR's OWN assignment
+    // (granting/revoking the ADMINISTRATOR role itself) stays SUPER_ADMIN-only, governed by the
+    // exact same INITIAL_BOOTSTRAP_ASSIGNABLE_ROLES-gated/FINANCE_ROLE_ASSIGN-equivalent
+    // maker/checker machinery the three Finance roles already use (Decision 2, item 5) — so
+    // ADMINISTRATOR genuinely needs this legacy vocabulary's scope-compatibility semantics, unlike
+    // the six catalogue-only operational roles it may in turn delegate (which have no legacy
+    // scope/maker-checker/rate-limit semantics to provide and are never added here — see the
+    // six-role note below and A2WorkforceSessionService.resolve()).
+    'ADMINISTRATOR',
   ] as const,
   REQUIRED_RULES = [
     'FINANCE_ROLE_ASSIGN',
@@ -231,6 +265,9 @@ export function workforceConfiguration(
       bootstrapAudience: '',
       bootstrapKeys: [],
       bootstrapFinanceAdminScopes: [],
+      recoveryEnabled: false,
+      recoveryAudience: '',
+      recoveryKeys: [],
       roles: [],
       makerCheckerRules: [],
       rateLimits: [],
@@ -239,7 +276,7 @@ export function workforceConfiguration(
   const roleList = parseJson(
       'A2_FINANCE_ROLES_JSON',
       env.A2_FINANCE_ROLES_JSON,
-      z.array(roleSchema).min(4).max(4),
+      z.array(roleSchema).min(5).max(5),
       [],
     ),
     roleKeys = roleList.map((role) => role.roleKey);
@@ -330,9 +367,9 @@ export function workforceConfiguration(
   if (!unique(bootstrapScopes)) throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: duplicate scope');
   if (bootstrapKeys.some((item) => item.environment !== (env.NODE_ENV ?? 'development')))
     throw invalid('A2_BOOTSTRAP_JWKS_JSON.environment: environment mismatch');
-  const admin = roleMap.get('FINANCE_ADMIN')!;
+  const admin = roleMap.get('SUPER_ADMIN')!;
   if ([...admin.scopes].sort().join('\0') !== [...bootstrapScopes].sort().join('\0'))
-    throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: must exactly match FINANCE_ADMIN scopes');
+    throw invalid('A2_BOOTSTRAP_ADMIN_SCOPES_JSON: must exactly match SUPER_ADMIN scopes');
   const bootstrapIssuer = bootstrapEnabled
       ? requiredText(env, 'A2_BOOTSTRAP_ISSUER', 2048)
       : (env.A2_BOOTSTRAP_ISSUER?.trim() ?? ''),
@@ -342,6 +379,29 @@ export function workforceConfiguration(
   if (bootstrapEnabled && !bootstrapKeys.length)
     throw invalid(
       'A2_BOOTSTRAP_JWKS_JSON: at least one trusted key required when bootstrap enabled',
+    );
+  // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: deliberately independent of the bootstrap block above —
+  // its own enable flag, its own trusted-key set (A2_RECOVERY_JWKS_JSON, never bootstrapKeys),
+  // and its own audience. Same validation shape as bootstrap (duplicate-kid / environment-match /
+  // fail-closed-when-enabled-but-keyless) because it reuses the identical jwkSchema/verifyRs256
+  // crypto path, not because the two trust chains are related.
+  const recoveryEnabled = env.A2_RECOVERY_ENABLED === 'true',
+    recoveryKeys = parseJson(
+      'A2_RECOVERY_JWKS_JSON',
+      env.A2_RECOVERY_JWKS_JSON,
+      z.array(jwkSchema).max(32),
+      [],
+    );
+  if (!unique(recoveryKeys.map((item) => item.kid)))
+    throw invalid('A2_RECOVERY_JWKS_JSON.kid: duplicate key ID');
+  if (recoveryKeys.some((item) => item.environment !== (env.NODE_ENV ?? 'development')))
+    throw invalid('A2_RECOVERY_JWKS_JSON.environment: environment mismatch');
+  const recoveryAudience = recoveryEnabled
+    ? requiredText(env, 'A2_RECOVERY_AUDIENCE', 255)
+    : (env.A2_RECOVERY_AUDIENCE?.trim() ?? '');
+  if (recoveryEnabled && !recoveryKeys.length)
+    throw invalid(
+      'A2_RECOVERY_JWKS_JSON: at least one trusted key required when recovery enabled',
     );
   const ttl = Number(env.A2_WORKFORCE_SESSION_TTL_SECONDS ?? 900);
   if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 3600)
@@ -373,6 +433,9 @@ export function workforceConfiguration(
     bootstrapAudience,
     bootstrapKeys,
     bootstrapFinanceAdminScopes: bootstrapScopes,
+    recoveryEnabled,
+    recoveryAudience,
+    recoveryKeys,
     roles: roleList,
     makerCheckerRules: rules,
     rateLimits: rates,

@@ -190,8 +190,16 @@ export class LedgerService {
           return this.postWithinTransaction(manager, normalized);
         });
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) {
-          continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) {
+            continue;
+          }
+          // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
+          // serialization failure/deadlock (SQLSTATE 40001/40P01) still occurring. Surface the
+          // structured, client-retryable conflict below instead of the raw QueryFailedError.
+          throw this.transactionContentionExhaustedException(
+            'The journal could not be posted after concurrent retries',
+          );
         }
 
         // A concurrent request with the same idempotency key can win the unique
@@ -215,7 +223,9 @@ export class LedgerService {
     }
 
     if (!journalId) {
-      throw new ConflictException('The journal could not be posted after concurrent retries');
+      throw this.transactionContentionExhaustedException(
+        'The journal could not be posted after concurrent retries',
+      );
     }
 
     return this.getJournal(journalId);
@@ -708,6 +718,17 @@ export class LedgerService {
       postedAt: journal.postedAt,
       lines: lineViews,
     };
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance.
+  private transactionContentionExhaustedException(message: string): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryableTransactionError(error: unknown): boolean {

@@ -15,6 +15,9 @@ export interface CustomerAuthenticationResult {
   customerId: string;
   session?: AuthenticationSessionToken;
   failureReason?: 'INVALID_CREDENTIALS';
+  /** V1-CUSTOMER-CREDENTIALS-01 — first-login rotation pendency of a workforce-issued
+   *  temporary credential. When true, authentication succeeded but NO session is issued. */
+  rotationRequired?: boolean;
 }
 
 export interface CompletePasswordResetCommand {

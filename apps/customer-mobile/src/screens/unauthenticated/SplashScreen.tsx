@@ -20,8 +20,8 @@ export const SplashScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.branding}>
         <Text style={styles.logoText}>₦</Text>
-        <Text style={styles.appName}>MoneyNaija</Text>
-        <Text style={styles.tagline}>Safe. Fast. Reliable Mobile Money</Text>
+        <Text style={styles.appName}>MonieNaija</Text>
+        <Text style={styles.tagline}>Your Money, Your Way.</Text>
       </View>
       <ActivityIndicator size="small" color={theme.colors.secondary.main} style={styles.loader} />
     </View>
