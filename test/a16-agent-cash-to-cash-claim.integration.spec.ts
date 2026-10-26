@@ -48,6 +48,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
   let customerHistoryService: CustomerTransactionHistoryService;
   let limitService: LimitEnforcementService;
 
+  const agentSessions = new Map<string, string>();
   let systemLedgerAccountId: string;
   let unclaimedLedgerAccountId: string;
 
@@ -146,11 +147,21 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `agent-wallet-${agent.id}-${randomUUID()}`,
     });
+    const [credential] = await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status)
+       VALUES ($1,$2,'PBKDF2',1,clock_timestamp(),'ACTIVE') RETURNING id`, [agent.id, hashPin('login-password')],
+    );
+    const [session] = await dataSource.query(
+      `INSERT INTO agent_authentication_sessions (agent_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at)
+       VALUES ($1,$2,$3,'agent-api','ACTIVE',clock_timestamp(),clock_timestamp()+INTERVAL '1 hour',clock_timestamp()) RETURNING id`,
+      [agent.id, credential.id, randomBytes(32).toString('hex')],
+    );
+    agentSessions.set(agent.id, session.id);
     return { cls, agent, appEntity, wallet };
   }
 
   function agentPrincipal(agentId: string) {
-    return { type: 'AGENT' as const, agentId, principalId: agentId, roles: [], scopes: [], customerAccess: 'NONE' as const, agentAccess: 'SELF' as const };
+    return { type: 'AGENT' as const, sessionId: agentSessions.get(agentId), agentId, principalId: agentId, roles: [], scopes: [], customerAccess: 'NONE' as const, agentAccess: 'SELF' as const };
   }
 
   async function createBeneficiaryCustomer(phoneCanonical: string, withKyc = true, withDoc = false) {
@@ -1873,5 +1884,250 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     expect((await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
       .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
   });
+
+  it('S2 atomic bad-code counting caps concurrent failures and prevents a valid-code claim', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7600');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 's2-lockout');
+    const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const command = { transferId, beneficiaryPhone: phone, customerId, mfaChallengeId: challengeId,
+      otp: 's2-lockout', idempotencyKey: randomUUID() };
+    const failures = await Promise.allSettled(Array.from({ length: 12 }, () => claimService.execute({
+      ...command, transferCode: transferCode === '000000' ? '111111' : '000000',
+    })));
+    expect(failures.every((r) => r.status === 'rejected')).toBe(true);
+    const [row] = await dataSource.query(`SELECT failed_attempts, is_locked, locked_at, lock_reason FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    expect(row).toMatchObject({ failed_attempts: 5, is_locked: true, lock_reason: 'TRANSFER_CODE_LOCKED' });
+    expect(row.locked_at).not.toBeNull();
+    await expect(claimService.execute({ ...command, transferCode })).rejects.toThrow(/locked/i);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+  });
+
+  it.each([
+    'logout', 'session-expiry', 'credential-revocation', 'credential-rotation',
+    'pin-rotation', 'pin-lock', 'pin-deletion',
+  ])('S2 rejects %s committed during OTP verification without settlement', async (race) => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7700');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    await createCurrentKycApproval(customerId);
+    const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const { challengeId } = await createMfaChallenge(customerId, 's2-security-race');
+    const beforeFloat = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    const beforeLiability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const verify = mfaService.verifyChallenge.bind(mfaService);
+    const spy = jest.spyOn(mfaService, 'verifyChallenge').mockImplementationOnce(async (command: any) => {
+      const result = await verify(command);
+      const sql: Record<string, string> = {
+        logout: `UPDATE agent_authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE agent_id=$1`,
+        'session-expiry': `UPDATE agent_authentication_sessions SET expires_at=clock_timestamp()-INTERVAL '1 second' WHERE agent_id=$1`,
+        'credential-revocation': `UPDATE agent_authentication_credentials SET status='REVOKED' WHERE agent_id=$1`,
+        'credential-rotation': `UPDATE agent_authentication_credentials SET password_changed_at=clock_timestamp(), password_version=password_version+1 WHERE agent_id=$1`,
+        'pin-rotation': `UPDATE agent_transaction_pins SET pin_version=pin_version+1, last_changed_at=clock_timestamp() WHERE agent_id=$1`,
+        'pin-lock': `UPDATE agent_transaction_pins SET account_locked=TRUE WHERE agent_id=$1`,
+        'pin-deletion': `UPDATE agent_transaction_pins SET deleted_at=clock_timestamp() WHERE agent_id=$1`,
+      };
+      await dataSource.query(sql[race]!, [agent.id]);
+      return result;
+    });
+    const idempotencyKey = `s2-race-${randomUUID()}`;
+    try {
+      await expect(claimService.execute({
+        transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 's2-security-race', idempotencyKey,
+        claimantPrincipal: agentPrincipal(agent.id), redemptionMethod: 'AGENT_CASH', agentPin: '1234',
+      })).rejects.toThrow(/session|PIN/i);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally { spy.mockRestore(); }
+    expect((await ledgerService.getAccountBalance(wallet.ledgerAccountId)).balanceMinor).toBe(beforeFloat.balanceMinor);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(beforeLiability.balanceMinor);
+    expect((await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+      .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+    expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [`claim:${transferId}:${idempotencyKey}`])).toEqual([]);
+  });
+
+  it('S2 wallet rejects explicitly expired KYC evidence before consuming OTP', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7800');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const assessment = await createCurrentKycApproval(customerId);
+    await dataSource.query(`UPDATE customer_kyc_assessments SET expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id=$1`, [assessment.id]);
+    const { challengeId } = await createMfaChallenge(customerId, 's2-expired-wallet');
+    await expect(claimService.execute({ transferId, beneficiaryPhone: phone, transferCode, customerId,
+      mfaChallengeId: challengeId, otp: 's2-expired-wallet', idempotencyKey: randomUUID(),
+    })).rejects.toThrow(/assessment.*expired/i);
+    expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+  });
+
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S2 %s rejects session expiry during ledger posting and rolls back', async (redemptionMethod) => {
+      const { transferId, phone, transferCode } = await initiateTransfer('7900');
+      const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
+      const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const { challengeId } = await createMfaChallenge(customerId, 's2-post-expiry');
+      const post = ledgerService.postJournalInTransaction.bind(ledgerService);
+      const spy = jest.spyOn(ledgerService, 'postJournalInTransaction').mockImplementationOnce(async (manager, command) => {
+        await manager.query(`UPDATE agent_authentication_sessions SET expires_at=clock_timestamp()+INTERVAL '50 milliseconds' WHERE id=$1`, [agentSessions.get(claimant.agent.id)]);
+        await manager.query(`SELECT pg_sleep(0.1)`);
+        return post(manager, command);
+      });
+      try {
+        await expect(claimService.execute({ transferId, beneficiaryPhone: phone, transferCode, customerId,
+          mfaChallengeId: challengeId, otp: 's2-post-expiry', idempotencyKey: randomUUID(), redemptionMethod,
+          claimantPrincipal: agentPrincipal(claimant.agent.id), agentPin: redemptionMethod === 'AGENT_CASH' ? '1234' : undefined,
+        })).rejects.toThrow(/session.*expired/i);
+      } finally { spy.mockRestore(); }
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+      expect((await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+        .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+    },
+  );
+
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S2 %s rolls back when assessment expires during posting', async (redemptionMethod) => {
+      const { transferId, phone, transferCode } = await initiateTransfer('8000');
+      const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+      const assessment = await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
+      const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const { challengeId } = await createMfaChallenge(customerId, 's2-kyc-post');
+      const post = ledgerService.postJournalInTransaction.bind(ledgerService);
+      const spy = jest.spyOn(ledgerService, 'postJournalInTransaction').mockImplementationOnce(async (manager, command) => {
+        await manager.query(`UPDATE customer_kyc_assessments SET expires_at=clock_timestamp()+INTERVAL '50 milliseconds' WHERE id=$1`, [assessment.id]);
+        await manager.query(`SELECT pg_sleep(0.1)`);
+        return post(manager, command);
+      });
+      try {
+        await expect(claimService.execute({ transferId, beneficiaryPhone: phone, transferCode, customerId,
+          mfaChallengeId: challengeId, otp: 's2-kyc-post', idempotencyKey: randomUUID(), redemptionMethod,
+          claimantPrincipal: agentPrincipal(claimant.agent.id), agentPin: redemptionMethod === 'AGENT_CASH' ? '1234' : undefined,
+        })).rejects.toThrow(/KYC assessment/i);
+      } finally { spy.mockRestore(); }
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+      expect((await dataSource.query(`SELECT status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+        .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
+    },
+  );
+
+  it.each(['session', 'pin', 'assessment'])(
+    'S2 %s revocation waits for the already-authorized posting transaction', async (evidence) => {
+      const { transferId, phone, transferCode } = await initiateTransfer('8100');
+      const { customerId } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const { challengeId } = await createMfaChallenge(customerId, 's2-lock-proof');
+      const runner = dataSource.createQueryRunner();
+      await runner.connect();
+      const [{ pid }] = await runner.query(`SELECT pg_backend_pid() AS pid`);
+      let update: Promise<unknown> | undefined;
+      const post = ledgerService.postJournalInTransaction.bind(ledgerService);
+      const spy = jest.spyOn(ledgerService, 'postJournalInTransaction').mockImplementationOnce(async (manager, command) => {
+        const sql: Record<string, string> = {
+          session: `UPDATE agent_authentication_sessions SET status='REVOKED', revoked_at=clock_timestamp() WHERE agent_id=$1`,
+          pin: `UPDATE agent_transaction_pins SET pin_version=pin_version+1, last_changed_at=clock_timestamp() WHERE agent_id=$1`,
+          assessment: `UPDATE customer_kyc_assessments SET kyc_status='REJECTED' WHERE customer_id=$1 AND is_current=TRUE`,
+        };
+        update = runner.query(sql[evidence]!, [evidence === 'assessment' ? customerId : agent.id]);
+        let blocked = false;
+        for (let i=0; i<100; i++) {
+          const [row] = await manager.query(`SELECT cardinality(pg_blocking_pids($1)) > 0 AS blocked`, [pid]);
+          if (row.blocked) { blocked = true; break; }
+          await manager.query(`SELECT pg_sleep(0.01)`);
+        }
+        expect(blocked).toBe(true);
+        return post(manager, command);
+      });
+      try {
+        const result = await claimService.execute({ transferId, beneficiaryPhone: phone, transferCode, customerId,
+          mfaChallengeId: challengeId, otp: 's2-lock-proof', idempotencyKey: randomUUID(),
+          claimantPrincipal: agentPrincipal(agent.id), redemptionMethod: 'AGENT_CASH', agentPin: '1234',
+        });
+        expect(result.status).toBe('COMPLETED');
+        expect(spy).toHaveBeenCalledTimes(1);
+      } finally {
+        spy.mockRestore();
+        if (update) await update;
+        await runner.release();
+      }
+    },
+  );
+
+  it('S2 an in-flight valid claim cannot bypass concurrent bad-code lockout', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('8200');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 's2-valid-vs-lockout');
+    const command = { transferId, beneficiaryPhone: phone, customerId, mfaChallengeId: challengeId,
+      otp: 's2-valid-vs-lockout', idempotencyKey: randomUUID() };
+    const verify = mfaService.verifyChallenge.bind(mfaService);
+    const spy = jest.spyOn(mfaService, 'verifyChallenge').mockImplementationOnce(async (input: any) => {
+      const verified = await verify(input);
+      await Promise.allSettled(Array.from({ length: 8 }, () => claimService.execute({
+        ...command, transferCode: transferCode === '000000' ? '111111' : '000000',
+      })));
+      return verified;
+    });
+    const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    try {
+      await expect(claimService.execute({ ...command, transferCode })).rejects.toThrow(/locked/i);
+    } finally { spy.mockRestore(); }
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect((await dataSource.query(`SELECT failed_attempts, is_locked, status, claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+      .toMatchObject({ failed_attempts: 5, is_locked: true, status: 'UNCLAIMED', claim_journal_id: null });
+  });
+
+  it.each(['missing', 'other-agent'])(
+    'S2 rejects %s Agent session identity before consuming OTP', async (scenario) => {
+      const { transferId, phone, transferCode } = await initiateTransfer('8300');
+      const { customerId } = await createBeneficiaryCustomer(phone, true);
+      const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const other = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const principal = { ...agentPrincipal(agent.id), sessionId: scenario === 'missing' ? undefined : agentSessions.get(other.agent.id) };
+      const { challengeId } = await createMfaChallenge(customerId, 's2-session-identity');
+      await expect(claimService.execute({ transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 's2-session-identity', idempotencyKey: randomUUID(), claimantPrincipal: principal,
+      })).rejects.toThrow(/session/i);
+      expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+    },
+  );
+
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S2 authenticated HTTP %s claim replay and recovery settle only once', async (redemptionMethod) => {
+      const amount = '8400';
+      const { transferId, phone, transferCode } = await initiateTransfer(amount);
+      const { customerId, wallet } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const login = await app.inject({ method: 'POST', url: '/api/v1/agents/sessions',
+        payload: { agentId: claimant.agent.id, password: 'login-password' } });
+      expect(login.statusCode).toBe(200);
+      const headers = { authorization: `Bearer ${login.json().accessToken}` };
+      const destination = redemptionMethod === 'AGENT_CASH' ? claimant.wallet : wallet;
+      const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const { challengeId } = await createMfaChallenge(customerId, 's2-http-positive');
+      const payload = { transferId, beneficiaryPhone: phone, transferCode, customerId,
+        mfaChallengeId: challengeId, otp: 's2-http-positive', idempotencyKey: randomUUID(), redemptionMethod,
+        ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
+      };
+      const claim = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim', headers, payload });
+      expect(claim.statusCode).toBe(200);
+      expect(claim.json()).toMatchObject({ status: 'COMPLETED', redemptionMethod, transferId });
+      const replay = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim', headers, payload });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({ status: 'REPLAYED', journalId: claim.json().journalId, replayed: true });
+      const receipt = await app.inject({ method: 'GET', url: `/api/v1/agents/cash-to-cash/claims/${transferId}`, headers });
+      expect(receipt.statusCode).toBe(200);
+      expect(receipt.json()).toMatchObject({ journalId: claim.json().journalId, redemptionMethod, transferId, replayed: true });
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor)
+        .toBe((BigInt(before.balanceMinor)+BigInt(amount)).toString());
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor)
+        .toBe((BigInt(liability.balanceMinor)-BigInt(amount)).toString());
+      expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${payload.idempotencyKey}`])).toHaveLength(1);
+    },
+  );
 
 });

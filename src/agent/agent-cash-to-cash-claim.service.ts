@@ -143,6 +143,7 @@ export class AgentCashToCashClaimService {
       claimantActor = principal.principalId.toLowerCase();
     }
 
+    let authorizedPin: { id: string; pin_hash: string; hash_algorithm: string; pin_version: number; last_changed_at: string } | undefined;
     if (redemptionMethod === 'AGENT_CASH') {
       if (!claimantAgentId || !input.claimantPrincipal) {
         throw new ForbiddenException('An authenticated Agent is required for cash redemption');
@@ -150,6 +151,11 @@ export class AgentCashToCashClaimService {
       if (typeof input.agentPin !== 'string' || !input.agentPin.trim()) {
         throw new BadRequestException('agentPin is required for Agent cash redemption');
       }
+      // Capture before authorization; an intervening rotation must not grant a stale proof.
+      [authorizedPin] = await this.dataSource.query(
+        `SELECT id, pin_hash, hash_algorithm, pin_version, last_changed_at::text AS last_changed_at FROM agent_transaction_pins
+         WHERE agent_id=$1 AND deleted_at IS NULL`, [claimantAgentId],
+      );
       await this.assertAgentCashRedemptionAuthorization(
         claimantAgentId,
         input.agentPin,
@@ -157,6 +163,9 @@ export class AgentCashToCashClaimService {
       );
     } else if (input.agentPin && input.agentPin.trim()) {
       throw new BadRequestException('agentPin is accepted only for Agent cash redemption');
+    }
+    if (input.claimantPrincipal) {
+      await this.dataSource.transaction((manager) => this.assertAgentSessionWithManager(manager, input.claimantPrincipal!));
     }
     const settlementWalletOwnerId = redemptionMethod === 'AGENT_CASH' ? claimantAgentId! : customerId;
 
@@ -219,17 +228,13 @@ export class AgentCashToCashClaimService {
         if (customer.kyc_status !== 'APPROVED') {
           throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED)');
         }
+        await this.assertWalletAssessmentUnexpired(this.dataSource, customerId);
       }
       // Transfer code verification before OTP (timing-safe, not consuming OTP if code wrong)
       const codeValidPre = this.verifyTransferCode(transferCode, preTransfer.transfer_code_hash);
       if (!codeValidPre) {
-        const nextAttempts = (preTransfer.failed_attempts ?? 0) + 1;
-        const shouldLock = nextAttempts >= MAX_FAILED_ATTEMPTS;
-        await this.dataSource.query(
-          `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-          [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, transferId],
-        );
-        if (shouldLock) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+        const locked = await this.recordFailedCode(transferId, preTransfer.transfer_code_hash);
+        if (locked) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
         throw new UnauthorizedException('Transfer code invalid');
       }
     }
@@ -398,6 +403,24 @@ export class AgentCashToCashClaimService {
           const transfer = transfers[0];
           if (!transfer) throw new NotFoundException(`Cash→Cash transfer ${transferId} not found`);
 
+          // Lock current authentication evidence until commit, including receipt replay.
+          if (input.claimantPrincipal) {
+            await this.assertAgentSessionWithManager(manager, input.claimantPrincipal);
+          }
+          if (redemptionMethod === 'AGENT_CASH') {
+            const pins = await manager.query(
+              `SELECT id, pin_hash, hash_algorithm, pin_version, last_changed_at::text AS last_changed_at, account_locked
+               FROM agent_transaction_pins WHERE agent_id=$1 AND deleted_at IS NULL FOR SHARE`,
+              [claimantAgentId],
+            );
+            const pin = pins[0];
+            if (!authorizedPin || !pin || pin.account_locked || pin.id !== authorizedPin.id ||
+                pin.pin_hash !== authorizedPin.pin_hash || pin.hash_algorithm !== authorizedPin.hash_algorithm || pin.pin_version !== authorizedPin.pin_version ||
+                pin.last_changed_at !== authorizedPin.last_changed_at) {
+              throw new UnauthorizedException('Agent PIN changed or was revoked during claim');
+            }
+          }
+
           // If already CLAIMED, handle idempotency
           if (transfer.status === 'EXPIRED') {
             throw new ConflictException('Transfer has expired and cannot be claimed');
@@ -495,6 +518,10 @@ export class AgentCashToCashClaimService {
           // other pre-check in this flow is duplicated here).
           await this.assertClaimantOwnsBeneficiaryPhone(manager, customerId, canonicalPhone);
 
+          // Freeze customer and current assessment evidence through financial commit.
+          await manager.query(`SELECT id FROM customers WHERE id=$1 FOR SHARE`, [customerId]);
+          await manager.query(`SELECT id FROM customer_kyc_assessments WHERE customer_id=$1 AND is_current=TRUE FOR SHARE`, [customerId]);
+
           // Identity already verified outside, but re-check inside for consistency (in case customer changed)
           const custRows2: Array<{ id: string; status: string; kyc_status: string; deleted_at: string | null }> = await manager.query(
             `SELECT id, status, kyc_status, deleted_at FROM customers WHERE id=$1 LIMIT 1`,
@@ -512,19 +539,17 @@ export class AgentCashToCashClaimService {
             throw new ForbiddenException('Claimant identity not verified (KYC not APPROVED)');
           }
 
+          if (redemptionMethod === 'CUSTOMER_WALLET') {
+            await this.assertWalletAssessmentUnexpired(manager, customerId);
+          }
+
           // Code already verified outside, but re-verify inside with timingSafeEqual for binding (in case hash changed)
           const codeValid = this.verifyTransferCode(transferCode, transfer.transfer_code_hash);
           if (!codeValid) {
             // This should have been caught outside, but handle concurrently changed hash
-            const nextAttempts = (transfer.failed_attempts ?? 0) + 1;
-            const shouldLock = nextAttempts >= MAX_FAILED_ATTEMPTS;
-            await manager.query(
-              `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-              [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, transferId],
-            );
+            // Persist outside the rolled-back posting transaction using an atomic increment.
             const err: any = new UnauthorizedException('Transfer code invalid');
-            err.nextAttempts = nextAttempts;
-            err.shouldLock = shouldLock;
+            err.failedCodeHash = transfer.transfer_code_hash;
             err.transferId = transferId;
             throw err;
           }
@@ -702,6 +727,19 @@ export class AgentCashToCashClaimService {
             await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKeyForClaim);
           }
 
+          // Re-evaluate wall-clock expiry after potentially slow ledger/limit work. Row
+          // locks already prevent revocation/rotation from committing ahead of this claim.
+          if (input.claimantPrincipal) {
+            await this.assertAgentSessionWithManager(manager, input.claimantPrincipal);
+          }
+
+          // Honour explicit evidence expiry even if it elapsed during ledger locking.
+          if (redemptionMethod === 'AGENT_CASH') {
+            await this.assertCurrentApprovedKyc(manager, customerId);
+          } else {
+            await this.assertWalletAssessmentUnexpired(manager, customerId);
+          }
+
           // Update transfer to CLAIMED
           // Ledger/account locks or limit evaluation may have waited beyond the earlier
           // deadline check. Gate the terminal transition on the database wall clock too;
@@ -797,17 +835,10 @@ export class AgentCashToCashClaimService {
           return result;
         });
       } catch (error: any) {
-        if (error?.nextAttempts !== undefined && error?.transferId) {
-          try {
-            const nextAttempts = error.nextAttempts;
-            const shouldLock = error.shouldLock;
-            const tid = error.transferId;
-            await this.dataSource.query(
-              `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-              [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, tid],
-            );
-          } catch (_e) { void 0; }
-          if (error.shouldLock) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+        if (error?.failedCodeHash && error?.transferId) {
+          if (await this.recordFailedCode(error.transferId, error.failedCodeHash)) {
+            throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+          }
           throw new UnauthorizedException('Transfer code invalid');
         }
         if (isRetryableTransactionError(error)) {
@@ -901,6 +932,33 @@ export class AgentCashToCashClaimService {
       ...(claim.reference ? { reference: claim.reference } : {}),
       claimedAt: new Date(claim.claimed_at),
     };
+  }
+
+  private async assertAgentSessionWithManager(
+    manager: EntityManager,
+    principal: AuthorizationPrincipal,
+  ): Promise<void> {
+    if (!principal.sessionId || !UUID_PATTERN.test(principal.sessionId)) {
+      throw new UnauthorizedException('A current Agent session is required for this claim');
+    }
+    // Same evidence as AgentAuthenticationSessionService.validateSession. Lock both
+    // rows so logout, credential reissue and account locking serialize with posting.
+    const rows = await manager.query(
+      `SELECT s.id,
+              (s.status='ACTIVE' AND s.revoked_at IS NULL AND s.audience='agent-api'
+               AND s.expires_at > clock_timestamp()
+               AND c.status='ACTIVE' AND c.deleted_at IS NULL
+               AND c.rotation_required=FALSE AND c.account_locked=FALSE
+               AND (c.password_expires_at IS NULL OR c.password_expires_at > clock_timestamp())
+               AND s.issued_at >= c.password_changed_at) AS eligible
+       FROM agent_authentication_credentials c
+       JOIN agent_authentication_sessions s ON s.credential_id=c.id AND s.agent_id=c.agent_id
+       WHERE s.id=$1 AND s.agent_id=$2 FOR SHARE OF c, s`,
+      [principal.sessionId, principal.agentId],
+    );
+    if (rows[0]?.eligible !== true) {
+      throw new UnauthorizedException('Agent session expired or revoked during claim');
+    }
   }
 
   private async assertAgentCashRedemptionAuthorization(
@@ -1177,6 +1235,24 @@ export class AgentCashToCashClaimService {
     return agentClass.id;
   }
 
+  /** Existing approval is required; honour any explicit current-assessment expiry.
+   * Do not invent a freshness period or require a new assessment for legacy APPROVED
+   * customers with no assessment row. That separate product decision remains open.
+   */
+  private async assertWalletAssessmentUnexpired(
+    queryable: { query: (sql: string, params?: unknown[]) => Promise<any[]> },
+    customerId: string,
+  ): Promise<void> {
+    const rows = await queryable.query(
+      `SELECT (kyc_status='APPROVED' AND (expires_at IS NULL OR expires_at > clock_timestamp())) AS eligible
+       FROM customer_kyc_assessments WHERE customer_id=$1 AND is_current=TRUE`,
+      [customerId],
+    );
+    if (rows.some((row) => row.eligible !== true)) {
+      throw new ForbiddenException('Wallet redemption KYC assessment is not approved or has expired');
+    }
+  }
+
   /**
    * Cash payout requires a current approved Customer KYC assessment. `assessed_by` is preserved
    * as audit provenance, but the schema does not classify the actor type or prove human review or
@@ -1227,6 +1303,26 @@ export class AgentCashToCashClaimService {
       throw new ForbiddenException('Cash payout requires a current approved Customer KYC assessment');
     }
     return { assessmentId: row.assessment_id, assessedBy: row.assessed_by };
+  }
+
+  /** One row-locked SQL increment: concurrent failures cannot lose updates or unlock a code. */
+  private async recordFailedCode(transferId: string, expectedHash: string): Promise<boolean> {
+    const rows: Array<{ is_locked: boolean }> = await this.dataSource.query(
+      `WITH failure AS (
+         UPDATE cash_to_cash_transfers
+         SET failed_attempts=LEAST(failed_attempts + 1, $3),
+             is_locked=(failed_attempts + 1 >= $3),
+             locked_at=CASE WHEN failed_attempts + 1 >= $3 THEN clock_timestamp() ELSE locked_at END,
+             lock_reason=CASE WHEN failed_attempts + 1 >= $3 THEN 'TRANSFER_CODE_LOCKED' ELSE lock_reason END,
+             updated_at=clock_timestamp()
+         WHERE id=$1 AND transfer_code_hash=$2 AND status='UNCLAIMED' AND is_locked=FALSE
+         RETURNING is_locked
+       ) SELECT is_locked FROM failure`,
+      [transferId, expectedHash, MAX_FAILED_ATTEMPTS],
+    );
+    if (rows[0]) return rows[0].is_locked;
+    const current = await this.dataSource.query(`SELECT is_locked FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    return current[0]?.is_locked === true;
   }
 
   private verifyTransferCode(provided: string, storedHash: string): boolean {
