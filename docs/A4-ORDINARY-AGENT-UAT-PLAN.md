@@ -1,8 +1,8 @@
 # Ordinary Agent V1 — End-to-End UAT Plan
 
-**Owner:** ARENA 4 (UAT / integration evidence)  
-**Status:** Preparation only; implementation is blocked pending ARENA 3's integrated branch and commit SHA.  
-**Baseline inspected:** `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` (ARENA 4 assigned branch `arena/870f970d-monienaija`; this is not asserted to include either completed sprint).  
+**Owner:** ARENA 4 (UAT / integration evidence)
+**Status:** Plan completed; targeted real-PostgreSQL UAT executed on integrated baseline. See [`A4-ORDINARY-AGENT-UAT-EXECUTION-20261026.md`](A4-ORDINARY-AGENT-UAT-EXECUTION-20261026.md) for exact evidence and limitations.
+**Integrated baseline:** `18bfb8c6200f10e544f4c864f9b8ad2af3c20385` from `arena/8e59e188-monienaija`, incorporated by normal merge into ARENA 4 branch. The earlier inspected baseline `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` did not include either sprint.
 **Safety:** Synthetic accounts and an isolated disposable database only. No production endpoints, credentials, or customer funds.
 
 ## Objective and evidence standard
