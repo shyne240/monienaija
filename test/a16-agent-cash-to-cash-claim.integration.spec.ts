@@ -1874,4 +1874,23 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null });
   });
 
+  it('S2 atomic bad-code counting caps concurrent failures and prevents a valid-code claim', async () => {
+    const { transferId, phone, transferCode } = await initiateTransfer('7600');
+    const { customerId } = await createBeneficiaryCustomer(phone, true);
+    const { challengeId } = await createMfaChallenge(customerId, 's2-lockout');
+    const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const command = { transferId, beneficiaryPhone: phone, customerId, mfaChallengeId: challengeId,
+      otp: 's2-lockout', idempotencyKey: randomUUID() };
+    const failures = await Promise.allSettled(Array.from({ length: 12 }, () => claimService.execute({
+      ...command, transferCode: transferCode === '000000' ? '111111' : '000000',
+    })));
+    expect(failures.every((r) => r.status === 'rejected')).toBe(true);
+    const [row] = await dataSource.query(`SELECT failed_attempts, is_locked, locked_at, lock_reason FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    expect(row).toMatchObject({ failed_attempts: 5, is_locked: true, lock_reason: 'TRANSFER_CODE_LOCKED' });
+    expect(row.locked_at).not.toBeNull();
+    await expect(claimService.execute({ ...command, transferCode })).rejects.toThrow(/locked/i);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+  });
+
 });

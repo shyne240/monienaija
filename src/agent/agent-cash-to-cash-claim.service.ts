@@ -223,13 +223,8 @@ export class AgentCashToCashClaimService {
       // Transfer code verification before OTP (timing-safe, not consuming OTP if code wrong)
       const codeValidPre = this.verifyTransferCode(transferCode, preTransfer.transfer_code_hash);
       if (!codeValidPre) {
-        const nextAttempts = (preTransfer.failed_attempts ?? 0) + 1;
-        const shouldLock = nextAttempts >= MAX_FAILED_ATTEMPTS;
-        await this.dataSource.query(
-          `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-          [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, transferId],
-        );
-        if (shouldLock) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+        const locked = await this.recordFailedCode(transferId, preTransfer.transfer_code_hash);
+        if (locked) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
         throw new UnauthorizedException('Transfer code invalid');
       }
     }
@@ -516,15 +511,9 @@ export class AgentCashToCashClaimService {
           const codeValid = this.verifyTransferCode(transferCode, transfer.transfer_code_hash);
           if (!codeValid) {
             // This should have been caught outside, but handle concurrently changed hash
-            const nextAttempts = (transfer.failed_attempts ?? 0) + 1;
-            const shouldLock = nextAttempts >= MAX_FAILED_ATTEMPTS;
-            await manager.query(
-              `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-              [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, transferId],
-            );
+            // Persist outside the rolled-back posting transaction using an atomic increment.
             const err: any = new UnauthorizedException('Transfer code invalid');
-            err.nextAttempts = nextAttempts;
-            err.shouldLock = shouldLock;
+            err.failedCodeHash = transfer.transfer_code_hash;
             err.transferId = transferId;
             throw err;
           }
@@ -797,17 +786,10 @@ export class AgentCashToCashClaimService {
           return result;
         });
       } catch (error: any) {
-        if (error?.nextAttempts !== undefined && error?.transferId) {
-          try {
-            const nextAttempts = error.nextAttempts;
-            const shouldLock = error.shouldLock;
-            const tid = error.transferId;
-            await this.dataSource.query(
-              `UPDATE cash_to_cash_transfers SET failed_attempts=$1, is_locked=$2, locked_at=$3, lock_reason=$4, updated_at=NOW() WHERE id=$5`,
-              [nextAttempts, shouldLock, shouldLock ? new Date().toISOString() : null, shouldLock ? 'TRANSFER_CODE_LOCKED' : null, tid],
-            );
-          } catch (_e) { void 0; }
-          if (error.shouldLock) throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+        if (error?.failedCodeHash && error?.transferId) {
+          if (await this.recordFailedCode(error.transferId, error.failedCodeHash)) {
+            throw new ForbiddenException('Transfer code is locked due to too many failed attempts');
+          }
           throw new UnauthorizedException('Transfer code invalid');
         }
         if (isRetryableTransactionError(error)) {
@@ -1227,6 +1209,26 @@ export class AgentCashToCashClaimService {
       throw new ForbiddenException('Cash payout requires a current approved Customer KYC assessment');
     }
     return { assessmentId: row.assessment_id, assessedBy: row.assessed_by };
+  }
+
+  /** One row-locked SQL increment: concurrent failures cannot lose updates or unlock a code. */
+  private async recordFailedCode(transferId: string, expectedHash: string): Promise<boolean> {
+    const rows: Array<{ is_locked: boolean }> = await this.dataSource.query(
+      `WITH failure AS (
+         UPDATE cash_to_cash_transfers
+         SET failed_attempts=LEAST(failed_attempts + 1, $3),
+             is_locked=(failed_attempts + 1 >= $3),
+             locked_at=CASE WHEN failed_attempts + 1 >= $3 THEN clock_timestamp() ELSE locked_at END,
+             lock_reason=CASE WHEN failed_attempts + 1 >= $3 THEN 'TRANSFER_CODE_LOCKED' ELSE lock_reason END,
+             updated_at=clock_timestamp()
+         WHERE id=$1 AND transfer_code_hash=$2 AND status='UNCLAIMED' AND is_locked=FALSE
+         RETURNING is_locked
+       ) SELECT is_locked FROM failure`,
+      [transferId, expectedHash, MAX_FAILED_ATTEMPTS],
+    );
+    if (rows[0]) return rows[0].is_locked;
+    const current = await this.dataSource.query(`SELECT is_locked FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    return current[0]?.is_locked === true;
   }
 
   private verifyTransferCode(provided: string, storedHash: string): boolean {
