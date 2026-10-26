@@ -76,11 +76,21 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
       </div>
 
       {!onReclassify ? (
-        <div style={styles.dependencyBox} role="note" data-testid="agent-reclassify-dependency">
-          <strong>Backend Dependency (ARENA 3):</strong> Post-onboarding Agent reclassification (
-          <code>PATCH /internal/admin/agents/:id/class</code>) and seeded role grants for{' '}
-          <code>agent.manage_classes</code> are pending ARENA 3 delivery. Initial class assignment is bound
-          from the approved onboarding application.
+        <div>
+          <div style={styles.dependencyBox} role="note" data-testid="agent-reclassify-dependency">
+            <strong>Policy-Blocked Capability:</strong> Post-activation Agent class reassignment (
+            <code>PATCH /internal/admin/agents/:id/class</code>) is not enabled in V1 policy. While{' '}
+            <code>agent.manage_classes</code> governs the class catalogue, an active Agent&apos;s assigned
+            class remains bound to its approved onboarding application until a governed reclassification
+            workflow is approved.
+          </div>
+          <button
+            type="button"
+            disabled
+            style={{ ...styles.button, marginTop: 8, opacity: 0.55, cursor: 'not-allowed' }}
+          >
+            Reclassify Agent (Policy blocked)
+          </button>
         </div>
       ) : !canManageClasses ? (
         <div style={styles.note}>Reclassification requires <code>agent.manage_classes</code>.</div>

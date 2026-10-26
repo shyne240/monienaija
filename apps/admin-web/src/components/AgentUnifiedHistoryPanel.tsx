@@ -99,13 +99,22 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
       </div>
 
       {!loadTransactions ? (
-        <div style={styles.dependencyBox} role="note" data-testid="agent-unified-history-dependency">
-          <strong>Backend Dependency (ARENA 3):</strong> Unified Admin Agent history (
-          <code>GET /internal/agents/:id/transactions</code>, combining <code>CASH_IN</code>,{' '}
-          <code>CASH_OUT</code>, <code>CASH_TO_CASH</code>, <code>CASH_TO_CASH_CLAIM</code>,{' '}
-          <code>AGENT_FUNDING</code>, and <code>AGENT_DEFUNDING</code>) is pending ARENA 3 implementation.
-          Use the live <strong>Wallet Transfers</strong> and <strong>Cash-to-Cash Transfers</strong> views above
-          for authoritative wallet and Cash-to-Cash records today.
+        <div>
+          <div style={styles.dependencyBox} role="note" data-testid="agent-unified-history-dependency">
+            <strong>Unavailable Backend Capability:</strong> Unified workforce Agent history (
+            <code>GET /internal/agents/:id/transactions</code>, combining <code>CASH_IN</code>,{' '}
+            <code>CASH_OUT</code>, <code>CASH_TO_CASH</code>, <code>CASH_TO_CASH_CLAIM</code>,{' '}
+            <code>AGENT_FUNDING</code>, and <code>AGENT_DEFUNDING</code>) is not exposed on the backend yet.
+            Use the live <strong>Wallet Transfers</strong> and <strong>Cash-to-Cash Transfers</strong> views
+            above for authoritative records today.
+          </div>
+          <button
+            type="button"
+            disabled
+            style={{ ...styles.button, marginTop: 8, opacity: 0.55, cursor: 'not-allowed' }}
+          >
+            Load unified stream (Unavailable)
+          </button>
         </div>
       ) : (
         <>

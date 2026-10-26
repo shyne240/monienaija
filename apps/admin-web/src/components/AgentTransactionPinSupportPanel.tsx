@@ -100,12 +100,30 @@ export const AgentTransactionPinSupportPanel: React.FC<AgentTransactionPinSuppor
       </p>
 
       {!loadPinStatus && !onUnlockPin ? (
-        <div style={styles.dependencyBox} role="note" data-testid="agent-pin-support-dependency">
-          <strong>Backend Dependency (ARENA 3):</strong> Admin Agent Transaction PIN status and lockout-reset
-          endpoints (<code>GET /internal/admin/agents/:id/transaction-pin</code> and{' '}
-          <code>POST /internal/admin/agents/:id/transaction-pin/unlock</code>) are not yet available on the
-          backend. Record out-of-band identity verification in the Support ticket thread for Agent{' '}
-          <code>{agentId}</code> and escalate lockout clearance once ARENA 3 enables the endpoint.
+        <div>
+          <div style={styles.dependencyBox} role="note" data-testid="agent-pin-support-dependency">
+            <strong>Policy-Blocked Capability (V1-AGENT-05 §7):</strong> Operational Agent Transaction PIN
+            status and lockout-reset endpoints (<code>GET /internal/admin/agents/:id/transaction-pin</code>{' '}
+            and <code>POST /internal/admin/agents/:id/transaction-pin/unlock</code>) remain disabled pending
+            explicit dual-control governance policy. Record verified out-of-band identity evidence in the
+            Support ticket thread for Agent <code>{agentId}</code>.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled
+              style={{ ...styles.button, opacity: 0.55, cursor: 'not-allowed' }}
+            >
+              Inspect PIN state (Unavailable)
+            </button>
+            <button
+              type="button"
+              disabled
+              style={{ ...styles.button, opacity: 0.55, cursor: 'not-allowed' }}
+            >
+              Clear PIN Lockout (Policy blocked)
+            </button>
+          </div>
         </div>
       ) : (
         <>

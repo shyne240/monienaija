@@ -164,9 +164,13 @@ export const AgentNetworkScreen: React.FC = () => {
   const canReviewApplications = hasFn('agent.review_application');
   const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals');
   const canAssignLimit = hasFn('agent.assign_limit');
+  const isOperatorOrPrivilegedWorkforce = ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(
+    principal?.type ?? '',
+  );
+  const canViewReceivingNumber = canView && isOperatorOrPrivilegedWorkforce;
   const canManageClasses = hasFn('agent.manage_classes');
   const canViewLimitCatalog = hasFn('limit.view');
-  const canViewTransactions = hasFn('transaction.view');
+  const canViewTransactions = hasFn('transaction.view') && isOperatorOrPrivilegedWorkforce;
   const canManageSupport = hasFn('customer.manage_support_case');
 
   const lifecycleFunctions = {
@@ -197,6 +201,7 @@ export const AgentNetworkScreen: React.FC = () => {
   const [receivingInfo, setReceivingInfo] = useState<AgentReceivingNumberView | null>(null);
   const [receivingLoading, setReceivingLoading] = useState(false);
   const [receivingError, setReceivingError] = useState('');
+  const [receivingNotEntitled, setReceivingNotEntitled] = useState(false);
 
   // Outlets & terminals sub-panel
   const [outletsLoaded, setOutletsLoaded] = useState(false);
@@ -293,6 +298,7 @@ export const AgentNetworkScreen: React.FC = () => {
     setActionErr('');
     setReceivingInfo(null);
     setReceivingError('');
+    setReceivingNotEntitled(false);
     setOutletsLoaded(false);
     setOutlets([]);
     setTerminals([]);
@@ -349,12 +355,32 @@ export const AgentNetworkScreen: React.FC = () => {
       const walletPromise = walletId
         ? ApiClient.get<any>(`/wallets/${encodeURIComponent(walletId)}/transactions?page=1&limit=10`)
         : Promise.resolve({ items: [] });
-      const [c2cRes, walletRes] = await Promise.all([c2cPromise, walletPromise]);
-      setAgentC2CRows(Array.isArray(c2cRes?.data) ? c2cRes.data : Array.isArray(c2cRes) ? c2cRes : []);
-      setWalletTransfers(
-        Array.isArray(walletRes?.items) ? walletRes.items : Array.isArray(walletRes?.data) ? walletRes.data : [],
-      );
+      const [c2cOutcome, walletOutcome] = await Promise.allSettled([c2cPromise, walletPromise]);
+      const errors: string[] = [];
+      if (c2cOutcome.status === 'fulfilled') {
+        const c2cRes = c2cOutcome.value;
+        setAgentC2CRows(Array.isArray(c2cRes?.data) ? c2cRes.data : Array.isArray(c2cRes) ? c2cRes : []);
+      } else {
+        setAgentC2CRows([]);
+        errors.push((c2cOutcome.reason as Error)?.message || 'Failed to load Cash-to-Cash history');
+      }
+      if (walletOutcome.status === 'fulfilled') {
+        const walletRes = walletOutcome.value;
+        setWalletTransfers(
+          Array.isArray(walletRes?.items)
+            ? walletRes.items
+            : Array.isArray(walletRes?.data)
+              ? walletRes.data
+              : [],
+        );
+      } else {
+        setWalletTransfers([]);
+        errors.push((walletOutcome.reason as Error)?.message || 'Failed to load wallet transfers');
+      }
       setAgentHistoryLoaded(true);
+      if (errors.length > 0) {
+        setAgentHistoryError(errors.join(' · '));
+      }
     } catch (e: any) {
       setAgentHistoryError(e?.message || 'Failed to load Agent transaction records');
     } finally {
@@ -389,15 +415,23 @@ export const AgentNetworkScreen: React.FC = () => {
   };
 
   const loadReceivingNumber = async (agentId: string) => {
+    if (!canViewReceivingNumber || receivingLoading || receivingNotEntitled) return;
     setReceivingLoading(true);
     setReceivingError('');
+    setReceivingInfo(null);
     try {
       const view = await ApiClient.get<AgentReceivingNumberView>(
         `/internal/agents/${encodeURIComponent(agentId)}/receiving-number`,
       );
       setReceivingInfo(view);
     } catch (e: any) {
-      setReceivingError(e?.message || 'Failed to load receiving number');
+      setReceivingInfo(null);
+      if (e?.status === 403) {
+        setReceivingNotEntitled(true);
+        setReceivingError('');
+      } else {
+        setReceivingError(e?.message || 'Failed to load receiving number');
+      }
     } finally {
       setReceivingLoading(false);
     }
@@ -658,8 +692,9 @@ export const AgentNetworkScreen: React.FC = () => {
   if (!canView) {
     return (
       <div style={wrap}>
-        <div style={denied}>
-          Agent directory access requires <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
+        <div style={denied} data-testid="agent-directory-not-entitled">
+          <strong>Not entitled:</strong> Agent directory and Agent receiving-number lookup require{' '}
+          <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
         </div>
         {canManageFunding && <AgentFundingPanel />}
       </div>
@@ -1029,14 +1064,37 @@ export const AgentNetworkScreen: React.FC = () => {
                 <button
                   type="button"
                   style={smallBtn}
-                  disabled={receivingLoading}
+                  disabled={!canViewReceivingNumber || receivingLoading || receivingNotEntitled}
                   onClick={() => void loadReceivingNumber(selected.id)}
                 >
-                  {receivingLoading ? 'Loading…' : 'Load receiving number'}
+                  {!canViewReceivingNumber || receivingNotEntitled
+                    ? 'Not entitled'
+                    : receivingLoading
+                      ? 'Loading…'
+                      : 'Load receiving number'}
                 </button>
               </div>
+              {(!canViewReceivingNumber || receivingNotEntitled) && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    background: '#FFFBEB',
+                    border: '1px solid #FCD34D',
+                    color: '#92400E',
+                    fontSize: 12,
+                  }}
+                  role="status"
+                  data-testid="receiving-number-not-entitled"
+                >
+                  <strong>Not entitled:</strong> Viewing an Agent receiving number requires an authorized
+                  workforce principal (<code>OPERATOR</code>, <code>SERVICE</code>, or{' '}
+                  <code>PRIVILEGED</code>) with <code>agent.view</code>. Forbidden requests are not retried.
+                </div>
+              )}
               {receivingError && <div style={errBox} role="alert">{receivingError}</div>}
-              {receivingInfo && (
+              {canViewReceivingNumber && !receivingNotEntitled && receivingInfo && (
                 <div style={{ marginTop: 6 }}>
                   Number: <strong>{receivingInfo.receivingNumber ?? 'Not allocated'}</strong> · Status:{' '}
                   <span style={badge(receivingInfo.status)}>{receivingInfo.status}</span>

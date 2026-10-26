@@ -54,7 +54,24 @@ interface CheckerHandoffToken {
   currency?: string;
 }
 
-export function parseCheckerHandoffInput(raw: string): { agentId: string; idempotencyKey?: string } | null {
+export interface SelectedFundingInboxTarget {
+  agentId: string;
+  idempotencyKey?: string;
+  requestId?: string;
+  revision: number;
+}
+
+export interface AgentFundingCheckerOutcome {
+  action: 'APPROVED' | 'REJECTED' | 'EXECUTED';
+  requestId: string;
+  agentId: string;
+}
+
+export function parseCheckerHandoffInput(raw: string): {
+  agentId: string;
+  idempotencyKey?: string;
+  requestId?: string;
+} | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith('{')) {
@@ -67,10 +84,29 @@ export function parseCheckerHandoffInput(raw: string): { agentId: string; idempo
             typeof parsed.idempotencyKey === 'string' && parsed.idempotencyKey.trim()
               ? parsed.idempotencyKey.trim()
               : undefined,
+          requestId:
+            typeof parsed.requestId === 'string' && parsed.requestId.trim()
+              ? parsed.requestId.trim()
+              : undefined,
         };
       }
     } catch {
       return null;
+    }
+    return null;
+  }
+  if (trimmed.toUpperCase().startsWith('MN-FUND:')) {
+    const rest = trimmed.slice('MN-FUND:'.length);
+    const sep = rest.indexOf(':');
+    if (sep > 0) {
+      const parsedAgentId = rest.slice(0, sep).trim();
+      const parsedIdem = rest.slice(sep + 1).trim();
+      if (parsedAgentId) {
+        return {
+          agentId: parsedAgentId,
+          idempotencyKey: parsedIdem || undefined,
+        };
+      }
     }
     return null;
   }
@@ -80,9 +116,13 @@ export function parseCheckerHandoffInput(raw: string): { agentId: string; idempo
 export function AgentFundingPanel({
   agentId: suppliedAgentId,
   initialIdempotencyKey,
+  selectedInboxTarget = null,
+  onCheckerOutcome,
 }: {
   agentId?: string;
   initialIdempotencyKey?: string;
+  selectedInboxTarget?: SelectedFundingInboxTarget | null;
+  onCheckerOutcome?: (outcome: AgentFundingCheckerOutcome) => void;
 }) {
   const { principal } = useAuthStore();
   const [agentId, setAgentId] = useState(suppliedAgentId ?? '');
@@ -108,7 +148,11 @@ export function AgentFundingPanel({
     principal?.scopes.includes(value === 'FUND' ? 'agent.fund' : 'agent.defund') === true;
   const mfa = principal?.assuranceLevel === 'MFA';
 
-  const pendingAutoLoadRef = useRef<{ agentId: string; idempotencyKey?: string } | null>(null);
+  const pendingAutoLoadRef = useRef<{
+    agentId: string;
+    idempotencyKey?: string;
+    requestId?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (suppliedAgentId !== undefined) {
@@ -122,14 +166,46 @@ export function AgentFundingPanel({
     }
   }, [suppliedAgentId, initialIdempotencyKey]);
 
-  async function loadForAgent(targetAgentId: string, instructionKey?: string) {
+  useEffect(() => {
+    if (!selectedInboxTarget?.agentId) return;
+    const targetAgent = selectedInboxTarget.agentId.trim();
+    if (!targetAgent) return;
+    if (targetAgent === trimmedAgentId) {
+      if (mfa) {
+        void guarded(() =>
+          loadForAgent(
+            targetAgent,
+            selectedInboxTarget.idempotencyKey,
+            selectedInboxTarget.requestId,
+          ),
+        );
+      }
+      return;
+    }
+    pendingAutoLoadRef.current = {
+      agentId: targetAgent,
+      idempotencyKey: selectedInboxTarget.idempotencyKey,
+      requestId: selectedInboxTarget.requestId,
+    };
+    setAgentId(targetAgent);
+  }, [selectedInboxTarget?.revision]);
+
+  async function loadForAgent(
+    targetAgentId: string,
+    instructionKey?: string,
+    preferredRequestId?: string,
+  ) {
     if (!targetAgentId) throw new Error('Agent ID is required');
     const query = instructionKey ? `?idempotencyKey=${encodeURIComponent(instructionKey)}` : '';
     const rows = await ApiClient.get<FundingRequest[]>(
       `/internal/agents/${encodeURIComponent(targetAgentId)}/funding-requests${query}`,
     );
     setItems(rows);
-    const selectedRow = rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
+    const selectedRow =
+      (preferredRequestId ? rows.find((row) => row.id === preferredRequestId) : undefined) ??
+      rows.find((row) => row.id === selected?.id) ??
+      rows[0] ??
+      null;
     setSelected(selectedRow);
     setReviewed(false);
     setRejectionReason('');
@@ -171,7 +247,9 @@ export function AgentFundingPanel({
     const autoLoad = pendingAutoLoadRef.current;
     if (autoLoad && autoLoad.agentId === trimmedAgentId && mfa) {
       pendingAutoLoadRef.current = null;
-      void guarded(() => loadForAgent(trimmedAgentId, autoLoad.idempotencyKey));
+      void guarded(() =>
+        loadForAgent(trimmedAgentId, autoLoad.idempotencyKey, autoLoad.requestId),
+      );
     }
   }, [key, trimmedAgentId]);
 
@@ -189,7 +267,9 @@ export function AgentFundingPanel({
     }
     setHandoffInput('');
     if (parsed.agentId === trimmedAgentId) {
-      void guarded(() => loadForAgent(parsed.agentId, parsed.idempotencyKey));
+      void guarded(() =>
+        loadForAgent(parsed.agentId, parsed.idempotencyKey, parsed.requestId),
+      );
       return;
     }
     pendingAutoLoadRef.current = parsed;
@@ -261,6 +341,11 @@ export function AgentFundingPanel({
 
     await load(selected.idempotencyKey);
     setMessage(`Decision confirmed: ${decision}`);
+    onCheckerOutcome?.({
+      action: decision,
+      requestId: selected.id,
+      agentId: selected.agentId,
+    });
   }
 
   async function execute() {
@@ -285,6 +370,11 @@ export function AgentFundingPanel({
     }
     await load(selected.idempotencyKey);
     setMessage(`${result.status}: journal ${result.journalId}. Posting confirmed.`);
+    onCheckerOutcome?.({
+      action: 'EXECUTED',
+      requestId: selected.id,
+      agentId: selected.agentId,
+    });
   }
 
   const selectedTerminal =
