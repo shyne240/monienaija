@@ -79,9 +79,10 @@ export async function fetchAdminAgentUnifiedHistory(
   ) {
     params.set('type', query.type);
   }
-  return ApiClient.get<AdminAgentUnifiedHistoryResponse>(
+  const response = await ApiClient.get<AdminAgentUnifiedHistoryResponse>(
     `/internal/agents/${encodeURIComponent(agentId)}/transactions?${params.toString()}`,
   );
+  return normalizeUnifiedHistoryResponse(response);
 }
 
 export interface AgentUnifiedHistoryPanelProps {
@@ -111,6 +112,79 @@ function isForbiddenError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const status = (err as { status?: unknown }).status;
   return status === 403;
+}
+
+/**
+ * ARENA 3 Sprint 3 final integration: normalize the AUTHORITATIVE backend projection
+ * (AgentTransactionHistoryService — GET /api/v1/internal/agents/:id/transactions, the same
+ * V1-AGENT-HISTORY-01 shape served to Agent Mobile on /agents/me/transactions; contract:
+ * docs/ARENA3-SPRINT3-WORKFORCE-API-AND-AUTHORIZATION-20261026.md §1.3) into this panel's
+ * view-model.
+ *
+ * The backend emits:
+ *   counterparty: { type: 'CUSTOMER'|'WORKFORCE'|'AGGREGATOR', beneficiaryPhone?, aggregatorId? } | null
+ *   commission:   { commissionMinor: string, payable: boolean, treatment: string|null } | null
+ * while this panel renders counterparty as { ownerType, display, identifierMasked } and
+ * commission as { amountMinor, currency, status }. Without this mapping the real payload
+ * rendered '—' for every counterparty and 'undefined' commission amounts. Entries already
+ * in the panel view-model shape (injected loadTransactions fixtures) pass through unchanged.
+ */
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 8) return phone;
+  return `${digits.slice(0, 3)}***${digits.slice(-4)}`;
+}
+
+function normalizeCounterparty(
+  counterparty?: AdminAgentHistoryCounterparty | Record<string, unknown> | null,
+): AdminAgentHistoryCounterparty | null {
+  if (!counterparty || typeof counterparty !== 'object') return null;
+  const raw = counterparty as Record<string, unknown>;
+  if (typeof raw.ownerType === 'string') {
+    return counterparty as AdminAgentHistoryCounterparty; // already panel-shaped
+  }
+  const ownerType = typeof raw.type === 'string' ? raw.type : 'UNKNOWN';
+  const beneficiaryPhone = typeof raw.beneficiaryPhone === 'string' ? raw.beneficiaryPhone : null;
+  const aggregatorId = typeof raw.aggregatorId === 'string' ? raw.aggregatorId : null;
+  return {
+    ownerType,
+    display: null,
+    identifierMasked: beneficiaryPhone ? maskPhone(beneficiaryPhone) : aggregatorId ? maskPhone(aggregatorId) : null,
+  };
+}
+
+function normalizeCommission(
+  entry: { currency?: string },
+  commission?: AdminAgentHistoryCommission | Record<string, unknown> | null,
+): AdminAgentHistoryCommission | null {
+  if (!commission || typeof commission !== 'object') return null;
+  const raw = commission as Record<string, unknown>;
+  if (typeof raw.amountMinor === 'string') {
+    return commission as AdminAgentHistoryCommission; // already panel-shaped
+  }
+  if (typeof raw.commissionMinor !== 'string') return null;
+  const currency = typeof raw.currency === 'string' ? raw.currency : entry.currency ?? 'NGN';
+  const status =
+    typeof raw.treatment === 'string' && raw.treatment
+      ? raw.treatment
+      : raw.payable === true
+        ? 'PAYABLE'
+        : 'NOT_PAYABLE';
+  return { amountMinor: raw.commissionMinor, currency, status };
+}
+
+function normalizeUnifiedHistoryResponse(
+  response: AdminAgentUnifiedHistoryResponse,
+): AdminAgentUnifiedHistoryResponse {
+  if (!response || !Array.isArray(response.items)) return response;
+  return {
+    ...response,
+    items: response.items.map((item) => ({
+      ...item,
+      counterparty: normalizeCounterparty(item.counterparty),
+      commission: normalizeCommission(item, item.commission),
+    })),
+  };
 }
 
 function formatCounterparty(counterparty?: AdminAgentHistoryCounterparty | null): string {

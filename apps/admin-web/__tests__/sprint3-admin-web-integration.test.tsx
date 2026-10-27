@@ -6,6 +6,7 @@ import { ApprovalsScreen } from '../src/screens/authenticated/ApprovalsScreen';
 import { AgentNetworkScreen } from '../src/screens/authenticated/AgentNetworkScreen';
 import { AgentClassesScreen } from '../src/screens/authenticated/AgentClassesScreen';
 import { parseCheckerHandoffInput } from '../src/screens/authenticated/AgentFundingPanel';
+import { AgentUnifiedHistoryPanel } from '../src/components/AgentUnifiedHistoryPanel';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
@@ -811,5 +812,96 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     fireEvent.click(supView.getByRole('button', { name: 'View' }));
     expect(supView.queryByRole('button', { name: 'Load unified stream' })).toBeNull();
     supView.unmount();
+  });
+  // ARENA 3 final-integration bridge test: the panel must render the AUTHORITATIVE backend
+  // projection shape (AgentTransactionHistoryService — identical on the workforce route
+  // GET /internal/agents/:id/transactions and the Agent-self route; contract:
+  // docs/ARENA3-SPRINT3-WORKFORCE-API-AND-AUTHORIZATION-20261026.md §1.3), where
+  // counterparty is { type, beneficiaryPhone?, aggregatorId? } and commission is
+  // { commissionMinor, payable, treatment } — NOT the panel-internal view model that the
+  // fixtures above inject. The normalizer added in Sprint 3 integration maps the real
+  // payload; this test feeds the exact shapes verified against real PostgreSQL responses
+  // in test/v1-sprint3-agent-history-workforce.integration.spec.ts.
+  test('Part B bridge: unified history panel renders the real backend counterparty/commission projection shapes', async () => {
+    setWorkforceSession(['AGENT_NETWORK_MANAGER'], ['agent.view']);
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/internal/agents/agent-bridge-1/transactions?')) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'journal-c2c-1',
+              type: 'CASH_TO_CASH',
+              status: 'UNCLAIMED',
+              amountMinor: '8000',
+              currency: 'NGN',
+              direction: 'DEBIT',
+              createdAt: '2026-10-27T10:00:00.000Z',
+              completedAt: null,
+              reference: 'S3-C2C-REF',
+              narration: null,
+              feeMinor: '0',
+              counterparty: { type: 'CUSTOMER', beneficiaryPhone: '8039876543' },
+              commission: { commissionMinor: '2500', payable: true, treatment: 'POSTED' },
+              failureCode: null,
+              failureMessage: null,
+            },
+            {
+              id: 'journal-fund-1',
+              type: 'AGENT_FUNDING',
+              status: 'COMPLETED',
+              amountMinor: '250000',
+              currency: 'NGN',
+              direction: 'CREDIT',
+              createdAt: '2026-10-27T09:00:00.000Z',
+              completedAt: '2026-10-27T09:00:00.000Z',
+              reference: 'S3-FUND',
+              narration: 'Sprint 3 agent funding',
+              feeMinor: '0',
+              counterparty: { type: 'WORKFORCE' },
+              commission: null,
+              failureCode: null,
+              failureMessage: null,
+            },
+            {
+              id: 'journal-claim-1',
+              type: 'CASH_TO_CASH_CLAIM',
+              status: 'COMPLETED',
+              amountMinor: '8000',
+              currency: 'NGN',
+              direction: 'CREDIT',
+              createdAt: '2026-10-27T08:00:00.000Z',
+              completedAt: '2026-10-27T08:00:00.000Z',
+              reference: 'S3-C2C-CLAIM',
+              narration: 'Cash\u2192Cash cash payout',
+              feeMinor: '0',
+              counterparty: { type: 'CUSTOMER', beneficiaryPhone: '8039876543' },
+              commission: { commissionMinor: '100', payable: true, treatment: null },
+              failureCode: null,
+              failureMessage: null,
+            },
+          ],
+          pagination: { page: 1, limit: 20, total: 3, totalPages: 1, hasNextPage: false },
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    const view = render(<AgentUnifiedHistoryPanel agentId="agent-bridge-1" canViewAgent />);
+    fireEvent.click(view.getByRole('button', { name: 'Load unified stream' }));
+    expect(await view.findByText('S3-C2C-REF')).toBeTruthy();
+    // Masked beneficiary phone + backend ownerType surface (no raw phone, no undefined fields).
+    expect(view.getAllByText('803***6543 \u00b7 CUSTOMER').length).toBeGreaterThanOrEqual(1);
+    // Commission maps commissionMinor/treatment into the rendered minor-unit amount + status.
+    expect(view.getByText(/Commission: NGN 25\.00 \(POSTED\)/)).toBeTruthy();
+    // payable-without-treatment maps to an honest PAYABLE status, never 'undefined'.
+    expect(view.getByText(/Commission: NGN 1\.00 \(PAYABLE\)/)).toBeTruthy();
+    // WORKFORCE counterparty renders its owner type with no identifier.
+    expect(view.getByText('WORKFORCE')).toBeTruthy();
+    // Amounts render from string minor units; verbatim backend status/narration preserved.
+    expect(view.getByText('NGN 2,500.00')).toBeTruthy();
+    expect(view.getAllByText('UNCLAIMED').length).toBeGreaterThanOrEqual(1);
+    expect(view.getByText('Cash\u2192Cash cash payout')).toBeTruthy();
+    expect(view.queryByText(/undefined/)).toBeNull();
+    view.unmount();
   });
 });
