@@ -89,6 +89,15 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
         throw new Error('simulated downstream failure before commit');
       }
     },
+    // ARENA 4 INTEGRATION: AgentCashToCashService now enqueues `cash_to_cash.created` via
+    // enqueueOnce inside the same SERIALIZABLE financial transaction. The stub mirrors the
+    // real OutboxService interface so this suite exercises the production call path; the
+    // failure-injection flag continues to target transfer.completed only.
+    enqueueOnce: async (_manager: unknown, event: { eventType: string }) => {
+      if (failCompletedOutbox && event.eventType === 'transfer.completed') {
+        throw new Error('simulated downstream failure before commit');
+      }
+    },
   };
 
   beforeAll(async () => {

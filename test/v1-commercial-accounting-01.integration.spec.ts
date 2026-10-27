@@ -181,6 +181,15 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         throw new Error('simulated downstream failure before commit');
       }
     },
+    // ARENA 4 INTEGRATION: AgentCashToCashService now enqueues `cash_to_cash.created` via
+    // enqueueOnce inside the same SERIALIZABLE financial transaction. The stub mirrors the
+    // real OutboxService interface so the accounting suite exercises the production call
+    // path; the failure-injection flag continues to target transfer.completed only.
+    enqueueOnce: async (_manager: unknown, event: { eventType: string }) => {
+      if (failCompletedOutbox && event.eventType === 'transfer.completed') {
+        throw new Error('simulated downstream failure before commit');
+      }
+    },
   };
 
   // Runtime-config helpers (the config service reads process.env fresh at every call, so tests

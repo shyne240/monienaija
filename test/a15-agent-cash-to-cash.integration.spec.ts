@@ -469,6 +469,13 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
     expect(afterBal.balanceMinor).toBe(beforeBal.balanceMinor);
     const journals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals WHERE idempotency_key LIKE $1`, [`agent:${agent.id}:${key}`]);
     expect(journals[0]!.cnt).toBe('1');
+    // ARENA 3 INTEGRATION (Phase 4): an idempotent replay must also add NO duplicate
+    // notification event — exactly one cash_to_cash.created outbox row per initiation.
+    const outboxRows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM outbox_events WHERE event_key=$1`,
+      [`cash_to_cash.created:${r1.transferId}`],
+    );
+    expect(outboxRows[0]!.cnt).toBe('1');
   });
 
   // 13. concurrent same idempotency key produces exactly one financial effect
