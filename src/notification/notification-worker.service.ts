@@ -3,9 +3,19 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } f
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 
-import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
+import {
+  NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+  NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
+  NOTIFICATION_PROVIDER_TOKEN,
+} from './notification.constants';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
-import type { NotificationProvider } from './notification.types';
+import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
+import { NotificationTemplateService } from './notification-template.service';
+import type {
+  NotificationEmailTemplateLookup,
+  NotificationProvider,
+  NotificationTemplateKey,
+} from './notification.types';
 
 export interface NotificationWorkerTickResult {
   outboxProcessed: number;
@@ -21,7 +31,7 @@ interface ClaimedDeliveryRow {
   event_key: string;
   recipient_type: 'CUSTOMER' | 'AGENT';
   recipient_id: string;
-  channel: 'SMS' | 'PUSH';
+  channel: 'SMS' | 'PUSH' | 'EMAIL';
   destination: string;
   message: string | null;
   payload: Record<string, unknown>;
@@ -63,7 +73,28 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     @Optional()
     private readonly provider: NotificationProvider | null,
+    // ARENA3-NOTIFICATION-EMAIL — EMAIL-only retry routing. The SMS retry path above is
+    // untouched: `provider` remains the sole send path for SMS/PUSH rows.
+    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN)
+    @Optional()
+    private readonly emailProviderBinding: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN)
+    @Optional()
+    private readonly emailTemplateBinding: NotificationEmailTemplateLookup | null,
+    private readonly templateService?: NotificationTemplateService,
   ) {}
+
+  /** EMAIL provider — fail-closed: missing binding behaves as NoneEmailProvider (never logs). */
+  private get emailProvider(): NotificationProvider | null {
+    return this.emailProviderBinding;
+  }
+
+  /** Email rendering seam for retry re-render (subject/html are not persisted — text body is). */
+  private get emailTemplates(): NotificationEmailTemplateLookup | null {
+    if (this.emailTemplateBinding) return this.emailTemplateBinding;
+    if (this.templateService) return new CodeNotificationEmailTemplateService(this.templateService);
+    return null;
+  }
 
   private get enabled(): boolean {
     return this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true;
@@ -191,8 +222,47 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
           }
         }
 
-        const result = this.provider
-          ? await this.provider.send({
+        // ARENA3-NOTIFICATION-EMAIL: mirror the SMS opt-out re-check for EMAIL — an opt-out
+        // recorded after the initial failure must be honored at retry time too.
+        const isEmailRow = row.channel === 'EMAIL';
+        if (isEmailRow && row.recipient_type === 'CUSTOMER') {
+          const optedOut = await this.isEmailOptedOut(row.recipient_id);
+          if (optedOut) {
+            await this.dataSource.query(
+              `UPDATE notification_deliveries
+                  SET status='SKIPPED', last_error='EMAIL_OPT_OUT', updated_at=NOW()
+                WHERE id=$1 AND status='FAILED'`,
+              [row.id],
+            );
+            retriesOptedOut += 1;
+            continue;
+          }
+        }
+
+        // EMAIL retries re-render subject/html from the persisted redacted payload
+        // (payload._templateKey, falling back to event_type) via the template seam — the
+        // plain-text body stays the persisted `message`. Fail closed when unrenderable.
+        let emailSubject: string | undefined;
+        let emailHtml: string | undefined;
+        if (isEmailRow) {
+          const templates = this.emailTemplates;
+          if (!templates) {
+            const failResult = { success: false as const, error: 'WORKER_NO_EMAIL_TEMPLATE_CONFIGURED' };
+            await this.recordRetryFailure(row, failResult.error);
+            retriesFailed += 1;
+            continue;
+          }
+          const templateKey = ((row.payload ?? {})._templateKey as string | undefined) ?? row.event_type;
+          const rendered = templates.buildEmail(templateKey as NotificationTemplateKey, row.payload ?? {});
+          emailSubject = rendered.subject;
+          emailHtml = rendered.html;
+        }
+
+        // Channel-routed provider selection: EMAIL rows NEVER go to the SMS provider and
+        // vice versa. Missing EMAIL binding fails closed (no console fallback for email).
+        const providerForChannel = isEmailRow ? this.emailProvider : this.provider;
+        const result = providerForChannel
+          ? await providerForChannel.send({
               channel: row.channel,
               destination: row.destination,
               message: (row.message ?? '').slice(0, 1000),
@@ -202,8 +272,9 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
               eventKey: row.event_key,
               recipientType: row.recipient_type,
               recipientId: row.recipient_id,
+              ...(isEmailRow ? { subject: emailSubject, html: emailHtml } : {}),
             })
-          : { success: false, error: 'WORKER_NO_PROVIDER_CONFIGURED' };
+          : { success: false, error: isEmailRow ? 'WORKER_NO_EMAIL_PROVIDER_CONFIGURED' : 'WORKER_NO_PROVIDER_CONFIGURED' };
 
         if (result.success) {
           // Conditional status guard: only a concurrent-safe FAILED→SENT transition persists.
@@ -253,5 +324,28 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     } catch {
       return false; // fail-safe: do not block retries on preference lookup errors
     }
+  }
+
+  /** ARENA3-NOTIFICATION-EMAIL: EMAIL retry opt-out re-check — exact parity with isSmsOptedOut. */
+  private async isEmailOptedOut(customerId: string): Promise<boolean> {
+    try {
+      const rows: Array<{ email_enabled: boolean | null }> = await this.dataSource.query(
+        `SELECT notification_email_enabled AS email_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
+        [customerId],
+      );
+      return rows[0]?.email_enabled === false;
+    } catch {
+      return false; // fail-safe: do not block retries on preference lookup errors
+    }
+  }
+
+  /** Fail-closed retry bookkeeping (e.g. EMAIL row that cannot be re-rendered). */
+  private async recordRetryFailure(row: ClaimedDeliveryRow, error: string): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE notification_deliveries
+          SET status='FAILED', attempts=attempts+1, last_error=$1, failed_at=NOW(), updated_at=NOW()
+        WHERE id=$2 AND status='FAILED'`,
+      [error.slice(0, 1000), row.id],
+    );
   }
 }

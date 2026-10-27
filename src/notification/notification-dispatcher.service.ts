@@ -2,11 +2,21 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
-import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
+import {
+  NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+  NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
+  NOTIFICATION_PROVIDER_TOKEN,
+} from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
-import { mapEventToIntents } from './notification-event-map';
+import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
+import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationTemplateService } from './notification-template.service';
-import type { NotificationProvider } from './notification.types';
+import type {
+  NotificationEmailTemplateLookup,
+  NotificationProvider,
+  NotificationTemplateKey,
+  RenderedEmail,
+} from './notification.types';
 
 export interface DispatchCommand {
   eventType: string;
@@ -44,6 +54,10 @@ export class NotificationDispatcherService {
     private readonly channelResolver: NotificationChannelResolverService,
     private readonly templateService: NotificationTemplateService,
     @Inject(NOTIFICATION_PROVIDER_TOKEN) @Optional() private readonly injectedProvider: NotificationProvider | null,
+    // ARENA3-NOTIFICATION-EMAIL — EMAIL-only provider + template seam. SMS/PUSH routing is
+    // untouched: `provider` above remains the sole send path for those channels.
+    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly injectedEmailProvider: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -52,6 +66,23 @@ export class NotificationDispatcherService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { ConsoleNotificationProvider } = require('./notification-provider.interface');
     return new ConsoleNotificationProvider();
+  }
+
+  /**
+   * EMAIL provider — fail-closed: unlike SMS (console fallback for tests), a missing
+   * EMAIL provider binding resolves to NoneEmailProvider (email stays dark, never logs).
+   */
+  private get emailProvider(): NotificationProvider {
+    if (this.injectedEmailProvider) return this.injectedEmailProvider;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NoneEmailProvider } = require('./email-provider.interface');
+    return new NoneEmailProvider();
+  }
+
+  /** Email rendering seam — default code-backed implementation (Arena 1 registry swaps the token binding). */
+  private get emailTemplates(): NotificationEmailTemplateLookup {
+    if (this.injectedEmailTemplates) return this.injectedEmailTemplates;
+    return new CodeNotificationEmailTemplateService(this.templateService);
   }
 
   /**
@@ -138,6 +169,13 @@ export class NotificationDispatcherService {
       }
     }
 
+    // ARENA3-NOTIFICATION-EMAIL: append CUSTOMER EMAIL copies ONLY when an email provider
+    // is configured. While dark (provider 'none'), no EMAIL intents exist at all — existing
+    // SMS/PUSH behaviour (generated/dispatched/skipped counts, delivery rows) is byte-identical.
+    if (this.emailProvider.name !== 'none') {
+      intents = appendCustomerEmailIntents(eventType, intents);
+    }
+
     if (intents.length === 0) {
       return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
     }
@@ -161,7 +199,15 @@ export class NotificationDispatcherService {
       const destination = resolved.destination;
       const isSkipped = !destination;
 
-      const message = this.templateService.buildMessage(intent.templateKey, payload);
+      // ARENA3-NOTIFICATION-EMAIL: EMAIL renders through the template seam (subject/text/html —
+      // text body identical wording to SMS via buildMessage). SMS/PUSH path unchanged.
+      const emailRender: RenderedEmail | null =
+        intent.channel === 'EMAIL'
+          ? this.emailTemplates.buildEmail(intent.templateKey as NotificationTemplateKey, payload)
+          : null;
+      const message = emailRender
+        ? emailRender.text
+        : this.templateService.buildMessage(intent.templateKey, payload);
       // Ensure no secrets in message (we already avoid, but double-check)
       // Do not include payload secrets; message is safe template only
 
@@ -268,7 +314,10 @@ export class NotificationDispatcherService {
       const attemptsIncrement = 1;
 
       try {
-        const sendResult = await this.provider.send({
+        // Channel-routed provider selection: EMAIL → email provider (NOTIFICATION_EMAIL_PROVIDER_TOKEN);
+        // SMS/PUSH → existing provider (NOTIFICATION_PROVIDER_TOKEN) — unchanged.
+        const providerForChannel = intent.channel === 'EMAIL' ? this.emailProvider : this.provider;
+        const sendResult = await providerForChannel.send({
           channel: intent.channel,
           destination: destination!,
           message,
@@ -278,6 +327,7 @@ export class NotificationDispatcherService {
           eventKey,
           recipientType: intent.recipientType,
           recipientId: intent.recipientId,
+          ...(emailRender ? { subject: emailRender.subject, html: emailRender.html } : {}),
         });
 
         if (sendResult.success) {

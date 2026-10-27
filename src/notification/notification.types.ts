@@ -1,4 +1,7 @@
-export type NotificationChannel = 'SMS' | 'PUSH';
+// ARENA3-NOTIFICATION-EMAIL: EMAIL widened alongside SMS/PUSH. Migration
+// 1785753600097-AddEmailNotificationChannel replaces the DB CHECK constraint;
+// existing SMS/PUSH rows are untouched.
+export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
 export type NotificationRecipientType = 'CUSTOMER' | 'AGENT';
 export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
 
@@ -17,6 +20,10 @@ export interface NotificationSendRequest {
   eventKey: string;
   recipientType: NotificationRecipientType;
   recipientId: string;
+  /** EMAIL only — sanitized subject (header-injection-safe). Ignored by SMS/PUSH providers. */
+  subject?: string;
+  /** EMAIL only — escaped HTML body. `message` always carries the plain-text equivalent. */
+  html?: string;
 }
 
 export interface NotificationSendResult {
@@ -52,6 +59,54 @@ export type EventNotificationMapping = {
   possible: boolean;
   fallback: string;
 };
+
+/**
+ * ARENA3-NOTIFICATION-EMAIL — template/rendering seam shared with Arena 1.
+ *
+ * Arena 1 owns the canonical event/template configuration and the future database-backed
+ * template registry. This interface is the coordination contract: Arena 1's registry
+ * implements it and is bound to NOTIFICATION_EMAIL_TEMPLATE_TOKEN (notification.constants.ts),
+ * replacing the code-backed default (CodeNotificationEmailTemplateService). Dispatcher and
+ * worker consume ONLY this interface — zero changes needed when the registry lands.
+ * Keys mirror the existing NotificationTemplateService switch (SMS/Push wording parity:
+ * the plain-text body must remain identical to buildMessage for the same key).
+ */
+export type NotificationTemplateKey =
+  | 'customer.funding.approved'
+  | 'customer.funding.rejected'
+  | 'customer.funding.requested'
+  | 'transfer.completed'
+  | 'transfer.failed'
+  | 'support.ticket.created'
+  | 'support.ticket.assigned'
+  | 'support.ticket.status_changed'
+  | 'support.ticket.resolved'
+  | 'support.ticket.closed'
+  | 'support.ticket.message_added'
+  | 'cash_to_cash.claimed'
+  | 'cash_to_cash.expired'
+  | 'cash_to_cash.created'
+  | 'agent.application.approved'
+  | 'agent.application.rejected'
+  | 'agent.activated'
+  | 'agent.suspended'
+  | 'agent.terminated'
+  | 'agent.reactivated';
+
+export type NotificationTemplatePayload = Record<string, unknown>;
+
+export interface RenderedEmail {
+  /** Sanitized subject — never contains CR/LF/control characters, bounded, no internal event names. */
+  subject: string;
+  /** Plain-text body — identical wording to the SMS/Push message for the same template key. */
+  text: string;
+  /** Fully escaped HTML body (fixed minimal layout, no scripts/external resources/dynamic styles). */
+  html: string;
+}
+
+export interface NotificationEmailTemplateLookup {
+  buildEmail(templateKey: NotificationTemplateKey, payload: NotificationTemplatePayload): RenderedEmail;
+}
 
 /**
  * Canonical outbox event types reused (no second outbox):

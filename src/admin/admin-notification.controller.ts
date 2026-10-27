@@ -17,7 +17,8 @@ interface AuthenticatedRequest {
 
 const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED']);
 const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT']);
-const VALID_CHANNELS = new Set(['SMS', 'PUSH']);
+// ARENA3-NOTIFICATION-EMAIL: EMAIL rows are filterable in delivery diagnostics.
+const VALID_CHANNELS = new Set(['SMS', 'PUSH', 'EMAIL']);
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
