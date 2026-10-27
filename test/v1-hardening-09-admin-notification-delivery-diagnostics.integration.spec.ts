@@ -465,7 +465,10 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?page=0').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?limit=101').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?recipientId=not-a-uuid').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=EMAIL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    // ARENA3-NOTIFICATION-EMAIL: EMAIL is now a valid channel filter (migration 097 widened
+    // the channel model); a genuinely unknown channel still 400s.
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=WHATSAPP').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=EMAIL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
   });
 
   it('20. provider-neutral semantics — SENT does not imply external provider delivery, no credentials', async () => {
