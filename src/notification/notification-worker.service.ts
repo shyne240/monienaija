@@ -75,12 +75,15 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     private readonly provider: NotificationProvider | null,
     // ARENA3-NOTIFICATION-EMAIL — EMAIL-only retry routing. The SMS retry path above is
     // untouched: `provider` remains the sole send path for SMS/PUSH rows.
+    // Optional (=) so existing direct constructions (e.g. sms-v1-01 spec) compile unchanged;
+    // Nest still injects the real bindings because NotificationModule provides both tokens.
+    // Missing EMAIL binding fails closed at retry time (WORKER_NO_EMAIL_PROVIDER_CONFIGURED).
     @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN)
     @Optional()
-    private readonly emailProviderBinding: NotificationProvider | null,
+    private readonly emailProviderBinding: NotificationProvider | null = null,
     @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN)
     @Optional()
-    private readonly emailTemplateBinding: NotificationEmailTemplateLookup | null,
+    private readonly emailTemplateBinding: NotificationEmailTemplateLookup | null = null,
     private readonly templateService?: NotificationTemplateService,
   ) {}
 
