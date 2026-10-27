@@ -11,11 +11,9 @@ const PREVIOUS_LATEST_MIGRATION = 'AddSecureCustomerProofOfAddressUploads1785753
 
 describe('Agent application access migration upgrade (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  let databaseName: string;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('agentappupgrade');
-    databaseName = String(dataSource.options.database);
     await dataSource.initialize();
   }, 120_000);
 
