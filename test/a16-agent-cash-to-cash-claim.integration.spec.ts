@@ -5,6 +5,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
 
+import { CreateCashToCashLocators1785753600096 } from '../src/migrations/1785753600096-CreateCashToCashLocators';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 import { AppModule } from '../src/app.module';
 import { AgentService } from '../src/agent/agent-service.enum';
@@ -276,7 +277,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     });
   }
 
-  async function initiateTransfer(amount = '4000', phoneOverride?: string) {
+  async function initiateTransfer(amount = '4000', phoneOverride?: string, reference?: string, senderPhone?: string) {
     const { agent, wallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
     await fundAgent(wallet.ledgerAccountId, '10000');
     const phone = phoneOverride ?? `80${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -288,8 +289,10 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       amountMinor: amount,
       currency: 'NGN',
       idempotencyKey: `init-${randomUUID()}`,
+      reference,
+      senderPhone,
     });
-    return { agent, wallet, phone, transferId: res.transferId, transferCode: res.transferCode!, amount };
+    return { transferNumber: res.transferNumber, senderPhone: res.senderPhone, agent, wallet, phone, transferId: res.transferId, transferCode: res.transferCode!, amount };
   }
 
   // 1. valid claim succeeds
@@ -2259,6 +2262,278 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
         status: 'COMPLETED',
       }),
     ]));
+  });
+
+  it('S3 public references are not unique even within one sender and beneficiary', async () => {
+    const reference = `s3-public-${randomUUID()}`;
+    const first = await initiateTransfer('1000', undefined, reference);
+    const second = await cashToCashService.execute({
+      agentId: first.agent.id, agentPrincipal: agentPrincipal(first.agent.id), agentPin: '1234',
+      beneficiaryPhone: first.phone, amountMinor: '1000', currency: 'NGN',
+      reference, idempotencyKey: `s3-second-${randomUUID()}`,
+    });
+    expect(second.transferId).not.toBe(first.transferId);
+    expect(second.reference).toBe(reference);
+    const rows = await dataSource.query(
+      `SELECT id, reference, status FROM cash_to_cash_transfers WHERE agent_id=$1 AND beneficiary_phone=$2 AND reference=$3`,
+      [first.agent.id, first.phone, reference],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row: any) => row.status === 'UNCLAIMED')).toBe(true);
+  });
+
+  it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(
+    'S3 HTTP %s reference alone cannot replace the required transfer UUID', async (redemptionMethod) => {
+      const reference = `s3-handoff-${randomUUID()}`;
+      const { transferId, phone, transferCode } = await initiateTransfer('2000', undefined, reference);
+      const { customerId } = await createBeneficiaryCustomer(phone, true);
+      await createCurrentKycApproval(customerId);
+      const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const login = await app.inject({ method: 'POST', url: '/api/v1/agents/sessions',
+        payload: { agentId: claimant.agent.id, password: 'login-password' } });
+      expect(login.statusCode).toBe(200);
+      const { challengeId } = await createMfaChallenge(customerId, 's3-handoff-otp');
+      const before = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const idempotencyKey = randomUUID();
+      const response = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim',
+        headers: { authorization: `Bearer ${login.json().accessToken}` },
+        payload: { reference, beneficiaryPhone: phone, transferCode, customerId, mfaChallengeId: challengeId,
+          otp: 's3-handoff-otp', idempotencyKey, redemptionMethod,
+          ...(redemptionMethod === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().message).toContain('transferId must be a UUID');
+      expect(response.body).not.toContain(transferId);
+      expect((await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [challengeId]))[0].status).toBe('ACTIVE');
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+      expect((await dataSource.query(`SELECT status, claim_journal_id, failed_attempts FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+        .toMatchObject({ status: 'UNCLAIMED', claim_journal_id: null, failed_attempts: 0 });
+      expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,
+        [`claim:${transferId}:${idempotencyKey}`])).toEqual([]);
+    },
+  );
+
+  it('six-digit locators preserve leading zeros and retry collisions without recycling history', async () => {
+    const generator = jest.spyOn(cashToCashService as any, 'generateTransferNumber')
+      .mockReturnValueOnce('000000').mockReturnValueOnce('000000').mockReturnValue('000001');
+    try {
+      const first = await initiateTransfer('1000', undefined, undefined, '+234 803 123 4567');
+      await dataSource.query(`UPDATE cash_to_cash_transfers SET status='EXPIRED', expires_at=clock_timestamp()-INTERVAL '1 second', expired_at=clock_timestamp() WHERE id=$1`, [first.transferId]);
+      const second = await initiateTransfer('1000', undefined, undefined, '08031234567');
+      expect(first.transferNumber).toBe('000000');
+      expect(first.senderPhone).toBe('8031234567');
+      expect(second.transferNumber).toBe('000001');
+      const rows = await dataSource.query(`SELECT transfer_number FROM cash_to_cash_locators WHERE sender_phone='8031234567'`);
+      expect(rows).toHaveLength(2);
+      const runner = dataSource.createQueryRunner();
+      await runner.connect();
+      try {
+        await expect(new CreateCashToCashLocators1785753600096().down(runner)).rejects.toThrow(/Cannot remove issued/i);
+      } finally { await runner.release(); }
+      const legacy = await initiateTransfer('1000');
+      await expect(dataSource.query(`INSERT INTO cash_to_cash_locators(transfer_id,sender_phone,transfer_number) VALUES ($1,'8031234567','000000')`, [legacy.transferId]))
+        .rejects.toThrow(/uq_cash_to_cash_locator/i);
+      await expect(dataSource.query(`UPDATE cash_to_cash_locators SET transfer_number='999999' WHERE transfer_id=$1`, [first.transferId]))
+        .rejects.toThrow(/immutable/i);
+    } finally { generator.mockRestore(); }
+  });
+
+  async function locatorHttpFixture(method: 'CUSTOMER_WALLET' | 'AGENT_CASH') {
+    const senderPhone = `81${Math.floor(10000000+Math.random()*89999999)}`;
+    const transfer = await initiateTransfer('2000', undefined, undefined, `0${senderPhone}`);
+    const { customerId, wallet } = await createBeneficiaryCustomer(transfer.phone, true);
+    await createCurrentKycApproval(customerId);
+    const claimant = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+    const login = await app.inject({ method: 'POST', url: '/api/v1/agents/sessions', payload: { agentId: claimant.agent.id, password: 'login-password' } });
+    expect(login.statusCode).toBe(200);
+    const challenge = await createMfaChallenge(customerId, `locator-${randomUUID()}`);
+    const payload = { senderPhone: `+234${senderPhone}`, transferNumber: transfer.transferNumber!,
+      beneficiaryPhone: transfer.phone, transferCode: transfer.transferCode, customerId,
+      mfaChallengeId: challenge.challengeId, otp: challenge.otp, idempotencyKey: randomUUID(), redemptionMethod: method,
+      ...(method === 'AGENT_CASH' ? { agentPin: '1234' } : {}),
+    };
+    return { transfer, customerId, wallet, claimant, challenge, payload,
+      headers: { authorization: `Bearer ${login.json().accessToken}` } };
+  }
+
+  it.each(['CUSTOMER_WALLET','AGENT_CASH'] as const)(
+    'authenticated number redemption %s, UUID replay and lost-response recovery share one journal', async (method) => {
+      const f = await locatorHttpFixture(method);
+      const destination = method === 'AGENT_CASH' ? f.claimant.wallet : f.wallet;
+      const before = await ledgerService.getAccountBalance(destination.ledgerAccountId);
+      const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+      const response = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim-by-number', headers: f.headers, payload: f.payload });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ transferId: f.transfer.transferId, redemptionMethod: method, status: 'COMPLETED' });
+      const { senderPhone, transferNumber, ...uuidPayload } = f.payload;
+      const replay = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim', headers: f.headers,
+        payload: { ...uuidPayload, transferId: f.transfer.transferId } });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json().journalId).toBe(response.json().journalId);
+      const wrongReplay = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claim-by-number', headers: f.headers,
+        payload: { ...f.payload, idempotencyKey: randomUUID() } });
+      expect(wrongReplay.statusCode).toBe(404);
+      const recovered = await app.inject({ method: 'POST', url: '/api/v1/agents/cash-to-cash/claims/recover-by-number', headers: f.headers,
+        payload: { senderPhone, transferNumber, idempotencyKey: f.payload.idempotencyKey } });
+      expect(recovered.statusCode).toBe(200);
+      expect(recovered.json()).toMatchObject({ journalId: response.json().journalId, replayed: true });
+      expect((await ledgerService.getAccountBalance(destination.ledgerAccountId)).balanceMinor).toBe((BigInt(before.balanceMinor)+2000n).toString());
+      expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe((BigInt(liability.balanceMinor)-2000n).toString());
+      expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`, [`claim:${f.transfer.transferId}:${f.payload.idempotencyKey}`])).toHaveLength(1);
+      const other = await createActiveAgentWithServicesAndPin([AgentService.CASH_TO_CASH], '1234');
+      const otherLogin = await app.inject({ method:'POST',url:'/api/v1/agents/sessions',payload:{agentId:other.agent.id,password:'login-password'} });
+      const denied = await app.inject({ method:'POST',url:'/api/v1/agents/cash-to-cash/claims/recover-by-number',
+        headers:{authorization:`Bearer ${otherLogin.json().accessToken}`},payload:{senderPhone,transferNumber,idempotencyKey:f.payload.idempotencyKey} });
+      expect(denied.statusCode).toBe(404);
+      expect(denied.json().code).toBe('C2C_CLAIM_NOT_AVAILABLE');
+    },
+  );
+
+  it('locator failures are non-enumerating, count bad codes, enforce expiry and persist rate limits', async () => {
+    const f = await locatorHttpFixture('AGENT_CASH');
+    const request = (payload: any) => app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,payload});
+    const unknown = await request({...f.payload,senderPhone:'08000000000'});
+    const wrong = await request({...f.payload,transferCode:'99999999999999999999'});
+    expect(unknown.statusCode).toBe(404);
+    expect(wrong.body).toBe(unknown.body);
+    expect((await dataSource.query(`SELECT failed_attempts FROM cash_to_cash_transfers WHERE id=$1`,[f.transfer.transferId]))[0].failed_attempts).toBe(1);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id=$1`,[f.transfer.transferId]);
+    const expired=await request(f.payload);
+    expect(expired.body).toBe(unknown.body);
+    for(let i=0;i<8;i++) await request(f.payload);
+    const limited=await request(f.payload);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().code).toBe('C2C_LOCATOR_RATE_LIMITED');
+    expect((await dataSource.query(`SELECT status,claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,[f.transfer.transferId]))[0])
+      .toMatchObject({status:'UNCLAIMED',claim_journal_id:null});
+  });
+
+  it('number and UUID claims racing settle exactly once', async () => {
+    const f=await locatorHttpFixture('CUSTOMER_WALLET');
+    const second=await createMfaChallenge(f.customerId,`race-${randomUUID()}`);
+    const before=await ledgerService.getAccountBalance(f.wallet.ledgerAccountId);
+    const {senderPhone,transferNumber,...uuidPayload}=f.payload;
+    const results=await Promise.all([
+      app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,payload:f.payload}),
+      app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim',headers:f.headers,
+        payload:{...uuidPayload,transferId:f.transfer.transferId,mfaChallengeId:second.challengeId,otp:second.otp,idempotencyKey:randomUUID()}}),
+    ]);
+    expect(results.filter(r=>r.statusCode===200)).toHaveLength(1);
+    expect((await ledgerService.getAccountBalance(f.wallet.ledgerAccountId)).balanceMinor).toBe((BigInt(before.balanceMinor)+2000n).toString());
+    const [row]=await dataSource.query(`SELECT claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,[f.transfer.transferId]);
+    expect(row.claim_journal_id).not.toBeNull();
+  });
+
+  it('locator settlement failure rolls back and retries with fresh OTP and the same financial key', async () => {
+    const f=await locatorHttpFixture('CUSTOMER_WALLET');
+    const before=await ledgerService.getAccountBalance(f.wallet.ledgerAccountId);
+    const spy=jest.spyOn(limitService,'commitReservationsWithManager').mockRejectedValueOnce(new Error('limit failure'));
+    try {
+      const response=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,payload:f.payload});
+      expect(response.statusCode).toBe(503);
+    } finally {spy.mockRestore();}
+    expect((await ledgerService.getAccountBalance(f.wallet.ledgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect(await dataSource.query(`SELECT id FROM ledger_journals WHERE idempotency_key=$1`,[`claim:${f.transfer.transferId}:${f.payload.idempotencyKey}`])).toEqual([]);
+    const fresh=await createMfaChallenge(f.customerId,`retry-${randomUUID()}`);
+    const retry=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,
+      payload:{...f.payload,mfaChallengeId:fresh.challengeId,otp:fresh.otp}});
+    expect(retry.statusCode).toBe(200);
+  });
+
+  it('concurrent initiation collisions reserve distinct immutable locator pairs', async () => {
+    let generated=0;
+    const generator=jest.spyOn(cashToCashService as any,'generateTransferNumber').mockImplementation(() => {
+      generated++;
+      return generated<=2 ? '123456' : String(200000+generated);
+    });
+    try {
+      const transfers=await Promise.all([
+        initiateTransfer('1000',undefined,undefined,'08035550101'),
+        initiateTransfer('1000',undefined,undefined,'+2348035550101'),
+      ]);
+      expect(new Set(transfers.map(t=>t.transferNumber)).size).toBe(2);
+      expect(await dataSource.query(`SELECT transfer_id FROM cash_to_cash_locators WHERE sender_phone='8035550101'`)).toHaveLength(2);
+    } finally {generator.mockRestore();}
+  });
+
+  it('exhausted collision retries roll back initiation journal and idempotency reservation', async () => {
+    const first=await initiateTransfer('1000',undefined,undefined,'08035550202');
+    const generator=jest.spyOn(cashToCashService as any,'generateTransferNumber').mockReturnValue(first.transferNumber);
+    const before=await ledgerService.getAccountBalance(first.wallet.ledgerAccountId);
+    const key=`exhausted-${randomUUID()}`;
+    try {
+      await expect(cashToCashService.execute({agentId:first.agent.id,agentPrincipal:agentPrincipal(first.agent.id),agentPin:'1234',
+        senderPhone:'08035550202',beneficiaryPhone:first.phone,amountMinor:'1000',currency:'NGN',idempotencyKey:key}))
+        .rejects.toThrow(/allocate transfer number/i);
+    } finally {generator.mockRestore();}
+    expect((await ledgerService.getAccountBalance(first.wallet.ledgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect(await dataSource.query(`SELECT id FROM cash_to_cash_transfers WHERE agent_id=$1 AND idempotency_key=$2`,[first.agent.id,key])).toEqual([]);
+    expect(await dataSource.query(`SELECT id FROM idempotency_records WHERE idempotency_key=$1`,[key])).toEqual([]);
+  });
+
+  it('HTTP initiation requires sender phone, returns stable locator on replay and never replays the secret code', async () => {
+    const first=await initiateTransfer('1000');
+    const login=await app.inject({method:'POST',url:'/api/v1/agents/sessions',payload:{agentId:first.agent.id,password:'login-password'}});
+    const headers={authorization:`Bearer ${login.json().accessToken}`};
+    const payload={senderPhone:'+2348035550303',beneficiaryPhone:first.phone,amountMinor:'1000',currency:'NGN',agentPin:'1234',idempotencyKey:randomUUID()};
+    const response=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash',headers,payload});
+    expect(response.statusCode).toBe(201);
+    expect(response.json().transferNumber).toMatch(/^[0-9]{6}$/);
+    expect(response.json().senderPhone).toBe('8035550303');
+    const replay=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash',headers,payload:{...payload,senderPhone:'08035550303'}});
+    expect(replay.statusCode).toBe(201);
+    expect(replay.json()).toMatchObject({transferId:response.json().transferId,transferNumber:response.json().transferNumber,replayed:true});
+    expect(replay.json().transferCode).toBeUndefined();
+    const changed=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash',headers,payload:{...payload,senderPhone:'08035550304'}});
+    expect(changed.statusCode).toBe(409);
+  });
+
+  it('number requests enforce atomic per-Agent rate limits across parallel unknown locators', async () => {
+    const f=await locatorHttpFixture('CUSTOMER_WALLET');
+    const responses=await Promise.all(Array.from({length:25},(_,i)=>app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,
+      payload:{...f.payload,transferNumber:String(800000+i)}})));
+    expect(responses.filter(r=>r.statusCode===429)).toHaveLength(5);
+    expect(responses.every(r=>r.statusCode===404||r.statusCode===429)).toBe(true);
+  });
+
+  it('number route preserves transaction-bound revocation and atomic secret-code lockout', async () => {
+    const f=await locatorHttpFixture('AGENT_CASH');
+    const request=(payload:any)=>app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:f.headers,payload});
+    for(let i=0;i<5;i++) expect((await request({...f.payload,transferCode:'99999999999999999999'})).statusCode).toBe(404);
+    expect((await request(f.payload)).statusCode).toBe(404);
+    expect((await dataSource.query(`SELECT failed_attempts,is_locked FROM cash_to_cash_transfers WHERE id=$1`,[f.transfer.transferId]))[0])
+      .toMatchObject({failed_attempts:5,is_locked:true});
+    const g=await locatorHttpFixture('AGENT_CASH');
+    const verify=mfaService.verifyChallenge.bind(mfaService);
+    const spy=jest.spyOn(mfaService,'verifyChallenge').mockImplementationOnce(async (command:any)=>{
+      const result=await verify(command);
+      await dataSource.query(`UPDATE agent_authentication_sessions SET status='REVOKED',revoked_at=clock_timestamp() WHERE agent_id=$1`,[g.claimant.agent.id]);
+      return result;
+    });
+    try {
+      const response=await app.inject({method:'POST',url:'/api/v1/agents/cash-to-cash/claim-by-number',headers:g.headers,payload:g.payload});
+      expect(response.statusCode).toBe(404);
+    } finally {spy.mockRestore();}
+    expect((await dataSource.query(`SELECT claim_journal_id FROM cash_to_cash_transfers WHERE id=$1`,[g.transfer.transferId]))[0].claim_journal_id).toBeNull();
+  });
+
+  it('initiation limit-usage failure rolls back journal, locator and reservation before same-key retry', async () => {
+    const first=await initiateTransfer('1000');
+    const before=await ledgerService.getAccountBalance(first.wallet.ledgerAccountId);
+    const liability=await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const command={agentId:first.agent.id,agentPrincipal:agentPrincipal(first.agent.id),agentPin:'1234',
+      senderPhone:'08035550404',beneficiaryPhone:first.phone,amountMinor:'1000',currency:'NGN',idempotencyKey:randomUUID()};
+    const spy=jest.spyOn(limitService,'commitReservationsWithManager').mockRejectedValueOnce(new Error('initiation limit failure'));
+    try {await expect(cashToCashService.execute(command)).rejects.toThrow('initiation limit failure');}
+    finally {spy.mockRestore();}
+    expect((await ledgerService.getAccountBalance(first.wallet.ledgerAccountId)).balanceMinor).toBe(before.balanceMinor);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(liability.balanceMinor);
+    expect(await dataSource.query(`SELECT transfer_id FROM cash_to_cash_locators WHERE sender_phone='8035550404'`)).toEqual([]);
+    expect(await dataSource.query(`SELECT id FROM idempotency_records WHERE idempotency_key=$1`,[command.idempotencyKey])).toEqual([]);
+    const retry=await cashToCashService.execute(command);
+    expect(retry.status).toBe('COMPLETED');
+    expect(retry.transferNumber).toMatch(/^[0-9]{6}$/);
   });
 
 });

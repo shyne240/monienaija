@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
-import { CashToCashClaimDto } from './dto/cash-to-cash-claim.dto';
+import { CashToCashClaimDto, CashToCashLocatorClaimDto, CashToCashLocatorRecoveryDto } from './dto/cash-to-cash-claim.dto';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
 interface AuthenticatedRequest {
@@ -44,6 +44,18 @@ export class AgentCashToCashClaimController {
       correlationId: dto.correlationId,
       metadata: dto.metadata,
     });
+  }
+
+  @Post('cash-to-cash/claim-by-number')
+  @HttpCode(200)
+  async claimByNumber(@Body() dto: CashToCashLocatorClaimDto, @Req() req: AuthenticatedRequest) {
+    return this.claimService.executeByLocator({ ...dto, claimantPrincipal: this.requireAgent(req) });
+  }
+
+  @Post('cash-to-cash/claims/recover-by-number')
+  @HttpCode(200)
+  async recoverByNumber(@Body() dto: CashToCashLocatorRecoveryDto, @Req() req: AuthenticatedRequest) {
+    return this.claimService.recoverByLocator(dto.senderPhone, dto.transferNumber, dto.idempotencyKey, this.requireAgent(req));
   }
 
   /** Recover the receipt for a claim committed by this Agent after a lost response. */

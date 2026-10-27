@@ -76,6 +76,10 @@ export class NotificationTemplateService {
       case 'cash_to_cash.expired':
         return `Cash-to-cash transfer ${shortRef} expired${amountPart}. Contact support.`;
       case 'cash_to_cash.created':
+        if (typeof payload.transferNumber === 'string' && /^[0-9]{6}$/.test(payload.transferNumber) &&
+            typeof payload.senderPhone === 'string' && /^[789][0-9]{9}$/.test(payload.senderPhone)) {
+          return `Cash-to-cash transfer number ${payload.transferNumber} from ${payload.senderPhone}${amountPart}. Share code securely.`;
+        }
         return `Cash-to-cash transfer ${shortRef} created${amountPart}. Share code securely.`;
       case 'agent.application.approved':
         return `Agent application ${shortRef} approved.`;

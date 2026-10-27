@@ -188,6 +188,12 @@ export class AgentCashToCashService {
     // But for ledger lock we need wallet account ids, so fetch or create.
     // We will do wallet ensure inside transaction as well for atomicity, but we can prefetch.
 
+    const senderPhone = input.senderPhone === undefined ? undefined
+      : AgentReceivingNumberService.canonicalizeTo10(input.senderPhone.trim());
+    if (input.senderPhone !== undefined && !senderPhone) {
+      throw new BadRequestException('senderPhone must be a valid Nigerian phone number');
+    }
+
     // Compute reference/description/correlation
     const reference = input.reference?.trim() ? input.reference.trim() : `CASH_TO_CASH-${idempotencyKey}`;
     const description = input.description?.trim()
@@ -224,6 +230,7 @@ export class AgentCashToCashService {
     }
 
     const requestHash = this.computeRequestHash({
+      ...(senderPhone ? { senderPhone } : {}),
       agentId,
       beneficiaryPhone: canonicalPhone,
       principalMinor: amountString,
@@ -275,7 +282,11 @@ export class AgentCashToCashService {
                   reference: string | null;
                   correlation_id: string | null;
                 };
+                const locator: Array<{ sender_phone: string; transfer_number: string }> = await manager.query(
+                  `SELECT sender_phone, transfer_number FROM cash_to_cash_locators WHERE transfer_id=$1`, [typed.id],
+                );
                 return {
+                  ...(locator[0] ? { senderPhone: locator[0].sender_phone, transferNumber: locator[0].transfer_number } : {}),
                   status: 'REPLAYED',
                   transferId: typed.id,
                   journalId: existing.resourceId,
@@ -418,9 +429,7 @@ export class AgentCashToCashService {
           }
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
-            try {
-              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
-            } catch {}
+            await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
           }
 
           // Create cash_to_cash_transfers record atomically with journal
@@ -455,6 +464,9 @@ export class AgentCashToCashService {
             ],
           );
 
+          const transferNumber = senderPhone
+            ? await this.allocateLocator(manager, idForTransfer, senderPhone) : undefined;
+
           // — V1-COMMERCIAL-DECISION-03C: record the immutable commercial decision snapshot for
           // the INITIATION operation inside this same SERIALIZABLE transaction, after the journal
           // posted, limits committed, and the transfer row persisted (so its identity is
@@ -481,6 +493,7 @@ export class AgentCashToCashService {
           const result: AgentCashToCashResult = {
             status: 'COMPLETED',
             transferId: idForTransfer,
+            ...(senderPhone ? { senderPhone, transferNumber } : {}),
             journalId,
             agentId,
             beneficiaryPhone: canonicalPhone,
@@ -528,6 +541,7 @@ export class AgentCashToCashService {
               idempotencyKey,
               requestHash,
               reference,
+              ...(senderPhone ? { senderPhone, transferNumber } : {}),
               correlationId: correlationId ?? null,
               status: 'UNCLAIMED',
               expiresAt: expiresAt.toISOString(),
@@ -837,6 +851,24 @@ export class AgentCashToCashService {
     const existing = await repo.findOne({ where: { customerId, currency } });
     if (existing) return existing;
     throw new NotFoundException(`Wallet for ${customerId} not found`);
+  }
+
+  // Separate from the secret transferCode generator. Never reuse pairs across history.
+  private generateTransferNumber(): string {
+    return randomInt(0, 1_000_000).toString().padStart(6, '0');
+  }
+
+  private async allocateLocator(manager: EntityManager, transferId: string, senderPhone: string): Promise<string> {
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const number = this.generateTransferNumber();
+      const rows: Array<{ transfer_number: string }> = await manager.query(
+        `INSERT INTO cash_to_cash_locators(transfer_id, sender_phone, transfer_number)
+         VALUES ($1,$2,$3) ON CONFLICT (sender_phone, transfer_number) DO NOTHING RETURNING transfer_number`,
+        [transferId, senderPhone, number],
+      );
+      if (rows[0]) return rows[0].transfer_number;
+    }
+    throw new ConflictException({ code: 'C2C_LOCATOR_UNAVAILABLE', message: 'Unable to allocate transfer number; retry unchanged request' });
   }
 
   private computeRequestHash(value: unknown): string {
