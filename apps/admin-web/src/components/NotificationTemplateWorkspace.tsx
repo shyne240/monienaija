@@ -320,7 +320,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   };
 
   const handleActivateVersion = async (versionRow: NotificationTemplateVersion) => {
-    if (!permissions.canApproveTemplates || !permissions.hasMfaAssurance) return;
+    // INTEGRATION (Phase 5): the real backend has no direct activation route. Activating a
+    // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
+    // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
+    // change queue (maker ≠ checker is enforced server-side at approval time).
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance) return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -329,18 +333,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       });
       return;
     }
-    if (versionRow.createdBy && versionRow.createdBy === currentPrincipalId) {
-      setActivationFeedback({
-        kind: 'error',
-        message: 'Self-approval prohibited: Maker and Checker must be distinct workforce principals.',
-      });
-      return;
-    }
 
     setActivatingTemplateId(versionRow.id);
     setActivationFeedback(null);
     try {
-      const res = await NotificationManagementApi.activateTemplateVersion(versionRow.id, {
+      const res = await NotificationManagementApi.activateTemplateVersion(versionRow, {
         comment: activationComment.trim() || undefined,
       });
       if (res.status === 'BLOCKED') {
@@ -348,7 +345,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       } else {
         setActivationFeedback({
           kind: 'success',
-          message: `Template v${versionRow.version} activation processed (${res.data.status}).`,
+          message:
+            `Rollback proposal for ${versionRow.channel} v${versionRow.version} created (${res.data.status}). ` +
+            (res.data.message ??
+              'A FINANCE_CONTROLLER checker must approve and execute it before this version becomes active.'),
         });
         setActivationComment('');
         if (onRefreshRequested) await onRefreshRequested();
@@ -356,7 +356,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     } catch (err: any) {
       setActivationFeedback({
         kind: 'error',
-        message: err?.message || 'Failed to activate template version.',
+        message: err?.message || 'Failed to create the governed rollback proposal.',
       });
     } finally {
       setActivatingTemplateId(null);
@@ -837,12 +837,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
           <h3 style={styles.sectionTitle}>
             🕓 {channel} Template Version History ({matchingVersions.length})
           </h3>
-          {permissions.canApproveTemplates && (
+          {permissions.canManageTemplates && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
                 type="text"
                 aria-label="Version activation comment"
-                placeholder="Optional checker activation note…"
+                placeholder="Optional rollback proposal note…"
                 style={{ ...styles.smallInput, width: 240 }}
                 value={activationComment}
                 onChange={(e) => setActivationComment(e.target.value)}
@@ -889,14 +889,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               </thead>
               <tbody>
                 {matchingVersions.map((ver) => {
-                  const isSelfAuthored = Boolean(
-                    ver.createdBy && ver.createdBy === currentPrincipalId,
-                  );
+                  // INTEGRATION (Phase 5): proposing a governed TEMPLATE_ROLLBACK is a
+                  // maker action; maker ≠ checker separation is enforced server-side when
+                  // the FINANCE_CONTROLLER checker approves — a maker MAY propose rolling
+                  // back a version they authored.
                   const canActivateRow =
-                    permissions.canApproveTemplates &&
+                    permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    !ver.isActive &&
-                    !isSelfAuthored;
+                    !ver.isActive;
 
                   return (
                     <tr key={ver.id}>
@@ -957,7 +957,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                               Compare
                             </button>
                           )}
-                          {permissions.canApproveTemplates && !ver.isActive && (
+                          {permissions.canManageTemplates && !ver.isActive && (
                             <button
                               type="button"
                               data-testid={`activate-version-${ver.version}`}
@@ -965,11 +965,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                                 !canActivateRow || activatingTemplateId === ver.id
                               }
                               title={
-                                isSelfAuthored
-                                  ? 'Self-approval prohibited (Maker ≠ Checker)'
-                                  : !permissions.hasMfaAssurance
-                                    ? 'MFA session assurance required'
-                                    : undefined
+                                !permissions.hasMfaAssurance
+                                  ? 'MFA session assurance required'
+                                  : 'Creates a governed rollback proposal — a FINANCE_CONTROLLER checker must approve and execute it (Maker ≠ Checker enforced server-side)'
                               }
                               style={
                                 canActivateRow
@@ -979,12 +977,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                               onClick={() => void handleActivateVersion(ver)}
                             >
                               {activatingTemplateId === ver.id
-                                ? 'Activating…'
-                                : isSelfAuthored
-                                  ? 'Maker ≠ Checker'
-                                  : !permissions.hasMfaAssurance
-                                    ? 'MFA Required'
-                                    : 'Activate'}
+                                ? 'Proposing…'
+                                : !permissions.hasMfaAssurance
+                                  ? 'MFA Required'
+                                  : 'Propose Rollback'}
                             </button>
                           )}
                         </div>

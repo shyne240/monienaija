@@ -139,6 +139,11 @@ export function canAccessAdminView(
     case 'superAdminRecovery':
       return has('workforce.super_admin.recover');
     case 'notifications':
+      // INTEGRATION (Phase 5): server read contract (Arena 1 registry requireRead) accepts
+      // notification.view_deliveries OR a FINANCE_CONTROLLER checker (MFA verified per
+      // request) — checkers must be able to open the console to inspect frozen proposals
+      // before approving/executing them.
+      if (roles.includes('FINANCE_CONTROLLER') && has('privileged:approve')) return true;
       return hasAny(
         'notification.view_deliveries',
         'notification.view_events',

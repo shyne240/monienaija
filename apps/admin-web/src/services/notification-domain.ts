@@ -191,8 +191,14 @@ export function deriveNotificationPermissions(
   const scopes = new Set(principal?.scopes ?? []);
   const roles = new Set(principal?.roles ?? []);
   const has = (code: string) => scopes.has(code);
-  const canAccessModule = NOTIFICATION_MODULE_SCOPES.some(has);
   const isFinanceControllerChecker = roles.has('FINANCE_CONTROLLER') && has('privileged:approve');
+  // INTERIM governance policy (Arena 1 registry, Phase 6 — pending product-owner
+  // ratification of granular notification.* catalogue functions): the maker of template
+  // and configuration change requests is SUPER_ADMIN holding notification.view_deliveries
+  // with MFA assurance; the checker/executor is FINANCE_CONTROLLER + privileged:approve.
+  // The server enforces this independently — the UI derivation only mirrors it.
+  const isSuperAdminMaker = roles.has('SUPER_ADMIN') && has('notification.view_deliveries');
+  const canAccessModule = NOTIFICATION_MODULE_SCOPES.some(has) || isFinanceControllerChecker;
 
   return {
     canAccessModule,
@@ -204,10 +210,11 @@ export function deriveNotificationPermissions(
       has('notification.manage_templates') ||
       has('notification.approve_templates') ||
       has('notification.manage_configuration') ||
-      has('notification.approve_configuration'),
-    canManageTemplates: has('notification.manage_templates'),
+      has('notification.approve_configuration') ||
+      isFinanceControllerChecker,
+    canManageTemplates: has('notification.manage_templates') || isSuperAdminMaker,
     canApproveTemplates: has('notification.approve_templates') || isFinanceControllerChecker,
-    canManageConfiguration: has('notification.manage_configuration'),
+    canManageConfiguration: has('notification.manage_configuration') || isSuperAdminMaker,
     canApproveConfiguration: has('notification.approve_configuration') || isFinanceControllerChecker,
     canViewProviderStatus:
       has('notification.view_provider_status') ||

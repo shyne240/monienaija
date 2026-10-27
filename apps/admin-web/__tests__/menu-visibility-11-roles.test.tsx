@@ -90,7 +90,10 @@ type NavKey = typeof ALL_NAV_KEYS[number];
 const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
   SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','notifications','systemHealth','auditEvents'],
   FINANCE_PREPARER: ['dashboard','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
-  FINANCE_CONTROLLER: ['dashboard','agents','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox'],
+  // INTEGRATION (Arena 3 Phase 5): FINANCE_CONTROLLER + privileged:approve is the notification
+  // change-request CHECKER — the Arena 1 registry requireRead admits FC (MFA-verified per
+  // request), so the console must be reachable to inspect frozen proposals before deciding.
+  FINANCE_CONTROLLER: ['dashboard','agents','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox','notifications'],
   FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','notifications','systemHealth','auditEvents'],
   ADMINISTRATOR: ['dashboard','dashboardSettings','customers','agents','agentClasses','workforceAccess','roleGovernance','superAdminRecovery'],
   OPERATIONS: ['dashboard','customers','support','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','notifications','systemHealth'],

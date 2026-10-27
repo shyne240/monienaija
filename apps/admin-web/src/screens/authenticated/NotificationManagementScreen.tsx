@@ -467,8 +467,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         kind: 'success',
         message:
           result.data.status === 'PENDING_APPROVAL'
-            ? `Trigger configuration change submitted for maker-checker approval.${approvalSuffix}`
-            : `Trigger configuration updated (${result.data.status}).${approvalSuffix}`,
+            ? `Trigger configuration change submitted for maker-checker approval.${approvalSuffix}${
+                result.data.message ? ` ${result.data.message}` : ''
+              }`
+            : (result.data.message ??
+              `Trigger configuration updated (${result.data.status}).${approvalSuffix}`),
       });
 
       setSessionSubmittedChanges((prev) => [
