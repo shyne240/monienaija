@@ -54,7 +54,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 export const CashToCashConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CashToCashConfirm'>>();
-  const { beneficiaryPhone, amountMinor, idempotencyKey } = route.params;
+  const { senderPhone, beneficiaryPhone, amountMinor, idempotencyKey } = route.params;
   const { agentId } = useAuthStore();
   const queryClient = useQueryClient();
 
@@ -66,6 +66,7 @@ export const CashToCashConfirmScreen: React.FC = () => {
   const cashToCashMutation = useMutation<AgentCashToCashResult, unknown, void>({
     mutationFn: () =>
       agentCashToCash({
+        senderPhone,
         beneficiaryPhone,
         amountMinor,
         currency: 'NGN',
@@ -94,7 +95,12 @@ export const CashToCashConfirmScreen: React.FC = () => {
     },
     onError: async (err) => {
       setPin('');
-      if (agentId && !isAmbiguousOperationOutcome(err)) {
+      const isLocatorRetryable =
+        err instanceof Error &&
+        err.name === 'ApiError' &&
+        ((err as Error & { code?: string }).code === 'C2C_LOCATOR_UNAVAILABLE' ||
+          /Unable to allocate transfer number/i.test(err.message));
+      if (agentId && !isAmbiguousOperationOutcome(err) && !isLocatorRetryable) {
         await clearPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
       }
     },
@@ -113,7 +119,7 @@ export const CashToCashConfirmScreen: React.FC = () => {
     setClientError('');
 
     const candidateParams = {
-      counterpartyId: beneficiaryPhone,
+      counterpartyId: `${senderPhone}->${beneficiaryPhone}`,
       amountMinor,
       currency: 'NGN',
     };
@@ -156,6 +162,7 @@ export const CashToCashConfirmScreen: React.FC = () => {
         <Text style={styles.title}>Confirm Cash→Cash Transfer</Text>
 
         <Card style={styles.card} testID="c2c-confirm-summary-card">
+          <SummaryRow label="Sender phone" value={senderPhone} testID="c2c-confirm-sender-phone" />
           <SummaryRow label="Beneficiary phone" value={beneficiaryPhone} testID="c2c-confirm-phone" />
           <SummaryRow
             label="Amount to send"
@@ -163,9 +170,11 @@ export const CashToCashConfirmScreen: React.FC = () => {
             testID="c2c-confirm-amount"
           />
           <Text style={styles.note} testID="c2c-settlement-method-notice">
-            The server debits this amount from your Agent float and reserves the principal. At claim,
-            settlement can credit the beneficiary Customer wallet or the claiming Agent's NGN float for
-            cash payout. Physical cash handover is separate from this ledger settlement.
+            Confirm the sender phone carefully — the issued sender phone and 6-digit transfer number
+            cannot be edited after sending. The server debits this amount from your Agent float and
+            reserves the principal. At claim, settlement can credit the beneficiary Customer wallet or
+            the claiming Agent's NGN float for cash payout. Physical cash handover is separate from this
+            ledger settlement.
           </Text>
         </Card>
 

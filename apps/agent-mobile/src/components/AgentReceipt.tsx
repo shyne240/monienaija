@@ -91,7 +91,35 @@ export function receiptFromCashInResult(
   };
 }
 
-/** Cash→Cash result → receipt (C2C-8 / RCP-1 integration). transferCode is NEVER included. */
+/**
+ * Builds the safe, secret-free public locator text for handing off / sharing a Cash→Cash
+ * transfer locator (`senderPhone` + exact 6-digit `transferNumber`).
+ * Returns `null` when legacy initiation responses omit `senderPhone` or `transferNumber`.
+ * NEVER includes the secret one-time code or internal UUIDs/hashes.
+ */
+export function buildPublicCashToCashLocatorShareText(
+  result: AgentCashToCashResult | SafeCashToCashResult,
+): string | null {
+  if (
+    typeof result.transferNumber !== 'string' ||
+    !/^[0-9]{6}$/.test(result.transferNumber) ||
+    typeof result.senderPhone !== 'string' ||
+    result.senderPhone.trim().length === 0
+  ) {
+    return null;
+  }
+  const amountFormatted = `${formatNairaFromMinor(result.principalMinor || result.amountMinor)} ${result.currency}`;
+  return [
+    'MonieNaija Cash→Cash Claim Locator',
+    `6-digit transfer number: ${result.transferNumber}`,
+    `Sender phone: ${result.senderPhone}`,
+    `Beneficiary phone: ${result.beneficiaryPhone}`,
+    `Amount: ${amountFormatted}`,
+    'Present this sender phone and 6-digit transfer number at a MonieNaija Agent along with the separate one-time secret code and beneficiary OTP verification.',
+  ].join('\n');
+}
+
+/** Cash→Cash result → receipt (C2C-8 / RCP-1 integration). Secret one-time code is NEVER included. */
 export function receiptFromCashToCashResult(
   result: AgentCashToCashResult | SafeCashToCashResult,
 ): AgentReceiptViewModel {
@@ -101,6 +129,12 @@ export function receiptFromCashToCashResult(
       label: 'Amount sent',
       value: `${formatNairaFromMinor(result.principalMinor || result.amountMinor)} ${result.currency}`,
     },
+    ...(typeof result.transferNumber === 'string' && /^[0-9]{6}$/.test(result.transferNumber)
+      ? [{ label: '6-digit transfer number', value: result.transferNumber, selectable: true }]
+      : []),
+    ...(typeof result.senderPhone === 'string' && result.senderPhone.trim().length > 0
+      ? [{ label: 'Sender phone', value: result.senderPhone, selectable: true }]
+      : []),
     { label: 'Beneficiary phone', value: result.beneficiaryPhone, selectable: true },
   ];
   if (result.feeMinor && result.feeMinor !== '0') {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
-import { AgentFundingPanel } from './AgentFundingPanel';
+import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC = () => {
   const { principal } = useAuthStore();
@@ -13,8 +13,26 @@ export const ApprovalsScreen: React.FC = () => {
     principal?.roles.includes('FINANCE_CONTROLLER') === true &&
     ((principal?.scopes.includes('agent.fund') ?? false) ||
       (principal?.scopes.includes('agent.defund') ?? false));
-  const [selectedFundingAgentId, setSelectedFundingAgentId] = useState('');
-  const [selectedFundingKey, setSelectedFundingKey] = useState<string | undefined>(undefined);
+  const canAccessGlobalFundingInbox =
+    ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal?.type ?? '') &&
+    principal?.roles.includes('FINANCE_CONTROLLER') === true &&
+    !principal.roles.includes('SUPER_ADMIN') &&
+    (principal?.scopes.includes('agent.fund') ?? false) &&
+    (principal?.scopes.includes('agent.defund') ?? false) &&
+    principal?.assuranceLevel === 'MFA';
+
+  const fundingInboxUnauthorizedReason = !canReviewFunding || canAccessGlobalFundingInbox
+    ? null
+    : principal?.roles.includes('SUPER_ADMIN')
+      ? 'Decision 7 forbids SUPER_ADMIN from viewing or approving Agent funding requests.'
+      : principal?.assuranceLevel !== 'MFA'
+        ? 'MFA session assurance is required to access the global funding inbox.'
+        : !['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal?.type ?? '')
+          ? 'An authorized workforce principal (OPERATOR, SERVICE, or PRIVILEGED) is required.'
+          : 'Decision 7 requires both agent.fund and agent.defund scopes to read the global funding inbox.';
+
+  const [selectedInboxTarget, setSelectedInboxTarget] = useState<SelectedFundingInboxTarget | null>(null);
+  const [inboxRefreshTrigger, setInboxRefreshTrigger] = useState(0);
   const [approvalId, setApprovalId] = useState('');
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +73,7 @@ export const ApprovalsScreen: React.FC = () => {
     void handleDecision('approve');
   };
 
-  if (!canApprove) {
+  if (!canApprove && !canReviewFunding) {
     return (
       <div style={styles.container} role="alert">
         <div style={styles.errorBox}>The configured checker role <code>FINANCE_CONTROLLER</code> and <code>privileged:approve</code> are required for these approval actions.</div>
@@ -71,9 +89,9 @@ export const ApprovalsScreen: React.FC = () => {
       </div>
 
       <div style={styles.gapWarning}>
-        <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Read-Only Listing & Details Unavailable</span>
+        <span style={styles.gapTitle}>ℹ️ Approval Discovery Scope</span>
         <p style={styles.gapText}>
-          The current A2 workforce controller does not expose GET `/approvals` or GET `/approvals/:id` endpoints. Viewing pending lists is currently a backend gap. Decisions require an approval ID from an existing workflow.
+          Agent funding and defunding requests use the live Global Funding Inbox below (<code>GET /internal/agents/funding-requests</code>). Generic non-funding workforce overrides still require a known Approval ID because generic <code>GET /internal/a2/workforce/approvals</code> listing is not exposed.
         </p>
       </div>
       <div style={styles.fundingNote}>
@@ -84,14 +102,50 @@ export const ApprovalsScreen: React.FC = () => {
         <div style={{ marginBottom: 24 }}>
           <PendingFundingApprovalsQueue
             canReviewFunding={canReviewFunding}
-            onSelectRequest={(targetAgentId, idemKey) => {
-              setSelectedFundingAgentId(targetAgentId);
-              setSelectedFundingKey(idemKey);
+            canAccessGlobalInbox={canAccessGlobalFundingInbox}
+            unauthorizedReason={fundingInboxUnauthorizedReason}
+            refreshTrigger={inboxRefreshTrigger}
+            activeRequestId={selectedInboxTarget?.requestId ?? null}
+            onSelectRequest={(targetAgentId, idemKey, selection) => {
+              setSelectedInboxTarget((prev) => ({
+                agentId: targetAgentId,
+                idempotencyKey: idemKey,
+                requestId: selection?.requestId,
+                revision: (prev?.revision ?? 0) + 1,
+              }));
             }}
           />
+          {selectedInboxTarget && (
+            <div style={styles.fundingNote} data-testid="funding-inbox-selected-banner">
+              Checker panel targeted to Agent <code>{selectedInboxTarget.agentId}</code>
+              {selectedInboxTarget.requestId ? (
+                <>
+                  {' '}· Request <code>{selectedInboxTarget.requestId}</code>
+                </>
+              ) : null}
+              .{' '}
+              <button
+                type="button"
+                style={{
+                  marginLeft: 8,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  border: '1px solid #93C5FD',
+                  background: '#FFFFFF',
+                  color: '#1E3A8A',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+                onClick={() => setSelectedInboxTarget(null)}
+              >
+                Clear target
+              </button>
+            </div>
+          )}
           <AgentFundingPanel
-            agentId={selectedFundingAgentId || undefined}
-            initialIdempotencyKey={selectedFundingKey}
+            selectedInboxTarget={selectedInboxTarget}
+            onCheckerOutcome={() => setInboxRefreshTrigger((n) => n + 1)}
           />
         </div>
       )}
@@ -99,6 +153,7 @@ export const ApprovalsScreen: React.FC = () => {
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
       {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Privileged action checked and approved successfully!' : 'Approval decision recorded as rejected successfully.'}</div>}
 
+      {canApprove && (
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Submit Checker Decision</h3>
         <form onSubmit={handleApproveSubmit} style={styles.form}>
@@ -135,6 +190,7 @@ export const ApprovalsScreen: React.FC = () => {
           </div>
         </form>
       </div>
+      )}
     </div>
   );
 };

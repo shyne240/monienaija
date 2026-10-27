@@ -11,34 +11,56 @@ import { Input } from '../../../components/Input';
 import { MfaChallengeCard } from '../../../components/MfaChallengeCard';
 import {
   agentCashToCashClaim,
+  agentCashToCashClaimByNumber,
   describeApiError,
   describeCashToCashClaimError,
   getAgentCashToCashClaim,
+  recoverAgentCashToCashClaimByNumber,
   type AgentCashToCashClaimResult,
   type AgentMfaChallenge,
 } from '../../../services/agent-api';
 import { isChallengeExpired } from '../../../services/mfa-challenge';
+import {
+  clearPendingCashToCashLocatorClaim,
+  loadPendingCashToCashLocatorClaim,
+  matchesPendingCashToCashLocatorClaim,
+  savePendingCashToCashLocatorClaim,
+} from '../../../services/pending-operation';
 import { newIdempotencyKey } from '../../../utils/format';
 import { useAuthStore } from '../../../store/auth-store';
 import type { RootStackParamList } from '../../../navigation/types';
 
 /**
- * Cash→Cash Claim Assist — Step 2: Confirm & Multi-party Verification (V1-AGENT-MOBILE-09 / CLM-2..5).
+ * Cash→Cash Claim Assist — Step 2: Confirm & Multi-party Verification
+ * (V1-AGENT-MOBILE-09 + ARENA 1 Approved Six-Digit Redemption Contract).
  *
- * Requirements:
- * 1. Customer OTP issued via backend challenge (POST /agents/me/mfa-challenges with CASH_TO_CASH_CLAIM).
- * 2. Secret transfer code provided by beneficiary.
- * 3. Customer OTP entered on the device.
- * 4. Agent-cash mode additionally requires the claimant Agent's CASH_TO_CASH capability and PIN.
+ * Primary flow (`senderPhone` + exact 6-digit `transferNumber`):
+ * - Submits to `POST /api/v1/agents/cash-to-cash/claim-by-number` (NEVER sending `transferId`).
+ * - Recovers uncertain outcomes via `POST /api/v1/agents/cash-to-cash/claims/recover-by-number`
+ *   with `{ senderPhone, transferNumber, idempotencyKey }` using the ORIGINAL idempotencyKey.
+ * - Never speculatively calls `recover-by-number` on fresh mounts when no persisted attempt exists,
+ *   preserving the shared 60-second locator rate budget.
+ * - Never rotates `idempotencyKey` after an ambiguous/potentially committed outcome.
  *
- * All credentials are sent directly in the POST body to /agents/cash-to-cash/claim.
- * Transfer code and OTP are NEVER persisted, NEVER logged, NEVER put in navigation params,
- * and always wiped on success, error, or screen unmount.
+ * Compatibility flow (`transferId` UUID):
+ * - Preserves internal compatibility with `POST /api/v1/agents/cash-to-cash/claim` and
+ *   `GET /api/v1/agents/cash-to-cash/claims/:transferId` without ever passing a 6-digit
+ *   `transferNumber` into `transferId`.
  */
 export const CashToCashClaimConfirmScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CashToCashClaimConfirm'>>();
-  const { customer, transferId, beneficiaryPhone } = route.params;
+  const params = route.params;
+  const { customer, beneficiaryPhone } = params;
+  const isLocatorMode =
+    'senderPhone' in params &&
+    typeof params.senderPhone === 'string' &&
+    'transferNumber' in params &&
+    typeof params.transferNumber === 'string';
+  const senderPhone = isLocatorMode ? params.senderPhone : undefined;
+  const transferNumber = isLocatorMode ? params.transferNumber : undefined;
+  const legacyTransferId = !isLocatorMode && 'transferId' in params ? params.transferId : undefined;
+
   const { agentId } = useAuthStore();
   const queryClient = useQueryClient();
 
@@ -46,8 +68,13 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   const [mfaInvalidatedRevision, setMfaInvalidatedRevision] = useState(0);
   const [transferCode, setTransferCode] = useState('');
   const [otp, setOtp] = useState('');
-  const [redemptionMethod, setRedemptionMethod] = useState<'CUSTOMER_WALLET' | 'AGENT_CASH'>('CUSTOMER_WALLET');
-  const [lockedRedemptionMethod, setLockedRedemptionMethod] = useState<'CUSTOMER_WALLET' | 'AGENT_CASH' | null>(null);
+  const [redemptionMethod, setRedemptionMethod] = useState<'CUSTOMER_WALLET' | 'AGENT_CASH'>(
+    'CUSTOMER_WALLET',
+  );
+  const [lockedRedemptionMethod, setLockedRedemptionMethod] = useState<
+    'CUSTOMER_WALLET' | 'AGENT_CASH' | null
+  >(null);
+  const [hasAmbiguousHistory, setHasAmbiguousHistory] = useState(false);
   const [rollbackRetryReady, setRollbackRetryReady] = useState(false);
   const [agentPin, setAgentPin] = useState('');
   const [clientError, setClientError] = useState('');
@@ -55,18 +82,22 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   const [recoveryError, setRecoveryError] = useState('');
   const [recoveryAttempt, setRecoveryAttempt] = useState(0);
   const [postSubmitRecoveryUnknown, setPostSubmitRecoveryUnknown] = useState(false);
+  const [postSubmitRecoveryNoticeError, setPostSubmitRecoveryNoticeError] = useState('');
   const [postSubmitChecking, setPostSubmitChecking] = useState(false);
   const submitInFlightRef = useRef(false);
 
   // Exactly ONE idempotency key per attempt (survives navigation + retries).
   const idempotencyKeyRef = useRef<string>(newIdempotencyKey('c2c-claim'));
 
-  const completeClaimSuccess = (result: AgentCashToCashClaimResult) => {
+  const completeClaimSuccess = async (result: AgentCashToCashClaimResult) => {
     setTransferCode('');
     setOtp('');
     setAgentPin('');
     setPostSubmitRecoveryUnknown(false);
-    // Server-authoritative query invalidation
+    setPostSubmitRecoveryNoticeError('');
+    if (isLocatorMode && agentId) {
+      await clearPendingCashToCashLocatorClaim(agentId);
+    }
     void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
     void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
     void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
@@ -88,20 +119,39 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   const checkPostSubmitClaimRecovery = async (triggerError?: unknown) => {
     if (!agentId) return;
     setPostSubmitChecking(true);
+    setPostSubmitRecoveryNoticeError('');
     try {
-      const recovered = await getAgentCashToCashClaim(transferId);
+      const recovered = isLocatorMode
+        ? await recoverAgentCashToCashClaimByNumber({
+            senderPhone: senderPhone!,
+            transferNumber: transferNumber!,
+            idempotencyKey: idempotencyKeyRef.current,
+          })
+        : await getAgentCashToCashClaim(legacyTransferId!);
       setRollbackRetryReady(false);
-      completeClaimSuccess(recovered);
+      await completeClaimSuccess(recovered);
     } catch (lookupError: unknown) {
       if (isApiNotFound(lookupError)) {
-        // Confirmed not claimed by this Agent — safe to retry with the same idempotencyKey + redemptionMethod
-        // and a fresh OTP if the previous challenge was already consumed.
-        setPostSubmitRecoveryUnknown(false);
-        setRollbackRetryReady(true);
-      } else if (!triggerError || isAmbiguousClaimError(triggerError)) {
-        // Both submission and recovery lookup were indeterminate; block blind re-submission.
+        if (isLocatorMode && triggerError && isAmbiguousLocatorClaimError(triggerError)) {
+          // Per ARENA 1 §2.C: on locator claims, an immediate 404 right after a lost/503 response is
+          // NOT proof an in-flight transaction cannot still commit. Hold in recovery mode until the
+          // Agent explicitly re-checks status, and NEVER rotate idempotencyKey.
+          setPostSubmitRecoveryUnknown(true);
+          setRollbackRetryReady(false);
+        } else {
+          // Confirmed not committed (either legacy UUID 404 or explicit manual re-check on locator):
+          // allow retry ONLY with the SAME idempotencyKey + locked redemptionMethod + fresh OTP.
+          setPostSubmitRecoveryUnknown(false);
+          setRollbackRetryReady(true);
+          if (isLocatorMode) {
+            setChallenge(null);
+            setMfaInvalidatedRevision((rev) => rev + 1);
+          }
+        }
+      } else {
         setPostSubmitRecoveryUnknown(true);
         setRollbackRetryReady(false);
+        setPostSubmitRecoveryNoticeError(describeCashToCashClaimError(lookupError));
       }
     } finally {
       setPostSubmitChecking(false);
@@ -109,12 +159,38 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
   };
 
   const claimMutation = useMutation<AgentCashToCashClaimResult, unknown, void>({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!challenge) {
         throw new Error('Beneficiary verification challenge missing');
       }
+      if (isLocatorMode) {
+        if (agentId) {
+          await savePendingCashToCashLocatorClaim({
+            agentId,
+            senderPhone: senderPhone!,
+            transferNumber: transferNumber!,
+            beneficiaryPhone,
+            customerId: customer.customerId,
+            redemptionMethod,
+            idempotencyKey: idempotencyKeyRef.current,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        return agentCashToCashClaimByNumber({
+          senderPhone: senderPhone!,
+          transferNumber: transferNumber!,
+          beneficiaryPhone,
+          transferCode: transferCode.trim(),
+          customerId: customer.customerId,
+          mfaChallengeId: challenge.challengeId,
+          otp: otp.trim(),
+          idempotencyKey: idempotencyKeyRef.current,
+          redemptionMethod,
+          ...(redemptionMethod === 'AGENT_CASH' ? { agentPin } : {}),
+        });
+      }
       return agentCashToCashClaim({
-        transferId,
+        transferId: legacyTransferId!,
         beneficiaryPhone,
         transferCode: transferCode.trim(),
         customerId: customer.customerId,
@@ -125,27 +201,62 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
         ...(redemptionMethod === 'AGENT_CASH' ? { agentPin } : {}),
       });
     },
-    onSuccess: (result) => {
-      completeClaimSuccess(result);
+    onSuccess: async (result) => {
+      await completeClaimSuccess(result);
     },
     onError: async (err) => {
       setTransferCode('');
       setOtp('');
       setAgentPin('');
+
+      if (isLocatorMode) {
+        if (isLocatorRateLimitedError(err)) {
+          // Rejected by LocatorRateLimiter before transaction execution — do not burn extra
+          // locator budget or force OTP resends.
+          if (agentId && !hasAmbiguousHistory) {
+            await clearPendingCashToCashLocatorClaim(agentId);
+          }
+          return;
+        }
+        if (isAmbiguousLocatorClaimError(err)) {
+          setHasAmbiguousHistory(true);
+          setLockedRedemptionMethod(redemptionMethod);
+          await checkPostSubmitClaimRecovery(err);
+          return;
+        }
+        // Definitive < 500 failure (including uniform 404 C2C_CLAIM_NOT_AVAILABLE, 400, 401, 403):
+        // Retain same idempotencyKey + locked method per ARENA 1 §3 ("retry unchanged financial parameters/key"),
+        // and invalidate MFA challenge when 404 C2C_CLAIM_NOT_AVAILABLE or consumed/expired OTP occurred.
+        if (isLocatorNotAvailableError(err) || isOtpChallengeInvalidatedError(err)) {
+          setLockedRedemptionMethod(redemptionMethod);
+          setRollbackRetryReady(true);
+          setChallenge(null);
+          setMfaInvalidatedRevision((rev) => rev + 1);
+        }
+        if (agentId && !hasAmbiguousHistory) {
+          await clearPendingCashToCashLocatorClaim(agentId);
+        }
+        return;
+      }
+
       if (isOtpChallengeInvalidatedError(err)) {
         setChallenge(null);
         setMfaInvalidatedRevision((rev) => rev + 1);
       }
-      if (shouldRecoverAfterClaimError(err)) {
+      if (shouldRecoverAfterLegacyClaimError(err)) {
+        if (isAmbiguousLegacyClaimError(err)) {
+          setHasAmbiguousHistory(true);
+        }
         setLockedRedemptionMethod(redemptionMethod);
         await checkPostSubmitClaimRecovery(err);
       }
     },
   });
 
-  // Recover a committed claim before enabling another submission. The server returns a
-  // receipt only when this authenticated Agent is the actor on the immutable claim audit row;
-  // a 404 means there is no committed claim to recover for this Agent.
+  // Mount recovery check:
+  // - Locator mode: recover ONLY when a matching persisted pending attempt exists for this Agent,
+  //   avoiding speculative rate-budget consumption on fresh claim attempts.
+  // - Legacy UUID mode: check `GET /agents/cash-to-cash/claims/:transferId` as before.
   useEffect(() => {
     let active = true;
     setRecoveryStatus('CHECKING');
@@ -154,28 +265,65 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     if (!agentId) {
       setRecoveryStatus('ERROR');
       setRecoveryError('Agent session is unavailable. Sign in again before processing a claim.');
-      return () => { active = false; };
+      return () => {
+        active = false;
+      };
     }
 
-    void getAgentCashToCashClaim(transferId)
+    if (isLocatorMode) {
+      void (async () => {
+        const existing = await loadPendingCashToCashLocatorClaim(agentId);
+        if (!active) return;
+        const matches =
+          existing &&
+          matchesPendingCashToCashLocatorClaim(existing, {
+            senderPhone: senderPhone!,
+            transferNumber: transferNumber!,
+            beneficiaryPhone,
+            customerId: customer.customerId,
+          });
+        if (!matches || !existing) {
+          setRecoveryStatus('READY');
+          return;
+        }
+
+        // Restore exact persisted idempotency key and payout method before recovering.
+        idempotencyKeyRef.current = existing.idempotencyKey;
+        setRedemptionMethod(existing.redemptionMethod);
+        setLockedRedemptionMethod(existing.redemptionMethod);
+        setHasAmbiguousHistory(true);
+
+        try {
+          const recovered = await recoverAgentCashToCashClaimByNumber({
+            senderPhone: existing.senderPhone,
+            transferNumber: existing.transferNumber,
+            idempotencyKey: existing.idempotencyKey,
+          });
+          if (!active) return;
+          await completeClaimSuccess(recovered);
+        } catch (error: unknown) {
+          if (!active) return;
+          if (isApiNotFound(error)) {
+            setRollbackRetryReady(true);
+            setRecoveryStatus('READY');
+            return;
+          }
+          setRecoveryStatus('ERROR');
+          setRecoveryError(
+            `${describeCashToCashClaimError(error)} Confirm the previous claim status before submitting; do not start a replacement while the outcome is unknown.`,
+          );
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }
+
+    void getAgentCashToCashClaim(legacyTransferId!)
       .then((result) => {
         if (!active) return;
-        setTransferCode('');
-        setOtp('');
-        void queryClient.invalidateQueries({ queryKey: ['agent-financial-position', agentId] });
-        void queryClient.invalidateQueries({ queryKey: ['agent-transactions', agentId] });
-        void queryClient.invalidateQueries({ queryKey: ['agent-history', agentId] });
-        navigation.reset({
-          index: 0,
-          routes: [{
-            name: 'CashToCashClaimSuccess',
-            params: {
-              result,
-              customerDisplay: customer.display,
-              customerReceivingNumber: customer.receivingNumber,
-            },
-          }],
-        });
+        void completeClaimSuccess(result);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -189,15 +337,31 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
         );
       });
 
-    return () => { active = false; };
-  }, [agentId, customer, navigation, queryClient, recoveryAttempt, transferId]);
+    return () => {
+      active = false;
+    };
+  }, [
+    agentId,
+    beneficiaryPhone,
+    customer,
+    isLocatorMode,
+    legacyTransferId,
+    navigation,
+    queryClient,
+    recoveryAttempt,
+    senderPhone,
+    transferNumber,
+  ]);
 
   // Safety: shed sensitive credentials when screen unmounts.
-  useEffect(() => () => {
-    setTransferCode('');
-    setOtp('');
-    setAgentPin('');
-  }, []);
+  useEffect(
+    () => () => {
+      setTransferCode('');
+      setOtp('');
+      setAgentPin('');
+    },
+    [],
+  );
 
   const handleSubmit = () => {
     if (postSubmitRecoveryUnknown) {
@@ -214,6 +378,10 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
     }
     if (!transferCode.trim()) {
       setClientError('Enter the secret transfer code');
+      return;
+    }
+    if (!/^\d{8,20}$/.test(transferCode.trim())) {
+      setClientError('Transfer code must contain 8 to 20 numeric digits');
       return;
     }
     if (!otp.trim()) {
@@ -254,7 +422,26 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
         <Card style={styles.card} testID="c2c-claim-summary-card">
           <SummaryRow label="Beneficiary" value={customer.display} testID="c2c-claim-summary-customer" />
           <SummaryRow label="Beneficiary Phone" value={customer.receivingNumber} testID="c2c-claim-summary-phone" />
-          <SummaryRow label="Transfer ID" value={transferId} testID="c2c-claim-summary-transfer-id" />
+          {isLocatorMode ? (
+            <>
+              <SummaryRow
+                label="Sender Phone"
+                value={senderPhone!}
+                testID="c2c-claim-summary-sender-phone"
+              />
+              <SummaryRow
+                label="6-Digit Transfer Number"
+                value={transferNumber!}
+                testID="c2c-claim-summary-transfer-number"
+              />
+            </>
+          ) : (
+            <SummaryRow
+              label="Transfer ID"
+              value={legacyTransferId!}
+              testID="c2c-claim-summary-transfer-id"
+            />
+          )}
           <Text style={styles.note} testID="c2c-redemption-method-intro">
             Select how this claim will settle below. Cash payout requires a current approved Customer
             KYC assessment and your Agent transaction PIN.
@@ -341,19 +528,21 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
               {rollbackRetryReady && !postSubmitRecoveryUnknown && !postSubmitChecking && !claimMutation.isPending && (
                 <>
                   <Text style={styles.helper} testID="c2c-claim-rollback-retry-notice">
-                    No committed claim was found on the server. Request a fresh customer OTP code if the previous code was already used, then retry with the same payout method.
+                    Request a fresh customer OTP code if the previous code was already used, then retry with the same payout method and unchanged idempotency key.
                   </Text>
-                  <Button
-                    label="Change payout method (new attempt)"
-                    variant="outline"
-                    onPress={() => {
-                      setLockedRedemptionMethod(null);
-                      setRollbackRetryReady(false);
-                      idempotencyKeyRef.current = newIdempotencyKey('c2c-claim');
-                      setClientError('');
-                    }}
-                    testID="c2c-claim-unlock-method-button"
-                  />
+                  {!hasAmbiguousHistory && (
+                    <Button
+                      label="Change payout method (new attempt)"
+                      variant="outline"
+                      onPress={() => {
+                        setLockedRedemptionMethod(null);
+                        setRollbackRetryReady(false);
+                        idempotencyKeyRef.current = newIdempotencyKey('c2c-claim');
+                        setClientError('');
+                      }}
+                      testID="c2c-claim-unlock-method-button"
+                    />
+                  )}
                 </>
               )}
             </View>
@@ -402,96 +591,102 @@ export const CashToCashClaimConfirmScreen: React.FC = () => {
               testID="c2c-claim-mfa-card"
             />
 
-        {/* Step 2B: Credentials & Authorization */}
-        <Card style={styles.card}>
-          <Input
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="number-pad"
-            secureTextEntry
-            label="Secret Transfer Code"
-            placeholder="••••••••"
-            value={transferCode}
-            maxLength={20}
-            testID="c2c-claim-code-input"
-            onChangeText={(text) => {
-              setTransferCode(text);
-              setClientError('');
-            }}
-          />
-          <Text style={styles.helper}>
-            Ask the beneficiary for the secret transfer code given to them by the sender.
-          </Text>
-
-          {redemptionMethod === 'AGENT_CASH' && (
-            <>
+            {/* Step 2B: Credentials & Authorization */}
+            <Card style={styles.card}>
               <Input
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="number-pad"
                 secureTextEntry
-                label="Agent transaction PIN"
-                placeholder="••••"
-                value={agentPin}
-                maxLength={12}
-                testID="c2c-claim-agent-pin-input"
+                label="Secret Transfer Code"
+                placeholder="••••••••"
+                value={transferCode}
+                maxLength={20}
+                testID="c2c-claim-code-input"
                 onChangeText={(text) => {
-                  setAgentPin(text);
+                  setTransferCode(text);
                   setClientError('');
                 }}
               />
-              <Text style={styles.helper} testID="c2c-claim-agent-pin-note">
-                Required to authorize cash redemption. It is sent securely for verification and is never included in the receipt.
+              <Text style={styles.helper}>
+                Ask the beneficiary for the secret transfer code given to them privately by the sender
+                (distinct from the 6-digit transfer number).
               </Text>
-            </>
-          )}
 
-          <Input
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="number-pad"
-            label="Beneficiary verification code (OTP)"
-            placeholder="e.g. 123456"
-            value={otp}
-            maxLength={10}
-            testID="c2c-claim-otp-input"
-            onChangeText={(text) => {
-              setOtp(text);
-              setClientError('');
-            }}
-          />
-          <Text style={styles.helper}>
-            Ask the beneficiary for the verification code sent to their registered phone number.
-          </Text>
+              {redemptionMethod === 'AGENT_CASH' && (
+                <>
+                  <Input
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="number-pad"
+                    secureTextEntry
+                    label="Agent transaction PIN"
+                    placeholder="••••"
+                    value={agentPin}
+                    maxLength={12}
+                    testID="c2c-claim-agent-pin-input"
+                    onChangeText={(text) => {
+                      setAgentPin(text);
+                      setClientError('');
+                    }}
+                  />
+                  <Text style={styles.helper} testID="c2c-claim-agent-pin-note">
+                    Required to authorize cash redemption. It is sent securely for verification and is never included in the receipt.
+                  </Text>
+                </>
+              )}
 
-          {!!failureText && (
-            <Text style={styles.errorText} testID="c2c-claim-confirm-error">{failureText}</Text>
-          )}
-
-          {postSubmitRecoveryUnknown && (
-            <View style={styles.recoveryNoticeBox} testID="c2c-claim-post-submit-recovery-card">
-              <Text style={styles.recoveryNoticeText} testID="c2c-claim-post-submit-recovery-text">
-                The previous submission response was lost and claim status could not be verified yet.
-                Check claim status before requesting a new OTP or submitting again.
-              </Text>
-              <Button
-                label={postSubmitChecking ? 'Checking…' : 'Check claim status'}
-                loading={postSubmitChecking}
-                variant="outline"
-                onPress={() => void checkPostSubmitClaimRecovery()}
-                testID="c2c-claim-post-submit-recovery-button"
+              <Input
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="number-pad"
+                label="Beneficiary verification code (OTP)"
+                placeholder="e.g. 123456"
+                value={otp}
+                maxLength={10}
+                testID="c2c-claim-otp-input"
+                onChangeText={(text) => {
+                  setOtp(text);
+                  setClientError('');
+                }}
               />
-            </View>
-          )}
+              <Text style={styles.helper}>
+                Ask the beneficiary for the verification code sent to their registered phone number.
+              </Text>
 
-          <Button
-            loading={claimMutation.isPending}
-            disabled={postSubmitRecoveryUnknown || postSubmitChecking}
-            label={claimMutation.isPending ? 'Processing Claim…' : 'Execute Claim'}
-            onPress={handleSubmit}
-            testID="c2c-claim-submit"
-            style={styles.button}
-          />
+              {!!failureText && (
+                <Text style={styles.errorText} testID="c2c-claim-confirm-error">{failureText}</Text>
+              )}
+
+              {postSubmitRecoveryUnknown && (
+                <View style={styles.recoveryNoticeBox} testID="c2c-claim-post-submit-recovery-card">
+                  <Text style={styles.recoveryNoticeText} testID="c2c-claim-post-submit-recovery-text">
+                    The previous submission response was lost or indeterminate and claim status could not be
+                    confirmed yet. Check claim status before requesting a new OTP or submitting again.
+                  </Text>
+                  {!!postSubmitRecoveryNoticeError && (
+                    <Text style={styles.errorText} testID="c2c-claim-post-submit-recovery-error">
+                      {postSubmitRecoveryNoticeError}
+                    </Text>
+                  )}
+                  <Button
+                    label={postSubmitChecking ? 'Checking…' : 'Check claim status'}
+                    loading={postSubmitChecking}
+                    variant="outline"
+                    onPress={() => void checkPostSubmitClaimRecovery()}
+                    testID="c2c-claim-post-submit-recovery-button"
+                  />
+                </View>
+              )}
+
+              <Button
+                loading={claimMutation.isPending}
+                disabled={postSubmitRecoveryUnknown || postSubmitChecking}
+                label={claimMutation.isPending ? 'Processing Claim…' : 'Execute Claim'}
+                onPress={handleSubmit}
+                testID="c2c-claim-submit"
+                style={styles.button}
+              />
             </Card>
           </>
         )}
@@ -508,7 +703,29 @@ function isApiNotFound(error: unknown): boolean {
   );
 }
 
-function isAmbiguousClaimError(error: unknown): boolean {
+function isLocatorNotAvailableError(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== 'ApiError') return false;
+  const { status, code } = error as Error & { status?: number; code?: string };
+  return code === 'C2C_CLAIM_NOT_AVAILABLE' || status === 404;
+}
+
+function isLocatorRateLimitedError(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== 'ApiError') return false;
+  const { status, code } = error as Error & { status?: number; code?: string };
+  return code === 'C2C_LOCATOR_RATE_LIMITED' || status === 429;
+}
+
+function isAmbiguousLocatorClaimError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  if (error.name === 'NetworkError') return true;
+  if (error.name === 'ApiError') {
+    const { status = 0, code } = error as Error & { status?: number; code?: string };
+    return code === 'C2C_RETRY_REQUIRED' || status >= 500 || status === 408;
+  }
+  return true;
+}
+
+function isAmbiguousLegacyClaimError(error: unknown): boolean {
   if (!(error instanceof Error)) return true;
   if (error.name === 'NetworkError') return true;
   if (error.name === 'ApiError') {
@@ -527,8 +744,8 @@ function isOtpChallengeInvalidatedError(error: unknown): boolean {
   );
 }
 
-function shouldRecoverAfterClaimError(error: unknown): boolean {
-  if (isAmbiguousClaimError(error)) return true;
+function shouldRecoverAfterLegacyClaimError(error: unknown): boolean {
+  if (isAmbiguousLegacyClaimError(error)) return true;
   if (error instanceof Error && error.name === 'ApiError') {
     const status = (error as Error & { status?: number }).status;
     if (

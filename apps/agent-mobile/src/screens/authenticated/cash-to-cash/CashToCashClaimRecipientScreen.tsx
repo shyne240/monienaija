@@ -14,23 +14,29 @@ import {
   type ResolvedCustomerRecipientView,
 } from '../../../services/agent-api';
 import { canonicalizePhoneNumber } from './CashToCashRecipientScreen';
+import {
+  classifyCashToCashClaimIdentifier,
+  validateSixDigitTransferNumber,
+} from './cash-to-cash-reference-handoff.plan';
 import type { RootStackParamList } from '../../../navigation/types';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
- * Cash→Cash Claim Assist — Step 1: Beneficiary Identification & Transfer ID (V1-AGENT-MOBILE-09 / CLM-1..2).
+ * Cash→Cash Claim Assist — Step 1: Beneficiary, Sender Phone & 6-Digit Transfer Number
+ * (V1-AGENT-MOBILE-09 + ARENA 1 Approved Six-Digit Redemption Contract).
  *
- * The agent enters the beneficiary's phone number and the Transfer ID.
- * Backend recipient resolution endpoint verifies the beneficiary is a registered ACTIVE customer.
- * Only registered, ACTIVE Customer accounts can claim. Settlement may credit the Customer wallet
- * or the claiming Agent's float; physical cash handover is separate from the ledger settlement.
- * Internal database IDs, ledger accounts, and request hashes are never displayed.
+ * Replaces raw UUID entry with:
+ * - Beneficiary's Nigerian phone number (verified as an ACTIVE Customer account).
+ * - Sender's Nigerian phone number (canonicalized to 10 digits).
+ * - Exact 6-digit transfer number string (`^[0-9]{6}$`, preserving leading zeros e.g. "000042").
+ *
+ * Never substitutes the 6-digit transfer number into `transferId`, never converts to `Number`,
+ * and never zero-pads shorter inputs.
  */
 export const CashToCashClaimRecipientScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [phoneInput, setPhoneInput] = useState('');
-  const [transferIdInput, setTransferIdInput] = useState('');
+  const [senderPhoneInput, setSenderPhoneInput] = useState('');
+  const [transferNumberInput, setTransferNumberInput] = useState('');
   const [clientError, setClientError] = useState('');
   const [customer, setCustomer] = useState<ResolvedCustomerRecipientView | null>(null);
 
@@ -46,23 +52,62 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
     },
   });
 
-  const handleVerify = () => {
-    const canonical = canonicalizePhoneNumber(phoneInput);
-    if (!canonical) {
+  const validateLocatorInputs = (): {
+    beneficiaryPhone: string;
+    senderPhone: string;
+    transferNumber: string;
+  } | null => {
+    const canonicalBeneficiary = canonicalizePhoneNumber(phoneInput);
+    if (!canonicalBeneficiary) {
       setClientError('Enter a valid 10-digit Nigerian phone number (e.g. 08012345678)');
       setCustomer(null);
-      return;
+      return null;
     }
 
-    const tid = transferIdInput.trim();
-    if (!tid || !UUID_PATTERN.test(tid)) {
-      setClientError('Enter a valid Transfer ID (UUID format)');
+    const canonicalSender = canonicalizePhoneNumber(senderPhoneInput);
+    if (!canonicalSender) {
+      setClientError('Enter a valid 10-digit Nigerian sender phone number (e.g. 08031234567)');
       setCustomer(null);
-      return;
+      return null;
     }
 
+    const classified = classifyCashToCashClaimIdentifier(transferNumberInput);
+    if (classified.kind === 'TRANSFER_REFERENCE') {
+      setClientError(
+        'You entered a receipt reference (CASH_TO_CASH-… / C2C-…). Enter the exact 6-digit transfer number (e.g. 000042) instead.',
+      );
+      setCustomer(null);
+      return null;
+    }
+    if (classified.kind === 'UUID') {
+      setClientError(
+        'Enter the 6-digit transfer number (e.g. 000042) with the sender phone, not an internal UUID.',
+      );
+      setCustomer(null);
+      return null;
+    }
+
+    const validTransferNumber = validateSixDigitTransferNumber(transferNumberInput);
+    if (!validTransferNumber) {
+      setClientError(
+        'Enter the exact 6-digit transfer number (including any leading zeros, e.g. 000042)',
+      );
+      setCustomer(null);
+      return null;
+    }
+
+    return {
+      beneficiaryPhone: canonicalBeneficiary,
+      senderPhone: canonicalSender,
+      transferNumber: validTransferNumber,
+    };
+  };
+
+  const handleVerify = () => {
+    const validated = validateLocatorInputs();
+    if (!validated) return;
     setClientError('');
-    resolveMutation.mutate(canonical);
+    resolveMutation.mutate(validated.beneficiaryPhone);
   };
 
   const handleProceed = () => {
@@ -75,20 +120,14 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
       setClientError('This customer account is not active and cannot claim transfers.');
       return;
     }
-    const tid = transferIdInput.trim();
-    if (!tid || !UUID_PATTERN.test(tid)) {
-      setClientError('Enter a valid Transfer ID (UUID format)');
-      return;
-    }
-    const canonical = canonicalizePhoneNumber(phoneInput);
-    if (!canonical) {
-      setClientError('Enter a valid 10-digit Nigerian phone number');
-      return;
-    }
+    const validated = validateLocatorInputs();
+    if (!validated) return;
+
     navigation.navigate('CashToCashClaimConfirm', {
       customer,
-      transferId: tid,
-      beneficiaryPhone: canonical,
+      senderPhone: validated.senderPhone,
+      transferNumber: validated.transferNumber,
+      beneficiaryPhone: validated.beneficiaryPhone,
     });
   };
 
@@ -99,9 +138,10 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Cash→Cash Claim Assistance</Text>
         <Text style={styles.helper} testID="c2c-settlement-method-notice">
-          Assist the named Customer with a Cash→Cash claim. An eligible claim can credit the
-          beneficiary's Customer wallet or the claiming Agent's NGN float for cash payout. Physical
-          cash handover is separate from the ledger settlement.
+          Assist the named Customer with a Cash→Cash claim using the sender&apos;s phone number and the
+          6-digit transfer number. An eligible claim can credit the beneficiary&apos;s Customer wallet or
+          the claiming Agent&apos;s NGN float for cash payout. Physical cash handover is separate from
+          the ledger settlement.
         </Text>
 
         <Card style={styles.card}>
@@ -112,7 +152,7 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
             label="Beneficiary Phone Number"
             placeholder="e.g. 08012345678"
             value={phoneInput}
-            maxLength={15}
+            maxLength={20}
             testID="c2c-claim-phone-input"
             onChangeText={(text) => {
               setPhoneInput(text);
@@ -125,18 +165,39 @@ export const CashToCashClaimRecipientScreen: React.FC = () => {
           <Input
             autoCapitalize="none"
             autoCorrect={false}
-            label="Transfer ID"
-            placeholder="e.g. 12345678-1234-1234-1234-1234567890ab"
-            value={transferIdInput}
-            maxLength={36}
-            testID="c2c-claim-transfer-id-input"
+            keyboardType="phone-pad"
+            label="Sender Phone Number"
+            placeholder="e.g. 08031234567"
+            value={senderPhoneInput}
+            maxLength={20}
+            testID="c2c-claim-sender-phone-input"
             onChangeText={(text) => {
-              setTransferIdInput(text);
+              setSenderPhoneInput(text);
               setClientError('');
               setCustomer(null);
               resolveMutation.reset();
             }}
           />
+
+          <Input
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="number-pad"
+            label="6-Digit Transfer Number"
+            placeholder="e.g. 000042"
+            value={transferNumberInput}
+            maxLength={64}
+            testID="c2c-claim-transfer-number-input"
+            onChangeText={(text) => {
+              setTransferNumberInput(text);
+              setClientError('');
+              setCustomer(null);
+              resolveMutation.reset();
+            }}
+          />
+          <Text style={styles.helper} testID="c2c-claim-locator-hint">
+            Enter all 6 digits exactly as issued, including any leading zeros (for example, 000042).
+          </Text>
 
           <Button
             loading={resolveMutation.isPending}

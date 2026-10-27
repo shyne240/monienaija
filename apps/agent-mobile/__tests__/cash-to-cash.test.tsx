@@ -63,6 +63,8 @@ const cashToCashResult: AgentCashToCashResult = {
   transferId: 'internal-transfer-uuid-9',
   journalId: 'internal-journal-uuid-9',
   agentId: 'internal-agent-uuid-1',
+  senderPhone: '8031234567',
+  transferNumber: '000042',
   beneficiaryPhone: '8012345678',
   principalMinor: '500000',
   feeMinor: '0',
@@ -108,17 +110,34 @@ describe('Cash→Cash — Step 1: Beneficiary Phone Screen (C2C-1)', () => {
     jest.clearAllMocks();
   });
 
-  test('valid Nigerian phone can proceed directly to amount step without resolver', () => {
+  test('valid Nigerian sender and beneficiary phones proceed directly to amount step without resolver', () => {
     const { getByTestId } = wrap(<CashToCashRecipientScreen />);
+    expect(getByTestId('sender-phone-input').props.value).toBe('');
+    fireEvent.changeText(getByTestId('sender-phone-input'), '+234 803 123 4567');
     fireEvent.changeText(getByTestId('beneficiary-phone-input'), '08012345678');
     fireEvent.press(getByTestId('beneficiary-continue'));
     expect(mockNavigate).toHaveBeenCalledWith('CashToCashAmount', {
+      senderPhone: '8031234567',
       beneficiaryPhone: '8012345678',
     });
   });
 
+  test('missing or invalid sender phone is blocked client-side and never inferred from Agent session', () => {
+    const { getByTestId, getByText } = wrap(<CashToCashRecipientScreen />);
+    fireEvent.changeText(getByTestId('beneficiary-phone-input'), '08012345678');
+    fireEvent.press(getByTestId('beneficiary-continue'));
+    expect(getByText(/Enter a valid 10-digit Nigerian sender phone number/)).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    fireEvent.changeText(getByTestId('sender-phone-input'), '05012345678');
+    fireEvent.press(getByTestId('beneficiary-continue'));
+    expect(getByText(/Enter a valid 10-digit Nigerian sender phone number/)).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   test('invalid phone format is blocked client-side with safe error', () => {
     const { getByTestId, getByText } = wrap(<CashToCashRecipientScreen />);
+    fireEvent.changeText(getByTestId('sender-phone-input'), '08031234567');
     fireEvent.changeText(getByTestId('beneficiary-phone-input'), '12345');
     fireEvent.press(getByTestId('beneficiary-continue'));
     expect(getByText(/Enter a valid 10-digit Nigerian phone number/)).toBeTruthy();
@@ -128,6 +147,7 @@ describe('Cash→Cash — Step 1: Beneficiary Phone Screen (C2C-1)', () => {
   test('optional verification: 404 from resolver confirms unregistered beneficiary (expected for C2C)', async () => {
     mockApi.resolveAgentRecipient.mockRejectedValue(apiError('Recipient not found', 404));
     const { getAllByText, getByTestId, getByText } = wrap(<CashToCashRecipientScreen />);
+    fireEvent.changeText(getByTestId('sender-phone-input'), '08031234567');
     fireEvent.changeText(getByTestId('beneficiary-phone-input'), '08012345678');
     fireEvent.press(getByTestId('beneficiary-verify-button'));
 
@@ -138,6 +158,7 @@ describe('Cash→Cash — Step 1: Beneficiary Phone Screen (C2C-1)', () => {
 
     fireEvent.press(getByTestId('beneficiary-continue'));
     expect(mockNavigate).toHaveBeenCalledWith('CashToCashAmount', {
+      senderPhone: '8031234567',
       beneficiaryPhone: '8012345678',
     });
   });
@@ -151,6 +172,7 @@ describe('Cash→Cash — Step 1: Beneficiary Phone Screen (C2C-1)', () => {
     };
     mockApi.resolveAgentRecipient.mockResolvedValue(agentRecipient);
     const { getByTestId, getByText, queryByTestId } = wrap(<CashToCashRecipientScreen />);
+    fireEvent.changeText(getByTestId('sender-phone-input'), '08031234567');
     fireEvent.changeText(getByTestId('beneficiary-phone-input'), '08012345678');
     fireEvent.press(getByTestId('beneficiary-verify-button'));
 
@@ -166,7 +188,7 @@ describe('Cash→Cash — Step 2: Amount Entry Screen (C2C-2)', () => {
     mockRoute = {
       key: 'k',
       name: 'CashToCashAmount',
-      params: { beneficiaryPhone: '8012345678' },
+      params: { senderPhone: '8031234567', beneficiaryPhone: '8012345678' },
     };
   });
 
@@ -204,6 +226,7 @@ describe('Cash→Cash — Step 2: Amount Entry Screen (C2C-2)', () => {
 
     const [screen, params] = mockNavigate.mock.calls[0] as any[];
     expect(screen).toBe('CashToCashConfirm');
+    expect(params.senderPhone).toBe('8031234567');
     expect(params.beneficiaryPhone).toBe('8012345678');
     expect(params.amountMinor).toBe('500000');
     expect(params.idempotencyKey).toMatch(/^c2c-/);
@@ -212,6 +235,7 @@ describe('Cash→Cash — Step 2: Amount Entry Screen (C2C-2)', () => {
 
 describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-1 / SEC-2)', () => {
   const params = {
+    senderPhone: '8031234567',
     beneficiaryPhone: '8012345678',
     amountMinor: '500000',
     idempotencyKey: 'c2c-key-abc',
@@ -226,12 +250,13 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
   test('summary displays only authoritative input data without client-side fee math', () => {
     const { getByText, getByTestId } = wrap(<CashToCashConfirmScreen />);
     expect(getByTestId('c2c-confirm-summary-card')).toBeTruthy();
+    expect(getByTestId('c2c-confirm-sender-phone').props.children).toBe('8031234567');
     expect(getByText('8012345678')).toBeTruthy();
     expect(getByText('₦5,000.00 NGN')).toBeTruthy();
     expect(getByText(/claiming Agent's NGN float for cash payout/)).toBeTruthy();
   });
 
-  test('request construction: sends agentPin and contract body with preserveSessionOn401', async () => {
+  test('request construction: sends senderPhone, agentPin, and contract body with preserveSessionOn401', async () => {
     mockApi.agentCashToCash.mockResolvedValue(cashToCashResult);
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
 
@@ -240,6 +265,7 @@ describe('Cash→Cash — Step 3: Confirmation & Authorize (C2C-4 / C2C-7 / SEC-
 
     await waitFor(() =>
       expect(mockApi.agentCashToCash).toHaveBeenCalledWith({
+        senderPhone: '8031234567',
         beneficiaryPhone: '8012345678',
         amountMinor: '500000',
         currency: 'NGN',
@@ -409,17 +435,54 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
     };
   });
 
-  test('displays prominent one-time transferCode from single-use handover', () => {
+  test('displays leading-zero 6-digit transferNumber, normalized senderPhone, and separate display-once secret transferCode', async () => {
+    const shareSpy = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
     setPendingTransferCode('TRANSFER_CODE_778899');
     const { getByTestId, getByText } = wrap(<CashToCashSuccessScreen />);
 
+    expect(getByTestId('c2c-public-locator-card')).toBeTruthy();
+    expect(getByTestId('c2c-transfer-number').props.children).toBe('000042');
+    expect(getByTestId('c2c-sender-phone').props.children).toBe('8031234567');
     expect(getByTestId('c2c-transfer-code-card')).toBeTruthy();
     expect(getByTestId('c2c-transfer-code').props.children).toBe('TRANSFER_CODE_778899');
     expect(getByText(/DISPLAY-ONCE CODE/)).toBeTruthy();
-    expect(getByText(/Agent-cash mode also requires the claiming Agent's CASH_TO_CASH capability and transaction PIN/)).toBeTruthy();
+    expect(
+      getByText(/Agent-cash mode also requires the claiming Agent's CASH_TO_CASH capability and transaction PIN/),
+    ).toBeTruthy();
 
     // Handover was consumed:
     expect(consumePendingTransferCode()).toBeNull();
+
+    // Share Claim Locator shares ONLY public locator fields — NEVER secret transferCode
+    fireEvent.press(getByTestId('c2c-share-locator-button'));
+    await waitFor(() => expect(shareSpy).toHaveBeenCalledTimes(1));
+    const locatorPayload = (shareSpy.mock.calls[0]?.[0] as { message: string }).message;
+    expect(locatorPayload).toContain('000042');
+    expect(locatorPayload).toContain('8031234567');
+    expect(locatorPayload).not.toContain('TRANSFER_CODE_778899');
+    expect(locatorPayload).not.toContain('transferCode');
+
+    // Copy Claim Locator also excludes secret transferCode
+    fireEvent.press(getByTestId('c2c-copy-locator-button'));
+    await waitFor(() => expect(getByTestId('c2c-locator-copied-feedback')).toBeTruthy());
+    for (const call of shareSpy.mock.calls) {
+      expect((call[0] as { message: string }).message).not.toContain('TRANSFER_CODE_778899');
+    }
+
+    shareSpy.mockRestore();
+  });
+
+  test('legacy initiation response without transferNumber/senderPhone does not advertise number handoff', () => {
+    const { senderPhone: _sp, transferNumber: _tn, ...legacyResult } = safeResult;
+    mockRoute = {
+      key: 'k-legacy',
+      name: 'CashToCashSuccess',
+      params: { result: legacyResult, amountMinor: '500000' },
+    };
+    setPendingTransferCode('TRANSFER_CODE_778899');
+    const { queryByTestId, getByTestId } = wrap(<CashToCashSuccessScreen />);
+    expect(queryByTestId('c2c-public-locator-card')).toBeNull();
+    expect(getByTestId('c2c-transfer-code-card')).toBeTruthy();
   });
 
   test('shared receipt is rendered but NEVER contains transferCode', () => {
@@ -508,6 +571,7 @@ describe('Cash→Cash — Step 4: Display-Once Success & Receipt (C2C-5 / C2C-6 
 // src/services/pending-operation.ts's module doc).
 describe('Cash→Cash Send — Idempotency-Key durability across a simulated process kill', () => {
   const agentId = 'agent-persist-c2c';
+  const senderPhone = '8031234567';
   const beneficiaryPhone = '8012345678';
 
   beforeEach(async () => {
@@ -521,7 +585,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-persist-k1' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-persist-k1' },
     };
     const networkErr = new Error('fetch failed');
     (networkErr as any).name = 'NetworkError';
@@ -535,30 +599,26 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     const persisted = await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
     expect(persisted).not.toBeNull();
     expect(persisted?.idempotencyKey).toBe('c2c-persist-k1');
-    expect(persisted?.counterpartyId).toBe(beneficiaryPhone);
+    expect(persisted?.counterpartyId).toBe(`${senderPhone}->${beneficiaryPhone}`);
     expect(persisted?.amountMinor).toBe('500000');
   });
 
   test('2. a fresh Confirm instance after a simulated restart reuses the persisted key, not the freshly-minted route-param one', async () => {
-    // Precondition: left behind by an earlier ambiguous attempt (per test 1 above).
     await savePendingAgentOperation({
       agentId,
       operationType: 'CASH_TO_CASH_SEND',
       idempotencyKey: 'c2c-restart-original',
-      counterpartyId: beneficiaryPhone,
+      counterpartyId: `${senderPhone}->${beneficiaryPhone}`,
       amountMinor: '500000',
       currency: 'NGN',
       createdAt: new Date().toISOString(),
     });
 
-    // "Reopen the app": a fresh Confirm instance with a BRAND NEW route-param key, exactly
-    // what CashToCashAmountScreen would mint since its in-memory useRef cannot have survived
-    // the process kill.
     mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-restart-FRESH-K2' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-restart-FRESH-K2' },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
@@ -572,7 +632,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-success-clear' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-success-clear' },
     };
     mockApi.agentCashToCash.mockResolvedValueOnce(cashToCashResult);
     const { getByTestId } = wrap(<CashToCashConfirmScreen />);
@@ -588,7 +648,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k1',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-definitive-reject' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-definitive-reject' },
     };
     mockApi.agentCashToCash.mockRejectedValueOnce(apiError('Transaction PIN invalid: PIN_INVALID', 401));
     const first = wrap(<CashToCashConfirmScreen />);
@@ -606,7 +666,7 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-clean-retry-key' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-clean-retry-key' },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
@@ -615,12 +675,12 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     expect(mockApi.agentCashToCash.mock.calls[1][0].idempotencyKey).toBe('c2c-clean-retry-key');
   });
 
-  test('5. a persisted operation for a DIFFERENT amount is never reused — no fuzzy attribution', async () => {
+  test('5. a persisted operation for a DIFFERENT amount or DIFFERENT senderPhone is never reused', async () => {
     await savePendingAgentOperation({
       agentId,
       operationType: 'CASH_TO_CASH_SEND',
       idempotencyKey: 'c2c-amount-a',
-      counterpartyId: beneficiaryPhone,
+      counterpartyId: `${senderPhone}->${beneficiaryPhone}`,
       amountMinor: '500000',
       currency: 'NGN',
       createdAt: new Date().toISOString(),
@@ -630,12 +690,65 @@ describe('Cash→Cash Send — Idempotency-Key durability across a simulated pro
     mockRoute = {
       key: 'k2',
       name: 'CashToCashConfirm',
-      params: { beneficiaryPhone, amountMinor: '900000', idempotencyKey: 'c2c-amount-b-own-key' },
+      params: { senderPhone, beneficiaryPhone, amountMinor: '900000', idempotencyKey: 'c2c-amount-b-own-key' },
     };
     const second = wrap(<CashToCashConfirmScreen />);
     fireEvent.changeText(second.getByTestId('c2c-pin-input'), '4321');
     fireEvent.press(second.getByTestId('c2c-confirm-submit'));
     await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(1));
     expect(mockApi.agentCashToCash.mock.calls[0][0].idempotencyKey).toBe('c2c-amount-b-own-key');
+    second.unmount();
+
+    // Save pending op for sender A, then submit for sender B -> uses sender B's own key
+    await savePendingAgentOperation({
+      agentId,
+      operationType: 'CASH_TO_CASH_SEND',
+      idempotencyKey: 'c2c-sender-a-key',
+      counterpartyId: `${senderPhone}->${beneficiaryPhone}`,
+      amountMinor: '500000',
+      currency: 'NGN',
+      createdAt: new Date().toISOString(),
+    });
+    mockApi.agentCashToCash.mockResolvedValueOnce({ ...cashToCashResult, senderPhone: '8099998888' });
+    mockRoute = {
+      key: 'k3',
+      name: 'CashToCashConfirm',
+      params: {
+        senderPhone: '8099998888',
+        beneficiaryPhone,
+        amountMinor: '500000',
+        idempotencyKey: 'c2c-sender-b-own-key',
+      },
+    };
+    const third = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(third.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(third.getByTestId('c2c-confirm-submit'));
+    await waitFor(() => expect(mockApi.agentCashToCash).toHaveBeenCalledTimes(2));
+    expect(mockApi.agentCashToCash.mock.calls[1][0].idempotencyKey).toBe('c2c-sender-b-own-key');
+  });
+
+  test('6. C2C_LOCATOR_UNAVAILABLE (409) retains persisted key for unchanged retry per ARENA 1 contract', async () => {
+    mockRoute = {
+      key: 'k-loc',
+      name: 'CashToCashConfirm',
+      params: { senderPhone, beneficiaryPhone, amountMinor: '500000', idempotencyKey: 'c2c-locator-retry-k1' },
+    };
+    const locatorErr = apiError('Unable to allocate transfer number; retry unchanged request', 409) as Error & {
+      status: number;
+      code?: string;
+    };
+    locatorErr.code = 'C2C_LOCATOR_UNAVAILABLE';
+    mockApi.agentCashToCash.mockRejectedValueOnce(locatorErr);
+
+    const view = wrap(<CashToCashConfirmScreen />);
+    fireEvent.changeText(view.getByTestId('c2c-pin-input'), '4321');
+    fireEvent.press(view.getByTestId('c2c-confirm-submit'));
+    await waitFor(() =>
+      expect(view.getByTestId('c2c-confirm-error').props.children).toBe(
+        'Unable to allocate a 6-digit transfer number right now. Retry this unchanged transfer.',
+      ),
+    );
+    const persisted = await loadPendingAgentOperation(agentId, 'CASH_TO_CASH_SEND');
+    expect(persisted?.idempotencyKey).toBe('c2c-locator-retry-k1');
   });
 });
