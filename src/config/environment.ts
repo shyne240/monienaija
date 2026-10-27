@@ -39,6 +39,10 @@ export const environmentSchema = z
     OUTBOX_RETENTION_SECONDS: z.coerce.number().int().min(3_600).max(31_536_000).default(2_592_000),
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
+    CASH_TO_CASH_EXPIRY_WORKER_ENABLED: booleanFromEnvironment.default(false),
+    CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
+    CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
+    CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
     // Secure PoA uploads are inert unless explicitly enabled. Local disk/key-file storage is
     // development/test only; production requires S3-compatible storage and a managed keyring.

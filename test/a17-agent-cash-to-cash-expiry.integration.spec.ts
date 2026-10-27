@@ -1,3 +1,6 @@
+import { ConfigService } from '@nestjs/config';
+import { AuditService } from '../src/operations/audit.service';
+import { AgentCashToCashExpiryWorker } from '../src/agent/agent-cash-to-cash-expiry-worker.service';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, no-empty */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -45,6 +48,7 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
   let mfaService: MfaExecutionService;
   let customerService: CustomerService;
 
+  let auditService: AuditService;
   let systemLedgerAccountId: string;
   let unclaimedLedgerAccountId: string;
 
@@ -62,6 +66,7 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     cashToCashService = moduleRef.get(AgentCashToCashService);
     claimService = moduleRef.get(AgentCashToCashClaimService);
     expiryService = moduleRef.get(AgentCashToCashExpiryService);
+    auditService = moduleRef.get(AuditService);
     classService = moduleRef.get(AgentClassService);
     appService = moduleRef.get(AgentApplicationService);
     lifecycleService = moduleRef.get(AgentLifecycleService);
@@ -769,4 +774,103 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     expect(res.status).toBe('COMPLETED');
     expect(res.transferId).toBe(transferId);
   });
+  function executionWorker(batchSize = 1) {
+    return new AgentCashToCashExpiryWorker(expiryService, new ConfigService({
+      CASH_TO_CASH_EXPIRY_WORKER_ENABLED: true,
+      CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: batchSize,
+      CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: 500,
+    }));
+  }
+
+  it('production execution is bounded, restart-safe and concurrent without journals or refunds', async () => {
+    await expiryService.expireDueTransfers({ limit: 1000 });
+    const transfers = [await initiateTransfer('3100'), await initiateTransfer('3200'), await initiateTransfer('3300')];
+    const ids = transfers.map(t => t.transferId);
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=ANY($1::uuid[])`, [ids]);
+    const [before] = await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`);
+    const liability = await ledgerService.getAccountBalance(unclaimedLedgerAccountId);
+    const floats = await Promise.all(transfers.map(t => ledgerService.getAccountBalance(t.wallet.ledgerAccountId)));
+    const first = executionWorker();
+    expect((await first.tick()).expiredCount).toBe(1);
+    await first.onModuleDestroy();
+    const restarted = executionWorker();
+    const concurrent = executionWorker();
+    const results = await Promise.all([restarted.tick(), concurrent.tick()]);
+    expect(results.reduce((n, r) => n + r.expiredCount, 0)).toBe(2);
+    expect((await restarted.tick()).expiredCount).toBe(0);
+    const rows = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=ANY($1::uuid[])`, [ids]);
+    expect(rows.every((r: {status:string}) => r.status === 'EXPIRED')).toBe(true);
+    const audits = await dataSource.query(`SELECT entity_id, count(*)::int AS count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=ANY($1::uuid[]) GROUP BY entity_id`, [ids]);
+    expect(audits).toHaveLength(3);
+    expect(audits.every((r: {count:number}) => r.count === 1)).toBe(true);
+    expect((await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`))[0].journals).toBe(before.journals);
+    expect((await ledgerService.getAccountBalance(unclaimedLedgerAccountId)).balanceMinor).toBe(liability.balanceMinor);
+    for (let i=0; i<transfers.length; i++) {
+      expect((await ledgerService.getAccountBalance(transfers[i]!.wallet.ledgerAccountId)).balanceMinor).toBe(floats[i]!.balanceMinor);
+    }
+    await restarted.onModuleDestroy();
+    await concurrent.onModuleDestroy();
+  });
+
+  it('audit failure rolls back expiry and retry after restart processes the persisted due row once', async () => {
+    await expiryService.expireDueTransfers({ limit: 1000 });
+    const { transferId } = await initiateTransfer('3400');
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
+    const spy = jest.spyOn(auditService, 'record').mockRejectedValueOnce(new Error('audit unavailable'));
+    const worker = executionWorker();
+    try { expect((await worker.tick()).status).toBe('FAILED'); }
+    finally { spy.mockRestore(); await worker.onModuleDestroy(); }
+    expect((await dataSource.query(`SELECT status, expired_at FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0])
+      .toMatchObject({ status: 'UNCLAIMED', expired_at: null });
+    const restarted = executionWorker();
+    expect((await restarted.tick()).expiredCount).toBe(1);
+    expect((await restarted.tick()).expiredCount).toBe(0);
+    expect(await dataSource.query(`SELECT id FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=$1`, [transferId])).toHaveLength(1);
+    await restarted.onModuleDestroy();
+  });
+
+  it('a database statement timeout rolls back and leaves work for the next execution', async () => {
+    await expiryService.expireDueTransfers({ limit: 1000 });
+    const { transferId } = await initiateTransfer('3500');
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
+    const record = auditService.record.bind(auditService);
+    const spy = jest.spyOn(auditService, 'record').mockImplementationOnce(async (manager, command) => {
+      await manager.query(`SELECT pg_sleep(1)`);
+      return record(manager, command);
+    });
+    const worker = executionWorker();
+    try { expect((await worker.tick()).status).toBe('FAILED'); }
+    finally { spy.mockRestore(); }
+    expect((await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0].status).toBe('UNCLAIMED');
+    expect((await worker.tick()).expiredCount).toBe(1);
+    await worker.onModuleDestroy();
+  });
+
+  it('startup automatically executes a persisted due transfer without a manual tick', async () => {
+    await expiryService.expireDueTransfers({ limit: 1000 });
+    const { transferId } = await initiateTransfer('3600');
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1`, [transferId]);
+    const original = expiryService.expireDueTransfers.bind(expiryService);
+    const spy = jest.spyOn(expiryService, 'expireDueTransfers');
+    const processed = new Promise<void>((resolve, reject) => {
+      spy.mockImplementationOnce(async input => {
+        try {
+          const result = await original(input);
+          expect(result.expiredIds).toContain(transferId);
+          resolve();
+          return result;
+        } catch (error) { reject(error); throw error; }
+      });
+    });
+    const worker = executionWorker();
+    try {
+      worker.onModuleInit();
+      await processed;
+    } finally {
+      await worker.onModuleDestroy();
+      spy.mockRestore();
+    }
+    expect((await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]))[0].status).toBe('EXPIRED');
+  });
+
 });
