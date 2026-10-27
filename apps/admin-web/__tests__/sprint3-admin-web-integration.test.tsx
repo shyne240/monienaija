@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { ApiClient } from '../src/services/api-client';
 import { useAuthStore, WorkforcePrincipal } from '../src/store/auth-store';
 import { ApprovalsScreen } from '../src/screens/authenticated/ApprovalsScreen';
@@ -529,7 +529,8 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
     fireEvent.click(netView.getByRole('button', { name: 'View' }));
     await netView.findByText('wallet-ops-1');
 
-    // Policy-blocked buttons are visibly rendered & disabled with zero speculative backend calls
+    // Policy-blocked buttons are visibly rendered & disabled with zero speculative backend calls;
+    // Unified history is now live and enabled via GET /internal/agents/:id/transactions
     expect(
       (netView.getByRole('button', { name: 'Reclassify Agent (Policy blocked)' }) as HTMLButtonElement)
         .disabled,
@@ -539,13 +540,276 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
         .disabled,
     ).toBe(true);
     expect(
-      (netView.getByRole('button', { name: 'Load unified stream (Unavailable)' }) as HTMLButtonElement)
+      (netView.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement)
         .disabled,
-    ).toBe(true);
+    ).toBe(false);
 
     // Partial failure in wallet transfers still renders Cash-to-Cash history + error notice
     fireEvent.click(netView.getByRole('button', { name: 'Load Agent transactions' }));
     expect(await netView.findByText('C2C-SURVIVING-01')).toBeTruthy();
     expect(netView.getByText(/Wallet history temporarily unavailable/)).toBeTruthy();
+    netView.unmount();
+  });
+
+  test('Part B: AgentUnifiedHistoryPanel integrates GET /internal/agents/:id/transactions with agent.view gating, pagination, type filtering, minor-unit rendering, and 403/error/empty handling', async () => {
+    // 1. AGENT_NETWORK_MANAGER with agent.view (and WITHOUT transaction.view) can load, filter, and paginate unified history
+    setWorkforceSession(['AGENT_NETWORK_MANAGER'], ['agent.view']);
+
+    const unifiedCalls: string[] = [];
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/internal/agents?')) {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'agent-uh-1',
+              reference: 'AG-UH-01',
+              status: 'ACTIVE',
+              agentClassId: null,
+              createdAt: '2026-10-27T08:00:00.000Z',
+              updatedAt: '2026-10-27T08:00:00.000Z',
+            },
+          ],
+          total: 1,
+        });
+      }
+      if (url === '/internal/agents/agent-uh-1/financial-position') {
+        return Promise.resolve({
+          agentId: 'agent-uh-1',
+          currency: 'NGN',
+          balanceMinor: '950000',
+          walletExists: true,
+          walletId: 'wallet-uh-1',
+        });
+      }
+      if (url.startsWith('/internal/agents/agent-uh-1/transactions?')) {
+        unifiedCalls.push(url);
+        if (url.includes('type=AGENT_DEFUNDING')) {
+          return Promise.resolve({
+            items: [],
+            pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false },
+          });
+        }
+        if (url.includes('type=CASH_TO_CASH_CLAIM')) {
+          return Promise.resolve({
+            items: [
+              {
+                id: 'tx-claim-1',
+                type: 'CASH_TO_CASH_CLAIM',
+                status: 'CLAIMED',
+                amountMinor: '300000',
+                currency: 'NGN',
+                direction: 'CREDIT',
+                createdAt: '2026-10-27T09:15:00.000Z',
+                completedAt: '2026-10-27T09:15:03.000Z',
+                reference: 'CASH_TO_CASH_CLAIM-001',
+                narration: 'Agent cash payout float credit',
+                feeMinor: '0',
+                counterparty: {
+                  ownerType: 'CUSTOMER',
+                  display: 'Chinedu Okafor',
+                  identifierMasked: '803***4567',
+                },
+                commission: null,
+                failureCode: null,
+                failureMessage: null,
+              },
+            ],
+            pagination: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false },
+          });
+        }
+        if (url.includes('page=2')) {
+          return Promise.resolve({
+            items: [
+              {
+                id: 'tx-fund-2',
+                type: 'AGENT_FUNDING',
+                status: 'FAILED',
+                amountMinor: '1000000',
+                currency: 'NGN',
+                direction: 'CREDIT',
+                createdAt: '2026-10-26T18:00:00.000Z',
+                completedAt: null,
+                reference: 'FUND-FAIL-002',
+                narration: null,
+                feeMinor: '0',
+                counterparty: {
+                  ownerType: 'WORKFORCE',
+                  display: null,
+                  identifierMasked: null,
+                },
+                commission: null,
+                failureCode: 'LIMIT_EXCEEDED',
+                failureMessage: 'Daily float funding cap reached',
+              },
+            ],
+            pagination: { page: 2, limit: 20, total: 21, totalPages: 2, hasNextPage: false },
+          });
+        }
+        return Promise.resolve({
+          items: [
+            {
+              id: 'tx-c2c-1',
+              type: 'CASH_TO_CASH',
+              status: 'COMPLETED',
+              amountMinor: '500000',
+              currency: 'NGN',
+              direction: 'DEBIT',
+              createdAt: '2026-10-27T10:00:00.000Z',
+              completedAt: '2026-10-27T10:00:01.000Z',
+              reference: 'CASH_TO_CASH-000042',
+              narration: 'Cash-to-Cash initiation',
+              feeMinor: '10000',
+              counterparty: {
+                ownerType: 'BENEFICIARY',
+                display: null,
+                identifierMasked: '809***1122',
+              },
+              commission: {
+                amountMinor: '2500',
+                currency: 'NGN',
+                status: 'POSTED',
+              },
+              failureCode: null,
+              failureMessage: null,
+            },
+          ],
+          pagination: { page: 1, limit: 20, total: 21, totalPages: 2, hasNextPage: true },
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    const view = render(<AgentNetworkScreen />);
+    expect(await view.findByText('AG-UH-01')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: 'View' }));
+    await view.findByText('wallet-uh-1');
+
+    // transaction.view section is hidden for role without transaction.view, while unified history is accessible via agent.view
+    expect(view.queryByRole('button', { name: 'Load Agent transactions' })).toBeNull();
+    expect(view.queryByTestId('agent-unified-history-dependency')).toBeNull();
+
+    fireEvent.click(view.getByRole('button', { name: 'Load unified stream' }));
+    expect(await view.findByText('CASH_TO_CASH-000042')).toBeTruthy();
+    expect(unifiedCalls[0]).toBe('/internal/agents/agent-uh-1/transactions?page=1&limit=20');
+    expect(view.getByText('NGN 5,000.00')).toBeTruthy();
+    expect(view.getByText('Fee: NGN 100.00')).toBeTruthy();
+    expect(view.getByText('Commission: NGN 25.00 (POSTED)')).toBeTruthy();
+    expect(view.getByText('809***1122 · BENEFICIARY')).toBeTruthy();
+
+    // Paginate to page 2 -> renders failureCode & failureMessage accurately, then Previous back to page 1
+    fireEvent.click(
+      within(view.getByTestId('agent-unified-history-pager')).getByRole('button', { name: 'Next' }),
+    );
+    expect(await view.findByText('FUND-FAIL-002')).toBeTruthy();
+    expect(unifiedCalls).toContain('/internal/agents/agent-uh-1/transactions?page=2&limit=20');
+    expect(view.getByText('LIMIT_EXCEEDED: Daily float funding cap reached')).toBeTruthy();
+
+    fireEvent.click(
+      within(view.getByTestId('agent-unified-history-pager')).getByRole('button', {
+        name: 'Previous',
+      }),
+    );
+    expect(await view.findByText('CASH_TO_CASH-000042')).toBeTruthy();
+
+    // Filter by CASH_TO_CASH_CLAIM -> resets to page 1 with type=CASH_TO_CASH_CLAIM
+    fireEvent.change(view.getByLabelText('Unified history service filter'), {
+      target: { value: 'CASH_TO_CASH_CLAIM' },
+    });
+    expect(await view.findByText('CASH_TO_CASH_CLAIM-001')).toBeTruthy();
+    expect(unifiedCalls).toContain(
+      '/internal/agents/agent-uh-1/transactions?page=1&limit=20&type=CASH_TO_CASH_CLAIM',
+    );
+    expect(view.getByText('Chinedu Okafor · 803***4567 · CUSTOMER')).toBeTruthy();
+
+    // Filter by AGENT_DEFUNDING -> renders empty state cleanly
+    fireEvent.change(view.getByLabelText('Unified history service filter'), {
+      target: { value: 'AGENT_DEFUNDING' },
+    });
+    expect(await view.findByTestId('agent-unified-history-empty')).toBeTruthy();
+    view.unmount();
+
+    // 2. Non-403 error then 403 Forbidden locks panel fail-closed without retrying
+    jest.clearAllMocks();
+    setWorkforceSession(['FINANCE_AUDITOR'], ['agent.view', 'transaction.view']);
+    let txAttempt = 0;
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/internal/agents?')) {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'agent-uh-403',
+              reference: 'AG-UH-403',
+              status: 'ACTIVE',
+              agentClassId: null,
+              createdAt: '2026-10-27T08:00:00.000Z',
+              updatedAt: '2026-10-27T08:00:00.000Z',
+            },
+          ],
+          total: 1,
+        });
+      }
+      if (url === '/internal/agents/agent-uh-403/financial-position') {
+        return Promise.resolve({
+          agentId: 'agent-uh-403',
+          currency: 'NGN',
+          balanceMinor: '0',
+          walletExists: false,
+          walletId: null,
+        });
+      }
+      if (url.startsWith('/internal/agents/agent-uh-403/transactions?')) {
+        txAttempt += 1;
+        if (txAttempt === 1) {
+          return Promise.reject(new Error('Temporary ledger timeout'));
+        }
+        const forbidden = new Error('Forbidden') as Error & { status: number };
+        forbidden.status = 403;
+        return Promise.reject(forbidden);
+      }
+      return Promise.resolve([]);
+    });
+
+    const errView = render(<AgentNetworkScreen />);
+    expect(await errView.findByText('AG-UH-403')).toBeTruthy();
+    fireEvent.click(errView.getByRole('button', { name: 'View' }));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/agents/agent-uh-403/financial-position'),
+    );
+
+    fireEvent.click(errView.getByRole('button', { name: 'Load unified stream' }));
+    expect(await errView.findByTestId('agent-unified-history-error')).toBeTruthy();
+    expect(errView.getByText('Temporary ledger timeout')).toBeTruthy();
+
+    fireEvent.click(errView.getByRole('button', { name: 'Load unified stream' }));
+    expect(await errView.findByTestId('agent-unified-history-forbidden')).toBeTruthy();
+    expect(txAttempt).toBe(2);
+    expect(
+      (errView.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    errView.unmount();
+
+    // 3. SUPPORT principal type is excluded from unified history per ARENA 3 route policy
+    jest.clearAllMocks();
+    setWorkforceSession(['CUSTOMER_SUPPORT_AGENT'], ['agent.view'], {
+      type: 'SUPPORT' as WorkforcePrincipal['type'],
+    });
+    (ApiClient.get as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          id: 'agent-support-1',
+          reference: 'AG-SUP-01',
+          status: 'ACTIVE',
+          agentClassId: null,
+          createdAt: '2026-10-27T08:00:00.000Z',
+          updatedAt: '2026-10-27T08:00:00.000Z',
+        },
+      ],
+      total: 1,
+    });
+    const supView = render(<AgentNetworkScreen />);
+    expect(await supView.findByText('AG-SUP-01')).toBeTruthy();
+    fireEvent.click(supView.getByRole('button', { name: 'View' }));
+    expect(supView.queryByRole('button', { name: 'Load unified stream' })).toBeNull();
+    supView.unmount();
   });
 });

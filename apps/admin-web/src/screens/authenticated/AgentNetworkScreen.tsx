@@ -168,6 +168,7 @@ export const AgentNetworkScreen: React.FC = () => {
     principal?.type ?? '',
   );
   const canViewReceivingNumber = canView && isOperatorOrPrivilegedWorkforce;
+  const canViewUnifiedHistory = canView && isOperatorOrPrivilegedWorkforce;
   const canManageClasses = hasFn('agent.manage_classes');
   const canViewLimitCatalog = hasFn('limit.view');
   const canViewTransactions = hasFn('transaction.view') && isOperatorOrPrivilegedWorkforce;
@@ -1532,9 +1533,14 @@ export const AgentNetworkScreen: React.FC = () => {
                     </div>
                   </div>
                 )}
+              </section>
+            )}
+
+            {canViewUnifiedHistory && (
+              <section style={card} aria-label="Unified Agent history section">
                 <AgentUnifiedHistoryPanel
                   agentId={selected.id}
-                  canViewTransactions={canViewTransactions}
+                  canViewAgent={canViewUnifiedHistory}
                 />
               </section>
             )}

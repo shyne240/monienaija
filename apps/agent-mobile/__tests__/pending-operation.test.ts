@@ -10,9 +10,13 @@
 import {
   clearAllPendingAgentOperations,
   clearPendingAgentOperation,
+  clearPendingCashToCashLocatorClaim,
   loadPendingAgentOperation,
+  loadPendingCashToCashLocatorClaim,
   matchesPendingAgentOperation,
+  matchesPendingCashToCashLocatorClaim,
   savePendingAgentOperation,
+  savePendingCashToCashLocatorClaim,
   type PendingAgentOperation,
 } from '../src/services/pending-operation';
 import { SecureStorage } from '../src/services/secure-storage';
@@ -168,5 +172,51 @@ describe('pending-operation — logout clears all pending operations for an Agen
     expect(await loadPendingAgentOperation('agent-logout', 'CASH_TO_CASH_SEND')).toBeNull();
     // A different Agent's pending state on the same device is never touched.
     expect(await loadPendingAgentOperation('agent-survivor', 'CASH_IN')).not.toBeNull();
+  });
+
+  test('13. PendingCashToCashLocatorClaim preserves leading-zero 6-digit transferNumber, isolates by Agent, and clears on logout', async () => {
+    const claimIntent = {
+      agentId: 'agent-claim-b',
+      senderPhone: '8031234567',
+      transferNumber: '000042',
+      beneficiaryPhone: '8012345678',
+      customerId: 'cust-uuid-1',
+      redemptionMethod: 'AGENT_CASH' as const,
+      idempotencyKey: 'c2c-claim-orig-key',
+      createdAt: new Date().toISOString(),
+    };
+    await savePendingCashToCashLocatorClaim(claimIntent);
+    const loaded = await loadPendingCashToCashLocatorClaim('agent-claim-b');
+    expect(loaded).toEqual(claimIntent);
+    expect(await loadPendingCashToCashLocatorClaim('agent-other')).toBeNull();
+
+    expect(
+      matchesPendingCashToCashLocatorClaim(claimIntent, {
+        senderPhone: '8031234567',
+        transferNumber: '000042',
+        beneficiaryPhone: '8012345678',
+        customerId: 'cust-uuid-1',
+      }),
+    ).toBe(true);
+    expect(
+      matchesPendingCashToCashLocatorClaim(claimIntent, {
+        senderPhone: '8031234567',
+        transferNumber: '000043',
+        beneficiaryPhone: '8012345678',
+        customerId: 'cust-uuid-1',
+      }),
+    ).toBe(false);
+
+    // Malformed non-6-digit transferNumber fails closed
+    await SecureStorage.set(
+      'pending_c2c_locator_claim:agent-bad-num',
+      JSON.stringify({ ...claimIntent, agentId: 'agent-bad-num', transferNumber: '42' }),
+    );
+    expect(await loadPendingCashToCashLocatorClaim('agent-bad-num')).toBeNull();
+
+    // Logout clears pending locator claim for that Agent
+    await clearAllPendingAgentOperations('agent-claim-b');
+    expect(await loadPendingCashToCashLocatorClaim('agent-claim-b')).toBeNull();
+    await clearPendingCashToCashLocatorClaim('agent-bad-num');
   });
 });

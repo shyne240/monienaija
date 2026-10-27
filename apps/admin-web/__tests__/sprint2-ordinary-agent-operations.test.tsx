@@ -352,7 +352,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     fireEvent.click(view.getByRole('button', { name: 'Load Agent transactions' }));
     expect(await view.findByText('WTX-REF-100')).toBeTruthy();
     expect(view.getByText('C2C-REF-100')).toBeTruthy();
-    expect(view.getByTestId('agent-unified-history-dependency').textContent).toContain('/internal/agents/:id/transactions');
+    expect(
+      (view.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     expect(view.getByTestId('agent-pin-support-dependency').textContent).toContain('transaction-pin');
   });
 

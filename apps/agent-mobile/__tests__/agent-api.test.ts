@@ -3,7 +3,9 @@ import {
   agentCashIn,
   agentCashToCash,
   agentCashToCashClaim,
+  agentCashToCashClaimByNumber,
   getAgentCashToCashClaim,
+  recoverAgentCashToCashClaimByNumber,
   createAgentSupportTicket,
   createAgentSupportTicketMessage,
   describeApiError,
@@ -153,6 +155,8 @@ describe('Agent operating-context API bindings', () => {
         transferId: 'c2c-transfer-uuid',
         journalId: 'journal-uuid',
         agentId: 'agent-uuid',
+        senderPhone: '8031234567',
+        transferNumber: '000042',
         beneficiaryPhone: '8012345678',
         principalMinor: '500000',
         feeMinor: '0',
@@ -170,6 +174,7 @@ describe('Agent operating-context API bindings', () => {
       mockClient.post.mockResolvedValue(result);
 
       const out = await agentCashToCash({
+        senderPhone: '8031234567',
         beneficiaryPhone: '8012345678',
         amountMinor: '500000',
         currency: 'NGN',
@@ -180,6 +185,7 @@ describe('Agent operating-context API bindings', () => {
       expect(mockClient.post).toHaveBeenCalledWith(
         'api/v1/agents/cash-to-cash',
         {
+          senderPhone: '8031234567',
           beneficiaryPhone: '8012345678',
           amountMinor: '500000',
           currency: 'NGN',
@@ -189,6 +195,8 @@ describe('Agent operating-context API bindings', () => {
         { idempotencyKey: 'c2c-key-1', preserveSessionOn401: true },
       );
       expect(out.status).toBe('COMPLETED');
+      expect(out.transferNumber).toBe('000042');
+      expect(out.senderPhone).toBe('8031234567');
       expect(out.transferCode).toBe('98765432');
     });
   });
@@ -330,6 +338,125 @@ describe('Agent operating-context API bindings', () => {
       );
       expect(describeCashToCashClaimError(new ApiError('Generic 400 error', 400))).toBe(
         'Generic 400 error',
+      );
+      expect(
+        describeCashToCashError(
+          new ApiError(
+            'Unable to allocate transfer number; retry unchanged request',
+            409,
+            'C2C_LOCATOR_UNAVAILABLE',
+          ),
+        ),
+      ).toBe(
+        'Unable to allocate a 6-digit transfer number right now. Retry this unchanged transfer.',
+      );
+      expect(
+        describeCashToCashClaimError(
+          new ApiError('Claim not available', 404, 'C2C_CLAIM_NOT_AVAILABLE'),
+        ),
+      ).toBe(
+        'Claim could not be completed. Verify the sender phone, 6-digit transfer number, secret transfer code, beneficiary OTP, customer eligibility, and Agent PIN (if cash payout), then request a new OTP if needed.',
+      );
+      expect(
+        describeCashToCashClaimError(
+          new ApiError('Too many locator requests; retry later', 429, 'C2C_LOCATOR_RATE_LIMITED'),
+        ),
+      ).toBe(
+        'Too many claim or recovery attempts right now. Wait at least 60 seconds before trying again, and avoid resending OTPs repeatedly.',
+      );
+      expect(
+        describeCashToCashClaimError(
+          new ApiError('Claim outcome unavailable; recover before retrying', 503, 'C2C_RETRY_REQUIRED'),
+        ),
+      ).toBe(
+        'Claim outcome could not be confirmed yet. Check claim status to recover before retrying with the same attempt.',
+      );
+    });
+
+    test('agentCashToCashClaimByNumber serializes 6-digit string with leading zeros and strips any stray transferId', async () => {
+      const claimRes = {
+        status: 'COMPLETED',
+        transferId: 'c2c-transfer-uuid',
+        journalId: 'journal-uuid',
+        beneficiaryPhone: '8012345678',
+        principalMinor: '450000',
+        currency: 'NGN',
+        amountMinor: '450000',
+        claimantCustomerId: 'cust-claimant-uuid',
+        redemptionMethod: 'AGENT_CASH',
+        idempotencyKey: 'c2c-claim-num-key-1',
+        requestHash: 'hash-claim-1',
+        replayed: false,
+        reference: 'CASH_TO_CASH_CLAIM-c2c-claim-num-key-1',
+        claimedAt: '2026-10-27T12:00:00.000Z',
+      };
+      mockClient.post.mockResolvedValueOnce(claimRes);
+
+      await agentCashToCashClaimByNumber({
+        senderPhone: ' 8031234567 ',
+        transferNumber: ' 000042 ',
+        beneficiaryPhone: '8012345678',
+        transferCode: '87654321',
+        customerId: 'cust-claimant-uuid',
+        mfaChallengeId: 'mfa-challenge-uuid',
+        otp: '123456',
+        idempotencyKey: 'c2c-claim-num-key-1',
+        redemptionMethod: 'AGENT_CASH',
+        agentPin: '1234',
+        ...({ transferId: 'must-never-be-sent' } as any),
+      });
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/cash-to-cash/claim-by-number',
+        {
+          senderPhone: '8031234567',
+          transferNumber: '000042',
+          beneficiaryPhone: '8012345678',
+          transferCode: '87654321',
+          customerId: 'cust-claimant-uuid',
+          mfaChallengeId: 'mfa-challenge-uuid',
+          otp: '123456',
+          idempotencyKey: 'c2c-claim-num-key-1',
+          redemptionMethod: 'AGENT_CASH',
+          agentPin: '1234',
+        },
+        { idempotencyKey: 'c2c-claim-num-key-1', preserveSessionOn401: true },
+      );
+      expect(mockClient.post.mock.calls[0][1]).not.toHaveProperty('transferId');
+
+      await expect(
+        agentCashToCashClaimByNumber({
+          senderPhone: '8031234567',
+          transferNumber: '42',
+          beneficiaryPhone: '8012345678',
+          transferCode: '87654321',
+          customerId: 'cust-claimant-uuid',
+          mfaChallengeId: 'mfa-challenge-uuid',
+          otp: '123456',
+          idempotencyKey: 'c2c-claim-num-key-2',
+        }),
+      ).rejects.toThrow(/exact 6-digit string/);
+    });
+
+    test('recoverAgentCashToCashClaimByNumber posts senderPhone, leading-zero transferNumber, and original idempotencyKey', async () => {
+      const recovered = { status: 'REPLAYED', transferId: 'c2c-transfer-uuid', replayed: true };
+      mockClient.post.mockResolvedValueOnce(recovered);
+
+      await expect(
+        recoverAgentCashToCashClaimByNumber({
+          senderPhone: '08031234567',
+          transferNumber: '000042',
+          idempotencyKey: 'c2c-claim-num-key-1',
+        }),
+      ).resolves.toEqual(recovered);
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        'api/v1/agents/cash-to-cash/claims/recover-by-number',
+        {
+          senderPhone: '08031234567',
+          transferNumber: '000042',
+          idempotencyKey: 'c2c-claim-num-key-1',
+        },
       );
     });
   });

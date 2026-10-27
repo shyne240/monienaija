@@ -344,6 +344,8 @@ export async function agentCashIn(request: AgentCashInRequest): Promise<AgentCas
  * ------------------------------------------------------------------------- */
 
 export interface AgentCashToCashRequest {
+  /** Sending customer's Nigerian phone number (never inferred from Agent login phone). */
+  senderPhone: string;
   beneficiaryPhone: string;
   /** kobo minor units, /^[1-9]\d*$/ */
   amountMinor: string;
@@ -361,6 +363,10 @@ export interface AgentCashToCashResult {
   transferId: string;
   journalId: string;
   agentId: string;
+  /** Canonical 10-digit Nigerian sender phone (optional on pre-backfill legacy rows). */
+  senderPhone?: string;
+  /** Exact 6-digit decimal string preserving leading zeros (optional on pre-backfill legacy rows). */
+  transferNumber?: string;
   beneficiaryPhone: string;
   principalMinor: string;
   feeMinor: string;
@@ -410,7 +416,8 @@ export function clearPendingTransferCode(): void {
 
 export function describeCashToCashError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
-    const status = (error as Error & { status?: number }).status;
+    const status = (error as Error & { status?: number; code?: string }).status;
+    const code = (error as Error & { status?: number; code?: string }).code;
     if (status === 401) {
       if (isBearerSessionExpired401Message(error.message)) {
         return 'Your session has expired. Please log in again.';
@@ -423,6 +430,13 @@ export function describeCashToCashError(error: unknown): string {
     }
     if (status === 403) {
       return 'You are not permitted to perform Cash→Cash for this account.';
+    }
+    if (
+      status === 409 &&
+      (code === 'C2C_LOCATOR_UNAVAILABLE' ||
+        /Unable to allocate transfer number/i.test(error.message))
+    ) {
+      return 'Unable to allocate a 6-digit transfer number right now. Retry this unchanged transfer.';
     }
   }
   return describeApiError(error);
@@ -549,6 +563,35 @@ export interface AgentCashToCashClaimRequest {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * ARENA 1 Approved Six-Digit Redemption DTO (`POST /api/v1/agents/cash-to-cash/claim-by-number`).
+ * `transferId` is strictly forbidden (`@IsEmpty()` on `CashToCashLocatorClaimDto`).
+ * `transferNumber` MUST be an exact 6-digit decimal string (`^[0-9]{6}$`) preserving leading zeros.
+ */
+export interface AgentCashToCashClaimByNumberRequest {
+  senderPhone: string;
+  transferNumber: string;
+  beneficiaryPhone: string;
+  transferCode: string;
+  customerId: string;
+  mfaChallengeId: string;
+  otp: string;
+  idempotencyKey: string;
+  redemptionMethod?: 'CUSTOMER_WALLET' | 'AGENT_CASH';
+  agentPin?: string;
+  reference?: string;
+  description?: string;
+  correlationId?: string;
+  metadata?: Record<string, unknown>;
+  transferId?: never;
+}
+
+export interface AgentCashToCashRecoverByNumberRequest {
+  senderPhone: string;
+  transferNumber: string;
+  idempotencyKey: string;
+}
+
 export interface AgentCashToCashClaimResult {
   status: 'COMPLETED' | 'REPLAYED';
   transferId: string;
@@ -567,7 +610,59 @@ export interface AgentCashToCashClaimResult {
   claimedAt: string;
 }
 
-/** POST /agents/cash-to-cash/claim (200). Unclaimed liability is debited; wallet or Agent float is credited by mode. */
+const SIX_DIGIT_TRANSFER_NUMBER_REGEX = /^[0-9]{6}$/;
+
+/**
+ * Primary Agent B redemption endpoint (`POST /api/v1/agents/cash-to-cash/claim-by-number`, HTTP 200).
+ * Never substitutes `transferNumber` into `transferId` and strips any stray `transferId` field.
+ */
+export async function agentCashToCashClaimByNumber(
+  request: AgentCashToCashClaimByNumberRequest,
+): Promise<AgentCashToCashClaimResult> {
+  const { transferId: _forbiddenTransferId, ...rest } =
+    request as AgentCashToCashClaimByNumberRequest & { transferId?: unknown };
+  const trimmedTransferNumber = String(rest.transferNumber ?? '').trim();
+  if (!SIX_DIGIT_TRANSFER_NUMBER_REGEX.test(trimmedTransferNumber)) {
+    throw new Error('Transfer number must be an exact 6-digit string (e.g. 000042).');
+  }
+  const payload: AgentCashToCashClaimByNumberRequest = {
+    ...rest,
+    senderPhone: rest.senderPhone.trim(),
+    transferNumber: trimmedTransferNumber,
+  };
+  return ApiClient.post<AgentCashToCashClaimResult>(
+    'api/v1/agents/cash-to-cash/claim-by-number',
+    payload,
+    { idempotencyKey: payload.idempotencyKey, preserveSessionOn401: true },
+  );
+}
+
+/**
+ * ARENA 1 locator receipt recovery (`POST /api/v1/agents/cash-to-cash/claims/recover-by-number`, HTTP 200).
+ * Requires a current session of the SAME claiming Agent and the ORIGINAL financial `idempotencyKey`.
+ * Consumes the shared locator rate budget — invoke only when recovering a persisted/uncertain attempt.
+ */
+export async function recoverAgentCashToCashClaimByNumber(
+  request: AgentCashToCashRecoverByNumberRequest,
+): Promise<AgentCashToCashClaimResult> {
+  const trimmedTransferNumber = String(request.transferNumber ?? '').trim();
+  if (!SIX_DIGIT_TRANSFER_NUMBER_REGEX.test(trimmedTransferNumber)) {
+    throw new Error('Transfer number must be an exact 6-digit string (e.g. 000042).');
+  }
+  return ApiClient.post<AgentCashToCashClaimResult>(
+    'api/v1/agents/cash-to-cash/claims/recover-by-number',
+    {
+      senderPhone: request.senderPhone.trim(),
+      transferNumber: trimmedTransferNumber,
+      idempotencyKey: request.idempotencyKey.trim(),
+    },
+  );
+}
+
+/**
+ * Legacy internal UUID compatibility endpoint (`POST /agents/cash-to-cash/claim`, HTTP 200).
+ * Retained for backward compatibility; never pass a 6-digit `transferNumber` here.
+ */
 export async function agentCashToCashClaim(
   request: AgentCashToCashClaimRequest,
 ): Promise<AgentCashToCashClaimResult> {
@@ -579,8 +674,8 @@ export async function agentCashToCashClaim(
 }
 
 /**
- * Recover a claim committed by this Agent when the original POST response was lost.
- * The server scopes the read to the authenticated Agent's immutable claim audit event.
+ * Legacy internal UUID recovery endpoint (`GET /agents/cash-to-cash/claims/:transferId`).
+ * Retained for backward compatibility; never pass a 6-digit `transferNumber` here.
  */
 export async function getAgentCashToCashClaim(
   transferId: string,
@@ -592,8 +687,24 @@ export async function getAgentCashToCashClaim(
 
 export function describeCashToCashClaimError(error: unknown): string {
   if (error instanceof Error && error.name === 'ApiError') {
-    const status = (error as Error & { status?: number }).status;
+    const status = (error as Error & { status?: number; code?: string }).status;
+    const code = (error as Error & { status?: number; code?: string }).code;
     const msg = error.message;
+    if (
+      code === 'C2C_CLAIM_NOT_AVAILABLE' ||
+      (status === 404 && /Claim not available/i.test(msg))
+    ) {
+      return 'Claim could not be completed. Verify the sender phone, 6-digit transfer number, secret transfer code, beneficiary OTP, customer eligibility, and Agent PIN (if cash payout), then request a new OTP if needed.';
+    }
+    if (code === 'C2C_LOCATOR_RATE_LIMITED' || status === 429) {
+      return 'Too many claim or recovery attempts right now. Wait at least 60 seconds before trying again, and avoid resending OTPs repeatedly.';
+    }
+    if (
+      code === 'C2C_RETRY_REQUIRED' ||
+      (status === 503 && /Claim outcome unavailable/i.test(msg))
+    ) {
+      return 'Claim outcome could not be confirmed yet. Check claim status to recover before retrying with the same attempt.';
+    }
     if (status === 404) {
       if (/Customer/i.test(msg)) {
         return 'Beneficiary customer not found. An active customer account is required to claim.';
@@ -666,6 +777,12 @@ export function describeCashToCashClaimError(error: unknown): string {
       }
       if (/Beneficiary phone/i.test(msg)) {
         return 'Beneficiary phone number does not match this transfer.';
+      }
+      if (/transferNumber/i.test(msg)) {
+        return 'Enter the exact 6-digit transfer number (including any leading zeros).';
+      }
+      if (/senderPhone/i.test(msg)) {
+        return 'Enter a valid Nigerian sender phone number.';
       }
       if (/transferId/i.test(msg)) {
         return 'Invalid transfer ID format.';

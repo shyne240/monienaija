@@ -1,24 +1,18 @@
 /**
- * V1-SPRINT3-MOBILE-CLAIM-HANDOFF-PLAN (ARENA 2 — Isolated Contract Review & Typed Plan)
+ * V1-SPRINT3-MOBILE-CLAIM-HANDOFF-PLAN (ARENA 2 — Six-Digit Claim Locator Classifier & Validator)
  *
- * Zero-network, pure TypeScript contract review and integration plan for the Cash-to-Cash
- * reference-versus-UUID handoff currently under ARENA 1 investigation.
+ * Pure TypeScript identifier classifier and validator aligned with ARENA 1's approved
+ * `docs/APPROVED-C2C-SIX-DIGIT-REDEMPTION-CONTRACT.md` (`POST /api/v1/agents/cash-to-cash/claim-by-number`
+ * and `POST /api/v1/agents/cash-to-cash/claims/recover-by-number`).
  *
- * IMPORTANT BOUNDARIES:
- * - Does NOT guess or call any unverified backend endpoint.
- * - Does NOT alter the live `POST /api/v1/agents/cash-to-cash/claim` or
- *   `GET /api/v1/agents/cash-to-cash/claims/:transferId` contracts.
- *
- * VERIFIED SPRINT 3 HANDOFF GAP:
- * 1. Sender Agent initiates Cash-to-Cash (`POST /api/v1/agents/cash-to-cash`), receiving both:
- *    - `transferId` (UUID — internal primary key)
- *    - `reference` (`CASH_TO_CASH-<idempotencyKey>` or `C2C-...` — human-shareable reference)
- * 2. `AgentReceipt` (`receiptFromCashToCashResult`) intentionally omits raw internal UUIDs from
- *    customer-facing shared receipts (`shareText` / receipt rows), surfacing `Reference` instead.
- * 3. Claiming Agent (`CashToCashClaimRecipientScreen` -> `CashToCashClaimConfirmScreen`) must
- *    currently submit `transferId` (`@IsUUID()` in `AgentCashToCashClaimDto`) to
- *    `POST /api/v1/agents/cash-to-cash/claim` and `GET /api/v1/agents/cash-to-cash/claims/:transferId`.
+ * CRITICAL STRING DISCIPLINE:
+ * - Six-digit transfer numbers (`^[0-9]{6}$`, e.g. `"000042"`) are ALWAYS handled as exact
+ *   6-character decimal strings.
+ * - NEVER coerce to `Number`, NEVER zero-pad shorter numbers (`"42"` is rejected, NOT padded),
+ *   NEVER truncate longer numbers, and NEVER pass a 6-digit `transferNumber` into `transferId`.
  */
+
+const SIX_DIGIT_TRANSFER_NUMBER_PATTERN = /^[0-9]{6}$/;
 
 const UUID_IDENTIFIER_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,6 +20,7 @@ const UUID_IDENTIFIER_PATTERN =
 const HUMAN_TRANSFER_REFERENCE_PATTERN = /^(?:CASH_TO_CASH[-_]|C2C[-_])[A-Za-z0-9_-]{3,120}$/i;
 
 export type CashToCashClaimIdentifierKind =
+  | 'TRANSFER_NUMBER'
   | 'UUID'
   | 'TRANSFER_REFERENCE'
   | 'EMPTY'
@@ -37,9 +32,21 @@ export interface ClassifiedCashToCashClaimIdentifier {
 }
 
 /**
- * Pure client-side classifier distinguishing a canonical `transferId` UUID from a receipt
- * `Reference` (`CASH_TO_CASH-...` / `C2C-...`) so `CashToCashClaimRecipientScreen` can guide
- * the Agent accurately without calling nonexistent lookup routes.
+ * Validates and trims an exact 6-digit transfer number string (`^[0-9]{6}$`), preserving
+ * leading zeros (`"000042"`). Rejects shorter (`"42"`), longer (`"0000421"`), or non-digit
+ * inputs without numeric coercion or padding.
+ */
+export function validateSixDigitTransferNumber(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!SIX_DIGIT_TRANSFER_NUMBER_PATTERN.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Pure client-side classifier distinguishing an exact 6-digit `transferNumber`, a legacy
+ * `transferId` UUID, or a printed receipt `Reference` (`CASH_TO_CASH-...` / `C2C-...`).
  */
 export function classifyCashToCashClaimIdentifier(
   raw: string,
@@ -47,6 +54,9 @@ export function classifyCashToCashClaimIdentifier(
   const normalized = raw.trim();
   if (!normalized) {
     return { kind: 'EMPTY', normalized: '' };
+  }
+  if (SIX_DIGIT_TRANSFER_NUMBER_PATTERN.test(normalized)) {
+    return { kind: 'TRANSFER_NUMBER', normalized };
   }
   if (UUID_IDENTIFIER_PATTERN.test(normalized)) {
     return { kind: 'UUID', normalized };
@@ -57,70 +67,41 @@ export function classifyCashToCashClaimIdentifier(
   return { kind: 'INVALID', normalized };
 }
 
-/**
- * Backend contract shapes ARENA 2 is prepared to wire once ARENA 1 finalizes the approved API:
- *
- * - `DIRECT_CLAIM_BY_REFERENCE`: `POST /api/v1/agents/cash-to-cash/claim` and recovery lookup
- *   accept `transferReference` (mutually exclusive with or preferred over `transferId`) so
- *   no pre-claim metadata leak occurs prior to transferCode + beneficiary OTP verification.
- * - `PRE_CLAIM_LOOKUP_BY_REFERENCE`: Dedicated authenticated Agent lookup resolves
- *   `(reference, beneficiaryPhone)` -> `{ transferId, status, expiresAt }` (without exposing
- *   `principalMinor` or sender PII before secret code verification, per V1-AGENT-07).
- */
-export type PendingArena1HandoffStrategy =
-  | 'DIRECT_CLAIM_BY_REFERENCE'
-  | 'PRE_CLAIM_LOOKUP_BY_REFERENCE';
-
-export interface PendingArena1DirectReferenceClaimExtension {
-  /** Human-readable receipt reference (`CASH_TO_CASH-...`), replacing raw UUID entry. */
-  readonly transferReference?: string;
-}
-
-export interface PendingArena1ReferenceResolutionView {
-  readonly transferId: string;
-  readonly reference: string;
-  readonly status: 'UNCLAIMED' | 'CLAIMED' | 'EXPIRED';
-  readonly expiresAt: string;
-}
-
 export interface MobileClaimHandoffTouchpoint {
   readonly file: string;
   readonly responsibility: string;
   readonly requiredChangeWhenApproved: string;
 }
 
-/**
- * Authoritative integration checklist for Agent Mobile once ARENA 1 lands the approved contract.
- */
 export const CASH_TO_CASH_REFERENCE_HANDOFF_PLAN: readonly MobileClaimHandoffTouchpoint[] = [
   {
     file: 'apps/agent-mobile/src/services/agent-api.ts',
     responsibility: 'Typed claim DTOs, recovery lookup, and error mapping',
     requiredChangeWhenApproved:
-      'Extend AgentCashToCashClaimRequest with optional transferReference (or add approved reference resolver) and support reference-keyed post-submit recovery alongside getAgentCashToCashClaim.',
+      'Integrated senderPhone on POST /agents/cash-to-cash, POST /agents/cash-to-cash/claim-by-number (omitting transferId), POST /agents/cash-to-cash/claims/recover-by-number, and C2C_CLAIM_NOT_AVAILABLE / C2C_LOCATOR_RATE_LIMITED / C2C_RETRY_REQUIRED handling.',
   },
   {
     file: 'apps/agent-mobile/src/navigation/types.ts',
-    responsibility: 'CashToCashClaimConfirm route params',
+    responsibility: 'CashToCash & CashToCashClaimConfirm route params',
     requiredChangeWhenApproved:
-      'Carry { transferId?: string; transferReference?: string; displayIdentifier: string } in RootStackParamList["CashToCashClaimConfirm"] without passing transferCode or OTP.',
+      'Carry senderPhone through initiation and { senderPhone, transferNumber, beneficiaryPhone } in CashToCashClaimConfirm while retaining internal UUID compatibility.',
   },
   {
     file: 'apps/agent-mobile/src/screens/authenticated/cash-to-cash/CashToCashClaimRecipientScreen.tsx',
-    responsibility: 'Step 1 beneficiary + transfer identifier capture',
+    responsibility: 'Step 1 beneficiary + senderPhone + 6-digit transferNumber capture',
     requiredChangeWhenApproved:
-      'Enable TRANSFER_REFERENCE classification in handleVerify/handleProceed so Agents can enter the printed receipt reference (CASH_TO_CASH-...) directly while retaining UUID backward compatibility.',
+      'Replace user-facing UUID input with canonical Nigerian senderPhone + exact 6-digit string transferNumber.',
   },
   {
     file: 'apps/agent-mobile/src/screens/authenticated/cash-to-cash/CashToCashClaimConfirmScreen.tsx',
     responsibility: 'Step 2 MFA challenge, secret transferCode, idempotent claim, and recovery',
     requiredChangeWhenApproved:
-      'Display transferReference in SummaryRow, forward transferReference/transferId in claimMutation, and run pre-mount / post-error recovery against the approved recovery identifier.',
+      'Display senderPhone + transferNumber in SummaryRow, submit to claim-by-number without transferId, and recover via claims/recover-by-number using the original idempotencyKey.',
   },
   {
     file: 'apps/agent-mobile/src/components/AgentReceipt.tsx',
     responsibility: 'Sender & claimant shareable receipts',
     requiredChangeWhenApproved:
-      'Highlight the claimable Transfer Reference prominently on sender Cash-to-Cash receipts as the single handoff identifier alongside the out-of-band secret transferCode.',
+      'Surface public 6-digit transferNumber and canonical senderPhone on initiation receipts/share text while strictly excluding secret transferCode.',
   },
 ] as const;

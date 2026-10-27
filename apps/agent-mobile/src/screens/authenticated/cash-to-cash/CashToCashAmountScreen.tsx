@@ -21,7 +21,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 export const CashToCashAmountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'CashToCashAmount'>>();
-  const { beneficiaryPhone } = route.params;
+  const { senderPhone, beneficiaryPhone } = route.params;
 
   const [nairaInput, setNairaInput] = useState('');
   const [error, setError] = useState('');
@@ -39,6 +39,7 @@ export const CashToCashAmountScreen: React.FC = () => {
     }
     setError('');
     navigation.navigate('CashToCashConfirm', {
+      senderPhone,
       beneficiaryPhone,
       amountMinor,
       idempotencyKey: idempotencyKeyRef.current,
@@ -50,7 +51,8 @@ export const CashToCashAmountScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>How much cash to send?</Text>
         <Text style={styles.helper}>
-          Sending to beneficiary phone <Text style={styles.strong}>{beneficiaryPhone}</Text>.
+          From sender phone <Text style={styles.strong}>{senderPhone}</Text> to beneficiary phone{' '}
+          <Text style={styles.strong}>{beneficiaryPhone}</Text>.
         </Text>
 
         <Card style={styles.card}>

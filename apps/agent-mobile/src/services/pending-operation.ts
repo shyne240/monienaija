@@ -142,7 +142,105 @@ export async function clearPendingAgentOperation(
 
 const ALL_OPERATION_TYPES: AgentOperationType[] = ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH_SEND'];
 
+/**
+ * ARENA 1 Six-Digit Redemption (`POST /api/v1/agents/cash-to-cash/claims/recover-by-number`)
+ * requires the SAME claiming Agent session AND the ORIGINAL financial `idempotencyKey` alongside
+ * `(senderPhone, transferNumber)`. Persisting ONLY those non-secret locator & idempotency fields
+ * immediately before `claim-by-number` ensures an interrupted claim can recover its receipt or
+ * safely retry with the identical `idempotencyKey` and locked `redemptionMethod` without ever
+ * minting a fresh key for an ambiguous financial attempt.
+ *
+ * SECURITY: NEVER stores `transferCode`, `otp`, or `agentPin`.
+ */
+const LOCATOR_CLAIM_STORAGE_PREFIX = 'pending_c2c_locator_claim';
+
+function locatorClaimStorageKeyFor(agentId: string): string {
+  return `${LOCATOR_CLAIM_STORAGE_PREFIX}:${agentId}`;
+}
+
+export interface CashToCashLocatorClaimParams {
+  senderPhone: string;
+  transferNumber: string;
+  beneficiaryPhone: string;
+  customerId: string;
+}
+
+export interface PendingCashToCashLocatorClaim extends CashToCashLocatorClaimParams {
+  agentId: string;
+  redemptionMethod: 'CUSTOMER_WALLET' | 'AGENT_CASH';
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+function isPendingCashToCashLocatorClaim(
+  value: unknown,
+): value is PendingCashToCashLocatorClaim {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.agentId === 'string' &&
+    typeof v.senderPhone === 'string' &&
+    typeof v.transferNumber === 'string' &&
+    /^[0-9]{6}$/.test(v.transferNumber) &&
+    typeof v.beneficiaryPhone === 'string' &&
+    typeof v.customerId === 'string' &&
+    (v.redemptionMethod === 'CUSTOMER_WALLET' || v.redemptionMethod === 'AGENT_CASH') &&
+    typeof v.idempotencyKey === 'string' &&
+    typeof v.createdAt === 'string'
+  );
+}
+
+export async function savePendingCashToCashLocatorClaim(
+  intent: PendingCashToCashLocatorClaim,
+): Promise<void> {
+  await SecureStorage.set(locatorClaimStorageKeyFor(intent.agentId), JSON.stringify(intent));
+}
+
+export async function clearPendingCashToCashLocatorClaim(agentId: string): Promise<void> {
+  await SecureStorage.remove(locatorClaimStorageKeyFor(agentId));
+}
+
+export async function loadPendingCashToCashLocatorClaim(
+  agentId: string,
+): Promise<PendingCashToCashLocatorClaim | null> {
+  const raw = await SecureStorage.get(locatorClaimStorageKeyFor(agentId));
+  if (!raw) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isPendingCashToCashLocatorClaim(parsed)) return null;
+  if (parsed.agentId !== agentId) return null;
+
+  const ageMs = Date.now() - new Date(parsed.createdAt).getTime();
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_PENDING_AGE_MS) {
+    await clearPendingCashToCashLocatorClaim(agentId);
+    return null;
+  }
+
+  return parsed;
+}
+
+export function matchesPendingCashToCashLocatorClaim(
+  intent: PendingCashToCashLocatorClaim,
+  candidate: CashToCashLocatorClaimParams,
+): boolean {
+  return (
+    intent.senderPhone === candidate.senderPhone &&
+    intent.transferNumber === candidate.transferNumber &&
+    intent.beneficiaryPhone === candidate.beneficiaryPhone &&
+    intent.customerId === candidate.customerId
+  );
+}
+
 /** Called on logout / session purge — no pending operation may ever cross an Agent identity boundary. */
 export async function clearAllPendingAgentOperations(agentId: string): Promise<void> {
-  await Promise.all(ALL_OPERATION_TYPES.map((type) => clearPendingAgentOperation(agentId, type)));
+  await Promise.all([
+    ...ALL_OPERATION_TYPES.map((type) => clearPendingAgentOperation(agentId, type)),
+    clearPendingCashToCashLocatorClaim(agentId),
+  ]);
 }
