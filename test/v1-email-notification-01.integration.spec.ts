@@ -23,6 +23,7 @@ import { NotificationTemplateService } from '../src/notification/notification-te
 import { NotificationWorkerService } from '../src/notification/notification-worker.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — EMAIL delivery infrastructure integration suite (real PostgreSQL).
@@ -153,6 +154,15 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
+    // Arena 1 registry defaults are migration-owned reference data — restore after TRUNCATE
+    // (same pattern as pg-harness truncateAllTables), then enable the EMAIL channel rows:
+    // the seed ships EMAIL event configurations DISABLED (email dark by default at the
+    // registry level too); these tests exercise the configured-email posture.
+    await seedNotificationDefaultsV1(dataSource.manager);
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=true, version=version+1, updated_at=now()
+        WHERE channel='EMAIL' AND delivery_class <> 'SECURITY'`,
+    );
     const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
     if (settlement.length === 0) {
       await dataSource.query(`

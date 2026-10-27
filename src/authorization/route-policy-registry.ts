@@ -703,6 +703,25 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Notification template/configuration governance is workforce-session only. Keep the
+    // existing delivery-diagnostics route separate; its legacy callers are unaffected.
+    if (path === '/api/v1/internal/notifications/events' ||
+        path === '/api/v1/internal/notifications/templates' ||
+        path.startsWith('/api/v1/internal/notifications/templates/') ||
+        path === '/api/v1/internal/notifications/changes' ||
+        path.startsWith('/api/v1/internal/notifications/changes/')) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'notification-registry',
+        policy: {
+          resourceType: 'notification-registry', action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Limit catalogue & assignment — workforce-only OPERATOR/SERVICE/PRIVILEGED (V1-LIMIT-01/02). Strict subset of generic internal.
     if (path.startsWith('/api/v1/internal/limit-')) {
       return {

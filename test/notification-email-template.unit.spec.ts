@@ -66,24 +66,33 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     }
   });
 
-  it('3. HTML escaping — script/tag/attribute injection payloads stay inert text', () => {
+  it('3. HTML safety — hostile variables are blocked upstream AND escaping neutralizes direct input', () => {
     const hostile = `</script><script>alert(1)</script><img src=x onerror="pwn">{{constructor}}`;
+
+    // Layer 1 (Arena 1 registry integration): the allowlisted variable resolvers refuse
+    // hostile reference/status payload values — they never reach the rendered message at all.
     const rendered = emails.buildEmail('support.ticket.status_changed', {
       reference: hostile,
       status: hostile,
     });
-
+    expect(rendered.text).not.toContain('script');
+    expect(rendered.text).not.toContain('onerror');
     expect(rendered.html).not.toContain('</script>');
     expect(rendered.html).not.toContain('<script');
-    // No live tag/attribute can be constructed: the injection payload survives only as
-    // entity-escaped text (e.g. `&lt;img src=x onerror=&quot;pwn&quot;&gt;`).
     expect(rendered.html).not.toContain('<img');
     expect(rendered.html).not.toContain('onerror="');
-    expect(rendered.html).toContain('&lt;/script&gt;');
-    expect(rendered.html).toContain('onerror=&quot;pwn&quot;');
-    expect(rendered.html).toContain('{{constructor}}'); // inert text, not a template directive
-    // The raw hostile string must not survive unescaped anywhere in the body:
-    expect(rendered.html).not.toContain(hostile);
+
+    // Layer 2 (email rendering): even text that DID contain markup (e.g. a future variable
+    // resolver or registry body) is entity-escaped by the fixed layout — no live tags.
+    const direct = renderEmailLayout('Heading', hostile);
+    expect(direct).not.toContain('</script>');
+    expect(direct).not.toContain('<script');
+    expect(direct).not.toContain('<img');
+    expect(direct).not.toContain('onerror="');
+    expect(direct).toContain('&lt;/script&gt;');
+    expect(direct).toContain('onerror=&quot;pwn&quot;');
+    expect(direct).toContain('{{constructor}}'); // inert text, not a template directive
+    expect(direct).not.toContain(hostile);
   });
 
   it('4. layout is fixed, minimal and self-contained (doctype, charset, no external refs)', () => {

@@ -460,8 +460,8 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600095', '1785753600096', '1785753600097']).toContain(latest[0]!.timestamp);
-    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096', 'AddEmailNotificationChannel1785753600097']).toContain(latest[0]!.name);
+    expect(['1785753600095', '1785753600096', '1785753600097', '1785753600098']).toContain(latest[0]!.timestamp);
+    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096', 'AddEmailNotificationChannel1785753600097', 'CreateNotificationTemplateRegistry1785753600098']).toContain(latest[0]!.name);
     const pool: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
     expect(pool.length).toBe(1);
   });
@@ -469,7 +469,7 @@ describe('A19 Agent Funding (real PostgreSQL)', () => {
   // 21. production readiness
   it('21. production readiness', async () => {
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600095', '1785753600096', '1785753600097']).toContain(latest[0]!.timestamp);
-    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096', 'AddEmailNotificationChannel1785753600097']).toContain(latest[0]!.name);
+    expect(['1785753600095', '1785753600096', '1785753600097', '1785753600098']).toContain(latest[0]!.timestamp);
+    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096', 'AddEmailNotificationChannel1785753600097', 'CreateNotificationTemplateRegistry1785753600098']).toContain(latest[0]!.name);
   });
 });
