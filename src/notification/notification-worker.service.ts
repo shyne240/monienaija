@@ -289,7 +289,11 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
             continue;
           }
           const templateKey = ((row.payload ?? {})._templateKey as string | undefined) ?? row.event_type;
-          const rendered = emailLookup.buildEmail(templateKey as NotificationTemplateKey, row.payload ?? {});
+          const rendered = await emailLookup.buildEmail(
+            templateKey as NotificationTemplateKey,
+            row.payload ?? {},
+            this.dataSource,
+          );
           emailSubject = rendered.subject;
           emailHtml = rendered.html;
         }

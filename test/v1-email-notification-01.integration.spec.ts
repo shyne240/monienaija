@@ -299,7 +299,10 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const sentEmail = emailProvider.sent[0]!;
     expect(sentEmail.channel).toBe('EMAIL');
     expect(sentEmail.destination).toBe(email);
-    expect(sentEmail.subject).toBe('Transfer received');
+    // INTEGRATION: the Arena 1 registry's ACTIVE approved EMAIL version now controls the
+    // subject (seeded 'MonieNaija account update'); curated code subjects apply only in
+    // no-registry unit contexts. Body parity with SMS is asserted below.
+    expect(sentEmail.subject).toBe('MonieNaija account update');
     expect(sentEmail.html).toContain('<!DOCTYPE html>');
     expect(sentEmail.html).not.toContain('<script');
 
@@ -434,7 +437,8 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(emailProvider.sent.length).toBe(1);
     const retried = emailProvider.sent[0]!;
     expect(retried.channel).toBe('EMAIL');
-    expect(retried.subject).toBe('Transfer did not complete');
+    // Worker re-render also reads the registry (dataSource passed through the seam).
+    expect(retried.subject).toBe('MonieNaija account update');
     expect(retried.html).toContain('<!DOCTYPE html>');
     expect(retried.message).toContain('REF-RETRY');
 
@@ -743,5 +747,80 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
       expect(blob.toLowerCase()).not.toContain('apikey');
       expect(blob.toLowerCase()).not.toContain('api_key');
     }
+  });
+
+  // ---- Phase 3 integration: registry governance over the EMAIL channel ----
+
+  it('22. EVENT_DISABLED gating — disabling the EMAIL configuration skips email while SMS delivers', async () => {
+    const cid = await createCustomer({ phone: '8011000022', email: `c22-${randomUUID().slice(0, 8)}@example.com` });
+    // Arena 1 registry: disable ONLY the EMAIL configuration row for this event (guard
+    // triggers permit is_enabled flips; identity changes are refused).
+    await dataSource.query(
+      `UPDATE notification_event_configurations SET is_enabled=false, version=version+1, updated_at=now()
+        WHERE event_type='transfer.completed' AND channel='EMAIL'`,
+    );
+    const key = `transfer.completed:${randomUUID()}`;
+    const result = await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey: key,
+      payload: { sourceCustomerId: cid, transferId: 'abcdef12-3456-7890', amountMinor: '25000', reference: 'REF-DIS22' },
+    });
+    const smsRow = result.deliveries.find((d) => d.channel === 'SMS')!;
+    const emailRow = result.deliveries.find((d) => d.channel === 'EMAIL')!;
+    expect(smsRow.status).toBe('SENT');
+    expect(emailRow.status).toBe('SKIPPED');
+    // Provider never invoked for email; SMS unaffected (channel-level enablement is independent)
+    expect(emailProvider.sent.length).toBe(0);
+    expect(smsProvider.sent.length).toBe(1);
+    const rows: Array<{ channel: string; status: string; message: string; last_error: string | null }> =
+      await dataSource.query(
+        `SELECT channel, status, message, last_error FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+        [key],
+      );
+    const emailDb = rows.find((r) => r.channel === 'EMAIL')!;
+    expect(emailDb.status).toBe('SKIPPED');
+    expect(emailDb.last_error).toBe('EVENT_DISABLED');
+    expect(emailDb.message).toBe('Notification disabled.');
+  });
+
+  it('23. registry ACTIVE EMAIL version controls rendering — approved v2 subject/body replace seeded v1', async () => {
+    const cid = await createCustomer({ phone: '8011000023', email: `c23-${randomUUID().slice(0, 8)}@example.com` });
+    // Simulate an approved maker-checker change request outcome: deactivate the seeded v1
+    // EMAIL template (guard trigger permits is_active true->false only) and activate a v2
+    // with a distinct approved subject/body. SMS templates are untouched.
+    await dataSource.query(
+      `UPDATE notification_templates SET is_active=false
+        WHERE event_type='transfer.completed' AND channel='EMAIL' AND version=1 AND is_active=true`,
+    );
+    await dataSource.query(
+      `INSERT INTO notification_templates (event_type, channel, locale, version, is_active, subject, body, created_by)
+       VALUES ('transfer.completed','EMAIL','en-NG',2,true,'Your transfer arrived','Approved body: transfer{{amount_clause}} landed, ref {{reference}}.','test')`,
+    );
+    const key = `transfer.completed:${randomUUID()}`;
+    const result = await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey: key,
+      payload: { sourceCustomerId: cid, transferId: 'abcdef12-3456-7890', amountMinor: '25000', reference: 'REF-V2' },
+    });
+    expect(result.deliveries.find((d) => d.channel === 'EMAIL')!.status).toBe('SENT');
+    const sent = emailProvider.sent[0]!;
+    // The approved registry version — not the code defaults — controls subject and body
+    expect(sent.subject).toBe('Your transfer arrived');
+    // reference resolver precedence for transfer.completed: short transferId prefix wins
+    expect(sent.message).toBe('Approved body: transfer of NGN 250.00 landed, ref abcdef12.');
+    expect(sent.html).toContain('Your transfer arrived');
+    expect(sent.html).toContain('abcdef12');
+    // SMS renders its OWN active registry version — channels/versioning are independent
+    expect(smsProvider.sent[0]!.message).toBe('Transfer of NGN 250.00 completed. Ref abcdef12.');
+    // Database-level guarantee behind the fail-closed seam: at most ONE ACTIVE template
+    // version per (event, channel, locale) — the partial unique index rejects a second
+    // ACTIVE row outright, so renderActive can never have to guess between versions.
+    await expect(
+      dataSource.query(
+        `INSERT INTO notification_templates (event_type, channel, locale, version, is_active, subject, body, created_by)
+         VALUES ('transfer.completed','EMAIL','en-NG',3,true,'Your transfer arrived','duplicate active','test')`,
+      ),
+    ).rejects.toThrow();
+    expect(emailProvider.sent.length).toBe(1); // no additional email left the seam
   });
 });

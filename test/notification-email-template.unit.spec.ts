@@ -25,7 +25,7 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
   const templateService = new NotificationTemplateService();
   const emails = new CodeNotificationEmailTemplateService(templateService);
 
-  it('1. plain-text body is byte-identical to buildMessage (SMS parity) for live keys', () => {
+  it('1. plain-text body is byte-identical to buildMessage (SMS parity) for live keys', async () => {
     const cases: Array<{ key: NotificationTemplateKey; payload: Record<string, unknown> }> = [
       { key: 'customer.funding.approved', payload: { reference: 'FND-1234', amountMinor: '25000' } },
       { key: 'customer.funding.rejected', payload: { reference: 'FND-1235' } },
@@ -38,7 +38,7 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
       { key: 'support.ticket.message_added', payload: { reference: 'SUP-4' } },
     ];
     for (const testCase of cases) {
-      const rendered = emails.buildEmail(testCase.key, testCase.payload);
+      const rendered = await emails.buildEmail(testCase.key, testCase.payload);
       expect(rendered.text).toBe(templateService.buildMessage(testCase.key, testCase.payload));
       expect(rendered.text.length).toBeGreaterThan(0);
       expect(rendered.html.length).toBeGreaterThan(0);
@@ -46,19 +46,19 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     }
   });
 
-  it('2. curated subjects for live events; generic fallback never leaks event names', () => {
-    expect(emails.buildEmail('transfer.completed', {}).subject).toBe('Transfer received');
-    expect(emails.buildEmail('customer.funding.approved', {}).subject).toBe(
+  it('2. curated subjects for live events; generic fallback never leaks event names', async () => {
+    expect((await emails.buildEmail('transfer.completed', {})).subject).toBe('Transfer received');
+    expect((await emails.buildEmail('customer.funding.approved', {})).subject).toBe(
       'Funding approved — your wallet has been credited',
     );
-    expect(emails.buildEmail('support.ticket.created', {}).subject).toBe(
+    expect((await emails.buildEmail('support.ticket.created', {})).subject).toBe(
       'We received your support request',
     );
     // Unmapped keys (not email-enabled, but the seam must stay safe for them):
     for (const key of ['cash_to_cash.created', 'agent.suspended', 'totally.unknown.event'] as Array<
       NotificationTemplateKey | string
     >) {
-      const rendered = emails.buildEmail(key as NotificationTemplateKey, {});
+      const rendered = await emails.buildEmail(key as NotificationTemplateKey, {});
       expect(rendered.subject).toBe('MonieNaija notification');
       expect(rendered.subject.toLowerCase()).not.toContain('cash_to_cash');
       expect(rendered.subject.toLowerCase()).not.toContain('agent.');
@@ -66,12 +66,12 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     }
   });
 
-  it('3. HTML safety — hostile variables are blocked upstream AND escaping neutralizes direct input', () => {
+  it('3. HTML safety — hostile variables are blocked upstream AND escaping neutralizes direct input', async () => {
     const hostile = `</script><script>alert(1)</script><img src=x onerror="pwn">{{constructor}}`;
 
     // Layer 1 (Arena 1 registry integration): the allowlisted variable resolvers refuse
     // hostile reference/status payload values — they never reach the rendered message at all.
-    const rendered = emails.buildEmail('support.ticket.status_changed', {
+    const rendered = await emails.buildEmail('support.ticket.status_changed', {
       reference: hostile,
       status: hostile,
     });
@@ -95,8 +95,8 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     expect(direct).not.toContain(hostile);
   });
 
-  it('4. layout is fixed, minimal and self-contained (doctype, charset, no external refs)', () => {
-    const rendered = emails.buildEmail('transfer.completed', { transferId: 'abcdef12-34' });
+  it('4. layout is fixed, minimal and self-contained (doctype, charset, no external refs)', async () => {
+    const rendered = await emails.buildEmail('transfer.completed', { transferId: 'abcdef12-34' });
     expect(rendered.html.startsWith('<!DOCTYPE html>')).toBe(true);
     expect(rendered.html).toContain('<meta charset="utf-8">');
     expect(rendered.html).not.toContain('http://');
@@ -107,7 +107,7 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     expect(rendered.html).toContain(escapeHtml(rendered.text.split('\n')[0]!.trim()));
   });
 
-  it('5. sanitizeEmailSubject strips CRLF/control chars, collapses whitespace, caps at 200', () => {
+  it('5. sanitizeEmailSubject strips CRLF/control chars, collapses whitespace, caps at 200', async () => {
     expect(sanitizeEmailSubject('Transfer\r\nBcc: evil@bad.com')).toBe('Transfer Bcc: evil@bad.com');
     expect(sanitizeEmailSubject('a\u0000b\u001fc')).toBe('a b c');
     expect(sanitizeEmailSubject('  many   spaces  ')).toBe('many spaces');
@@ -118,7 +118,8 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
       'transfer.completed',
       'support.ticket.created',
     ] as NotificationTemplateKey[]) {
-      expect(emails.buildEmail(key, {}).subject).toBe(sanitizeEmailSubject(emails.buildEmail(key, {}).subject));
+      const rendered = await emails.buildEmail(key, {});
+      expect(rendered.subject).toBe(sanitizeEmailSubject(rendered.subject));
     }
   });
 

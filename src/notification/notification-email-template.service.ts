@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { NotificationTemplateService } from './notification-template.service';
+import { NotificationTemplateService, canonicalNotificationEvent } from './notification-template.service';
 import type {
+  NotificationEmailQuery,
   NotificationEmailTemplateLookup,
   NotificationTemplateKey,
   NotificationTemplatePayload,
@@ -8,24 +9,22 @@ import type {
 } from './notification.types';
 
 /**
- * ARENA3-NOTIFICATION-EMAIL — email rendering seam (default code-backed implementation).
+ * ARENA3-NOTIFICATION-EMAIL — email rendering seam (Arena 1 registry integration LIVE).
  *
- * COORDINATION CONTRACT WITH ARENA 1 (recorded per the Arena 1 template-registry
- * decision — NOT a competing registry):
- * - Arena 1 owns the canonical event/template configuration and the future
- *   database-backed template registry. When it lands, its email rendering service must
- *   implement `NotificationEmailTemplateLookup` (notification.types.ts) and be provided
- *   under `NOTIFICATION_EMAIL_TEMPLATE_TOKEN` (notification.constants.ts), replacing the
- *   binding registered in NotificationModule.
- * - The dispatcher and worker consume ONLY this token/interface:
- *     buildEmail(templateKey, payload) -> { subject, text, html }
- *   so swapping registries requires zero changes to delivery, retry, idempotency or
- *   channel-resolution code.
- * - `templateKey` values are the existing NotificationTemplateKey union; payload keys
- *   are the existing redacted payload contract (notification-event-map.ts).
- * - The plain-text body stays byte-identical to `NotificationTemplateService.buildMessage`
- *   (SMS parity — the SMS channel and its 20-case switch are untouched), so recipients
- *   on either channel receive the same wording.
+ * UNIFIED TEMPLATE SYSTEM (Phase 3 of the Arena 1/2/3/4 integration):
+ * - When a persistent query is supplied (dispatcher queryRunner / worker DataSource),
+ *   the ACTIVE approved EMAIL version from the Arena 1 registry (notification_templates,
+ *   channel='EMAIL') controls the subject AND body — identical governance to SMS:
+ *   maker-checker change requests, locked SECURITY-class events, guard triggers.
+ * - FAIL-CLOSED: a missing ACTIVE EMAIL version or registry outage throws — the delivery
+ *   row is marked FAILED and retried by the bounded worker; the code defaults below are
+ *   NEVER silently substituted, so code-based and database-backed templates cannot
+ *   disagree in production dispatch.
+ * - Without a query (unit-test contexts only) the frozen code defaults render: they are
+ *   byte-identical to the registry defaults seeded by migration 098 /
+ *   seedNotificationDefaultsV1.
+ * - The HTML body is always derived from the ALLOWLISTED, assertSafe-validated plain-text
+ *   body (entity-escaped, fixed minimal layout, no scripts/external resources).
  *
  * SAFETY PROPERTIES:
  * - ALL dynamic values are HTML-entity-escaped before entering markup; no raw payload
@@ -58,10 +57,23 @@ const SUBJECT_MAP: Readonly<Partial<Record<NotificationTemplateKey, string>>> = 
 export class CodeNotificationEmailTemplateService implements NotificationEmailTemplateLookup {
   constructor(private readonly templateService: NotificationTemplateService) {}
 
-  buildEmail(
+  async buildEmail(
     templateKey: NotificationTemplateKey,
     payload: NotificationTemplatePayload,
-  ): RenderedEmail {
+    query?: NotificationEmailQuery,
+  ): Promise<RenderedEmail> {
+    if (query) {
+      // PRODUCTION PATH: the registry's ACTIVE approved EMAIL version controls rendering
+      // (fail-closed — renderActive throws when configuration/template state is missing or
+      // inconsistent; bounded worker retries apply, code defaults are never substituted).
+      const event = canonicalNotificationEvent(templateKey);
+      const rendered = await this.templateService.renderActive(query, event, 'EMAIL', payload);
+      const rawSubject = rendered.subject && rendered.subject.trim().length > 0 ? rendered.subject : GENERIC_SUBJECT;
+      const subject = sanitizeEmailSubject(rawSubject);
+      return { subject, text: rendered.body, html: renderEmailLayout(subject, rendered.body) };
+    }
+    // UNIT-CONTEXT FALLBACK: frozen code defaults (byte-identical to the seeded registry
+    // defaults) — SMS/Push parity wording, generic subject for unmapped keys.
     const text = this.templateService.buildMessage(templateKey, payload);
     const rawSubject = SUBJECT_MAP[templateKey] ?? GENERIC_SUBJECT;
     return {

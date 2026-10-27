@@ -212,7 +212,11 @@ export class NotificationDispatcherService {
       // template variables, delivery rows or providers on ANY channel path.
       const emailRender: RenderedEmail | null =
         enabled && intent.channel === 'EMAIL'
-          ? this.emailTemplates.buildEmail(intent.templateKey as NotificationTemplateKey, payload)
+          ? await this.emailTemplates.buildEmail(
+              intent.templateKey as NotificationTemplateKey,
+              payload,
+              queryRunner,
+            )
           : null;
       const message = !enabled
         ? 'Notification disabled.'

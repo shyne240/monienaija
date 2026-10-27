@@ -106,8 +106,24 @@ export interface RenderedEmail {
   html: string;
 }
 
+/**
+ * INTEGRATION (Phase 3): `query` carries the persistent template registry connection
+ * (dispatcher queryRunner / worker DataSource). When provided, implementations MUST render
+ * from the registry's ACTIVE approved EMAIL version (fail-closed when unavailable) so code
+ * and database template systems can never silently disagree. When omitted (unit contexts),
+ * the frozen code defaults are used — they are byte-identical to the migration-seeded
+ * registry defaults.
+ */
+export interface NotificationEmailQuery {
+  query(sql: string, parameters?: unknown[]): Promise<unknown>;
+}
+
 export interface NotificationEmailTemplateLookup {
-  buildEmail(templateKey: NotificationTemplateKey, payload: NotificationTemplatePayload): RenderedEmail;
+  buildEmail(
+    templateKey: NotificationTemplateKey,
+    payload: NotificationTemplatePayload,
+    query?: NotificationEmailQuery,
+  ): Promise<RenderedEmail>;
 }
 
 /**
