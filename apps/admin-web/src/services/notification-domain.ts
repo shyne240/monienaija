@@ -949,17 +949,25 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'cash_to_cash.created',
     category: 'CASH_TO_CASH',
-    description: 'Beneficiary SMS on Cash-to-Cash initiation with approved non-disclosure locator variables.',
+    // ARENA 3 CLOSURE (evidence-backed): the initiation outbox event is LIVE-WIRED —
+    // AgentCashToCashService.execute() enqueues `cash_to_cash.created:<transferId>` via
+    // OutboxService.enqueueOnce inside the same SERIALIZABLE financial transaction
+    // (src/agent/agent-cash-to-cash.service.ts), and the persistent registry seeds this
+    // event's SMS configuration enabled (EMAIL disabled). Delivery itself additionally
+    // requires the notification worker to be enabled in the environment — this label
+    // describes trigger wiring + registry enablement, not worker runtime state.
+    description:
+      'Beneficiary SMS on Cash-to-Cash initiation (outbox-wired at initiation; registry SMS configuration enabled, EMAIL disabled).',
     deliveryClass: 'TRANSACTIONAL',
     recipientTarget: 'BENEFICIARY_PHONE',
-    runtimeTriggerState: 'UNWIRED_OUTBOX',
+    runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
     toggleLocked: false,
     lockReason: null,
     templateEditable: true,
     securityNotes:
-      'Audit Finding F-S2: Must NEVER disclose 6-digit transferNumber, senderPhone, or secret transferCode. Only {{sender_name}}, {{amount}}, and {{agent_locator_url}} are permitted.',
+      'Audit Finding F-S2 (unified with the Arena 4 registry contract): Must NEVER disclose the transfer number, senderPhone, or secret transferCode. The registry allowlist for this event is {{sender_name}}, {{amount}}, and {{locator_clause}} (https-validated public locator only).',
     approvedVariables: [SENDER_NAME_VAR, AMOUNT_VAR, AGENT_LOCATOR_URL_VAR],
     activeSmsVersion: 1,
     activeEmailVersion: null,
@@ -967,7 +975,10 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'cash_to_cash.claimed',
     category: 'CASH_TO_CASH',
-    description: 'Cash-to-Cash redemption completion notification.',
+    // ARENA 3 CLOSURE (evidence-backed): NO backend emitter exists for this event
+    // (verified: no OutboxService enqueue for cash_to_cash.claimed anywhere in src/) —
+    // only intent-mapping and inbox-title definitions. Honestly labelled UNWIRED_OUTBOX.
+    description: 'Cash-to-Cash redemption completion notification (no backend trigger wired yet).',
     deliveryClass: 'INFORMATIONAL',
     recipientTarget: 'CUSTOMER_AND_AGENT',
     runtimeTriggerState: 'UNWIRED_OUTBOX',
@@ -983,7 +994,10 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
   {
     eventType: 'cash_to_cash.expired',
     category: 'CASH_TO_CASH',
-    description: 'Cash-to-Cash transfer expiry notification emitted when unclaimed transfer expires.',
+    // ARENA 3 CLOSURE (evidence-backed): NO backend emitter exists for this event either —
+    // the expiry worker updates transfer/ledger state but enqueues no notification event.
+    description:
+      'Cash-to-Cash transfer expiry notification for unclaimed transfers (no backend trigger wired yet).',
     deliveryClass: 'INFORMATIONAL',
     recipientTarget: 'CUSTOMER_AND_AGENT',
     runtimeTriggerState: 'UNWIRED_OUTBOX',

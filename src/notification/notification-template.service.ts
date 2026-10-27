@@ -187,6 +187,20 @@ export class NotificationTemplateService {
     // safe subset BEFORE variable resolution, on every channel and every call path.
     const safe = this.redactPayload(payload, eventType);
     const values = this.resolveVariables(eventType, safe);
+    // ARENA 3 CLOSURE (Defect B): a cash_to_cash.created notification must NEVER render an
+    // empty or missing amount ('sent you .'). The amount variable resolves ONLY from the
+    // committed transfer principal — redactPayload keeps amountMinor only for positive
+    // integer strings — so when the template uses {{amount}}/{{amount_clause}} and no valid
+    // principal survived redaction, rendering fails closed: the dispatcher/outbox drain
+    // marks the delivery or event FAILED for bounded retry and no message is sent. The
+    // amount is never fabricated, defaulted, or echoed from an untrusted payload shape.
+    if (
+      canonicalNotificationEvent(eventType) === 'cash_to_cash.created' &&
+      (variablesUsed.includes('amount') || variablesUsed.includes('amount_clause')) &&
+      values.amount === ''
+    ) {
+      throw new BadRequestException('Cash-to-Cash notification amount unavailable');
+    }
     const interpolate = (text: string) =>
       text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => values[name] ?? '');
     const body = interpolate(content.body);

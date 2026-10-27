@@ -1083,9 +1083,15 @@ export const NotificationManagementApi = {
   },
 
   /**
-   * Manual delivery retry remains genuinely absent from the backend — automatic bounded
-   * retry runs in NotificationWorkerService (FOR UPDATE SKIP LOCKED, exponential backoff,
-   * never touching financial services). The 404 maps to an honest BLOCKED state.
+   * Manual delivery retry is DEFERRED BY REQUIREMENT, not missing by accident:
+   * - Approved V1 scope (docs/V1/V1-ADMIN-WEB-PAGE-INVENTORY-01.md, notification
+   *   deliveries page) mandates a READ-ONLY surface: "No retry/replay/mutation controls".
+   * - The approved retry mechanism is the automatic bounded worker retry
+   *   (SMS_RETRY_MAX_ATTEMPTS + exponential backoff, FOR UPDATE SKIP LOCKED, isolated
+   *   from all financial services) per docs/V1/V1-AGENT-MOBILE-17-RELEASE-INFRASTRUCTURE-HANDOFF.md.
+   * - The Arena 2 contract document itself labelled a manual-retry route "Optional".
+   * Adding one would require a new requirement + authorization policy decision; until then
+   * the 404 maps to an honest BLOCKED/deferred state and no endpoint is invented.
    */
   async requestManualDeliveryRetry(
     deliveryId: string,
@@ -1098,7 +1104,7 @@ export const NotificationManagementApi = {
       method: 'POST',
       endpoint,
       blockedExplanation:
-        `BLOCKED on ARENA 3: Manual delivery retry endpoint (${endpoint}) is not integrated; failed SMS deliveries are retried automatically by NotificationWorkerService exponential backoff.`,
+        `DEFERRED (approved V1 scope is read-only — no retry/replay controls): manual delivery retry endpoint (${endpoint}) does not exist by requirement. Failed deliveries are retried automatically by NotificationWorkerService (bounded attempts, exponential backoff); a manual-retry capability needs a new requirement + authorization policy decision.`,
       run: () =>
         ApiClient.post<NotificationMutationOutcome>(endpoint, { reason }, { idempotencyKey }),
     });

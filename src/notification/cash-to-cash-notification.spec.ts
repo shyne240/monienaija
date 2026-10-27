@@ -55,6 +55,35 @@ describe('Cash-to-Cash beneficiary notification contract', () => {
     }
   });
 
+  it('ARENA 3 CLOSURE (Defect B): fails closed when the committed principal is missing or invalid — never renders an empty amount, never fabricates one', () => {
+    const template = new NotificationTemplateService();
+    // Missing amountMinor entirely
+    expect(() =>
+      template.buildMessage('cash_to_cash.created', {
+        senderDisplayName: 'Ada Example',
+        currency: 'NGN',
+      }),
+    ).toThrow(/amount unavailable/i);
+    // Zero principal is not a valid positive committed amount
+    expect(() =>
+      template.buildMessage('cash_to_cash.created', { amountMinor: '0', currency: 'NGN' }),
+    ).toThrow(/amount unavailable/i);
+    // Non-numeric / negative / decimal payload shapes are refused (no fabrication, no echo)
+    for (const invalid of ['not-a-number', '-2500', '2500.50', ' 2500', '002500', '1e3']) {
+      expect(() =>
+        template.buildMessage('cash_to_cash.created', { amountMinor: invalid, currency: 'NGN' }),
+      ).toThrow(/amount unavailable/i);
+    }
+    // A valid committed principal still renders exactly (minor units -> major, 2dp)
+    const message = template.buildMessage('cash_to_cash.created', {
+      senderDisplayName: 'Ada Example',
+      amountMinor: '250000',
+      currency: 'NGN',
+    });
+    expect(message).toContain('NGN 2500.00');
+    expect(message).not.toContain('sent you .');
+  });
+
   it('uses a generic sender name and refuses a non-HTTPS locator URL', () => {
     const template = new NotificationTemplateService();
     const message = template.buildMessage('cash_to_cash.created', {

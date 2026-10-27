@@ -55,15 +55,28 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
       'We received your support request',
     );
     // Unmapped keys (not email-enabled, but the seam must stay safe for them):
-    for (const key of ['cash_to_cash.created', 'agent.suspended', 'totally.unknown.event'] as Array<
+    for (const key of ['agent.suspended', 'totally.unknown.event'] as Array<
       NotificationTemplateKey | string
     >) {
       const rendered = await emails.buildEmail(key as NotificationTemplateKey, {});
       expect(rendered.subject).toBe('MonieNaija notification');
-      expect(rendered.subject.toLowerCase()).not.toContain('cash_to_cash');
       expect(rendered.subject.toLowerCase()).not.toContain('agent.');
       expect(rendered.subject.toLowerCase()).not.toContain('unknown');
     }
+
+    // C2C fail-closed (approved defect-B policy): the committed principal is required
+    // rendering data — a payload without a valid amountMinor must fail closed and never
+    // fabricate or omit an amount. Bounded automatic retries cover transient gaps; the
+    // outbox drain marks the event FAILED and nothing is sent.
+    await expect(emails.buildEmail('cash_to_cash.created', {})).rejects.toThrow(
+      'Cash-to-Cash notification amount unavailable',
+    );
+    // With a valid committed principal the seam stays safe: generic subject (c2c is not
+    // email-enabled) and the exact formatted principal in the body.
+    const c2cRendered = await emails.buildEmail('cash_to_cash.created', { amountMinor: '250000' });
+    expect(c2cRendered.subject).toBe('MonieNaija notification');
+    expect(c2cRendered.subject.toLowerCase()).not.toContain('cash_to_cash');
+    expect(c2cRendered.text).toContain('NGN 2500.00');
   });
 
   it('3. HTML safety — hostile variables are blocked upstream AND escaping neutralizes direct input', async () => {
