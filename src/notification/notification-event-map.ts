@@ -1,4 +1,5 @@
 import type { NotificationIntent } from './notification.types';
+import { canonicalNotificationEvent } from './notification-template.service';
 
 /**
  * V1-005 Event catalogue → recipient/channel/template mapping.
@@ -168,7 +169,7 @@ export function mapEventToIntents(
         recipientType: 'CUSTOMER',
         recipientId: claimantCustomerId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });
@@ -177,7 +178,7 @@ export function mapEventToIntents(
         recipientType: 'CUSTOMER',
         recipientId: beneficiaryId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });
@@ -187,7 +188,7 @@ export function mapEventToIntents(
         recipientType: 'AGENT',
         recipientId: agentId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });

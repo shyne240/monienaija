@@ -9,13 +9,14 @@ import {
   COMMERCIAL_RULE_ACTIONS,
   GOVERNED_ACTIONS,
   LEDGER_JOURNAL_REVERSAL_ACTION,
+  NOTIFICATION_CHANGE_ACTIONS,
   governedAction,
   governedChangeFingerprint,
   isGovernedAction,
 } from '../src/authorization/governed-action.registry';
 
 describe('governed-action registry (P0-A/P0-B)', () => {
-  it('registers the eight Decision-2 commercial actions, Decision-7 Agent funding actions, and ledger reversal', () => {
+  it('registers the commercial, Agent funding, ledger reversal and notification actions', () => {
     expect(Object.keys(COMMERCIAL_RULE_ACTIONS).sort()).toEqual(
       [
         'COMMISSION_RULE_CREATE',
@@ -32,6 +33,7 @@ describe('governed-action registry (P0-A/P0-B)', () => {
       [
         ...Object.keys(COMMERCIAL_RULE_ACTIONS),
         ...Object.values(AGENT_FUNDING_ACTIONS).map((definition) => definition.action),
+        ...Object.keys(NOTIFICATION_CHANGE_ACTIONS),
         'LEDGER_JOURNAL_REVERSAL',
       ].sort(),
     );
@@ -41,6 +43,25 @@ describe('governed-action registry (P0-A/P0-B)', () => {
     expect(isGovernedAction('AGENT_FUND')).toBe(true);
     expect(isGovernedAction('AGENT_DEFUND')).toBe(true);
     expect(isGovernedAction('LEDGER_JOURNAL_REVERSAL')).toBe(true);
+  });
+
+  it('requires independent MFA maker/checker roles for both notification change types', () => {
+    expect(Object.keys(NOTIFICATION_CHANGE_ACTIONS).sort()).toEqual([
+      'NOTIFICATION_EVENT_CONFIGURATION_CHANGE',
+      'NOTIFICATION_TEMPLATE_CHANGE',
+    ]);
+    for (const action of Object.values(NOTIFICATION_CHANGE_ACTIONS)) {
+      expect(action).toMatchObject({
+        resourceType: 'NOTIFICATION_EVENT_CONFIGURATION',
+        initiatingRoles: ['SUPER_ADMIN'],
+        approvingRoles: ['FINANCE_CONTROLLER'],
+        initiatingFunctionCodes: ['notification.view_deliveries'],
+        approvalScope: 'privileged:approve',
+        minimumAssurance: 'MFA',
+        minimumApprovals: 1,
+        selfApprovalProhibited: true,
+      });
+    }
   });
 
   it('carries the Decision-2 policy values verbatim on commercial and ledger actions', () => {
@@ -163,7 +184,12 @@ describe('governed-action registry (P0-A/P0-B)', () => {
         base.payload,
       );
       expect(
-        governedChangeFingerprint('FEE_RULE_MODIFY', base.resourceType, base.resourceId, base.payload),
+        governedChangeFingerprint(
+          'FEE_RULE_MODIFY',
+          base.resourceType,
+          base.resourceId,
+          base.payload,
+        ),
       ).not.toBe(original);
       expect(
         governedChangeFingerprint(base.action, 'COMMISSION_RULE', base.resourceId, base.payload),

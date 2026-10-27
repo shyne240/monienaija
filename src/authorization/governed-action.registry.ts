@@ -7,8 +7,9 @@
  * Governance identities are hardcoded (not `A2_MAKER_CHECKER_RULES_JSON`-driven), mirroring the
  * documented `RoleDefinitionGovernanceService` precedent (`ROLE_DEFINITION_INITIATOR_ROLE` /
  * `ROLE_DEFINITION_APPROVER_ROLE`) and the `ADMINISTRATOR_OPERATIONAL_ROLE_KEYS` precedent in
- * `finance-role-administration.service.ts`. Every value below is copied verbatim from the
- * approved decisions — nothing here is a new approval policy:
+ * `finance-role-administration.service.ts`. Commercial, ledger and agent-funding definitions
+ * below follow their approved decisions. The separately marked notification rule is an interim
+ * technical gate requiring owner sign-off, not a claimed approved organizational policy:
  *
  *  - Decision 2 (commercial configuration is maker/checker governed): FINANCE_PREPARER initiates,
  *    FINANCE_CONTROLLER approves, maker and checker must always be different principals,
@@ -166,8 +167,27 @@ export const AGENT_FUNDING_ACTIONS: Readonly<Record<'FUND' | 'DEFUND', GovernedA
   DEFUND: crossFunctionalRule('AGENT_DEFUND', 'agent.defund'),
 };
 
+/** Notification governance uses existing workforce roles until dedicated catalogue functions are
+ * approved by the catalogue owner. MFA + an independent FINANCE_CONTROLLER checker are mandatory;
+ * the initiating SUPER_ADMIN must also have the existing notification read function. */
+export const NOTIFICATION_CHANGE_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> =
+  Object.fromEntries(['NOTIFICATION_TEMPLATE_CHANGE', 'NOTIFICATION_EVENT_CONFIGURATION_CHANGE'].map((action) => [action, {
+    action,
+    resourceType: 'NOTIFICATION_EVENT_CONFIGURATION',
+    initiatingFunctionCodes: ['notification.view_deliveries'],
+    approvingFunctionCodes: [],
+    initiatingRoles: ['SUPER_ADMIN'],
+    approvingRoles: ['FINANCE_CONTROLLER'],
+    minimumApprovals: 1,
+    selfApprovalProhibited: true,
+    mfaRequired: true,
+    minimumAssurance: 'MFA' as const,
+    approvalScope: 'privileged:approve',
+  }]));
+
 export const GOVERNED_ACTIONS: Readonly<Record<string, GovernedActionDefinition>> = {
   ...COMMERCIAL_RULE_ACTIONS,
+  ...NOTIFICATION_CHANGE_ACTIONS,
   ...Object.fromEntries(Object.values(AGENT_FUNDING_ACTIONS).map((item) => [item.action, item])),
   [LEDGER_JOURNAL_REVERSAL_ACTION.action]: LEDGER_JOURNAL_REVERSAL_ACTION,
 };

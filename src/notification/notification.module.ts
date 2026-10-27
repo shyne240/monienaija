@@ -1,4 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { AuthorizationModule } from '../authorization/authorization.module';
+import { OperationsModule } from '../operations/operations.module';
+import { NotificationRegistryController } from './notification-registry.controller';
+import { NotificationRegistryService } from './notification-registry.service';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -24,9 +28,10 @@ import { RobaseNotificationProvider } from './robase-notification-provider';
  * No second outbox/event bus. Reuses OutboxService eventKey for idempotency.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([NotificationDelivery])],
-  controllers: [NotificationInboxController],
+  imports: [TypeOrmModule.forFeature([NotificationDelivery]), forwardRef(() => AuthorizationModule), forwardRef(() => OperationsModule)],
+  controllers: [NotificationInboxController, NotificationRegistryController],
   providers: [
+    NotificationRegistryService,
     NotificationTemplateService,
     NotificationChannelResolverService,
     NotificationInboxService,

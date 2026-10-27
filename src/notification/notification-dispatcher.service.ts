@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unnecessary-type-assertion, prefer-const, no-empty */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, no-empty */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
@@ -6,6 +6,7 @@ import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
 import { mapEventToIntents } from './notification-event-map';
 import { NotificationTemplateService } from './notification-template.service';
+import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type { NotificationProvider } from './notification.types';
 
 export interface DispatchCommand {
@@ -68,6 +69,10 @@ export class NotificationDispatcherService {
   ): Promise<DispatchResult> {
     const eventType = command.eventType?.trim();
     if (!eventType) throw new Error('eventType is required');
+    // These direct-send flows must never persist an OTP/credential in a delivery row.
+    if (isSecurityCriticalNotificationEvent(eventType)) {
+      throw new Error('Security notifications cannot use the outbox dispatcher');
+    }
 
     const payload = (command.payload ?? {}) as Record<string, unknown>;
     const redactedPayload = this.templateService.redactPayload(payload) as Record<string, unknown>;
@@ -88,7 +93,7 @@ export class NotificationDispatcherService {
 
     // Fallback for support events where payload lacks customerId/agentId (e.g., assigned/status_changed)
     // Resolve via support_tickets table using ticketId or aggregateId
-    if (intents.length === 0 && eventType.startsWith('support.ticket')) {
+    if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
       // internal notes already filtered, but double-check
       if (eventType === 'support.ticket.message_added' && (payload.isInternal as boolean) === true) {
         return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
@@ -142,37 +147,28 @@ export class NotificationDispatcherService {
       return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
     }
 
-    // dsManager kept for compatibility but not used (queryRunner is authoritative)
-    const dsManager = manager ?? this.dataSource.createEntityManager();
-
     const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     for (const intent of intents) {
-      // Resolve destination per recipient/channel (SMS-V1-01: eventType drives the
-      // security-critical opt-out bypass in the channel resolver)
-      const resolved = await this.channelResolver.resolve(
-        intent.recipientType,
-        intent.recipientId,
-        intent.channel,
-        queryRunner,
-        eventType,
-      );
+      // Configuration is checked before preferences/destination. Disabled events are recorded
+      // SKIPPED under the same delivery idempotency key; PUSH keeps its existing dependency path.
+      const enabled = intent.channel === 'SMS'
+        ? await this.templateService.isEventEnabled(queryRunner, eventType, 'SMS') : true;
+      const resolved = enabled
+        ? await this.channelResolver.resolve(intent.recipientType, intent.recipientId, intent.channel, queryRunner, eventType)
+        : { destination: null, reason: 'EVENT_DISABLED' };
 
       const destination = resolved.destination;
       const isSkipped = !destination;
-
-      const message = this.templateService.buildMessage(intent.templateKey, payload);
-      // Ensure no secrets in message (we already avoid, but double-check)
-      // Do not include payload secrets; message is safe template only
+      const message = !enabled ? 'Notification disabled.' : intent.channel === 'SMS'
+        ? (await this.templateService.renderActive(queryRunner, intent.templateKey, 'SMS', payload)).body
+        : this.templateService.buildMessage(intent.templateKey, payload);
 
       // Build redacted delivery payload with templateKey for audit (still redacted, no secrets)
       const deliveryPayload: Record<string, unknown> = {
         ...redactedPayload,
         _templateKey: intent.templateKey,
       };
-
-      // Deterministic identity for idempotency
-      const deliveryIdempotencyKey = `${eventKey}:${intent.recipientId}:${intent.channel}`;
 
       // Insert delivery record — idempotent via unique constraint
       let deliveryId: string | null = null;
@@ -233,8 +229,9 @@ export class NotificationDispatcherService {
             continue;
           }
         }
-      } catch (e) {
-        this.logger.warn(`Failed to insert notification delivery ${deliveryIdempotencyKey}: ${(e as Error).message}`);
+      } catch {
+        // SQL errors can include bound destinations or rendered text; never log them.
+        this.logger.warn('Failed to insert notification delivery');
         result.failed += 1;
         continue;
       }
@@ -313,8 +310,8 @@ export class NotificationDispatcherService {
             [attemptsIncrement, lastError, now, deliveryId],
           );
         }
-      } catch (e) {
-        this.logger.warn(`Failed to update delivery ${deliveryId}: ${(e as Error).message}`);
+      } catch {
+        this.logger.warn('Failed to update notification delivery status');
       }
 
       result.deliveries.push({
@@ -350,7 +347,7 @@ export class NotificationDispatcherService {
     }> = await this.dataSource.query(
       `SELECT id, event_type, event_key, aggregate_type, aggregate_id, payload, correlation_id, causation_id, occurred_at
          FROM outbox_events
-        WHERE status IN ('PENDING','FAILED')
+        WHERE status IN ('PENDING','FAILED') AND available_at <= NOW()
         ORDER BY created_at ASC
         LIMIT $1`,
       [limit],
@@ -375,10 +372,11 @@ export class NotificationDispatcherService {
           `UPDATE outbox_events SET status='PUBLISHED', attempts=attempts+1, published_at=NOW() WHERE id=$1`,
           [ev.id],
         );
-      } catch (e) {
+      } catch {
+        // Never persist driver messages/SQL parameters, which may contain customer data.
         await this.dataSource.query(
-          `UPDATE outbox_events SET status='FAILED', attempts=attempts+1, last_error=$1, available_at=NOW() + INTERVAL '60 seconds' WHERE id=$1`,
-          [(e as Error).message.slice(0, 255), ev.id],
+          `UPDATE outbox_events SET status='FAILED', attempts=attempts+1, last_error=$1, available_at=NOW() + INTERVAL '60 seconds' WHERE id=$2`,
+          ['NOTIFICATION_DISPATCH_FAILED', ev.id],
         );
       }
     }

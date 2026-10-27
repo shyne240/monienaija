@@ -5,6 +5,8 @@ import { DataSource } from 'typeorm';
 
 import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
+import { canonicalNotificationEvent, NotificationTemplateService } from './notification-template.service';
+import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type { NotificationProvider } from './notification.types';
 
 export interface NotificationWorkerTickResult {
@@ -13,6 +15,7 @@ export interface NotificationWorkerTickResult {
   retriesSent: number;
   retriesFailed: number;
   retriesOptedOut: number;
+  retriesSuppressed: number;
 }
 
 interface ClaimedDeliveryRow {
@@ -63,6 +66,7 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     @Inject(NOTIFICATION_PROVIDER_TOKEN)
     @Optional()
     private readonly provider: NotificationProvider | null,
+    @Optional() private readonly templateService?: NotificationTemplateService,
   ) {}
 
   private get enabled(): boolean {
@@ -114,6 +118,7 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
       retriesSent: 0,
       retriesFailed: 0,
       retriesOptedOut: 0,
+      retriesSuppressed: 0,
     };
     if (this.running) return empty; // re-entrancy guard (single instance, overlapping ticks)
     this.running = true;
@@ -166,14 +171,34 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     retriesSent: number;
     retriesFailed: number;
     retriesOptedOut: number;
+    retriesSuppressed: number;
   }> {
     const claimed = await this.claimRetryEligible(limit);
     let retriesSent = 0;
     let retriesFailed = 0;
     let retriesOptedOut = 0;
+    let retriesSuppressed = 0;
+    const templates = this.templateService ?? new NotificationTemplateService();
 
     for (const row of claimed) {
       try {
+        // A disabled event must not be revived by a retry. Configuration lookup failures leave
+        // the existing FAILED row for later retry, rather than failing open to the provider.
+        let suppression: string | null = null;
+        if (isSecurityCriticalNotificationEvent(row.event_type)) suppression = 'SECURITY_DIRECT_ONLY';
+        else if (row.channel === 'SMS' && !(await templates.isEventEnabled(this.dataSource, row.event_type, 'SMS'))) suppression = 'EVENT_DISABLED';
+        try {
+          templates.assertSafe(row.message ?? '');
+          // Legacy C2C messages may predate the non-disclosure template. Never retry the pair.
+          if (canonicalNotificationEvent(row.event_type) === 'cash_to_cash.created' &&
+              /\b\d{6}\b/.test(row.message ?? '') && /\b[789]\d{9}\b/.test(row.message ?? '')) suppression = 'UNSAFE_MESSAGE';
+        } catch { suppression = 'UNSAFE_MESSAGE'; }
+        if (suppression) {
+          await this.dataSource.query(`UPDATE notification_deliveries SET status='SKIPPED', last_error=$1, updated_at=NOW()
+            WHERE id=$2 AND status='FAILED'`, [suppression, row.id]);
+          retriesSuppressed += 1;
+          continue;
+        }
         // Re-check the SMS preference at retry time: an opt-out recorded after the initial
         // failure must be honored (security-critical events never surface here — the set is
         // empty for V1 — but the check is harmless and future-proof).
@@ -230,17 +255,15 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
             );
           }
         }
-      } catch (error) {
-        // Provider threw through isolation and/or DB hiccup: leave row FAILED for next cycle.
-        // Never log provider payloads; message text is provider-safe by adapter contract.
-        this.logger.warn(
-          `Retry of notification delivery ${row.id} failed: ${(error as Error).message.slice(0, 500)}`,
-        );
+      } catch {
+        // Provider/database error may include private payloads or SQL parameters. Leave the
+        // row FAILED for the next bounded retry without logging the raw exception.
+        this.logger.warn('Notification delivery retry failed');
         retriesFailed += 1;
       }
     }
 
-    return { claimed, retriesSent, retriesFailed, retriesOptedOut };
+    return { claimed, retriesSent, retriesFailed, retriesOptedOut, retriesSuppressed };
   }
 
   private async isSmsOptedOut(customerId: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
+import { NOTIFICATION_DEFAULTS_V1, NOTIFICATION_SECURITY_DEFAULTS_V1 } from '../src/notification/notification-defaults-v1';
 
 import {
   createEmptyIntegrationDataSource,
@@ -64,6 +65,18 @@ describe('migration chain (real PostgreSQL)', () => {
     );
     expect(Number(firstRow(rows, 'migration ledger count').count)).toBe(expectedMigrations);
     expect(dataSource.migrations).toHaveLength(expectedMigrations);
+  });
+
+  it('seeds the notification registry during the real migration, including locked SECURITY rows', async () => {
+    const counts: Array<{ templates: number; configurations: number; security_locked: number; security_templates: number }> = await dataSource.query(`
+      SELECT (SELECT count(*)::int FROM notification_templates) AS templates,
+             (SELECT count(*)::int FROM notification_event_configurations) AS configurations,
+             (SELECT count(*)::int FROM notification_event_configurations WHERE delivery_class='SECURITY' AND is_locked) AS security_locked,
+             (SELECT count(*)::int FROM notification_templates t JOIN notification_event_configurations c
+                 ON c.event_type=t.event_type AND c.channel=t.channel WHERE c.delivery_class='SECURITY') AS security_templates`);
+    expect(counts[0]).toEqual({ templates: NOTIFICATION_DEFAULTS_V1.length * 2,
+      configurations: (NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_SECURITY_DEFAULTS_V1.length) * 2,
+      security_locked: NOTIFICATION_SECURITY_DEFAULTS_V1.length * 2, security_templates: 0 });
   });
 
   it('creates every foreign key in a validated state', async () => {
