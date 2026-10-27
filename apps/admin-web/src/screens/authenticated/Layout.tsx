@@ -16,6 +16,7 @@ import { ComplianceScreen } from './ComplianceScreen';
 import { RiskFraudScreen } from './RiskFraudScreen';
 import { WorkforceAdminScreen } from './WorkforceAdminScreen';
 import { SystemHealthScreen } from './SystemHealthScreen';
+import { NotificationManagementScreen } from './NotificationManagementScreen';
 import { CommercialRulesScreen } from './CommercialRulesScreen';
 import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
@@ -119,6 +120,7 @@ export const Layout: React.FC = () => {
         { key: 'roleGovernance' as View, label: '🔑 Role Governance', visible: isVisible('roleGovernance') },
         { key: 'approvalsInbox' as View, label: '⚖️ Privileged Approvals', visible: isVisible('approvalsInbox') },
         { key: 'superAdminRecovery' as View, label: '🔐 Super-Admin Recovery', visible: isVisible('superAdminRecovery') },
+        { key: 'notifications' as View, label: '🔔 SMS & Email Notifications', visible: isVisible('notifications') },
         { key: 'systemHealth' as View, label: '🩺 System Health', visible: isVisible('systemHealth') },
         { key: 'auditEvents' as View, label: '📜 Audit & Security Events', visible: isVisible('auditEvents') },
       ],
@@ -187,7 +189,8 @@ export const Layout: React.FC = () => {
       case 'roleGovernance': return <RoleAssignmentScreen />;
       case 'approvalsInbox': return <ApprovalsScreen />;
       case 'superAdminRecovery': return <SuperAdminRecoveryScreen />;
-      case 'systemHealth': return <SystemHealthScreen />;
+      case 'notifications': return <NotificationManagementScreen />;
+      case 'systemHealth': return <SystemHealthScreen onOpenNotifications={isVisible('notifications') ? () => handleNav('notifications') : undefined} />;
       case 'auditEvents': return <AuditTrailScreen initialCustomerId={navContext.customerId} />;
       default: return null;
     }
