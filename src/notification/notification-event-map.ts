@@ -149,11 +149,27 @@ export function mapEventToIntents(
     return intents;
   }
 
+  // Cash-to-cash initiation targets a phone directly so registration is not a prerequisite.
+  // The phone is used as a recipient key only; template output is limited to explicit safe vars.
+  if (eventType === 'cash_to_cash.created') {
+    const beneficiaryPhone = payload.beneficiaryPhone as string | undefined;
+    if (!beneficiaryPhone || !/^[789][0-9]{9}$/.test(beneficiaryPhone)) return [];
+    return [
+      {
+        recipientType: 'PHONE',
+        recipientId: beneficiaryPhone,
+        channel: 'SMS',
+        templateKey: 'cash_to_cash.created',
+        correlationId,
+        causationId,
+      },
+    ];
+  }
+
   // Cash-to-cash
   if (
     eventType === 'cash_to_cash.claimed' ||
     eventType === 'cash_to_cash.expired' ||
-    eventType === 'cash_to_cash.created' ||
     eventType === 'cash-to-cash.claimed' ||
     eventType === 'cash-to-cash.expired'
   ) {
@@ -323,6 +339,17 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     fallback: 'If isInternal true → NO notification (isolation)',
   },
   // CASH-TO-CASH
+  {
+    eventType: 'cash_to_cash.created',
+    recipient: 'PHONE (beneficiaryPhone; registration is not required)',
+    channel:
+      'SMS to canonical Nigerian phone; verified customer SMS preference honored when available',
+    templateKey: 'cash_to_cash.created',
+    required: true,
+    possible: true,
+    fallback:
+      'Malformed/missing phone is not dispatched; delivery is idempotent by eventKey + phone + channel',
+  },
   {
     eventType: 'cash_to_cash.claimed',
     recipient: 'CUSTOMER (claimant) + AGENT (sender)',

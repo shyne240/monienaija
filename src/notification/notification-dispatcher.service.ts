@@ -70,7 +70,7 @@ export class NotificationDispatcherService {
     if (!eventType) throw new Error('eventType is required');
 
     const payload = (command.payload ?? {}) as Record<string, unknown>;
-    const redactedPayload = this.templateService.redactPayload(payload) as Record<string, unknown>;
+    const redactedPayload = this.templateService.redactPayload(payload, eventType) as Record<string, unknown>;
 
     // Deterministic eventKey: use provided eventKey or fallback to aggregate+type+occurredAt hash-like
     const eventKey =
@@ -161,7 +161,10 @@ export class NotificationDispatcherService {
       const destination = resolved.destination;
       const isSkipped = !destination;
 
-      const message = this.templateService.buildMessage(intent.templateKey, payload);
+      const message = this.templateService.buildMessage(
+        intent.templateKey,
+        eventType === 'cash_to_cash.created' ? redactedPayload : payload,
+      );
       // Ensure no secrets in message (we already avoid, but double-check)
       // Do not include payload secrets; message is safe template only
 

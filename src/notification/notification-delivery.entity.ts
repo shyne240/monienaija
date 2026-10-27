@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 
 export type NotificationChannel = 'SMS' | 'PUSH';
-export type NotificationRecipientType = 'CUSTOMER' | 'AGENT';
+export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
 export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 /**
@@ -28,7 +28,7 @@ export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPE
 @Index('idx_notification_deliveries_status', ['status', 'createdAt'])
 @Index('idx_notification_deliveries_event_type', ['eventType', 'createdAt'])
 @Check('chk_notification_deliveries_channel', "channel IN ('SMS', 'PUSH')")
-@Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT')")
+@Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT', 'PHONE')")
 @Check('chk_notification_deliveries_status', "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')")
 @Check('chk_notification_deliveries_attempts', 'attempts >= 0')
 export class NotificationDelivery {
@@ -50,7 +50,8 @@ export class NotificationDelivery {
   @Column({ name: 'recipient_type', type: 'varchar', length: 20 })
   recipientType!: NotificationRecipientType;
 
-  @Column({ name: 'recipient_id', type: 'uuid' })
+  // UUID for CUSTOMER/AGENT; canonical phone for unregistered PHONE recipients.
+  @Column({ name: 'recipient_id', type: 'varchar', length: 255 })
   recipientId!: string;
 
   @Column({ type: 'varchar', length: 20 })

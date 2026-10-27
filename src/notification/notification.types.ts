@@ -1,5 +1,5 @@
 export type NotificationChannel = 'SMS' | 'PUSH';
-export type NotificationRecipientType = 'CUSTOMER' | 'AGENT';
+export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
 export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 /**

@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
@@ -8,6 +8,7 @@ import { AgentTerminal } from './agent-terminal.entity';
 import { OutletService } from './outlet.service';
 import { TerminalService } from './terminal.service';
 import { OutletController } from './outlet.controller';
+import { PublicAgentLocatorController } from './public-agent-locator.controller';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { OutletController } from './outlet.controller';
     OperationsModule,
     TypeOrmModule.forFeature([AgentOutlet, AgentTerminal]),
   ],
-  controllers: [OutletController],
+  controllers: [OutletController, PublicAgentLocatorController],
   providers: [OutletService, TerminalService],
   exports: [OutletService, TerminalService],
 })

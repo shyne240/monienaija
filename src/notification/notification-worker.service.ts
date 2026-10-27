@@ -19,7 +19,7 @@ interface ClaimedDeliveryRow {
   id: string;
   event_type: string;
   event_key: string;
-  recipient_type: 'CUSTOMER' | 'AGENT';
+  recipient_type: 'CUSTOMER' | 'AGENT' | 'PHONE';
   recipient_id: string;
   channel: 'SMS' | 'PUSH';
   destination: string;
@@ -177,8 +177,11 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
         // Re-check the SMS preference at retry time: an opt-out recorded after the initial
         // failure must be honored (security-critical events never surface here — the set is
         // empty for V1 — but the check is harmless and future-proof).
-        if (row.recipient_type === 'CUSTOMER' && row.channel === 'SMS') {
-          const optedOut = await this.isSmsOptedOut(row.recipient_id);
+        if (row.channel === 'SMS' && (row.recipient_type === 'CUSTOMER' || row.recipient_type === 'PHONE')) {
+          const customerId = row.recipient_type === 'PHONE'
+            ? await this.verifiedCustomerIdForPhone(row.recipient_id)
+            : row.recipient_id;
+          const optedOut = customerId ? await this.isSmsOptedOut(customerId) : false;
           if (optedOut) {
             await this.dataSource.query(
               `UPDATE notification_deliveries
@@ -241,6 +244,21 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     }
 
     return { claimed, retriesSent, retriesFailed, retriesOptedOut };
+  }
+
+  private async verifiedCustomerIdForPhone(phone: string): Promise<string | null> {
+    if (!/^[789][0-9]{9}$/.test(phone)) return null;
+    try {
+      const rows: Array<{ customer_id: string }> = await this.dataSource.query(
+        `SELECT customer_id FROM customer_contact_methods
+          WHERE type='PHONE' AND normalized_value=$1 AND verified_at IS NOT NULL AND deleted_at IS NULL
+          LIMIT 1`,
+        [phone],
+      );
+      return rows[0]?.customer_id ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async isSmsOptedOut(customerId: string): Promise<boolean> {

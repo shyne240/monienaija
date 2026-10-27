@@ -2,6 +2,14 @@ import { Injectable } from '@nestjs/common';
 
 import { redactRecord } from '../common/sensitive-data-redaction';
 
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 0x1f && code !== 0x7f;
+  }).join('');
+}
+
+
 /**
  * Safe message content — no PIN/OTP/password/ledger IDs.
  * Uses public reference, NGN amount. Redacted payload.
@@ -11,8 +19,29 @@ export class NotificationTemplateService {
   /**
    * Build redacted payload — strips secrets via redactRecord.
    */
-  redactPayload(payload: Record<string, unknown>): Record<string, unknown> {
-    return redactRecord(payload);
+  redactPayload(payload: Record<string, unknown>, eventType?: string): Record<string, unknown> {
+    const redacted = redactRecord(payload);
+    if (eventType !== 'cash_to_cash.created') return redacted;
+
+    // Delivery rows and provider adapters receive only template variables for this event.
+    // Recipient phone is stored separately as the delivery destination, not in payload JSON.
+    const safe: Record<string, unknown> = {};
+    if (typeof redacted.senderDisplayName === 'string')
+      safe.senderDisplayName = redacted.senderDisplayName;
+    if (typeof redacted.amountMinor === 'string' && /^[1-9][0-9]*$/.test(redacted.amountMinor)) {
+      safe.amountMinor = redacted.amountMinor;
+    }
+    if (redacted.currency === 'NGN') safe.currency = 'NGN';
+    if (typeof redacted.locatorUrl === 'string') {
+      try {
+        const url = new URL(redacted.locatorUrl);
+        if (url.protocol === 'https:' && !url.username && !url.password)
+          safe.locatorUrl = url.toString();
+      } catch {
+        // Invalid URLs are not copied into delivery/provider payloads.
+      }
+    }
+    return safe;
   }
 
   /**
@@ -75,12 +104,32 @@ export class NotificationTemplateService {
         return `Cash-to-cash transfer ${shortRef} claimed${amountPart}.`;
       case 'cash_to_cash.expired':
         return `Cash-to-cash transfer ${shortRef} expired${amountPart}. Contact support.`;
-      case 'cash_to_cash.created':
-        if (typeof payload.transferNumber === 'string' && /^[0-9]{6}$/.test(payload.transferNumber) &&
-            typeof payload.senderPhone === 'string' && /^[789][0-9]{9}$/.test(payload.senderPhone)) {
-          return `Cash-to-cash transfer number ${payload.transferNumber} from ${payload.senderPhone}${amountPart}. Share code securely.`;
+      case 'cash_to_cash.created': {
+        // Explicit allowlist: no transfer ID/number, sender phone, reference, or secret code is
+        // rendered for the beneficiary. Only an approved sender display name, committed amount,
+        // and validated configured locator URL may appear.
+        const configuredName = payload.senderDisplayName;
+        const senderName =
+          typeof configuredName === 'string'
+            ? stripControlCharacters(configuredName).trim().slice(0, 80)
+            : '';
+        const displayName = senderName || 'A MonieNaija customer';
+        const committedAmount =
+          typeof payload.amountMinor === 'string' && /^[1-9][0-9]*$/.test(payload.amountMinor)
+            ? ` ${this.formatNgn(payload.amountMinor)}`
+            : '';
+        let locator = '';
+        if (typeof payload.locatorUrl === 'string') {
+          try {
+            const url = new URL(payload.locatorUrl);
+            if (url.protocol === 'https:' && !url.username && !url.password)
+              locator = ` Find an active outlet: ${url.toString()}`;
+          } catch {
+            // Invalid URLs are never echoed into a customer-facing message.
+          }
         }
-        return `Cash-to-cash transfer ${shortRef} created${amountPart}. Share code securely.`;
+        return `Cash-to-Cash: ${displayName} sent you${committedAmount}. Visit an active agent outlet to collect.${locator}`;
+      }
       case 'agent.application.approved':
         return `Agent application ${shortRef} approved.`;
       case 'agent.application.rejected':

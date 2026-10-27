@@ -18,6 +18,13 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function containsControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+}
+
 const ALLOWED_OUTLET_TRANSITIONS: Record<OutletStatus, OutletStatus[]> = {
   [OutletStatus.ACTIVE]: [OutletStatus.SUSPENDED, OutletStatus.TERMINATED],
   [OutletStatus.SUSPENDED]: [OutletStatus.ACTIVE, OutletStatus.TERMINATED],
@@ -216,6 +223,121 @@ export class OutletService {
       [aggregatorId, agentId],
     );
     if (relRows.length === 0) throw new ConflictException(`No ACTIVE Aggregator-Agent relationship for ${aggregatorId} → ${agentId}`);
+  }
+
+  async listPublicCashToCashOutlets(
+    input: {
+      state?: string;
+      city?: string;
+      page?: string | number;
+      limit?: string | number;
+    } = {},
+  ): Promise<{
+    data: Array<{
+      name: string;
+      address: string | null;
+      city: string | null;
+      state: string | null;
+      country: string | null;
+    }>;
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+    filters: { state: string | null; city: string | null };
+  }> {
+    const state = this.normalizeLocatorFilter(input.state, 'state');
+    const city = this.normalizeLocatorFilter(input.city, 'city');
+    const page = this.normalizeLocatorPage(input.page, 1, 1_000_000, 'page');
+    const limit = this.normalizeLocatorPage(input.limit, 50, 100, 'limit');
+    const offset = (page - 1) * limit;
+    const filterValues = [state, city];
+    const where = `o.status = 'ACTIVE'
+      AND o.deleted_at IS NULL
+      AND upper(COALESCE(NULLIF(btrim(o.country), ''), 'NG')) = 'NG'
+      AND a.status = 'ACTIVE'
+      AND a.deleted_at IS NULL
+      AND ac.is_active = TRUE
+      AND ac.deleted_at IS NULL
+      AND COALESCE(
+        CASE WHEN jsonb_typeof(ac.applicable_services) = 'array' THEN EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(ac.applicable_services) AS svc(value)
+           WHERE upper(btrim(svc.value)) = 'CASH_TO_CASH'
+        ) ELSE FALSE END,
+        FALSE
+      )
+      AND ($1::varchar IS NULL OR lower(btrim(o.state)) = lower($1))
+      AND ($2::varchar IS NULL OR lower(btrim(o.city)) = lower($2))`;
+    const countRows: Array<{ total: string }> = await this.dataSource.query(
+      `SELECT count(*)::text AS total
+         FROM agent_outlets o
+         JOIN agents a ON a.id = o.agent_id
+         JOIN agent_classes ac ON ac.id = a.agent_class_id
+        WHERE ${where}`,
+      filterValues,
+    );
+    const rows: Array<{
+      display_name: string | null;
+      address_line: string | null;
+      city: string | null;
+      state: string | null;
+      country: string | null;
+    }> = await this.dataSource.query(
+      `SELECT NULLIF(btrim(o.display_name), '') AS display_name,
+              NULLIF(btrim(o.address_line), '') AS address_line,
+              NULLIF(btrim(o.city), '') AS city,
+              NULLIF(btrim(o.state), '') AS state,
+              COALESCE(NULLIF(btrim(o.country), ''), 'NG') AS country
+         FROM agent_outlets o
+         JOIN agents a ON a.id = o.agent_id
+         JOIN agent_classes ac ON ac.id = a.agent_class_id
+        WHERE ${where}
+        ORDER BY lower(COALESCE(o.state, '')), lower(COALESCE(o.city, '')), lower(COALESCE(o.display_name, ''))
+        LIMIT $3 OFFSET $4`,
+      [...filterValues, limit, offset],
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+    return {
+      data: rows.map((row) => ({
+        name: row.display_name ?? 'Cash-to-Cash service outlet',
+        address: row.address_line,
+        city: row.city,
+        state: row.state,
+        country: row.country,
+      })),
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      filters: { state, city },
+    };
+  }
+
+  private normalizeLocatorFilter(value: string | undefined, field: string): string | null {
+    if (value === undefined || value.trim() === '') return null;
+    const normalized = value.trim();
+    if (normalized.length > 100 || containsControlCharacters(normalized)) {
+      throw new BadRequestException(
+        `${field} must be at most 100 characters without control characters`,
+      );
+    }
+    return normalized;
+  }
+
+  private normalizeLocatorPage(
+    value: string | number | undefined,
+    fallback: number,
+    max: number,
+    field: string,
+  ): number {
+    if (value === undefined || value === '') return fallback;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) {
+      throw new BadRequestException(
+        `${field} must be a positive integer${max !== Number.MAX_SAFE_INTEGER ? ` no greater than ${max}` : ''}`,
+      );
+    }
+    return parsed;
   }
 
   private toValues(o: AgentOutlet): Record<string, unknown> {

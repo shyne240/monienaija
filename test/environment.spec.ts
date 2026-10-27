@@ -26,6 +26,16 @@ describe('validateEnvironment', () => {
     });
   });
 
+  it('accepts only credential-free HTTPS URLs for the optional Cash-to-Cash locator link', () => {
+    expect(validateEnvironment(validEnvironment).CASH_TO_CASH_LOCATOR_URL).toBeUndefined();
+    expect(validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'https://locator.example.ng/cash-to-cash' }).CASH_TO_CASH_LOCATOR_URL)
+      .toBe('https://locator.example.ng/cash-to-cash');
+    expect(() => validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'http://locator.example.ng/cash-to-cash' }))
+      .toThrow('Invalid environment configuration');
+    expect(() => validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'https://user:password@locator.example.ng/cash-to-cash' }))
+      .toThrow('Invalid environment configuration');
+  });
+
   it('keeps secure PoA uploads disabled by default with the documented 10 MB cap', () => {
     expect(validateEnvironment(validEnvironment)).toMatchObject({
       POA_UPLOADS_ENABLED: false,

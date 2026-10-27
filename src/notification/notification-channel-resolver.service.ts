@@ -26,14 +26,15 @@ export class NotificationChannelResolverService {
    *   the preference check applied (fail-safe toward honoring opt-out).
    */
   async resolve(
-    recipientType: 'CUSTOMER' | 'AGENT',
+    recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
     recipientId: string,
     channel: 'SMS' | 'PUSH',
     manager?: { query: (sql: string, params: unknown[]) => Promise<unknown> },
     eventType?: string | null,
   ): Promise<ResolvedDestination> {
     const ds = (manager as unknown as DataSource) ?? this.dataSource;
-    const query = (sql: string, params: unknown[]) => (ds as any).query(sql, params) as Promise<Array<any>>;
+    const query = (sql: string, params: unknown[]) =>
+      (ds as any).query(sql, params) as Promise<Array<any>>;
 
     if (channel === 'PUSH') {
       // Push requires device-token model — missing V1
@@ -91,6 +92,36 @@ export class NotificationChannelResolverService {
       return { channel: 'SMS', destination: phone };
     }
 
+    // PHONE SMS — direct canonical beneficiary phone allows delivery without a customer UUID.
+    // For a verified registered contact, preserve the existing customer SMS opt-out preference.
+    if (recipientType === 'PHONE') {
+      if (!/^[789][0-9]{9}$/.test(recipientId)) {
+        return { channel: 'SMS', destination: null, reason: 'INVALID_PHONE_RECIPIENT' };
+      }
+      try {
+        const contacts = await query(
+          `SELECT customer_id FROM customer_contact_methods
+            WHERE type='PHONE' AND normalized_value=$1 AND verified_at IS NOT NULL AND deleted_at IS NULL
+            LIMIT 1`,
+          [recipientId],
+        );
+        const customerId = contacts[0]?.customer_id as string | undefined;
+        if (customerId && !isSecurityCriticalNotificationEvent(eventType)) {
+          const preferences = await query(
+            `SELECT notification_sms_enabled AS sms_enabled FROM customer_preferences
+              WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
+            [customerId],
+          );
+          if (preferences[0]?.sms_enabled === false) {
+            return { channel: 'SMS', destination: null, reason: 'SMS_OPT_OUT' };
+          }
+        }
+      } catch {
+        // Existing transaction-notification policy: preference lookup failures do not block delivery.
+      }
+      return { channel: 'SMS', destination: recipientId };
+    }
+
     // AGENT SMS — no authoritative phone field on Agent/AgentApplication (contact_email only)
     // Search agent_applications for agent_id? Agent → originApplicationId → contact_email is email, not phone.
     // Therefore Agent SMS is dependency.
@@ -107,7 +138,7 @@ export class NotificationChannelResolverService {
    * Resolve both channels where possible, but V1 prefers SMS.
    */
   async resolveChannels(
-    recipientType: 'CUSTOMER' | 'AGENT',
+    recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
     recipientId: string,
     preferredChannels: Array<'SMS' | 'PUSH'> = ['SMS'],
     manager?: any,
