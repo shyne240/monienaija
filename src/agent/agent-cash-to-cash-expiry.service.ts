@@ -7,6 +7,8 @@ import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../commo
 
 export interface CashToCashExpiryInput {
   limit?: number;
+  /** Worker-only per-statement deadline, transaction-local; never session-global. */
+  statementTimeoutMs?: number;
   now?: Date;
   correlationId?: string;
   actor?: string;
@@ -49,6 +51,12 @@ export class AgentCashToCashExpiryService {
     if (Number.isNaN(now.getTime())) {
       throw new BadRequestException('now must be a valid date');
     }
+    if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1)) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+    if (input.statementTimeoutMs !== undefined && (!Number.isSafeInteger(input.statementTimeoutMs) || input.statementTimeoutMs < 100 || input.statementTimeoutMs > 60_000)) {
+      throw new BadRequestException('statementTimeoutMs must be an integer between 100 and 60000');
+    }
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
     const actor = input.actor?.trim() ? input.actor.trim() : 'system-expiry';
@@ -56,6 +64,14 @@ export class AgentCashToCashExpiryService {
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
       try {
         return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+          if (input.statementTimeoutMs !== undefined) {
+            await manager.query(`SELECT set_config('statement_timeout', $1, true)`, [String(input.statementTimeoutMs)]);
+            await manager.query(`SELECT set_config('idle_in_transaction_session_timeout', $1, true)`, [String(input.statementTimeoutMs)]);
+          }
+          // Production sweeps use database time, not the host clock. Explicit test/operator
+          // time remains backward compatible and is never supplied by the worker.
+          const clockRows: Array<{ now: Date }> = input.now ? [] : await manager.query(`SELECT clock_timestamp() AS now`);
+          const now = input.now ?? clockRows[0]!.now;
           // Select only UNCLAIMED and already due (expires_at <= now), ordered deterministically.
           // SKIP LOCKED allows concurrent workers to not block each other.
           const rows: Array<{
@@ -69,7 +85,7 @@ export class AgentCashToCashExpiryService {
             `SELECT id, beneficiary_phone, principal_minor, currency, reference, expires_at
                FROM cash_to_cash_transfers
               WHERE status = 'UNCLAIMED' AND expires_at <= $1
-              ORDER BY expires_at ASC, created_at ASC
+              ORDER BY expires_at ASC, created_at ASC, id ASC
               LIMIT $2
               FOR UPDATE SKIP LOCKED`,
             [now.toISOString(), limit],
