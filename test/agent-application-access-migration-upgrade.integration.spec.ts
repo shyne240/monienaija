@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 
 import {
-  buildIntegrationDataSource,
   createEmptyIntegrationDataSource,
   destroyIntegrationDataSource,
 } from './support/pg-harness';
@@ -12,11 +11,9 @@ const PREVIOUS_LATEST_MIGRATION = 'AddSecureCustomerProofOfAddressUploads1785753
 
 describe('Agent application access migration upgrade (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  let databaseName: string;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('agentappupgrade');
-    databaseName = String(dataSource.options.database);
     await dataSource.initialize();
   }, 120_000);
 
@@ -29,9 +26,24 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
     expect(fullChain.some((migration) => migration.name === EXPECTED_ACCESS_MIGRATION)).toBe(true);
     expect(fullChain.some((migration) => migration.name === PREVIOUS_LATEST_MIGRATION)).toBe(true);
 
+    // ARENA 3 Sprint 3 final integration: the repository chain now continues past 0095
+    // (1785753600096-CreateCashToCashLocators, ARENA 1's approved six-digit redemption
+    // migration). This suite verifies the historical 0094 -> 0095 upgrade exactly as it
+    // shipped, so BOTH DataSources below are scoped to the chain as it existed when 0095
+    // was head (timestamp <= 1785753600095). Later additive migrations (0096+) are
+    // exercised by every other integration suite through the harness's full chain and by
+    // the dedicated locator coverage in a15/a16/a17 — scoping keeps this test a faithful
+    // point-in-time upgrade reproduction and stable as the chain keeps growing.
+    const scopedChain = fullChain.filter(
+      (migration) => Number(String(migration.name ?? '').slice(-13)) <= Number(EXPECTED_ACCESS_MIGRATION.slice(-13)),
+    );
+    expect(
+      Math.max(...scopedChain.map((migration) => Number(String(migration.name ?? '').slice(-13)))),
+    ).toBe(Number(EXPECTED_ACCESS_MIGRATION.slice(-13)));
+
     // Build the already-existing schema through its historical latest migration, 0094, using
     // a separate DataSource configured with the historical migration classes only.
-    const historicalMigrations = fullChain
+    const historicalMigrations = scopedChain
       .filter((migration) => migration.name !== EXPECTED_ACCESS_MIGRATION)
       .map((migration) => migration.constructor);
     const historicalDataSource = new DataSource({
@@ -42,7 +54,7 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
     dataSource = historicalDataSource;
     await dataSource.initialize();
     const historicalRun = await dataSource.runMigrations({ transaction: 'all' });
-    expect(historicalRun).toHaveLength(fullChain.length - 1);
+    expect(historicalRun).toHaveLength(scopedChain.length - 1);
     const historicalLatest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text AS timestamp, name
          FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
@@ -82,10 +94,13 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
       existingApplicationIds.push(applicationId);
     }
 
-    // A second DataSource discovers the full chain from the same database. TypeORM must see
-    // exactly one pending migration and apply only the additive 0095 migration.
+    // A second DataSource discovers the (0095-head) chain from the same database. TypeORM
+    // must see exactly one pending migration and apply only the additive 0095 migration.
     await dataSource.destroy();
-    dataSource = buildIntegrationDataSource(databaseName);
+    dataSource = new DataSource({
+      ...historicalDataSource.options,
+      migrations: scopedChain.map((migration) => migration.constructor),
+    });
     await dataSource.initialize();
     await expect(dataSource.showMigrations()).resolves.toBe(true);
     const upgradeRun = await dataSource.runMigrations({ transaction: 'all' });

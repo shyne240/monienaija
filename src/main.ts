@@ -100,6 +100,7 @@ async function bootstrap(): Promise<void> {
   });
 
   try {
+    app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
     await app.init();
     await readinessService.verifyStartup();
     await governanceService.recordStartup();

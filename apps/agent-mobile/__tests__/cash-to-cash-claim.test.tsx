@@ -20,7 +20,9 @@ jest.mock('../src/services/agent-api', () => ({
   resolveCustomerRecipient: jest.fn(),
   requestAgentMfaChallenge: jest.fn(),
   agentCashToCashClaim: jest.fn(),
+  agentCashToCashClaimByNumber: jest.fn(),
   getAgentCashToCashClaim: jest.fn(),
+  recoverAgentCashToCashClaimByNumber: jest.fn(),
   describeApiError: jest.requireActual('../src/services/agent-api').describeApiError,
   describeCashToCashClaimError: jest.requireActual('../src/services/agent-api').describeCashToCashClaimError,
 }));
@@ -29,7 +31,9 @@ const mockApi = jest.requireMock('../src/services/agent-api') as {
   resolveCustomerRecipient: jest.Mock;
   requestAgentMfaChallenge: jest.Mock;
   agentCashToCashClaim: jest.Mock;
+  agentCashToCashClaimByNumber: jest.Mock;
   getAgentCashToCashClaim: jest.Mock;
+  recoverAgentCashToCashClaimByNumber: jest.Mock;
 };
 
 const mockNavigate = jest.fn();
@@ -102,17 +106,18 @@ function wrap(ui: React.ReactElement) {
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
 
-describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID', () => {
+describe('Cash→Cash Claim — Step 1: Beneficiary Identification, Sender Phone & 6-Digit Transfer Number', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('valid beneficiary phone and transfer ID resolves and renders identity', async () => {
+  test('valid beneficiary phone, sender phone, and 6-digit transfer number resolves and renders identity', async () => {
     mockApi.resolveCustomerRecipient.mockResolvedValue(customerRecipient);
     const { getByTestId, getByText, queryByText } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '08012345678');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '08031234567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '000042');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     await waitFor(() => expect(getByTestId('c2c-claim-customer-card')).toBeTruthy());
@@ -129,21 +134,28 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
     const { getByTestId, getByText } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '123');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '08031234567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '000042');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     expect(getByText(/Enter a valid 10-digit Nigerian phone number/)).toBeTruthy();
     expect(mockApi.resolveCustomerRecipient).not.toHaveBeenCalled();
   });
 
-  test('invalid transfer ID format (non-UUID) blocked client-side', () => {
+  test('invalid transfer number format (<6 digits, >6 digits, non-digit, or UUID) blocked client-side without zero-padding', () => {
     const { getByTestId, getByText } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '08012345678');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), 'not-a-valid-uuid');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '08031234567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '42');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
-    expect(getByText(/Enter a valid Transfer ID \(UUID format\)/)).toBeTruthy();
+    expect(getByText(/exact 6-digit transfer number/)).toBeTruthy();
+    expect(mockApi.resolveCustomerRecipient).not.toHaveBeenCalled();
+
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.press(getByTestId('c2c-claim-verify-button'));
+    expect(getByText(/not an internal UUID/)).toBeTruthy();
     expect(mockApi.resolveCustomerRecipient).not.toHaveBeenCalled();
   });
 
@@ -152,7 +164,8 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
     const { getByTestId, getByText, queryByTestId } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '08099999999');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '08031234567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '000042');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     await waitFor(() =>
@@ -172,7 +185,8 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
     const { getByTestId, getByText, queryByTestId } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '08012345678');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '08031234567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '000042');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     await waitFor(() => expect(getByTestId('c2c-claim-customer-ineligible')).toBeTruthy());
@@ -180,12 +194,13 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
     expect(queryByTestId('c2c-claim-continue')).toBeNull();
   });
 
-  test('continue navigates to confirm screen with safe parameters', async () => {
+  test('continue navigates to confirm screen with senderPhone + leading-zero 6-digit transferNumber and NO transferId', async () => {
     mockApi.resolveCustomerRecipient.mockResolvedValue(customerRecipient);
     const { getByTestId } = wrap(<CashToCashClaimRecipientScreen />);
 
     fireEvent.changeText(getByTestId('c2c-claim-phone-input'), '08012345678');
-    fireEvent.changeText(getByTestId('c2c-claim-transfer-id-input'), '12345678-1234-1234-1234-1234567890ab');
+    fireEvent.changeText(getByTestId('c2c-claim-sender-phone-input'), '+234 803 123 4567');
+    fireEvent.changeText(getByTestId('c2c-claim-transfer-number-input'), '000042');
     fireEvent.press(getByTestId('c2c-claim-verify-button'));
 
     await waitFor(() => expect(getByTestId('c2c-claim-continue')).toBeTruthy());
@@ -193,9 +208,11 @@ describe('Cash→Cash Claim — Step 1: Beneficiary Identification & Transfer ID
 
     expect(mockNavigate).toHaveBeenCalledWith('CashToCashClaimConfirm', {
       customer: customerRecipient,
-      transferId: '12345678-1234-1234-1234-1234567890ab',
+      senderPhone: '8031234567',
+      transferNumber: '000042',
       beneficiaryPhone: '8012345678',
     });
+    expect(mockNavigate.mock.calls[0]?.[1]).not.toHaveProperty('transferId');
   });
 });
 

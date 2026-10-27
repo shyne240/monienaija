@@ -4,6 +4,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import {
   AgentReceipt,
+  buildPublicCashToCashLocatorShareText,
   receiptFromCashInResult,
   receiptFromCashToCashResult,
   receiptFromCashToCashClaimResult,
@@ -289,5 +290,27 @@ describe('Shared Agent receipt renderer', () => {
     const { queryByText } = render(<AgentReceipt receipt={hacked} />);
     expect(JSON.stringify(hacked)).not.toContain('ABCD-1234');
     expect(queryByText('ABCD-1234')).toBeNull();
+  });
+
+  test('F: ARENA 1 6-digit transferNumber and senderPhone render preserving leading zeros and zero secrets in locator/receipt share text', () => {
+    const withLocator: AgentCashToCashResult = {
+      ...completedCashToCashResult,
+      senderPhone: '8039998877',
+      transferNumber: '000042',
+    };
+    const locatorText = buildPublicCashToCashLocatorShareText(withLocator);
+    expect(locatorText).not.toBeNull();
+    expect(locatorText).toContain('000042');
+    expect(locatorText).toContain('8039998877');
+    expectSecretFree(locatorText!);
+
+    expect(buildPublicCashToCashLocatorShareText(completedCashToCashResult)).toBeNull();
+
+    const receipt = receiptFromCashToCashResult(withLocator);
+    const { getByText } = render(<AgentReceipt receipt={receipt} />);
+    expect(getByText('000042')).toBeTruthy();
+    expect(getByText('8039998877')).toBeTruthy();
+    expectSecretFree(JSON.stringify(receipt));
+    expectSecretFree(receipt.shareText);
   });
 });

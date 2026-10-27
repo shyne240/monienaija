@@ -40,6 +40,7 @@ export function canonicalizePhoneNumber(input: string): string | null {
  */
 export const CashToCashRecipientScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [senderPhoneInput, setSenderPhoneInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
   const [clientError, setClientError] = useState('');
   const [resolvedView, setResolvedView] = useState<ResolvedRecipientView | null>(null);
@@ -87,12 +88,20 @@ export const CashToCashRecipientScreen: React.FC = () => {
   const handleContinue = () => {
     const canonical = getCanonicalOrSetError();
     if (!canonical) return;
+    const canonicalSender = canonicalizePhoneNumber(senderPhoneInput);
+    if (!canonicalSender) {
+      setClientError('Enter a valid 10-digit Nigerian sender phone number (e.g. 08031234567)');
+      return;
+    }
     if (resolvedView?.ownerType === 'AGENT') {
       setClientError('Agent recipients cannot receive Cash→Cash.');
       return;
     }
     setClientError('');
-    navigation.navigate('CashToCashAmount', { beneficiaryPhone: canonical });
+    navigation.navigate('CashToCashAmount', {
+      senderPhone: canonicalSender,
+      beneficiaryPhone: canonical,
+    });
   };
 
   const isAgent = resolvedView?.ownerType === 'AGENT';
@@ -102,12 +111,33 @@ export const CashToCashRecipientScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Send cash to beneficiary</Text>
         <Text style={styles.helper} testID="c2c-settlement-method-notice">
-          Collect the sender&apos;s physical cash and enter the recipient&apos;s phone number. At claim,
-          settlement can credit the beneficiary Customer wallet or the claiming Agent&apos;s NGN float for
-          cash payout. Physical cash handover is separate from this ledger settlement.
+          Collect the sender&apos;s physical cash and enter the sending customer&apos;s phone number and
+          the recipient&apos;s phone number. At claim, settlement can credit the beneficiary Customer
+          wallet or the claiming Agent&apos;s NGN float for cash payout. Physical cash handover is separate
+          from this ledger settlement.
         </Text>
 
         <Card style={styles.card}>
+          <Input
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="phone-pad"
+            label="Sender phone number"
+            placeholder="e.g. 08031234567"
+            value={senderPhoneInput}
+            maxLength={20}
+            testID="sender-phone-input"
+            onChangeText={(text) => {
+              setSenderPhoneInput(text);
+              setClientError('');
+            }}
+          />
+          <Text style={styles.helper} testID="sender-phone-notice">
+            Enter the sending customer&apos;s Nigerian phone number (never your Agent login phone). Confirm
+            it carefully before sending — the issued sender phone and 6-digit transfer number cannot be
+            edited later.
+          </Text>
+
           <Input
             autoCapitalize="none"
             autoCorrect={false}

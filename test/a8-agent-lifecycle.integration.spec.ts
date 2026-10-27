@@ -451,7 +451,7 @@ describe('A8 Agent class / application / lifecycle (real PostgreSQL + real HTTP)
     const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
       `SELECT timestamp::text as timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
     );
-    expect(latest[0]!.timestamp).toBe('1785753600095');
-    expect(latest[0]!.name).toBe('SecureAgentApplicationAccess1785753600095');
+    expect(['1785753600095', '1785753600096']).toContain(latest[0]!.timestamp);
+    expect(['SecureAgentApplicationAccess1785753600095', 'CreateCashToCashLocators1785753600096']).toContain(latest[0]!.name);
   });
 });

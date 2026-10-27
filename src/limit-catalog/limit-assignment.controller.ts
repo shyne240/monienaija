@@ -38,6 +38,7 @@ export class LimitAssignmentController {
       actor = await this.requireAgentAssignmentFunction(req);
     } else {
       this.requireWorkforce(req);
+      await this.requireLimitFunction(req, 'limit.modify');
       actor = this.actorOf(req);
     }
     return this.service.createAssignment(
@@ -68,6 +69,7 @@ export class LimitAssignmentController {
     @Query('isActive') isActive?: string,
   ) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
     if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
@@ -92,6 +94,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/profile/:code')
   async listByProfile(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
@@ -103,6 +106,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/customer/:id')
   async listByCustomer(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
@@ -114,6 +118,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/agent/:id')
   async listByAgent(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
@@ -125,6 +130,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/agent-class/:id')
   async listByAgentClass(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
@@ -136,6 +142,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/segment/:code')
   async listBySegment(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
@@ -147,6 +154,7 @@ export class LimitAssignmentController {
   @Get('limit-assignments/:id')
   async get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
+    await this.requireLimitFunction(req, 'limit.view');
     if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
     return this.service.getAssignment(id.trim());
   }
@@ -168,6 +176,7 @@ export class LimitAssignmentController {
       actor = await this.requireAgentAssignmentFunction(req);
     } else {
       this.requireWorkforce(req);
+      await this.requireLimitFunction(req, 'limit.modify');
       actor = this.actorOf(req);
     }
     return this.service.updateAssignment(id.trim(), {
@@ -191,6 +200,30 @@ export class LimitAssignmentController {
       principal,
       'agent.assign_limit',
       'agent-limit-assignment',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
+  }
+
+  /**
+   * V1-SPRINT3-SEC-SWEEP-01 (ARENA 3, P3): limit-assignment reads and non-Agent writes
+   * previously passed with the bare requireWorkforce principal-type check alone — any
+   * workforce principal (e.g. TREASURY, which holds only reconciliation.view) could read
+   * Agent-scoped limit assignments via GET /limit-assignments/agent/:id, and any
+   * OPERATOR-typed role could create/patch non-Agent assignments. This mirrors the
+   * sibling LimitCatalogController's established gates on the SAME limit domain:
+   * `limit.view` for reads, `limit.modify` for non-Agent writes (OPERATOR/SERVICE/
+   * PRIVILEGED only, SUPPORT/CUSTOMER/AGENT/AGGREGATOR denied). requireWorkforce still
+   * runs FIRST so its documented 401/403 type-denial behavior is unchanged. The AGENT
+   * write path is untouched: it remains gated by the stricter `agent.assign_limit`
+   * function (p0-p1 test: "agent-level limit assignment follows agent.assign_limit, not
+   * limit.modify"), and AGENT-scoped READS now require limit.view, which every
+   * agent.assign_limit holder (AGENT_NETWORK_MANAGER, SUPER_ADMIN) also holds.
+   */
+  private requireLimitFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.authorizationService.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'limit_assignment',
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
     );
   }

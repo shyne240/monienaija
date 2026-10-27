@@ -245,9 +245,9 @@ export const AgentClassesScreen: React.FC = () => {
       {!canManage && (
         <div style={styles.governanceBanner} role="note" data-testid="agent-classes-readonly-governance">
           <strong>Read-Only Governance Mode:</strong> Your principal holds <code>agent.view</code> without{' '}
-          <code>agent.manage_classes</code>. Backend dependency (ARENA 3): seeded workforce role grants for{' '}
-          <code>agent.manage_classes</code> in <code>authorization-catalogue.seed.ts</code> are required before
-          standard governance roles can create or edit classes.
+          <code>agent.manage_classes</code>. Class catalogue creation and editing require{' '}
+          <code>agent.manage_classes</code> (granted to <code>AGENT_NETWORK_MANAGER</code> and{' '}
+          <code>SUPER_ADMIN</code>).
         </div>
       )}
       {error && <div style={styles.error} role="alert">{error}</div>}

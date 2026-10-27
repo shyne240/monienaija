@@ -1,5 +1,7 @@
 # V1-AGENT-MOBILE-APPLICATION-SPEC-01 — Agent Mobile Application (V1) Specification
 
+> Cash-to-Cash contract update: the product owner approved six-digit transfer-number + sender-phone redemption after Sprint 3. See [the implemented contract](../APPROVED-C2C-SIX-DIGIT-REDEMPTION-CONTRACT.md) for required `senderPhone` on new HTTP sends, string `transferNumber`, `claim-by-number`, protected recovery, errors and rollout requirements. Existing UUID claim/recovery routes remain supported. Older tables below do not describe these new locator fields.
+
 - **Date:** 2026-10-01 · **Type:** specification only — **no implementation, no scaffold, no backend/migration/API changes, no modifications to Customer Mobile**
 - **Authority:** owner decision (V1-AGENT-MOBILE): the *actual Agent mobile application* is **REQUIRED in V1** as a first-class client. This document defines what is to be built.
 - **Sources of truth:** `apps/customer-mobile/**` (architecture baseline), `src/agent/**`, `src/agent-authentication/**`, `src/customer-authentication/mfa-execution.service.ts`, `test/a13–a21` suites. Every endpoint cited exists in code; nothing is invented.

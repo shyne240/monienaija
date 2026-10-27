@@ -410,6 +410,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       .post('/api/v1/agents/cash-to-cash')
       .set('Authorization', `Bearer ${initiator.token}`)
       .send({
+        senderPhone: '08035559999',
         beneficiaryPhone,
         amountMinor: '2000',
         currency: 'NGN',
@@ -519,6 +520,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       .post('/api/v1/agents/cash-to-cash')
       .set('Authorization', `Bearer ${initiator.token}`)
       .send({
+        senderPhone: '08035559999',
         beneficiaryPhone,
         amountMinor: '3000',
         currency: 'NGN',
@@ -586,6 +588,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       .post('/api/v1/agents/cash-to-cash')
       .set('Authorization', `Bearer ${initiator.token}`)
       .send({
+        senderPhone: '08035559999',
         beneficiaryPhone,
         amountMinor: '3200',
         currency: 'NGN',

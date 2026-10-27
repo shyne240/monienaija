@@ -38,6 +38,7 @@ import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service'
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
 import { AgentCashToCashOperationsController } from './agent-cash-to-cash-operations.controller';
 import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.service';
+import { AgentCashToCashExpiryWorker } from './agent-cash-to-cash-expiry-worker.service';
 import { CashToCashTransfer } from './cash-to-cash.entity';
 import { AgentFundingService } from './agent-funding.service';
 import { AgentFundingController } from './agent-funding.controller';
@@ -108,6 +109,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashService,
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
+    AgentCashToCashExpiryWorker,
     AgentLifecycleService,
     AgentFundingService,
     AgentDeskOtpService, // V1-AGENT-MFA-API-01 — canonical-challenge issuance for desk flows
@@ -127,6 +129,10 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashClaimService,
     AgentCashToCashExpiryService,
     AgentFundingService,
+    // V1-SPRINT3-AGENT-HISTORY-API-01: exported for the workforce investigation read
+    // (AdminAgentController GET /internal/agents/:id/transactions). Read-only projection;
+    // no new mutation surface is exposed.
+    AgentTransactionHistoryService,
   ],
 })
 export class AgentModule {}

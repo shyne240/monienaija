@@ -50,7 +50,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     localStorage.clear();
   });
 
-  test('Finance Controller accesses Agent funding checker directly inside ApprovalsScreen via Maker handoff token without speculative queue calls', async () => {
+  test('Finance Controller accesses live Global Funding Inbox and Maker handoff token inside ApprovalsScreen without requiring agent.view', async () => {
     setPrincipal(['FINANCE_CONTROLLER'], ['privileged:approve', 'agent.fund', 'agent.defund'], 'checker-fc-1');
     const pendingReq = {
       id: 'fund-req-1',
@@ -75,20 +75,52 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       journalId: null,
       policy: {},
     };
-    (ApiClient.get as jest.Mock)
-      .mockResolvedValueOnce([pendingReq])
-      .mockResolvedValueOnce([{ ...pendingReq, approvalStatus: 'APPROVED', approvalApprovedBy: 'checker-fc-1', checkerPrincipalId: 'checker-fc-1' }])
-      .mockResolvedValueOnce([{ ...pendingReq, status: 'EXECUTED', approvalStatus: 'CONSUMED', approvalApprovedBy: 'checker-fc-1', checkerPrincipalId: 'checker-fc-1', journalId: 'journal-fc-99' }]);
+    let currentState = pendingReq;
+    (ApiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.startsWith('/internal/agents/funding-requests?')) {
+        return Promise.resolve({
+          items: currentState.status === 'PENDING' ? [currentState] : [],
+          page: 1,
+          limit: 20,
+          total: currentState.status === 'PENDING' ? 1 : 0,
+        });
+      }
+      if (url.startsWith('/internal/agents/agent-fc-1/funding-requests')) {
+        return Promise.resolve([currentState]);
+      }
+      return Promise.resolve([]);
+    });
     (ApiClient.post as jest.Mock).mockImplementation((url: string) => {
-      if (url.endsWith('/approve')) return Promise.resolve({ reason: 'APPROVED' });
-      if (url.endsWith('/execute')) return Promise.resolve({ status: 'COMPLETED', journalId: 'journal-fc-99' });
+      if (url.endsWith('/approve')) {
+        currentState = {
+          ...currentState,
+          approvalStatus: 'APPROVED',
+          approvalApprovedBy: 'checker-fc-1',
+          checkerPrincipalId: 'checker-fc-1',
+        } as any;
+        return Promise.resolve({ reason: 'APPROVED' });
+      }
+      if (url.endsWith('/execute')) {
+        currentState = {
+          ...currentState,
+          status: 'EXECUTED',
+          approvalStatus: 'CONSUMED',
+          approvalApprovedBy: 'checker-fc-1',
+          checkerPrincipalId: 'checker-fc-1',
+          journalId: 'journal-fc-99',
+        } as any;
+        return Promise.resolve({ status: 'COMPLETED', journalId: 'journal-fc-99' });
+      }
       return Promise.resolve({});
     });
 
     const view = render(<ApprovalsScreen />);
-    expect(view.getByTestId('pending-funding-backend-dependency').textContent).toContain('ARENA 3');
-    // Zero speculative network calls on mount
-    expect(ApiClient.get).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/agents/funding-requests?page=1&limit=20&status=PENDING',
+      ),
+    );
+    expect(await view.findByText('Float top-up Abuja outlet')).toBeTruthy();
 
     fireEvent.change(view.getByLabelText('Checker handoff token'), {
       target: { value: JSON.stringify({ agentId: 'agent-fc-1', idempotencyKey: 'idem-fc-1' }) },
@@ -162,16 +194,20 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
         onSelectRequest={onSelect}
       />,
     );
-    fireEvent.click(view.getByRole('button', { name: 'Load pending queue' }));
     expect(await view.findByText('AG-001')).toBeTruthy();
     expect(view.getByText('AG-002')).toBeTruthy();
 
-    fireEvent.change(view.getByLabelText('Queue approval status filter'), {
-      target: { value: 'APPROVED' },
+    fireEvent.change(view.getByLabelText('Funding inbox direction filter'), {
+      target: { value: 'DEFUND' },
     });
-    expect(view.queryByText('AG-001')).toBeNull();
-    fireEvent.click(view.getByRole('button', { name: 'Open in Funding Checker' }));
-    expect(onSelect).toHaveBeenCalledWith('agent-b', 'idem-b');
+    await waitFor(() => expect(view.queryByText('AG-001')).toBeNull());
+    fireEvent.click(view.getByRole('button', { name: 'Review in Checker' }));
+    expect(onSelect).toHaveBeenCalledWith('agent-b', 'idem-b', {
+      agentId: 'agent-b',
+      idempotencyKey: 'idem-b',
+      requestId: 'req-b',
+      approvalId: 'app-b',
+    });
   });
 
   test('AgentNetworkScreen inspects application detail, resolves class & limit catalogs, and loads wallet + Cash-to-Cash activity on demand', async () => {
@@ -316,7 +352,9 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
     fireEvent.click(view.getByRole('button', { name: 'Load Agent transactions' }));
     expect(await view.findByText('WTX-REF-100')).toBeTruthy();
     expect(view.getByText('C2C-REF-100')).toBeTruthy();
-    expect(view.getByTestId('agent-unified-history-dependency').textContent).toContain('/internal/agents/:id/transactions');
+    expect(
+      (view.getByRole('button', { name: 'Load unified stream' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     expect(view.getByTestId('agent-pin-support-dependency').textContent).toContain('transaction-pin');
   });
 

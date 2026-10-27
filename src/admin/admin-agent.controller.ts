@@ -12,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { Agent } from '../agent/agent.entity';
+import { AgentTransactionHistoryService } from '../agent/agent-transaction-history.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -27,6 +28,7 @@ export class AdminAgentController {
     @InjectRepository(Agent) private readonly repo: Repository<Agent>,
     private readonly walletService: WalletService,
     private readonly auth: AuthorizationService,
+    private readonly historyService: AgentTransactionHistoryService,
   ) {}
 
   @Get()
@@ -104,6 +106,46 @@ export class AdminAgentController {
       walletId: ngnWallet.id,
       status: ngnWallet.status,
     };
+  }
+
+  /**
+   * V1-SPRINT3-AGENT-HISTORY-API-01 (ARENA 3): workforce read of an Agent's unified
+   * transaction history. This is the SAME read-only projection the Agent-facing
+   * GET /agents/me/transactions serves (AgentTransactionHistoryService.listUnified,
+   * V1-AGENT-HISTORY-01) — identical item schema, merge ordering (created_at DESC, id DESC),
+   * pagination shape and type filter. Nothing is synthesized and no accounting event is
+   * double-counted: the service projects authoritative records (ledger journals for
+   * CASH_IN/CASH_OUT/funding, cash_to_cash_transfers rows for initiated C2C lifecycle,
+   * claim audit events for CASH_TO_CASH_CLAIM) and every query is filtered at the boundary
+   * by the requested Agent's own wallet ledger accounts / agent_id.
+   *
+   * Authorization mirrors the sibling investigation reads on this controller
+   * (requireWorkforce + requireFunction 'agent.view'), and the RoutePolicyRegistry declares
+   * the same gate for defense in depth. Ownership/scope: the :id path parameter is the
+   * Agent resource; workforce callers entitled to agent.view may inspect any Agent (this
+   * is the workforce investigation surface), while Agents themselves continue to use the
+   * SELF-bound /agents/me/transactions route.
+   *
+   * Query params (all optional; validated by the history service):
+   *   page  — integer >= 1 (default 1)
+   *   limit — integer 1..100 (default 20)
+   *   type  — CASH_IN | CASH_OUT | CASH_TO_CASH | CASH_TO_CASH_CLAIM | AGENT_FUNDING | AGENT_DEFUNDING
+   * Response: { items: AgentUnifiedHistoryItem[], pagination: { page, limit, total, totalPages, hasNextPage } }
+   */
+  @Get(':id/transactions')
+  async getTransactions(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+  ) {
+    this.requireWorkforce(req);
+    await this.requireFunction(req, 'agent.view');
+    this.assertUuid(id, 'id');
+    const agent = await this.repo.findOne({ where: { id } as never });
+    if (!agent) throw new NotFoundException('Agent not found');
+    return this.historyService.listUnified({ agentId: id, page, limit, type });
   }
 
   private requireWorkforce(req: AuthenticatedRequest): string {

@@ -53,13 +53,15 @@ export type RootStackParamList = {
     amountMinor: string;
   };
 
-  // Agent Cash→Cash (V1-AGENT-MOBILE-07). PIN and transferCode NEVER travel in params.
+  // Agent Cash→Cash (V1-AGENT-MOBILE-07 + ARENA 1 6-digit locator contract). PIN and transferCode NEVER travel in params.
   CashToCash: undefined;
   CashToCashAmount: {
+    senderPhone: string;
     beneficiaryPhone: string;
     amountMinor?: string;
   };
   CashToCashConfirm: {
+    senderPhone: string;
     beneficiaryPhone: string;
     amountMinor: string;
     idempotencyKey: string;
@@ -87,13 +89,25 @@ export type RootStackParamList = {
     customerReceivingNumber?: string;
   };
 
-  // Agent Cash→Cash Claim Assist (V1-AGENT-MOBILE-09). transferCode and OTP NEVER travel in params.
+  // Agent Cash→Cash Claim Assist (V1-AGENT-MOBILE-09 + ARENA 1 6-digit locator redemption;
+  // legacy UUID transferId variant retained internally for compatibility — NEVER populate transferId with a 6-digit transferNumber).
+  // transferCode and OTP NEVER travel in params.
   CashToCashClaim: undefined;
-  CashToCashClaimConfirm: {
-    customer: ResolvedCustomerRecipientView;
-    transferId: string;
-    beneficiaryPhone: string;
-  };
+  CashToCashClaimConfirm:
+    | {
+        customer: ResolvedCustomerRecipientView;
+        senderPhone: string;
+        transferNumber: string;
+        beneficiaryPhone: string;
+        transferId?: never;
+      }
+    | {
+        customer: ResolvedCustomerRecipientView;
+        transferId: string;
+        beneficiaryPhone: string;
+        senderPhone?: never;
+        transferNumber?: never;
+      };
   CashToCashClaimSuccess: {
     result: AgentCashToCashClaimResult;
     customerDisplay?: string;

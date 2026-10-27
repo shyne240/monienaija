@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
+import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import {
@@ -9,6 +10,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
@@ -92,6 +94,88 @@ export class AgentCashToCashClaimService {
     @Optional()
     private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
   ) {}
+
+  /** Authenticated command, never a public UUID lookup. All transfer-specific failures
+   * share one envelope; the canonical service alone verifies credentials and posts funds. */
+  async executeByLocator(
+    input: Omit<AgentCashToCashClaimInput, 'transferId'> & { senderPhone: string; transferNumber: string },
+  ): Promise<AgentCashToCashClaimResult> {
+    const started = Date.now();
+    try {
+      const principal = input.claimantPrincipal;
+      const id = await this.resolveProtectedLocator(input.senderPhone, input.transferNumber, principal);
+      if (!id) throw this.locatorUnavailable();
+      const { senderPhone: _phone, transferNumber: _number, ...claim } = input;
+      try {
+        return await this.execute({ ...claim, transferId: id });
+      } catch (error) {
+        if (error instanceof HttpException && error.getStatus() < 500) throw this.locatorUnavailable();
+        throw new ServiceUnavailableException({ code: 'C2C_RETRY_REQUIRED', message: 'Claim outcome unavailable; recover before retrying' });
+      }
+    } finally {
+      // Equalize cheap unknown-locator and invalid-code failures below a common floor.
+      // Rate budgets remain authoritative; this is not a constant-time network guarantee.
+      await delay(Math.max(0, 100 - (Date.now() - started)));
+    }
+  }
+
+  async recoverByLocator(
+    senderPhone: string, transferNumber: string, idempotencyKey: string, principal: AuthorizationPrincipal,
+  ): Promise<AgentCashToCashClaimResult> {
+    const id = await this.resolveProtectedLocator(senderPhone, transferNumber, principal);
+    if (!id) throw this.locatorUnavailable();
+    try {
+      const result = await this.recoverClaimForAgent(id, principal);
+      if (result.idempotencyKey !== idempotencyKey) throw this.locatorUnavailable();
+      return result;
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() < 500) throw this.locatorUnavailable();
+      throw new ServiceUnavailableException({ code: 'C2C_RETRY_REQUIRED', message: 'Claim outcome unavailable; recover before retrying' });
+    }
+  }
+
+  private locatorUnavailable(): NotFoundException {
+    return new NotFoundException({ code: 'C2C_CLAIM_NOT_AVAILABLE', message: 'Claim not available' });
+  }
+
+  private async resolveProtectedLocator(
+    phone: string, number: string, principal?: AuthorizationPrincipal,
+  ): Promise<string | undefined> {
+    if (!principal || principal.type !== 'AGENT' || !principal.agentId ||
+        principal.agentId.toLowerCase() !== principal.principalId.toLowerCase()) {
+      throw new UnauthorizedException('Agent authentication required');
+    }
+    await this.dataSource.transaction((manager) => this.assertAgentSessionWithManager(manager, principal));
+    // Charge the Agent before parsing or querying a locator. Unknown and known locators
+    // consume identical persistent budgets. Hash keys to avoid raw phone storage here.
+    await this.chargeLocatorBudget(`agent:${principal.agentId.toLowerCase()}`, 20);
+    const canonicalPhone = typeof phone === 'string' ? AgentReceivingNumberService.canonicalizeTo10(phone.trim()) : null;
+    if (!canonicalPhone || typeof number !== 'string' || !/^[0-9]{6}$/.test(number)) throw this.locatorUnavailable();
+    await this.chargeLocatorBudget(`sender:${canonicalPhone}`, 100);
+    await this.chargeLocatorBudget(`pair:${canonicalPhone}:${number}`, 10);
+    const rows: Array<{ transfer_id: string }> = await this.dataSource.query(
+      `SELECT transfer_id FROM cash_to_cash_locators WHERE sender_phone=$1 AND transfer_number=$2`,
+      [canonicalPhone, number],
+    );
+    return rows[0]?.transfer_id;
+  }
+
+  private async chargeLocatorBudget(key: string, maximum: number): Promise<void> {
+    const rows: Array<{ attempts: number }> = await this.dataSource.query(
+      `INSERT INTO cash_to_cash_locator_attempts(bucket_key, window_start, attempts)
+       VALUES ($1,clock_timestamp(),1)
+       ON CONFLICT (bucket_key) DO UPDATE SET
+         attempts=CASE WHEN cash_to_cash_locator_attempts.window_start <= clock_timestamp()-INTERVAL '60 seconds'
+                       THEN 1 ELSE LEAST(cash_to_cash_locator_attempts.attempts+1, 1000000) END,
+         window_start=CASE WHEN cash_to_cash_locator_attempts.window_start <= clock_timestamp()-INTERVAL '60 seconds'
+                           THEN clock_timestamp() ELSE cash_to_cash_locator_attempts.window_start END
+       RETURNING attempts`,
+      [createHash('sha256').update(key).digest('hex')],
+    );
+    if (!rows[0] || rows[0].attempts > maximum) {
+      throw new HttpException({ code: 'C2C_LOCATOR_RATE_LIMITED', message: 'Too many locator requests; retry later' }, 429);
+    }
+  }
 
   async execute(input: AgentCashToCashClaimInput): Promise<AgentCashToCashClaimResult> {
     const transferId = input.transferId?.trim().toLowerCase();
