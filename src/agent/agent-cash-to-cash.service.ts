@@ -16,6 +16,7 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
+import { OutboxService } from '../operations/outbox.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
@@ -59,6 +60,13 @@ const DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS = 604800;
 const MIN_CASH_TO_CASH_EXPIRY_SECONDS = 60;
 const MAX_CASH_TO_CASH_EXPIRY_SECONDS = 31_536_000;
 
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 0x1f && code !== 0x7f;
+  }).join('');
+}
+
 @Injectable()
 export class AgentCashToCashService {
   constructor(
@@ -67,6 +75,7 @@ export class AgentCashToCashService {
     private readonly ledgerService: LedgerService,
     private readonly idempotencyService: IdempotencyService,
     private readonly auditService: AuditService,
+    private readonly outboxService: OutboxService,
     @Optional() private readonly configService?: ConfigService,
     @Optional()
     private readonly limitEnforcementService?: LimitEnforcementService,
@@ -548,6 +557,32 @@ export class AgentCashToCashService {
             },
           });
 
+          // The event shares this SERIALIZABLE commit with the journal, transfer, limits and
+          // idempotency record. It intentionally contains no transfer number, sender phone,
+          // or one-time transfer code. Notifications remain outbox-driven/non-blocking.
+          const senderDisplayName = senderPhone
+            ? await this.findVerifiedSenderDisplayName(manager, senderPhone)
+            : null;
+          const configuredLocatorUrl = this.configService?.get<string>('CASH_TO_CASH_LOCATOR_URL');
+          await this.outboxService.enqueueOnce(manager, {
+            eventType: 'cash_to_cash.created',
+            eventKey: `cash_to_cash.created:${idForTransfer}`,
+            aggregateType: 'CASH_TO_CASH_TRANSFER',
+            aggregateId: idForTransfer,
+            schemaVersion: 1,
+            classification: 'CONFIDENTIAL',
+            retentionClass: 'OPERATIONS_DEFAULT',
+            correlationId: correlationId ?? undefined,
+            payload: {
+              transferId: idForTransfer,
+              beneficiaryPhone: canonicalPhone,
+              amountMinor: amountString,
+              currency: 'NGN',
+              senderDisplayName: senderDisplayName ?? 'A MonieNaija customer',
+              ...(configuredLocatorUrl ? { locatorUrl: configuredLocatorUrl } : {}),
+            },
+          });
+
           return result;
         });
       } catch (error) {
@@ -838,6 +873,39 @@ export class AgentCashToCashService {
       );
     }
     return parsed;
+  }
+
+  private async findVerifiedSenderDisplayName(
+    manager: EntityManager,
+    senderPhone: string,
+  ): Promise<string | null> {
+    try {
+      const rows: Array<{ legal_name: string | null }> = await manager.query(
+        `SELECT cp.legal_name
+         FROM customer_contact_methods ccm
+         JOIN customers c ON c.id = ccm.customer_id
+         JOIN customer_profiles cp ON cp.customer_id = c.id
+        WHERE ccm.type = 'PHONE'
+          AND ccm.normalized_value = $1
+          AND ccm.verified_at IS NOT NULL
+          AND ccm.deleted_at IS NULL
+          AND c.kyc_status = 'APPROVED'
+          AND c.deleted_at IS NULL
+          AND cp.is_active = TRUE
+          AND cp.deleted_at IS NULL
+          AND NULLIF(BTRIM(cp.legal_name), '') IS NOT NULL
+        ORDER BY ccm.is_primary DESC, ccm.verified_at DESC, cp.created_at ASC
+        LIMIT 1`,
+        [senderPhone],
+      );
+      const name = rows[0]?.legal_name
+        ? stripControlCharacters(rows[0].legal_name).trim()
+        : undefined;
+      return name ? name.slice(0, 80) : null;
+    } catch {
+      // Sender enrichment is best-effort; a profile lookup must never block financial execution.
+      return null;
+    }
   }
 
   private async getUnclaimedAccount(): Promise<LedgerAccount | null> {

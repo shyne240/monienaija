@@ -106,7 +106,7 @@ export class NotificationDispatcherService {
     }
 
     const payload = (command.payload ?? {}) as Record<string, unknown>;
-    const redactedPayload = this.templateService.redactPayload(payload) as Record<string, unknown>;
+    const redactedPayload = this.templateService.redactPayload(payload, eventType) as Record<string, unknown>;
 
     // Deterministic eventKey: use provided eventKey or fallback to aggregate+type+occurredAt hash-like
     const eventKey =
@@ -207,6 +207,9 @@ export class NotificationDispatcherService {
       // INTEGRATION: Arena 1 registry rendering (SMS) + Arena 3 email seam (EMAIL) unified.
       // EMAIL renders through the template seam (subject/text/html); SMS renders the ACTIVE
       // registry version; disabled events persist a safe fixed message. PUSH keeps buildMessage.
+      // Arena 4's C2C non-disclosure contract is enforced inside render()/redactPayload()
+      // (eventType-aware allowlist subset), so raw cash_to_cash.created payloads never reach
+      // template variables, delivery rows or providers on ANY channel path.
       const emailRender: RenderedEmail | null =
         enabled && intent.channel === 'EMAIL'
           ? this.emailTemplates.buildEmail(intent.templateKey as NotificationTemplateKey, payload)

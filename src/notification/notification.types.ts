@@ -2,7 +2,9 @@
 // 1785753600097-AddEmailNotificationChannel replaces the DB CHECK constraint;
 // existing SMS/PUSH rows are untouched.
 export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
-export type NotificationRecipientType = 'CUSTOMER' | 'AGENT';
+// ARENA4-INTEGRATION: PHONE widened for unregistered Cash-to-Cash beneficiaries. Migration
+// 1785753600099-AllowPhoneNotificationRecipients widens recipient_type + recipient_id.
+export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
 export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 /**

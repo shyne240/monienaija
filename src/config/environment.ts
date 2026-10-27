@@ -9,6 +9,13 @@ const optionalEnvironmentUrl = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.string().trim().url().max(2048).optional(),
 );
+const optionalEnvironmentHttpsUrl = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().trim().url().max(2048).refine((value) => {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password;
+  }, 'must be an HTTPS URL without embedded credentials').optional(),
+);
 const optionalEnvironmentSecret = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.string().min(16).max(512).optional(),
@@ -44,6 +51,8 @@ export const environmentSchema = z
     CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
     CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
+    // Optional public locator URL; included in beneficiary SMS only when configured.
+    CASH_TO_CASH_LOCATOR_URL: optionalEnvironmentHttpsUrl,
     // Secure PoA uploads are inert unless explicitly enabled. Local disk/key-file storage is
     // development/test only; production requires S3-compatible storage and a managed keyring.
     POA_UPLOADS_ENABLED: booleanFromEnvironment.default(false),

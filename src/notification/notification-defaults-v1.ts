@@ -72,13 +72,16 @@ export const NOTIFICATION_DEFAULTS_V1 = [
     variables: ['reference'],
     body: 'New update on support ticket {{reference}}. Check your dashboard.',
   },
-  // Deliberately no sender phone, transfer number, code or locator URL. There is no new C2C
-  // delivery wiring here; the owner must decide the eventual beneficiary messaging contract.
+  // INTEGRATION (Arena 4 beneficiary contract, unified into the Arena 1 registry): the
+  // cash_to_cash.created SMS goes to the unregistered beneficiary PHONE recipient. Only the
+  // verified sender display name, the committed transfer amount and the configured HTTPS
+  // locator URL may render — never the transfer number, sender phone, secret transfer code,
+  // transaction reference or beneficiary phone (see redactPayload/resolveVariables).
   {
     eventType: 'cash_to_cash.created',
     kind: 'INFORMATIONAL',
-    variables: ['reference', 'amount_clause'],
-    body: 'Cash-to-cash transfer {{reference}} created{{amount_clause}}. Contact support for details.',
+    variables: ['sender_name', 'amount', 'locator_clause'],
+    body: 'Cash-to-Cash: {{sender_name}} sent you {{amount}}. Visit an active agent outlet to collect.{{locator_clause}}',
   },
   {
     eventType: 'cash_to_cash.claimed',

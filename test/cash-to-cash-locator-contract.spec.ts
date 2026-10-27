@@ -15,16 +15,16 @@ describe('Cash-to-Cash public locator contract', () => {
     }
   });
 
-  it('does not disclose locator components, an internal UUID or a secret in ordinary notification text', () => {
+  it('never renders a transfer number, sender phone, transfer UUID or secret code', () => {
     const message = new NotificationTemplateService().buildMessage('cash_to_cash.created', {
       reference: 'a-long-unrelated-display-reference',
       senderPhone: '8031234567', transferNumber: '000001',
       transferId: 'internal-uuid', transferCode: 'secret-code', amountMinor: '2000',
     });
-    expect(message).not.toContain('000001');
-    expect(message).not.toContain('8031234567');
-    expect(message).not.toContain('internal-uuid');
-    expect(message).not.toContain('secret-code');
-    expect(message).not.toContain('a-long-unrelated');
+    expect(message).toContain('A MonieNaija customer');
+    expect(message).toContain('NGN 20.00');
+    for (const forbidden of ['000001', '8031234567', 'internal-uuid', 'secret-code', 'a-long-unrelated']) {
+      expect(message).not.toContain(forbidden);
+    }
   });
 });

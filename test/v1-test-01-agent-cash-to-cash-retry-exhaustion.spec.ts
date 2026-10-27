@@ -65,6 +65,7 @@ describe('AgentCashToCashService — bounded SERIALIZABLE retry exhaustion (V1-T
       ledgerService,
       idempotencyService,
       auditService,
+      { enqueueOnce: jest.fn() } as never,
     );
   }
 

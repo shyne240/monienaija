@@ -30,6 +30,8 @@ export interface RoutePolicyResolution {
 }
 
 const PUBLIC_ROUTES = new Set([
+  // Public read-only projection of active, Cash-to-Cash eligible physical outlets.
+  'GET /api/v1/public/agents/cash-to-cash-outlets',
   'GET /api/v1/health',
   'GET /api/v1/health/ready',
   'GET /api/v1/internal/version',

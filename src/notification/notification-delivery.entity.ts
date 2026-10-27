@@ -11,7 +11,10 @@ import {
 // ARENA3-NOTIFICATION-EMAIL: EMAIL widened. DB CHECK constraint replaced by migration
 // 1785753600097-AddEmailNotificationChannel (existing SMS/PUSH rows untouched).
 export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
-export type NotificationRecipientType = 'CUSTOMER' | 'AGENT';
+// ARENA4-INTEGRATION: PHONE widened for unregistered Cash-to-Cash beneficiaries (migration
+// 1785753600099-AllowPhoneNotificationRecipients; recipient_id is varchar(255) — UUID for
+// CUSTOMER/AGENT, canonical phone for PHONE recipients).
+export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
 export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
 
 /**
@@ -30,7 +33,7 @@ export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPE
 @Index('idx_notification_deliveries_status', ['status', 'createdAt'])
 @Index('idx_notification_deliveries_event_type', ['eventType', 'createdAt'])
 @Check('chk_notification_deliveries_channel', "channel IN ('SMS', 'PUSH', 'EMAIL')")
-@Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT')")
+@Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT', 'PHONE')")
 @Check('chk_notification_deliveries_status', "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')")
 @Check('chk_notification_deliveries_attempts', 'attempts >= 0')
 export class NotificationDelivery {
@@ -52,7 +55,8 @@ export class NotificationDelivery {
   @Column({ name: 'recipient_type', type: 'varchar', length: 20 })
   recipientType!: NotificationRecipientType;
 
-  @Column({ name: 'recipient_id', type: 'uuid' })
+  // UUID for CUSTOMER/AGENT; canonical phone for unregistered PHONE recipients.
+  @Column({ name: 'recipient_id', type: 'varchar', length: 255 })
   recipientId!: string;
 
   @Column({ type: 'varchar', length: 20 })

@@ -25,11 +25,45 @@ export function canonicalNotificationEvent(eventType: string): string {
   return eventType;
 }
 
+/** Arena 4 C2C integration: control-character strip for the verified sender display name. */
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 0x1f && code !== 0x7f;
+  }).join('');
+}
+
 /** Plain-text, allowlist-only templates. There is deliberately no expression or property evaluator. */
 @Injectable()
 export class NotificationTemplateService {
-  redactPayload(payload: Record<string, unknown>): Record<string, unknown> {
-    return redactRecord(payload);
+  /**
+   * INTEGRATION (Arena 4): for cash_to_cash.created the delivery rows and provider adapters
+   * receive ONLY an explicit safe subset — verified sender display name, committed amount,
+   * currency and the configured https locator URL. Transfer number, sender phone, secret
+   * transfer code, transaction reference and beneficiary phone are structurally excluded
+   * (the beneficiary phone lives in the delivery destination, never in payload JSON).
+   */
+  redactPayload(payload: Record<string, unknown>, eventType?: string): Record<string, unknown> {
+    const redacted = redactRecord(payload);
+    if (canonicalNotificationEvent(eventType ?? '') !== 'cash_to_cash.created') return redacted;
+
+    const safe: Record<string, unknown> = {};
+    if (typeof redacted.senderDisplayName === 'string')
+      safe.senderDisplayName = redacted.senderDisplayName;
+    if (typeof redacted.amountMinor === 'string' && /^[1-9][0-9]*$/.test(redacted.amountMinor)) {
+      safe.amountMinor = redacted.amountMinor;
+    }
+    if (redacted.currency === 'NGN') safe.currency = 'NGN';
+    if (typeof redacted.locatorUrl === 'string') {
+      try {
+        const url = new URL(redacted.locatorUrl);
+        if (url.protocol === 'https:' && !url.username && !url.password)
+          safe.locatorUrl = url.toString();
+      } catch {
+        // Invalid URLs are not copied into delivery/provider payloads.
+      }
+    }
+    return safe;
   }
 
   definition(eventType: string): TemplateDefinition | undefined {
@@ -125,6 +159,10 @@ export class NotificationTemplateService {
       reference: 'R'.repeat(20),
       amount_clause: ' of NGN 9999999999999.99',
       status: 'IN_PROGRESS',
+      // Arena 4 C2C beneficiary variables (worst-case bounded by the resolvers below).
+      sender_name: 'S'.repeat(80),
+      amount: 'NGN 9999999999999.99',
+      locator_clause: ' Find an active outlet: ' + 'h'.repeat(240),
     };
     const expandedLength = (text: string) =>
       text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => maxima[name] ?? '')
@@ -145,7 +183,9 @@ export class NotificationTemplateService {
     payload: Record<string, unknown>,
   ): RenderedTemplate {
     const variablesUsed = this.validateTemplate(eventType, channel, content);
-    const safe = this.redactPayload(payload);
+    // eventType-aware redaction (Arena 4): cash_to_cash.created payloads are reduced to the
+    // safe subset BEFORE variable resolution, on every channel and every call path.
+    const safe = this.redactPayload(payload, eventType);
     const values = this.resolveVariables(eventType, safe);
     const interpolate = (text: string) =>
       text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => values[name] ?? '');
@@ -252,6 +292,45 @@ export class NotificationTemplateService {
     const allowedStatuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
     const status =
       typeof rawStatus === 'string' && allowedStatuses.includes(rawStatus) ? rawStatus : 'updated';
-    return { reference, amount_clause: amount ? ` of ${amount}` : '', status };
+
+    // Arena 4 C2C beneficiary variables. Only reachable for cash_to_cash.created because the
+    // event's variable allowlist is ['sender_name','amount','locator_clause'] and the payload
+    // was already reduced to the safe subset by redactPayload(payload, eventType).
+    let senderName = 'A MonieNaija customer';
+    if (typeof payload.senderDisplayName === 'string') {
+      const cleaned = stripControlCharacters(payload.senderDisplayName).trim().slice(0, 80);
+      if (cleaned.length > 0) {
+        try {
+          this.assertSafe(cleaned);
+          senderName = cleaned;
+        } catch {
+          // A display name carrying markup/credential-looking words is replaced by the
+          // generic name — never rendered raw, never fails the whole notification.
+        }
+      }
+    }
+    let locatorClause = '';
+    if (typeof payload.locatorUrl === 'string') {
+      try {
+        const url = new URL(payload.locatorUrl);
+        if (url.protocol === 'https:' && !url.username && !url.password) {
+          const locator = url.toString();
+          // Bounded so the worst-case SMS body stays within the 1000-char channel limit;
+          // an over-long URL is omitted rather than truncated into a broken link.
+          if (locator.length <= 240) locatorClause = ` Find an active outlet: ${locator}`;
+        }
+      } catch {
+        // Invalid URLs are never echoed into a customer-facing message.
+      }
+    }
+
+    return {
+      reference,
+      amount_clause: amount ? ` of ${amount}` : '',
+      status,
+      sender_name: senderName,
+      amount,
+      locator_clause: locatorClause,
+    };
   }
 }
