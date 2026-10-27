@@ -21,7 +21,7 @@ import type { NotificationProvider, NotificationSendRequest, NotificationSendRes
 export class NoneEmailProvider implements NotificationProvider {
   readonly name = 'none';
 
-  async send(_request: NotificationSendRequest): Promise<NotificationSendResult> {
+  async send(): Promise<NotificationSendResult> {
     return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
   }
 }

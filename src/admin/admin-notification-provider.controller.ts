@@ -92,7 +92,7 @@ export class AdminNotificationProviderController {
    * Read-only, non-secret snapshot of notification provider configuration + worker tuning.
    */
   @Get('provider-status')
-  async providerStatus(@Req() req: AuthenticatedRequest) {
+  providerStatus(@Req() req: AuthenticatedRequest) {
     this.requireFunction(req, 'notification.view_deliveries');
 
     const smsProviderName = this.configService.get<string>('NOTIFICATION_SMS_PROVIDER') ?? 'console';
