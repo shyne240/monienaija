@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { seedNotificationDefaultsV1 } from '../../src/notification/notification-defaults-v1';
 import {
   AUTHORIZATION_FUNCTION_SEED,
   AUTHORIZATION_ROLE_FUNCTION_SEED,
@@ -122,7 +123,7 @@ async function dropOwnDatabase(ds: DataSource, name: string): Promise<void> {
       WHERE datname = $1 AND pid <> pg_backend_pid()`,
     [name],
   );
-  await ds.query(`DROP DATABASE IF EXISTS \"${name}\"`);
+  await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
 }
 
 export function buildIntegrationDataSource(name: string): DataSource {
@@ -275,6 +276,12 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   // `/widgets/:widgetKey`, or the dashboard settings endpoints via a real, non-mocked app need it
   // to survive every `beforeEach(truncateAllTables)` call, not just the first test.
   await reseedDashboardPlatform(dataSource);
+  // Registry defaults are migration-owned reference data; restore them after the test-only
+  // wholesale TRUNCATE, just like the authorization and dashboard catalogues above.
+  const registry: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT to_regclass('public.notification_templates') IS NOT NULL AS present`,
+  );
+  if (registry[0]?.present) await seedNotificationDefaultsV1(dataSource.manager);
 }
 
 /**

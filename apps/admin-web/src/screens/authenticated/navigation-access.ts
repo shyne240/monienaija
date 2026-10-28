@@ -24,6 +24,7 @@ export type AdminView =
   | 'roleGovernance'
   | 'approvalsInbox'
   | 'superAdminRecovery'
+  | 'notifications'
   | 'systemHealth'
   | 'auditEvents'
   // Legacy view aliases retained for existing in-app callers/bookmarks.
@@ -137,6 +138,23 @@ export function canAccessAdminView(
       return roles.includes('FINANCE_CONTROLLER') && has('privileged:approve');
     case 'superAdminRecovery':
       return has('workforce.super_admin.recover');
+    case 'notifications':
+      // INTEGRATION (Phase 5): server read contract (Arena 1 registry requireRead) accepts
+      // notification.view_deliveries OR a FINANCE_CONTROLLER checker (MFA verified per
+      // request) — checkers must be able to open the console to inspect frozen proposals
+      // before approving/executing them.
+      if (roles.includes('FINANCE_CONTROLLER') && has('privileged:approve')) return true;
+      return hasAny(
+        'notification.view_deliveries',
+        'notification.view_events',
+        'notification.view_templates',
+        'notification.manage_templates',
+        'notification.approve_templates',
+        'notification.manage_configuration',
+        'notification.approve_configuration',
+        'notification.view_provider_status',
+        'notification.test_send',
+      );
     case 'systemHealth':
       return hasAny('metrics.view', 'diagnostics.view', 'outbox.view', 'notification.view_deliveries');
     case 'auditEvents':

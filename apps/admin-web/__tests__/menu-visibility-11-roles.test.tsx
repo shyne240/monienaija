@@ -80,7 +80,7 @@ const ALL_NAV_KEYS = [
   'dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps',
   'ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue',
   'limitCatalogue','limitAssignments','kycQueue','complianceCases','fraudCases','workforceAccess',
-  'roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents',
+  'roleGovernance','approvalsInbox','superAdminRecovery','notifications','systemHealth','auditEvents',
 ] as const;
 type NavKey = typeof ALL_NAV_KEYS[number];
 
@@ -88,12 +88,15 @@ type NavKey = typeof ALL_NAV_KEYS[number];
 // legacy approval/execution scopes. Customer-service transaction history is contextual, not a
 // global sidebar route.
 const EXPECTED: Record<RoleKey, readonly NavKey[]> = {
-  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','systemHealth','auditEvents'],
+  SUPER_ADMIN: ['dashboard','dashboardSettings','customers','agents','agentClasses','support','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','complianceCases','workforceAccess','roleGovernance','notifications','systemHealth','auditEvents'],
   FINANCE_PREPARER: ['dashboard','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
-  FINANCE_CONTROLLER: ['dashboard','agents','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox'],
-  FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','systemHealth','auditEvents'],
+  // INTEGRATION (Arena 3 Phase 5): FINANCE_CONTROLLER + privileged:approve is the notification
+  // change-request CHECKER — the Arena 1 registry requireRead admits FC (MFA-verified per
+  // request), so the console must be reachable to inspect frozen proposals before deciding.
+  FINANCE_CONTROLLER: ['dashboard','agents','ledgerExplorer','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','approvalsInbox','notifications'],
+  FINANCE_AUDITOR: ['dashboard','customers','agents','agentClasses','transfers','cashIn','cashOut','cashToCashOps','ledgerExplorer','reconciliation','feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments','kycQueue','notifications','systemHealth','auditEvents'],
   ADMINISTRATOR: ['dashboard','dashboardSettings','customers','agents','agentClasses','workforceAccess','roleGovernance','superAdminRecovery'],
-  OPERATIONS: ['dashboard','customers','support','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','systemHealth'],
+  OPERATIONS: ['dashboard','customers','support','transfers','cashIn','cashOut','cashToCashOps','workforceAccess','notifications','systemHealth'],
   AGENT_NETWORK_MANAGER: ['dashboard','agents','agentClasses','limitCatalogue','limitAssignments'],
   COMPLIANCE: ['dashboard','customers','kycQueue','complianceCases'],
   RISK_FRAUD: ['dashboard','fraudCases'],
@@ -108,7 +111,7 @@ const SECTION_KEYS: Record<string, readonly NavKey[]> = {
   finance: ['ledgerExplorer','reconciliation'],
   commercial: ['feeRules','commissionRules','rewardRules','productCatalogue','limitCatalogue','limitAssignments'],
   compliance: ['kycQueue','complianceCases','fraudCases'],
-  platform: ['workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','systemHealth','auditEvents'],
+  platform: ['workforceAccess','roleGovernance','approvalsInbox','superAdminRecovery','notifications','systemHealth','auditEvents'],
 };
 
 const SCREEN_MARKERS: Record<NavKey, RegExp> = {
@@ -137,6 +140,7 @@ const SCREEN_MARKERS: Record<NavKey, RegExp> = {
   roleGovernance: /Role (Assignments|Governance)/i,
   approvalsInbox: /Privileged Approvals/i,
   superAdminRecovery: /Super-Admin Recovery/i,
+  notifications: /SMS & Email Notification Management/i,
   systemHealth: /System Health/i,
   auditEvents: /Audit & Security Events/i,
 };
@@ -243,6 +247,16 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     expect(canAccessAdminView('agents', ['agent.defund'], ['AGENT_NETWORK_MANAGER'])).toBe(true);
     expect(canAccessAdminView('agents', ['agent.fund'], ['OPERATIONS'])).toBe(false);
     expect(canAccessAdminView('agents', [], ['FINANCE_CONTROLLER'])).toBe(false);
+  });
+
+  test('notification management navigation is unlocked only by notification.* authorization scopes', () => {
+    expect(canAccessAdminView('notifications', [], ['OPERATIONS'])).toBe(false);
+    expect(canAccessAdminView('notifications', ['metrics.view', 'outbox.view'], ['OPERATIONS'])).toBe(false);
+    expect(canAccessAdminView('notifications', ['notification.view_deliveries'], ['FINANCE_AUDITOR'])).toBe(true);
+    expect(canAccessAdminView('notifications', ['notification.manage_templates'], ['OPERATIONS'])).toBe(true);
+    expect(canAccessAdminView('notifications', ['notification.approve_templates'], ['FINANCE_CONTROLLER'])).toBe(true);
+    expect(canAccessAdminView('notifications', ['notification.manage_configuration'], ['OPERATIONS'])).toBe(true);
+    expect(canAccessAdminView('notifications', ['notification.test_send'], ['OPERATIONS'])).toBe(true);
   });
 
   test('agent list and lifecycle affordances use exact function scopes, not role-name fallbacks', async () => {

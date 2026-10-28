@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 
 export interface ResolvedDestination {
-  channel: 'SMS' | 'PUSH';
+  channel: 'SMS' | 'PUSH' | 'EMAIL';
   destination: string | null; // null means dependency missing (e.g. Push token absent)
   reason?: string; // for SKIPPED
 }
@@ -22,13 +22,17 @@ export class NotificationChannelResolverService {
    * Preferences: notification_push_enabled respected; notification_sms_enabled respected as
    *   SMS_OPT_OUT (SMS-V1-01) — except for security-critical events (OTP/authorization class),
    *   which bypass the opt-out by design (see notification-security.constants.ts).
+   * Email (ARENA3-NOTIFICATION-EMAIL): authoritative CustomerContactMethod EMAIL normalizedValue
+   *   (same ordering discipline as PHONE); notification_email_enabled honored as EMAIL_OPT_OUT
+   *   with the SAME security-critical bypass as SMS (parity, not new policy).
+   *   Agent EMAIL: no authoritative agent email source — documented dependency (SKIPPED).
    * `eventType` is optional and backward-compatible: direct resolver callers that omit it get
    *   the preference check applied (fail-safe toward honoring opt-out).
    */
   async resolve(
     recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
     recipientId: string,
-    channel: 'SMS' | 'PUSH',
+    channel: 'SMS' | 'PUSH' | 'EMAIL',
     manager?: { query: (sql: string, params: unknown[]) => Promise<unknown> },
     eventType?: string | null,
   ): Promise<ResolvedDestination> {
@@ -56,6 +60,46 @@ export class NotificationChannelResolverService {
       }
       // No device token table — dependency
       return { channel: 'PUSH', destination: null, reason: 'PUSH_TOKEN_DEPENDENCY_MISSING' };
+    }
+
+    // EMAIL (ARENA3-NOTIFICATION-EMAIL)
+    if (channel === 'EMAIL') {
+      if (recipientType === 'CUSTOMER') {
+        // Same posture as SMS-V1-01: honor the authoritative per-channel preference BEFORE
+        // any contact lookup; security-critical (OTP/authorization) events bypass opt-out —
+        // identical policy to SMS, so EMAIL introduces no new opt-out semantics.
+        if (!isSecurityCriticalNotificationEvent(eventType)) {
+          try {
+            const prefRows = await query(
+              `SELECT notification_email_enabled AS email_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
+              [recipientId],
+            );
+            if (prefRows[0]?.email_enabled === false) {
+              return { channel: 'EMAIL', destination: null, reason: 'EMAIL_OPT_OUT' };
+            }
+          } catch {
+            // Preference lookup failure must not block delivery of security/transactional messages.
+          }
+        }
+        // Reuse authoritative CustomerContactMethod EMAIL (same ordering discipline as PHONE)
+        const rows = await query(
+          `SELECT normalized_value FROM customer_contact_methods
+            WHERE customer_id=$1 AND type='EMAIL' AND deleted_at IS NULL
+            ORDER BY is_primary DESC, verified_at DESC NULLS LAST, created_at ASC
+            LIMIT 1`,
+          [recipientId],
+        );
+        const email = rows[0]?.normalized_value as string | undefined;
+        if (!email) {
+          return { channel: 'EMAIL', destination: null, reason: 'CUSTOMER_EMAIL_MISSING' };
+        }
+        // Use as stored — customer onboarding already normalized/validated the address.
+        return { channel: 'EMAIL', destination: email };
+      }
+      // AGENT EMAIL — no authoritative verified email field on Agent/AgentApplication
+      // (agent_applications.contact_email is application-contact, not a verified delivery
+      // identity — using it would be inventing policy). Documented dependency, SKIPPED.
+      return { channel: 'EMAIL', destination: null, reason: 'AGENT_EMAIL_DEPENDENCY_MISSING' };
     }
 
     // SMS
@@ -140,7 +184,7 @@ export class NotificationChannelResolverService {
   async resolveChannels(
     recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
     recipientId: string,
-    preferredChannels: Array<'SMS' | 'PUSH'> = ['SMS'],
+    preferredChannels: Array<'SMS' | 'PUSH' | 'EMAIL'> = ['SMS'],
     manager?: any,
   ): Promise<ResolvedDestination[]> {
     const results: ResolvedDestination[] = [];

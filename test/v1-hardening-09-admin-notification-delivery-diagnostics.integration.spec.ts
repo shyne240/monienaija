@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
+import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -104,6 +105,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
+    await seedNotificationDefaultsV1(dataSource.manager);
     const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
     if (settlement.length === 0) {
       await dataSource.query(`
@@ -465,7 +467,10 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?page=0').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?limit=101').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
     await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?recipientId=not-a-uuid').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=EMAIL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    // ARENA3-NOTIFICATION-EMAIL: EMAIL is now a valid channel filter (migration 097 widened
+    // the channel model); a genuinely unknown channel still 400s.
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=WHATSAPP').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=EMAIL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
   });
 
   it('20. provider-neutral semantics — SENT does not imply external provider delivery, no credentials', async () => {

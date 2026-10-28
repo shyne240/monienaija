@@ -1,4 +1,5 @@
 import type { NotificationIntent } from './notification.types';
+import { canonicalNotificationEvent } from './notification-template.service';
 
 /**
  * V1-005 Event catalogue → recipient/channel/template mapping.
@@ -184,7 +185,7 @@ export function mapEventToIntents(
         recipientType: 'CUSTOMER',
         recipientId: claimantCustomerId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });
@@ -193,7 +194,7 @@ export function mapEventToIntents(
         recipientType: 'CUSTOMER',
         recipientId: beneficiaryId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });
@@ -203,7 +204,7 @@ export function mapEventToIntents(
         recipientType: 'AGENT',
         recipientId: agentId,
         channel: 'SMS',
-        templateKey: eventType.replace('-', '_'),
+        templateKey: canonicalNotificationEvent(eventType),
         correlationId,
         causationId,
       });
@@ -242,6 +243,47 @@ export function mapEventToIntents(
 
   // Fallback: unknown event — no notification (not every audit generates notification)
   return [];
+}
+
+/**
+ * ARENA3-NOTIFICATION-EMAIL — EMAIL intent augmentation for CUSTOMER recipients.
+ *
+ * `mapEventToIntents` above is deliberately UNCHANGED (SMS/PUSH-only, byte-preserved —
+ * requirement: preserve all existing SMS behaviour). The dispatcher calls this helper
+ * ONLY when an email provider is configured (NOTIFICATION_EMAIL_PROVIDER != none);
+ * while email is dark, no EMAIL intents are generated at all (no SKIPPED-row churn).
+ *
+ * Scope: already-live wired events with CUSTOMER recipients only. cash_to_cash.* and
+ * agent.* intents are intentionally NOT augmented (agent email is a documented dependency —
+ * AGENT_EMAIL_DEPENDENCY_MISSING; cash-to-cash beneficiary wiring is out of mission scope).
+ * SMS intents are never modified — EMAIL copies are appended after them.
+ */
+const EMAIL_ENABLED_CUSTOMER_EVENTS: ReadonlySet<string> = new Set([
+  'customer.funding.requested',
+  'customer.funding.approved',
+  'customer.funding.rejected',
+  'transfer.completed',
+  'transfer.failed',
+  'transfer.unknown',
+  'support.ticket.created',
+  'support.ticket.assigned',
+  'support.ticket.status_changed',
+  'support.ticket.resolved',
+  'support.ticket.closed',
+  'support.ticket.message_added',
+]);
+
+export function appendCustomerEmailIntents(
+  eventType: string,
+  intents: NotificationIntent[],
+): NotificationIntent[] {
+  if (!EMAIL_ENABLED_CUSTOMER_EVENTS.has(eventType)) return intents;
+  const copies: NotificationIntent[] = [];
+  for (const intent of intents) {
+    if (intent.recipientType !== 'CUSTOMER') continue;
+    copies.push({ ...intent, channel: 'EMAIL' });
+  }
+  return copies.length > 0 ? [...intents, ...copies] : intents;
 }
 
 /**
@@ -414,5 +456,15 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     required: false,
     possible: false,
     fallback: 'SKIPPED PUSH_TOKEN_DEPENDENCY_MISSING until device-token entity exists; notification_push_enabled respected',
+  },
+  // EMAIL (ARENA3-NOTIFICATION-EMAIL)
+  {
+    eventType: 'customer.funding.* / transfer.completed|failed|unknown / support.ticket.*',
+    recipient: 'CUSTOMER only (AGENT email is a documented dependency)',
+    channel: 'EMAIL (customer_contact_methods type=EMAIL normalized_value; only generated when NOTIFICATION_EMAIL_PROVIDER is configured)',
+    templateKey: 'same as SMS intent — plain-text body identical (NotificationEmailTemplateLookup seam)',
+    required: false,
+    possible: true,
+    fallback: 'Email dark (provider none): no EMAIL intent generated. Configured: EMAIL_OPT_OUT (notification_email_enabled=false, security-critical events bypass), CUSTOMER_EMAIL_MISSING, AGENT_EMAIL_DEPENDENCY_MISSING → SKIPPED with reason; provider failure → FAILED with bounded retries via worker',
   },
 ];

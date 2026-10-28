@@ -170,6 +170,23 @@ export const environmentSchema = z
     // Bounded SMS retry semantics (delivery level, never reversed into finance).
     SMS_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     SMS_RETRY_BASE_DELAY_SECONDS: z.coerce.number().int().min(5).max(86_400).default(60),
+    // ARENA3-NOTIFICATION-EMAIL — provider-neutral EMAIL configuration (mirrors the SMS posture).
+    // 'none' (default): email DARK — dispatcher generates no EMAIL intents, worker fails closed.
+    // 'console': dev/test only (logs + in-memory; rejected in production by refinement below).
+    // 'resend': production adapter — requires RESEND_API_KEY (re_ prefix) + NOTIFICATION_EMAIL_FROM.
+    NOTIFICATION_EMAIL_PROVIDER: z.enum(['none', 'console', 'resend']).default('none'),
+    RESEND_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.resend.com'),
+    RESEND_API_KEY: optionalEnvironmentSecret,
+    RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+    // Verified sender identity, e.g. "MonieNaija <notifications@monienaija.ng>".
+    NOTIFICATION_EMAIL_FROM: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().trim().min(3).max(320).optional(),
+    ),
+    NOTIFICATION_EMAIL_REPLY_TO: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().trim().min(3).max(320).optional(),
+    ),
   })
   .superRefine((config, context) => {
     if (
@@ -230,6 +247,54 @@ export const environmentSchema = z
           message: 'ROBASE_API_KEY must be a Robase live key (robe_ prefix, see docs.robase.dev)',
         });
       }
+    }
+
+    // ARENA3-NOTIFICATION-EMAIL: production must never run the console email adapter — it
+    // writes full message bodies (potentially transaction details) to stdout and delivers
+    // nothing. 'none' stays legal in production: email is a dark channel until operations
+    // explicitly enable it (unlike SMS, no OTP-gated flow depends on email today).
+    if (config.NODE_ENV === 'production' && config.NOTIFICATION_EMAIL_PROVIDER === 'console') {
+      context.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_EMAIL_PROVIDER'],
+        message:
+          'NOTIFICATION_EMAIL_PROVIDER=console is restricted to development/test — production ' +
+          'must use "resend" (real delivery) or "none" (email dark).',
+      });
+    }
+
+    // ARENA3-NOTIFICATION-EMAIL: fail-fast credential validation when Resend is selected —
+    // same safety property as the Robase refinement (never silently degrade to no delivery).
+    if (config.NOTIFICATION_EMAIL_PROVIDER === 'resend') {
+      if (!config.RESEND_API_KEY) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RESEND_API_KEY'],
+          message: 'RESEND_API_KEY is required when NOTIFICATION_EMAIL_PROVIDER=resend',
+        });
+      } else if (!config.RESEND_API_KEY.startsWith('re_')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RESEND_API_KEY'],
+          message: 'RESEND_API_KEY must be a Resend live key (re_ prefix)',
+        });
+      }
+      if (!config.NOTIFICATION_EMAIL_FROM || !config.NOTIFICATION_EMAIL_FROM.includes('@')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['NOTIFICATION_EMAIL_FROM'],
+          message:
+            'NOTIFICATION_EMAIL_FROM (verified sender identity containing @) is required when ' +
+            'NOTIFICATION_EMAIL_PROVIDER=resend',
+        });
+      }
+    }
+    if (config.NOTIFICATION_EMAIL_REPLY_TO && !config.NOTIFICATION_EMAIL_REPLY_TO.includes('@')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_EMAIL_REPLY_TO'],
+        message: 'NOTIFICATION_EMAIL_REPLY_TO must contain a valid reply address (@)',
+      });
     }
 
     if (config.POA_UPLOADS_ENABLED) {

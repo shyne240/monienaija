@@ -24,7 +24,7 @@ const OUTBOX_COLUMNS: StructuredColumn[] = [
   { key: 'availableAt', label: 'Available' }, { key: 'lastError', label: 'Last error' },
 ];
 
-export const SystemHealthScreen: React.FC = () => {
+export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> = ({ onOpenNotifications }) => {
   const { principal } = useAuthStore();
   const canViewMetrics = principal?.scopes.includes('metrics.view') ?? false;
   const canViewDiagnostics = principal?.scopes.includes('diagnostics.view') ?? false;
@@ -163,7 +163,19 @@ export const SystemHealthScreen: React.FC = () => {
 
           {canViewDeliveries && (
             <section style={card} aria-label="Notification deliveries">
-              <h3 style={h4}>Notification Deliveries</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <h3 style={h4}>Notification Deliveries</h3>
+                {onOpenNotifications && (
+                  <button
+                    type="button"
+                    style={smallBtn}
+                    data-testid="open-notification-management-btn"
+                    onClick={onOpenNotifications}
+                  >
+                    Manage SMS & Email Notifications →
+                  </button>
+                )}
+              </div>
               <p style={muted}>Read-only delivery diagnostics. Filters are applied by the existing paginated API.</p>
               <form onSubmit={applyDeliveryFilters} style={filterRow}>
                 <label style={filterLabel}>Status

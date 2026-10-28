@@ -10,6 +10,7 @@ import { AdminCustomerController } from './admin-customer.controller';
 import { AdminAggregatorController } from './admin-aggregator.controller';
 import { AdminAgentLifecycleController } from './admin-agent-lifecycle.controller';
 import { AdminNotificationController } from './admin-notification.controller';
+import { AdminNotificationProviderController } from './admin-notification-provider.controller';
 import { AdminAgentCredentialsController } from './admin-agent-credentials.controller';
 import { AdminCustomerCredentialsController } from './admin-customer-credentials.controller';
 import { AgentAuthenticationModule } from '../agent-authentication/agent-authentication.module';
@@ -50,6 +51,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AdminCustomerCredentialsController,
     AdminSupportCredentialsController,
     AdminNotificationController,
+    AdminNotificationProviderController,
   ],
   providers: [CustomerTransactionHistoryService],
 })

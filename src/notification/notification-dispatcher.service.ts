@@ -1,12 +1,23 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unnecessary-type-assertion, prefer-const, no-empty */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, no-empty */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
-import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
+import {
+  NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+  NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
+  NOTIFICATION_PROVIDER_TOKEN,
+} from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
-import { mapEventToIntents } from './notification-event-map';
+import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
+import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationTemplateService } from './notification-template.service';
-import type { NotificationProvider } from './notification.types';
+import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
+import type {
+  NotificationEmailTemplateLookup,
+  NotificationProvider,
+  NotificationTemplateKey,
+  RenderedEmail,
+} from './notification.types';
 
 export interface DispatchCommand {
   eventType: string;
@@ -44,6 +55,10 @@ export class NotificationDispatcherService {
     private readonly channelResolver: NotificationChannelResolverService,
     private readonly templateService: NotificationTemplateService,
     @Inject(NOTIFICATION_PROVIDER_TOKEN) @Optional() private readonly injectedProvider: NotificationProvider | null,
+    // ARENA3-NOTIFICATION-EMAIL — EMAIL-only provider + template seam. SMS/PUSH routing is
+    // untouched: `provider` above remains the sole send path for those channels.
+    @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly injectedEmailProvider: NotificationProvider | null,
+    @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -52,6 +67,23 @@ export class NotificationDispatcherService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { ConsoleNotificationProvider } = require('./notification-provider.interface');
     return new ConsoleNotificationProvider();
+  }
+
+  /**
+   * EMAIL provider — fail-closed: unlike SMS (console fallback for tests), a missing
+   * EMAIL provider binding resolves to NoneEmailProvider (email stays dark, never logs).
+   */
+  private get emailProvider(): NotificationProvider {
+    if (this.injectedEmailProvider) return this.injectedEmailProvider;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NoneEmailProvider } = require('./email-provider.interface');
+    return new NoneEmailProvider();
+  }
+
+  /** Email rendering seam — default code-backed implementation (Arena 1 registry swaps the token binding). */
+  private get emailTemplates(): NotificationEmailTemplateLookup {
+    if (this.injectedEmailTemplates) return this.injectedEmailTemplates;
+    return new CodeNotificationEmailTemplateService(this.templateService);
   }
 
   /**
@@ -68,6 +100,10 @@ export class NotificationDispatcherService {
   ): Promise<DispatchResult> {
     const eventType = command.eventType?.trim();
     if (!eventType) throw new Error('eventType is required');
+    // These direct-send flows must never persist an OTP/credential in a delivery row.
+    if (isSecurityCriticalNotificationEvent(eventType)) {
+      throw new Error('Security notifications cannot use the outbox dispatcher');
+    }
 
     const payload = (command.payload ?? {}) as Record<string, unknown>;
     const redactedPayload = this.templateService.redactPayload(payload, eventType) as Record<string, unknown>;
@@ -88,7 +124,7 @@ export class NotificationDispatcherService {
 
     // Fallback for support events where payload lacks customerId/agentId (e.g., assigned/status_changed)
     // Resolve via support_tickets table using ticketId or aggregateId
-    if (intents.length === 0 && eventType.startsWith('support.ticket')) {
+    if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
       // internal notes already filtered, but double-check
       if (eventType === 'support.ticket.message_added' && (payload.isInternal as boolean) === true) {
         return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
@@ -138,44 +174,63 @@ export class NotificationDispatcherService {
       }
     }
 
+    // ARENA3-NOTIFICATION-EMAIL: append CUSTOMER EMAIL copies ONLY when an email provider
+    // is configured. While dark (provider 'none'), no EMAIL intents exist at all — existing
+    // SMS/PUSH behaviour (generated/dispatched/skipped counts, delivery rows) is byte-identical.
+    if (this.emailProvider.name !== 'none') {
+      intents = appendCustomerEmailIntents(eventType, intents);
+    }
+
     if (intents.length === 0) {
       return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
     }
 
-    // dsManager kept for compatibility but not used (queryRunner is authoritative)
-    const dsManager = manager ?? this.dataSource.createEntityManager();
-
     const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     for (const intent of intents) {
-      // Resolve destination per recipient/channel (SMS-V1-01: eventType drives the
-      // security-critical opt-out bypass in the channel resolver)
-      const resolved = await this.channelResolver.resolve(
-        intent.recipientType,
-        intent.recipientId,
-        intent.channel,
-        queryRunner,
-        eventType,
-      );
+      // Configuration is checked before preferences/destination. Disabled events are recorded
+      // SKIPPED under the same delivery idempotency key; PUSH keeps its existing dependency path.
+      // INTEGRATION: Arena 1 gated SMS only; EMAIL is now gated by the same persistent registry
+      // (notification_event_configurations channel='EMAIL'), so per-event email enablement is
+      // enforced at dispatch. PUSH has no registry row and stays ungated (dependency path).
+      const enabled =
+        intent.channel === 'SMS' || intent.channel === 'EMAIL'
+          ? await this.templateService.isEventEnabled(queryRunner, eventType, intent.channel)
+          : true;
+      const resolved = enabled
+        ? await this.channelResolver.resolve(intent.recipientType, intent.recipientId, intent.channel, queryRunner, eventType)
+        : { destination: null, reason: 'EVENT_DISABLED' };
 
       const destination = resolved.destination;
       const isSkipped = !destination;
 
-      const message = this.templateService.buildMessage(
-        intent.templateKey,
-        eventType === 'cash_to_cash.created' ? redactedPayload : payload,
-      );
-      // Ensure no secrets in message (we already avoid, but double-check)
-      // Do not include payload secrets; message is safe template only
+      // INTEGRATION: Arena 1 registry rendering (SMS) + Arena 3 email seam (EMAIL) unified.
+      // EMAIL renders through the template seam (subject/text/html); SMS renders the ACTIVE
+      // registry version; disabled events persist a safe fixed message. PUSH keeps buildMessage.
+      // Arena 4's C2C non-disclosure contract is enforced inside render()/redactPayload()
+      // (eventType-aware allowlist subset), so raw cash_to_cash.created payloads never reach
+      // template variables, delivery rows or providers on ANY channel path.
+      const emailRender: RenderedEmail | null =
+        enabled && intent.channel === 'EMAIL'
+          ? await this.emailTemplates.buildEmail(
+              intent.templateKey as NotificationTemplateKey,
+              payload,
+              queryRunner,
+            )
+          : null;
+      const message = !enabled
+        ? 'Notification disabled.'
+        : intent.channel === 'SMS'
+          ? (await this.templateService.renderActive(queryRunner, intent.templateKey, 'SMS', payload)).body
+          : emailRender
+            ? emailRender.text
+            : this.templateService.buildMessage(intent.templateKey, payload);
 
       // Build redacted delivery payload with templateKey for audit (still redacted, no secrets)
       const deliveryPayload: Record<string, unknown> = {
         ...redactedPayload,
         _templateKey: intent.templateKey,
       };
-
-      // Deterministic identity for idempotency
-      const deliveryIdempotencyKey = `${eventKey}:${intent.recipientId}:${intent.channel}`;
 
       // Insert delivery record — idempotent via unique constraint
       let deliveryId: string | null = null;
@@ -236,8 +291,9 @@ export class NotificationDispatcherService {
             continue;
           }
         }
-      } catch (e) {
-        this.logger.warn(`Failed to insert notification delivery ${deliveryIdempotencyKey}: ${(e as Error).message}`);
+      } catch {
+        // SQL errors can include bound destinations or rendered text; never log them.
+        this.logger.warn('Failed to insert notification delivery');
         result.failed += 1;
         continue;
       }
@@ -271,7 +327,10 @@ export class NotificationDispatcherService {
       const attemptsIncrement = 1;
 
       try {
-        const sendResult = await this.provider.send({
+        // Channel-routed provider selection: EMAIL → email provider (NOTIFICATION_EMAIL_PROVIDER_TOKEN);
+        // SMS/PUSH → existing provider (NOTIFICATION_PROVIDER_TOKEN) — unchanged.
+        const providerForChannel = intent.channel === 'EMAIL' ? this.emailProvider : this.provider;
+        const sendResult = await providerForChannel.send({
           channel: intent.channel,
           destination: destination!,
           message,
@@ -281,6 +340,7 @@ export class NotificationDispatcherService {
           eventKey,
           recipientType: intent.recipientType,
           recipientId: intent.recipientId,
+          ...(emailRender ? { subject: emailRender.subject, html: emailRender.html } : {}),
         });
 
         if (sendResult.success) {
@@ -316,8 +376,8 @@ export class NotificationDispatcherService {
             [attemptsIncrement, lastError, now, deliveryId],
           );
         }
-      } catch (e) {
-        this.logger.warn(`Failed to update delivery ${deliveryId}: ${(e as Error).message}`);
+      } catch {
+        this.logger.warn('Failed to update notification delivery status');
       }
 
       result.deliveries.push({
@@ -353,7 +413,7 @@ export class NotificationDispatcherService {
     }> = await this.dataSource.query(
       `SELECT id, event_type, event_key, aggregate_type, aggregate_id, payload, correlation_id, causation_id, occurred_at
          FROM outbox_events
-        WHERE status IN ('PENDING','FAILED')
+        WHERE status IN ('PENDING','FAILED') AND available_at <= NOW()
         ORDER BY created_at ASC
         LIMIT $1`,
       [limit],
@@ -378,10 +438,11 @@ export class NotificationDispatcherService {
           `UPDATE outbox_events SET status='PUBLISHED', attempts=attempts+1, published_at=NOW() WHERE id=$1`,
           [ev.id],
         );
-      } catch (e) {
+      } catch {
+        // Never persist driver messages/SQL parameters, which may contain customer data.
         await this.dataSource.query(
-          `UPDATE outbox_events SET status='FAILED', attempts=attempts+1, last_error=$1, available_at=NOW() + INTERVAL '60 seconds' WHERE id=$1`,
-          [(e as Error).message.slice(0, 255), ev.id],
+          `UPDATE outbox_events SET status='FAILED', attempts=attempts+1, last_error=$1, available_at=NOW() + INTERVAL '60 seconds' WHERE id=$2`,
+          ['NOTIFICATION_DISPATCH_FAILED', ev.id],
         );
       }
     }

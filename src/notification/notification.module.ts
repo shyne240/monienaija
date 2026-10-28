@@ -1,16 +1,27 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { AuthorizationModule } from '../authorization/authorization.module';
+import { OperationsModule } from '../operations/operations.module';
+import { NotificationRegistryController } from './notification-registry.controller';
+import { NotificationRegistryService } from './notification-registry.service';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { NOTIFICATION_PROVIDER_TOKEN } from './notification.constants';
+import {
+  NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+  NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
+  NOTIFICATION_PROVIDER_TOKEN,
+} from './notification.constants';
+import { ConsoleEmailProvider, NoneEmailProvider } from './email-provider.interface';
 import { ConsoleNotificationProvider } from './notification-provider.interface';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
 import { NotificationDelivery } from './notification-delivery.entity';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
+import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationInboxController } from './notification-inbox.controller';
 import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { NotificationWorkerService } from './notification-worker.service';
+import { ResendEmailProvider } from './resend-email-provider';
 import { RobaseNotificationProvider } from './robase-notification-provider';
 
 /**
@@ -24,9 +35,10 @@ import { RobaseNotificationProvider } from './robase-notification-provider';
  * No second outbox/event bus. Reuses OutboxService eventKey for idempotency.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([NotificationDelivery])],
-  controllers: [NotificationInboxController],
+  imports: [TypeOrmModule.forFeature([NotificationDelivery]), forwardRef(() => AuthorizationModule), forwardRef(() => OperationsModule)],
+  controllers: [NotificationInboxController, NotificationRegistryController],
   providers: [
+    NotificationRegistryService,
     NotificationTemplateService,
     NotificationChannelResolverService,
     NotificationInboxService,
@@ -49,6 +61,39 @@ import { RobaseNotificationProvider } from './robase-notification-provider';
     },
     NotificationDispatcherService,
     NotificationWorkerService,
+    // ARENA3-NOTIFICATION-EMAIL — EMAIL channel providers + template seam.
+    // NOTIFICATION_EMAIL_PROVIDER: 'none' (default, email dark — dispatcher generates no
+    // EMAIL intents, worker fails closed) | 'console' (dev/test only — rejected in
+    // production by the environment schema) | 'resend' (production adapter; requires
+    // RESEND_API_KEY + NOTIFICATION_EMAIL_FROM, enforced fail-fast by the schema).
+    {
+      provide: NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const provider = configService.get<string>('NOTIFICATION_EMAIL_PROVIDER') ?? 'none';
+        if (provider === 'resend') {
+          return new ResendEmailProvider({
+            baseUrl: configService.get<string>('RESEND_API_BASE_URL') ?? 'https://api.resend.com',
+            // Validated non-empty + re_ prefix by the environment schema (fail-fast).
+            apiKey: configService.get<string>('RESEND_API_KEY') ?? '',
+            from: configService.get<string>('NOTIFICATION_EMAIL_FROM') ?? '',
+            replyTo: configService.get<string>('NOTIFICATION_EMAIL_REPLY_TO') ?? null,
+            requestTimeoutMs: configService.get<number>('RESEND_REQUEST_TIMEOUT_MS') ?? 10_000,
+          });
+        }
+        if (provider === 'console') {
+          return new ConsoleEmailProvider();
+        }
+        return new NoneEmailProvider();
+      },
+    },
+    CodeNotificationEmailTemplateService,
+    {
+      // Template seam binding — Arena 1's future database-backed registry replaces this
+      // binding WITHOUT dispatcher/worker changes (documented coordination contract).
+      provide: NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
+      useExisting: CodeNotificationEmailTemplateService,
+    },
   ],
   exports: [
     NotificationDispatcherService,
@@ -57,6 +102,8 @@ import { RobaseNotificationProvider } from './robase-notification-provider';
     NotificationInboxService,
     NotificationWorkerService,
     NOTIFICATION_PROVIDER_TOKEN,
+    NOTIFICATION_EMAIL_PROVIDER_TOKEN,
+    NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
   ],
 })
 export class NotificationModule {}

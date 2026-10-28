@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AllowPhoneNotificationRecipients1785753600097 implements MigrationInterface {
-  name = 'AllowPhoneNotificationRecipients1785753600097';
+export class AllowPhoneNotificationRecipients1785753600099 implements MigrationInterface {
+  name = 'AllowPhoneNotificationRecipients1785753600099';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Phone recipients allow transactional messages to unregistered beneficiaries; UUID-based

@@ -233,6 +233,9 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   { functionCode: 'metrics.view', domain: 'OPERATIONS', name: 'View metrics', description: 'View operational metrics.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'diagnostics.view', domain: 'OPERATIONS', name: 'View diagnostics', description: 'View operational diagnostics endpoints.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
   { functionCode: 'notification.view_deliveries', domain: 'OPERATIONS', name: 'View notification deliveries', description: 'View notification delivery records.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+  // ARENA3-NOTIFICATION-EMAIL: controlled notification connectivity test (SMS/EMAIL).
+  // Fixed safe content, rate limited (5/hour/principal), audited with masked destination.
+  { functionCode: 'notification.test_send', domain: 'OPERATIONS', name: 'Send notification test', description: 'Send a controlled, non-financial notification connectivity test (SMS/EMAIL) to an operator-provided destination. Rate limited and audited.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
 
   // --------------------------------------------------------------- REPORTING
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: a deliberately narrow, new aggregate-only
@@ -395,6 +398,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'metrics.view', VIEW),
   nowAssign('SUPER_ADMIN', 'diagnostics.view', VIEW),
   nowAssign('SUPER_ADMIN', 'notification.view_deliveries', VIEW),
+  nowAssign('SUPER_ADMIN', 'notification.test_send', EXECUTE),
   nowAssign('SUPER_ADMIN', 'ledger.view', VIEW),
   nowAssign('SUPER_ADMIN', 'reconciliation.view', VIEW),
   nowAssign('SUPER_ADMIN', 'transaction.view', VIEW),
@@ -524,6 +528,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('OPERATIONS', 'metrics.view', VIEW),
   nowAssign('OPERATIONS', 'diagnostics.view', VIEW),
   nowAssign('OPERATIONS', 'notification.view_deliveries', VIEW),
+  nowAssign('OPERATIONS', 'notification.test_send', EXECUTE),
   nowAssign('OPERATIONS', 'transaction.view', VIEW),
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
   nowAssign('OPERATIONS', 'reporting.transaction_summary.view', VIEW),

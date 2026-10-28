@@ -44,11 +44,18 @@ describe('Notification worker phone-recipient retries', () => {
         .mockResolvedValueOnce([]),
     };
     const provider = { name: 'test', send: jest.fn() };
+    // INTEGRATION: merged worker signature (Arena 3 email bindings + Arena 1 registry-aware
+    // templateService). The registry stub keeps this spec focused on Arena 4's PHONE-recipient
+    // contract: event enablement/assertSafe are exercised by the registry suites instead.
+    const registryTemplates = { isEventEnabled: async () => true, assertSafe: () => undefined };
     const worker = new NotificationWorkerService(
       dataSource as never,
       {} as never,
       { get: jest.fn().mockReturnValue(undefined) } as never,
       provider as never,
+      null,
+      undefined,
+      registryTemplates as never,
     );
 
     const result = await retryFailedDeliveries(worker, 10);
@@ -72,11 +79,18 @@ describe('Notification worker phone-recipient retries', () => {
       name: 'test',
       send: jest.fn().mockResolvedValue({ success: true, providerRef: 'provider-ref' }),
     };
+    // INTEGRATION: merged worker signature (Arena 3 email bindings + Arena 1 registry-aware
+    // templateService). The registry stub keeps this spec focused on Arena 4's PHONE-recipient
+    // contract: event enablement/assertSafe are exercised by the registry suites instead.
+    const registryTemplates = { isEventEnabled: async () => true, assertSafe: () => undefined };
     const worker = new NotificationWorkerService(
       dataSource as never,
       {} as never,
       { get: jest.fn().mockReturnValue(undefined) } as never,
       provider as never,
+      null,
+      undefined,
+      registryTemplates as never,
     );
 
     const result = await retryFailedDeliveries(worker, 10);
