@@ -834,7 +834,10 @@ export const NotificationManagementApi = {
               ? 'CONSOLE_ONLY'
               : raw.sms.lifecycleState === 'MISCONFIGURED' || raw.sms.lifecycleState === 'NOT_CONFIGURED'
                 ? 'MISCONFIGURED'
-                : raw.sms.deliveryTested && raw.sms.enabled
+                : (raw.sms.deliveryTested ||
+                      raw.sms.lifecycleState === 'DELIVERY_TESTED' ||
+                      raw.sms.lifecycleState === 'PRODUCTION_READY') &&
+                    raw.sms.enabled
                   ? 'READY'
                   : 'DEGRADED'
             : raw.sms?.configured
@@ -849,7 +852,10 @@ export const NotificationManagementApi = {
               ? 'NOT_CONFIGURED'
               : emailProvider === 'console'
                 ? 'CONSOLE_ONLY'
-                : raw.email.deliveryTested && raw.email.enabled
+                : (raw.email.deliveryTested ||
+                      raw.email.lifecycleState === 'DELIVERY_TESTED' ||
+                      raw.email.lifecycleState === 'PRODUCTION_READY') &&
+                    raw.email.enabled
                   ? 'READY'
                   : 'DEGRADED'
             : emailProvider === 'none'

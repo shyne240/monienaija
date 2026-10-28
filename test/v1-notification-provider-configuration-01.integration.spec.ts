@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/require-await, @typescript-eslint/no-require-imports */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import request = require('supertest');
@@ -989,5 +989,446 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       { channel: 'EMAIL', status: 'SENT', attempts: 2 },
       { channel: 'SMS', status: 'SENT', attempts: 2 },
     ]);
+  });
+
+  it('6. provider-status enforces AuthorizationService audit & 11-role matrix, hiding key fingerprints, sender config, and lastTest sentinels from delivery-only roles', async () => {
+    const superAdminToken = await loginSuperAdmin();
+    const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
+    const auditor = await provisionRole('FINANCE_AUDITOR', 'MFA');
+    const operations = await provisionRole('OPERATIONS', 'MFA');
+
+    // Provision a custom non-seeded role carrying ONLY notification.view_deliveries (without expanding any seeded role grant)
+    const deliveryViewerRoleRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO authorization_roles (role_key, display_name, description, is_active, is_system_seeded)
+       VALUES ('NOTIF_DELIVERY_VIEWER_ONLY', 'Delivery Viewer Only', 'Test-only role carrying notification.view_deliveries without notification.provider.view', true, false)
+       RETURNING id`,
+    );
+    const deliveryViewerRoleId = deliveryViewerRoleRows[0]!.id;
+    await dataSource.query(
+      `INSERT INTO authorization_role_functions (role_id, function_code, access_type, is_active, assigned_by)
+       VALUES ($1, 'notification.view_deliveries', 'VIEW', true, 'test-harness')`,
+      [deliveryViewerRoleId],
+    );
+    const deliveryOnlyViewer = await provisionRole('NOTIF_DELIVERY_VIEWER_ONLY', 'MFA');
+
+    try {
+      const sentinelSenderId = 'SNTSMS99';
+      const sentinelFromEmail = 'sentinel-from-8811@monienaija.ng';
+      const sentinelFromName = 'SentinelBrandName8811';
+      const sentinelReplyTo = 'sentinel-reply-8811@monienaija.ng';
+      brevoVerifiedSenders = [sentinelFromEmail];
+
+      // Activate governed Robase SMS & Brevo Email with sentinel sender metadata + encrypted keys
+      const smsProp = await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/provider-config/proposals')
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'SMS',
+          expectedVersion: 0,
+          provider: 'robase',
+          enabled: true,
+          senderId: sentinelSenderId,
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_ROBASE_KEY_1,
+          reason: 'Configure Robase with sentinel sender metadata for status hardening test',
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/api/v1/internal/notifications/provider-config/proposals/${smsProp.body.id}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'Approved SMS status sentinel config' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/v1/internal/notifications/provider-config/proposals/${smsProp.body.id}/activate`)
+        .set(auth(controller.token))
+        .expect(200);
+
+      const emailProp = await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/provider-config/proposals')
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'EMAIL',
+          expectedVersion: 0,
+          provider: 'brevo',
+          enabled: true,
+          fromEmail: sentinelFromEmail,
+          fromName: sentinelFromName,
+          replyToEmail: sentinelReplyTo,
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_BREVO_KEY_1,
+          spfConfigured: true,
+          dkimConfigured: true,
+          dmarcConfigured: true,
+          reason: 'Configure Brevo with sentinel sender metadata for status hardening test',
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'Approved EMAIL status sentinel config' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/api/v1/internal/notifications/provider-config/proposals/${emailProp.body.id}/activate`)
+        .set(auth(controller.token))
+        .expect(200);
+
+      // Run Brevo verify + test-send so `lastTest` carries destinationMasked & providerRef sentinels
+      await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/provider-config/EMAIL/verify')
+        .set(auth(superAdminToken))
+        .expect(200);
+      const testSendRes = await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/test-send')
+        .set(auth(operations.token))
+        .send({ channel: 'EMAIL', destination: 'sentinel-probe@monienaija.ng' })
+        .expect(201);
+      const sentinelProviderRef = testSendRes.body.providerRef as string;
+      expect(typeof sentinelProviderRef).toBe('string');
+
+      // A) Unauthenticated -> 401 + AUTHORIZATION_DECISION
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/provider-status')
+        .expect(401);
+
+      // B) All 7 seeded catalogue roles with NEITHER notification.provider.view NOR notification.view_deliveries -> 403 FUNCTION_MISSING
+      const deniedRoles = [
+        'FINANCE_PREPARER',
+        'TREASURY',
+        'RISK_FRAUD',
+        'AGENT_NETWORK_MANAGER',
+        'ADMINISTRATOR',
+        'COMPLIANCE',
+        'CUSTOMER_SERVICE',
+      ] as const;
+      for (const roleKey of deniedRoles) {
+        const roleSession = await provisionRole(roleKey, 'MFA');
+        const denied = await request(app.getHttpServer())
+          .get('/api/v1/internal/notifications/provider-status')
+          .set(auth(roleSession.token))
+          .expect(403);
+        expect(denied.body.message).toBe('FUNCTION_MISSING');
+
+        const decisionRows: Array<{ action: string; new_values: Record<string, any> }> =
+          await dataSource.query(
+            `SELECT action, new_values
+               FROM audit_events
+              WHERE entity_type = 'AUTHORIZATION_DECISION'
+                AND actor = $1
+              ORDER BY occurred_at DESC
+              LIMIT 1`,
+            [roleSession.principalId],
+          );
+        expect(decisionRows.length).toBe(1);
+        expect(decisionRows[0]!.action).toBe('DENIED');
+        expect(decisionRows[0]!.new_values.resourceType).toBe('notification-provider-status');
+        expect(decisionRows[0]!.new_values.reason).toBe('FUNCTION_MISSING');
+      }
+
+      // C) Principal entitled ONLY to notification.view_deliveries -> 200 MINIMAL projection with ZERO sentinels
+      const minimalRes = await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/provider-status')
+        .set(auth(deliveryOnlyViewer.token))
+        .expect(200);
+
+      expect(minimalRes.body.projectionScope).toBe('MINIMAL');
+      expect(minimalRes.body.channels).toEqual(['SMS', 'PUSH', 'EMAIL']);
+      expect(minimalRes.body.sms.provider).toBe('robase');
+      expect(minimalRes.body.sms.configured).toBe(true);
+      expect(minimalRes.body.sms.keyFingerprint).toBeNull();
+      expect(minimalRes.body.sms.senderId).toBeUndefined();
+      expect(minimalRes.body.sms.lastTest).toBeUndefined();
+      expect(minimalRes.body.email.provider).toBe('brevo');
+      expect(minimalRes.body.email.configured).toBe(true);
+      expect(minimalRes.body.email.keyFingerprint).toBeNull();
+      expect(minimalRes.body.email.from).toBeNull();
+      expect(minimalRes.body.email.replyTo).toBeNull();
+      expect(minimalRes.body.email.fromName).toBeUndefined();
+      expect(minimalRes.body.email.domainAuth).toBeUndefined();
+      expect(minimalRes.body.email.lastTest).toBeUndefined();
+
+      const rawMinimal = JSON.stringify(minimalRes.body);
+      expect(rawMinimal).not.toContain('****7081');
+      expect(rawMinimal).not.toContain('****Key1');
+      expect(rawMinimal).not.toContain(sentinelSenderId);
+      expect(rawMinimal).not.toContain(sentinelFromEmail);
+      expect(rawMinimal).not.toContain(sentinelFromName);
+      expect(rawMinimal).not.toContain(sentinelReplyTo);
+      expect(rawMinimal).not.toContain(sentinelProviderRef);
+      expect(rawMinimal).not.toContain('se***@monienaija.ng');
+      expect(rawMinimal).not.toContain('api.robase.dev');
+      expect(rawMinimal).not.toContain('api.brevo.com');
+
+      const allowAudit: Array<{ action: string; new_values: Record<string, any> }> =
+        await dataSource.query(
+          `SELECT action, new_values
+             FROM audit_events
+            WHERE entity_type = 'AUTHORIZATION_DECISION'
+              AND actor = $1
+            ORDER BY occurred_at DESC
+            LIMIT 1`,
+          [deliveryOnlyViewer.principalId],
+        );
+      expect(allowAudit.length).toBe(1);
+      expect(allowAudit[0]!.action).toBe('ALLOWED');
+      expect(allowAudit[0]!.new_values.resourceType).toBe('notification-provider-status');
+      expect(allowAudit[0]!.new_values.action).toBe('notification.view_deliveries');
+
+      // D) Provider-view roles (SUPER_ADMIN, FINANCE_CONTROLLER, FINANCE_AUDITOR, OPERATIONS) -> 200 FULL non-secret projection
+      for (const token of [superAdminToken, controller.token, auditor.token, operations.token]) {
+        const fullRes = await request(app.getHttpServer())
+          .get('/api/v1/internal/notifications/provider-status')
+          .set(auth(token))
+          .expect(200);
+        expect(fullRes.body.projectionScope).toBe('FULL');
+        expect(fullRes.body.sms.keyFingerprint).toBe('****7081');
+        expect(fullRes.body.sms.senderId).toBe(sentinelSenderId);
+        expect(fullRes.body.email.keyFingerprint).toBe('****Key1');
+        expect(fullRes.body.email.from).toBe(sentinelFromEmail);
+        expect(fullRes.body.email.fromName).toBe(sentinelFromName);
+        expect(fullRes.body.email.replyTo).toBe(sentinelReplyTo);
+        expect(fullRes.body.email.lastTest.providerRef).toBe(sentinelProviderRef);
+
+        const rawFull = JSON.stringify(fullRes.body);
+        expect(rawFull).not.toContain(LIVE_ROBASE_KEY_1);
+        expect(rawFull).not.toContain(LIVE_BREVO_KEY_1);
+        expect(rawFull).not.toContain('MNNPS1:');
+      }
+    } finally {
+      await dataSource.query(
+        `DELETE FROM authorization_role_functions WHERE role_id = $1`,
+        [deliveryViewerRoleId],
+      );
+      await dataSource.query(`DELETE FROM authorization_roles WHERE id = $1`, [
+        deliveryViewerRoleId,
+      ]);
+    }
+  });
+
+  it('7. restricts NOTIFICATION_PROVIDER_CONFIG and NOTIFICATION_TEST_SEND in GET /internal/audit unless caller holds notification.provider.view while preserving DB records & oversight', async () => {
+    const superAdminToken = await loginSuperAdmin();
+    const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
+    const auditor = await provisionRole('FINANCE_AUDITOR', 'MFA');
+    const operations = await provisionRole('OPERATIONS', 'MFA');
+    const compliance = await provisionRole('COMPLIANCE', 'MFA');
+    const customerService = await provisionRole('CUSTOMER_SERVICE', 'MFA');
+    const financePreparer = await provisionRole('FINANCE_PREPARER', 'MFA');
+
+    const auditSentinelEmail = 'audit-sentinel-7744@monienaija.ng';
+    const auditSentinelName = 'AuditSentinelBrand7744';
+    const auditSentinelComment = 'AUDIT_SENTINEL_CHECKER_COMMENT_7744';
+    brevoVerifiedSenders = [auditSentinelEmail];
+
+    const propRes = await request(app.getHttpServer())
+      .post('/api/v1/internal/notifications/provider-config/proposals')
+      .set(auth(superAdminToken))
+      .send({
+        channel: 'EMAIL',
+        expectedVersion: 0,
+        provider: 'brevo',
+        enabled: true,
+        fromEmail: auditSentinelEmail,
+        fromName: auditSentinelName,
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_BREVO_KEY_1,
+        spfConfigured: true,
+        dkimConfigured: true,
+        dmarcConfigured: true,
+        reason: 'Audit visibility hardening integration check',
+      })
+      .expect(201);
+    const proposalId = propRes.body.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/notifications/provider-config/proposals/${proposalId}/approve`)
+      .set(auth(controller.token))
+      .send({ comment: auditSentinelComment })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/notifications/provider-config/proposals/${proposalId}/activate`)
+      .set(auth(controller.token))
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/v1/internal/notifications/test-send')
+      .set(auth(operations.token))
+      .send({ channel: 'EMAIL', destination: 'audit-test-dest@monienaija.ng' })
+      .expect(201);
+
+    // Insert a general non-provider audit event to verify normal audit visibility stays intact
+    const generalEntityId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO audit_events (id, entity_type, entity_id, action, actor, new_values, occurred_at, created_at)
+       VALUES ($1, 'WALLET_OPERATION', $2, 'GENERAL_AUDIT_VISIBLE_SENTINEL', 'system', '{"ok":true}'::jsonb, NOW(), NOW())`,
+      [randomUUID(), generalEntityId],
+    );
+
+    // Underlying PostgreSQL audit_events table preserves all NOTIFICATION_PROVIDER_CONFIG & NOTIFICATION_TEST_SEND rows
+    const dbProviderAuditCount: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count
+         FROM audit_events
+        WHERE entity_type IN ('NOTIFICATION_PROVIDER_CONFIG', 'NOTIFICATION_TEST_SEND')`,
+    );
+    expect(Number(dbProviderAuditCount[0]!.count)).toBeGreaterThanOrEqual(4);
+
+    // Unentitled callers (COMPLIANCE, CUSTOMER_SERVICE, FINANCE_PREPARER) see general audit rows ONLY — zero provider audit sentinels
+    for (const unentitled of [compliance, customerService, financePreparer]) {
+      const genericList = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?limit=200')
+        .set(auth(unentitled.token))
+        .expect(200);
+
+      expect(Array.isArray(genericList.body)).toBe(true);
+      const genericItems = genericList.body as Array<{ action?: string; entityType?: string }>;
+      expect(
+        genericItems.some((e) => e.action === 'GENERAL_AUDIT_VISIBLE_SENTINEL'),
+      ).toBe(true);
+      expect(
+        genericItems.some(
+          (e) =>
+            e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
+            e.entityType === 'NOTIFICATION_TEST_SEND',
+        ),
+      ).toBe(false);
+
+      const serializedGeneric = JSON.stringify(genericList.body);
+      expect(serializedGeneric).not.toContain(auditSentinelEmail);
+      expect(serializedGeneric).not.toContain(auditSentinelName);
+      expect(serializedGeneric).not.toContain(auditSentinelComment);
+      expect(serializedGeneric).not.toContain('****Key1');
+      expect(serializedGeneric).not.toContain('au***@monienaija.ng');
+
+      // Direct entityType / entityId filters also return empty [] for unentitled callers
+      const byEntityType = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?entityType=NOTIFICATION_PROVIDER_CONFIG')
+        .set(auth(unentitled.token))
+        .expect(200);
+      expect(byEntityType.body).toEqual([]);
+
+      const byTestType = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?entityType=NOTIFICATION_TEST_SEND')
+        .set(auth(unentitled.token))
+        .expect(200);
+      expect(byTestType.body).toEqual([]);
+
+      const byEntityId = await request(app.getHttpServer())
+        .get(`/api/v1/internal/audit?entityId=${proposalId}`)
+        .set(auth(unentitled.token))
+        .expect(200);
+      const byEntityIdItems = byEntityId.body as Array<{ entityType?: string }>;
+      expect(
+        byEntityIdItems.some(
+          (e) =>
+            e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
+            e.entityType === 'NOTIFICATION_TEST_SEND' ||
+            e.entityType === 'PRIVILEGED_ACTION_APPROVAL',
+        ),
+      ).toBe(false);
+      const serializedByEntityId = JSON.stringify(byEntityId.body);
+      expect(serializedByEntityId).not.toContain(auditSentinelEmail);
+      expect(serializedByEntityId).not.toContain(auditSentinelName);
+      expect(serializedByEntityId).not.toContain(auditSentinelComment);
+      expect(serializedByEntityId).not.toContain('****Key1');
+    }
+
+    // Authorized oversight callers (FINANCE_AUDITOR, SUPER_ADMIN, FINANCE_CONTROLLER, OPERATIONS) see full non-secret provider audit records
+    for (const entitledToken of [
+      auditor.token,
+      superAdminToken,
+      controller.token,
+      operations.token,
+    ]) {
+      const oversightRes = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?entityType=NOTIFICATION_PROVIDER_CONFIG&limit=50')
+        .set(auth(entitledToken))
+        .expect(200);
+
+      expect(oversightRes.body.length).toBeGreaterThanOrEqual(3);
+      const serializedOversight = JSON.stringify(oversightRes.body);
+      expect(serializedOversight).toContain(auditSentinelEmail);
+      expect(serializedOversight).toContain(auditSentinelComment);
+      expect(serializedOversight).toContain('****Key1');
+      expect(serializedOversight).not.toContain(LIVE_BREVO_KEY_1);
+      expect(serializedOversight).not.toContain('MNNPS1:');
+    }
+  });
+
+  it('8. prevents PostgreSQL trigger/driver exceptions, bound parameters, and MNNPS1 envelopes from leaking into HTTP responses or logs on transaction failure', async () => {
+    const superAdminToken = await loginSuperAdmin();
+
+    const capturedLogs: string[] = [];
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        capturedLogs.push(JSON.stringify(args));
+      });
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        capturedLogs.push(JSON.stringify(args));
+      });
+
+    await dataSource.query(`
+      CREATE OR REPLACE FUNCTION test_fail_notif_provider_proposal_insert()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        RAISE EXCEPTION 'PG_TRIGGER_SENTINEL_9988 table=notification_provider_config_proposals envelope=%', NEW.proposed_encrypted_api_key
+          USING ERRCODE = 'P0001';
+      END;
+      $$ LANGUAGE plpgsql;
+
+      CREATE TRIGGER trg_test_fail_notif_provider_proposal
+        BEFORE INSERT ON notification_provider_config_proposals
+        FOR EACH ROW
+        EXECUTE FUNCTION test_fail_notif_provider_proposal_insert();
+    `);
+
+    try {
+      const failRes = await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/provider-config/proposals')
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'SMS',
+          expectedVersion: 0,
+          provider: 'robase',
+          enabled: false,
+          senderId: 'MonieNaija',
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_ROBASE_KEY_1,
+          reason: 'Trigger simulated PostgreSQL failure during proposal insert',
+        })
+        .expect(500);
+
+      const responseBlob = JSON.stringify(failRes.body);
+      const logsBlob = capturedLogs.join('\n');
+
+      for (const blob of [responseBlob, logsBlob]) {
+        expect(blob).not.toContain('PG_TRIGGER_SENTINEL_9988');
+        expect(blob).not.toContain('MNNPS1:');
+        expect(blob).not.toContain(LIVE_ROBASE_KEY_1);
+        expect(blob).not.toContain('notification_provider_config_proposals');
+        expect(blob).not.toContain('test_fail_notif_provider_proposal_insert');
+      }
+      expect(logsBlob).toContain('"sqlState":"P0001"');
+
+      // Transaction rolled back cleanly and pre-created privileged_action_approvals row was cancelled
+      const proposalRows: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text AS count FROM notification_provider_config_proposals`,
+      );
+      expect(Number(proposalRows[0]!.count)).toBe(0);
+
+      const approvalRows: Array<{ status: string }> = await dataSource.query(
+        `SELECT status FROM privileged_action_approvals WHERE resource_type = 'NOTIFICATION_PROVIDER_CONFIG_PROPOSAL'`,
+      );
+      expect(approvalRows.length).toBe(1);
+      expect(approvalRows[0]!.status).toBe('CANCELLED');
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      await dataSource.query(
+        `DROP TRIGGER IF EXISTS trg_test_fail_notif_provider_proposal ON notification_provider_config_proposals`,
+      );
+      await dataSource.query(
+        `DROP FUNCTION IF EXISTS test_fail_notif_provider_proposal_insert()`,
+      );
+    }
   });
 });

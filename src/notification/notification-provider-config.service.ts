@@ -3,8 +3,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   Optional,
@@ -719,38 +721,48 @@ export class NotificationProviderConfigService {
     }
     params.push(boundedLimit);
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const rows: DbProposalRow[] = await ds.query(
-      `SELECT id, channel, expected_version, proposed_provider, proposed_enabled,
-              proposed_base_url, proposed_request_timeout_ms, proposed_sender_id,
-              proposed_from_email, proposed_from_name, proposed_reply_to_email,
-              credential_action, proposed_encryption_key_version, proposed_key_fingerprint,
-              proposed_spf_configured, proposed_dkim_configured, proposed_dmarc_configured,
-              reason, status, proposer_principal_id, approval_id, action_fingerprint,
-              decided_by, decided_at, decision_reason, activated_by, activated_at,
-              resulting_version, created_at, updated_at
-         FROM notification_provider_config_proposals
-         ${whereClause}
-         ORDER BY created_at DESC
-         LIMIT $${params.length}`,
-      params,
+    const rows: DbProposalRow[] = await this.safeDbOperation(
+      'listProposals',
+      () =>
+        ds.query(
+          `SELECT id, channel, expected_version, proposed_provider, proposed_enabled,
+                  proposed_base_url, proposed_request_timeout_ms, proposed_sender_id,
+                  proposed_from_email, proposed_from_name, proposed_reply_to_email,
+                  credential_action, proposed_encryption_key_version, proposed_key_fingerprint,
+                  proposed_spf_configured, proposed_dkim_configured, proposed_dmarc_configured,
+                  reason, status, proposer_principal_id, approval_id, action_fingerprint,
+                  decided_by, decided_at, decision_reason, activated_by, activated_at,
+                  resulting_version, created_at, updated_at
+             FROM notification_provider_config_proposals
+             ${whereClause}
+             ORDER BY created_at DESC
+             LIMIT $${params.length}`,
+          params,
+        ),
+      'Notification provider configuration proposals could not be loaded.',
     );
     return rows.map((r) => this.mapProposalView(r));
   }
 
   async getProposal(id: string): Promise<ProviderConfigProposalView> {
     const ds = this.requireDataSource();
-    const rows: DbProposalRow[] = await ds.query(
-      `SELECT id, channel, expected_version, proposed_provider, proposed_enabled,
-              proposed_base_url, proposed_request_timeout_ms, proposed_sender_id,
-              proposed_from_email, proposed_from_name, proposed_reply_to_email,
-              credential_action, proposed_encryption_key_version, proposed_key_fingerprint,
-              proposed_spf_configured, proposed_dkim_configured, proposed_dmarc_configured,
-              reason, status, proposer_principal_id, approval_id, action_fingerprint,
-              decided_by, decided_at, decision_reason, activated_by, activated_at,
-              resulting_version, created_at, updated_at
-         FROM notification_provider_config_proposals
-        WHERE id = $1`,
-      [id],
+    const rows: DbProposalRow[] = await this.safeDbOperation(
+      'getProposal',
+      () =>
+        ds.query(
+          `SELECT id, channel, expected_version, proposed_provider, proposed_enabled,
+                  proposed_base_url, proposed_request_timeout_ms, proposed_sender_id,
+                  proposed_from_email, proposed_from_name, proposed_reply_to_email,
+                  credential_action, proposed_encryption_key_version, proposed_key_fingerprint,
+                  proposed_spf_configured, proposed_dkim_configured, proposed_dmarc_configured,
+                  reason, status, proposer_principal_id, approval_id, action_fingerprint,
+                  decided_by, decided_at, decision_reason, activated_by, activated_at,
+                  resulting_version, created_at, updated_at
+             FROM notification_provider_config_proposals
+            WHERE id = $1`,
+          [id],
+        ),
+      'Notification provider configuration proposal could not be loaded.',
     );
     if (!rows[0]) {
       throw new NotFoundException('Notification provider configuration proposal not found.');
@@ -1011,22 +1023,24 @@ export class NotificationProviderConfigService {
       )
       .digest('hex');
 
-    const decision = await approvals.request({
-      principal,
-      policy: {
-        resourceType: GOVERNANCE_RESOURCE_TYPE,
-        action: GOVERNANCE_ACTION_TYPE,
-        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        requiredRoles: [INITIATOR_ROLE],
-        requiredFunctions: [CONFIGURE_FUNCTION],
-        minimumAssurance: 'MFA',
-        customerAccess: 'NONE',
-      },
-      resource: { type: GOVERNANCE_RESOURCE_TYPE, id: proposalId },
-      actionFingerprint,
-      reason,
-      approvalScope: CONFIGURE_FUNCTION,
-    });
+    const decision = await this.safeDbOperation('proposeChange.requestApproval', () =>
+      approvals.request({
+        principal,
+        policy: {
+          resourceType: GOVERNANCE_RESOURCE_TYPE,
+          action: GOVERNANCE_ACTION_TYPE,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredRoles: [INITIATOR_ROLE],
+          requiredFunctions: [CONFIGURE_FUNCTION],
+          minimumAssurance: 'MFA',
+          customerAccess: 'NONE',
+        },
+        resource: { type: GOVERNANCE_RESOURCE_TYPE, id: proposalId },
+        actionFingerprint,
+        reason,
+        approvalScope: CONFIGURE_FUNCTION,
+      }),
+    );
 
     if (!decision.approval) {
       throw new ForbiddenException(
@@ -1035,7 +1049,7 @@ export class NotificationProviderConfigService {
     }
 
     try {
-      await ds.transaction(async (manager) => {
+      await this.safeTransaction('proposeChange.persist', ds, async (manager) => {
         await manager.query(
           `INSERT INTO notification_provider_config_proposals
              (id, channel, expected_version, proposed_provider, proposed_enabled,
@@ -1157,9 +1171,29 @@ export class NotificationProviderConfigService {
       );
     }
 
-    const rows: DbProposalRow[] = await ds.query(
-      `SELECT * FROM notification_provider_config_proposals WHERE id = $1`,
-      [proposalId],
+    const rows: Array<
+      Pick<
+        DbProposalRow,
+        | 'id'
+        | 'channel'
+        | 'status'
+        | 'proposer_principal_id'
+        | 'approval_id'
+        | 'proposed_provider'
+        | 'proposed_enabled'
+        | 'proposed_key_fingerprint'
+      >
+    > = await this.safeDbOperation(
+      'decideProposal.load',
+      () =>
+        ds.query(
+          `SELECT id, channel, status, proposer_principal_id, approval_id,
+                  proposed_provider, proposed_enabled, proposed_key_fingerprint
+             FROM notification_provider_config_proposals
+            WHERE id = $1`,
+          [proposalId],
+        ),
+      'Notification provider configuration proposal could not be loaded.',
     );
     const proposal = rows[0];
     if (!proposal) {
@@ -1182,17 +1216,19 @@ export class NotificationProviderConfigService {
       );
     }
 
-    const decision = approve
-      ? await approvals.approve({
-          approvalId: proposal.approval_id,
-          principal,
-          comment,
-        })
-      : await approvals.reject({
-          approvalId: proposal.approval_id,
-          principal,
-          comment,
-        });
+    const decision = await this.safeDbOperation('decideProposal.approvalService', () =>
+      approve
+        ? approvals.approve({
+            approvalId: proposal.approval_id,
+            principal,
+            comment,
+          })
+        : approvals.reject({
+            approvalId: proposal.approval_id,
+            principal,
+            comment,
+          }),
+    );
 
     const expectedReason = approve ? 'APPROVED' : 'REJECTED';
     if (decision.reason !== expectedReason) {
@@ -1208,7 +1244,7 @@ export class NotificationProviderConfigService {
     }
 
     const nextStatus = approve ? 'APPROVED' : 'REJECTED';
-    await ds.transaction(async (manager) => {
+    await this.safeTransaction('decideProposal.persist', ds, async (manager) => {
       await manager.query(
         `UPDATE notification_provider_config_proposals
             SET status = $1,
@@ -1268,7 +1304,7 @@ export class NotificationProviderConfigService {
       );
     }
 
-    await ds.transaction(async (manager) => {
+    await this.safeTransaction('activateProposal.persist', ds, async (manager) => {
       const propRows: DbProposalRow[] = await manager.query(
         `SELECT * FROM notification_provider_config_proposals WHERE id = $1 FOR UPDATE`,
         [proposalId],
@@ -1535,13 +1571,17 @@ export class NotificationProviderConfigService {
       throw new ForbiddenException('Read-only principals cannot execute provider verification.');
     }
 
-    const recentRows: Array<{ count: string }> = await ds.query(
-      `SELECT count(*)::text AS count
-         FROM audit_events
-        WHERE action = 'NOTIFICATION_PROVIDER_VERIFY'
-          AND actor = $1
-          AND created_at > NOW() - INTERVAL '1 hour'`,
-      [principal.principalId],
+    const recentRows: Array<{ count: string }> = await this.safeDbOperation(
+      'verifyChannelConfiguration.rateLimitCount',
+      () =>
+        ds.query(
+          `SELECT count(*)::text AS count
+             FROM audit_events
+            WHERE action = 'NOTIFICATION_PROVIDER_VERIFY'
+              AND actor = $1
+              AND created_at > NOW() - INTERVAL '1 hour'`,
+          [principal.principalId],
+        ),
     );
     if (Number(recentRows[0]?.count ?? 0) >= VERIFY_HOURLY_CAP) {
       throw new BadRequestException('NOTIFICATION_VERIFY_RATE_LIMITED');
@@ -1562,13 +1602,15 @@ export class NotificationProviderConfigService {
 
     const secretResolution = this.resolveRowSecret(row);
     if (!secretResolution.ok) {
-      await ds.query(
-        `UPDATE notification_provider_configurations
-            SET verified_at = NULL,
-                last_verification_error = $1,
-                updated_at = NOW()
-          WHERE channel = $2`,
-        [secretResolution.errorCode, channel],
+      await this.safeDbOperation('verifyChannelConfiguration.recordDecryptFailure', () =>
+        ds.query(
+          `UPDATE notification_provider_configurations
+              SET verified_at = NULL,
+                  last_verification_error = $1,
+                  updated_at = NOW()
+            WHERE channel = $2`,
+          [secretResolution.errorCode, channel],
+        ),
       );
       throw new BadRequestException(secretResolution.errorCode);
     }
@@ -1624,7 +1666,7 @@ export class NotificationProviderConfigService {
       }
     }
 
-    await ds.transaction(async (manager) => {
+    await this.safeTransaction('verifyChannelConfiguration.persist', ds, async (manager) => {
       if (verified) {
         await manager.query(
           `UPDATE notification_provider_configurations
@@ -1705,29 +1747,31 @@ export class NotificationProviderConfigService {
     // Console test sends NEVER promote `delivery_tested_at` or `verified_at`!
     const promoteLiveReadiness = params.success && !isConsole;
 
-    await this.dataSource.query(
-      `UPDATE notification_provider_configurations
-          SET last_test_status = $1,
-              last_test_destination_masked = $2,
-              last_test_provider_ref = $3,
-              last_test_error_code = $4,
-              last_test_at = NOW(),
-              delivery_tested_at = CASE WHEN $5 THEN NOW() ELSE delivery_tested_at END,
-              delivery_tested_by = CASE WHEN $5 THEN $6 ELSE delivery_tested_by END,
-              verified_at = CASE WHEN $5 AND verified_at IS NULL THEN NOW() ELSE verified_at END,
-              verified_by = CASE WHEN $5 AND verified_by IS NULL THEN $6 ELSE verified_by END,
-              verification_method = CASE WHEN $5 AND verification_method IS NULL THEN 'LIVE_TEST_SEND' ELSE verification_method END,
-              updated_at = NOW()
-        WHERE channel = $7`,
-      [
-        lastTestStatus,
-        params.maskedDestination.slice(0, 128),
-        params.providerRef ? params.providerRef.slice(0, 255) : null,
-        params.errorCode ? params.errorCode.slice(0, 128) : null,
-        promoteLiveReadiness,
-        params.actor,
-        params.channel,
-      ],
+    await this.safeDbOperation('recordTestSendOutcome', () =>
+      this.dataSource!.query(
+        `UPDATE notification_provider_configurations
+            SET last_test_status = $1,
+                last_test_destination_masked = $2,
+                last_test_provider_ref = $3,
+                last_test_error_code = $4,
+                last_test_at = NOW(),
+                delivery_tested_at = CASE WHEN $5 THEN NOW() ELSE delivery_tested_at END,
+                delivery_tested_by = CASE WHEN $5 THEN $6 ELSE delivery_tested_by END,
+                verified_at = CASE WHEN $5 AND verified_at IS NULL THEN NOW() ELSE verified_at END,
+                verified_by = CASE WHEN $5 AND verified_by IS NULL THEN $6 ELSE verified_by END,
+                verification_method = CASE WHEN $5 AND verification_method IS NULL THEN 'LIVE_TEST_SEND' ELSE verification_method END,
+                updated_at = NOW()
+          WHERE channel = $7`,
+        [
+          lastTestStatus,
+          params.maskedDestination.slice(0, 128),
+          params.providerRef ? params.providerRef.slice(0, 255) : null,
+          params.errorCode ? params.errorCode.slice(0, 128) : null,
+          promoteLiveReadiness,
+          params.actor,
+          params.channel,
+        ],
+      ),
     );
   }
 
@@ -2473,6 +2517,55 @@ export class NotificationProviderConfigService {
       throw new BadRequestException('Privileged action approval service is not available.');
     }
     return this.approvals;
+  }
+
+  /**
+   * Driver errors (TypeORM QueryFailedError, pg DatabaseError, trigger exceptions) can carry
+   * SQL text, constraint/table names, and bound parameter arrays (including encrypted `MNNPS1:`
+   * envelopes). Never let raw database/driver errors reach Nest exception handlers, HTTP
+   * responses, or application logs; preserve intentional HttpExceptions unchanged.
+   */
+  private async safeTransaction<T>(
+    operation: string,
+    ds: DataSource,
+    work: (manager: EntityManager) => Promise<T>,
+  ): Promise<T> {
+    return this.safeDbOperation(
+      operation,
+      () => ds.transaction(work),
+      'Notification provider configuration could not be persisted.',
+    );
+  }
+
+  private async safeDbOperation<T>(
+    operation: string,
+    work: () => Promise<T>,
+    fallbackMessage = 'Notification provider configuration could not be persisted.',
+  ): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.warn({
+        msg: 'notification_provider_db_error',
+        operation,
+        sqlState: this.extractSafeSqlState(error),
+      });
+      throw new InternalServerErrorException(fallbackMessage);
+    }
+  }
+
+  private extractSafeSqlState(error: unknown): string {
+    if (error && typeof error === 'object') {
+      const record = error as { code?: unknown; driverError?: { code?: unknown } };
+      const raw = record.driverError?.code ?? record.code;
+      if (typeof raw === 'string' && /^[0-9A-Z]{5}$/.test(raw)) {
+        return raw;
+      }
+    }
+    return 'UNKNOWN';
   }
 }
 

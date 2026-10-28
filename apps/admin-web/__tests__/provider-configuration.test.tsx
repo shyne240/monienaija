@@ -6,6 +6,7 @@ import {
   type ProviderConfigProposal,
   type ProviderConfigurationOverview,
 } from '../src/services/notification-domain';
+import { NotificationManagementApi } from '../src/services/notification-management-api';
 import { NotificationManagementScreen } from '../src/screens/authenticated/NotificationManagementScreen';
 import { useAuthStore, WorkforcePrincipal } from '../src/store/auth-store';
 
@@ -561,5 +562,55 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect(serialized).not.toContain('xsmtpsib-');
     expect(serialized).not.toContain('MNNPS1:');
     expect(scrubbed.sms.keyFingerprint).toBe('****9988');
+  });
+
+  it('5. maps MINIMAL provider-status projection for delivery-only roles cleanly with READY status and zero fingerprints/sender metadata', async () => {
+    (ApiClient.get as jest.Mock).mockResolvedValueOnce({
+      channels: ['SMS', 'PUSH', 'EMAIL'],
+      projectionScope: 'MINIMAL',
+      sms: {
+        provider: 'robase',
+        enabled: true,
+        configured: true,
+        deliveryTested: true,
+        lifecycleState: 'PRODUCTION_READY',
+        keyFingerprint: null,
+        baseUrl: null,
+        timeoutMs: null,
+      },
+      email: {
+        provider: 'brevo',
+        enabled: true,
+        configured: true,
+        deliveryTested: true,
+        lifecycleState: 'PRODUCTION_READY',
+        keyFingerprint: null,
+        from: null,
+        replyTo: null,
+        baseUrl: null,
+        timeoutMs: null,
+      },
+      worker: {
+        enabled: true,
+        pollIntervalMs: null,
+        batchSize: null,
+        retryMaxAttempts: null,
+        retryBaseDelaySeconds: null,
+      },
+    });
+
+    const outcome = await NotificationManagementApi.getProviderStatus();
+    expect(outcome.status).toBe('LIVE');
+    if (outcome.status === 'LIVE') {
+      expect(outcome.data.sms.operationalStatus).toBe('READY');
+      expect(outcome.data.sms.apiKeyLast4Fingerprint).toBeNull();
+      expect(outcome.data.sms.senderId).toBeNull();
+      expect(outcome.data.sms.lastTest).toBeUndefined();
+      expect(outcome.data.email.operationalStatus).toBe('READY');
+      expect(outcome.data.email.credentialFingerprint).toBeNull();
+      expect(outcome.data.email.fromAddress).toBeNull();
+      expect(outcome.data.email.fromName).toBeNull();
+      expect(outcome.data.email.lastTest).toBeUndefined();
+    }
   });
 });

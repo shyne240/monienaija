@@ -7,6 +7,8 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  InternalServerErrorException,
+  Logger,
   Optional,
   Post,
   Req,
@@ -16,7 +18,12 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 
-import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { AuthorizationService } from '../authorization/authorization.service';
+import type {
+  AuthorizationDenialReason,
+  AuthorizationPrincipal,
+  AuthorizationPrincipalType,
+} from '../authorization/authorization.types';
 import {
   NOTIFICATION_EMAIL_PROVIDER_TOKEN,
   NOTIFICATION_PROVIDER_TOKEN,
@@ -32,6 +39,13 @@ interface AuthenticatedRequest {
 }
 
 const TEST_SEND_HOURLY_LIMIT = 5;
+const WORKFORCE_PRINCIPAL_TYPES: readonly AuthorizationPrincipalType[] = [
+  'SUPPORT',
+  'OPERATOR',
+  'SERVICE',
+  'PRIVILEGED',
+];
+const SQL_STATE_PATTERN = /^[0-9A-Z]{5}$/;
 
 /** Conservative email shape: single address, no whitespace/quotes/brackets/semicolons/commas. */
 const TEST_EMAIL_PATTERN = /^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/;
@@ -55,12 +69,26 @@ function keyFingerprint(key: string | undefined): string | null {
   return `****${key.slice(-4)}`;
 }
 
+function extractSqlState(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const record = error as { code?: unknown; driverError?: { code?: unknown } };
+    const raw = record.driverError?.code ?? record.code;
+    if (typeof raw === 'string' && SQL_STATE_PATTERN.test(raw)) {
+      return raw;
+    }
+  }
+  return 'UNKNOWN';
+}
+
 @Controller('internal/notifications')
 export class AdminNotificationProviderController {
+  private readonly logger = new Logger(AdminNotificationProviderController.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
+    private readonly auth: AuthorizationService,
     @Inject(NOTIFICATION_PROVIDER_TOKEN) private readonly smsProvider: NotificationProvider,
     @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) private readonly emailProvider: NotificationProvider,
     @Optional() private readonly providerConfigService?: NotificationProviderConfigService,
@@ -69,15 +97,60 @@ export class AdminNotificationProviderController {
   /**
    * GET /internal/notifications/provider-status
    * Read-only, non-secret snapshot of notification provider configuration + worker tuning.
+   *
+   * Authorization & projection tiers (enforced and audited via AuthorizationService):
+   *   - `notification.provider.view` (`projectionScope: 'FULL'`): full non-secret operational
+   *     configuration snapshot (masked key fingerprints, sender config, base URLs, domain auth,
+   *     lastTest metadata, worker tuning).
+   *   - `notification.view_deliveries` without `notification.provider.view`
+   *     (`projectionScope: 'MINIMAL'`): backward-compatible minimal channel status booleans only;
+   *     omits key fingerprints, sender configuration, lastTest details, base URLs, and worker tuning.
    */
   @Get('provider-status')
   async providerStatus(@Req() req: AuthenticatedRequest) {
-    this.requireAnyFunction(req, ['notification.view_deliveries', 'notification.provider.view']);
+    const { hasProviderView } = await this.authorizeProviderStatus(req);
 
     if (this.providerConfigService) {
       const overview = await this.providerConfigService.getOverview();
+      if (!hasProviderView) {
+        return {
+          channels: ['SMS', 'PUSH', 'EMAIL'],
+          projectionScope: 'MINIMAL',
+          sms: {
+            provider: overview.sms.provider,
+            enabled: overview.sms.enabled,
+            configured: overview.sms.gates.configured,
+            deliveryTested: overview.sms.gates.deliveryTested,
+            lifecycleState: overview.sms.lifecycleState,
+            keyFingerprint: null,
+            baseUrl: null,
+            timeoutMs: null,
+          },
+          email: {
+            provider: overview.email.provider,
+            enabled: overview.email.enabled,
+            configured: overview.email.gates.configured,
+            deliveryTested: overview.email.gates.deliveryTested,
+            lifecycleState: overview.email.lifecycleState,
+            keyFingerprint: null,
+            from: null,
+            replyTo: null,
+            baseUrl: null,
+            timeoutMs: null,
+          },
+          worker: {
+            enabled: overview.worker.enabled,
+            pollIntervalMs: null,
+            batchSize: null,
+            retryMaxAttempts: null,
+            retryBaseDelaySeconds: null,
+          },
+        };
+      }
+
       return {
         channels: ['SMS', 'PUSH', 'EMAIL'],
+        projectionScope: 'FULL',
         sms: {
           provider: overview.sms.provider,
           source: overview.sms.source,
@@ -133,13 +206,53 @@ export class AdminNotificationProviderController {
     const robaseKey = this.configService.get<string>('ROBASE_API_KEY');
     const brevoKey = this.configService.get<string>('BREVO_API_KEY');
     const resendKey = this.configService.get<string>('RESEND_API_KEY');
+    const smsConfigured = smsProviderName === 'robase' && Boolean(robaseKey);
+    const emailConfigured =
+      (emailProviderName === 'brevo' &&
+        Boolean(brevoKey) &&
+        Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM'))) ||
+      (emailProviderName === 'resend' &&
+        Boolean(resendKey) &&
+        Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM')));
+    const workerEnabled = this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true;
+
+    if (!hasProviderView) {
+      return {
+        channels: ['SMS', 'PUSH', 'EMAIL'],
+        projectionScope: 'MINIMAL',
+        sms: {
+          provider: smsProviderName,
+          configured: smsConfigured,
+          keyFingerprint: null,
+          baseUrl: null,
+          timeoutMs: null,
+        },
+        email: {
+          provider: emailProviderName,
+          configured: emailConfigured,
+          keyFingerprint: null,
+          from: null,
+          replyTo: null,
+          baseUrl: null,
+          timeoutMs: null,
+        },
+        worker: {
+          enabled: workerEnabled,
+          pollIntervalMs: null,
+          batchSize: null,
+          retryMaxAttempts: null,
+          retryBaseDelaySeconds: null,
+        },
+      };
+    }
 
     return {
       channels: ['SMS', 'PUSH', 'EMAIL'],
+      projectionScope: 'FULL',
       sms: {
         provider: smsProviderName,
         baseUrl: this.configService.get<string>('ROBASE_API_BASE_URL') ?? null,
-        configured: smsProviderName === 'robase' && Boolean(robaseKey),
+        configured: smsConfigured,
         keyFingerprint: keyFingerprint(robaseKey),
         timeoutMs: this.configService.get<number>('ROBASE_REQUEST_TIMEOUT_MS') ?? null,
       },
@@ -151,13 +264,7 @@ export class AdminNotificationProviderController {
             : emailProviderName === 'resend'
               ? (this.configService.get<string>('RESEND_API_BASE_URL') ?? null)
               : null,
-        configured:
-          (emailProviderName === 'brevo' &&
-            Boolean(brevoKey) &&
-            Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM'))) ||
-          (emailProviderName === 'resend' &&
-            Boolean(resendKey) &&
-            Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM'))),
+        configured: emailConfigured,
         keyFingerprint:
           emailProviderName === 'brevo' ? keyFingerprint(brevoKey) : keyFingerprint(resendKey),
         from: this.configService.get<string>('NOTIFICATION_EMAIL_FROM') ?? null,
@@ -170,7 +277,7 @@ export class AdminNotificationProviderController {
               : null,
       },
       worker: {
-        enabled: this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true,
+        enabled: workerEnabled,
         pollIntervalMs:
           this.configService.get<number>('NOTIFICATION_WORKER_POLL_INTERVAL_MS') ?? null,
         batchSize: this.configService.get<number>('NOTIFICATION_WORKER_BATCH_SIZE') ?? null,
@@ -188,7 +295,7 @@ export class AdminNotificationProviderController {
    */
   @Post('test-send')
   async testSend(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
-    const principalId = this.requireAnyFunction(req, ['notification.test_send'], true);
+    const principalId = await this.authorizeTestSend(req);
 
     const parsed = this.parseTestSendBody(body);
     const { channel, destination } = parsed;
@@ -233,12 +340,14 @@ export class AdminNotificationProviderController {
 
     // Durable rate limit: 5 provider-reaching attempts per principal per rolling hour,
     // counted from the audit trail (every attempt below writes exactly one audit row).
-    const countRows: Array<{ count: string }> = await this.dataSource.query(
-      `SELECT count(*)::text AS count FROM audit_events
-        WHERE entity_type = 'NOTIFICATION_TEST_SEND'
-          AND actor = $1
-          AND created_at >= NOW() - INTERVAL '1 hour'`,
-      [principalId],
+    const countRows = await this.safeDbOperation('testSend.rateLimitCount', () =>
+      this.dataSource.query<Array<{ count: string }>>(
+        `SELECT count(*)::text AS count FROM audit_events
+          WHERE entity_type = 'NOTIFICATION_TEST_SEND'
+            AND actor = $1
+            AND created_at >= NOW() - INTERVAL '1 hour'`,
+        [principalId],
+      ),
     );
     if (Number(countRows[0]?.count ?? '0') >= TEST_SEND_HOURLY_LIMIT) {
       throw new HttpException(
@@ -291,21 +400,25 @@ export class AdminNotificationProviderController {
       });
     }
 
-    await this.auditService.record(this.dataSource.manager, {
-      entityType: 'NOTIFICATION_TEST_SEND',
-      entityId: randomUUID(),
-      action: success ? 'NOTIFICATION_TEST_SENT' : 'NOTIFICATION_TEST_FAILED',
-      actor: principalId,
-      correlationId,
-      newValues: {
-        channel,
-        destination: maskedDestination,
-        provider: providerName,
-        providerRef:
-          typeof result.providerRef === 'string' ? result.providerRef.slice(0, 255) : null,
-        errorCode,
-      },
-    });
+    await this.safeDbOperation('testSend.recordAudit', () =>
+      this.dataSource.transaction((manager) =>
+        this.auditService.record(manager, {
+          entityType: 'NOTIFICATION_TEST_SEND',
+          entityId: randomUUID(),
+          action: success ? 'NOTIFICATION_TEST_SENT' : 'NOTIFICATION_TEST_FAILED',
+          actor: principalId,
+          correlationId,
+          newValues: {
+            channel,
+            destination: maskedDestination,
+            provider: providerName,
+            providerRef:
+              typeof result.providerRef === 'string' ? result.providerRef.slice(0, 255) : null,
+            errorCode,
+          },
+        }),
+      ),
+    );
 
     return {
       status: success ? 'SENT' : 'FAILED',
@@ -351,26 +464,88 @@ export class AdminNotificationProviderController {
     return { channel, destination };
   }
 
-  private requireAnyFunction(
+  private async authorizeProviderStatus(
     req: AuthenticatedRequest,
-    functionCodes: string[],
-    mutating = false,
-  ): string {
+  ): Promise<{ principalId: string; hasProviderView: boolean }> {
     const principal = req.authorizationPrincipal;
-    if (!principal) throw new UnauthorizedException('Authentication required');
-    if (
-      principal.type === 'AGENT' ||
-      principal.type === 'CUSTOMER' ||
-      (principal.type as string) === 'AGGREGATOR'
-    ) {
-      throw new UnauthorizedException('Privileged access required');
+    const useDeliveryFallback =
+      Boolean(principal) &&
+      !principal!.scopes?.includes('notification.provider.view') &&
+      Boolean(principal!.scopes?.includes('notification.view_deliveries'));
+    const requiredFunction = useDeliveryFallback
+      ? 'notification.view_deliveries'
+      : 'notification.provider.view';
+
+    const decision = await this.auth.authorize(
+      principal,
+      {
+        resourceType: 'notification-provider-status',
+        action: requiredFunction,
+        allowedPrincipalTypes: WORKFORCE_PRINCIPAL_TYPES,
+        requiredFunctions: [requiredFunction],
+        customerAccess: 'NONE',
+      },
+      { type: 'notification-provider-status' },
+    );
+
+    if (!decision.allowed || !principal) {
+      this.throwAuthorizationDenial(decision.reason);
     }
-    if (mutating && principal.readOnlyPrincipal) {
+
+    return {
+      principalId: principal.principalId,
+      hasProviderView: !useDeliveryFallback,
+    };
+  }
+
+  private async authorizeTestSend(req: AuthenticatedRequest): Promise<string> {
+    const principal = req.authorizationPrincipal;
+    const decision = await this.auth.authorize(
+      principal,
+      {
+        resourceType: 'notification-test-send',
+        action: 'notification.test_send',
+        allowedPrincipalTypes: WORKFORCE_PRINCIPAL_TYPES,
+        requiredFunctions: ['notification.test_send'],
+        customerAccess: 'NONE',
+      },
+      { type: 'notification-test-send' },
+    );
+
+    if (!decision.allowed || !principal) {
+      this.throwAuthorizationDenial(decision.reason);
+    }
+
+    if (principal.readOnlyPrincipal) {
       throw new ForbiddenException('READ_ONLY_PRINCIPAL');
     }
-    if (!functionCodes.some((code) => principal.scopes?.includes(code))) {
-      throw new ForbiddenException('FUNCTION_MISSING');
-    }
+
     return principal.principalId;
+  }
+
+  private throwAuthorizationDenial(reason?: AuthorizationDenialReason): never {
+    if (reason === 'UNAUTHENTICATED' || !reason) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (reason === 'PRINCIPAL_TYPE_DENIED' || reason === 'INVALID_PRINCIPAL') {
+      throw new UnauthorizedException('Privileged access required');
+    }
+    throw new ForbiddenException(reason);
+  }
+
+  private async safeDbOperation<T>(operation: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.warn({
+        msg: 'notification_provider_controller_db_error',
+        operation,
+        sqlState: extractSqlState(error),
+      });
+      throw new InternalServerErrorException('Notification provider operation could not be completed');
+    }
   }
 }

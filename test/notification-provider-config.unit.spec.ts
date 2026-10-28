@@ -1,20 +1,28 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { InternalServerErrorException, Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import type { DataSource, Repository } from 'typeorm';
 
-import { validateEnvironment } from '../src/config/environment';
+import type { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
+import { redactRecord, redactSensitiveText } from '../src/common/sensitive-data-redaction';
+import { type Environment, validateEnvironment } from '../src/config/environment';
 import {
   BrevoEmailProvider,
   type BrevoFetchFn,
   parseSenderIdentity,
   verifyBrevoConnection,
 } from '../src/notification/brevo-email-provider';
+import { NotificationProviderConfigService } from '../src/notification/notification-provider-config.service';
 import {
   computeKeyFingerprint,
   NotificationSecretEncryptionError,
   NotificationSecretEncryptionService,
 } from '../src/notification/notification-secret-encryption.service';
 import type { NotificationSendRequest } from '../src/notification/notification.types';
+import type { AuditEvent } from '../src/operations/audit-event.entity';
+import { AuditService } from '../src/operations/audit.service';
 
 const KEY_V1 = randomBytes(32).toString('base64');
 const KEY_V2 = randomBytes(32).toString('base64');
@@ -392,5 +400,195 @@ describe('Environment validation for Brevo and Notification Secret Encryption', 
     });
     expect(validManaged.NOTIFICATION_SMS_PROVIDER).toBe('managed');
     expect(validManaged.NOTIFICATION_EMAIL_PROVIDER).toBe('managed');
+  });
+});
+
+describe('Provider Configuration Security Hardening (redaction, safeTransaction, AuditService.list)', () => {
+  it('redacts MNNPS1 encrypted envelopes, provider API key tokens, and encryptedApiKey fields', () => {
+    const enc = new NotificationSecretEncryptionService(
+      makeConfig({
+        NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON: JSON.stringify({ v1: KEY_V1 }),
+        NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+      }),
+    );
+    const { envelope } = enc.encrypt(SAMPLE_ROBASE_KEY, 'SMS');
+
+    const scrubbedRecord = redactRecord({
+      channel: 'SMS',
+      encryptedApiKey: envelope,
+      proposed_encrypted_api_key: envelope,
+      apiKey: SAMPLE_BREVO_KEY,
+    });
+    expect(scrubbedRecord.encryptedApiKey).toBe('[REDACTED]');
+    expect(scrubbedRecord.proposed_encrypted_api_key).toBe('[REDACTED]');
+    expect(scrubbedRecord.apiKey).toBe('[REDACTED]');
+
+    const scrubbedText = redactSensitiveText(
+      `Query failed: row=(${envelope}) robase=${SAMPLE_ROBASE_KEY} brevo=${SAMPLE_BREVO_KEY} smtp=xsmtpsib-abcdef1234567890 resend=re_abcdef1234567890`,
+    );
+    expect(scrubbedText).not.toContain('MNNPS1:');
+    expect(scrubbedText).not.toContain(SAMPLE_ROBASE_KEY);
+    expect(scrubbedText).not.toContain(SAMPLE_BREVO_KEY);
+    expect(scrubbedText).not.toContain('xsmtpsib-abcdef1234567890');
+    expect(scrubbedText).not.toContain('re_abcdef1234567890');
+  });
+
+  it('prevents SQL driver errors, bound parameters, and MNNPS1 envelopes from leaking in exceptions or logs while cancelling orphan approvals', async () => {
+    const enc = new NotificationSecretEncryptionService(
+      makeConfig({
+        NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON: JSON.stringify({ v1: KEY_V1 }),
+        NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+      }),
+    );
+
+    const approvalId = randomUUID();
+    let cancelCalled = false;
+    const mockApprovals = {
+      request: async () => ({
+        approved: false,
+        reason: 'REQUESTED',
+        approval: { id: approvalId },
+      }),
+      cancel: async () => {
+        cancelCalled = true;
+        return { approved: false, reason: 'CANCELLED' };
+      },
+    } as unknown as PrivilegedActionApprovalService;
+
+    const driverSentinelError = Object.assign(
+      new Error(
+        `Failing row contains (SMS, robase, MNNPS1:v1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBBBB==:SENTINEL_CIPHERTEXT_9911, PG_INTERNAL_DETAIL_8822)`,
+      ),
+      {
+        code: '23514',
+        detail: 'SENTINEL_DRIVER_DETAIL_7733',
+        query: 'INSERT INTO notification_provider_config_proposals VALUES ($1)',
+        parameters: [
+          'MNNPS1:v1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBBBB==:SENTINEL_CIPHERTEXT_9911',
+          SAMPLE_ROBASE_KEY,
+        ],
+      },
+    );
+
+    const mockDs = {
+      isInitialized: true,
+      query: async (sql: string) => {
+        if (sql.includes('FROM notification_provider_configurations')) {
+          return [];
+        }
+        throw driverSentinelError;
+      },
+      transaction: async () => {
+        throw driverSentinelError;
+      },
+    } as unknown as DataSource;
+
+    const svc = new NotificationProviderConfigService(
+      makeConfig({
+        NODE_ENV: 'test',
+        NOTIFICATION_SMS_PROVIDER: 'managed',
+        NOTIFICATION_EMAIL_PROVIDER: 'managed',
+      }) as unknown as ConfigService<Environment, true>,
+      enc,
+      mockDs,
+      mockApprovals,
+    );
+
+    const loggedPayloads: string[] = [];
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        loggedPayloads.push(JSON.stringify(args));
+      });
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        loggedPayloads.push(JSON.stringify(args));
+      });
+
+    const superAdmin: AuthorizationPrincipal = {
+      type: 'PRIVILEGED',
+      principalId: 'super-admin-unit-1',
+      audience: 'workforce-admin',
+      assuranceLevel: 'MFA',
+      roles: ['SUPER_ADMIN'],
+      scopes: ['notification.provider.view', 'notification.provider.configure'],
+      customerAccess: 'ANY',
+    };
+
+    try {
+      let caught: unknown;
+      try {
+        await svc.proposeChange(superAdmin, {
+          channel: 'SMS',
+          expectedVersion: 0,
+          provider: 'robase',
+          enabled: false,
+          senderId: 'MonieNaija',
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: SAMPLE_ROBASE_KEY,
+          reason: 'Unit test driver failure redaction check',
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(InternalServerErrorException);
+      expect(cancelCalled).toBe(true);
+
+      const serializedError = JSON.stringify({
+        message: (caught as Error).message,
+        response: (caught as InternalServerErrorException).getResponse(),
+      });
+      const combinedLogs = loggedPayloads.join('\n');
+
+      for (const blob of [serializedError, combinedLogs]) {
+        expect(blob).not.toContain('SENTINEL_CIPHERTEXT_9911');
+        expect(blob).not.toContain('PG_INTERNAL_DETAIL_8822');
+        expect(blob).not.toContain('SENTINEL_DRIVER_DETAIL_7733');
+        expect(blob).not.toContain('MNNPS1:');
+        expect(blob).not.toContain(SAMPLE_ROBASE_KEY);
+        expect(blob).not.toContain('notification_provider_config_proposals');
+      }
+      expect(combinedLogs).toContain('"sqlState":"23514"');
+
+      await expect(svc.listProposals()).rejects.toThrow(InternalServerErrorException);
+      await expect(svc.getProposal(randomUUID())).rejects.toThrow(InternalServerErrorException);
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('excludes NOTIFICATION_PROVIDER_CONFIG and NOTIFICATION_TEST_SEND from AuditService.list by default unless includeNotificationProviderRecords is true', async () => {
+    const andWhereCalls: Array<{ clause: string; params?: Record<string, unknown> }> = [];
+    const mockQb = {
+      andWhere: (clause: string, params?: Record<string, unknown>) => {
+        andWhereCalls.push({ clause, params });
+        return mockQb;
+      },
+      orderBy: () => mockQb,
+      take: () => mockQb,
+      getMany: async () => [],
+    };
+    const mockRepo = {
+      createQueryBuilder: () => mockQb,
+    } as unknown as Repository<AuditEvent>;
+
+    const auditService = new AuditService(mockRepo);
+
+    await auditService.list({});
+    expect(
+      andWhereCalls.some(
+        (c) =>
+          c.clause.includes('providerAuditTypes') &&
+          Array.isArray(c.params?.providerAuditTypes) &&
+          (c.params?.providerAuditTypes as string[]).includes('NOTIFICATION_PROVIDER_CONFIG'),
+      ),
+    ).toBe(true);
+
+    andWhereCalls.length = 0;
+    await auditService.listWithNotificationProviderOversight({});
+    expect(andWhereCalls.some((c) => c.clause.includes('providerAuditTypes'))).toBe(false);
   });
 });
