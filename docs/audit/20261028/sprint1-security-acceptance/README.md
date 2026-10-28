@@ -23,3 +23,7 @@
 This is an independent, read-only source review. No application code, tests, migration, infrastructure, main branch, or mobile app was modified. Source inspection is not an exploit reproduction; no unauthorized HTTP request or production database query was performed. Existing test assertions and role grants are recorded as evidence of current contracts, not automatically accepted as correct policy.
 
 The original three P0 findings remain **PENDING IMPLEMENTATION REVIEW** because no dedicated Sprint 1 implementation branches/commits were present in the fetched remote refs. The baseline source findings are recorded as FAIL against the intended least-privilege/function-gate expectation, with policy-dependent details explicitly marked OPEN. Newly discovered P0 candidate P0-04 is caller-controlled case audit attribution; it requires security-owner triage and an identity-derived actor fix/test before acceptance.
+
+## Follow-up independent acceptance
+
+`08-FINAL-INDEPENDENT-ACCEPTANCE-20261028.md` is the follow-up against integrated app SHA `5a5ad8a5e130da1dc598508914a0a14e48c8735f`. It records independent real-HTTP/PostgreSQL P0 test results, the notification message projection defect, unresolved compliance scope decisions, the incomplete full-PG attempt, per-finding verdicts and next actions. Overall recommendation is **NO-GO** pending remediation and policy decisions.
