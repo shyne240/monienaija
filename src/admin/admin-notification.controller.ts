@@ -4,10 +4,10 @@ import {
   Get,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
 interface AuthenticatedRequest {
@@ -16,7 +16,7 @@ interface AuthenticatedRequest {
 }
 
 const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED']);
-const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT']);
+const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT', 'PHONE']);
 // ARENA3-NOTIFICATION-EMAIL: EMAIL rows are filterable in delivery diagnostics.
 const VALID_CHANNELS = new Set(['SMS', 'PUSH', 'EMAIL']);
 
@@ -24,9 +24,34 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+/**
+ * Redacts direct recipient identifiers (such as unregistered Cash-to-Cash beneficiary phone
+ * numbers stored in `recipient_id` for `recipient_type = 'PHONE'`) while preserving opaque
+ * `CUSTOMER` and `AGENT` UUIDs. Raw destination values are never projected.
+ */
+function redactRecipientId(recipientType: string, recipientId: string): string {
+  if (recipientType !== 'PHONE' && isUuid(recipientId)) {
+    return recipientId;
+  }
+  if (recipientId.includes('@')) {
+    const [local = '', domain = ''] = recipientId.split('@');
+    const keep = Math.min(2, local.length);
+    return `${local.slice(0, keep)}***@${domain}`;
+  }
+  const digits = recipientId.replace(/\D/g, '');
+  if (digits.length === 0) {
+    return '***';
+  }
+  const keep = Math.min(3, digits.length);
+  return `${recipientId.slice(0, Math.max(0, recipientId.length - keep)).replace(/\d/g, '*')}${digits.slice(-keep)}`;
+}
+
 @Controller('internal/notifications')
 export class AdminNotificationController {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Get('deliveries')
   async listDeliveries(
@@ -39,7 +64,7 @@ export class AdminNotificationController {
     @Query('eventType') eventTypeRaw?: string,
     @Query('recipientId') recipientIdRaw?: string,
   ) {
-    this.requireWorkforce(req);
+    await this.requireFunction(req, 'notification.view_deliveries');
 
     // Pagination — deterministic, bounded 1..100, bad request on invalid
     const page = this.parsePage(pageRaw);
@@ -130,7 +155,7 @@ export class AdminNotificationController {
       aggregateType: r.aggregate_type,
       aggregateId: r.aggregate_id,
       recipientType: r.recipient_type,
-      recipientId: r.recipient_id,
+      recipientId: redactRecipientId(r.recipient_type, r.recipient_id),
       channel: r.channel,
       status: r.status,
       attempts: r.attempts,
@@ -155,17 +180,14 @@ export class AdminNotificationController {
     };
   }
 
-  private requireWorkforce(req: AuthenticatedRequest): string {
-    const principal = req.authorizationPrincipal;
-    if (!principal) throw new UnauthorizedException('Authentication required');
-    if (
-      principal.type === 'AGENT' ||
-      principal.type === 'CUSTOMER' ||
-      (principal.type as string) === 'AGGREGATOR'
-    ) {
-      throw new UnauthorizedException('Privileged access required');
-    }
-    return principal.principalId;
+  private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'internal-notifications',
+      ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+      { deniedStatus: 401 },
+    );
   }
 
   private parsePage(raw?: string): number {
