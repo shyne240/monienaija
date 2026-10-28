@@ -332,7 +332,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       {canViewDiagnostics ? (
         <>
           <div style={diagnosticNotice}>
-            These existing diagnostics are read-only. The API currently checks workforce principal type rather than enforcing <code>limit.view</code>; this page only requests them when the signed-in principal has <code>limit.view</code>. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen does not release reservations.
+            These existing diagnostics are read-only. The API enforces <code>limit.view</code> server-side, AND-combined with the workforce principal-type allowlist (audit F-03/P0-03 correction); this page requests them only when the signed-in principal holds <code>limit.view</code>, matching the backend gate. Stale reservations are flagged for investigation only: age is not proof of an orphan, and this screen does not release reservations.
           </div>
           <section style={diagnosticCard} aria-label="Limit usage diagnostics">
             <h3 style={sectionTitle}>Usage Diagnostics</h3>

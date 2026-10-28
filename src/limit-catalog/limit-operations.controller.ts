@@ -21,17 +21,31 @@ interface AuthenticatedRequest {
 }
 
 /**
- * V1-LIMIT-05 — Workforce-only limit diagnostics & manual reservation recovery boundary.
+ * V1-LIMIT-05 — Limit diagnostics & manual reservation recovery boundary.
  *
  * Routes:
- *   GET  /api/v1/internal/limit-usages                     (OPERATOR/SERVICE/PRIVILEGED — read-only)
- *   GET  /api/v1/internal/limit-reservations               (OPERATOR/SERVICE/PRIVILEGED — read-only)
+ *   GET  /api/v1/internal/limit-usages                     (OPERATOR/SERVICE/PRIVILEGED + limit.view — read-only)
+ *   GET  /api/v1/internal/limit-reservations               (OPERATOR/SERVICE/PRIVILEGED + limit.view — read-only)
  *   POST /api/v1/internal/limit-reservation-recovery/release (PRIVILEGED only — explicit manual release)
  *
- * RoutePolicyRegistry maps /api/v1/internal/limit-* to WORKFORCE_SESSION with
- * OPERATOR/SERVICE/PRIVILEGED (SUPPORT/CUSTOMER/AGENT/AGGREGATOR excluded); the checks below
- * are defense-in-depth on top of the guard. The recovery route additionally requires the
- * strictest PRIVILEGED role because it mutates reservation state.
+ * AUDIT F-03 / P0-03 (docs/audit/20261028) CORRECTION: the diagnostics GETs previously checked
+ * ONLY the workforce principal type, while the approved Admin Web policy (LimitAssignmentScreen,
+ * navigation-access) gates the same diagnostics behind the catalogue function `limit.view`.
+ * Because every non-administrative A2 workforce role collapses to principal.type OPERATOR, the
+ * type-only check admitted workforce roles that hold no limit function (OPERATIONS, COMPLIANCE,
+ * RISK_FRAUD, CUSTOMER_SERVICE, TREASURY, ...) to sensitive operational metadata. The type
+ * allowlist is now AND-combined with a server-side `limit.view` requirement — the identical
+ * pattern used by V1-ADMIN-AUTHORIZATION-HARDENING-01 (agent lifecycle) and
+ * AdminNotificationProviderController.requireFunction. Access is narrowed, never broadened:
+ * the roles granted limit.view in the catalogue (SUPER_ADMIN, FINANCE_PREPARER,
+ * FINANCE_CONTROLLER, FINANCE_AUDITOR, AGENT_NETWORK_MANAGER) all resolve to OPERATOR/PRIVILEGED
+ * and keep access. RoutePolicyRegistry additionally declares requiredFunctions ['limit.view']
+ * for the two GET paths, so the RuntimeAccessGuard V1-SPRINT3-GUARD-01 slice denies
+ * function-less principals (403 Authorization denied: FUNCTION_MISSING) before this controller;
+ * the check below remains the authoritative controller gate. Query parameters can never widen
+ * access: RoutePolicyRegistry.resolve() strips the query string before matching, filters are
+ * parsed after authorization, and the recovery route stays PRIVILEGED-only — reservation
+ * release is a separate mutation and is NOT conflated with these reads.
  */
 @Controller('internal')
 export class LimitOperationsController {
@@ -145,12 +159,22 @@ export class LimitOperationsController {
     return n;
   }
 
+  /**
+   * Diagnostics reader gate: workforce principal-type allowlist AND the catalogue function
+   * `limit.view` (fail-closed). Type denial keeps this controller's pre-existing 403 message
+   * convention; a type-permitted principal missing the function gets 403 FUNCTION_MISSING —
+   * fully authenticated, simply not entitled to this read (correct HTTP semantics per
+   * AuthorizationService.requireFunction's FUNCTION_MISSING carve-out).
+   */
   private requireWorkforce(req: AuthenticatedRequest): void {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     const allowed = ['OPERATOR', 'SERVICE', 'PRIVILEGED'];
     if (!allowed.includes(principal.type as string)) {
       throw new ForbiddenException('Privileged access required — OPERATOR/SERVICE/PRIVILEGED only');
+    }
+    if (!principal.scopes?.includes('limit.view')) {
+      throw new ForbiddenException('FUNCTION_MISSING');
     }
   }
 

@@ -724,6 +724,39 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // V1-LIMIT-05 + audit F-03/P0-03 (docs/audit/20261028): limit DIAGNOSTICS reads are gated by
+    // the catalogue function `limit.view` (FINANCE domain, READ sensitivity), AND-combined with the
+    // workforce principal-type allowlist — the same function the Admin Web LimitAssignmentScreen
+    // and navigation-access have always required client-side. Declared here so the RuntimeAccessGuard
+    // V1-SPRINT3-GUARD-01 slice enforces it (403 Authorization denied: FUNCTION_MISSING) in addition
+    // to the authoritative controller-level check in LimitOperationsController. This narrows access
+    // only: roles holding limit.view (SUPER_ADMIN, FINANCE_PREPARER, FINANCE_CONTROLLER,
+    // FINANCE_AUDITOR, AGENT_NETWORK_MANAGER) resolve to OPERATOR/PRIVILEGED and keep access;
+    // workforce roles without the function are now denied where principal type alone previously
+    // admitted them. Exact GET paths only — the mutation route
+    // POST /api/v1/internal/limit-reservation-recovery/release stays under the generic prefix with
+    // its separate stricter PRIVILEGED-only controller gate (reservation release is NOT conflated
+    // with diagnostics reads).
+    if (
+      method === 'GET' &&
+      (path === '/api/v1/internal/limit-usages' || path === '/api/v1/internal/limit-reservations')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'limit-catalogue',
+        policy: {
+          resourceType: 'limit-catalogue',
+          action: `${method}:${path}`,
+          requiredFunctions: ['limit.view'],
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Limit catalogue & assignment — workforce-only OPERATOR/SERVICE/PRIVILEGED (V1-LIMIT-01/02). Strict subset of generic internal.
     if (path.startsWith('/api/v1/internal/limit-')) {
       return {

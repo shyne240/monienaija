@@ -6,11 +6,15 @@
  *   GET /api/v1/internal/limit-usages
  *   GET /api/v1/internal/limit-reservations
  *
- * Verified: authorization (OPERATOR/SERVICE/PRIVILEGED only — SUPPORT/CUSTOMER/AGENT/AGGREGATOR
- * blocked), filtering, deterministic pagination/ordering, SAFE PROJECTION (request_hash never
- * exposed), read-only (no ledger/usage/reservation mutation), stale-flag diagnostics with
- * configurable threshold, and manual recovery boundary authorization on
- *   POST /api/v1/internal/limit-reservation-recovery/release (PRIVILEGED-only).
+ * Verified: authorization (OPERATOR/SERVICE/PRIVILEGED type allowlist AND-combined with the
+ * catalogue function `limit.view` — audit F-03/P0-03 correction; SUPPORT/CUSTOMER/AGENT/AGGREGATOR
+ * blocked; type-permitted workforce principals WITHOUT limit.view denied 403 FUNCTION_MISSING;
+ * query-filter/trailing-slash variants cannot bypass), filtering, deterministic
+ * pagination/ordering, SAFE PROJECTION (request_hash never exposed), read-only (no
+ * ledger/usage/reservation mutation), stale-flag diagnostics with configurable threshold, and
+ * manual recovery boundary authorization on
+ *   POST /api/v1/internal/limit-reservation-recovery/release (PRIVILEGED-only — unchanged;
+ *   reservation release is a separate mutation and is NOT conflated with these reads).
  *
  * Real PostgreSQL; no financial service mocked.
  */
@@ -51,15 +55,24 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
+      const raw = token.replace('workforce-', '').toUpperCase();
+      // '-NOFN' suffix: type-permitted workforce principal that holds NO catalogue function —
+      // the audit F-03/P0-03 negative case (previously admitted by the type-only check).
+      const withoutFunction = raw.endsWith('-NOFN');
+      const type = withoutFunction ? raw.slice(0, -'-NOFN'.length) : raw;
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+      // Workforce types represent roles granted `limit.view` in the catalogue (SUPER_ADMIN,
+      // FINANCE_*, AGENT_NETWORK_MANAGER resolve to OPERATOR/PRIVILEGED); SERVICE is the legacy
+      // workforce type kept in the allowlist. Non-workforce types keep scopes [] exactly as
+      // before so their denial semantics are unchanged.
+      const scopes = !withoutFunction && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type) ? ['limit.view'] : [];
       return {
         type,
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes,
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -138,7 +151,7 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
   // ── 1. Authorization ──
 
-  it('01 GET /internal/limit-usages — OPERATOR/SERVICE/PRIVILEGED allowed; SUPPORT/CUSTOMER/AGENT blocked; no auth 401', async () => {
+  it('01 GET /internal/limit-usages — limit.view-holding OPERATOR/SERVICE/PRIVILEGED allowed; SUPPORT/CUSTOMER/AGENT blocked; no auth 401', async () => {
     for (const role of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
       const res = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages').set('Authorization', auth(role));
       expect(res.status).toBe(200);
@@ -163,6 +176,44 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(support.status).toBe(403);
     const noAuth = await request(app.getHttpServer()).get('/api/v1/internal/limit-reservations');
     expect(noAuth.status).toBe(401);
+  });
+
+  it('02b type-permitted workforce principals WITHOUT limit.view are denied 403 FUNCTION_MISSING on both diagnostics routes (audit F-03 correction)', async () => {
+    for (const type of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
+      for (const path of ['/api/v1/internal/limit-usages', '/api/v1/internal/limit-reservations']) {
+        const res = await request(app.getHttpServer()).get(path).set('Authorization', auth(`${type}-NOFN`));
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(res.body)).toMatch(/FUNCTION_MISSING/);
+        expect(res.body.data).toBeUndefined();
+      }
+    }
+  });
+
+  it('02c query-filter and route-variant bypass attempts never admit a limit.view-less principal, and never widen an authorized one', async () => {
+    const noFn = auth('OPERATOR-NOFN');
+    const attempts = [
+      `/api/v1/internal/limit-usages?principalId=${randomUUID()}&limit=50&page=1`,
+      `/api/v1/internal/limit-usages?limitProfileCode=DIAG_PROFILE&principalType=CUSTOMER&windowKey=x`,
+      `/api/v1/internal/limit-reservations?stale=true&status=RESERVED&idempotencyKey=anything`,
+      `/api/v1/internal/limit-reservations?correlationId=x&reservedFrom=2020-01-01&reservedTo=2030-01-01`,
+      '/api/v1/internal/limit-usages?x=/../limit-profiles', // query cannot alter the matched route
+    ];
+    for (const url of attempts) {
+      const res = await request(app.getHttpServer()).get(url).set('Authorization', noFn);
+      expect(res.status).toBe(403);
+      expect(res.body.data).toBeUndefined();
+    }
+    // Route-variant probes (trailing slash) may 404 at the router or 403 at the gate — either is
+    // safe; what must never happen is a 200 with diagnostics data for a function-less principal.
+    const slash = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages/').set('Authorization', noFn);
+    expect([403, 404]).toContain(slash.status);
+    expect(slash.body?.data).toBeUndefined();
+    // An authorized (limit.view-holding) principal is unaffected by the same query variants.
+    const ok = await request(app.getHttpServer())
+      .get(`/api/v1/internal/limit-usages?principalId=${randomUUID()}&limit=50`)
+      .set('Authorization', auth('OPERATOR'));
+    expect(ok.status).toBe(200);
+    expect(ok.body.data).toBeDefined();
   });
 
   // ── 2. Filtering — usages ──
