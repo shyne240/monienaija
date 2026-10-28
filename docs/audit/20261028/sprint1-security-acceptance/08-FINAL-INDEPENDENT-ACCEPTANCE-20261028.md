@@ -44,7 +44,11 @@ Remote source-ref preservation at review time: `arena/92fd33dd-monienaija` remai
 
 ### Local workspace preservation note
 
-The pre-existing main checkout was already on `arena/870f970d-monienaija` at `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510`, while its remote branch was at `d08696d6d783889fbc676e7e672143894d284eb4`; the main checkout also contained extensive pre-existing modified/untracked application files. I did not switch, reset, clean, stash, stage, or commit those files. Acceptance documentation was prepared in a separate worktree based on the remote pinned-branch tip, then fast-forward-pushed to that branch. The exact final remote SHA is recorded in §10. The main checkout's pre-existing changes remain untouched.
+The pre-existing main checkout was already on `arena/870f970d-monienaija` at `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510`, while its remote branch was at `d08696d6d783889fbc676e7e672143894d284eb4`; the main checkout also contained extensive pre-existing modified/untracked application files. I did not switch, reset, clean, stash, stage, or commit those files. Acceptance documentation was prepared in a separate worktree based on the remote pinned-branch tip, then fast-forward-pushed to that branch. The exact final remote SHA is recorded in §10. The main checkout's pre-existing changes remain untouched. At final verification it still had 483 modified/untracked status entries and remained at local HEAD `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510`; it was not clean. I preserved that state. The documentation worktree was clean after the report commit.
+
+### Final remote source-ref check
+
+After the acceptance report was pushed, a final `git ls-remote` showed Arena 1 still at `22d3ec8254f8e641c0ae4d74c4f905858b417271`. Arena 2 had independently advanced from the reviewed integration commit `cdf52030f0cae09f169a1fb333e9292f4d74f135` to `1f6decdf96491d548e7cabecb7ff7ed18ef8d2d2` (parent `cdf5203`, subject `feat(notification): governed Robase SMS & Brevo email provider configuration`). The newer Arena 2 tip is not integrated into target `5a5ad8a` and was not substituted for the requested target. The fetched `arena/edba26d6-monienaija` ref was `058600e84cac0996c268235fe32dc76e5b2e3693` and does not contain `a7898e2`; the A3 implementation commit is nevertheless an ancestor of the integration application SHA. These ref changes were observed only; no Arena 1/2/3 branch was updated by this reviewer.
 
 ## 3. Compliance case authorization — P0-01
 
