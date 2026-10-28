@@ -43,6 +43,18 @@ import {
   rewardNone,
 } from '../commercial-decision/commercial-decision.defaults';
 import { Transfer } from './transfer.entity';
+import {
+  buildAuditedInternalTransferCompletedEvent,
+  buildAuditedInternalTransferFailedEvent,
+  INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+  INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+  INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+  INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+  INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
+  transferCompletedEventKey,
+  transferFailedEventKey,
+  type AuditedTransferRecipientIdentity,
+} from './transfer-events';
 import { limitCodeToTransferFailureCode, TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
   CreateTransferCommand,
@@ -308,6 +320,13 @@ export class TransferService {
     });
     await transferRepository.save(transfer);
 
+    // Authoritative recipient identity for the versioned notification event contract,
+    // derived from the pessimistically-locked wallet rows that back the ledger posting.
+    const notificationRecipients: AuditedTransferRecipientIdentity = {
+      sourceCustomerId: sourceWallet.customerId,
+      destinationCustomerId: destinationWallet.customerId,
+    };
+
     if (
       sourceWallet.status !== WalletStatus.ACTIVE ||
       destinationWallet.status !== WalletStatus.ACTIVE
@@ -316,7 +335,7 @@ export class TransferService {
         code: TransferFailureCode.WALLET_NOT_ACTIVE,
         statusCode: 409,
         message: 'Both wallets must be active to transfer funds',
-      });
+      }, notificationRecipients);
     }
 
     // V1-SYSTEM-01: WalletAccount.status alone is not authoritative for whether the owning
@@ -360,7 +379,7 @@ export class TransferService {
           code: TransferFailureCode.CUSTOMER_NOT_ACTIVE,
           statusCode: 409,
           message: 'Both the sending and receiving customer must be active to transfer funds',
-        });
+        }, notificationRecipients);
       }
     }
 
@@ -373,7 +392,7 @@ export class TransferService {
         code: TransferFailureCode.CURRENCY_MISMATCH,
         statusCode: 409,
         message: 'Source, destination, and transfer currencies must match',
-      });
+      }, notificationRecipients);
     }
 
     // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
@@ -414,7 +433,7 @@ export class TransferService {
               code: limitCode,
               statusCode: error.getStatus(),
               message: (resp.message as string) ?? String(limitCode),
-            });
+            }, notificationRecipients);
           }
         }
         throw error;
@@ -460,7 +479,7 @@ export class TransferService {
           // best-effort release; if no reservations exist this is a no-op
         }
       }
-      return this.markFailed(manager, transfer, this.failureFromLedgerException(error));
+      return this.markFailed(manager, transfer, this.failureFromLedgerException(error), notificationRecipients);
     }
 
     if (limitIdempotencyKey && this.limitEnforcementService) {
@@ -505,15 +524,28 @@ export class TransferService {
         amountMinor: transfer.amountMinor,
       },
     });
-    await this.outboxService?.enqueue(manager, {
-      eventType: 'transfer.completed',
+    // Notification producer contract v1 (Arena 3 producer correction): the audited
+    // completion path emits the same versioned event identity as the lifecycle producer —
+    // stable eventKey, schemaVersion 1, RESTRICTED_FINANCIAL/A5 classification — and the
+    // authoritative recipient identity/safe facts the notification.v1 consumer requires
+    // (locked-wallet customer ids + committed amount/currency). Enqueued inside the same
+    // SERIALIZABLE transaction as the financial state (atomicity preserved); enqueueOnce
+    // makes replays converge without duplicates. Ledger/accounting logic is untouched.
+    await this.outboxService?.enqueueOnce(manager, {
+      eventKey: transferCompletedEventKey(transfer.id),
+      eventType: INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
-      payload: {
-        transferId: transfer.id,
-        journalId: transfer.journalId,
-        paymentReference: transfer.paymentReference,
-      },
+      schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+      classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+      retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+      occurredAt: transfer.completedAt ?? new Date(),
+      correlationId: `transfer:${transfer.id}`,
+      payload: buildAuditedInternalTransferCompletedEvent(
+        transfer,
+        notificationRecipients,
+        transfer.completedAt ?? new Date(),
+      ),
     });
     await this.metricsService?.increment(manager, 'transfers.completed');
 
@@ -713,6 +745,7 @@ export class TransferService {
     manager: EntityManager,
     transfer: Transfer,
     failure: TransferFailure,
+    recipients: AuditedTransferRecipientIdentity,
   ): Promise<TransferTransactionResult> {
     transfer.status = TransferStatus.FAILED;
     transfer.journalId = null;
@@ -729,11 +762,27 @@ export class TransferService {
       correlationId: `transfer:${transfer.id}`,
       newValues: { status: transfer.status, failureCode: transfer.failureCode },
     });
-    await this.outboxService?.enqueue(manager, {
-      eventType: 'transfer.failed',
+    // Notification producer contract v1 (Arena 3 producer correction): authoritative
+    // recipient identity from the locked wallet rows so the notification.v1 consumer can
+    // address the failure notice to the source customer instead of quarantining the event.
+    // No journal exists for a failed transfer and no failure prose/PIN/secret is emitted.
+    const failedAt = new Date();
+    await this.outboxService?.enqueueOnce(manager, {
+      eventKey: transferFailedEventKey(transfer.id),
+      eventType: INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
-      payload: { transferId: transfer.id, failureCode: transfer.failureCode },
+      schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+      classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+      retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+      occurredAt: failedAt,
+      correlationId: `transfer:${transfer.id}`,
+      payload: buildAuditedInternalTransferFailedEvent(
+        transfer,
+        recipients,
+        transfer.failureCode,
+        failedAt,
+      ),
     });
     await this.metricsService?.increment(manager, 'transfers.failed');
     return { transferId: transfer.id };

@@ -2211,9 +2211,9 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         [randomUUID(), custId],
       );
       await dataSource.query(
-        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary)
-         VALUES ($1, $2, 'PHONE', '8039998877', '8039998877', TRUE),
-                ($3, $2, 'EMAIL', $4, 'f01.customer@example.com', TRUE)`,
+        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at)
+         VALUES ($1, $2, 'PHONE', '8039998877', '8039998877', TRUE, NOW()),
+                ($3, $2, 'EMAIL', $4, 'f01.customer@example.com', TRUE, NOW())`,
         [randomUUID(), custId, randomUUID(), 'f01.customer@example.com'],
       );
       await dataSource.query(
@@ -2230,6 +2230,11 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         eventKey: `transfer.completed:f01:${randomUUID()}`,
         payload: {
           sourceCustomerId: custId,
+          // Integration reconciliation (Arena 1 durable-dispatcher guard): transfer.completed
+          // materialization requires BOTH authoritative recipient ids; the same customer on
+          // both legs exercises the self-transfer dedupe and keeps the two expected
+          // deliveries (SMS + EMAIL) for custId.
+          destinationCustomerId: custId,
           amountMinor: '100000',
           transferId: 'tx-f01-1',
           reference: 'REF-F01-1',
