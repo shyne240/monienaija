@@ -564,53 +564,75 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect(scrubbed.sms.keyFingerprint).toBe('****9988');
   });
 
-  it('5. maps MINIMAL provider-status projection for delivery-only roles cleanly with READY status and zero fingerprints/sender metadata', async () => {
+  it('5. maps strict coarse MINIMAL provider-status projection for delivery-only roles cleanly with zero provider/lifecycle/worker/fingerprint metadata', async () => {
     (ApiClient.get as jest.Mock).mockResolvedValueOnce({
       channels: ['SMS', 'PUSH', 'EMAIL'],
       projectionScope: 'MINIMAL',
-      sms: {
-        provider: 'robase',
-        enabled: true,
-        configured: true,
-        deliveryTested: true,
-        lifecycleState: 'PRODUCTION_READY',
-        keyFingerprint: null,
-        baseUrl: null,
-        timeoutMs: null,
-      },
-      email: {
-        provider: 'brevo',
-        enabled: true,
-        configured: true,
-        deliveryTested: true,
-        lifecycleState: 'PRODUCTION_READY',
-        keyFingerprint: null,
-        from: null,
-        replyTo: null,
-        baseUrl: null,
-        timeoutMs: null,
-      },
-      worker: {
-        enabled: true,
-        pollIntervalMs: null,
-        batchSize: null,
-        retryMaxAttempts: null,
-        retryBaseDelaySeconds: null,
-      },
+      sms: { available: true },
+      push: { available: false },
+      email: { available: true },
     });
 
     const outcome = await NotificationManagementApi.getProviderStatus();
     expect(outcome.status).toBe('LIVE');
     if (outcome.status === 'LIVE') {
+      expect(outcome.data.sms.provider).toBe('redacted');
       expect(outcome.data.sms.operationalStatus).toBe('READY');
+      expect(outcome.data.sms.apiKeyConfigured).toBe(false);
       expect(outcome.data.sms.apiKeyLast4Fingerprint).toBeNull();
       expect(outcome.data.sms.senderId).toBeNull();
+      expect(outcome.data.sms.lifecycleState).toBeUndefined();
       expect(outcome.data.sms.lastTest).toBeUndefined();
+      expect(outcome.data.email.provider).toBeNull();
       expect(outcome.data.email.operationalStatus).toBe('READY');
+      expect(outcome.data.email.credentialsConfigured).toBe(false);
       expect(outcome.data.email.credentialFingerprint).toBeNull();
       expect(outcome.data.email.fromAddress).toBeNull();
       expect(outcome.data.email.fromName).toBeNull();
+      expect(outcome.data.email.lifecycleState).toBeUndefined();
       expect(outcome.data.email.lastTest).toBeUndefined();
+      expect(outcome.data.worker.enabled).toBe(false);
     }
+  });
+
+  it('6. hides Tab 9 (Provider Configuration) and quick-jump button for delivery-only principals lacking notification.provider.view, and rejects unpinned baseUrls client-side', async () => {
+    seedPrincipal({
+      principalId: 'issuer:delivery-only-1',
+      roles: ['CUSTOM_DELIVERY_VIEWER'],
+      scopes: ['notification.view_deliveries'],
+    });
+
+    const calledEndpoints: string[] = [];
+    (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => {
+      calledEndpoints.push(endpoint);
+      if (endpoint === '/internal/notifications/provider-status') {
+        return Promise.resolve({
+          channels: ['SMS', 'PUSH', 'EMAIL'],
+          projectionScope: 'MINIMAL',
+          sms: { available: false },
+          push: { available: false },
+          email: { available: false },
+        });
+      }
+      if (endpoint.startsWith('/internal/notifications/deliveries')) {
+        return Promise.resolve({ items: [], total: 0, page: 1, limit: 25, totalPages: 0 });
+      }
+      return Promise.resolve({});
+    });
+
+    const view = render(<NotificationManagementScreen initialTab="providerConfig" />);
+    await waitFor(() => expect(view.getByTestId('notif-tab-overview')).toBeTruthy());
+
+    // Tab 9 and the Provider Configuration workspace must NOT render or call /provider-config
+    expect(view.queryByTestId('notif-tab-providerConfig')).toBeNull();
+    expect(view.queryByTestId('notif-panel-providerConfig')).toBeNull();
+    expect(view.queryByTestId('provider-config-workspace')).toBeNull();
+
+    fireEvent.click(view.getByTestId('notif-tab-providers'));
+    await waitFor(() => expect(view.getByTestId('notif-panel-providers')).toBeTruthy());
+    expect(view.queryByTestId('jump-to-provider-config-btn')).toBeNull();
+    expect(
+      calledEndpoints.some((ep) => ep.startsWith('/internal/notifications/provider-config')),
+    ).toBe(false);
   });
 });

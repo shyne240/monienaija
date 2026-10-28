@@ -39,6 +39,12 @@ import type {
   NotificationSendRequest,
   NotificationSendResult,
 } from './notification.types';
+import {
+  isExternalNotificationVendor,
+  isPinnedProviderBaseUrl,
+  normalizeProviderErrorCode,
+  validatePinnedProviderBaseUrl,
+} from './provider-security';
 import { ResendEmailProvider, sanitizeHeader } from './resend-email-provider';
 import { RobaseNotificationProvider } from './robase-notification-provider';
 
@@ -304,41 +310,10 @@ function toIsoOrNull(val: Date | string | null | undefined): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function validateProviderBaseUrl(rawUrl: string, nodeEnv: string): string {
-  const trimmed = rawUrl.trim().replace(/\/+$/, '');
-  if (trimmed.length === 0 || trimmed.length > 2048) {
-    throw new BadRequestException('baseUrl must be between 1 and 2048 characters.');
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw new BadRequestException('baseUrl must be a valid HTTPS URL.');
-  }
-  if (parsed.protocol !== 'https:') {
-    throw new BadRequestException('baseUrl must use https://.');
-  }
-  if (parsed.username || parsed.password) {
-    throw new BadRequestException('baseUrl must not contain embedded credentials.');
-  }
-  if (parsed.search || parsed.hash) {
-    throw new BadRequestException('baseUrl must not include query strings or URL fragments.');
-  }
-  const host = parsed.hostname.toLowerCase();
-  if (
-    nodeEnv === 'production' &&
-    (host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '::1' ||
-      host === '[::1]' ||
-      host.endsWith('.local') ||
-      host.endsWith('.internal'))
-  ) {
-    throw new BadRequestException(
-      'Loopback or internal baseUrl hosts are forbidden in production.',
-    );
-  }
-  return trimmed;
+function defaultPinnedBaseUrl(provider: 'robase' | 'brevo' | 'resend'): string {
+  if (provider === 'robase') return 'https://api.robase.dev';
+  if (provider === 'brevo') return 'https://api.brevo.com';
+  return 'https://api.resend.com';
 }
 
 function validateApiKeyForProvider(provider: string, rawKey: string): string {
@@ -479,10 +454,13 @@ export class NotificationProviderConfigService {
       const baseUrl =
         this.configService.get('ROBASE_API_BASE_URL', { infer: true }) ??
         'https://api.robase.dev';
+      if (!isPinnedProviderBaseUrl('robase', baseUrl)) {
+        return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+      }
       const requestTimeoutMs =
         this.configService.get('ROBASE_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
       const adapter = new RobaseNotificationProvider(
-        { baseUrl, apiKey, requestTimeoutMs },
+        { baseUrl: validatePinnedProviderBaseUrl('robase', baseUrl), apiKey, requestTimeoutMs },
         this.fetchImpl as ConstructorParameters<typeof RobaseNotificationProvider>[1],
       );
       return adapter.send(request);
@@ -502,16 +480,18 @@ export class NotificationProviderConfigService {
       return { success: false, error: 'SMS_PROVIDER_DISABLED' };
     }
 
-    const secretResolution = this.resolveRowSecret(row);
-    if (!secretResolution.ok) {
-      return { success: false, error: secretResolution.errorCode };
-    }
-
     if (row.provider === 'robase') {
-      const baseUrl = row.base_url ?? 'https://api.robase.dev';
+      const candidateUrl = row.base_url ?? 'https://api.robase.dev';
+      if (!isPinnedProviderBaseUrl('robase', candidateUrl)) {
+        return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+      }
+      const secretResolution = this.resolveRowSecret(row);
+      if (!secretResolution.ok) {
+        return { success: false, error: secretResolution.errorCode };
+      }
       const adapter = new RobaseNotificationProvider(
         {
-          baseUrl,
+          baseUrl: validatePinnedProviderBaseUrl('robase', candidateUrl),
           apiKey: secretResolution.apiKey,
           requestTimeoutMs: row.request_timeout_ms,
         },
@@ -551,11 +531,14 @@ export class NotificationProviderConfigService {
         const baseUrl =
           this.configService.get('BREVO_API_BASE_URL', { infer: true }) ??
           'https://api.brevo.com';
+        if (!isPinnedProviderBaseUrl('brevo', baseUrl)) {
+          return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+        }
         const requestTimeoutMs =
           this.configService.get('BREVO_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
         const adapter = new BrevoEmailProvider(
           {
-            baseUrl,
+            baseUrl: validatePinnedProviderBaseUrl('brevo', baseUrl),
             apiKey,
             fromEmail: from,
             fromName: fromName ?? null,
@@ -575,10 +558,19 @@ export class NotificationProviderConfigService {
         const baseUrl =
           this.configService.get('RESEND_API_BASE_URL', { infer: true }) ??
           'https://api.resend.com';
+        if (!isPinnedProviderBaseUrl('resend', baseUrl)) {
+          return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+        }
         const requestTimeoutMs =
           this.configService.get('RESEND_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
         const adapter = new ResendEmailProvider(
-          { baseUrl, apiKey, from, replyTo, requestTimeoutMs },
+          {
+            baseUrl: validatePinnedProviderBaseUrl('resend', baseUrl),
+            apiKey,
+            from,
+            replyTo,
+            requestTimeoutMs,
+          },
           this.fetchImpl as ConstructorParameters<typeof ResendEmailProvider>[1],
         );
         return adapter.send(request);
@@ -605,19 +597,22 @@ export class NotificationProviderConfigService {
       return { success: false, error: 'EMAIL_PROVIDER_DISABLED' };
     }
 
-    const secretResolution = this.resolveRowSecret(row);
-    if (!secretResolution.ok) {
-      return { success: false, error: secretResolution.errorCode };
-    }
-
     if (!row.from_email) {
       return { success: false, error: 'EMAIL_SENDER_NOT_CONFIGURED' };
     }
 
     if (row.provider === 'brevo') {
+      const candidateUrl = row.base_url ?? 'https://api.brevo.com';
+      if (!isPinnedProviderBaseUrl('brevo', candidateUrl)) {
+        return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+      }
+      const secretResolution = this.resolveRowSecret(row);
+      if (!secretResolution.ok) {
+        return { success: false, error: secretResolution.errorCode };
+      }
       const adapter = new BrevoEmailProvider(
         {
-          baseUrl: row.base_url ?? 'https://api.brevo.com',
+          baseUrl: validatePinnedProviderBaseUrl('brevo', candidateUrl),
           apiKey: secretResolution.apiKey,
           fromEmail: row.from_email,
           fromName: row.from_name,
@@ -630,12 +625,20 @@ export class NotificationProviderConfigService {
     }
 
     if (row.provider === 'resend') {
+      const candidateUrl = row.base_url ?? 'https://api.resend.com';
+      if (!isPinnedProviderBaseUrl('resend', candidateUrl)) {
+        return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
+      }
+      const secretResolution = this.resolveRowSecret(row);
+      if (!secretResolution.ok) {
+        return { success: false, error: secretResolution.errorCode };
+      }
       const combinedFrom = row.from_name
         ? `${sanitizeHeader(row.from_name)} <${row.from_email}>`
         : row.from_email;
       const adapter = new ResendEmailProvider(
         {
-          baseUrl: row.base_url ?? 'https://api.resend.com',
+          baseUrl: validatePinnedProviderBaseUrl('resend', candidateUrl),
           apiKey: secretResolution.apiKey,
           from: combinedFrom,
           replyTo: row.reply_to_email,
@@ -839,9 +842,21 @@ export class NotificationProviderConfigService {
       );
     }
 
-    const enabled = Boolean(input.enabled);
+    if (typeof input.enabled !== 'boolean') {
+      throw new BadRequestException('enabled must be a strict JSON boolean (true or false).');
+    }
+    const enabled = input.enabled;
     if (provider === 'none' && enabled) {
       throw new BadRequestException('Provider "none" cannot be marked enabled.');
+    }
+
+    for (const boolKey of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      const candidate = input[boolKey];
+      if (candidate !== undefined && typeof candidate !== 'boolean') {
+        throw new BadRequestException(
+          `${boolKey} must be a strict JSON boolean (true or false) when provided.`,
+        );
+      }
     }
 
     const requestTimeoutMs = input.requestTimeoutMs ?? (existing?.request_timeout_ms ?? 10_000);
@@ -856,21 +871,27 @@ export class NotificationProviderConfigService {
       );
     }
 
-    const isExternalProvider =
-      provider === 'robase' || provider === 'brevo' || provider === 'resend';
+    const isExternalProvider = isExternalNotificationVendor(provider);
 
     let baseUrl: string | null = null;
     if (isExternalProvider) {
-      const defaultUrl =
-        provider === 'robase'
-          ? 'https://api.robase.dev'
-          : provider === 'brevo'
-            ? 'https://api.brevo.com'
-            : 'https://api.resend.com';
-      baseUrl = validateProviderBaseUrl(
-        input.baseUrl && input.baseUrl.trim() ? input.baseUrl : (existing?.base_url ?? defaultUrl),
-        nodeEnv,
+      const defaultUrl = defaultPinnedBaseUrl(provider);
+      const fallbackUrl =
+        existing?.base_url && isPinnedProviderBaseUrl(provider, existing.base_url)
+          ? existing.base_url
+          : defaultUrl;
+      baseUrl = validatePinnedProviderBaseUrl(
+        provider,
+        input.baseUrl !== undefined && input.baseUrl !== null && input.baseUrl.trim() !== ''
+          ? input.baseUrl
+          : fallbackUrl,
       );
+    } else if (
+      input.baseUrl !== undefined &&
+      input.baseUrl !== null &&
+      input.baseUrl.trim() !== ''
+    ) {
+      throw new BadRequestException(`baseUrl is not permitted when provider is "${provider}".`);
     }
 
     let senderId: string | null = null;
@@ -892,9 +913,9 @@ export class NotificationProviderConfigService {
         senderId = trimmedSender;
       }
     } else {
-      spfConfigured = Boolean(input.spfConfigured ?? existing?.spf_configured ?? false);
-      dkimConfigured = Boolean(input.dkimConfigured ?? existing?.dkim_configured ?? false);
-      dmarcConfigured = Boolean(input.dmarcConfigured ?? existing?.dmarc_configured ?? false);
+      spfConfigured = input.spfConfigured ?? existing?.spf_configured ?? false;
+      dkimConfigured = input.dkimConfigured ?? existing?.dkim_configured ?? false;
+      dmarcConfigured = input.dmarcConfigured ?? existing?.dmarc_configured ?? false;
 
       if (provider === 'brevo' || provider === 'resend') {
         const rawFrom = (input.fromEmail ?? existing?.from_email ?? '').trim();
@@ -1385,6 +1406,17 @@ export class NotificationProviderConfigService {
         nextCredSource = 'NONE';
       }
 
+      if (isExternalNotificationVendor(proposal.proposed_provider)) {
+        validatePinnedProviderBaseUrl(
+          proposal.proposed_provider,
+          proposal.proposed_base_url ?? defaultPinnedBaseUrl(proposal.proposed_provider),
+        );
+      } else if (proposal.proposed_base_url !== null) {
+        throw new BadRequestException(
+          `Cannot activate proposal: provider "${proposal.proposed_provider}" must not specify a baseUrl.`,
+        );
+      }
+
       const consumeDecision = await approvals.consumeInTransaction(manager, {
         principal,
         approvalId: proposal.approval_id,
@@ -1571,22 +1603,6 @@ export class NotificationProviderConfigService {
       throw new ForbiddenException('Read-only principals cannot execute provider verification.');
     }
 
-    const recentRows: Array<{ count: string }> = await this.safeDbOperation(
-      'verifyChannelConfiguration.rateLimitCount',
-      () =>
-        ds.query(
-          `SELECT count(*)::text AS count
-             FROM audit_events
-            WHERE action = 'NOTIFICATION_PROVIDER_VERIFY'
-              AND actor = $1
-              AND created_at > NOW() - INTERVAL '1 hour'`,
-          [principal.principalId],
-        ),
-    );
-    if (Number(recentRows[0]?.count ?? 0) >= VERIFY_HOURLY_CAP) {
-      throw new BadRequestException('NOTIFICATION_VERIFY_RATE_LIMITED');
-    }
-
     const row = await this.loadDbRow(channel);
     if (!row) {
       throw new BadRequestException(
@@ -1600,8 +1616,67 @@ export class NotificationProviderConfigService {
       );
     }
 
+    if (isExternalNotificationVendor(row.provider)) {
+      const candidateUrl = row.base_url ?? defaultPinnedBaseUrl(row.provider);
+      if (!isPinnedProviderBaseUrl(row.provider, candidateUrl)) {
+        await this.safeDbOperation('verifyChannelConfiguration.recordUntrustedUrl', () =>
+          ds.query(
+            `UPDATE notification_provider_configurations
+                SET verified_at = NULL,
+                    last_verification_error = $1,
+                    updated_at = NOW()
+              WHERE channel = $2`,
+            ['PROVIDER_BASE_URL_UNTRUSTED', channel],
+          ),
+        );
+        throw new BadRequestException('PROVIDER_BASE_URL_UNTRUSTED');
+      }
+    }
+
+    await this.safeTransaction('verifyChannelConfiguration.reserveQuota', ds, async (manager) => {
+      await manager.query(
+        `SELECT pg_advisory_xact_lock(hashtext('notification_provider_verify_quota_v1'), hashtext($1))`,
+        [principal.principalId],
+      );
+      const recentRows: Array<{ count: string }> = await manager.query(
+        `SELECT count(*)::text AS count
+           FROM audit_events
+          WHERE action IN ('NOTIFICATION_PROVIDER_VERIFY_RESERVED', 'NOTIFICATION_PROVIDER_VERIFY')
+            AND actor = $1
+            AND created_at > NOW() - INTERVAL '1 hour'
+            AND (
+              action = 'NOTIFICATION_PROVIDER_VERIFY_RESERVED'
+              OR correlation_id IS NULL
+              OR NOT EXISTS (
+                SELECT 1
+                  FROM audit_events r
+                 WHERE r.action = 'NOTIFICATION_PROVIDER_VERIFY_RESERVED'
+                   AND r.actor = $1
+                   AND r.correlation_id = audit_events.correlation_id
+                   AND r.created_at > NOW() - INTERVAL '1 hour'
+              )
+            )`,
+        [principal.principalId],
+      );
+      if (Number(recentRows[0]?.count ?? 0) >= VERIFY_HOURLY_CAP) {
+        throw new BadRequestException('NOTIFICATION_VERIFY_RATE_LIMITED');
+      }
+      if (this.auditService) {
+        await this.auditService.record(manager, {
+          entityType: 'NOTIFICATION_PROVIDER_CONFIG',
+          entityId: randomUUID(),
+          action: 'NOTIFICATION_PROVIDER_VERIFY_RESERVED',
+          actor: principal.principalId,
+          correlationId,
+          newValues: { channel, provider: row.provider },
+        });
+      }
+    });
+
     const secretResolution = this.resolveRowSecret(row);
     if (!secretResolution.ok) {
+      const safeSecretErr =
+        normalizeProviderErrorCode(secretResolution.errorCode) ?? 'PROVIDER_FAILURE';
       await this.safeDbOperation('verifyChannelConfiguration.recordDecryptFailure', () =>
         ds.query(
           `UPDATE notification_provider_configurations
@@ -1609,10 +1684,10 @@ export class NotificationProviderConfigService {
                   last_verification_error = $1,
                   updated_at = NOW()
             WHERE channel = $2`,
-          [secretResolution.errorCode, channel],
+          [safeSecretErr, channel],
         ),
       );
-      throw new BadRequestException(secretResolution.errorCode);
+      throw new BadRequestException(safeSecretErr);
     }
 
     let verified = false;
@@ -1626,7 +1701,7 @@ export class NotificationProviderConfigService {
       } else {
         const check = await verifyBrevoConnection(
           {
-            baseUrl: row.base_url ?? 'https://api.brevo.com',
+            baseUrl: validatePinnedProviderBaseUrl('brevo', row.base_url ?? 'https://api.brevo.com'),
             apiKey: secretResolution.apiKey,
             fromEmail: row.from_email,
             fromName: row.from_name,
@@ -1637,15 +1712,12 @@ export class NotificationProviderConfigService {
         );
         verified = check.ok;
         verificationMethod = 'BREVO_ACCOUNT_AND_SENDER_API';
-        errorCode = check.errorCode;
+        errorCode = check.ok ? null : (normalizeProviderErrorCode(check.errorCode) ?? 'VERIFY_FAILED');
       }
     } else if (channel === 'SMS' && row.provider === 'robase') {
       try {
         validateApiKeyForProvider('robase', secretResolution.apiKey);
-        validateProviderBaseUrl(
-          row.base_url ?? 'https://api.robase.dev',
-          this.configService.get('NODE_ENV', { infer: true }),
-        );
+        validatePinnedProviderBaseUrl('robase', row.base_url ?? 'https://api.robase.dev');
         verified = true;
         verificationMethod = 'CRYPTO_AND_CONTRACT_CHECK';
         liveEndpointNote =
@@ -1657,6 +1729,7 @@ export class NotificationProviderConfigService {
     } else if (channel === 'EMAIL' && row.provider === 'resend') {
       try {
         validateApiKeyForProvider('resend', secretResolution.apiKey);
+        validatePinnedProviderBaseUrl('resend', row.base_url ?? 'https://api.resend.com');
         verified = Boolean(row.from_email);
         verificationMethod = 'CRYPTO_AND_CONTRACT_CHECK';
         if (!verified) errorCode = 'EMAIL_SENDER_NOT_CONFIGURED';
@@ -1665,6 +1738,10 @@ export class NotificationProviderConfigService {
         errorCode = 'RESEND_CONFIG_INVALID';
       }
     }
+
+    const safeErrorCode = verified
+      ? null
+      : (normalizeProviderErrorCode(errorCode) ?? 'VERIFY_FAILED');
 
     await this.safeTransaction('verifyChannelConfiguration.persist', ds, async (manager) => {
       if (verified) {
@@ -1687,7 +1764,7 @@ export class NotificationProviderConfigService {
                   last_verification_error = $2,
                   updated_at = NOW()
             WHERE channel = $3`,
-          [verificationMethod, errorCode ?? 'VERIFY_FAILED', channel],
+          [verificationMethod, safeErrorCode ?? 'VERIFY_FAILED', channel],
         );
       }
 
@@ -1706,7 +1783,7 @@ export class NotificationProviderConfigService {
             provider: row.provider,
             verified,
             verificationMethod,
-            errorCode,
+            errorCode: safeErrorCode,
           },
         });
       }
@@ -1718,7 +1795,7 @@ export class NotificationProviderConfigService {
       channel,
       provider: row.provider,
       verificationMethod,
-      errorCode,
+      errorCode: safeErrorCode,
       liveEndpointNote,
       snapshot: channel === 'SMS' ? overview.sms : overview.email,
     };
@@ -1746,6 +1823,9 @@ export class NotificationProviderConfigService {
 
     // Console test sends NEVER promote `delivery_tested_at` or `verified_at`!
     const promoteLiveReadiness = params.success && !isConsole;
+    const safeErrorCode = params.success
+      ? null
+      : (normalizeProviderErrorCode(params.errorCode) ?? 'PROVIDER_FAILURE');
 
     await this.safeDbOperation('recordTestSendOutcome', () =>
       this.dataSource!.query(
@@ -1766,7 +1846,7 @@ export class NotificationProviderConfigService {
           lastTestStatus,
           params.maskedDestination.slice(0, 128),
           params.providerRef ? params.providerRef.slice(0, 255) : null,
-          params.errorCode ? params.errorCode.slice(0, 128) : null,
+          safeErrorCode ? safeErrorCode.slice(0, 128) : null,
           promoteLiveReadiness,
           params.actor,
           params.channel,
@@ -2199,13 +2279,13 @@ export class NotificationProviderConfigService {
           verifiedAt: null,
           verifiedBy: null,
           verificationMethod: null,
-          lastVerificationError: row.last_verification_error,
+          lastVerificationError: normalizeProviderErrorCode(row.last_verification_error),
         },
         lastTest: {
           status: row.last_test_status,
           destinationMasked: row.last_test_destination_masked,
           providerRef: row.last_test_provider_ref,
-          errorCode: row.last_test_error_code,
+          errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
           deliveryTestedAt: null,
           deliveryTestedBy: null,
@@ -2256,7 +2336,7 @@ export class NotificationProviderConfigService {
           status: row.last_test_status,
           destinationMasked: row.last_test_destination_masked,
           providerRef: row.last_test_provider_ref,
-          errorCode: row.last_test_error_code,
+          errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
           deliveryTestedAt: null,
           deliveryTestedBy: null,
@@ -2270,16 +2350,26 @@ export class NotificationProviderConfigService {
 
     const secretResolution = this.resolveRowSecret(row);
     const senderValid = row.channel === 'SMS' ? true : Boolean(row.from_email);
+    const baseUrlTrusted = isExternalNotificationVendor(row.provider)
+      ? isPinnedProviderBaseUrl(
+          row.provider,
+          row.base_url ?? defaultPinnedBaseUrl(row.provider),
+        )
+      : true;
     const hasCred = row.credential_source !== 'NONE';
 
     let misconfigurationCode: string | null = null;
-    if (hasCred && !secretResolution.ok) {
-      misconfigurationCode = secretResolution.errorCode;
+    if (!baseUrlTrusted) {
+      misconfigurationCode = 'PROVIDER_BASE_URL_UNTRUSTED';
+    } else if (hasCred && !secretResolution.ok) {
+      misconfigurationCode =
+        normalizeProviderErrorCode(secretResolution.errorCode) ?? 'PROVIDER_FAILURE';
     } else if (!senderValid) {
       misconfigurationCode = 'EMAIL_SENDER_NOT_CONFIGURED';
     }
 
-    const configured = secretResolution.ok && senderValid && Boolean(row.base_url);
+    const configured =
+      secretResolution.ok && senderValid && Boolean(row.base_url) && baseUrlTrusted;
     const verified = configured && Boolean(row.verified_at);
     const enabled = configured && row.enabled;
     const deliveryTested = configured && Boolean(row.delivery_tested_at);
@@ -2315,7 +2405,7 @@ export class NotificationProviderConfigService {
         deliveryTested,
         productionReady,
       },
-      baseUrl: row.base_url,
+      baseUrl: baseUrlTrusted ? row.base_url : null,
       requestTimeoutMs: row.request_timeout_ms,
       senderId: row.sender_id,
       senderIdNote: row.channel === 'SMS' ? ROBASE_SENDER_ID_NOTE : null,
@@ -2334,13 +2424,13 @@ export class NotificationProviderConfigService {
         verifiedAt: toIsoOrNull(row.verified_at),
         verifiedBy: row.verified_by,
         verificationMethod: row.verification_method,
-        lastVerificationError: row.last_verification_error,
+        lastVerificationError: normalizeProviderErrorCode(row.last_verification_error),
       },
       lastTest: {
         status: row.last_test_status,
         destinationMasked: row.last_test_destination_masked,
         providerRef: row.last_test_provider_ref,
-        errorCode: row.last_test_error_code,
+        errorCode: normalizeProviderErrorCode(row.last_test_error_code),
         testedAt: toIsoOrNull(row.last_test_at),
         deliveryTestedAt: toIsoOrNull(row.delivery_tested_at),
         deliveryTestedBy: row.delivery_tested_by,

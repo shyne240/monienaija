@@ -770,10 +770,12 @@ export const NotificationManagementApi = {
       run: async () => {
         const raw = await ApiClient.get<{
           channels: string[];
+          projectionScope?: 'MINIMAL' | 'FULL';
           sms: {
-            provider: string;
-            baseUrl: string | null;
-            configured: boolean;
+            available?: boolean;
+            provider?: string;
+            baseUrl?: string | null;
+            configured?: boolean;
             verified?: boolean;
             enabled?: boolean;
             deliveryTested?: boolean;
@@ -783,13 +785,14 @@ export const NotificationManagementApi = {
             senderId?: string | null;
             lastTest?: ProviderChannelSnapshot['lastTest'];
             misconfigurationCode?: string | null;
-            keyFingerprint: string | null;
-            timeoutMs: number | null;
+            keyFingerprint?: string | null;
+            timeoutMs?: number | null;
           };
           email: {
-            provider: string;
-            baseUrl: string | null;
-            configured: boolean;
+            available?: boolean;
+            provider?: string;
+            baseUrl?: string | null;
+            configured?: boolean;
             verified?: boolean;
             enabled?: boolean;
             deliveryTested?: boolean;
@@ -804,13 +807,13 @@ export const NotificationManagementApi = {
               dmarcConfigured: boolean;
               allConfigured: boolean;
             } | null;
-            keyFingerprint: string | null;
-            from: string | null;
+            keyFingerprint?: string | null;
+            from?: string | null;
             fromName?: string | null;
-            replyTo: string | null;
-            timeoutMs: number | null;
+            replyTo?: string | null;
+            timeoutMs?: number | null;
           };
-          worker: {
+          worker?: {
             enabled: boolean;
             pollIntervalMs: number | null;
             batchSize: number | null;
@@ -824,6 +827,49 @@ export const NotificationManagementApi = {
         // this mapping never cross-calls endpoints the current principal may lack scope for.
         const environment: string = 'unknown';
         const pendingOutboxCount = 0;
+
+        if (raw.projectionScope === 'MINIMAL') {
+          const smsAvail = raw.sms?.available === true;
+          const emailAvail = raw.email?.available === true;
+          const minimalMapped: NotificationProviderStatus = {
+            checkedAt: new Date().toISOString(),
+            environment,
+            worker: {
+              enabled: false,
+              batchSize: 0,
+              smsRetryMaxAttempts: 0,
+              smsRetryBaseDelaySeconds: 0,
+              pendingOutboxCount,
+            },
+            sms: {
+              provider: 'redacted',
+              operationalStatus: smsAvail ? 'READY' : 'DEGRADED',
+              senderId: null,
+              baseUrl: null,
+              apiKeyConfigured: false,
+              apiKeyPrefixValid: false,
+              apiKeyLast4Fingerprint: null,
+              requestTimeoutMs: 0,
+              productionGuardSatisfied: false,
+              senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT',
+              senderIdentitySummary:
+                'Provider identity and configuration details require notification.provider.view.',
+              deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY',
+            },
+            email: {
+              channelEnabledInSchema: (raw.channels ?? []).includes('EMAIL'),
+              provider: null,
+              operationalStatus: emailAvail ? 'READY' : 'NOT_CONFIGURED',
+              credentialsConfigured: false,
+              credentialFingerprint: null,
+              fromAddress: null,
+              fromName: null,
+              domainVerificationStatus: 'NOT_APPLICABLE',
+              honorsCustomerEmailPreference: true,
+            },
+          };
+          return sanitizeProviderStatusForDisplay(minimalMapped);
+        }
 
         const smsProvider = raw.sms?.provider ?? 'console';
         const emailProvider = raw.email?.provider ?? 'none';

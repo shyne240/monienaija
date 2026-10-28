@@ -5,6 +5,14 @@ import {
   NotificationSendRequest,
   NotificationSendResult,
 } from './notification.types';
+import {
+  ProviderEgressBlockedError,
+  classifyBrevoErrorCode,
+  classifyTransportErrorName,
+  createPinnedProviderHttpFetch,
+  formatSafeHttpStatus,
+  isPinnedProviderEndpointUrl,
+} from './provider-security';
 import { sanitizeHeader } from './resend-email-provider';
 
 const EMAIL_DESTINATION_PATTERN =
@@ -60,12 +68,16 @@ export type BrevoFetchFn = (
     headers: Record<string, string>;
     body?: string;
     signal: AbortSignal;
+    redirect?: 'error';
   },
 ) => Promise<{
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
 }>;
+
+const DEFAULT_BREVO_FETCH: BrevoFetchFn =
+  createPinnedProviderHttpFetch() as unknown as BrevoFetchFn;
 
 interface BrevoSendSuccessBody {
   messageId?: unknown;
@@ -86,8 +98,6 @@ export interface BrevoConnectionVerificationResult {
   senderVerified: boolean;
   errorCode: string | null;
 }
-
-const SAFE_ERROR_CODE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 export function parseSenderIdentity(
   rawFrom: string,
@@ -114,15 +124,9 @@ export function parseSenderIdentity(
   };
 }
 
-function classifyBrevoErrorCode(rawCode: unknown): string | null {
-  if (typeof rawCode !== 'string') return null;
-  const trimmed = rawCode.trim();
-  return SAFE_ERROR_CODE.test(trimmed) ? trimmed : null;
-}
-
 export async function verifyBrevoConnection(
   config: BrevoEmailProviderConfig,
-  fetchImpl: BrevoFetchFn = globalThis.fetch as unknown as BrevoFetchFn,
+  fetchImpl: BrevoFetchFn = DEFAULT_BREVO_FETCH,
 ): Promise<BrevoConnectionVerificationResult> {
   if (!config.apiKey || config.apiKey.startsWith('xsmtpsib-')) {
     return {
@@ -152,6 +156,18 @@ export async function verifyBrevoConnection(
   }
 
   const baseUrl = config.baseUrl.replace(/\/+$/, '');
+  if (
+    !isPinnedProviderEndpointUrl('brevo', `${baseUrl}/v3/account`) ||
+    !isPinnedProviderEndpointUrl('brevo', `${baseUrl}/v3/senders`)
+  ) {
+    return {
+      ok: false,
+      accountReachable: false,
+      senderVerified: false,
+      errorCode: 'BREVO_EGRESS_BLOCKED',
+    };
+  }
+
   const headers: Record<string, string> = {
     'api-key': config.apiKey,
     accept: 'application/json',
@@ -160,14 +176,33 @@ export async function verifyBrevoConnection(
   const getJson = async (
     path: string,
   ): Promise<{ ok: boolean; status: number; body: unknown; networkError: string | null }> => {
+    const endpointUrl = `${baseUrl}${path}`;
+    if (!isPinnedProviderEndpointUrl('brevo', endpointUrl)) {
+      return {
+        ok: false,
+        status: 0,
+        body: null,
+        networkError: 'BREVO_EGRESS_BLOCKED',
+      };
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     try {
-      const res = await fetchImpl(`${baseUrl}${path}`, {
+      const res = await fetchImpl(endpointUrl, {
         method: 'GET',
         headers,
         signal: controller.signal,
+        redirect: 'error',
       });
+      if (res.status >= 300 && res.status < 400) {
+        return {
+          ok: false,
+          status: res.status,
+          body: null,
+          networkError: 'BREVO_EGRESS_BLOCKED',
+        };
+      }
       let body: unknown = null;
       try {
         body = await res.json();
@@ -176,10 +211,20 @@ export async function verifyBrevoConnection(
       }
       return { ok: res.ok, status: res.status, body, networkError: null };
     } catch (err) {
+      if (
+        err instanceof ProviderEgressBlockedError ||
+        (err as { name?: unknown } | null)?.name === 'ProviderEgressBlockedError'
+      ) {
+        return {
+          ok: false,
+          status: 0,
+          body: null,
+          networkError: 'BREVO_EGRESS_BLOCKED',
+        };
+      }
       const aborted =
         controller.signal.aborted || (err instanceof Error && err.name === 'AbortError');
-      const name =
-        err instanceof Error && SAFE_ERROR_CODE.test(err.name) ? err.name : 'Error';
+      const name = classifyTransportErrorName(err);
       return {
         ok: false,
         status: 0,
@@ -202,13 +247,14 @@ export async function verifyBrevoConnection(
   }
   if (!accountRes.ok) {
     const code = classifyBrevoErrorCode((accountRes.body as BrevoErrorBody | null)?.code);
+    const safeStatus = formatSafeHttpStatus(accountRes.status);
     return {
       ok: false,
       accountReachable: false,
       senderVerified: false,
       errorCode: code
-        ? `BREVO_VERIFY_HTTP_${accountRes.status}:${code}`
-        : `BREVO_VERIFY_HTTP_${accountRes.status}`,
+        ? `BREVO_VERIFY_HTTP_${safeStatus}:${code}`
+        : `BREVO_VERIFY_HTTP_${safeStatus}`,
     };
   }
 
@@ -223,13 +269,14 @@ export async function verifyBrevoConnection(
   }
   if (!sendersRes.ok) {
     const code = classifyBrevoErrorCode((sendersRes.body as BrevoErrorBody | null)?.code);
+    const safeStatus = formatSafeHttpStatus(sendersRes.status);
     return {
       ok: false,
       accountReachable: true,
       senderVerified: false,
       errorCode: code
-        ? `BREVO_SENDERS_HTTP_${sendersRes.status}:${code}`
-        : `BREVO_SENDERS_HTTP_${sendersRes.status}`,
+        ? `BREVO_SENDERS_HTTP_${safeStatus}:${code}`
+        : `BREVO_SENDERS_HTTP_${safeStatus}`,
     };
   }
 
@@ -279,14 +326,15 @@ export class BrevoEmailProvider implements NotificationProvider {
     fetchImpl?: BrevoFetchFn,
   ) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
-    this.fetchFn = fetchImpl ?? (globalThis.fetch as unknown as BrevoFetchFn);
+    this.fetchFn = fetchImpl ?? DEFAULT_BREVO_FETCH;
   }
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (request.channel !== 'EMAIL') {
+      const safeChannel = request.channel === 'SMS' ? 'SMS' : 'PUSH';
       return {
         success: false,
-        error: `BREVO_UNSUPPORTED_CHANNEL:${request.channel}`,
+        error: `BREVO_UNSUPPORTED_CHANNEL:${safeChannel}`,
       };
     }
 
@@ -338,11 +386,23 @@ export class BrevoEmailProvider implements NotificationProvider {
       ...(tag ? { tags: [tag] } : {}),
     };
 
+    const endpointUrl = `${this.baseUrl}/v3/smtp/email`;
+    if (!isPinnedProviderEndpointUrl('brevo', endpointUrl)) {
+      this.logger.warn({
+        msg: 'brevo_email_egress_blocked',
+        eventType: request.eventType,
+        eventKey: request.eventKey,
+        correlationId: request.correlationId,
+        reason: 'unpinned_origin',
+      });
+      return { success: false, error: 'BREVO_EGRESS_BLOCKED' };
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
 
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/v3/smtp/email`, {
+      const response = await this.fetchFn(endpointUrl, {
         method: 'POST',
         headers: {
           'api-key': this.config.apiKey,
@@ -351,7 +411,20 @@ export class BrevoEmailProvider implements NotificationProvider {
         },
         body: JSON.stringify(bodyPayload),
         signal: controller.signal,
+        redirect: 'error',
       });
+
+      if (response.status >= 300 && response.status < 400) {
+        this.logger.warn({
+          msg: 'brevo_email_egress_blocked',
+          eventType: request.eventType,
+          eventKey: request.eventKey,
+          correlationId: request.correlationId,
+          status: formatSafeHttpStatus(response.status),
+          reason: 'redirect_rejected',
+        });
+        return { success: false, error: 'BREVO_EGRESS_BLOCKED' };
+      }
 
       let parsed: unknown = null;
       try {
@@ -379,7 +452,7 @@ export class BrevoEmailProvider implements NotificationProvider {
             eventType: request.eventType,
             eventKey: request.eventKey,
             correlationId: request.correlationId,
-            status: response.status,
+            status: formatSafeHttpStatus(response.status),
           });
           return { success: false, error: 'BREVO_INVALID_RESPONSE' };
         }
@@ -397,24 +470,37 @@ export class BrevoEmailProvider implements NotificationProvider {
       }
 
       const errorCode = classifyBrevoErrorCode((parsed as BrevoErrorBody | null)?.code);
+      const safeStatus = formatSafeHttpStatus(response.status);
       const error = errorCode
-        ? `BREVO_HTTP_${response.status}:${errorCode}`
-        : `BREVO_HTTP_${response.status}`;
+        ? `BREVO_HTTP_${safeStatus}:${errorCode}`
+        : `BREVO_HTTP_${safeStatus}`;
 
       this.logger.warn({
         msg: 'brevo_email_rejected',
         eventType: request.eventType,
         eventKey: request.eventKey,
         correlationId: request.correlationId,
-        status: response.status,
+        status: safeStatus,
         errorCode: errorCode ?? 'unclassified',
       });
       return { success: false, error };
     } catch (err) {
+      if (
+        err instanceof ProviderEgressBlockedError ||
+        (err as { name?: unknown } | null)?.name === 'ProviderEgressBlockedError'
+      ) {
+        this.logger.warn({
+          msg: 'brevo_email_egress_blocked',
+          eventType: request.eventType,
+          eventKey: request.eventKey,
+          correlationId: request.correlationId,
+          reason: 'dns_or_ip_blocked',
+        });
+        return { success: false, error: 'BREVO_EGRESS_BLOCKED' };
+      }
       const aborted =
         controller.signal.aborted || (err instanceof Error && err.name === 'AbortError');
-      const errName =
-        err instanceof Error && SAFE_ERROR_CODE.test(err.name) ? err.name : 'Error';
+      const errName = classifyTransportErrorName(err);
       const error = aborted ? 'BREVO_TIMEOUT' : `BREVO_NETWORK:${errName}`;
 
       this.logger.warn({
