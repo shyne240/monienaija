@@ -110,6 +110,7 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       'AddEmailNotificationChannel1785753600097',
       'CreateNotificationTemplateRegistry1785753600098',
       'AllowPhoneNotificationRecipients1785753600099',
+      'CreateNotificationProviderConfiguration1785753600100',
     ]);
     expect(await dataSource.showMigrations()).toBe(false);
 

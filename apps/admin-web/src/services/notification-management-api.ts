@@ -10,6 +10,13 @@ import {
   NotificationEventCatalogueItem,
   NotificationProviderStatus,
   NotificationTemplateVersion,
+  ManagedProviderChannel,
+  ProposeProviderConfigPayload,
+  ProviderChannelSnapshot,
+  ProviderConfigProposal,
+  ProviderConfigurationOverview,
+  ProviderLifecycleState,
+  ProviderReadinessGates,
   SafePreviewResult,
   sanitizeProviderStatusForDisplay,
 } from './notification-domain';
@@ -763,13 +770,43 @@ export const NotificationManagementApi = {
       run: async () => {
         const raw = await ApiClient.get<{
           channels: string[];
-          sms: { provider: string; baseUrl: string | null; configured: boolean; keyFingerprint: string | null; timeoutMs: number | null };
+          sms: {
+            provider: string;
+            baseUrl: string | null;
+            configured: boolean;
+            verified?: boolean;
+            enabled?: boolean;
+            deliveryTested?: boolean;
+            productionReady?: boolean;
+            lifecycleState?: ProviderLifecycleState;
+            gates?: ProviderReadinessGates;
+            senderId?: string | null;
+            lastTest?: ProviderChannelSnapshot['lastTest'];
+            misconfigurationCode?: string | null;
+            keyFingerprint: string | null;
+            timeoutMs: number | null;
+          };
           email: {
             provider: string;
             baseUrl: string | null;
             configured: boolean;
+            verified?: boolean;
+            enabled?: boolean;
+            deliveryTested?: boolean;
+            productionReady?: boolean;
+            lifecycleState?: ProviderLifecycleState;
+            gates?: ProviderReadinessGates;
+            lastTest?: ProviderChannelSnapshot['lastTest'];
+            misconfigurationCode?: string | null;
+            domainAuth?: {
+              spfConfigured: boolean;
+              dkimConfigured: boolean;
+              dmarcConfigured: boolean;
+              allConfigured: boolean;
+            } | null;
             keyFingerprint: string | null;
             from: string | null;
+            fromName?: string | null;
             replyTo: string | null;
             timeoutMs: number | null;
           };
@@ -790,6 +827,48 @@ export const NotificationManagementApi = {
 
         const smsProvider = raw.sms?.provider ?? 'console';
         const emailProvider = raw.email?.provider ?? 'none';
+
+        const smsOperationalStatus: NotificationProviderStatus['sms']['operationalStatus'] =
+          raw.sms?.lifecycleState !== undefined
+            ? smsProvider === 'console'
+              ? 'CONSOLE_ONLY'
+              : raw.sms.lifecycleState === 'MISCONFIGURED' || raw.sms.lifecycleState === 'NOT_CONFIGURED'
+                ? 'MISCONFIGURED'
+                : raw.sms.deliveryTested && raw.sms.enabled
+                  ? 'READY'
+                  : 'DEGRADED'
+            : raw.sms?.configured
+              ? 'READY'
+              : smsProvider === 'console'
+                ? 'CONSOLE_ONLY'
+                : 'MISCONFIGURED';
+
+        const emailOperationalStatus: NotificationProviderStatus['email']['operationalStatus'] =
+          raw.email?.lifecycleState !== undefined
+            ? emailProvider === 'none' || raw.email.lifecycleState === 'NOT_CONFIGURED'
+              ? 'NOT_CONFIGURED'
+              : emailProvider === 'console'
+                ? 'CONSOLE_ONLY'
+                : raw.email.deliveryTested && raw.email.enabled
+                  ? 'READY'
+                  : 'DEGRADED'
+            : emailProvider === 'none'
+              ? 'NOT_CONFIGURED'
+              : emailProvider === 'console'
+                ? 'CONSOLE_ONLY'
+                : raw.email?.configured
+                  ? 'READY'
+                  : 'DEGRADED';
+
+        const domainVerificationStatus: NotificationProviderStatus['email']['domainVerificationStatus'] =
+          emailProvider === 'none' || emailProvider === 'console'
+            ? 'NOT_APPLICABLE'
+            : raw.email?.domainAuth
+              ? raw.email.domainAuth.allConfigured
+                ? 'VERIFIED'
+                : 'UNVERIFIED'
+              : 'NOT_APPLICABLE';
+
         const mapped: NotificationProviderStatus = {
           checkedAt: new Date().toISOString(),
           environment,
@@ -802,41 +881,43 @@ export const NotificationManagementApi = {
           },
           sms: {
             provider: smsProvider,
-            operationalStatus: raw.sms?.configured
-              ? 'READY'
-              : smsProvider === 'console'
-                ? 'CONSOLE_ONLY'
-                : 'MISCONFIGURED',
+            operationalStatus: smsOperationalStatus,
+            lifecycleState: raw.sms?.lifecycleState,
+            gates: raw.sms?.gates,
+            senderId: raw.sms?.senderId ?? null,
+            lastTest: raw.sms?.lastTest,
             baseUrl: raw.sms?.baseUrl ?? null,
             apiKeyConfigured: Boolean(raw.sms?.configured),
             apiKeyPrefixValid: Boolean(raw.sms?.keyFingerprint),
             apiKeyLast4Fingerprint: raw.sms?.keyFingerprint ?? null,
             requestTimeoutMs: Number(raw.sms?.timeoutMs ?? 0),
-            // The server enforces the production guard (provider 'console' is rejected in
-            // production; robase requires a configured key) — the snapshot mirrors it.
             productionGuardSatisfied:
-              smsProvider === 'console' ? false : Boolean(raw.sms?.configured),
+              smsProvider === 'console'
+                ? false
+                : raw.sms?.lifecycleState !== undefined
+                  ? Boolean(raw.sms?.enabled && raw.sms?.configured)
+                  : Boolean(raw.sms?.configured),
             senderIdentityMode: 'PROVIDER_WORKSPACE_ACCOUNT',
             senderIdentitySummary:
               smsProvider === 'robase'
-                ? 'Sender identity is managed by the Robase workspace/account configuration.'
+                ? raw.sms?.senderId
+                  ? `Workspace sender ID "${raw.sms.senderId}" recorded (bound at Robase workspace level).`
+                  : 'Sender identity is managed by the Robase workspace/account configuration.'
                 : `No live sender identity — provider '${smsProvider}' does not transmit messages.`,
             deliveryReceiptTracking: 'ACCEPTED_BY_PROVIDER_ONLY',
           },
           email: {
             channelEnabledInSchema: (raw.channels ?? []).includes('EMAIL'),
             provider: emailProvider === 'none' ? null : emailProvider,
-            operationalStatus:
-              emailProvider === 'none'
-                ? 'NOT_CONFIGURED'
-                : raw.email?.configured
-                  ? 'READY'
-                  : 'DEGRADED',
+            operationalStatus: emailOperationalStatus,
+            lifecycleState: raw.email?.lifecycleState,
+            gates: raw.email?.gates,
+            lastTest: raw.email?.lastTest,
             credentialsConfigured: Boolean(raw.email?.configured),
             credentialFingerprint: raw.email?.keyFingerprint ?? null,
             fromAddress: raw.email?.from ?? null,
-            fromName: null,
-            domainVerificationStatus: 'NOT_APPLICABLE',
+            fromName: raw.email?.fromName ?? null,
+            domainVerificationStatus,
             honorsCustomerEmailPreference: true,
           },
         };
@@ -1141,5 +1222,154 @@ export const NotificationManagementApi = {
       `/internal/audit?entityType=${encodeURIComponent(entityType)}&limit=${limit}`,
     );
     return extractArray<Record<string, unknown>>(res);
+  },
+
+  /**
+   * Governed Provider Configuration — read non-secret SMS & Email provider configuration,
+   * encryption keyring status, 5-gate readiness, and contract notes.
+   */
+  async getProviderConfiguration(): Promise<IntegrationResult<ProviderConfigurationOverview>> {
+    const endpoint = '/internal/notifications/provider-config';
+    return callTypedBoundary({
+      owner: 'ARENA_3',
+      method: 'GET',
+      endpoint,
+      blockedExplanation:
+        'Provider configuration endpoint (GET /internal/notifications/provider-config) is not available on this server.',
+      run: async () => {
+        const raw = await ApiClient.get<ProviderConfigurationOverview>(endpoint);
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.sms || !raw.email) {
+          const err = new Error('Provider configuration endpoint not integrated') as Error & {
+            status?: number;
+          };
+          err.status = 404;
+          throw err;
+        }
+        return sanitizeProviderStatusForDisplay(raw);
+      },
+    });
+  },
+
+  /**
+   * Governed Provider Configuration — list non-secret maker-checker proposals.
+   */
+  async listProviderConfigProposals(params?: {
+    channel?: ManagedProviderChannel;
+    status?: string;
+    limit?: number;
+  }): Promise<IntegrationResult<ProviderConfigProposal[]>> {
+    const query = new URLSearchParams();
+    if (params?.channel) query.set('channel', params.channel);
+    if (params?.status) query.set('status', params.status);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const endpoint = `/internal/notifications/provider-config/proposals${qs}`;
+    return callTypedBoundary({
+      owner: 'ARENA_3',
+      method: 'GET',
+      endpoint: '/internal/notifications/provider-config/proposals',
+      blockedExplanation:
+        'Provider configuration proposals endpoint is not available on this server.',
+      run: async () => {
+        const res = await ApiClient.get<unknown>(endpoint);
+        return sanitizeProviderStatusForDisplay(extractArray<ProviderConfigProposal>(res));
+      },
+    });
+  },
+
+  /**
+   * Governed Provider Configuration — submit maker proposal (SUPER_ADMIN + MFA).
+   */
+  async proposeProviderConfig(
+    payload: ProposeProviderConfigPayload,
+    idempotencyKey = generateNotificationIdempotencyKey(),
+  ): Promise<ProviderConfigProposal> {
+    const raw = await ApiClient.post<ProviderConfigProposal>(
+      '/internal/notifications/provider-config/proposals',
+      payload,
+      { idempotencyKey },
+    );
+    return sanitizeProviderStatusForDisplay(raw);
+  },
+
+  /**
+   * Governed Provider Configuration — independent checker approval (FINANCE_CONTROLLER + MFA).
+   */
+  async approveProviderConfigProposal(
+    proposalId: string,
+    comment?: string,
+    idempotencyKey = generateNotificationIdempotencyKey(),
+  ): Promise<ProviderConfigProposal> {
+    const raw = await ApiClient.post<ProviderConfigProposal>(
+      `/internal/notifications/provider-config/proposals/${encodeURIComponent(proposalId)}/approve`,
+      comment ? { comment } : {},
+      { idempotencyKey },
+    );
+    return sanitizeProviderStatusForDisplay(raw);
+  },
+
+  /**
+   * Governed Provider Configuration — independent checker rejection (FINANCE_CONTROLLER + MFA).
+   */
+  async rejectProviderConfigProposal(
+    proposalId: string,
+    comment?: string,
+    idempotencyKey = generateNotificationIdempotencyKey(),
+  ): Promise<ProviderConfigProposal> {
+    const raw = await ApiClient.post<ProviderConfigProposal>(
+      `/internal/notifications/provider-config/proposals/${encodeURIComponent(proposalId)}/reject`,
+      comment ? { comment } : {},
+      { idempotencyKey },
+    );
+    return sanitizeProviderStatusForDisplay(raw);
+  },
+
+  /**
+   * Governed Provider Configuration — activate an approved proposal (MFA required).
+   */
+  async activateProviderConfigProposal(
+    proposalId: string,
+    idempotencyKey = generateNotificationIdempotencyKey(),
+  ): Promise<{ proposal: ProviderConfigProposal; configuration: ProviderChannelSnapshot }> {
+    const raw = await ApiClient.post<{
+      proposal: ProviderConfigProposal;
+      configuration: ProviderChannelSnapshot;
+    }>(
+      `/internal/notifications/provider-config/proposals/${encodeURIComponent(proposalId)}/activate`,
+      {},
+      { idempotencyKey },
+    );
+    return sanitizeProviderStatusForDisplay(raw);
+  },
+
+  /**
+   * Governed Provider Configuration — authorized connection / cryptographic verification.
+   */
+  async verifyProviderChannel(
+    channel: ManagedProviderChannel,
+    idempotencyKey = generateNotificationIdempotencyKey(),
+  ): Promise<{
+    verified: boolean;
+    channel: ManagedProviderChannel;
+    provider: string;
+    verificationMethod: string | null;
+    errorCode: string | null;
+    liveEndpointNote: string | null;
+    snapshot: ProviderChannelSnapshot;
+  }> {
+    const raw = await ApiClient.post<{
+      verified: boolean;
+      channel: ManagedProviderChannel;
+      provider: string;
+      verificationMethod: string | null;
+      errorCode: string | null;
+      liveEndpointNote: string | null;
+      snapshot: ProviderChannelSnapshot;
+    }>(
+      `/internal/notifications/provider-config/${encodeURIComponent(channel)}/verify`,
+      {},
+      { idempotencyKey },
+    );
+    return sanitizeProviderStatusForDisplay(raw);
   },
 };

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
+import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
   BASELINE_CODE_TEMPLATES,
@@ -32,7 +33,8 @@ export type NotificationAdminTab =
   | 'approvals'
   | 'providers'
   | 'deliveries'
-  | 'testSend';
+  | 'testSend'
+  | 'providerConfig';
 
 interface TabDefinition {
   key: NotificationAdminTab;
@@ -48,6 +50,7 @@ const TABS: readonly TabDefinition[] = [
   { key: 'providers', label: '6. Provider Status' },
   { key: 'deliveries', label: '7. Deliveries & Retries' },
   { key: 'testSend', label: '8. Controlled Test-Send' },
+  { key: 'providerConfig', label: '9. Provider Configuration' },
 ];
 
 export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationAdminTab }> = ({
@@ -1724,10 +1727,33 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       {activeTab === 'providers' && (
         <div style={styles.sectionStack} data-testid="notif-panel-providers">
           <div style={styles.infoBanner} data-testid="provider-secret-free-banner">
-            <strong>🔐 Secret-Free Provider Governance (Audit Finding F-S5):</strong> Provider
-            credentials (<code>ROBASE_API_KEY</code>, SMTP secrets, bearer keys) are managed strictly
-            via validated environment configuration and are NEVER transmitted, accepted, or rendered
-            in Admin Web. Only boolean readiness flags and masked 4-character fingerprints are shown.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <strong>🔐 Secret-Free Provider Status & Governance:</strong> Stored provider API
+                keys are encrypted at rest with AES-256-GCM and are NEVER returned in GET responses,
+                logs, or audit trails. Only truthful lifecycle states, readiness gates, and masked
+                4-character fingerprints are displayed here.
+              </div>
+              {permissions.canViewProviderConfig && (
+                <button
+                  type="button"
+                  data-testid="jump-to-provider-config-btn"
+                  onClick={() => setActiveTab('providerConfig')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #0f172a',
+                    background: '#0f172a',
+                    color: '#ffffff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Configure Robase & Brevo →
+                </button>
+              )}
+            </div>
           </div>
 
           {providerBlockedMsg && (
@@ -2567,6 +2593,18 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               </button>
             </form>
           </section>
+        </div>
+      )}
+
+      {/* TAB 9: GOVERNED PROVIDER CONFIGURATION (Robase SMS & Brevo Transactional Email) */}
+      {activeTab === 'providerConfig' && (
+        <div style={styles.sectionStack} data-testid="notif-panel-providerConfig">
+          <ProviderConfigurationWorkspace
+            principalId={currentPrincipalId || null}
+            principalRoles={principal?.roles ?? []}
+            permissions={permissions}
+            onRefreshParentStatus={() => void fetchAllReadSurfaces()}
+          />
         </div>
       )}
     </div>

@@ -1,13 +1,14 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
   HttpException,
   HttpStatus,
   Inject,
+  Optional,
   Post,
-  Body,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,41 +16,18 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 
-import { AuditService } from '../operations/audit.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import {
   NOTIFICATION_EMAIL_PROVIDER_TOKEN,
   NOTIFICATION_PROVIDER_TOKEN,
 } from '../notification/notification.constants';
 import { renderEmailLayout } from '../notification/notification-email-template.service';
+import { NotificationProviderConfigService } from '../notification/notification-provider-config.service';
 import type { NotificationProvider } from '../notification/notification.types';
-
-/**
- * ARENA3-NOTIFICATION-EMAIL — read-only provider configuration/status + controlled test-send.
- *
- * Separate controller file (not merged into admin-notification.controller.ts) to keep the
- * diagnostics endpoint byte-stable and minimize merge surface with Arena 1.
- *
- * SECURITY PROPERTIES:
- * - provider-status is READ-ONLY and NON-SECRET: it exposes provider names, base URLs,
- *   timeouts and a last-4 key FINGERPRINT only. Full API keys never appear in any response,
- *   log line, delivery payload or audit record (credential hygiene requirement).
- * - Both endpoints require an authenticated workforce principal (customer/agent/aggregator
- *   identities are rejected 401) PLUS server-side function-scope checks (fail-closed 403):
- *     GET  provider-status → notification.view_deliveries (existing catalogue function)
- *     POST test-send       → notification.test_send (new catalogue function, EXECUTE,
- *                            assigned to SUPER_ADMIN + OPERATIONS only)
- * - test-send is rate limited to 5 attempts/hour/principal (durable counter over
- *   audit_events — no new table), strictly validates the destination, sends FIXED safe
- *   content (never template-driven, never financial), and writes an audit row with a
- *   MASKED destination for every attempt that reaches the provider.
- * - test-send deliberately writes NO notification_deliveries row: recipient_id is a uuid
- *   FK-shaped identity for CUSTOMER/AGENT recipients, which workforce principals are not;
- *   inventing one would pollute delivery diagnostics. The audit trail is the evidence.
- */
+import { AuditService } from '../operations/audit.service';
 
 interface AuthenticatedRequest {
-  headers: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | string[] | undefined>;
   authorizationPrincipal?: AuthorizationPrincipal;
 }
 
@@ -85,6 +63,7 @@ export class AdminNotificationProviderController {
     private readonly auditService: AuditService,
     @Inject(NOTIFICATION_PROVIDER_TOKEN) private readonly smsProvider: NotificationProvider,
     @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) private readonly emailProvider: NotificationProvider,
+    @Optional() private readonly providerConfigService?: NotificationProviderConfigService,
   ) {}
 
   /**
@@ -92,12 +71,67 @@ export class AdminNotificationProviderController {
    * Read-only, non-secret snapshot of notification provider configuration + worker tuning.
    */
   @Get('provider-status')
-  providerStatus(@Req() req: AuthenticatedRequest) {
-    this.requireFunction(req, 'notification.view_deliveries');
+  async providerStatus(@Req() req: AuthenticatedRequest) {
+    this.requireAnyFunction(req, ['notification.view_deliveries', 'notification.provider.view']);
+
+    if (this.providerConfigService) {
+      const overview = await this.providerConfigService.getOverview();
+      return {
+        channels: ['SMS', 'PUSH', 'EMAIL'],
+        sms: {
+          provider: overview.sms.provider,
+          source: overview.sms.source,
+          enabled: overview.sms.enabled,
+          baseUrl: overview.sms.baseUrl,
+          configured: overview.sms.gates.configured,
+          verified: overview.sms.gates.verified,
+          deliveryTested: overview.sms.gates.deliveryTested,
+          productionReady: overview.sms.gates.productionReady,
+          lifecycleState: overview.sms.lifecycleState,
+          gates: overview.sms.gates,
+          senderId: overview.sms.senderId,
+          keyFingerprint: overview.sms.keyFingerprint,
+          timeoutMs: overview.sms.requestTimeoutMs,
+          encryptionKeyAvailable: overview.sms.encryptionKeyAvailable,
+          misconfigurationCode: overview.sms.misconfigurationCode,
+          lastTest: overview.sms.lastTest,
+        },
+        email: {
+          provider: overview.email.provider,
+          source: overview.email.source,
+          enabled: overview.email.enabled,
+          baseUrl: overview.email.baseUrl,
+          configured: overview.email.gates.configured,
+          verified: overview.email.gates.verified,
+          deliveryTested: overview.email.gates.deliveryTested,
+          productionReady: overview.email.gates.productionReady,
+          lifecycleState: overview.email.lifecycleState,
+          gates: overview.email.gates,
+          keyFingerprint: overview.email.keyFingerprint,
+          from: overview.email.fromEmail,
+          fromName: overview.email.fromName,
+          replyTo: overview.email.replyToEmail,
+          timeoutMs: overview.email.requestTimeoutMs,
+          encryptionKeyAvailable: overview.email.encryptionKeyAvailable,
+          misconfigurationCode: overview.email.misconfigurationCode,
+          domainAuth: overview.email.domainAuthentication,
+          lastTest: overview.email.lastTest,
+        },
+        worker: {
+          enabled: overview.worker.enabled,
+          pollIntervalMs: overview.worker.pollIntervalMs,
+          batchSize: overview.worker.batchSize,
+          retryMaxAttempts: overview.worker.smsRetryMaxAttempts,
+          retryBaseDelaySeconds: overview.worker.smsRetryBaseDelaySeconds,
+        },
+      };
+    }
 
     const smsProviderName = this.configService.get<string>('NOTIFICATION_SMS_PROVIDER') ?? 'console';
-    const emailProviderName = this.configService.get<string>('NOTIFICATION_EMAIL_PROVIDER') ?? 'none';
+    const emailProviderName =
+      this.configService.get<string>('NOTIFICATION_EMAIL_PROVIDER') ?? 'none';
     const robaseKey = this.configService.get<string>('ROBASE_API_KEY');
+    const brevoKey = this.configService.get<string>('BREVO_API_KEY');
     const resendKey = this.configService.get<string>('RESEND_API_KEY');
 
     return {
@@ -112,27 +146,37 @@ export class AdminNotificationProviderController {
       email: {
         provider: emailProviderName,
         baseUrl:
-          emailProviderName === 'resend'
-            ? (this.configService.get<string>('RESEND_API_BASE_URL') ?? null)
-            : null,
+          emailProviderName === 'brevo'
+            ? (this.configService.get<string>('BREVO_API_BASE_URL') ?? null)
+            : emailProviderName === 'resend'
+              ? (this.configService.get<string>('RESEND_API_BASE_URL') ?? null)
+              : null,
         configured:
-          emailProviderName === 'resend' &&
-          Boolean(resendKey) &&
-          Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM')),
-        keyFingerprint: keyFingerprint(resendKey),
+          (emailProviderName === 'brevo' &&
+            Boolean(brevoKey) &&
+            Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM'))) ||
+          (emailProviderName === 'resend' &&
+            Boolean(resendKey) &&
+            Boolean(this.configService.get<string>('NOTIFICATION_EMAIL_FROM'))),
+        keyFingerprint:
+          emailProviderName === 'brevo' ? keyFingerprint(brevoKey) : keyFingerprint(resendKey),
         from: this.configService.get<string>('NOTIFICATION_EMAIL_FROM') ?? null,
         replyTo: this.configService.get<string>('NOTIFICATION_EMAIL_REPLY_TO') ?? null,
         timeoutMs:
-          emailProviderName === 'resend'
-            ? (this.configService.get<number>('RESEND_REQUEST_TIMEOUT_MS') ?? null)
-            : null,
+          emailProviderName === 'brevo'
+            ? (this.configService.get<number>('BREVO_REQUEST_TIMEOUT_MS') ?? null)
+            : emailProviderName === 'resend'
+              ? (this.configService.get<number>('RESEND_REQUEST_TIMEOUT_MS') ?? null)
+              : null,
       },
       worker: {
         enabled: this.configService.get<boolean>('NOTIFICATION_WORKER_ENABLED') === true,
-        pollIntervalMs: this.configService.get<number>('NOTIFICATION_WORKER_POLL_INTERVAL_MS') ?? null,
+        pollIntervalMs:
+          this.configService.get<number>('NOTIFICATION_WORKER_POLL_INTERVAL_MS') ?? null,
         batchSize: this.configService.get<number>('NOTIFICATION_WORKER_BATCH_SIZE') ?? null,
         retryMaxAttempts: this.configService.get<number>('SMS_RETRY_MAX_ATTEMPTS') ?? null,
-        retryBaseDelaySeconds: this.configService.get<number>('SMS_RETRY_BASE_DELAY_SECONDS') ?? null,
+        retryBaseDelaySeconds:
+          this.configService.get<number>('SMS_RETRY_BASE_DELAY_SECONDS') ?? null,
       },
     };
   }
@@ -144,10 +188,39 @@ export class AdminNotificationProviderController {
    */
   @Post('test-send')
   async testSend(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
-    const principalId = this.requireFunction(req, 'notification.test_send');
+    const principalId = this.requireAnyFunction(req, ['notification.test_send'], true);
 
     const parsed = this.parseTestSendBody(body);
     const { channel, destination } = parsed;
+
+    // Fail closed BEFORE consuming rate-limit quota if governed DB config is disabled or misconfigured.
+    if (this.providerConfigService) {
+      const overview = await this.providerConfigService.getOverview();
+      const snap = channel === 'EMAIL' ? overview.email : overview.sms;
+      if (snap.source === 'DATABASE') {
+        if (snap.provider === 'none') {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: 'PROVIDER_NOT_CONFIGURED',
+            detail: 'EMAIL channel is set to none.',
+          });
+        }
+        if (snap.misconfigurationCode) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: snap.misconfigurationCode,
+            detail: `${channel} provider configuration cannot be decrypted or lacks required settings.`,
+          });
+        }
+        if (!snap.enabled) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: `${channel}_PROVIDER_DISABLED`,
+            detail: `${channel} provider is currently disabled; enable it via maker-checker before sending.`,
+          });
+        }
+      }
+    }
 
     // Provider availability — fail closed BEFORE consuming rate-limit quota or sending.
     if (channel === 'EMAIL' && this.emailProvider.name === 'none') {
@@ -181,6 +254,7 @@ export class AdminNotificationProviderController {
     const correlationId = randomUUID();
     const maskedDestination = channel === 'EMAIL' ? maskEmail(destination) : maskPhone(destination);
     const provider = channel === 'EMAIL' ? this.emailProvider : this.smsProvider;
+    const providerName = provider.name;
 
     // FIXED safe content — never template-driven, never financial, no event data.
     const text =
@@ -189,8 +263,6 @@ export class AdminNotificationProviderController {
         : `MonieNaija notification test (SMS). Reference ${correlationId}. This is a controlled connectivity test with no financial content. No action is required.`;
     const subject = 'MonieNaija notification test';
 
-    // Provider call keying fields only — NO notification_deliveries row is written
-    // (recipient identities are CUSTOMER/AGENT uuids; workforce principals are neither).
     const result = await provider.send({
       channel,
       destination,
@@ -205,6 +277,20 @@ export class AdminNotificationProviderController {
     });
 
     const success = result.success === true;
+    const errorCode = success ? null : String(result.error ?? 'PROVIDER_FAILURE').slice(0, 160);
+
+    if (this.providerConfigService) {
+      await this.providerConfigService.recordTestSendOutcome({
+        channel,
+        actor: principalId,
+        providerName,
+        success,
+        maskedDestination,
+        providerRef: typeof result.providerRef === 'string' ? result.providerRef.slice(0, 255) : null,
+        errorCode,
+      });
+    }
+
     await this.auditService.record(this.dataSource.manager, {
       entityType: 'NOTIFICATION_TEST_SEND',
       entityId: randomUUID(),
@@ -214,10 +300,10 @@ export class AdminNotificationProviderController {
       newValues: {
         channel,
         destination: maskedDestination,
-        provider: provider.name,
-        providerRef: typeof result.providerRef === 'string' ? result.providerRef.slice(0, 255) : null,
-        // Bounded, stable error code only (adapters never return prose/bodies/credentials).
-        errorCode: success ? null : String(result.error ?? 'PROVIDER_FAILURE').slice(0, 160),
+        provider: providerName,
+        providerRef:
+          typeof result.providerRef === 'string' ? result.providerRef.slice(0, 255) : null,
+        errorCode,
       },
     });
 
@@ -226,25 +312,36 @@ export class AdminNotificationProviderController {
       channel,
       correlationId,
       destination: maskedDestination,
-      provider: provider.name,
+      provider: providerName,
       providerRef: success ? (result.providerRef ?? null) : null,
-      errorCode: success ? null : String(result.error ?? 'PROVIDER_FAILURE').slice(0, 160),
+      errorCode,
     };
   }
 
   private parseTestSendBody(body: unknown): { channel: 'EMAIL' | 'SMS'; destination: string } {
-    if (!body || typeof body !== 'object') {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new BadRequestException('Body must be a JSON object');
     }
     const raw = body as Record<string, unknown>;
+    for (const key of Object.keys(raw)) {
+      if (key !== 'channel' && key !== 'destination') {
+        throw new BadRequestException(`Unknown field: ${key}`);
+      }
+    }
     const channel = typeof raw.channel === 'string' ? raw.channel.trim().toUpperCase() : '';
     if (channel !== 'EMAIL' && channel !== 'SMS') {
       throw new BadRequestException("channel must be 'EMAIL' or 'SMS'");
     }
     const destination = typeof raw.destination === 'string' ? raw.destination.trim() : '';
     if (channel === 'EMAIL') {
-      if (destination.length === 0 || destination.length > 254 || !TEST_EMAIL_PATTERN.test(destination)) {
-        throw new BadRequestException('destination must be a valid email address (max 254 characters)');
+      if (
+        destination.length === 0 ||
+        destination.length > 254 ||
+        !TEST_EMAIL_PATTERN.test(destination)
+      ) {
+        throw new BadRequestException(
+          'destination must be a valid email address (max 254 characters)',
+        );
       }
     } else {
       if (!TEST_SMS_PATTERN.test(destination)) {
@@ -254,8 +351,11 @@ export class AdminNotificationProviderController {
     return { channel, destination };
   }
 
-  /** Workforce authentication + fail-closed server-side function check. Returns principalId. */
-  private requireFunction(req: AuthenticatedRequest, functionCode: string): string {
+  private requireAnyFunction(
+    req: AuthenticatedRequest,
+    functionCodes: string[],
+    mutating = false,
+  ): string {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (
@@ -265,7 +365,10 @@ export class AdminNotificationProviderController {
     ) {
       throw new UnauthorizedException('Privileged access required');
     }
-    if (!principal.scopes?.includes(functionCode)) {
+    if (mutating && principal.readOnlyPrincipal) {
+      throw new ForbiddenException('READ_ONLY_PRINCIPAL');
+    }
+    if (!functionCodes.some((code) => principal.scopes?.includes(code))) {
       throw new ForbiddenException('FUNCTION_MISSING');
     }
     return principal.principalId;

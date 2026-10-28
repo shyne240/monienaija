@@ -10,6 +10,7 @@ import {
 } from './notification.constants';
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
+import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { canonicalNotificationEvent, NotificationTemplateService } from './notification-template.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type {
@@ -89,6 +90,7 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     // Arena 1 retry-suppression needs the registry-aware template service (same optional
     // by-type injection; falls back to a standalone instance for direct constructions).
     @Optional() private readonly templateService?: NotificationTemplateService,
+    @Optional() private readonly providerConfigService?: NotificationProviderConfigService,
   ) {}
 
   /** EMAIL provider — fail-closed: missing binding behaves as NoneEmailProvider (never logs). */
@@ -157,6 +159,9 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
     if (this.running) return empty; // re-entrancy guard (single instance, overlapping ticks)
     this.running = true;
     try {
+      if (this.providerConfigService) {
+        await this.providerConfigService.refreshRuntimeCache().catch(() => undefined);
+      }
       const outboxProcessed = await this.dispatcher.processPendingOutboxEvents(this.batchSize);
       const { claimed, ...rest } = await this.retryFailedDeliveries(this.batchSize);
       return { outboxProcessed, retriesClaimed: claimed.length, ...rest };
