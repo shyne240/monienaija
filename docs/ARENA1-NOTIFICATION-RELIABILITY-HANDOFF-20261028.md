@@ -4,6 +4,8 @@
 
 **Source:** implementation follows the reviewed application at `fe06ea8f7f6345db1542a17995c1d17b2aa07631` and the [Arena 1 audit](ARENA1-NOTIFICATION-ARCHITECTURE-EXTENSIBILITY-AUDIT-20261028.md), committed on top of audit commit `b476bb6514679a99a2160e399d7b9600e8c50789`.
 
+**Implementation commit:** `aaa98276efb92268536896f253b87d41d1420abd` (the validation handoff may have a later documentation-only commit).
+
 **Release status:** **NO-GO / foundation only**. No deployment, live provider, real contact, production credential, or production migration was used. This is not independent acceptance.
 
 ## Delivered boundaries
@@ -37,6 +39,6 @@ The subscriber does not use shared `available_at` as its retry gate, because ano
 - Full backend Jest unit run (`--runInBand`): **206 suites / 2,072 tests passed**.
 - Focused notification/migration/security PostgreSQL run: **10 suites / 157 tests passed**, including clean migration chain and upgrade from the historical 0096 schema through 0101. A subsequent compatibility run passed **9 suites / 155 tests** (overlapping the focused run), including the real clean-chain production schema compatibility check, provider governance with fake transports, and 14 notification-reliability tests including a one-connection-pool regression. The 14-test reliability suite was rerun after adding receipt-endpoint unauthenticated/forbidden/authorized and corrupt-reason checks and passed. These counts are not additive because suites overlap.
 - Targeted ESLint on changed notification, diagnostics, migration, direct-security callers, readiness and new tests passed. `src/customer-registration/customer-registration.service.ts` has four lint errors at lines 521 and 633, unchanged and independently reproduced from the committed baseline with ESLint stdin; the edited safe-log line is not among them. The file was excluded from the clean targeted-lint result.
-- A concurrency-2 full PostgreSQL attempt was interrupted because the sandbox exhausted memory; do not treat it as a completed full run. A serial rerun was started; its final result and any failures must be recorded in the final delivery message (and this handoff before commit).
+- A concurrency-2 full PostgreSQL attempt was interrupted because the sandbox exhausted memory. A serial full-suite rerun completed **4 of 21 batches: 24 suites / 797 tests passed**, with a fifth batch in progress, and was stopped after approximately 12 minutes to bound runtime. These completed batches cover financial, cash-to-cash, commission, funding and security regressions, but do not constitute a full-suite result. Earlier in the concurrency-2 attempt, the provider-configuration suite's old notification case failed; after updating its fixture and ambiguity/retry expectations, that suite passed in the 9-suite compatibility run. No other failure was observed in the completed serial batches. Do not report either interrupted full run as a full pass.
 
 See the final delivery message for the exact implementation commit SHA and verified push. Tests use only a disposable local PostgreSQL cluster, synthetic credentials and fake provider transport; they do not prove vendor behavior or production readiness.
