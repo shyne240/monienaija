@@ -20,9 +20,11 @@ export class UpdateComplianceCaseDto {
   @IsOptional()
   version?: number;
 
+  // Accepted for compatibility only; the authenticated workforce principal is authoritative.
+  @IsOptional()
   @IsString()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @MinLength(1)
   @MaxLength(160)
-  actor!: string;
+  actor?: string;
 }

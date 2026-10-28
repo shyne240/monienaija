@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { NON_FRAUD_CASE_CATEGORIES } from '../customer-compliance/customer-compliance-access';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { AuditService } from '../operations/audit.service';
 
@@ -362,10 +363,10 @@ export class DashboardWidgetDataService {
     const rows = await this.rows(`
       SELECT category, status, COUNT(*)::text AS count
         FROM customer_compliance_cases
-       WHERE category <> 'FRAUD' AND deleted_at IS NULL
+       WHERE category = ANY($1::varchar[]) AND deleted_at IS NULL
        GROUP BY category, status
        ORDER BY category, status
-    `);
+    `, [NON_FRAUD_CASE_CATEGORIES]);
     return {
       byCategoryStatus: rows.map((r) => ({ category: r.category, status: r.status, count: Number(r.count ?? 0) })),
     };
