@@ -3,6 +3,14 @@ import type {
   NotificationSendRequest,
   NotificationSendResult,
 } from './notification.types';
+import {
+  ProviderEgressBlockedError,
+  classifyResendErrorCode,
+  classifyTransportErrorName,
+  createPinnedProviderHttpFetch,
+  formatSafeHttpStatus,
+  isPinnedProviderEndpointUrl,
+} from './provider-security';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — production email provider adapter (Resend HTTP API).
@@ -50,12 +58,16 @@ type FetchImplementation = (
     headers: Record<string, string>;
     body: string;
     signal: AbortSignal;
+    redirect?: 'error';
   },
 ) => Promise<{
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
 }>;
+
+const DEFAULT_RESEND_FETCH: FetchImplementation =
+  createPinnedProviderHttpFetch() as unknown as FetchImplementation;
 
 /** Conservative address shape: no whitespace/quotes/semicolons/commas/angle brackets, one @, dotted domain. */
 const EMAIL_DESTINATION_PATTERN = /^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/;
@@ -65,13 +77,14 @@ export class ResendEmailProvider implements NotificationProvider {
 
   constructor(
     private readonly config: ResendEmailProviderConfig,
-    private readonly fetchImpl: FetchImplementation = fetch as unknown as FetchImplementation,
+    private readonly fetchImpl: FetchImplementation = DEFAULT_RESEND_FETCH,
   ) {}
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (request.channel !== 'EMAIL') {
       // Email adapter is EMAIL-only; SMS/PUSH must never route here.
-      return { success: false, error: `RESEND_UNSUPPORTED_CHANNEL:${request.channel}` };
+      const safeChannel = request.channel === 'SMS' ? 'SMS' : 'PUSH';
+      return { success: false, error: `RESEND_UNSUPPORTED_CHANNEL:${safeChannel}` };
     }
 
     const destination = request.destination.trim().toLowerCase();
@@ -86,6 +99,11 @@ export class ResendEmailProvider implements NotificationProvider {
     const text = typeof request.message === 'string' ? request.message.slice(0, 4_000) : '';
     if (!text && !request.html) {
       return { success: false, error: 'RESEND_EMPTY_BODY' };
+    }
+
+    const endpointUrl = `${this.config.baseUrl.replace(/\/+$/, '')}/emails`;
+    if (!isPinnedProviderEndpointUrl('resend', endpointUrl)) {
+      return { success: false, error: 'RESEND_EGRESS_BLOCKED' };
     }
 
     const controller = new AbortController();
@@ -104,7 +122,7 @@ export class ResendEmailProvider implements NotificationProvider {
         body.reply_to = this.config.replyTo;
       }
 
-      const response = await this.fetchImpl(`${this.config.baseUrl}/emails`, {
+      const response = await this.fetchImpl(endpointUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
@@ -117,7 +135,12 @@ export class ResendEmailProvider implements NotificationProvider {
         },
         body: JSON.stringify(body),
         signal: controller.signal,
+        redirect: 'error',
       });
+
+      if (response.status >= 300 && response.status < 400) {
+        return { success: false, error: 'RESEND_EGRESS_BLOCKED' };
+      }
 
       if (response.ok) {
         const parsed = (await response.json()) as { id?: unknown };
@@ -127,25 +150,31 @@ export class ResendEmailProvider implements NotificationProvider {
         return { success: false, error: 'RESEND_UNRECOGNIZED_SUCCESS_RESPONSE' };
       }
 
-      // Failure: extract a stable bounded error code only; never surface prose or bodies.
+      // Failure: classify error code strictly against the closed allowlist; never echo prose or bodies.
       let errorName = 'unknown';
       try {
         const errBody = (await response.json()) as { name?: unknown; code?: unknown };
-        const candidate = errBody?.name ?? errBody?.code;
-        if (typeof candidate === 'string' && /^[a-zA-Z0-9._-]{1,80}$/.test(candidate)) {
-          errorName = candidate;
-        }
+        errorName = classifyResendErrorCode(errBody?.name ?? errBody?.code);
       } catch {
         // Non-JSON error body — keep the generic name.
       }
-      return { success: false, error: `RESEND_HTTP_${response.status}:${errorName}` };
+      const safeStatus = formatSafeHttpStatus(response.status);
+      return { success: false, error: `RESEND_HTTP_${safeStatus}:${errorName}` };
     } catch (error) {
-      const name = (error as Error | undefined)?.name ?? 'Error';
-      if (name === 'AbortError') {
+      if (
+        error instanceof ProviderEgressBlockedError ||
+        (error as { name?: unknown } | null)?.name === 'ProviderEgressBlockedError'
+      ) {
+        return { success: false, error: 'RESEND_EGRESS_BLOCKED' };
+      }
+      if (
+        controller.signal.aborted ||
+        (error as { name?: unknown } | null)?.name === 'AbortError'
+      ) {
         return { success: false, error: 'RESEND_TIMEOUT' };
       }
-      // Network-level failure — error name only (messages can embed request details).
-      return { success: false, error: `RESEND_NETWORK:${String(name).slice(0, 80)}` };
+      // Network-level failure — closed standard JS error name only.
+      return { success: false, error: `RESEND_NETWORK:${classifyTransportErrorName(error)}` };
     } finally {
       clearTimeout(timeout);
     }

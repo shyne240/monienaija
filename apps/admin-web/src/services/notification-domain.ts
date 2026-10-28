@@ -235,20 +235,13 @@ export function deriveNotificationPermissions(
       has('notification.view_events') ||
       has('notification.view_deliveries') ||
       has('diagnostics.view'),
-    canViewProviderConfig:
-      has('notification.provider.view') ||
-      has('notification.view_deliveries') ||
-      isFinanceControllerChecker,
+    canViewProviderConfig: has('notification.provider.view'),
     canProposeProviderConfig:
-      (has('notification.provider.configure') || isSuperAdminMaker) &&
-      roles.has('SUPER_ADMIN'),
+      has('notification.provider.configure') && roles.has('SUPER_ADMIN'),
     canApproveProviderConfig:
-      (has('notification.provider.configure') || isFinanceControllerChecker) &&
-      roles.has('FINANCE_CONTROLLER'),
+      has('notification.provider.configure') && roles.has('FINANCE_CONTROLLER'),
     canActivateProviderConfig:
-      (has('notification.provider.configure') ||
-        isSuperAdminMaker ||
-        isFinanceControllerChecker) &&
+      has('notification.provider.configure') &&
       (roles.has('SUPER_ADMIN') || roles.has('FINANCE_CONTROLLER')),
     canTestSend: has('notification.test_send'),
     canUseWorkforceApprovalEndpoint: isFinanceControllerChecker,
@@ -898,9 +891,19 @@ export function validateProviderConfigProposalDraft(
   }
 
   if (isExternal) {
-    const rawUrl = (draft.baseUrl ?? '').trim();
+    const rawUrl = (draft.baseUrl ?? '').trim().replace(/\/+$/, '');
+    const pinnedOrigin =
+      provider === 'robase'
+        ? 'https://api.robase.dev'
+        : provider === 'brevo'
+          ? 'https://api.brevo.com'
+          : 'https://api.resend.com';
     if (!rawUrl || !rawUrl.startsWith('https://')) {
       errors.push('External provider Base URL must begin with https://.');
+    } else if (rawUrl.toLowerCase() !== pinnedOrigin) {
+      errors.push(
+        `Untrusted Base URL for ${provider}: must match pinned vendor origin ${pinnedOrigin}.`,
+      );
     }
   }
 

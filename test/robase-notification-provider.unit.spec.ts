@@ -208,6 +208,48 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
       expect(surface).not.toContain('aaaa'); // never echo key material fragments
     }
   });
+
+  it('10. F-01 & F-02: discards unrecognized/credential error.type values and blocks unpinned baseUrls or 3xx redirects without forwarding Bearer key', async () => {
+    const sentinel = 'robe_SENTINEL_CRED_112233.TX_NGN_950000_ACCT_0123456789';
+    const providerWithSentinelErr = new RobaseNotificationProvider(
+      { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+      async () => ({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: { type: sentinel, message: `Key ${API_KEY} rejected` },
+        }),
+      }),
+    );
+
+    const errRes = await providerWithSentinelErr.send(request());
+    expect(errRes).toEqual({ success: false, error: 'ROBASE_HTTP_401:unknown' });
+    expect(JSON.stringify(errRes)).not.toContain('SENTINEL_CRED_112233');
+    expect(JSON.stringify(errRes)).not.toContain('TX_NGN_950000');
+    expect(JSON.stringify(errRes)).not.toContain('robe_');
+
+    let unpinnedCalls = 0;
+    const unpinnedProvider = new RobaseNotificationProvider(
+      { baseUrl: 'https://attacker-controlled.example.test', apiKey: API_KEY, requestTimeoutMs: 5000 },
+      async () => {
+        unpinnedCalls += 1;
+        return { ok: true, status: 200, json: async () => ({ id: 'exfil' }) };
+      },
+    );
+    const unpinnedRes = await unpinnedProvider.send(request());
+    expect(unpinnedRes).toEqual({ success: false, error: 'ROBASE_EGRESS_BLOCKED' });
+    expect(unpinnedCalls).toBe(0);
+
+    const redirectProvider = new RobaseNotificationProvider(
+      { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+      async (_url, init) => {
+        expect(init.redirect).toBe('error');
+        return { ok: false, status: 307, json: async () => null };
+      },
+    );
+    const redirectRes = await redirectProvider.send(request());
+    expect(redirectRes).toEqual({ success: false, error: 'ROBASE_EGRESS_BLOCKED' });
+  });
 });
 
 describe('Robase environment configuration validation (validateEnvironment)', () => {

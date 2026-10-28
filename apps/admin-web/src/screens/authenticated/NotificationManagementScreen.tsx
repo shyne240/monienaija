@@ -60,7 +60,19 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const permissions = useMemo(() => deriveNotificationPermissions(principal), [principal]);
   const currentPrincipalId = principal?.principalId ?? '';
 
-  const [activeTab, setActiveTab] = useState<NotificationAdminTab>(initialTab);
+  const visibleTabs = useMemo(
+    () =>
+      TABS.filter(
+        (tabItem) => tabItem.key !== 'providerConfig' || permissions.canViewProviderConfig,
+      ),
+    [permissions.canViewProviderConfig],
+  );
+
+  const [activeTab, setActiveTab] = useState<NotificationAdminTab>(
+    initialTab === 'providerConfig' && !permissions.canViewProviderConfig
+      ? 'overview'
+      : initialTab,
+  );
   const [templateJumpEventType, setTemplateJumpEventType] = useState<string | undefined>(undefined);
 
   // Core data & boundary state
@@ -791,7 +803,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
       {/* Navigation Tabs */}
       <div style={styles.tabBar} role="tablist" aria-label="Notification management sections">
-        {TABS.map((tabItem) => (
+        {visibleTabs.map((tabItem) => (
           <button
             key={tabItem.key}
             type="button"
@@ -2597,7 +2609,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       )}
 
       {/* TAB 9: GOVERNED PROVIDER CONFIGURATION (Robase SMS & Brevo Transactional Email) */}
-      {activeTab === 'providerConfig' && (
+      {activeTab === 'providerConfig' && permissions.canViewProviderConfig && (
         <div style={styles.sectionStack} data-testid="notif-panel-providerConfig">
           <ProviderConfigurationWorkspace
             principalId={currentPrincipalId || null}

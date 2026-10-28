@@ -57,7 +57,11 @@ export class AuditService {
       // unless the caller holds `notification.provider.view`.
       // Records remain intact in `audit_events` for authorized oversight.
       builder.andWhere('audit.entity_type NOT IN (:...providerAuditTypes)', {
-        providerAuditTypes: ['NOTIFICATION_PROVIDER_CONFIG', 'NOTIFICATION_TEST_SEND'],
+        providerAuditTypes: [
+          'NOTIFICATION_PROVIDER_CONFIG',
+          'NOTIFICATION_TEST_SEND',
+          'NOTIFICATION_TEST_SEND_QUOTA',
+        ],
       });
       builder.andWhere(
         `NOT (

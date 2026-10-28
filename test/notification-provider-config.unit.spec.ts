@@ -560,7 +560,7 @@ describe('Provider Configuration Security Hardening (redaction, safeTransaction,
     }
   });
 
-  it('excludes NOTIFICATION_PROVIDER_CONFIG and NOTIFICATION_TEST_SEND from AuditService.list by default unless includeNotificationProviderRecords is true', async () => {
+  it('excludes NOTIFICATION_PROVIDER_CONFIG, NOTIFICATION_TEST_SEND, and NOTIFICATION_TEST_SEND_QUOTA from AuditService.list by default unless includeNotificationProviderRecords is true', async () => {
     const andWhereCalls: Array<{ clause: string; params?: Record<string, unknown> }> = [];
     const mockQb = {
       andWhere: (clause: string, params?: Record<string, unknown>) => {
@@ -583,12 +583,282 @@ describe('Provider Configuration Security Hardening (redaction, safeTransaction,
         (c) =>
           c.clause.includes('providerAuditTypes') &&
           Array.isArray(c.params?.providerAuditTypes) &&
-          (c.params?.providerAuditTypes as string[]).includes('NOTIFICATION_PROVIDER_CONFIG'),
+          (c.params?.providerAuditTypes as string[]).includes('NOTIFICATION_PROVIDER_CONFIG') &&
+          (c.params?.providerAuditTypes as string[]).includes('NOTIFICATION_TEST_SEND_QUOTA'),
       ),
     ).toBe(true);
 
     andWhereCalls.length = 0;
     await auditService.listWithNotificationProviderOversight({});
     expect(andWhereCalls.some((c) => c.clause.includes('providerAuditTypes'))).toBe(false);
+  });
+});
+
+describe('Sprint 1 Remediation F-01 & F-02 — Closed error-code allowlist & pinned vendor egress guards', () => {
+  const SAMPLE_BREVO_KEY = 'xkeysib-' + 'b'.repeat(48);
+
+  it('F-01: Brevo adapter and verifyBrevoConnection discard credential/financial sentinels in upstream error codes and logs', async () => {
+    const logged: string[] = [];
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        logged.push(JSON.stringify(args));
+      });
+
+    try {
+      const sentinelCode = 'xkeysib-SENTINEL_CREDENTIAL_998877.TX_NGN_950000_ACCT_0123456789';
+      const customErr = new Error('Socket error');
+      customErr.name = sentinelCode;
+
+      const sendRejected = await new BrevoEmailProvider(
+        {
+          baseUrl: 'https://api.brevo.com',
+          apiKey: SAMPLE_BREVO_KEY,
+          fromEmail: 'notifications@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({
+          ok: false,
+          status: 401,
+          json: async () => ({
+            code: sentinelCode,
+            message: `Rejected key ${SAMPLE_BREVO_KEY} for TX_NGN_950000`,
+          }),
+        }),
+      ).send({
+        channel: 'EMAIL',
+        destination: 'ops@monienaija.ng',
+        subject: 'Alert',
+        message: 'Body',
+        payload: {},
+        correlationId: 'corr-f01',
+        eventType: 'notification.test_send',
+        eventKey: 'evt-f01',
+        recipientType: 'CUSTOMER',
+        recipientId: 'cust-1',
+      });
+
+      expect(sendRejected).toEqual({
+        success: false,
+        error: 'BREVO_HTTP_401',
+      });
+
+      const sendThrown = await new BrevoEmailProvider(
+        {
+          baseUrl: 'https://api.brevo.com',
+          apiKey: SAMPLE_BREVO_KEY,
+          fromEmail: 'notifications@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => {
+          throw customErr;
+        },
+      ).send({
+        channel: 'EMAIL',
+        destination: 'ops@monienaija.ng',
+        subject: 'Alert',
+        message: 'Body',
+        payload: {},
+        correlationId: 'corr-f01-net',
+        eventType: 'notification.test_send',
+        eventKey: 'evt-f01-net',
+        recipientType: 'CUSTOMER',
+        recipientId: 'cust-1',
+      });
+
+      expect(sendThrown).toEqual({
+        success: false,
+        error: 'BREVO_NETWORK:Error',
+      });
+
+      const verifyRejected = await verifyBrevoConnection(
+        {
+          baseUrl: 'https://api.brevo.com',
+          apiKey: SAMPLE_BREVO_KEY,
+          fromEmail: 'notifications@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({
+          ok: false,
+          status: 401,
+          json: async () => ({ code: sentinelCode }),
+        }),
+      );
+      expect(verifyRejected.errorCode).toBe('BREVO_VERIFY_HTTP_401');
+
+      const combinedLogs = logged.join('\n');
+      for (const blob of [
+        JSON.stringify(sendRejected),
+        JSON.stringify(sendThrown),
+        JSON.stringify(verifyRejected),
+        combinedLogs,
+      ]) {
+        expect(blob).not.toContain('SENTINEL_CREDENTIAL_998877');
+        expect(blob).not.toContain('TX_NGN_950000');
+        expect(blob).not.toContain('ACCT_0123456789');
+        expect(blob).not.toContain('xkeysib-');
+      }
+      expect(combinedLogs).toContain('"errorCode":"unclassified"');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('F-02: pinned origin validation, redirect blocking, private/metadata IP denylist, and DNS-rebinding protection block credential exfiltration', async () => {
+    const {
+      validatePinnedProviderBaseUrl,
+      isForbiddenOutboundIp,
+      createPinnedProviderHttpFetch,
+      normalizeProviderErrorCode,
+    } = await import('../src/notification/provider-security');
+
+    expect(validatePinnedProviderBaseUrl('robase', 'https://api.robase.dev/')).toBe(
+      'https://api.robase.dev',
+    );
+    expect(validatePinnedProviderBaseUrl('brevo', 'https://api.brevo.com')).toBe(
+      'https://api.brevo.com',
+    );
+
+    const rejectedBaseUrls = [
+      'https://attacker-controlled.example.test',
+      'https://api.robase.dev.attacker.test',
+      'https://evil-robase.dev',
+      'https://api.robase.dev:8443',
+      'https://api.robase.dev:443',
+      'https://api.robase.dev/v1',
+      'https://user:pass@api.robase.dev',
+      'https://api.robase.dev?leak=1',
+      'https://api.robase.dev#frag',
+      'http://api.robase.dev',
+      'https://127.0.0.1',
+      'https://10.0.0.1',
+      'https://169.254.169.254',
+      'https://[::1]',
+      'https://[fe80::1]',
+      'https://api.brevo.com', // wrong vendor for robase
+    ];
+    for (const badUrl of rejectedBaseUrls) {
+      expect(() => validatePinnedProviderBaseUrl('robase', badUrl)).toThrow();
+    }
+
+    // Exhaustive IPv4/IPv6 private, loopback, link-local, metadata, NAT64, 6to4 checks
+    for (const forbiddenIp of [
+      '127.0.0.1',
+      '10.24.0.5',
+      '172.16.0.1',
+      '172.31.255.254',
+      '192.168.1.10',
+      '169.254.169.254',
+      '100.64.0.1',
+      '0.0.0.0',
+      '::1',
+      '::',
+      'fe80::1',
+      'fc00::1',
+      'fd12:3456:789a::1',
+      '::ffff:127.0.0.1',
+      '::ffff:169.254.169.254',
+      '64:ff9b::10.0.0.1',
+      '2002:7f00:0001::1',
+    ]) {
+      expect(isForbiddenOutboundIp(forbiddenIp)).toBe(true);
+    }
+    expect(isForbiddenOutboundIp('93.184.216.34')).toBe(false);
+    expect(isForbiddenOutboundIp('2606:2800:220:1:248:1893:25c8:1946')).toBe(false);
+
+    // Adapter blocks unpinned baseUrl and 3xx redirects without forwarding credentials
+    let fetchInvocations = 0;
+    const unpinnedAdapter = new BrevoEmailProvider(
+      {
+        baseUrl: 'https://attacker-controlled.example.test',
+        apiKey: SAMPLE_BREVO_KEY,
+        fromEmail: 'notifications@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
+      async () => {
+        fetchInvocations += 1;
+        return { ok: true, status: 200, json: async () => ({ messageId: 'leak' }) };
+      },
+    );
+    const blockedRes = await unpinnedAdapter.send({
+      channel: 'EMAIL',
+      destination: 'ops@monienaija.ng',
+      subject: 'Subj',
+      message: 'Body',
+      payload: {},
+      correlationId: 'corr-egress',
+      eventType: 'notification.test_send',
+      eventKey: 'evt-egress',
+      recipientType: 'CUSTOMER',
+      recipientId: 'cust-1',
+    });
+    expect(blockedRes).toEqual({ success: false, error: 'BREVO_EGRESS_BLOCKED' });
+    expect(fetchInvocations).toBe(0);
+
+    const redirectAdapter = new BrevoEmailProvider(
+      {
+        baseUrl: 'https://api.brevo.com',
+        apiKey: SAMPLE_BREVO_KEY,
+        fromEmail: 'notifications@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
+      async (_url, init) => {
+        expect(init.redirect).toBe('error');
+        return { ok: false, status: 302, json: async () => null };
+      },
+    );
+    const redirectRes = await redirectAdapter.send({
+      channel: 'EMAIL',
+      destination: 'ops@monienaija.ng',
+      subject: 'Subj',
+      message: 'Body',
+      payload: {},
+      correlationId: 'corr-redir',
+      eventType: 'notification.test_send',
+      eventKey: 'evt-redir',
+      recipientType: 'CUSTOMER',
+      recipientId: 'cust-1',
+    });
+    expect(redirectRes).toEqual({ success: false, error: 'BREVO_EGRESS_BLOCKED' });
+
+    // DNS-rebinding guard blocks resolution of api.brevo.com -> 169.254.169.254 BEFORE socket open
+    let socketOpened = false;
+    const rebindingFetch = createPinnedProviderHttpFetch({
+      lookupImpl: async () => [{ address: '169.254.169.254', family: 4 }],
+      requestImpl: (() => {
+        socketOpened = true;
+        throw new Error('Socket must never open');
+      }) as never,
+    });
+    const rebindingAdapter = new BrevoEmailProvider(
+      {
+        baseUrl: 'https://api.brevo.com',
+        apiKey: SAMPLE_BREVO_KEY,
+        fromEmail: 'notifications@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
+      rebindingFetch,
+    );
+    const rebindingRes = await rebindingAdapter.send({
+      channel: 'EMAIL',
+      destination: 'ops@monienaija.ng',
+      subject: 'Subj',
+      message: 'Body',
+      payload: {},
+      correlationId: 'corr-rebind',
+      eventType: 'notification.test_send',
+      eventKey: 'evt-rebind',
+      recipientType: 'CUSTOMER',
+      recipientId: 'cust-1',
+    });
+    expect(rebindingRes).toEqual({ success: false, error: 'BREVO_EGRESS_BLOCKED' });
+    expect(socketOpened).toBe(false);
+
+    // Boundary normalizer collapses unrecognized suffixes and arbitrary strings
+    expect(normalizeProviderErrorCode('BREVO_HTTP_401:xkeysib-leak')).toBe('BREVO_HTTP_401');
+    expect(normalizeProviderErrorCode('ROBASE_HTTP_401:robe_secret')).toBe(
+      'ROBASE_HTTP_401:unknown',
+    );
+    expect(normalizeProviderErrorCode('TX_NGN_950000_RAW_LEAK')).toBe('PROVIDER_FAILURE');
   });
 });

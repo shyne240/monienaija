@@ -67,8 +67,9 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
 
   // Token suffix → granted function scopes (server-side checks are fail-closed on these).
   const scopeMap: Record<string, string[]> = {
-    ops: ['notification.view_deliveries', 'notification.test_send'],
-    viewer: ['notification.view_deliveries'],
+    ops: ['notification.view_deliveries', 'notification.provider.view', 'notification.test_send'],
+    viewer: ['notification.view_deliveries', 'notification.provider.view'],
+    deliveryonly: ['notification.view_deliveries'],
     noscopes: [],
   };
 
@@ -574,6 +575,22 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(raw).not.toContain('robe_');
     expect(raw.toLowerCase()).not.toContain('apikey');
     expect(raw.toLowerCase()).not.toContain('authorization');
+    // Delivery-only principal receives strict coarse MINIMAL availability only (F-04)
+    const minimalRes = await request(app.getHttpServer())
+      .get('/api/v1/internal/notifications/provider-status')
+      .set('Authorization', `Bearer ${token('deliveryonly')}`)
+      .expect(200);
+    expect(minimalRes.body).toEqual({
+      channels: ['SMS', 'PUSH', 'EMAIL'],
+      projectionScope: 'MINIMAL',
+      sms: { available: expect.any(Boolean) },
+      push: { available: false },
+      email: { available: false },
+    });
+    expect(minimalRes.body.sms.provider).toBeUndefined();
+    expect(minimalRes.body.email.provider).toBeUndefined();
+    expect(minimalRes.body.worker).toBeUndefined();
+
     // Read-only: GET does not mutate anything
     const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM notification_deliveries`);
     await request(app.getHttpServer())

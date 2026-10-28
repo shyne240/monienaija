@@ -3,6 +3,14 @@ import type {
   NotificationSendRequest,
   NotificationSendResult,
 } from './notification.types';
+import {
+  ProviderEgressBlockedError,
+  classifyRobaseErrorType,
+  classifyTransportErrorName,
+  createPinnedProviderHttpFetch,
+  formatSafeHttpStatus,
+  isPinnedProviderEndpointUrl,
+} from './provider-security';
 
 /**
  * SMS-V1-01 — Robase production SMS provider adapter.
@@ -42,6 +50,7 @@ type FetchImplementation = (
     headers: Record<string, string>;
     body: string;
     signal: AbortSignal;
+    redirect?: 'error';
   },
 ) => Promise<{
   ok: boolean;
@@ -49,18 +58,22 @@ type FetchImplementation = (
   json: () => Promise<unknown>;
 }>;
 
+const DEFAULT_ROBASE_FETCH: FetchImplementation =
+  createPinnedProviderHttpFetch() as unknown as FetchImplementation;
+
 export class RobaseNotificationProvider implements NotificationProvider {
   readonly name = 'robase';
 
   constructor(
     private readonly config: RobaseProviderConfig,
-    private readonly fetchImpl: FetchImplementation = fetch as unknown as FetchImplementation,
+    private readonly fetchImpl: FetchImplementation = DEFAULT_ROBASE_FETCH,
   ) {}
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (request.channel !== 'SMS') {
       // Robase adapter is SMS-only; PUSH remains a documented dependency (no device-token model).
-      return { success: false, error: 'ROBASE_UNSUPPORTED_CHANNEL:PUSH' };
+      const safeChannel = request.channel === 'EMAIL' ? 'EMAIL' : 'PUSH';
+      return { success: false, error: `ROBASE_UNSUPPORTED_CHANNEL:${safeChannel}` };
     }
 
     const destination = this.toE164(request.destination);
@@ -68,10 +81,15 @@ export class RobaseNotificationProvider implements NotificationProvider {
       return { success: false, error: 'ROBASE_INVALID_DESTINATION' };
     }
 
+    const endpointUrl = `${this.config.baseUrl.replace(/\/+$/, '')}/v1/sms/send`;
+    if (!isPinnedProviderEndpointUrl('robase', endpointUrl)) {
+      return { success: false, error: 'ROBASE_EGRESS_BLOCKED' };
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
     try {
-      const response = await this.fetchImpl(`${this.config.baseUrl}/v1/sms/send`, {
+      const response = await this.fetchImpl(endpointUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
@@ -89,7 +107,12 @@ export class RobaseNotificationProvider implements NotificationProvider {
           metadata: { event_type: request.eventType },
         }),
         signal: controller.signal,
+        redirect: 'error',
       });
+
+      if (response.status >= 300 && response.status < 400) {
+        return { success: false, error: 'ROBASE_EGRESS_BLOCKED' };
+      }
 
       if (response.ok) {
         const body = (await response.json()) as { id?: unknown };
@@ -99,27 +122,32 @@ export class RobaseNotificationProvider implements NotificationProvider {
         return { success: false, error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE' };
       }
 
-      // Failure envelope: extract the stable error.type only; never surface prose or bodies.
+      // Failure envelope: classify error.type strictly against the closed allowlist;
+      // never echo unrecognized upstream tokens, prose, or bodies.
       let errorType = 'unknown';
       try {
         const errBody = (await response.json()) as { error?: { type?: unknown } };
-        if (
-          typeof errBody?.error?.type === 'string' &&
-          /^[a-z0-9._-]{1,80}$/i.test(errBody.error.type)
-        ) {
-          errorType = errBody.error.type;
-        }
+        errorType = classifyRobaseErrorType(errBody?.error?.type);
       } catch {
         // Non-JSON error body — keep the generic type.
       }
-      return { success: false, error: `ROBASE_HTTP_${response.status}:${errorType}` };
+      const safeStatus = formatSafeHttpStatus(response.status);
+      return { success: false, error: `ROBASE_HTTP_${safeStatus}:${errorType}` };
     } catch (error) {
-      const name = (error as Error | undefined)?.name ?? 'Error';
-      if (name === 'AbortError') {
+      if (
+        error instanceof ProviderEgressBlockedError ||
+        (error as { name?: unknown } | null)?.name === 'ProviderEgressBlockedError'
+      ) {
+        return { success: false, error: 'ROBASE_EGRESS_BLOCKED' };
+      }
+      if (
+        controller.signal.aborted ||
+        (error as { name?: unknown } | null)?.name === 'AbortError'
+      ) {
         return { success: false, error: 'ROBASE_TIMEOUT' };
       }
-      // Network-level failure — error name only (messages can embed request details).
-      return { success: false, error: `ROBASE_NETWORK:${String(name).slice(0, 80)}` };
+      // Network-level failure — closed standard JS error name only.
+      return { success: false, error: `ROBASE_NETWORK:${classifyTransportErrorName(error)}` };
     } finally {
       clearTimeout(timeout);
     }

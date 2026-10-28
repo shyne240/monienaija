@@ -25,6 +25,8 @@ import {
 
 const LOGIN_PATH = '/api/v1/internal/a2/workforce/local-admin-sessions';
 const CFG_BASE = '/api/v1/internal/notifications/provider-config';
+const OVERVIEW_PATH = CFG_BASE;
+const PROPOSALS_PATH = `${CFG_BASE}/proposals`;
 const STATUS_PATH = '/api/v1/internal/notifications/provider-status';
 const TEST_SEND_PATH = '/api/v1/internal/notifications/test-send';
 
@@ -54,6 +56,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
   let robaseNextStatus = 200;
   let brevoSendNextStatus = 201;
   let brevoVerifiedSenders = ['notifications@monienaija.ng'];
+  let customTransportOverride: ProviderHttpFetchFn | null = null;
 
   const mockTransport: ProviderHttpFetchFn = async (url, init) => {
     outboundCalls.push({
@@ -62,6 +65,10 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       headers: { ...init.headers },
       body: init.body,
     });
+
+    if (customTransportOverride) {
+      return customTransportOverride(url, init);
+    }
 
     if (url.startsWith('https://api.robase.dev/v1/sms/send')) {
       if (robaseNextStatus >= 200 && robaseNextStatus < 300) {
@@ -183,6 +190,7 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     robaseNextStatus = 200;
     brevoSendNextStatus = 201;
     brevoVerifiedSenders = ['notifications@monienaija.ng'];
+    customTransportOverride = null;
     process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON = JSON.stringify({
       v1: ENCRYPTION_KEY_V1,
     });
@@ -1124,29 +1132,55 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         expect(decisionRows[0]!.new_values.reason).toBe('FUNCTION_MISSING');
       }
 
-      // C) Principal entitled ONLY to notification.view_deliveries -> 200 MINIMAL projection with ZERO sentinels
+      // C) Principal entitled ONLY to notification.view_deliveries -> 200 strict coarse MINIMAL schema (F-04)
       const minimalRes = await request(app.getHttpServer())
         .get('/api/v1/internal/notifications/provider-status')
         .set(auth(deliveryOnlyViewer.token))
         .expect(200);
 
-      expect(minimalRes.body.projectionScope).toBe('MINIMAL');
-      expect(minimalRes.body.channels).toEqual(['SMS', 'PUSH', 'EMAIL']);
-      expect(minimalRes.body.sms.provider).toBe('robase');
-      expect(minimalRes.body.sms.configured).toBe(true);
-      expect(minimalRes.body.sms.keyFingerprint).toBeNull();
+      // Exact full-schema assertion: ONLY coarse channel availability booleans exist
+      expect(minimalRes.body).toEqual({
+        channels: ['SMS', 'PUSH', 'EMAIL'],
+        projectionScope: 'MINIMAL',
+        sms: { available: true },
+        push: { available: false },
+        email: { available: true },
+      });
+      expect(Object.keys(minimalRes.body as Record<string, unknown>).sort()).toEqual([
+        'channels',
+        'email',
+        'projectionScope',
+        'push',
+        'sms',
+      ]);
+      expect(Object.keys(minimalRes.body.sms as Record<string, unknown>)).toEqual(['available']);
+      expect(Object.keys(minimalRes.body.push as Record<string, unknown>)).toEqual(['available']);
+      expect(Object.keys(minimalRes.body.email as Record<string, unknown>)).toEqual(['available']);
+      expect(minimalRes.body.sms.provider).toBeUndefined();
+      expect(minimalRes.body.sms.enabled).toBeUndefined();
+      expect(minimalRes.body.sms.configured).toBeUndefined();
+      expect(minimalRes.body.sms.deliveryTested).toBeUndefined();
+      expect(minimalRes.body.sms.lifecycleState).toBeUndefined();
+      expect(minimalRes.body.sms.keyFingerprint).toBeUndefined();
       expect(minimalRes.body.sms.senderId).toBeUndefined();
       expect(minimalRes.body.sms.lastTest).toBeUndefined();
-      expect(minimalRes.body.email.provider).toBe('brevo');
-      expect(minimalRes.body.email.configured).toBe(true);
-      expect(minimalRes.body.email.keyFingerprint).toBeNull();
-      expect(minimalRes.body.email.from).toBeNull();
-      expect(minimalRes.body.email.replyTo).toBeNull();
+      expect(minimalRes.body.email.provider).toBeUndefined();
+      expect(minimalRes.body.email.enabled).toBeUndefined();
+      expect(minimalRes.body.email.configured).toBeUndefined();
+      expect(minimalRes.body.email.deliveryTested).toBeUndefined();
+      expect(minimalRes.body.email.lifecycleState).toBeUndefined();
+      expect(minimalRes.body.email.keyFingerprint).toBeUndefined();
+      expect(minimalRes.body.email.from).toBeUndefined();
+      expect(minimalRes.body.email.replyTo).toBeUndefined();
       expect(minimalRes.body.email.fromName).toBeUndefined();
       expect(minimalRes.body.email.domainAuth).toBeUndefined();
       expect(minimalRes.body.email.lastTest).toBeUndefined();
+      expect(minimalRes.body.worker).toBeUndefined();
 
       const rawMinimal = JSON.stringify(minimalRes.body);
+      expect(rawMinimal).not.toContain('robase');
+      expect(rawMinimal).not.toContain('brevo');
+      expect(rawMinimal).not.toContain('PRODUCTION_READY');
       expect(rawMinimal).not.toContain('****7081');
       expect(rawMinimal).not.toContain('****Key1');
       expect(rawMinimal).not.toContain(sentinelSenderId);
@@ -1349,6 +1383,27 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       expect(serializedOversight).not.toContain(LIVE_BREVO_KEY_1);
       expect(serializedOversight).not.toContain('MNNPS1:');
     }
+
+    // Unfiltered GET /internal/audit by a notification.provider.view holder ALSO records an AUTHORIZATION_DECISION read-audit event
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/audit?limit=25')
+      .set(auth(auditor.token))
+      .expect(200);
+
+    const unfilteredOversightDecision: Array<{ action: string; new_values: Record<string, any> }> =
+      await dataSource.query(
+        `SELECT action, new_values
+           FROM audit_events
+          WHERE entity_type = 'AUTHORIZATION_DECISION'
+            AND actor = $1
+            AND new_values ->> 'resourceType' = 'notification-provider-config-audit'
+          ORDER BY occurred_at DESC
+          LIMIT 1`,
+        [auditor.principalId],
+      );
+    expect(unfilteredOversightDecision.length).toBe(1);
+    expect(unfilteredOversightDecision[0]!.action).toBe('ALLOWED');
+    expect(unfilteredOversightDecision[0]!.new_values.action).toBe('notification.provider.view');
   });
 
   it('8. prevents PostgreSQL trigger/driver exceptions, bound parameters, and MNNPS1 envelopes from leaking into HTTP responses or logs on transaction failure', async () => {
@@ -1430,5 +1485,491 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         `DROP FUNCTION IF EXISTS test_fail_notif_provider_proposal_insert()`,
       );
     }
+  });
+
+  it('9. F-01: strips credential-like and financial sentinels in upstream Robase/Brevo error codes across test-send, verify, provider-status, provider-config, PostgreSQL columns, audit JSON, and logs', async () => {
+    const superAdminToken = await loginSuperAdmin();
+    const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
+    const operations = await provisionRole('OPERATIONS', 'MFA');
+
+    const smsSentinel = 'robe_SENTINEL_CRED_881122.TX_NGN_950000_ACCT_0123456789';
+    const emailSentinel = 'xkeysib-SENTINEL_CRED_993344.TX_NGN_950000_ACCT_9876543210';
+
+    const capturedLogs: string[] = [];
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation((...args: unknown[]) => {
+        capturedLogs.push(JSON.stringify(args));
+      });
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        capturedLogs.push(JSON.stringify(args));
+      });
+
+    try {
+      // Activate both SMS (Robase) and EMAIL (Brevo) via maker-checker
+      const smsProp = await request(app.getHttpServer())
+        .post(PROPOSALS_PATH)
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'SMS',
+          expectedVersion: 0,
+          provider: 'robase',
+          enabled: true,
+          baseUrl: 'https://api.robase.dev',
+          senderId: 'MonieNaija',
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_ROBASE_KEY_1,
+          reason: 'F-01 SMS error sanitization verification',
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${smsProp.body.id}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'Approved SMS F-01' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${smsProp.body.id}/activate`)
+        .set(auth(controller.token))
+        .expect(200);
+
+      const emailProp = await request(app.getHttpServer())
+        .post(PROPOSALS_PATH)
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'EMAIL',
+          expectedVersion: 0,
+          provider: 'brevo',
+          enabled: true,
+          baseUrl: 'https://api.brevo.com',
+          fromEmail: 'notifications@monienaija.ng',
+          fromName: 'MonieNaija',
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_BREVO_KEY_1,
+          spfConfigured: true,
+          dkimConfigured: true,
+          dmarcConfigured: true,
+          reason: 'F-01 EMAIL error sanitization verification',
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${emailProp.body.id}/approve`)
+        .set(auth(controller.token))
+        .send({ comment: 'Approved EMAIL F-01' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${emailProp.body.id}/activate`)
+        .set(auth(controller.token))
+        .expect(200);
+
+      // Upstream returns 401 with pattern-matching credential & financial sentinels in error.type / code
+      customTransportOverride = async (url) => {
+        if (url.includes('robase.dev')) {
+          return {
+            ok: false,
+            status: 401,
+            json: async () => ({
+              error: { type: smsSentinel, message: `Raw key ${LIVE_ROBASE_KEY_1}` },
+            }),
+          };
+        }
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({
+            code: emailSentinel,
+            message: `Raw key ${LIVE_BREVO_KEY_1}`,
+          }),
+        };
+      };
+
+      const verifyRes = await request(app.getHttpServer())
+        .post(`${OVERVIEW_PATH}/EMAIL/verify`)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(verifyRes.body.verified).toBe(false);
+      expect(verifyRes.body.errorCode).toBe('BREVO_VERIFY_HTTP_401');
+
+      const smsTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(operations.token))
+        .send({ channel: 'SMS', destination: '+2348012345678' })
+        .expect(201);
+      expect(smsTestRes.body.status).toBe('FAILED');
+      expect(smsTestRes.body.errorCode).toBe('ROBASE_HTTP_401:unknown');
+
+      const emailTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(operations.token))
+        .send({ channel: 'EMAIL', destination: 'ops.f01@monienaija.ng' })
+        .expect(201);
+      expect(emailTestRes.body.status).toBe('FAILED');
+      expect(emailTestRes.body.errorCode).toBe('BREVO_HTTP_401');
+
+      const fullStatusRes = await request(app.getHttpServer())
+        .get(STATUS_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(fullStatusRes.body.sms.lastTest.errorCode).toBe('ROBASE_HTTP_401:unknown');
+      expect(fullStatusRes.body.email.lastTest.errorCode).toBe('BREVO_HTTP_401');
+
+      const overviewRes = await request(app.getHttpServer())
+        .get(OVERVIEW_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(overviewRes.body.sms.lastTest.errorCode).toBe('ROBASE_HTTP_401:unknown');
+      expect(overviewRes.body.email.lastTest.errorCode).toBe('BREVO_HTTP_401');
+      expect(overviewRes.body.email.verification.lastVerificationError).toBe(
+        'BREVO_VERIFY_HTTP_401',
+      );
+
+      const dbConfigRows = await dataSource.query(
+        `SELECT channel, last_verification_error, last_test_error_code FROM notification_provider_configurations`,
+      );
+      const dbAuditRows = await dataSource.query(
+        `SELECT entity_type, action, new_values FROM audit_events WHERE entity_type IN ('NOTIFICATION_TEST_SEND', 'NOTIFICATION_PROVIDER_CONFIG')`,
+      );
+
+      for (const surface of [
+        JSON.stringify(verifyRes.body),
+        JSON.stringify(smsTestRes.body),
+        JSON.stringify(emailTestRes.body),
+        JSON.stringify(fullStatusRes.body),
+        JSON.stringify(overviewRes.body),
+        JSON.stringify(dbConfigRows),
+        JSON.stringify(dbAuditRows),
+        capturedLogs.join('\n'),
+      ]) {
+        expect(surface).not.toContain('SENTINEL_CRED_881122');
+        expect(surface).not.toContain('SENTINEL_CRED_993344');
+        expect(surface).not.toContain('TX_NGN_950000');
+        expect(surface).not.toContain('ACCT_0123456789');
+        expect(surface).not.toContain('ACCT_9876543210');
+        expect(surface).not.toContain('robe_');
+        expect(surface).not.toContain('xkeysib-');
+      }
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('10. F-02: rejects unpinned public hosts, lookalikes, custom ports, IP literals, redirects, DNS rebinding, and tampered DB base_url values without sending credentials', async () => {
+    const http = await import('node:http');
+    const { createPinnedProviderHttpFetch } = await import(
+      '../src/notification/provider-security'
+    );
+    const superAdminToken = await loginSuperAdmin();
+    const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
+    const operations = await provisionRole('OPERATIONS', 'MFA');
+
+    // A) Negative proposal tests: arbitrary public HTTPS hosts, lookalikes, ports, credentials, paths, private/metadata IPs
+    const invalidRobaseUrls = [
+      'https://attacker-controlled.example.test',
+      'https://api.robase.dev.attacker.test',
+      'https://robase.dev',
+      'https://api.robase.dev:8443',
+      'https://api.robase.dev:443',
+      'https://api.robase.dev/evil',
+      'https://user:secret@api.robase.dev',
+      'https://api.robase.dev?token=1',
+      'http://api.robase.dev',
+      'https://127.0.0.1',
+      'https://10.0.0.5',
+      'https://169.254.169.254',
+      'https://[::1]',
+      'https://[fe80::1]',
+      'https://api.brevo.com',
+    ];
+
+    for (const badUrl of invalidRobaseUrls) {
+      await request(app.getHttpServer())
+        .post(PROPOSALS_PATH)
+        .set(auth(superAdminToken))
+        .send({
+          channel: 'SMS',
+          expectedVersion: 0,
+          provider: 'robase',
+          enabled: false,
+          baseUrl: badUrl,
+          senderId: 'MonieNaija',
+          credentialAction: 'SET_ENCRYPTED',
+          apiKey: LIVE_ROBASE_KEY_1,
+          reason: 'Negative host pinning proposal test',
+        })
+        .expect(400);
+    }
+    expect(outboundCalls.length).toBe(0);
+
+    // B) Activate valid pinned Robase config, then verify 302 redirect is blocked without forwarding Authorization header
+    const validProp = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(superAdminToken))
+      .send({
+        channel: 'SMS',
+        expectedVersion: 0,
+        provider: 'robase',
+        enabled: true,
+        baseUrl: 'https://api.robase.dev',
+        senderId: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_ROBASE_KEY_1,
+        reason: 'Activate pinned Robase for redirect and tamper defense checks',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${validProp.body.id}/approve`)
+      .set(auth(controller.token))
+      .send({ comment: 'Approved' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${validProp.body.id}/activate`)
+      .set(auth(controller.token))
+      .expect(200);
+
+    outboundCalls.length = 0;
+    customTransportOverride = async () => ({
+      ok: false,
+      status: 302,
+      json: async () => null,
+    });
+
+    const redirectSend = await request(app.getHttpServer())
+      .post(TEST_SEND_PATH)
+      .set(auth(operations.token))
+      .send({ channel: 'SMS', destination: '+2348012345678' })
+      .expect(201);
+    expect(redirectSend.body.status).toBe('FAILED');
+    expect(redirectSend.body.errorCode).toBe('ROBASE_EGRESS_BLOCKED');
+    expect(outboundCalls.length).toBe(1);
+    expect(outboundCalls[0]!.url).toBe('https://api.robase.dev/v1/sms/send');
+
+    // C) Direct DB tamper of base_url fails closed as MISCONFIGURED / PROVIDER_BASE_URL_UNTRUSTED with ZERO outbound calls
+    outboundCalls.length = 0;
+    customTransportOverride = null;
+    await dataSource.query(
+      `UPDATE notification_provider_configurations SET base_url = 'https://attacker-controlled.example.test' WHERE channel = 'SMS'`,
+    );
+
+    const tamperedTest = await request(app.getHttpServer())
+      .post(TEST_SEND_PATH)
+      .set(auth(operations.token))
+      .send({ channel: 'SMS', destination: '+2348012345678' })
+      .expect(400);
+    expect(tamperedTest.body.message).toBe('PROVIDER_BASE_URL_UNTRUSTED');
+    expect(outboundCalls.length).toBe(0);
+
+    // D) Real local TCP/HTTP listener proves createPinnedProviderHttpFetch blocks DNS rebinding to 127.0.0.1 / 169.254.169.254 with zero socket connections
+    let localServerConnections = 0;
+    const localServer = http.createServer((_req, res) => {
+      localServerConnections += 1;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"id":"stolen"}');
+    });
+    await new Promise<void>((resolve) => localServer.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      for (const reboundIp of ['127.0.0.1', '10.0.0.9', '169.254.169.254', '::1']) {
+        const pinnedFetch = createPinnedProviderHttpFetch({
+          lookupImpl: async () => [
+            { address: reboundIp, family: reboundIp.includes(':') ? 6 : 4 },
+          ],
+        });
+        await expect(
+          pinnedFetch('https://api.robase.dev/v1/sms/send', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${LIVE_ROBASE_KEY_1}` },
+            body: '{}',
+            signal: new AbortController().signal,
+          }),
+        ).rejects.toThrow();
+      }
+      expect(localServerConnections).toBe(0);
+    } finally {
+      await new Promise<void>((resolve) => localServer.close(() => resolve()));
+    }
+  });
+
+  it('11. F-03: enforces atomic 5-per-rolling-hour test-send quota under concurrent bursts and preserves quota across post-send DB persistence failures', async () => {
+    const superAdminToken = await loginSuperAdmin();
+    const controller = await provisionRole('FINANCE_CONTROLLER', 'MFA');
+    const operations = await provisionRole('OPERATIONS', 'MFA');
+
+    // Activate Brevo EMAIL config
+    const emailProp = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(superAdminToken))
+      .send({
+        channel: 'EMAIL',
+        expectedVersion: 0,
+        provider: 'brevo',
+        enabled: true,
+        baseUrl: 'https://api.brevo.com',
+        fromEmail: 'notifications@monienaija.ng',
+        fromName: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_BREVO_KEY_1,
+        spfConfigured: true,
+        dkimConfigured: true,
+        dmarcConfigured: true,
+        reason: 'Enable Brevo for F-03 atomic concurrency quota verification',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${emailProp.body.id}/approve`)
+      .set(auth(controller.token))
+      .send({ comment: 'Approved' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${emailProp.body.id}/activate`)
+      .set(auth(controller.token))
+      .expect(200);
+
+    // Slow down provider HTTP response (75ms) to widen the concurrency window
+    outboundCalls.length = 0;
+    customTransportOverride = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ messageId: `<concurrent-${randomUUID().slice(0, 8)}@brevo>` }),
+      };
+    };
+
+    // Scenario A (exact Arena 4 reproducer): 2 prior attempts + 8 simultaneous parallel requests for SUPER_ADMIN
+    for (let i = 0; i < 2; i += 1) {
+      await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(superAdminToken))
+        .send({ channel: 'EMAIL', destination: `prior${i}@monienaija.ng` })
+        .expect(201);
+    }
+    expect(outboundCalls.length).toBe(2);
+
+    const burst8 = await Promise.all(
+      Array.from({ length: 8 }, (_, idx) =>
+        request(app.getHttpServer())
+          .post(TEST_SEND_PATH)
+          .set(auth(superAdminToken))
+          .send({ channel: 'EMAIL', destination: `burst${idx}@monienaija.ng` }),
+      ),
+    );
+    const statuses8 = burst8.map((r) => r.status);
+    expect(statuses8.filter((s) => s === 201).length).toBe(3);
+    expect(statuses8.filter((s) => s === 429).length).toBe(5);
+    expect(outboundCalls.length).toBe(5); // Strictly capped at 2 + 3 = 5 provider-reaching calls!
+
+    // Scenario B: Independent principal (OPERATIONS) fires 10 simultaneous requests (with 4th/5th failing upstream and post-send DB failure injected)
+    outboundCalls.length = 0;
+    let opsProviderCalls = 0;
+    customTransportOverride = async () => {
+      opsProviderCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({ code: 'service_unavailable' }),
+      };
+    };
+
+    await dataSource.query(`
+      CREATE OR REPLACE FUNCTION test_fail_post_send_config_update()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        IF NEW.last_test_at IS DISTINCT FROM OLD.last_test_at THEN
+          RAISE EXCEPTION 'SIMULATED_POST_SEND_CONFIG_UPDATE_FAILURE' USING ERRCODE = 'P0001';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      CREATE TRIGGER trg_test_fail_post_send_config_update
+        BEFORE UPDATE ON notification_provider_configurations
+        FOR EACH ROW
+        EXECUTE FUNCTION test_fail_post_send_config_update();
+    `);
+
+    try {
+      const burst10 = await Promise.all(
+        Array.from({ length: 10 }, (_, idx) =>
+          request(app.getHttpServer())
+            .post(TEST_SEND_PATH)
+            .set(auth(operations.token))
+            .send({ channel: 'EMAIL', destination: `opsburst${idx}@monienaija.ng` }),
+        ),
+      );
+      const statuses10 = burst10.map((r) => r.status);
+      expect(statuses10.filter((s) => s === 201).length).toBe(5);
+      expect(statuses10.filter((s) => s === 429).length).toBe(5);
+      expect(opsProviderCalls).toBe(5);
+
+      // Even after post-send config update failures AND failed upstream sends, 11th attempt is still 429
+      const eleventh = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(operations.token))
+        .send({ channel: 'EMAIL', destination: 'opsburst11@monienaija.ng' })
+        .expect(429);
+      expect(eleventh.body.message).toBe('NOTIFICATION_TEST_RATE_LIMITED');
+      expect(opsProviderCalls).toBe(5);
+    } finally {
+      await dataSource.query(
+        `DROP TRIGGER IF EXISTS trg_test_fail_post_send_config_update ON notification_provider_configurations`,
+      );
+      await dataSource.query(`DROP FUNCTION IF EXISTS test_fail_post_send_config_update()`);
+    }
+  });
+
+  it('12. F-05: rejects truthy/falsy non-boolean types for enabled, spfConfigured, dkimConfigured, and dmarcConfigured with 400', async () => {
+    const superAdminToken = await loginSuperAdmin();
+
+    const basePayload = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'brevo',
+      enabled: false,
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'notifications@monienaija.ng',
+      fromName: 'MonieNaija',
+      credentialAction: 'SET_ENCRYPTED',
+      apiKey: LIVE_BREVO_KEY_1,
+      spfConfigured: false,
+      dkimConfigured: false,
+      dmarcConfigured: false,
+      reason: 'Strict boolean input validation check',
+    };
+
+    const malformedPayloads: Array<Record<string, unknown>> = [
+      { ...basePayload, enabled: 'false' },
+      { ...basePayload, enabled: 'true' },
+      { ...basePayload, enabled: 0 },
+      { ...basePayload, enabled: 1 },
+      { ...basePayload, enabled: null },
+      { ...basePayload, enabled: [] },
+      (() => {
+        const clone: Record<string, unknown> = { ...basePayload };
+        delete clone.enabled;
+        return clone;
+      })(),
+      { ...basePayload, spfConfigured: 'false' },
+      { ...basePayload, spfConfigured: 1 },
+      { ...basePayload, spfConfigured: null },
+      { ...basePayload, dkimConfigured: 'true' },
+      { ...basePayload, dmarcConfigured: 'false' },
+      { ...basePayload, expectedVersion: '0' },
+      { ...basePayload, requestTimeoutMs: '5000' },
+    ];
+
+    for (const invalidBody of malformedPayloads) {
+      await request(app.getHttpServer())
+        .post(PROPOSALS_PATH)
+        .set(auth(superAdminToken))
+        .send(invalidBody)
+        .expect(400);
+    }
+
+    const proposalsCount: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM notification_provider_config_proposals`,
+    );
+    expect(Number(proposalsCount[0]!.count)).toBe(0);
   });
 });

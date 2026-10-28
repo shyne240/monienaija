@@ -64,6 +64,46 @@ function readRequiredString(obj: Record<string, unknown>, field: string): string
   return val;
 }
 
+function readRequiredBoolean(obj: Record<string, unknown>, field: string): boolean {
+  const val = obj[field];
+  if (typeof val !== 'boolean') {
+    throw new BadRequestException(`${field} must be a strict JSON boolean (true or false).`);
+  }
+  return val;
+}
+
+function readOptionalBoolean(obj: Record<string, unknown>, field: string): boolean | undefined {
+  const val = obj[field];
+  if (val === undefined) {
+    return undefined;
+  }
+  if (typeof val !== 'boolean') {
+    throw new BadRequestException(
+      `${field} must be a strict JSON boolean (true or false) when provided.`,
+    );
+  }
+  return val;
+}
+
+function readRequiredNonNegativeInt(obj: Record<string, unknown>, field: string): number {
+  const val = obj[field];
+  if (typeof val !== 'number' || !Number.isInteger(val) || val < 0) {
+    throw new BadRequestException(`${field} must be a non-negative integer.`);
+  }
+  return val;
+}
+
+function readOptionalInt(obj: Record<string, unknown>, field: string): number | undefined {
+  const val = obj[field];
+  if (val === undefined) {
+    return undefined;
+  }
+  if (typeof val !== 'number' || !Number.isInteger(val)) {
+    throw new BadRequestException(`${field} must be an integer when provided.`);
+  }
+  return val;
+}
+
 function readOptionalNullableString(
   obj: Record<string, unknown>,
   field: string,
@@ -89,27 +129,21 @@ function parseProposeBody(body: unknown): ProposeProviderConfigInput {
     }
   }
   return {
-    channel: obj['channel'] as ManagedNotificationChannel,
-    expectedVersion: obj['expectedVersion'] as number,
+    channel: readRequiredString(obj, 'channel') as ManagedNotificationChannel,
+    expectedVersion: readRequiredNonNegativeInt(obj, 'expectedVersion'),
     provider: readRequiredString(obj, 'provider'),
-    enabled: Boolean(obj['enabled']),
+    enabled: readRequiredBoolean(obj, 'enabled'),
     baseUrl: readOptionalNullableString(obj, 'baseUrl'),
-    requestTimeoutMs:
-      obj['requestTimeoutMs'] === undefined
-        ? undefined
-        : Number(obj['requestTimeoutMs']),
+    requestTimeoutMs: readOptionalInt(obj, 'requestTimeoutMs'),
     senderId: readOptionalNullableString(obj, 'senderId'),
     fromEmail: readOptionalNullableString(obj, 'fromEmail'),
     fromName: readOptionalNullableString(obj, 'fromName'),
     replyToEmail: readOptionalNullableString(obj, 'replyToEmail'),
     credentialAction: readRequiredString(obj, 'credentialAction') as CredentialAction,
     apiKey: obj['apiKey'] === undefined ? undefined : readRequiredString(obj, 'apiKey'),
-    spfConfigured:
-      obj['spfConfigured'] === undefined ? undefined : Boolean(obj['spfConfigured']),
-    dkimConfigured:
-      obj['dkimConfigured'] === undefined ? undefined : Boolean(obj['dkimConfigured']),
-    dmarcConfigured:
-      obj['dmarcConfigured'] === undefined ? undefined : Boolean(obj['dmarcConfigured']),
+    spfConfigured: readOptionalBoolean(obj, 'spfConfigured'),
+    dkimConfigured: readOptionalBoolean(obj, 'dkimConfigured'),
+    dmarcConfigured: readOptionalBoolean(obj, 'dmarcConfigured'),
     reason: readRequiredString(obj, 'reason'),
   };
 }

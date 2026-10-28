@@ -864,14 +864,20 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
                   <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span>Robase Base URL (HTTPS)</span>
+                    <span>Robase Base URL (Pinned HTTPS Origin)</span>
                     <input
                       type="url"
                       data-testid="sms-base-url-input"
                       value={smsBaseUrl}
+                      readOnly
                       disabled={!permissions.canProposeProviderConfig}
-                      onChange={(e) => setSmsBaseUrl(e.target.value)}
-                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        fontSize: 12,
+                      }}
                     />
                   </label>
                   <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1305,14 +1311,20 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             {(emailProvider === 'brevo' || emailProvider === 'resend') && (
               <>
                 <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>API Base URL (HTTPS)</span>
+                  <span>API Base URL (Pinned HTTPS Origin)</span>
                   <input
                     type="url"
                     data-testid="email-base-url-input"
                     value={emailBaseUrl}
+                    readOnly
                     disabled={!permissions.canProposeProviderConfig}
-                    onChange={(e) => setEmailBaseUrl(e.target.value)}
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      fontSize: 12,
+                    }}
                   />
                 </label>
 

@@ -81,10 +81,13 @@ export class OperationsController {
     const normalizedEntityType = entityType?.trim().toUpperCase();
     const targetsProviderAudit =
       normalizedEntityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
-      normalizedEntityType === 'NOTIFICATION_TEST_SEND';
-    const decision = targetsProviderAudit
-      ? await this.auth.authorize(req?.authorizationPrincipal, policy, resource)
-      : this.auth.evaluate(req?.authorizationPrincipal, policy, resource);
+      normalizedEntityType === 'NOTIFICATION_TEST_SEND' ||
+      normalizedEntityType === 'NOTIFICATION_TEST_SEND_QUOTA';
+    const preDecision = this.auth.evaluate(req?.authorizationPrincipal, policy, resource);
+    const decision =
+      targetsProviderAudit || preDecision.allowed
+        ? await this.auth.authorize(req?.authorizationPrincipal, policy, resource)
+        : preDecision;
 
     const auditQuery = {
       entityType,
