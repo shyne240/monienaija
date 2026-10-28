@@ -8,6 +8,7 @@ import {
   classifyRobaseErrorType,
   classifyTransportErrorName,
   createPinnedProviderHttpFetch,
+  deriveSafeVendorProviderRef,
   formatSafeHttpStatus,
   isPinnedProviderEndpointUrl,
 } from './provider-security';
@@ -115,9 +116,22 @@ export class RobaseNotificationProvider implements NotificationProvider {
       }
 
       if (response.ok) {
-        const body = (await response.json()) as { id?: unknown };
-        if (typeof body?.id === 'string' && body.id.length > 0 && body.id.length <= 255) {
-          return { success: true, providerRef: body.id };
+        let body: unknown = null;
+        try {
+          body = await response.json();
+        } catch {
+          return { success: false, error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE' };
+        }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return { success: false, error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE' };
+        }
+        const safeProviderRef = deriveSafeVendorProviderRef(
+          'robase',
+          (body as { id?: unknown }).id,
+          this.config.apiKey,
+        );
+        if (safeProviderRef) {
+          return { success: true, providerRef: safeProviderRef };
         }
         return { success: false, error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE' };
       }

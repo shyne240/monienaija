@@ -5,6 +5,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
 import { redactRecord } from '../common/sensitive-data-redaction';
+import {
+  normalizeProviderErrorCode,
+  sanitizeProviderRefForBoundary,
+} from '../notification/provider-security';
 import { AuditEvent } from './audit-event.entity';
 import type { AuditEventCommand, AuditQuery, AuditView } from './operations.types';
 
@@ -91,8 +95,11 @@ export class AuditService {
       actor: event.actor,
       correlationId: event.correlationId,
       requestId: event.requestId,
-      previousValues: event.previousValues,
-      newValues: event.newValues,
+      previousValues: sanitizeNotificationProviderAuditPayload(
+        event.entityType,
+        event.previousValues,
+      ),
+      newValues: sanitizeNotificationProviderAuditPayload(event.entityType, event.newValues),
       occurredAt: event.occurredAt,
     }));
   }
@@ -108,4 +115,70 @@ export class AuditService {
     });
     return this.list(scopedQuery);
   }
+}
+
+function sanitizeNotificationProviderAuditPayload(
+  entityType: string,
+  payload: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  if (
+    entityType !== 'NOTIFICATION_TEST_SEND' &&
+    entityType !== 'NOTIFICATION_PROVIDER_CONFIG'
+  ) {
+    return payload;
+  }
+
+  const hasDiagnosticField =
+    'providerRef' in payload ||
+    'lastTestProviderRef' in payload ||
+    'errorCode' in payload ||
+    'lastTestErrorCode' in payload ||
+    'lastVerificationError' in payload;
+  if (!hasDiagnosticField) {
+    return payload;
+  }
+
+  const sanitized: Record<string, unknown> = { ...payload };
+  const providerHint = payload['provider'];
+
+  if ('providerRef' in sanitized) {
+    sanitized['providerRef'] = sanitizeProviderRefForBoundary(
+      sanitized['providerRef'],
+      providerHint,
+    );
+  }
+  if ('lastTestProviderRef' in sanitized) {
+    sanitized['lastTestProviderRef'] = sanitizeProviderRefForBoundary(
+      sanitized['lastTestProviderRef'],
+      providerHint,
+    );
+  }
+  if (
+    'errorCode' in sanitized &&
+    sanitized['errorCode'] !== null &&
+    sanitized['errorCode'] !== undefined
+  ) {
+    sanitized['errorCode'] = normalizeProviderErrorCode(sanitized['errorCode']);
+  }
+  if (
+    'lastTestErrorCode' in sanitized &&
+    sanitized['lastTestErrorCode'] !== null &&
+    sanitized['lastTestErrorCode'] !== undefined
+  ) {
+    sanitized['lastTestErrorCode'] = normalizeProviderErrorCode(sanitized['lastTestErrorCode']);
+  }
+  if (
+    'lastVerificationError' in sanitized &&
+    sanitized['lastVerificationError'] !== null &&
+    sanitized['lastVerificationError'] !== undefined
+  ) {
+    sanitized['lastVerificationError'] = normalizeProviderErrorCode(
+      sanitized['lastVerificationError'],
+    );
+  }
+
+  return sanitized;
 }

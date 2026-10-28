@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { NotificationSendRequest } from '../src/notification/notification.types';
+import {
+  SAFE_PROVIDER_REF_PATTERN,
+  deriveSafeVendorProviderRef,
+} from '../src/notification/provider-security';
 import { ResendEmailProvider, sanitizeHeader } from '../src/notification/resend-email-provider';
 import { validateEnvironment } from '../src/config/environment';
 
@@ -58,7 +62,11 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
     const result = await provider.send(request());
 
     expect(result.success).toBe(true);
-    expect(result.providerRef).toBe('49a3999c-0ce1-4ea6-a689-9f01dcb1a646');
+    expect(result.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    expect(result.providerRef).toBe(
+      deriveSafeVendorProviderRef('resend', '49a3999c-0ce1-4ea6-a689-9f01dcb1a646', API_KEY),
+    );
+    expect(result.providerRef).not.toContain('49a3999c');
     expect(calls.length).toBe(1);
     expect(calls[0]!.url).toBe('https://api.resend.com/emails');
     expect(calls[0]!.init.method).toBe('POST');
@@ -258,6 +266,69 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
     const result = await provider.send(request({ message: '', html: undefined }));
     expect(result).toEqual({ success: false, error: 'RESEND_EMPTY_BODY' });
+  });
+
+  it('13. F-01: converts 2xx Resend response ids containing credential/financial sentinels into opaque HMAC digests and rejects malformed/overlong/control-char ids without truncation', async () => {
+    const sentinels = [
+      're_2XX_CRED_SENTINEL_11223344556677889900',
+      'xkeysib-2XX_BREVO_SENTINEL_AABBCCDDEE',
+      'robe_2XX_ROBASE_SENTINEL_998877665544',
+      'MNNPS1:v1:CIPHERTEXT_LEAK:CCCC:DDDD',
+      'TX_NGN_84000000_ACCT_9876543210_PIN_1938_OTP_552019',
+    ];
+
+    for (const rawId of sentinels) {
+      const provider = new ResendEmailProvider(
+        {
+          baseUrl: 'https://api.resend.com',
+          apiKey: API_KEY,
+          from: 'noreply@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({ ok: true, status: 200, json: async () => ({ id: rawId }) }),
+      );
+      const res = await provider.send(request());
+      expect(res.success).toBe(true);
+      expect(res.providerRef).toMatch(/^pvr1:resend:[0-9a-f]{32}$/);
+      const serialized = JSON.stringify(res);
+      expect(serialized).not.toContain(rawId);
+      expect(serialized).not.toContain('SENTINEL');
+      expect(serialized).not.toContain('re_2XX');
+      expect(serialized).not.toContain('xkeysib-');
+      expect(serialized).not.toContain('robe_');
+      expect(serialized).not.toContain('MNNPS1');
+      expect(serialized).not.toContain('84000000');
+      expect(serialized).not.toContain('9876543210');
+    }
+
+    const malformedIds: unknown[] = [
+      undefined,
+      null,
+      '',
+      '   ',
+      999,
+      false,
+      ['re_array_id'],
+      { id: 're_nested_id' },
+      're_overlong_' + 'y'.repeat(600),
+      're_crlf\r\ninjected',
+      're_nul\u0000byte',
+      're_del\u007fchar',
+    ];
+
+    for (const badId of malformedIds) {
+      const provider = new ResendEmailProvider(
+        {
+          baseUrl: 'https://api.resend.com',
+          apiKey: API_KEY,
+          from: 'noreply@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({ ok: true, status: 200, json: async () => ({ id: badId }) }),
+      );
+      const res = await provider.send(request());
+      expect(res).toEqual({ success: false, error: 'RESEND_UNRECOGNIZED_SUCCESS_RESPONSE' });
+    }
   });
 });
 

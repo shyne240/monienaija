@@ -3,6 +3,8 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { ApiClient, ApiError } from '../src/services/api-client';
 import {
   sanitizeProviderStatusForDisplay,
+  validateProviderConfigProposalDraft,
+  type ProposeProviderConfigPayload,
   type ProviderConfigProposal,
   type ProviderConfigurationOverview,
 } from '../src/services/notification-domain';
@@ -634,5 +636,143 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect(
       calledEndpoints.some((ep) => ep.startsWith('/internal/notifications/provider-config')),
     ).toBe(false);
+  });
+
+  it('7. F-05: Admin Web Brevo form always submits explicit boolean DNS flags (including false) and domain validator rejects omitted Brevo DNS booleans without broadening Robase/Resend', async () => {
+    seedPrincipal({
+      principalId: 'issuer:super-admin-brevo-dns',
+      roles: ['SUPER_ADMIN'],
+      scopes: [
+        'notification.view_deliveries',
+        'notification.provider.view',
+        'notification.provider.configure',
+      ],
+    });
+
+    const unconfiguredEmailOverview = makeOverviewFixture({
+      email: {
+        ...makeOverviewFixture().email,
+        source: 'ENVIRONMENT',
+        provider: 'none',
+        enabled: false,
+        lifecycleState: 'NOT_CONFIGURED',
+        hasStoredCredential: false,
+        domainAuthentication: null,
+        fromEmail: null,
+      },
+    });
+    const proposals: ProviderConfigProposal[] = [];
+    wireStandardBackendMocks(unconfiguredEmailOverview, proposals);
+
+    let postedBody: Record<string, unknown> | null = null;
+    (ApiClient.post as jest.Mock).mockImplementation(
+      (endpoint: string, body: Record<string, unknown>) => {
+        if (endpoint === '/internal/notifications/provider-config/proposals') {
+          postedBody = body;
+          const created: ProviderConfigProposal = {
+            id: 'prop-brevo-dns-false',
+            channel: 'EMAIL',
+            expectedVersion: 0,
+            proposedProvider: 'brevo',
+            proposedEnabled: false,
+            proposedBaseUrl: 'https://api.brevo.com',
+            proposedRequestTimeoutMs: 10000,
+            proposedSenderId: null,
+            proposedFromEmail: 'alerts@monienaija.ng',
+            proposedFromName: 'MonieNaija',
+            proposedReplyToEmail: null,
+            credentialAction: 'SET_ENCRYPTED',
+            proposedEncryptionKeyVersion: 'v1',
+            proposedKeyFingerprint: '****Dns0',
+            proposedDomainAuthentication: {
+              spfConfigured: false,
+              dkimConfigured: false,
+              dmarcConfigured: false,
+            },
+            reason: String(body.reason),
+            status: 'REQUESTED',
+            proposerPrincipalId: 'issuer:super-admin-brevo-dns',
+            approvalId: 'appr-dns-0',
+            actionFingerprint: 'fp-dns-0',
+            decidedBy: null,
+            decidedAt: null,
+            decisionReason: null,
+            activatedBy: null,
+            activatedAt: null,
+            resultingVersion: null,
+            createdAt: '2026-10-28T10:15:00.000Z',
+            updatedAt: '2026-10-28T10:15:00.000Z',
+          };
+          proposals.unshift(created);
+          return Promise.resolve(created);
+        }
+        return Promise.resolve({});
+      },
+    );
+
+    const view = render(<NotificationManagementScreen initialTab="providerConfig" />);
+    await view.findByTestId('provider-config-workspace');
+
+    fireEvent.change(view.getByTestId('email-provider-select'), { target: { value: 'brevo' } });
+    fireEvent.change(await view.findByTestId('email-from-address-input'), {
+      target: { value: 'alerts@monienaija.ng' },
+    });
+    fireEvent.change(view.getByTestId('email-api-key-input'), {
+      target: { value: 'xkeysib-' + '0123456789abcdef'.repeat(4) + '-Dns0' },
+    });
+    fireEvent.change(view.getByTestId('email-reason-input'), {
+      target: { value: 'Initial Brevo staging before DNS TXT records are published' },
+    });
+    await act(async () => {
+      fireEvent.click(view.getByTestId('submit-email-proposal-btn'));
+    });
+
+    await waitFor(() => expect(postedBody).not.toBeNull());
+    expect(postedBody!.spfConfigured).toBe(false);
+    expect(postedBody!.dkimConfigured).toBe(false);
+    expect(postedBody!.dmarcConfigured).toBe(false);
+    expect(typeof postedBody!.spfConfigured).toBe('boolean');
+    expect(typeof postedBody!.dkimConfigured).toBe('boolean');
+    expect(typeof postedBody!.dmarcConfigured).toBe('boolean');
+
+    // Domain validator enforces all 3 booleans on Brevo and leaves Robase/Resend unaffected
+    const validBrevoDraft: ProposeProviderConfigPayload = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'brevo',
+      enabled: false,
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'alerts@monienaija.ng',
+      credentialAction: 'SET_ENCRYPTED',
+      apiKey: 'xkeysib-' + '0123456789abcdef'.repeat(4) + '-Dns0',
+      spfConfigured: false,
+      dkimConfigured: false,
+      dmarcConfigured: false,
+      reason: 'Explicit false Brevo DNS attestation',
+    };
+    expect(validateProviderConfigProposalDraft(validBrevoDraft, false)).toEqual([]);
+
+    for (const omitted of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      const copy = { ...validBrevoDraft } as Record<string, unknown>;
+      delete copy[omitted];
+      const errs = validateProviderConfigProposalDraft(
+        copy as unknown as ProposeProviderConfigPayload,
+        false,
+      );
+      expect(errs.some((e) => e.includes(omitted))).toBe(true);
+    }
+
+    const validResendWithoutDns: ProposeProviderConfigPayload = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'resend',
+      enabled: false,
+      baseUrl: 'https://api.resend.com',
+      fromEmail: 'alerts@monienaija.ng',
+      credentialAction: 'SET_ENCRYPTED',
+      apiKey: 're_' + 'a1b2c3d4e5f6'.repeat(3),
+      reason: 'Resend staging without Brevo-specific DNS fields',
+    };
+    expect(validateProviderConfigProposalDraft(validResendWithoutDns, false)).toEqual([]);
   });
 });

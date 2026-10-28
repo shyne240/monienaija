@@ -11,6 +11,7 @@ import {
 import { NotificationDispatcherService } from './notification-dispatcher.service';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationProviderConfigService } from './notification-provider-config.service';
+import { sanitizeProviderRefForBoundary } from './provider-security';
 import { canonicalNotificationEvent, NotificationTemplateService } from './notification-template.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type {
@@ -322,13 +323,17 @@ export class NotificationWorkerService implements OnModuleInit, OnModuleDestroy 
           : { success: false, error: isEmailRow ? 'WORKER_NO_EMAIL_PROVIDER_CONFIGURED' : 'WORKER_NO_PROVIDER_CONFIGURED' };
 
         if (result.success) {
+          const safeRetryProviderRef = sanitizeProviderRefForBoundary(
+            result.providerRef,
+            providerForChannel?.name,
+          );
           // Conditional status guard: only a concurrent-safe FAILED→SENT transition persists.
           await this.dataSource.query(
             `UPDATE notification_deliveries
                 SET status='SENT', attempts=attempts+1, provider_ref=$1, sent_at=NOW(),
                     last_error=NULL, updated_at=NOW()
               WHERE id=$2 AND status='FAILED'`,
-            [result.providerRef ?? null, row.id],
+            [safeRetryProviderRef, row.id],
           );
           retriesSent += 1;
         } else {

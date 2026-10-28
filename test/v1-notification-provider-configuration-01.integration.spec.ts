@@ -13,8 +13,10 @@ import { LocalAdminAuthenticationService } from '../src/local-admin-authenticati
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import {
   NOTIFICATION_PROVIDER_HTTP_FETCH_TOKEN,
+  NotificationProviderConfigService,
   type ProviderHttpFetchFn,
 } from '../src/notification/notification-provider-config.service';
+import { SAFE_PROVIDER_REF_PATTERN } from '../src/notification/provider-security';
 import { NotificationWorkerService } from '../src/notification/notification-worker.service';
 import { ProductionReadinessService } from '../src/production/production-readiness.service';
 import {
@@ -401,6 +403,9 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         fromName: 'MonieNaija',
         credentialAction: 'SET_ENCRYPTED',
         apiKey: 'xsmtpsib-abcdef1234567890abcdef1234567890',
+        spfConfigured: false,
+        dkimConfigured: false,
+        dmarcConfigured: false,
         reason: 'Accidental SMTP relay password entry',
       })
       .expect(400);
@@ -1971,5 +1976,632 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       `SELECT count(*)::text AS count FROM notification_provider_config_proposals`,
     );
     expect(Number(proposalsCount[0]!.count)).toBe(0);
+  });
+
+  it('13. F-01 adversarial 2xx vendor response IDs (Robase, Brevo, Resend): replaces credential & financial sentinels with opaque keyed-HMAC references across HTTP, FULL status, config overview, DB columns, delivery rows, audit JSON, and captured logs; rejects malformed/overlong/control-char IDs; and protects historical persisted rows', async () => {
+    const superAdminToken = await loginSuperAdmin();
+    const checker = await provisionRole('FINANCE_CONTROLLER');
+    const opsBatch1 = await provisionRole('OPERATIONS');
+    const opsBatch2 = await provisionRole('OPERATIONS');
+    const opsBatch3 = await provisionRole('OPERATIONS');
+    const providerConfigSvc = app.get(NotificationProviderConfigService);
+
+    const LIVE_RESEND_KEY_1 = 're_' + 'a1b2c3d4e5f60718'.repeat(3);
+
+    const ROBASE_2XX_SENTINEL =
+      'robe_2XX_CRED_SENTINEL_77112233_TX_NGN_95000000_ACCT_0123456789_PIN_4821';
+    const BREVO_2XX_SENTINEL =
+      '<xkeysib-2XX_CRED_SENTINEL_88442211@TX-NGN-76543210-ACCT-9988776655-OTP-619204.example>';
+    const BREVO_BATCH_2XX_SENTINEL =
+      'MNNPS1:v1:2XX_BATCH_ENVELOPE_LEAK:robe_5544332211:LEDGER_JRN_909090';
+    const RESEND_2XX_SENTINEL =
+      're_2XX_CRED_SENTINEL_66554433_TX_NGN_44332211_ACCT_1122334455_BEARER_SECRET';
+    const HISTORICAL_DB_SENTINEL =
+      'xkeysib-HISTORICAL_DB_REF_918273_TX_NGN_55000000_ACCT_2233445566';
+    const HISTORICAL_AUDIT_SENTINEL =
+      'xkeysib-HISTORICAL_AUDIT_REF_654321_TX_NGN_33000000_ACCT_7788990011';
+
+    const ALL_FORBIDDEN_SUBSTRINGS = [
+      ROBASE_2XX_SENTINEL,
+      BREVO_2XX_SENTINEL,
+      BREVO_BATCH_2XX_SENTINEL,
+      RESEND_2XX_SENTINEL,
+      HISTORICAL_DB_SENTINEL,
+      HISTORICAL_AUDIT_SENTINEL,
+      '2XX_CRED_SENTINEL',
+      '2XX_BATCH_ENVELOPE_LEAK',
+      'HISTORICAL_DB_REF',
+      'HISTORICAL_AUDIT_REF',
+      'TX_NGN_95000000',
+      'TX-NGN-76543210',
+      'TX_NGN_44332211',
+      'TX_NGN_55000000',
+      'TX_NGN_33000000',
+      '0123456789',
+      '9988776655',
+      '1122334455',
+      '2233445566',
+      '7788990011',
+      'PIN_4821',
+      'OTP-619204',
+      'LEDGER_JRN_909090',
+    ];
+
+    const assertZeroSentinels = (surface: unknown, label: string) => {
+      const serialized = typeof surface === 'string' ? surface : JSON.stringify(surface);
+      for (const token of ALL_FORBIDDEN_SUBSTRINGS) {
+        if (serialized.includes(token)) {
+          throw new Error(`Sentinel "${token}" leaked in ${label}`);
+        }
+      }
+    };
+
+    const capturedLogs: string[] = [];
+    const recordLog = (...args: unknown[]) => {
+      capturedLogs.push(
+        args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '),
+      );
+    };
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(recordLog);
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(recordLog);
+    const errSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(recordLog);
+    const dbgSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(recordLog);
+
+    try {
+      // Helper to propose + approve + activate a provider config cleanly
+      const activateConfig = async (payload: Record<string, unknown>) => {
+        const prop = await request(app.getHttpServer())
+          .post(PROPOSALS_PATH)
+          .set(auth(superAdminToken))
+          .send(payload)
+          .expect(201);
+        await request(app.getHttpServer())
+          .post(`${PROPOSALS_PATH}/${prop.body.id}/approve`)
+          .set(auth(checker.token))
+          .send({ comment: 'Approved F-01 adversarial vendor config' })
+          .expect(200);
+        await request(app.getHttpServer())
+          .post(`${PROPOSALS_PATH}/${prop.body.id}/activate`)
+          .set(auth(checker.token))
+          .expect(200);
+      };
+
+      await activateConfig({
+        channel: 'SMS',
+        expectedVersion: 0,
+        provider: 'robase',
+        enabled: true,
+        baseUrl: 'https://api.robase.dev',
+        senderId: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_ROBASE_KEY_1,
+        reason: 'Activate Robase for F-01 2xx sentinel verification',
+      });
+
+      await activateConfig({
+        channel: 'EMAIL',
+        expectedVersion: 0,
+        provider: 'brevo',
+        enabled: true,
+        baseUrl: 'https://api.brevo.com',
+        fromEmail: 'notifications@monienaija.ng',
+        fromName: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_BREVO_KEY_1,
+        spfConfigured: true,
+        dkimConfigured: true,
+        dmarcConfigured: true,
+        reason: 'Activate Brevo for F-01 2xx sentinel verification',
+      });
+
+      // --- A) Successful 2xx sentinel responses on Robase & Brevo (messageId + messageIds) ---
+      let brevoUseBatchArray = false;
+      customTransportOverride = async (url) => {
+        if (url === 'https://api.robase.dev/v1/sms/send') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              id: ROBASE_2XX_SENTINEL,
+              status: 'pending',
+              phone_number: '+2348012345678',
+              credit_cost: 1,
+            }),
+          };
+        }
+        if (url === 'https://api.brevo.com/v3/smtp/email') {
+          return {
+            ok: true,
+            status: 201,
+            json: async () =>
+              brevoUseBatchArray
+                ? { messageIds: [BREVO_BATCH_2XX_SENTINEL] }
+                : { messageId: BREVO_2XX_SENTINEL },
+          };
+        }
+        if (url === 'https://api.resend.com/emails') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ id: RESEND_2XX_SENTINEL }),
+          };
+        }
+        throw new Error(`Unexpected URL ${url}`);
+      };
+
+      const robaseTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(opsBatch1.token))
+        .send({ channel: 'SMS', destination: '+2348012345678' })
+        .expect(201);
+      expect(robaseTestRes.body.status).toBe('SENT');
+      expect(robaseTestRes.body.providerRef).toMatch(/^pvr1:robase:[0-9a-f]{32}$/);
+      assertZeroSentinels(robaseTestRes.body, 'Robase test-send HTTP response');
+
+      const brevoTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(opsBatch1.token))
+        .send({ channel: 'EMAIL', destination: 'ops.f01@monienaija.ng' })
+        .expect(201);
+      expect(brevoTestRes.body.status).toBe('SENT');
+      expect(brevoTestRes.body.providerRef).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      assertZeroSentinels(brevoTestRes.body, 'Brevo messageId test-send HTTP response');
+
+      brevoUseBatchArray = true;
+      const brevoBatchTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(opsBatch1.token))
+        .send({ channel: 'EMAIL', destination: 'ops.f01.batch@monienaija.ng' })
+        .expect(201);
+      expect(brevoBatchTestRes.body.status).toBe('SENT');
+      expect(brevoBatchTestRes.body.providerRef).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      assertZeroSentinels(brevoBatchTestRes.body, 'Brevo messageIds test-send HTTP response');
+
+      // Inspect FULL provider-status & provider-config overview after Robase + Brevo sends
+      const fullStatusAfterBrevo = await request(app.getHttpServer())
+        .get(STATUS_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(fullStatusAfterBrevo.body.projectionScope).toBe('FULL');
+      expect(fullStatusAfterBrevo.body.sms.lastTest.providerRef).toBe(
+        robaseTestRes.body.providerRef,
+      );
+      expect(fullStatusAfterBrevo.body.email.lastTest.providerRef).toBe(
+        brevoBatchTestRes.body.providerRef,
+      );
+      assertZeroSentinels(fullStatusAfterBrevo.body, 'FULL provider-status after Robase+Brevo');
+
+      const overviewAfterBrevo = await request(app.getHttpServer())
+        .get(OVERVIEW_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(overviewAfterBrevo.body.sms.lastTest.providerRef).toBe(
+        robaseTestRes.body.providerRef,
+      );
+      expect(overviewAfterBrevo.body.email.lastTest.providerRef).toBe(
+        brevoBatchTestRes.body.providerRef,
+      );
+      assertZeroSentinels(overviewAfterBrevo.body, 'provider-config overview after Robase+Brevo');
+
+      // Also verify outbox/dispatcher + worker retry delivery path writes safe pvr1:* refs into notification_deliveries.provider_ref
+      await dataSource.query(
+        `UPDATE notification_event_configurations
+            SET is_enabled = TRUE, version = version + 1, updated_at = NOW()
+          WHERE event_type = 'transfer.completed' AND channel = 'EMAIL'`,
+      );
+      const custId = randomUUID();
+      await dataSource.query(
+        `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status)
+         VALUES ($1, $2, 'INDIVIDUAL', 'ACTIVE', 'LEVEL_1', 'APPROVED')`,
+        [custId, `cust-f01-${randomUUID()}`],
+      );
+      await dataSource.query(
+        `INSERT INTO customer_profiles (id, customer_id, display_name, is_active)
+         VALUES ($1, $2, 'F01 Customer', TRUE)`,
+        [randomUUID(), custId],
+      );
+      await dataSource.query(
+        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary)
+         VALUES ($1, $2, 'PHONE', '8039998877', '8039998877', TRUE),
+                ($3, $2, 'EMAIL', $4, 'f01.customer@example.com', TRUE)`,
+        [randomUUID(), custId, randomUUID(), 'f01.customer@example.com'],
+      );
+      await dataSource.query(
+        `INSERT INTO customer_preferences
+           (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled,
+            notification_push_enabled, notification_in_app_enabled, security_login_alerts,
+            security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
+         VALUES ($1, $2, 'EN', 'SYSTEM', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, 1)`,
+        [randomUUID(), custId],
+      );
+
+      const dispatchOutcome = await dispatcher.dispatch({
+        eventType: 'transfer.completed',
+        eventKey: `transfer.completed:f01:${randomUUID()}`,
+        payload: {
+          sourceCustomerId: custId,
+          amountMinor: '100000',
+          transferId: 'tx-f01-1',
+          reference: 'REF-F01-1',
+        },
+      });
+      expect(dispatchOutcome.dispatched).toBe(2);
+      for (const del of dispatchOutcome.deliveries) {
+        expect(del.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+      }
+
+      const deliveryRows = await dataSource.query<
+        Array<{ channel: string; status: string; provider_ref: string | null }>
+      >(
+        `SELECT channel, status, provider_ref FROM notification_deliveries WHERE recipient_id = $1`,
+        [custId],
+      );
+      expect(deliveryRows.length).toBe(2);
+      for (const row of deliveryRows) {
+        expect(row.status).toBe('SENT');
+        expect(row.provider_ref).toMatch(SAFE_PROVIDER_REF_PATTERN);
+      }
+      assertZeroSentinels(deliveryRows, 'notification_deliveries.provider_ref');
+
+      // Also verify worker retry path converts sentinel 2xx IDs to pvr1:*
+      await dataSource.query(
+        `UPDATE notification_deliveries
+            SET status = 'FAILED', attempts = 1, provider_ref = NULL,
+                updated_at = NOW() - INTERVAL '10 minutes'
+          WHERE recipient_id = $1`,
+        [custId],
+      );
+      const tickRes = await worker.tick();
+      expect(tickRes.retriesSent).toBe(2);
+      const retriedRows = await dataSource.query<
+        Array<{ channel: string; status: string; provider_ref: string | null }>
+      >(
+        `SELECT channel, status, provider_ref FROM notification_deliveries WHERE recipient_id = $1`,
+        [custId],
+      );
+      for (const row of retriedRows) {
+        expect(row.status).toBe('SENT');
+        expect(row.provider_ref).toMatch(SAFE_PROVIDER_REF_PATTERN);
+      }
+      assertZeroSentinels(retriedRows, 'worker-retried notification_deliveries.provider_ref');
+
+      // --- B) Switch EMAIL channel to Resend and inject Resend 2xx sentinel ---
+      await activateConfig({
+        channel: 'EMAIL',
+        expectedVersion: 1,
+        provider: 'resend',
+        enabled: true,
+        baseUrl: 'https://api.resend.com',
+        fromEmail: 'notifications@monienaija.ng',
+        fromName: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_RESEND_KEY_1,
+        reason: 'Switch EMAIL to Resend for F-01 2xx sentinel verification',
+      });
+
+      const resendTestRes = await request(app.getHttpServer())
+        .post(TEST_SEND_PATH)
+        .set(auth(opsBatch1.token))
+        .send({ channel: 'EMAIL', destination: 'ops.resend@monienaija.ng' })
+        .expect(201);
+      expect(resendTestRes.body.status).toBe('SENT');
+      expect(resendTestRes.body.providerRef).toMatch(/^pvr1:resend:[0-9a-f]{32}$/);
+      assertZeroSentinels(resendTestRes.body, 'Resend test-send HTTP response');
+
+      const fullStatusAfterResend = await request(app.getHttpServer())
+        .get(STATUS_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(fullStatusAfterResend.body.email.lastTest.providerRef).toBe(
+        resendTestRes.body.providerRef,
+      );
+      assertZeroSentinels(fullStatusAfterResend.body, 'FULL provider-status after Resend');
+
+      const overviewAfterResend = await request(app.getHttpServer())
+        .get(OVERVIEW_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(overviewAfterResend.body.email.lastTest.providerRef).toBe(
+        resendTestRes.body.providerRef,
+      );
+      assertZeroSentinels(overviewAfterResend.body, 'provider-config overview after Resend');
+
+      // --- C) Malformed 2xx vendor IDs (arrays, objects, overlong >512 without truncation, control chars) fail closed ---
+      const malformedRobaseIds: unknown[] = [
+        ['robe_array_leak'],
+        { id: 'robe_object_leak' },
+        ROBASE_2XX_SENTINEL + '_OVERLONG_' + 'x'.repeat(600),
+        `robe_crlf\r\n${ROBASE_2XX_SENTINEL}`,
+      ];
+      for (const badId of malformedRobaseIds) {
+        customTransportOverride = async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ id: badId }),
+        });
+        const badRes = await request(app.getHttpServer())
+          .post(TEST_SEND_PATH)
+          .set(auth(opsBatch2.token))
+          .send({ channel: 'SMS', destination: '+2348012345678' })
+          .expect(201);
+        expect(badRes.body.status).toBe('FAILED');
+        expect(badRes.body.providerRef).toBeNull();
+        expect(badRes.body.errorCode).toBe('ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE');
+        assertZeroSentinels(badRes.body, 'Malformed Robase 2xx response');
+      }
+
+      const malformedResendIds: unknown[] = [
+        null,
+        { nested: RESEND_2XX_SENTINEL },
+        RESEND_2XX_SENTINEL + '_OVERLONG_' + 'y'.repeat(600),
+        `re_nul\u0000${RESEND_2XX_SENTINEL}`,
+      ];
+      for (const badId of malformedResendIds) {
+        customTransportOverride = async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ id: badId }),
+        });
+        const badRes = await request(app.getHttpServer())
+          .post(TEST_SEND_PATH)
+          .set(auth(opsBatch3.token))
+          .send({ channel: 'EMAIL', destination: 'ops.bad@monienaija.ng' })
+          .expect(201);
+        expect(badRes.body.status).toBe('FAILED');
+        expect(badRes.body.providerRef).toBeNull();
+        expect(badRes.body.errorCode).toBe('RESEND_UNRECOGNIZED_SUCCESS_RESPONSE');
+        assertZeroSentinels(badRes.body, 'Malformed Resend 2xx response');
+      }
+
+      // Inspect raw DB diagnostic columns & raw audit_events rows written during all sends above
+      const dbConfigRows = await dataSource.query(
+        `SELECT channel, provider, last_test_status, last_test_provider_ref, last_test_error_code, last_verification_error
+           FROM notification_provider_configurations`,
+      );
+      assertZeroSentinels(dbConfigRows, 'notification_provider_configurations DB columns');
+
+      const dbAuditRows = await dataSource.query(
+        `SELECT entity_type, action, previous_values, new_values
+           FROM audit_events
+          WHERE entity_type IN ('NOTIFICATION_TEST_SEND', 'NOTIFICATION_PROVIDER_CONFIG')`,
+      );
+      expect(dbAuditRows.length).toBeGreaterThanOrEqual(4);
+      assertZeroSentinels(dbAuditRows, 'audit_events DB JSON columns');
+
+      const httpAuditRes = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?entityType=NOTIFICATION_TEST_SEND&limit=50')
+        .set(auth(superAdminToken))
+        .expect(200);
+      assertZeroSentinels(httpAuditRes.body, 'GET /internal/audit NOTIFICATION_TEST_SEND');
+      assertZeroSentinels(capturedLogs, 'Captured application logs');
+
+      // --- D) Historical persisted unsafe references (DB row + immutable audit_events row) ---
+      await dataSource.query(
+        `UPDATE notification_provider_configurations
+            SET provider = 'brevo',
+                last_test_status = 'SENT',
+                last_test_provider_ref = $1
+          WHERE channel = 'EMAIL'`,
+        [HISTORICAL_DB_SENTINEL],
+      );
+      const versionBeforeBackfillRows: Array<{ version: number }> = await dataSource.query(
+        `SELECT version FROM notification_provider_configurations WHERE channel = 'EMAIL'`,
+      );
+      const versionBeforeBackfill = versionBeforeBackfillRows[0]!.version;
+
+      const historicalAuditId = randomUUID();
+      await dataSource.query(
+        `INSERT INTO audit_events
+           (id, entity_type, entity_id, action, actor, correlation_id, request_id, previous_values, new_values, occurred_at, created_at)
+         VALUES ($1, 'NOTIFICATION_TEST_SEND', $2, 'NOTIFICATION_TEST_SENT', $3, 'corr-legacy-f01', 'req-legacy-f01', NULL, $4::jsonb, NOW(), NOW())`,
+        [
+          historicalAuditId,
+          randomUUID(),
+          opsBatch1.principalId,
+          JSON.stringify({
+            channel: 'EMAIL',
+            destination: 'le***@monienaija.ng',
+            provider: 'brevo',
+            providerRef: HISTORICAL_AUDIT_SENTINEL,
+            errorCode: null,
+            unrelatedEvidenceField: 'PRESERVE_HISTORICAL_EVIDENCE_99',
+          }),
+        ],
+      );
+
+      // Even BEFORE startup normalization runs, read boundaries never leak historical raw refs!
+      const statusWithHistoricalRow = await request(app.getHttpServer())
+        .get(STATUS_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(statusWithHistoricalRow.body.email.lastTest.providerRef).toMatch(
+        /^pvr1:brevo:[0-9a-f]{32}$/,
+      );
+      assertZeroSentinels(
+        statusWithHistoricalRow.body,
+        'FULL provider-status with historical unbackfilled DB row',
+      );
+
+      const overviewWithHistoricalRow = await request(app.getHttpServer())
+        .get(OVERVIEW_PATH)
+        .set(auth(superAdminToken))
+        .expect(200);
+      expect(overviewWithHistoricalRow.body.email.lastTest.providerRef).toMatch(
+        /^pvr1:brevo:[0-9a-f]{32}$/,
+      );
+      assertZeroSentinels(
+        overviewWithHistoricalRow.body,
+        'provider-config overview with historical unbackfilled DB row',
+      );
+
+      const auditWithHistoricalRow = await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?entityType=NOTIFICATION_TEST_SEND&limit=100')
+        .set(auth(superAdminToken))
+        .expect(200);
+      const projectedHistoricalAudit = (auditWithHistoricalRow.body as Array<any>).find(
+        (item) => item.id === historicalAuditId,
+      );
+      expect(projectedHistoricalAudit).toBeDefined();
+      expect(projectedHistoricalAudit.newValues.providerRef).toMatch(
+        /^pvr1:brevo:[0-9a-f]{32}$/,
+      );
+      expect(projectedHistoricalAudit.newValues.unrelatedEvidenceField).toBe(
+        'PRESERVE_HISTORICAL_EVIDENCE_99',
+      );
+      assertZeroSentinels(
+        auditWithHistoricalRow.body,
+        'GET /internal/audit with historical NOTIFICATION_TEST_SEND row',
+      );
+
+      // Additive startup normalization updates last_test_provider_ref in-place idempotently without bumping version
+      const normalizedCount = await providerConfigSvc.normalizeHistoricalProviderRefs();
+      expect(normalizedCount).toBe(1);
+      expect(await providerConfigSvc.normalizeHistoricalProviderRefs()).toBe(0);
+
+      const postBackfillRow: Array<{ version: number; last_test_provider_ref: string }> =
+        await dataSource.query(
+          `SELECT version, last_test_provider_ref
+             FROM notification_provider_configurations
+            WHERE channel = 'EMAIL'`,
+        );
+      expect(postBackfillRow[0]!.version).toBe(versionBeforeBackfill);
+      expect(postBackfillRow[0]!.last_test_provider_ref).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      assertZeroSentinels(postBackfillRow, 'post-backfill notification_provider_configurations');
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      errSpy.mockRestore();
+      dbgSpy.mockRestore();
+    }
+  });
+
+  it('14. F-05 adversarial Brevo DNS boolean contract: rejects individually omitted or mistyped spfConfigured/dkimConfigured/dmarcConfigured with 400 and zero DB/audit mutations, accepts explicit false values, and leaves unrelated providers unaffected', async () => {
+    const superAdminToken = await loginSuperAdmin();
+
+    const validExplicitFalseBrevo = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'brevo',
+      enabled: false,
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'notifications@monienaija.ng',
+      fromName: 'MonieNaija',
+      credentialAction: 'SET_ENCRYPTED',
+      apiKey: LIVE_BREVO_KEY_1,
+      spfConfigured: false,
+      dkimConfigured: false,
+      dmarcConfigured: false,
+      reason: 'Stage Brevo configuration with explicit false DNS booleans',
+    };
+
+    const countMutations = async () => {
+      const [proposals, configs, approvals, configAudits] = await Promise.all([
+        dataSource.query<Array<{ c: string }>>(
+          `SELECT count(*)::text AS c FROM notification_provider_config_proposals`,
+        ),
+        dataSource.query<Array<{ c: string }>>(
+          `SELECT count(*)::text AS c FROM notification_provider_configurations`,
+        ),
+        dataSource.query<Array<{ c: string }>>(
+          `SELECT count(*)::text AS c FROM privileged_action_approvals WHERE resource_type = 'NOTIFICATION_PROVIDER_CONFIG_PROPOSAL'`,
+        ),
+        dataSource.query<Array<{ c: string }>>(
+          `SELECT count(*)::text AS c FROM audit_events WHERE entity_type = 'NOTIFICATION_PROVIDER_CONFIG'`,
+        ),
+      ]);
+      return {
+        proposals: Number(proposals[0]!.c),
+        configs: Number(configs[0]!.c),
+        approvals: Number(approvals[0]!.c),
+        configAudits: Number(configAudits[0]!.c),
+      };
+    };
+
+    // 1. Individually omit each of spfConfigured, dkimConfigured, dmarcConfigured + omit all three
+    for (const omittedField of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      const body: Record<string, unknown> = { ...validExplicitFalseBrevo };
+      delete body[omittedField];
+      const res = await request(app.getHttpServer())
+        .post(PROPOSALS_PATH)
+        .set(auth(superAdminToken))
+        .send(body)
+        .expect(400);
+      expect(String(res.body.message)).toContain(omittedField);
+    }
+
+    const allThreeOmitted: Record<string, unknown> = { ...validExplicitFalseBrevo };
+    delete allThreeOmitted.spfConfigured;
+    delete allThreeOmitted.dkimConfigured;
+    delete allThreeOmitted.dmarcConfigured;
+    await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(superAdminToken))
+      .send(allThreeOmitted)
+      .expect(400);
+
+    // 2. Non-boolean types for every single DNS field (strings, numbers, null, arrays, objects)
+    for (const field of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      for (const badType of ['true', 'false', '0', '1', '', 0, 1, null, [], [true], { value: true }]) {
+        await request(app.getHttpServer())
+          .post(PROPOSALS_PATH)
+          .set(auth(superAdminToken))
+          .send({ ...validExplicitFalseBrevo, [field]: badType })
+          .expect(400);
+      }
+    }
+
+    // Strict zero-mutation guarantee across proposals, configs, approvals, and config audit rows
+    expect(await countMutations()).toEqual({
+      proposals: 0,
+      configs: 0,
+      approvals: 0,
+      configAudits: 0,
+    });
+
+    // 3. Valid explicit `false` values on all three DNS booleans succeed with 201 and persist false
+    const createdFalseRes = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(superAdminToken))
+      .send(validExplicitFalseBrevo)
+      .expect(201);
+    expect(createdFalseRes.body.proposedDomainAuthentication).toEqual({
+      spfConfigured: false,
+      dkimConfigured: false,
+      dmarcConfigured: false,
+    });
+
+    const persistedProposalRows: Array<{
+      proposed_spf_configured: boolean;
+      proposed_dkim_configured: boolean;
+      proposed_dmarc_configured: boolean;
+    }> = await dataSource.query(
+      `SELECT proposed_spf_configured, proposed_dkim_configured, proposed_dmarc_configured
+         FROM notification_provider_config_proposals
+        WHERE id = $1`,
+      [createdFalseRes.body.id],
+    );
+    expect(persistedProposalRows[0]).toEqual({
+      proposed_spf_configured: false,
+      proposed_dkim_configured: false,
+      proposed_dmarc_configured: false,
+    });
+
+    // 4. Unrelated provider contracts (e.g. Robase SMS without DNS booleans) remain unaffected
+    const robaseWithoutDns = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(superAdminToken))
+      .send({
+        channel: 'SMS',
+        expectedVersion: 0,
+        provider: 'robase',
+        enabled: false,
+        baseUrl: 'https://api.robase.dev',
+        senderId: 'MonieNaija',
+        credentialAction: 'SET_ENCRYPTED',
+        apiKey: LIVE_ROBASE_KEY_1,
+        reason: 'Robase SMS proposal without email DNS fields',
+      })
+      .expect(201);
+    expect(robaseWithoutDns.body.proposedProvider).toBe('robase');
   });
 });

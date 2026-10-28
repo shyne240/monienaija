@@ -34,7 +34,10 @@ import type {
   NotificationProvider,
   NotificationSendResult,
 } from '../notification/notification.types';
-import { normalizeProviderErrorCode } from '../notification/provider-security';
+import {
+  normalizeProviderErrorCode,
+  sanitizeProviderRefForBoundary,
+} from '../notification/provider-security';
 import { AuditService } from '../operations/audit.service';
 
 interface AuthenticatedRequest {
@@ -166,6 +169,10 @@ export class AdminNotificationProviderController {
           lastTest: overview.sms.lastTest
             ? {
                 ...overview.sms.lastTest,
+                providerRef: sanitizeProviderRefForBoundary(
+                  overview.sms.lastTest.providerRef,
+                  overview.sms.provider,
+                ),
                 errorCode: normalizeProviderErrorCode(overview.sms.lastTest.errorCode),
               }
             : overview.sms.lastTest,
@@ -192,6 +199,10 @@ export class AdminNotificationProviderController {
           lastTest: overview.email.lastTest
             ? {
                 ...overview.email.lastTest,
+                providerRef: sanitizeProviderRefForBoundary(
+                  overview.email.lastTest.providerRef,
+                  overview.email.provider,
+                ),
                 errorCode: normalizeProviderErrorCode(overview.email.lastTest.errorCode),
               }
             : overview.email.lastTest,
@@ -293,10 +304,12 @@ export class AdminNotificationProviderController {
     const { channel, destination } = parsed;
 
     // Fail closed BEFORE consuming rate-limit quota if governed DB config is disabled or misconfigured.
+    let resolvedDbProviderName: string | null = null;
     if (this.providerConfigService) {
       const overview = await this.providerConfigService.getOverview();
       const snap = channel === 'EMAIL' ? overview.email : overview.sms;
       if (snap.source === 'DATABASE') {
+        resolvedDbProviderName = snap.provider;
         if (snap.provider === 'none') {
           throw new BadRequestException({
             statusCode: 400,
@@ -333,7 +346,7 @@ export class AdminNotificationProviderController {
     const correlationId = randomUUID();
     const maskedDestination = channel === 'EMAIL' ? maskEmail(destination) : maskPhone(destination);
     const provider = channel === 'EMAIL' ? this.emailProvider : this.smsProvider;
-    const providerName = provider.name;
+    const providerName = resolvedDbProviderName ?? provider.name;
 
     // Atomic durable rate-limit reservation (Sprint 1 Remediation F-03):
     // Serialize per-principal rolling-hour quota with `pg_advisory_xact_lock` and commit an
@@ -427,10 +440,9 @@ export class AdminNotificationProviderController {
     const errorCode = success
       ? null
       : (normalizeProviderErrorCode(result.error) ?? 'PROVIDER_FAILURE');
-    const safeProviderRef =
-      typeof result.providerRef === 'string' && result.providerRef.length > 0
-        ? result.providerRef.slice(0, 255)
-        : null;
+    const safeProviderRef = success
+      ? sanitizeProviderRefForBoundary(result.providerRef, providerName)
+      : null;
 
     if (this.providerConfigService) {
       try {

@@ -128,11 +128,17 @@ function parseProposeBody(body: unknown): ProposeProviderConfigInput {
       throw new BadRequestException(`Unknown field "${key}" in provider configuration proposal.`);
     }
   }
+  const channel = readRequiredString(obj, 'channel') as ManagedNotificationChannel;
+  const expectedVersion = readRequiredNonNegativeInt(obj, 'expectedVersion');
+  const provider = readRequiredString(obj, 'provider');
+  const enabled = readRequiredBoolean(obj, 'enabled');
+  const isBrevoProposal = provider.trim().toLowerCase() === 'brevo';
+
   return {
-    channel: readRequiredString(obj, 'channel') as ManagedNotificationChannel,
-    expectedVersion: readRequiredNonNegativeInt(obj, 'expectedVersion'),
-    provider: readRequiredString(obj, 'provider'),
-    enabled: readRequiredBoolean(obj, 'enabled'),
+    channel,
+    expectedVersion,
+    provider,
+    enabled,
     baseUrl: readOptionalNullableString(obj, 'baseUrl'),
     requestTimeoutMs: readOptionalInt(obj, 'requestTimeoutMs'),
     senderId: readOptionalNullableString(obj, 'senderId'),
@@ -141,9 +147,15 @@ function parseProposeBody(body: unknown): ProposeProviderConfigInput {
     replyToEmail: readOptionalNullableString(obj, 'replyToEmail'),
     credentialAction: readRequiredString(obj, 'credentialAction') as CredentialAction,
     apiKey: obj['apiKey'] === undefined ? undefined : readRequiredString(obj, 'apiKey'),
-    spfConfigured: readOptionalBoolean(obj, 'spfConfigured'),
-    dkimConfigured: readOptionalBoolean(obj, 'dkimConfigured'),
-    dmarcConfigured: readOptionalBoolean(obj, 'dmarcConfigured'),
+    spfConfigured: isBrevoProposal
+      ? readRequiredBoolean(obj, 'spfConfigured')
+      : readOptionalBoolean(obj, 'spfConfigured'),
+    dkimConfigured: isBrevoProposal
+      ? readRequiredBoolean(obj, 'dkimConfigured')
+      : readOptionalBoolean(obj, 'dkimConfigured'),
+    dmarcConfigured: isBrevoProposal
+      ? readRequiredBoolean(obj, 'dmarcConfigured')
+      : readOptionalBoolean(obj, 'dmarcConfigured'),
     reason: readRequiredString(obj, 'reason'),
   };
 }

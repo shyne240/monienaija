@@ -12,6 +12,7 @@ import { appendCustomerEmailIntents, mapEventToIntents } from './notification-ev
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { NotificationProviderConfigService } from './notification-provider-config.service';
+import { sanitizeProviderRefForBoundary } from './provider-security';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type {
   NotificationEmailTemplateLookup,
@@ -347,7 +348,10 @@ export class NotificationDispatcherService {
         });
 
         if (sendResult.success) {
-          providerRef = sendResult.providerRef ?? null;
+          providerRef = sanitizeProviderRefForBoundary(
+            sendResult.providerRef,
+            providerForChannel.name,
+          );
           status = 'SENT';
           result.dispatched += 1;
         } else {
