@@ -226,15 +226,11 @@ export class AgentDeskOtpService {
       });
       delivered = result.success === true;
       if (!result.success) {
-        this.logger.warn(
-          `Agent desk OTP delivery failed via ${this.provider.name}: ${result.error ?? 'provider rejected send'}`,
-        );
+        this.logger.warn({ event: 'agent_desk.otp_delivery_failed' });
       }
-    } catch (error) {
-      // Never surface delivery internals; never log the OTP.
-      this.logger.warn(
-        `Agent desk OTP delivery failed via ${this.provider.name}: ${(error as Error).message}`,
-      );
+    } catch {
+      // Provider errors may include the OTP, destination or request body.
+      this.logger.warn({ event: 'agent_desk.otp_delivery_failed' });
     }
 
     const destinationMasked = maskPhoneForAudit(destinationPhone);

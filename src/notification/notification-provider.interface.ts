@@ -13,16 +13,14 @@ import type {
  */
 export class ConsoleNotificationProvider implements NotificationProvider {
   readonly name = 'console';
-  public readonly sent: Array<NotificationSendRequest & { providerRef: string; sentAt: Date }> = [];
+  public readonly sent: Array<{ providerRef: string; sentAt: Date }> = [];
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
-    // Redacted logging — never log secrets, use redaction upstream.
+    void request;
     const providerRef = `console-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const entry = { ...request, providerRef, sentAt: new Date() };
-    this.sent.push(entry);
-    console.log(
-      `[Notification][${request.channel}] ${request.recipientType}:${request.recipientId} -> ${request.destination} | ${request.eventType} | ${request.message} | ref=${providerRef}`,
-    );
+    // No destination, recipient, body, credential, event payload, or subject in logs or memory.
+    this.sent.push({ providerRef, sentAt: new Date() });
+    console.log(JSON.stringify({ event: 'notification.console_simulated', channel: 'SMS' }));
     return { success: true, providerRef };
   }
 
@@ -42,7 +40,7 @@ export class TestNotificationProvider implements NotificationProvider {
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (this.shouldFail) {
-      return { success: false, error: this.failMessage };
+      return { success: false, error: this.failMessage, failureDisposition: 'RETRYABLE' };
     }
     const providerRef = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.sent.push({ ...request, providerRef, sentAt: new Date() });

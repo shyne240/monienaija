@@ -1,196 +1,123 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 
 export interface ResolvedDestination {
   channel: 'SMS' | 'PUSH' | 'EMAIL';
-  destination: string | null; // null means dependency missing (e.g. Push token absent)
-  reason?: string; // for SKIPPED
+  destination: string | null;
+  reason?: string;
 }
+
+type QuerySource = { query(sql: string, params?: unknown[]): Promise<unknown> };
+type RecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
+type Channel = ResolvedDestination['channel'];
 
 @Injectable()
 export class NotificationChannelResolverService {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * Resolve destination for recipient+channel.
-   * Customer SMS: authoritative CustomerContactMethod PHONE normalizedValue (is_primary preferred).
-   * Agent SMS: no authoritative phone — documented dependency (SKIPPED).
-   * Push: requires device-token model — not present V1 — return dependency missing (SKIPPED).
-   * Preferences: notification_push_enabled respected; notification_sms_enabled respected as
-   *   SMS_OPT_OUT (SMS-V1-01) — except for security-critical events (OTP/authorization class),
-   *   which bypass the opt-out by design (see notification-security.constants.ts).
-   * Email (ARENA3-NOTIFICATION-EMAIL): authoritative CustomerContactMethod EMAIL normalizedValue
-   *   (same ordering discipline as PHONE); notification_email_enabled honored as EMAIL_OPT_OUT
-   *   with the SAME security-critical bypass as SMS (parity, not new policy).
-   *   Agent EMAIL: no authoritative agent email source — documented dependency (SKIPPED).
-   * `eventType` is optional and backward-compatible: direct resolver callers that omit it get
-   *   the preference check applied (fail-safe toward honoring opt-out).
+   * Ordinary messages honor channel preferences and require verified customer contacts.
+   * An unavailable/missing preference is not consent. Database errors propagate so the
+   * caller can durably retry without sending; they are never interpreted as an opt-in.
+   * Security OTPs use a separate direct provider path and do not enter the outbox.
    */
   async resolve(
-    recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
+    recipientType: RecipientType,
     recipientId: string,
-    channel: 'SMS' | 'PUSH' | 'EMAIL',
-    manager?: { query: (sql: string, params: unknown[]) => Promise<unknown> },
+    channel: Channel,
+    manager?: QuerySource,
     eventType?: string | null,
   ): Promise<ResolvedDestination> {
-    const ds = (manager as unknown as DataSource) ?? this.dataSource;
-    const query = (sql: string, params: unknown[]) =>
-      (ds as any).query(sql, params) as Promise<Array<any>>;
+    const source: QuerySource = manager ?? this.dataSource;
+    const query = async <T>(sql: string, params: unknown[]): Promise<T[]> =>
+      (await source.query(sql, params)) as T[];
+    const missing = (reason: string): ResolvedDestination => ({ channel, destination: null, reason });
 
     if (channel === 'PUSH') {
-      // Push requires device-token model — missing V1
-      // Check notification_push_enabled preference; if false, SKIPPED as opt-out.
-      if (recipientType === 'CUSTOMER') {
-        try {
-          const prefRows = await query(
-            `SELECT notification_push_enabled AS push_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-            [recipientId],
-          );
-          const pushEnabled = prefRows[0]?.push_enabled;
-          // If preference exists and is false, respect opt-out
-          if (pushEnabled === false) {
-            return { channel: 'PUSH', destination: null, reason: 'PUSH_OPT_OUT' };
-          }
-        } catch {
-          // ignore preference lookup failure
-        }
-      }
-      // No device token table — dependency
-      return { channel: 'PUSH', destination: null, reason: 'PUSH_TOKEN_DEPENDENCY_MISSING' };
-    }
-
-    // EMAIL (ARENA3-NOTIFICATION-EMAIL)
-    if (channel === 'EMAIL') {
-      if (recipientType === 'CUSTOMER') {
-        // Same posture as SMS-V1-01: honor the authoritative per-channel preference BEFORE
-        // any contact lookup; security-critical (OTP/authorization) events bypass opt-out —
-        // identical policy to SMS, so EMAIL introduces no new opt-out semantics.
-        if (!isSecurityCriticalNotificationEvent(eventType)) {
-          try {
-            const prefRows = await query(
-              `SELECT notification_email_enabled AS email_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-              [recipientId],
-            );
-            if (prefRows[0]?.email_enabled === false) {
-              return { channel: 'EMAIL', destination: null, reason: 'EMAIL_OPT_OUT' };
-            }
-          } catch {
-            // Preference lookup failure must not block delivery of security/transactional messages.
-          }
-        }
-        // Reuse authoritative CustomerContactMethod EMAIL (same ordering discipline as PHONE)
-        const rows = await query(
-          `SELECT normalized_value FROM customer_contact_methods
-            WHERE customer_id=$1 AND type='EMAIL' AND deleted_at IS NULL
-            ORDER BY is_primary DESC, verified_at DESC NULLS LAST, created_at ASC
-            LIMIT 1`,
+      if (recipientType === 'CUSTOMER' && !isSecurityCriticalNotificationEvent(eventType)) {
+        const rows = await query<{ enabled: boolean | null }>(
+          `SELECT notification_push_enabled AS enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
           [recipientId],
         );
-        const email = rows[0]?.normalized_value as string | undefined;
-        if (!email) {
-          return { channel: 'EMAIL', destination: null, reason: 'CUSTOMER_EMAIL_MISSING' };
-        }
-        // Use as stored — customer onboarding already normalized/validated the address.
-        return { channel: 'EMAIL', destination: email };
+        if (rows[0]?.enabled === false) return missing('PUSH_OPT_OUT');
+        if (rows[0]?.enabled !== true) return missing('PUSH_PREFERENCE_UNAVAILABLE');
       }
-      // AGENT EMAIL — no authoritative verified email field on Agent/AgentApplication
-      // (agent_applications.contact_email is application-contact, not a verified delivery
-      // identity — using it would be inventing policy). Documented dependency, SKIPPED.
-      return { channel: 'EMAIL', destination: null, reason: 'AGENT_EMAIL_DEPENDENCY_MISSING' };
+      return missing('PUSH_TOKEN_DEPENDENCY_MISSING');
     }
+    if (recipientType === 'AGENT') return missing(`AGENT_${channel === 'SMS' ? 'PHONE' : 'EMAIL'}_DEPENDENCY_MISSING`);
 
-    // SMS
-    if (recipientType === 'CUSTOMER') {
-      // SMS-V1-01: honor the authoritative per-channel SMS preference BEFORE any phone lookup.
-      // Security-critical (OTP/authorization) events bypass this check — customers must not be
-      // able to opt out of messages required to authorize their own operations.
-      if (!isSecurityCriticalNotificationEvent(eventType)) {
-        try {
-          const prefRows = await query(
-            `SELECT notification_sms_enabled AS sms_enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-            [recipientId],
-          );
-          if (prefRows[0]?.sms_enabled === false) {
-            return { channel: 'SMS', destination: null, reason: 'SMS_OPT_OUT' };
-          }
-        } catch {
-          // Preference lookup failure must not block delivery of security/transactional messages.
-        }
-      }
-      // Reuse authoritative CustomerContactMethod PHONE
-      const rows = await query(
-        `SELECT normalized_value FROM customer_contact_methods
-          WHERE customer_id=$1 AND type='PHONE' AND deleted_at IS NULL
-          ORDER BY is_primary DESC, verified_at DESC NULLS LAST, created_at ASC
-          LIMIT 1`,
-        [recipientId],
+    const preference = async (customerId: string): Promise<string | null> => {
+      if (isSecurityCriticalNotificationEvent(eventType)) return null;
+      const column = channel === 'SMS' ? 'notification_sms_enabled' : 'notification_email_enabled';
+      const rows = await query<{ enabled: boolean | null }>(
+        `SELECT ${column} AS enabled FROM customer_preferences WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
+        [customerId],
       );
-      const phone = rows[0]?.normalized_value as string | undefined;
-      if (!phone) {
-        return { channel: 'SMS', destination: null, reason: 'CUSTOMER_PHONE_MISSING' };
-      }
-      // Canonical 10-digit or full normalized_value — use as stored (V1 preserves existing normalization)
-      return { channel: 'SMS', destination: phone };
-    }
+      if (rows[0]?.enabled === false) return `${channel}_OPT_OUT`;
+      if (rows[0]?.enabled !== true) return `${channel}_PREFERENCE_UNAVAILABLE`;
+      return null;
+    };
 
-    // PHONE SMS — direct canonical beneficiary phone allows delivery without a customer UUID.
-    // For a verified registered contact, preserve the existing customer SMS opt-out preference.
-    if (recipientType === 'PHONE') {
-      if (!/^[789][0-9]{9}$/.test(recipientId)) {
-        return { channel: 'SMS', destination: null, reason: 'INVALID_PHONE_RECIPIENT' };
-      }
-      try {
-        const contacts = await query(
-          `SELECT customer_id FROM customer_contact_methods
-            WHERE type='PHONE' AND normalized_value=$1 AND verified_at IS NOT NULL AND deleted_at IS NULL
-            LIMIT 1`,
-          [recipientId],
-        );
-        const customerId = contacts[0]?.customer_id as string | undefined;
-        if (customerId && !isSecurityCriticalNotificationEvent(eventType)) {
-          const preferences = await query(
-            `SELECT notification_sms_enabled AS sms_enabled FROM customer_preferences
-              WHERE customer_id=$1 AND deleted_at IS NULL LIMIT 1`,
-            [customerId],
-          );
-          if (preferences[0]?.sms_enabled === false) {
-            return { channel: 'SMS', destination: null, reason: 'SMS_OPT_OUT' };
-          }
+    if (recipientType === 'CUSTOMER') {
+      const preferenceReason = await preference(recipientId);
+      if (preferenceReason) return missing(preferenceReason);
+      const type = channel === 'SMS' ? 'PHONE' : 'EMAIL';
+      const contacts = await query<{ normalized_value: string | null }>(
+        `SELECT normalized_value FROM customer_contact_methods
+          WHERE customer_id=$1 AND type=$2 AND deleted_at IS NULL AND verified_at IS NOT NULL
+          ORDER BY is_primary DESC, verified_at DESC, created_at ASC LIMIT 1`,
+        [recipientId, type],
+      );
+      const destination = contacts[0]?.normalized_value;
+      if (!destination) return missing(`CUSTOMER_${type}_VERIFIED_MISSING`);
+      if (channel === 'SMS') {
+        try {
+          return { channel, destination: normalizeNigerianPhone(destination).canonical };
+        } catch {
+          return missing('CUSTOMER_PHONE_INVALID');
         }
-      } catch {
-        // Existing transaction-notification policy: preference lookup failures do not block delivery.
       }
-      return { channel: 'SMS', destination: recipientId };
+      return { channel, destination };
     }
 
-    // AGENT SMS — no authoritative phone field on Agent/AgentApplication (contact_email only)
-    // Search agent_applications for agent_id? Agent → originApplicationId → contact_email is email, not phone.
-    // Therefore Agent SMS is dependency.
-    if (recipientType === 'AGENT') {
-      // Future: if agent has receiving number or linked customer phone, resolve here.
-      // For V1, mark SKIPPED with documented dependency.
-      return { channel: 'SMS', destination: null, reason: 'AGENT_PHONE_DEPENDENCY_MISSING' };
+    // The existing C2C contract explicitly permits an unregistered beneficiary phone. It is
+    // not a general exemption for ordinary CUSTOMER messages. If the number belongs to any
+    // registered contact, verification and each associated customer's preference are required.
+    if (recipientType === 'PHONE' && channel === 'SMS' && eventType === 'cash_to_cash.created') {
+      let phone: string;
+      try {
+        phone = normalizeNigerianPhone(recipientId).canonical;
+      } catch {
+        return missing('INVALID_PHONE_RECIPIENT');
+      }
+      const contacts = await query<{ customer_id: string; verified_at: Date | null }>(
+        `SELECT customer_id, verified_at FROM customer_contact_methods
+          WHERE type='PHONE' AND normalized_value = ANY($1::text[]) AND deleted_at IS NULL`,
+        [[phone, `0${phone}`, `234${phone}`, `+234${phone}`]],
+      );
+      if (contacts.some((contact) => !contact.verified_at)) return missing('PHONE_RECIPIENT_UNVERIFIED');
+      for (const customerId of new Set(contacts.map((contact) => contact.customer_id))) {
+        const preferenceReason = await preference(customerId);
+        if (preferenceReason) return missing(preferenceReason);
+      }
+      return { channel, destination: phone };
     }
 
-    return { channel, destination: null, reason: 'UNSUPPORTED_RECIPIENT' };
+    return missing('UNSUPPORTED_RECIPIENT');
   }
 
-  /**
-   * Resolve both channels where possible, but V1 prefers SMS.
-   */
   async resolveChannels(
-    recipientType: 'CUSTOMER' | 'AGENT' | 'PHONE',
+    recipientType: RecipientType,
     recipientId: string,
-    preferredChannels: Array<'SMS' | 'PUSH' | 'EMAIL'> = ['SMS'],
-    manager?: any,
+    preferredChannels: Channel[] = ['SMS'],
+    manager?: QuerySource,
   ): Promise<ResolvedDestination[]> {
     const results: ResolvedDestination[] = [];
-    for (const ch of preferredChannels) {
-      const res = await this.resolve(recipientType, recipientId, ch, manager);
-      results.push(res);
+    for (const channel of preferredChannels) {
+      results.push(await this.resolve(recipientType, recipientId, channel, manager));
     }
     return results;
   }

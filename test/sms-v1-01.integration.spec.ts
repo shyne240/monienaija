@@ -164,7 +164,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       [randomUUID(), customerId, `Cust ${customerId.slice(0, 4)}`],
     );
     await dataSource.query(
-      `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary) VALUES ($1,$2,'PHONE',$3,$3,true)`,
+      `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`,
       [randomUUID(), customerId, phone],
     );
     try {
@@ -216,7 +216,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
   }
 
   async function makeRetryEligible(): Promise<void> {
-    await dataSource.query(`UPDATE notification_deliveries SET updated_at = NOW() - INTERVAL '1 day' WHERE status='FAILED'`);
+    await dataSource.query(`UPDATE notification_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE status='FAILED'`);
   }
 
   it('10. worker drains pending outbox end-to-end: funding approved → SENT delivery + inbox entry', async () => {
@@ -260,7 +260,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       );
     expect(rows[0]!.status).toBe('FAILED');
     expect(rows[0]!.attempts).toBe(1);
-    expect(rows[0]!.last_error).toBe('Simulated provider failure');
+    expect(rows[0]!.last_error).toBe('PROVIDER_REJECTED_RETRYABLE');
     expect(rows[0]!.failed_at).toBeTruthy();
     // Backoff gate: immediately, retry claim must find nothing (row not yet eligible)
     const tooEarly = await worker.tick();
@@ -283,7 +283,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     expect(anyRows[0].sent_at).toBeTruthy();
   });
 
-  it('5. retry exhaustion: terminally FAILED after SMS_RETRY_MAX_ATTEMPTS, never re-claimed', async () => {
+  it('5. retry exhaustion: terminally DEAD after SMS_RETRY_MAX_ATTEMPTS, never re-claimed', async () => {
     const maxAttempts = configService.get<number>('SMS_RETRY_MAX_ATTEMPTS') ?? 3;
     const customerId = await createCustomerWithPhone('8022222223');
     await approveFundingViaHttp(customerId, '15000');
@@ -295,12 +295,12 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     }
     const rows: Array<{ status: string; attempts: number; last_error: string | null }> =
       await dataSource.query(
-        `SELECT status, attempts, last_error FROM notification_deliveries WHERE recipient_id=$1 AND status='FAILED'`,
+        `SELECT status, attempts, last_error FROM notification_deliveries WHERE recipient_id=$1 AND status='DEAD'`,
         [customerId],
       );
-    expect(rows.length).toBe(2); // requested + approved both FAILED (only approved+requested dispatched)
+    expect(rows.length).toBe(2); // requested + approved exhausted (only approved+requested dispatched)
     expect(rows.every((r) => r.attempts === maxAttempts)).toBe(true);
-    expect(rows.every((r) => r.last_error === 'Simulated provider failure')).toBe(true);
+    expect(rows.every((r) => r.last_error === 'PROVIDER_REJECTED_OR_EXHAUSTED')).toBe(true);
     // Recovery: provider healthy, but exhausted rows must never be claimed again
     testProvider.shouldFail = false;
     await makeRetryEligible();
@@ -311,7 +311,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       `SELECT status FROM notification_deliveries WHERE recipient_id=$1`,
       [customerId],
     );
-    expect(finalRows.every((r) => r.status === 'FAILED')).toBe(true);
+    expect(finalRows.every((r) => r.status === 'DEAD')).toBe(true);
   });
 
   it('6/7. concurrent workers claim disjoint rows; idempotent processing never re-sends', async () => {
@@ -518,11 +518,13 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       [customerId],
     );
     expect(Number(journals[0]!.c)).toBe(1);
-    // Outbox marked PUBLISHED regardless of provider failure (isolation semantics)
+    // The notification checkpoint advances without mutating the shared outbox.
     const outboxStates: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM outbox_events`,
     );
-    expect(outboxStates.every((o) => o.status === 'PUBLISHED')).toBe(true);
+    expect(outboxStates.every((o) => o.status === 'PENDING')).toBe(true); // shared consumer is untouched
+    const receipts: Array<{ status: string }> = await dataSource.query(`SELECT status FROM notification_outbox_receipts WHERE consumer_name='notification.v1'`);
+    expect(receipts.every((receipt) => receipt.status === 'MATERIALIZED')).toBe(true);
     // Late recovery: SMS succeeds afterwards; financial state still identical
     testProvider.shouldFail = false;
     await makeRetryEligible();
@@ -554,7 +556,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     expect(surface).not.toContain('pin');
     expect(surface).not.toContain('password');
     expect(surface).not.toContain('secret');
-    expect(rows[0]!.last_error).toBe('ROBASE_HTTP_402:insufficient_credits');
+    expect(rows[0]!.last_error).toBe('PROVIDER_REJECTED_RETRYABLE');
   });
 
   it('16/worker-default. Console/Test adapters intact; worker disabled by default in this environment', async () => {

@@ -15,7 +15,13 @@ interface AuthenticatedRequest {
   authorizationPrincipal?: AuthorizationPrincipal;
 }
 
-const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED']);
+const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD']);
+const VALID_RECEIPT_STATUSES = new Set(['MATERIALIZED', 'SUPPRESSED', 'UNSUPPORTED', 'QUARANTINED', 'FAILED']);
+const SAFE_RECEIPT_REASONS = new Set([
+  'EVENT_TYPE_UNSUPPORTED', 'UNSUPPORTED_SCHEMA_VERSION', 'SECURITY_DIRECT_ONLY',
+  'INTERNAL_SUPPORT_MESSAGE', 'SUPPORT_VISIBILITY_UNKNOWN', 'NO_NOTIFICATION_INTENTS',
+  'MATERIALIZATION_FAILED', 'MATERIALIZATION_EXHAUSTED', 'LEGACY_PUBLISHED_UNVERIFIED',
+]);
 
 /**
  * SPRINT1-P0-02 REMEDIATION (Arena 4 independent acceptance, 08-FINAL report): the diagnostics
@@ -43,6 +49,24 @@ const SAFE_DELIVERY_ERROR_CODES: ReadonlySet<string> = new Set([
   'AGENT_EMAIL_DEPENDENCY_MISSING',
   'INVALID_PHONE_RECIPIENT',
   'UNSUPPORTED_RECIPIENT',
+  'SMS_PREFERENCE_UNAVAILABLE',
+  'EMAIL_PREFERENCE_UNAVAILABLE',
+  'PUSH_PREFERENCE_UNAVAILABLE',
+  'CUSTOMER_PHONE_VERIFIED_MISSING',
+  'CUSTOMER_EMAIL_VERIFIED_MISSING',
+  'CUSTOMER_PHONE_INVALID',
+  'PHONE_RECIPIENT_UNVERIFIED',
+  'DESTINATION_CHANGED',
+  'SECURITY_DIRECT_ONLY',
+  'PRE_SEND_FAILED',
+  'PROVIDER_OR_CONTENT_UNAVAILABLE',
+  'PROVIDER_OUTCOME_UNKNOWN',
+  'PROVIDER_REJECTED_RETRYABLE',
+  'PROVIDER_REJECTED_OR_EXHAUSTED',
+  'LEASE_EXPIRED_AFTER_START',
+  'LEASE_EXPIRED_BEFORE_SEND',
+  'ATTEMPTS_EXHAUSTED',
+  'LEGACY_DELIVERY_OUTCOME_UNKNOWN',
 ]);
 
 /** Maps a stored last_error to a safe response code: allowlisted code, 'UNCLASSIFIED', or null. */
@@ -212,6 +236,49 @@ export class AdminNotificationController {
       limit,
       totalPages,
       hasNextPage,
+    };
+  }
+
+  /** Notification-only checkpoints: no shared status, event payload, destination or content. */
+  @Get('outbox-receipts')
+  async listOutboxReceipts(
+    @Req() req: AuthenticatedRequest,
+    @Query('page') pageRaw?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('status') statusRaw?: string,
+  ) {
+    await this.requireFunction(req, 'notification.view_deliveries');
+    const page = this.parsePage(pageRaw);
+    const limit = this.parseLimit(limitRaw);
+    const status = this.parseEnum(statusRaw, VALID_RECEIPT_STATUSES, 'status');
+    const params: unknown[] = ['notification.v1'];
+    const filter = status ? ' AND status=$2' : '';
+    if (status) params.push(status);
+    const count = await this.dataSource.query<Array<{ count: string }>>(
+      `SELECT count(*)::text AS count FROM notification_outbox_receipts WHERE consumer_name=$1${filter}`, params,
+    );
+    const rows = await this.dataSource.query<Array<{
+      outbox_event_id: string; status: string; reason: string | null; attempts: number;
+      next_attempt_at: Date | null; created_at: Date; updated_at: Date;
+    }>>(
+      `SELECT outbox_event_id,status,reason,attempts,next_attempt_at,created_at,updated_at
+       FROM notification_outbox_receipts WHERE consumer_name=$1${filter}
+       ORDER BY created_at DESC, outbox_event_id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, (page - 1) * limit],
+    );
+    const total = Number(count[0]?.count ?? '0');
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return {
+      data: rows.map((row) => ({
+        outboxEventId: row.outbox_event_id,
+        status: row.status,
+        reason: row.reason === null ? null : SAFE_RECEIPT_REASONS.has(row.reason) ? row.reason : 'UNCLASSIFIED',
+        attempts: row.attempts,
+        nextAttemptAt: row.next_attempt_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+      total, page, limit, totalPages, hasNextPage: page < totalPages,
     };
   }
 

@@ -856,11 +856,11 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         .expect(200);
     }
 
-    // Enable transfer.completed EMAIL trigger in notification_event_configurations
+    // Enable customer.funding.approved EMAIL trigger in notification_event_configurations
     await dataSource.query(
       `UPDATE notification_event_configurations
           SET is_enabled = TRUE, version = version + 1, updated_at = NOW()
-        WHERE event_type = 'transfer.completed' AND channel = 'EMAIL'`,
+        WHERE event_type = 'customer.funding.approved' AND channel = 'EMAIL'`,
     );
 
     // Seed two customers: custOptIn (email enabled) and custOptOut (email opted out)
@@ -877,9 +877,9 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
         [randomUUID(), cid, `Cust ${cid.slice(0, 4)}`],
       );
       await dataSource.query(
-        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary)
-         VALUES ($1, $2, 'PHONE', $3, $3, TRUE),
-                ($4, $2, 'EMAIL', $5, $6, TRUE)`,
+        `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at)
+         VALUES ($1, $2, 'PHONE', $3, $3, TRUE, NOW()),
+                ($4, $2, 'EMAIL', $5, $6, TRUE, NOW())`,
         [randomUUID(), cid, phone, randomUUID(), email, email.toLowerCase()],
       );
       await dataSource.query(
@@ -899,12 +899,12 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     outboundCalls.length = 0;
 
     // 5a. Opted-in customer receives BOTH Robase SMS and Brevo Email, idempotently
-    const eventKey1 = `transfer.completed:${randomUUID()}`;
+    const eventKey1 = `customer.funding.approved:${randomUUID()}`;
     const dispatch1 = await dispatcher.dispatch({
-      eventType: 'transfer.completed',
+      eventType: 'customer.funding.approved',
       eventKey: eventKey1,
       payload: {
-        sourceCustomerId: custOptIn,
+        customerId: custOptIn,
         amountMinor: '250000',
         transferId: 'tx-prov-0001',
         reference: 'REF-PROV-1',
@@ -919,10 +919,10 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     // Duplicate dispatch with same eventKey is a strict idempotent no-op
     outboundCalls.length = 0;
     const dup = await dispatcher.dispatch({
-      eventType: 'transfer.completed',
+      eventType: 'customer.funding.approved',
       eventKey: eventKey1,
       payload: {
-        sourceCustomerId: custOptIn,
+        customerId: custOptIn,
         amountMinor: '250000',
         transferId: 'tx-prov-0001',
         reference: 'REF-PROV-1',
@@ -932,12 +932,12 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     expect(outboundCalls.length).toBe(0);
 
     // 5b. Opted-out email customer: SMS sends via Robase, EMAIL is SKIPPED (EMAIL_OPT_OUT)
-    const eventKey2 = `transfer.completed:${randomUUID()}`;
+    const eventKey2 = `customer.funding.approved:${randomUUID()}`;
     await dispatcher.dispatch({
-      eventType: 'transfer.completed',
+      eventType: 'customer.funding.approved',
       eventKey: eventKey2,
       payload: {
-        sourceCustomerId: custOptOut,
+        customerId: custOptOut,
         amountMinor: '100000',
         transferId: 'tx-prov-0002',
         reference: 'REF-PROV-2',
@@ -956,42 +956,52 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       { channel: 'SMS', status: 'SENT', last_error: null },
     ]);
 
-    // 5c. Transient 503 failure -> NotificationWorkerService retries via governed Robase & Brevo to SENT
+    // 5c. A 503 is ambiguous: an upstream could have accepted the request before failing.
+    // Neither governed provider may be called again automatically for this event.
     robaseNextStatus = 503;
     brevoSendNextStatus = 503;
-    const eventKey3 = `transfer.completed:${randomUUID()}`;
+    const ambiguousKey = `customer.funding.approved:${randomUUID()}`;
+    const ambiguousDispatch = await dispatcher.dispatch({
+      eventType: 'customer.funding.approved', eventKey: ambiguousKey,
+      payload: { customerId: custOptIn, amountMinor: '75000', reference: 'REF-PROV-3' },
+    });
+    expect(ambiguousDispatch.failed).toBe(2);
+    const ambiguousRows: Array<{ channel: string; status: string; attempts: number }> =
+      await dataSource.query(
+        `SELECT channel, status, attempts FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+        [ambiguousKey],
+      );
+    expect(ambiguousRows).toEqual([
+      { channel: 'EMAIL', status: 'UNKNOWN', attempts: 1 },
+      { channel: 'SMS', status: 'UNKNOWN', attempts: 1 },
+    ]);
+    const callsAfterAmbiguous = outboundCalls.length;
+    robaseNextStatus = 200;
+    brevoSendNextStatus = 201;
+    await worker.tick();
+    expect(outboundCalls.length).toBe(callsAfterAmbiguous);
+
+    // 5d. A definitive HTTP 429 rejection is safely retryable, with a bounded schedule.
+    robaseNextStatus = 429;
+    brevoSendNextStatus = 429;
+    const retryKey = `customer.funding.approved:${randomUUID()}`;
     const failedDispatch = await dispatcher.dispatch({
-      eventType: 'transfer.completed',
-      eventKey: eventKey3,
-      payload: {
-        sourceCustomerId: custOptIn,
-        amountMinor: '75000',
-        transferId: 'tx-prov-0003',
-        reference: 'REF-PROV-3',
-      },
+      eventType: 'customer.funding.approved', eventKey: retryKey,
+      payload: { customerId: custOptIn, amountMinor: '75000', reference: 'REF-PROV-4' },
     });
     expect(failedDispatch.failed).toBe(2);
-
-    // Fast-forward updated_at lease so worker claims both failed rows immediately
     await dataSource.query(
-      `UPDATE notification_deliveries
-          SET updated_at = NOW() - INTERVAL '5 minutes'
-        WHERE event_key = $1`,
-      [eventKey3],
+      `UPDATE notification_deliveries SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE event_key=$1`,
+      [retryKey],
     );
-
     robaseNextStatus = 200;
     brevoSendNextStatus = 201;
     const retryStats = await worker.tick();
     expect(retryStats.retriesSent).toBe(2);
-
     const recoveredRows: Array<{ channel: string; status: string; attempts: number }> =
       await dataSource.query(
-        `SELECT channel, status, attempts
-           FROM notification_deliveries
-          WHERE event_key = $1
-          ORDER BY channel`,
-        [eventKey3],
+        `SELECT channel, status, attempts FROM notification_deliveries WHERE event_key=$1 ORDER BY channel`,
+        [retryKey],
       );
     expect(recoveredRows).toEqual([
       { channel: 'EMAIL', status: 'SENT', attempts: 2 },

@@ -159,8 +159,8 @@ describe('notification template/configuration foundation — real PostgreSQL and
     );
     const phone = `8${randomInt(0, 1_000_000_000).toString().padStart(9, '0')}`;
     await db.query(
-      `INSERT INTO customer_contact_methods (id,customer_id,type,value,normalized_value,is_primary)
-      VALUES ($1,$2,'PHONE',$3,$3,true)`,
+      `INSERT INTO customer_contact_methods (id,customer_id,type,value,normalized_value,is_primary,verified_at)
+      VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`,
       [randomUUID(), id, phone],
     );
     await db.query(
@@ -565,14 +565,12 @@ describe('notification template/configuration foundation — real PostgreSQL and
     const before = (await db.query(`SELECT count(*)::int AS n FROM ledger_journals`))[0].n;
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(0);
     const failed = (
-      await db.query(`SELECT status,attempts,last_error FROM outbox_events WHERE id=$1`, [outboxId])
+      await db.query(`SELECT status,attempts,reason FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId])
     )[0];
-    expect(failed).toEqual({
-      status: 'FAILED',
-      attempts: 1,
-      last_error: 'NOTIFICATION_DISPATCH_FAILED',
-    });
-    expect(await dispatcher.processPendingOutboxEvents(10)).toBe(0); // respects available_at backoff
+    expect(failed).toEqual({ status: 'FAILED', attempts: 1, reason: 'MATERIALIZATION_FAILED' });
+    expect((await db.query(`SELECT status,attempts,last_error FROM outbox_events WHERE id=$1`, [outboxId]))[0])
+      .toEqual({ status: 'PENDING', attempts: 0, last_error: null });
+    expect(await dispatcher.processPendingOutboxEvents(10)).toBe(0); // independent retry backoff
     expect(provider.sent).toHaveLength(0);
     // Simulate an approved operator repair in the isolated test database.
     await db.query(
@@ -580,13 +578,14 @@ describe('notification template/configuration foundation — real PostgreSQL and
       VALUES ($1,'SMS','en-NG',2,true,NULL,'Recovered {{reference}}.','test-repair')`,
       [eventType],
     );
-    await db.query(`UPDATE outbox_events SET available_at=NOW()-INTERVAL '1 second' WHERE id=$1`, [
-      outboxId,
-    ]);
+    await db.query(`UPDATE notification_outbox_receipts SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId]);
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(1);
-    expect(
-      (await db.query(`SELECT status,attempts FROM outbox_events WHERE id=$1`, [outboxId]))[0],
-    ).toEqual({ status: 'PUBLISHED', attempts: 2 });
+    expect((await db.query(`SELECT status,attempts FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId]))[0])
+      .toEqual({ status: 'MATERIALIZED', attempts: 2 });
+    expect((await db.query(`SELECT status,attempts FROM outbox_events WHERE id=$1`, [outboxId]))[0])
+      .toEqual({ status: 'PENDING', attempts: 0 });
+    expect(provider.sent).toHaveLength(0); // no provider call in materialization transaction
+    await worker.tick();
     expect(provider.sent).toHaveLength(1);
     expect((await db.query(`SELECT count(*)::int AS n FROM ledger_journals`))[0].n).toBe(before);
   }, 30_000);

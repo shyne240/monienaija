@@ -124,8 +124,8 @@ describe('Cash-to-Cash beneficiary notification contract', () => {
     const phone = '8012345678';
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ customer_id: 'customer-uuid' }])
-      .mockResolvedValueOnce([{ sms_enabled: false }]);
+      .mockResolvedValueOnce([{ customer_id: 'customer-uuid', verified_at: new Date() }])
+      .mockResolvedValueOnce([{ enabled: false }]);
     const resolver = new NotificationChannelResolverService({ query } as never);
 
     await expect(

@@ -201,15 +201,11 @@ export class AdminCustomerCredentialsController {
       });
       success = result.success === true;
       if (!result.success) {
-        this.logger.warn(
-          `Customer temporary credential delivery failed via ${this.provider.name}: ${result.error ?? 'provider rejected send'}`,
-        );
+        this.logger.warn({ event: 'customer.temporary_credential_delivery_failed' });
       }
-    } catch (error) {
-      // Never surface delivery internals to the caller; never log the secret.
-      this.logger.warn(
-        `Customer temporary credential delivery failed via ${this.provider.name}: ${(error as Error).message}`,
-      );
+    } catch {
+      // Provider errors may include the temporary credential, destination or request body.
+      this.logger.warn({ event: 'customer.temporary_credential_delivery_failed' });
     }
     const masked = this.maskPhone(contact.value);
     await this.recordDeliveryAudit(

@@ -26,6 +26,7 @@ import { NotificationRegistryService } from './notification-registry.service';
 import { NotificationSecretEncryptionService } from './notification-secret-encryption.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { NotificationWorkerService } from './notification-worker.service';
+import { NormalizingSmsNotificationProvider } from './normalizing-sms-notification-provider';
 
 @Module({
   imports: [
@@ -46,10 +47,11 @@ import { NotificationWorkerService } from './notification-worker.service';
     NotificationSecretEncryptionService,
     NotificationProviderConfigService,
     ConfigurableSmsNotificationProvider,
+    NormalizingSmsNotificationProvider,
     ConfigurableEmailNotificationProvider,
     {
       provide: NOTIFICATION_PROVIDER_TOKEN,
-      useExisting: ConfigurableSmsNotificationProvider,
+      useExisting: NormalizingSmsNotificationProvider,
     },
     {
       provide: NOTIFICATION_EMAIL_PROVIDER_TOKEN,
