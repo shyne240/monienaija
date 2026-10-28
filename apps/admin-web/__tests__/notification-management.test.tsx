@@ -89,8 +89,7 @@ function mockBaselineUnintegratedBackend() {
             providerRef: 'robase_msg_001',
             correlationId: 'corr-001',
             causationId: null,
-            message: 'Your funding of NGN 25000.00 has been approved. Ref 8F4A21C9.',
-            lastError: null,
+            errorCode: null,
             createdAt: '2026-10-27T08:00:00.000Z',
             updatedAt: '2026-10-27T08:00:02.000Z',
             sentAt: '2026-10-27T08:00:02.000Z',
@@ -110,8 +109,7 @@ function mockBaselineUnintegratedBackend() {
             providerRef: null,
             correlationId: 'corr-002',
             causationId: null,
-            message: 'Transfer of NGN 5000.00 completed. Ref TX990011.',
-            lastError: 'provider_timeout',
+            errorCode: 'UNCLASSIFIED',
             createdAt: '2026-10-27T08:05:00.000Z',
             updatedAt: '2026-10-27T08:08:00.000Z',
             sentAt: null,
@@ -445,8 +443,7 @@ function mockIntegratedRegistryBackend() {
                 providerRef: 'test-email-1',
                 correlationId: 'corr-003',
                 causationId: null,
-                message: 'Transfer of NGN 5000.00 completed. Ref TX990011.',
-                lastError: null,
+                errorCode: null,
                 createdAt: '2026-10-27T09:00:00.000Z',
                 updatedAt: '2026-10-27T09:00:02.000Z',
                 sentAt: '2026-10-27T09:00:02.000Z',
@@ -468,8 +465,7 @@ function mockIntegratedRegistryBackend() {
                 providerRef: 'robase_msg_001',
                 correlationId: 'corr-001',
                 causationId: null,
-                message: 'Your funding of NGN 25000.00 has been approved. Ref 8F4A21C9.',
-                lastError: null,
+                errorCode: null,
                 createdAt: '2026-10-27T08:00:00.000Z',
                 updatedAt: '2026-10-27T08:00:02.000Z',
                 sentAt: '2026-10-27T08:00:02.000Z',
@@ -489,8 +485,7 @@ function mockIntegratedRegistryBackend() {
                 providerRef: null,
                 correlationId: 'corr-002',
                 causationId: null,
-                message: 'Transfer of NGN 5000.00 completed. Ref TX990011.',
-                lastError: 'provider_timeout',
+                errorCode: 'UNCLASSIFIED',
                 createdAt: '2026-10-27T08:05:00.000Z',
                 updatedAt: '2026-10-27T08:08:00.000Z',
                 sentAt: null,
@@ -1001,7 +996,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     // Inspect failed delivery row with 3 attempts
     fireEvent.click(view.getByTestId('inspect-delivery-deliv-failed-2'));
     const inspector = view.getByTestId('delivery-inspector-panel');
-    expect(within(inspector).getByText(/provider_timeout/)).toBeTruthy();
+    // SPRINT1-P0-02: the API returns only the sanitized errorCode — never raw provider errors.
+    expect(within(inspector).getByText(/UNCLASSIFIED/)).toBeTruthy();
     expect(inspector.textContent).toMatch(/3 attempt\(s\)/);
 
     // Manual retry endpoint is genuinely absent from the backend — honest BLOCKED state,

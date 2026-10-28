@@ -16,6 +16,40 @@ interface AuthenticatedRequest {
 }
 
 const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED']);
+
+/**
+ * SPRINT1-P0-02 REMEDIATION (Arena 4 independent acceptance, 08-FINAL report): the diagnostics
+ * projection previously returned the stored rendered `message` and the raw `last_error` string.
+ * Rendered content can carry transaction amounts and recipient-specific data, and provider
+ * error strings are an unverified disclosure surface. Both fields are removed from the SQL
+ * projection and the JSON response. Failure/skip triage keeps a CLOSED allowlist of fixed
+ * first-party operational codes (written by NotificationDispatcherService,
+ * NotificationChannelResolverService and NotificationWorkerService — never provider prose);
+ * any other non-null stored error is exposed only as the fixed sentinel 'UNCLASSIFIED'.
+ * The raw value remains in the database for authorized server-side investigation; no
+ * "preview" of message content is exposed pending data-owner approval.
+ */
+const SAFE_DELIVERY_ERROR_CODES: ReadonlySet<string> = new Set([
+  'SKIPPED',
+  'EVENT_DISABLED',
+  'UNSAFE_MESSAGE',
+  'SMS_OPT_OUT',
+  'EMAIL_OPT_OUT',
+  'PUSH_OPT_OUT',
+  'PUSH_TOKEN_DEPENDENCY_MISSING',
+  'CUSTOMER_PHONE_MISSING',
+  'CUSTOMER_EMAIL_MISSING',
+  'AGENT_PHONE_DEPENDENCY_MISSING',
+  'AGENT_EMAIL_DEPENDENCY_MISSING',
+  'INVALID_PHONE_RECIPIENT',
+  'UNSUPPORTED_RECIPIENT',
+]);
+
+/** Maps a stored last_error to a safe response code: allowlisted code, 'UNCLASSIFIED', or null. */
+function sanitizeDeliveryErrorCode(lastError: string | null): string | null {
+  if (lastError === null || lastError === undefined || lastError.trim() === '') return null;
+  return SAFE_DELIVERY_ERROR_CODES.has(lastError) ? lastError : 'UNCLASSIFIED';
+}
 const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT', 'PHONE']);
 // ARENA3-NOTIFICATION-EMAIL: EMAIL rows are filterable in delivery diagnostics.
 const VALID_CHANNELS = new Set(['SMS', 'PUSH', 'EMAIL']);
@@ -114,7 +148,10 @@ export class AdminNotificationController {
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
 
-    // Data — deterministic ordering created_at DESC, id DESC, safe projection only
+    // Data — deterministic ordering created_at DESC, id DESC, safe projection only.
+    // SPRINT1-P0-02: `message` is never selected; `last_error` is read ONLY to derive the
+    // sanitized `errorCode` below and is never projected raw. `destination` and `payload`
+    // were and remain excluded.
     const dataParams = [...params, limit, offset];
     const limitIdx = idx++;
     const offsetIdx = idx++;
@@ -132,14 +169,13 @@ export class AdminNotificationController {
       provider_ref: string | null;
       correlation_id: string | null;
       causation_id: string | null;
-      message: string | null;
       last_error: string | null;
       created_at: Date;
       updated_at: Date;
       sent_at: Date | null;
       failed_at: Date | null;
     }> = await this.dataSource.query(
-      `SELECT id, event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id, channel, status, attempts, provider_ref, correlation_id, causation_id, message, last_error, created_at, updated_at, sent_at, failed_at
+      `SELECT id, event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id, channel, status, attempts, provider_ref, correlation_id, causation_id, last_error, created_at, updated_at, sent_at, failed_at
          FROM notification_deliveries
          ${whereClause}
          ORDER BY created_at DESC, id DESC
@@ -162,8 +198,7 @@ export class AdminNotificationController {
       providerRef: r.provider_ref,
       correlationId: r.correlation_id,
       causationId: r.causation_id,
-      message: r.message,
-      lastError: r.last_error,
+      errorCode: sanitizeDeliveryErrorCode(r.last_error),
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       sentAt: r.sent_at,

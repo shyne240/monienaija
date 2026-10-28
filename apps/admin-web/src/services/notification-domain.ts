@@ -139,8 +139,13 @@ export interface NotificationDeliveryRecord {
   providerRef: string | null;
   correlationId: string | null;
   causationId: string | null;
-  message: string | null;
-  lastError: string | null;
+  /**
+   * SPRINT1-P0-02: the API no longer returns the rendered `message` or the raw provider
+   * `lastError`. Failed/skipped rows carry only a fixed allowlisted operational code
+   * (e.g. EVENT_DISABLED, SMS_OPT_OUT, PUSH_TOKEN_DEPENDENCY_MISSING) or 'UNCLASSIFIED';
+   * null when no error/skip reason is stored.
+   */
+  errorCode: string | null;
   createdAt: string;
   updatedAt: string;
   sentAt: string | null;

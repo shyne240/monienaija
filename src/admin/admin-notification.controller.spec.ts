@@ -330,5 +330,71 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
     expect(serialized).not.toContain('8012345678');
     expect(serialized).not.toContain('"destination"');
     expect(serialized).not.toContain('"payload"');
+    // SPRINT1-P0-02: rendered message text and raw provider errors are never projected.
+    expect(serialized).not.toContain('"message"');
+    expect(serialized).not.toContain('"lastError"');
+    expect(serialized).not.toContain('Cash-to-Cash transfer ready.');
+    expect(serialized).not.toContain('Agent notification');
+  });
+
+  it('SPRINT1-P0-02: maps stored last_error to a closed errorCode allowlist and never leaks raw error strings', async () => {
+    const { controller, query } = setup();
+    const row = (id: string, lastError: string | null, status: string) => ({
+      id,
+      event_type: 'customer.funding.approved',
+      event_key: `evt-${id}`,
+      aggregate_type: null,
+      aggregate_id: null,
+      recipient_type: 'CUSTOMER',
+      recipient_id: CUSTOMER_UUID,
+      channel: 'SMS',
+      status,
+      attempts: 1,
+      provider_ref: null,
+      correlation_id: null,
+      causation_id: null,
+      last_error: lastError,
+      created_at: new Date('2026-10-28T08:00:00.000Z'),
+      updated_at: new Date('2026-10-28T08:00:00.000Z'),
+      sent_at: null,
+      failed_at: status === 'FAILED' ? new Date('2026-10-28T08:00:00.000Z') : null,
+    });
+    query.mockResolvedValueOnce([{ count: '4' }]).mockResolvedValueOnce([
+      row('20000000-0000-4000-8000-000000000001', 'EVENT_DISABLED', 'SKIPPED'),
+      row('20000000-0000-4000-8000-000000000002', 'PUSH_TOKEN_DEPENDENCY_MISSING', 'SKIPPED'),
+      row(
+        '20000000-0000-4000-8000-000000000003',
+        'Provider HTTP 500: upstream said api_key=SUPER-SECRET-PROVIDER-KEY-9999 invalid',
+        'FAILED',
+      ),
+      row('20000000-0000-4000-8000-000000000004', null, 'SENT'),
+    ]);
+
+    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
+    const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+
+    // Allowlisted first-party codes pass through unchanged.
+    expect(result.data[0]?.errorCode).toBe('EVENT_DISABLED');
+    expect(result.data[1]?.errorCode).toBe('PUSH_TOKEN_DEPENDENCY_MISSING');
+    // Arbitrary/provider prose collapses to the fixed sentinel — raw string never projected.
+    expect(result.data[2]?.errorCode).toBe('UNCLASSIFIED');
+    // No stored error → null.
+    expect(result.data[3]?.errorCode).toBeNull();
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('SUPER-SECRET-PROVIDER-KEY-9999');
+    expect(serialized).not.toContain('Provider HTTP 500');
+    expect(serialized).not.toContain('"lastError"');
+    expect(serialized).not.toContain('"message"');
+  });
+
+  it('SPRINT1-P0-02: the diagnostics SQL projection never selects the rendered message column', async () => {
+    const { controller, query } = setup();
+    query.mockResolvedValueOnce([{ count: '0' }]).mockResolvedValueOnce([]);
+    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
+    await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+    const dataSql = String(query.mock.calls[1]?.[0] ?? '');
+    expect(dataSql).not.toMatch(/\bmessage\b/);
+    expect(dataSql).toMatch(/last_error/); // read solely to derive the sanitized errorCode
   });
 });

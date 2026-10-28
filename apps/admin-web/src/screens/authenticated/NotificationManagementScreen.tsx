@@ -2171,16 +2171,14 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                         ? ` · Failed ${new Date(selectedDelivery.failedAt).toLocaleString()}`
                         : ''}
                     </div>
-                    {selectedDelivery.lastError && (
+                    {selectedDelivery.errorCode && (
                       <div style={{ color: '#991B1B' }}>
-                        <strong>Last Error / Skip Reason:</strong>{' '}
-                        <code>{selectedDelivery.lastError}</code>
+                        <strong>Error / Skip Code:</strong>{' '}
+                        <code>{selectedDelivery.errorCode}</code>
                       </div>
                     )}
-                    <div>
-                      <strong>Rendered Safe Message:</strong>{' '}
-                      <span>{selectedDelivery.message || '(empty)'}</span>
-                    </div>
+                    {/* SPRINT1-P0-02: rendered message content is no longer returned by the
+                        diagnostics API (data minimization) and is never displayed here. */}
                   </div>
 
                   {selectedDelivery.status === 'FAILED' &&
@@ -2250,7 +2248,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                           <th style={styles.th}>Status</th>
                           <th style={styles.th}>Attempts</th>
                           <th style={styles.th}>Provider Ref</th>
-                          <th style={styles.th}>Last Error / Skip</th>
+                          <th style={styles.th}>Error / Skip Code</th>
                           <th style={styles.th}>Created</th>
                           <th style={styles.th}>Inspect</th>
                         </tr>
@@ -2283,7 +2281,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                               <code>{row.providerRef || '—'}</code>
                             </td>
                             <td style={styles.td}>
-                              <code>{row.lastError || '—'}</code>
+                              <code>{row.errorCode || '—'}</code>
                             </td>
                             <td style={styles.td}>
                               {row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}

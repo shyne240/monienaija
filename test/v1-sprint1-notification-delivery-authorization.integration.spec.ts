@@ -599,6 +599,9 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     for (const item of res.body.data) {
       expect(item).not.toHaveProperty('destination');
       expect(item).not.toHaveProperty('payload');
+      // SPRINT1-P0-02: rendered message and raw lastError are no longer projected.
+      expect(item).not.toHaveProperty('message');
+      expect(item).not.toHaveProperty('lastError');
     }
 
     const phoneRow = res.body.data.find((d: any) => d.recipientType === 'PHONE');
@@ -616,6 +619,11 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     expect(bodyText).not.toContain('654321');
     expect(bodyText).not.toContain('robase_super_secret_key_do_not_expose_9999');
     expect(bodyText).not.toContain('re_super_secret_key_do_not_expose_8888');
+    // SPRINT1-P0-02: the Arena 4 reproduction — rendered financial message text must never
+    // appear in the diagnostics response.
+    expect(bodyText).not.toContain('Your funding of NGN 5,000.00 has been approved.');
+    expect(bodyText).not.toContain('Cash-to-Cash transfer notification.');
+    expect(bodyText).not.toContain('Notification body');
 
     const auditRows: Array<{ action: string; new_values: Record<string, unknown> }> =
       await dataSource.query(
@@ -639,5 +647,117 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     expect(auditText).not.toContain('alice.private.inbox@example.com');
     expect(auditText).not.toContain('8091234567');
     expect(auditText).not.toContain('robase_super_secret_key_do_not_expose_9999');
+  });
+
+  // ---------------------------------------------------------------------------
+  // D2 — SPRINT1-P0-02 remediation regression: distinctive sentinels seeded into
+  // rendered message, payload, destination, raw last_error and provider-secret-like
+  // fields must NEVER appear anywhere in the response JSON (including nested objects),
+  // across SMS + EMAIL rows, SENT/FAILED/SKIPPED statuses and PHONE recipients, while
+  // operational metadata and the closed errorCode allowlist remain.
+  // ---------------------------------------------------------------------------
+  it('D2: rendered message, payload, destination, raw lastError and provider-secret sentinels never appear anywhere in the response JSON', async () => {
+    const { customerId } = await createCustomerSession('8073334444');
+    const { accessToken: opsToken } = await establishRoleSession('OPERATIONS');
+
+    const sentinels = {
+      smsMessage: 'SENTINEL-SMS-RENDERED-MESSAGE NGN 77,888.99 ref WD-SENTINEL-001',
+      emailMessage: 'SENTINEL-EMAIL-RENDERED-MESSAGE your OTP is 246810',
+      emailDestination: 'sentinel.inbox@example.test',
+      phoneRecipient: '8095557777',
+      payloadSecret: 'SENTINEL-PAYLOAD-SECRET-TOKEN-31337',
+      providerSecret: 'Authorization Bearer sk_live_SENTINEL_PROVIDER_KEY_424242 upstream 500',
+      unknownReason: 'SENTINEL-UNKNOWN-INTERNAL-REASON-8888',
+      c2cMessage: 'SENTINEL-C2C-MESSAGE locator abc123',
+      optOutMessage: 'SENTINEL-OPTOUT-MESSAGE do not send',
+    };
+
+    // SMS SENT row — rendered financial message + sensitive payload value.
+    await insertDeliveryRow({
+      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS',
+      destination: '8073334444', status: 'SENT',
+      message: sentinels.smsMessage, payload: { secret: sentinels.payloadSecret },
+    });
+    // EMAIL FAILED row — arbitrary provider-secret-like error text in last_error.
+    await insertDeliveryRow({
+      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'EMAIL',
+      destination: sentinels.emailDestination, status: 'FAILED',
+      eventType: 'customer.funding.rejected',
+      message: sentinels.emailMessage, lastError: sentinels.providerSecret,
+      payload: { apiKey: sentinels.payloadSecret },
+    });
+    // PHONE-recipient SKIPPED row — unclassified internal reason.
+    await insertDeliveryRow({
+      recipientType: 'PHONE', recipientId: sentinels.phoneRecipient, channel: 'SMS',
+      destination: sentinels.phoneRecipient, status: 'SKIPPED',
+      eventType: 'cash_to_cash.created',
+      message: sentinels.c2cMessage, lastError: sentinels.unknownReason,
+    });
+    // Allowlisted skip-code row.
+    await insertDeliveryRow({
+      recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS',
+      destination: '8073334444', status: 'SKIPPED',
+      lastError: 'SMS_OPT_OUT', message: sentinels.optOutMessage,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/internal/notifications/deliveries')
+      .set('Authorization', `Bearer ${opsToken}`)
+      .expect(200);
+
+    expect(res.body.total).toBe(4);
+    const bodyText = JSON.stringify(res.body);
+
+    // No sentinel appears anywhere in the JSON response (nested objects included).
+    for (const [name, value] of Object.entries(sentinels)) {
+      expect({ sentinel: name, leaked: bodyText.includes(value) }).toEqual({ sentinel: name, leaked: false });
+    }
+    // Raw fragments of the provider error and financial/OTP content never leak.
+    expect(bodyText).not.toContain('sk_live');
+    expect(bodyText).not.toContain('NGN 77,888.99');
+    expect(bodyText).not.toContain('246810');
+    expect(bodyText).not.toContain('SENTINEL');
+
+    // message/lastError/destination/payload properties are gone from every row.
+    for (const item of res.body.data) {
+      expect(item).not.toHaveProperty('message');
+      expect(item).not.toHaveProperty('lastError');
+      expect(item).not.toHaveProperty('destination');
+      expect(item).not.toHaveProperty('payload');
+    }
+
+    // Sanitized errorCode: allowlisted code passes through; anything else is UNCLASSIFIED;
+    // no stored error is null.
+    const failed = res.body.data.find((d: any) => d.status === 'FAILED');
+    expect(failed.errorCode).toBe('UNCLASSIFIED');
+    const skippedCodes = res.body.data
+      .filter((d: any) => d.status === 'SKIPPED')
+      .map((d: any) => d.errorCode)
+      .sort();
+    expect(skippedCodes).toEqual(['SMS_OPT_OUT', 'UNCLASSIFIED']);
+    const sent = res.body.data.find((d: any) => d.status === 'SENT');
+    expect(sent.errorCode).toBeNull();
+
+    // PHONE recipient masking preserved (never the raw destination).
+    const phone = res.body.data.find((d: any) => d.recipientType === 'PHONE');
+    expect(phone.recipientId).toBe('*******777');
+    const cust = res.body.data.find((d: any) => d.recipientType === 'CUSTOMER');
+    expect(cust.recipientId).toBe(customerId);
+
+    // Operationally useful metadata preserved for triage and retry scheduling.
+    for (const item of res.body.data) {
+      expect(item.id).toBeDefined();
+      expect(item.eventType).toBeDefined();
+      expect(item.eventKey).toBeDefined();
+      expect(item.channel).toBeDefined();
+      expect(item.status).toBeDefined();
+      expect(typeof item.attempts).toBe('number');
+      expect(item.createdAt).toBeDefined();
+      expect(item.updatedAt).toBeDefined();
+    }
+    expect(res.body.page).toBe(1);
+    expect(res.body.limit).toBeGreaterThan(0);
+    expect(res.body.totalPages).toBe(1);
+    expect(res.body.hasNextPage).toBe(false);
   });
 });

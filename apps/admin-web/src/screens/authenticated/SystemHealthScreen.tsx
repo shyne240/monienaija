@@ -14,7 +14,7 @@ const DELIVERY_COLUMNS: StructuredColumn[] = [
   { key: 'recipientType', label: 'Recipient type' }, { key: 'recipientId', label: 'Recipient ID' },
   { key: 'status', label: 'Status' }, { key: 'attempts', label: 'Attempts' },
   { key: 'providerRef', label: 'Provider reference' }, { key: 'createdAt', label: 'Created' },
-  { key: 'sentAt', label: 'Sent' }, { key: 'lastError', label: 'Last error' },
+  { key: 'sentAt', label: 'Sent' }, { key: 'errorCode', label: 'Error code' },
 ];
 
 const OUTBOX_COLUMNS: StructuredColumn[] = [

@@ -68,7 +68,7 @@ describe('Admin Web shared-screen improvements', () => {
       if (path === '/internal/metrics') return Promise.resolve({ generatedAt: '2026-10-23T10:00:00.000Z', metrics: { jobs_completed: '8' } });
       if (path === '/internal/diagnostics') return Promise.resolve({ status: 'PASS', database: { status: 'connected' }, pendingOutbox: 0 });
       if (path === '/internal/outbox') return Promise.resolve([{ id: 'outbox-1', eventType: 'customer.created', status: 'PENDING', attempts: 0, payload: { customerId: 'cust-1' } }]);
-      if (path.startsWith('/internal/notifications/deliveries?')) return Promise.resolve({ data: [{ id: 'delivery-1', eventType: 'KYC_APPROVED', channel: 'SMS', recipientType: 'CUSTOMER', recipientId: 'cust-1', status: 'FAILED', attempts: 2, lastError: 'provider unavailable' }], total: 1, page: 1, limit: 20, hasNextPage: false });
+      if (path.startsWith('/internal/notifications/deliveries?')) return Promise.resolve({ data: [{ id: 'delivery-1', eventType: 'KYC_APPROVED', channel: 'SMS', recipientType: 'CUSTOMER', recipientId: 'cust-1', status: 'FAILED', attempts: 2, errorCode: 'UNCLASSIFIED' }], total: 1, page: 1, limit: 20, hasNextPage: false });
       return Promise.resolve([]);
     });
 

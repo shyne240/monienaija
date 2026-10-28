@@ -303,14 +303,18 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     expect(found.sentAt).toBeDefined();
   });
 
-  it('10. FAILED delivery visible with lastError', async () => {
+  it('10. FAILED delivery visible with sanitized errorCode only — raw lastError/message never projected (SPRINT1-P0-02)', async () => {
     const cid = await createCustomerWithPhone('8010000010');
     const id = await insertDelivery({ recipientId: cid, status: 'FAILED', lastError: 'Simulated provider failure', failedAt: new Date() });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=FAILED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
     const found = res.body.data.find((d: any) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('FAILED');
-    expect(found.lastError).toContain('Simulated');
+    // Arbitrary provider prose collapses to the fixed sentinel; the raw string is never returned.
+    expect(found.errorCode).toBe('UNCLASSIFIED');
+    expect(found).not.toHaveProperty('lastError');
+    expect(found).not.toHaveProperty('message');
+    expect(JSON.stringify(res.body)).not.toContain('Simulated');
     expect(found.failedAt).toBeDefined();
   });
 
@@ -321,7 +325,8 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const found = res.body.data.find((d: any) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('SKIPPED');
-    expect(found.lastError).toBe('PUSH_TOKEN_DEPENDENCY_MISSING');
+    // Allowlisted first-party skip codes remain visible for triage.
+    expect(found.errorCode).toBe('PUSH_TOKEN_DEPENDENCY_MISSING');
   });
 
   it('12. status filtering', async () => {
@@ -403,7 +408,9 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     expect(found.attempts).toBeDefined();
     expect(found.providerRef).toBe('test-abc123');
     expect(found.createdAt).toBeDefined();
-    expect(found.message).toContain('NGN');
+    // SPRINT1-P0-02: the rendered message (with its financial amount) is NEVER projected.
+    expect(found).not.toHaveProperty('message');
+    expect(found).not.toHaveProperty('lastError');
     // Sensitive fields must NOT be present
     expect(found).not.toHaveProperty('destination');
     expect(found).not.toHaveProperty('payload');
@@ -421,6 +428,9 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     // Message should not contain secrets
     expect(bodyStr).not.toContain('pin');
     expect(bodyStr).not.toContain('password');
+    // SPRINT1-P0-02: rendered message content (amount + reference) must not appear anywhere.
+    expect(bodyStr).not.toContain('ngn 100.00 approved');
+    expect(bodyStr).not.toContain('ref-123');
   });
 
   it('15. filtering by recipientType, channel, eventType, recipientId', async () => {
