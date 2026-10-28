@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { NotificationSendRequest } from '../src/notification/notification.types';
+import {
+  SAFE_PROVIDER_REF_PATTERN,
+  deriveSafeVendorProviderRef,
+} from '../src/notification/provider-security';
 import { RobaseNotificationProvider } from '../src/notification/robase-notification-provider';
 import { validateEnvironment } from '../src/config/environment';
 
@@ -59,7 +63,11 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
     const result = await provider.send(request());
 
     expect(result.success).toBe(true);
-    expect(result.providerRef).toBe('3c90c3cc-0d44-4b50-8888-8dd25736052a');
+    expect(result.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    expect(result.providerRef).toBe(
+      deriveSafeVendorProviderRef('robase', '3c90c3cc-0d44-4b50-8888-8dd25736052a', API_KEY),
+    );
+    expect(result.providerRef).not.toContain('3c90c3cc');
     expect(calls.length).toBe(1);
     // Verified contract: endpoint /v1/sms/send
     expect(calls[0]!.url).toBe('https://api.robase.dev/v1/sms/send');
@@ -249,6 +257,83 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
     );
     const redirectRes = await redirectProvider.send(request());
     expect(redirectRes).toEqual({ success: false, error: 'ROBASE_EGRESS_BLOCKED' });
+  });
+
+  it('11. F-01: converts 2xx Robase response ids containing credential/financial sentinels into opaque HMAC digests and rejects malformed/overlong/control-char ids without truncation', async () => {
+    const sentinels = [
+      'robe_2XX_CRED_SENTINEL_11223344556677889900',
+      'xkeysib-2XX_CROSS_VENDOR_SENTINEL_AABBCCDDEE',
+      're_2XX_RESEND_SENTINEL_9988776655443322',
+      'MNNPS1:v1:CIPHERTEXT_LEAK:AAAA:BBBB',
+      'TX_NGN_95000000_ACCT_0123456789_PIN_4829_OTP_771902',
+    ];
+
+    for (const rawId of sentinels) {
+      const provider = new RobaseNotificationProvider(
+        { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ id: rawId, status: 'pending' }),
+        }),
+      );
+      const res = await provider.send(request());
+      expect(res.success).toBe(true);
+      expect(res.providerRef).toMatch(/^pvr1:robase:[0-9a-f]{32}$/);
+      const serialized = JSON.stringify(res);
+      expect(serialized).not.toContain(rawId);
+      expect(serialized).not.toContain('SENTINEL');
+      expect(serialized).not.toContain('robe_');
+      expect(serialized).not.toContain('xkeysib-');
+      expect(serialized).not.toContain('re_2XX');
+      expect(serialized).not.toContain('MNNPS1');
+      expect(serialized).not.toContain('95000000');
+      expect(serialized).not.toContain('0123456789');
+    }
+
+    const malformedIds: unknown[] = [
+      undefined,
+      null,
+      '',
+      '    ',
+      42,
+      true,
+      ['robe_array_sentinel'],
+      { nested: 'robe_object_sentinel' },
+      'robe_overlong_' + 'x'.repeat(600),
+      'robe_crlf\r\ninjected',
+      'robe_nul\u0000byte',
+      'robe_del\u007fchar',
+    ];
+
+    for (const badId of malformedIds) {
+      const provider = new RobaseNotificationProvider(
+        { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ id: badId }),
+        }),
+      );
+      const res = await provider.send(request());
+      expect(res).toEqual({ success: false, error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE' });
+    }
+
+    // Non-JSON 200 OK body fails closed as unrecognized success response
+    const nonJsonSuccess = new RobaseNotificationProvider(
+      { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token <');
+        },
+      }),
+    );
+    expect(await nonJsonSuccess.send(request())).toEqual({
+      success: false,
+      error: 'ROBASE_UNRECOGNIZED_SUCCESS_RESPONSE',
+    });
   });
 });
 

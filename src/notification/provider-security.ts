@@ -1,3 +1,4 @@
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import * as dns from 'node:dns';
 import * as https from 'node:https';
 import * as net from 'node:net';
@@ -129,6 +130,8 @@ const CLOSED_FIRST_PARTY_PROVIDER_ERROR_CODES: ReadonlySet<string> = new Set([
   'BREVO_INVALID_RESPONSE',
   'BREVO_SENDERS_INVALID_RESPONSE',
   'BREVO_SENDER_NOT_VERIFIED',
+  'BREVO_UNSUPPORTED_CHANNEL:SMS',
+  'BREVO_UNSUPPORTED_CHANNEL:PUSH',
   'BREVO_EGRESS_BLOCKED',
   'RESEND_TIMEOUT',
   'RESEND_INVALID_DESTINATION',
@@ -224,6 +227,184 @@ export function isExternalNotificationVendor(
   provider: string,
 ): provider is ExternalNotificationVendor {
   return provider === 'robase' || provider === 'brevo' || provider === 'resend';
+}
+
+export type SafeProviderRefScope = ExternalNotificationVendor | 'external';
+
+/**
+ * Canonical opaque provider-reference token format:
+ * `pvr1:<robase|brevo|resend|external>:<32 lowercase hex HMAC-SHA256 digest chars>`.
+ *
+ * Raw upstream vendor identifiers (`id`, `messageId`, `messageIds[0]`) are untrusted external
+ * payload fields and are NEVER persisted, logged, audited, or projected in HTTP responses.
+ */
+export const SAFE_PROVIDER_REF_PATTERN =
+  /^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/;
+
+/**
+ * First-party local non-network synthetic harness/console references generated inside
+ * MonieNaija (`ConsoleNotificationProvider`, `ConsoleEmailProvider`, `TestNotificationProvider`,
+ * `TestEmailProvider`). Strictly constrained to `<prefix>-<unix_ms>-<alphanumeric_nonce>` and
+ * never matched when the provider is an external vendor (`robase`, `brevo`, `resend`).
+ */
+export const SAFE_LOCAL_HARNESS_REF_PATTERN =
+  /^(console|console-email|test|test-email)-[0-9]{10,16}-[a-z0-9]{1,12}$/;
+
+export const MAX_RAW_VENDOR_PROVIDER_ID_LENGTH = 512;
+
+// eslint-disable-next-line no-control-regex
+const ASCII_CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/;
+const PROVIDER_REF_KEY_DERIVATION_DOMAIN = 'monienaija:notification:provider-ref:hmac-key:v1';
+const PROVIDER_REF_HMAC_DOMAIN = 'monienaija:notification:provider-ref:v1';
+const PROCESS_EPHEMERAL_PROVIDER_REF_SECRET = randomBytes(32);
+
+function resolveCanonicalKeyringSeed(): string | null {
+  const rawKeyring = process.env['NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON'];
+  if (typeof rawKeyring === 'string' && rawKeyring.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawKeyring) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed as Record<string, unknown>)
+          .filter(
+            ([k, v]) =>
+              typeof k === 'string' &&
+              k.trim().length > 0 &&
+              typeof v === 'string' &&
+              v.trim().length > 0,
+          )
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([k, v]) => `${k.trim()}=${(v as string).trim()}`);
+        if (entries.length > 0) {
+          return entries.join('|');
+        }
+      }
+    } catch {
+      // Fall through to single-key / adapter-secret / ephemeral seed.
+    }
+  }
+
+  const singleKey = process.env['NOTIFICATION_PROVIDER_ENCRYPTION_KEY'];
+  if (typeof singleKey === 'string' && singleKey.trim().length > 0) {
+    return singleKey.trim();
+  }
+  return null;
+}
+
+function resolveProviderRefHmacKey(secretMaterial?: string | null): Buffer {
+  const keyringSeed = resolveCanonicalKeyringSeed();
+  if (keyringSeed) {
+    return createHash('sha256')
+      .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:keyring:${keyringSeed}`, 'utf8')
+      .digest();
+  }
+  if (typeof secretMaterial === 'string' && secretMaterial.trim().length > 0) {
+    return createHash('sha256')
+      .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:secret:${secretMaterial.trim()}`, 'utf8')
+      .digest();
+  }
+  return createHash('sha256')
+    .update(PROVIDER_REF_KEY_DERIVATION_DOMAIN, 'utf8')
+    .update(':ephemeral:', 'utf8')
+    .update(PROCESS_EPHEMERAL_PROVIDER_REF_SECRET)
+    .digest();
+}
+
+function computeOpaqueProviderRefDigest(
+  scope: SafeProviderRefScope,
+  canonicalId: string,
+  secretMaterial?: string | null,
+): string {
+  const key = resolveProviderRefHmacKey(secretMaterial);
+  const tagHex = createHmac('sha256', key)
+    .update(
+      `${PROVIDER_REF_HMAC_DOMAIN}\0${scope.length}:${scope}\0${canonicalId.length}:${canonicalId}`,
+      'utf8',
+    )
+    .digest('hex')
+    .slice(0, 32);
+  return `pvr1:${scope}:${tagHex}`;
+}
+
+export function isSafeOpaqueProviderRef(value: unknown): value is string {
+  return typeof value === 'string' && SAFE_PROVIDER_REF_PATTERN.test(value);
+}
+
+/**
+ * Strictly validates an untrusted 2xx vendor message identifier and converts it into a
+ * domain-separated keyed-HMAC opaque reference (`pvr1:<vendor>:<32-hex>`).
+ *
+ * Security invariants (Sprint 1 Remediation F-01):
+ * - Rejects non-strings (`null`, `undefined`, numbers, booleans, arrays, objects).
+ * - Rejects empty/whitespace strings, control characters (CR/LF/NUL/TAB), and unexpectedly
+ *   long identifiers (`> 512` chars) — NEVER truncates an untrusted string into a raw prefix.
+ * - Uses keyed HMAC-SHA256 with vendor domain separation so predictable sensitive values
+ *   (account numbers, phone numbers, transaction amounts, credentials) cannot be recovered
+ *   by dictionary guessing, while keeping correlation deterministic for a given vendor ID.
+ */
+export function deriveSafeVendorProviderRef(
+  vendor: ExternalNotificationVendor,
+  rawId: unknown,
+  secretMaterial?: string | null,
+): string | null {
+  if (!isExternalNotificationVendor(vendor)) {
+    return null;
+  }
+  if (typeof rawId !== 'string') {
+    return null;
+  }
+  if (rawId.length === 0 || rawId.length > MAX_RAW_VENDOR_PROVIDER_ID_LENGTH) {
+    return null;
+  }
+  if (ASCII_CONTROL_CHAR_PATTERN.test(rawId)) {
+    return null;
+  }
+  const trimmed = rawId.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  return computeOpaqueProviderRefDigest(vendor, trimmed, secretMaterial);
+}
+
+/**
+ * Shared boundary normalizer enforced at controller, service, delivery dispatcher/worker,
+ * configuration snapshot, historical database backfill, and audit-read boundaries.
+ *
+ * - Already-opaque `pvr1:<scope>:<32-hex>` tokens pass through unchanged (idempotent).
+ * - Genuine first-party local console/test-harness timestamp-nonce IDs pass through ONLY
+ *   when `providerName` is not an external vendor (`robase`, `brevo`, `resend`).
+ * - Every other non-empty string (including historical persisted raw vendor references) is
+ *   converted into `pvr1:<vendor|external>:<32-hex>` without exposing any raw character.
+ */
+export function sanitizeProviderRefForBoundary(
+  rawRef: unknown,
+  providerName?: unknown,
+  secretMaterial?: string | null,
+): string | null {
+  if (rawRef === null || rawRef === undefined) {
+    return null;
+  }
+  if (typeof rawRef !== 'string') {
+    return null;
+  }
+  const trimmed = rawRef.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (SAFE_PROVIDER_REF_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalizedProvider =
+    typeof providerName === 'string' ? providerName.trim().toLowerCase() : '';
+  const isExternalVendor = isExternalNotificationVendor(normalizedProvider);
+
+  if (!isExternalVendor && SAFE_LOCAL_HARNESS_REF_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  const scope: SafeProviderRefScope = isExternalVendor ? normalizedProvider : 'external';
+  const boundedCanonical = trimmed.length > 4096 ? trimmed.slice(0, 4096) : trimmed;
+  return computeOpaqueProviderRefDigest(scope, boundedCanonical, secretMaterial);
 }
 
 /**

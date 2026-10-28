@@ -9,6 +9,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -40,9 +41,11 @@ import type {
   NotificationSendResult,
 } from './notification.types';
 import {
+  type ExternalNotificationVendor,
   isExternalNotificationVendor,
   isPinnedProviderBaseUrl,
   normalizeProviderErrorCode,
+  sanitizeProviderRefForBoundary,
   validatePinnedProviderBaseUrl,
 } from './provider-security';
 import { ResendEmailProvider, sanitizeHeader } from './resend-email-provider';
@@ -358,8 +361,26 @@ function validateApiKeyForProvider(provider: string, rawKey: string): string {
   );
 }
 
+function sanitizeVendorSendResult(
+  vendor: ExternalNotificationVendor,
+  result: NotificationSendResult,
+  secretMaterial?: string | null,
+): NotificationSendResult {
+  if (result.success) {
+    const safeRef = sanitizeProviderRefForBoundary(result.providerRef, vendor, secretMaterial);
+    return {
+      success: true,
+      providerRef: safeRef ?? undefined,
+    };
+  }
+  return {
+    success: false,
+    error: normalizeProviderErrorCode(result.error) ?? 'PROVIDER_FAILURE',
+  };
+}
+
 @Injectable()
-export class NotificationProviderConfigService {
+export class NotificationProviderConfigService implements OnModuleInit {
   private readonly logger = new Logger(NotificationProviderConfigService.name);
   private readonly consoleSms = new ConsoleNotificationProvider();
   private readonly consoleEmail = new ConsoleEmailProvider();
@@ -393,6 +414,59 @@ export class NotificationProviderConfigService {
 
   getActiveEmailProviderNameSync(): string {
     return this.cachedEmailProviderName;
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.normalizeHistoricalProviderRefs();
+    await this.refreshRuntimeCache();
+  }
+
+  /**
+   * Additive, non-destructive normalization of any historical raw `last_test_provider_ref`
+   * values persisted prior to Sprint 1 F-01 opaque reference enforcement. Updates only
+   * `last_test_provider_ref` without bumping governance `version` or altering audit rows.
+   */
+  async normalizeHistoricalProviderRefs(): Promise<number> {
+    if (!this.dataSource || !this.dataSource.isInitialized) {
+      return 0;
+    }
+    try {
+      const rows = await this.dataSource.query<
+        Array<{
+          channel: ManagedNotificationChannel;
+          provider: string;
+          last_test_provider_ref: string | null;
+        }>
+      >(
+        `SELECT channel, provider, last_test_provider_ref
+           FROM notification_provider_configurations
+          WHERE last_test_provider_ref IS NOT NULL`,
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return 0;
+      }
+      let updated = 0;
+      for (const row of rows) {
+        if (!row.last_test_provider_ref) continue;
+        const safeRef = sanitizeProviderRefForBoundary(
+          row.last_test_provider_ref,
+          row.provider,
+        );
+        if (safeRef !== row.last_test_provider_ref) {
+          await this.dataSource.query(
+            `UPDATE notification_provider_configurations
+                SET last_test_provider_ref = $1
+              WHERE channel = $2
+                AND last_test_provider_ref IS NOT DISTINCT FROM $3`,
+            [safeRef, row.channel, row.last_test_provider_ref],
+          );
+          updated += 1;
+        }
+      }
+      return updated;
+    } catch {
+      return 0;
+    }
   }
 
   async refreshRuntimeCache(): Promise<void> {
@@ -463,7 +537,7 @@ export class NotificationProviderConfigService {
         { baseUrl: validatePinnedProviderBaseUrl('robase', baseUrl), apiKey, requestTimeoutMs },
         this.fetchImpl as ConstructorParameters<typeof RobaseNotificationProvider>[1],
       );
-      return adapter.send(request);
+      return sanitizeVendorSendResult('robase', await adapter.send(request), apiKey);
     }
 
     if (row.provider === 'console') {
@@ -497,7 +571,11 @@ export class NotificationProviderConfigService {
         },
         this.fetchImpl as ConstructorParameters<typeof RobaseNotificationProvider>[1],
       );
-      return adapter.send(request);
+      return sanitizeVendorSendResult(
+        'robase',
+        await adapter.send(request),
+        secretResolution.apiKey,
+      );
     }
 
     return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
@@ -547,7 +625,7 @@ export class NotificationProviderConfigService {
           },
           this.fetchImpl as BrevoFetchFn | undefined,
         );
-        return adapter.send(request);
+        return sanitizeVendorSendResult('brevo', await adapter.send(request), apiKey);
       }
 
       if (envProvider === 'resend') {
@@ -573,7 +651,7 @@ export class NotificationProviderConfigService {
           },
           this.fetchImpl as ConstructorParameters<typeof ResendEmailProvider>[1],
         );
-        return adapter.send(request);
+        return sanitizeVendorSendResult('resend', await adapter.send(request), apiKey);
       }
 
       return this.noneEmail.send();
@@ -621,7 +699,11 @@ export class NotificationProviderConfigService {
         },
         this.fetchImpl as BrevoFetchFn | undefined,
       );
-      return adapter.send(request);
+      return sanitizeVendorSendResult(
+        'brevo',
+        await adapter.send(request),
+        secretResolution.apiKey,
+      );
     }
 
     if (row.provider === 'resend') {
@@ -646,7 +728,11 @@ export class NotificationProviderConfigService {
         },
         this.fetchImpl as ConstructorParameters<typeof ResendEmailProvider>[1],
       );
-      return adapter.send(request);
+      return sanitizeVendorSendResult(
+        'resend',
+        await adapter.send(request),
+        secretResolution.apiKey,
+      );
     }
 
     return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
@@ -850,12 +936,22 @@ export class NotificationProviderConfigService {
       throw new BadRequestException('Provider "none" cannot be marked enabled.');
     }
 
-    for (const boolKey of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
-      const candidate = input[boolKey];
-      if (candidate !== undefined && typeof candidate !== 'boolean') {
-        throw new BadRequestException(
-          `${boolKey} must be a strict JSON boolean (true or false) when provided.`,
-        );
+    if (provider === 'brevo') {
+      for (const boolKey of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+        if (typeof input[boolKey] !== 'boolean') {
+          throw new BadRequestException(
+            `${boolKey} is required for Brevo configuration proposals and must be a strict JSON boolean (true or false).`,
+          );
+        }
+      }
+    } else {
+      for (const boolKey of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+        const candidate = input[boolKey];
+        if (candidate !== undefined && typeof candidate !== 'boolean') {
+          throw new BadRequestException(
+            `${boolKey} must be a strict JSON boolean (true or false) when provided.`,
+          );
+        }
       }
     }
 
@@ -913,9 +1009,18 @@ export class NotificationProviderConfigService {
         senderId = trimmedSender;
       }
     } else {
-      spfConfigured = input.spfConfigured ?? existing?.spf_configured ?? false;
-      dkimConfigured = input.dkimConfigured ?? existing?.dkim_configured ?? false;
-      dmarcConfigured = input.dmarcConfigured ?? existing?.dmarc_configured ?? false;
+      spfConfigured =
+        provider === 'brevo'
+          ? (input.spfConfigured as boolean)
+          : (input.spfConfigured ?? existing?.spf_configured ?? false);
+      dkimConfigured =
+        provider === 'brevo'
+          ? (input.dkimConfigured as boolean)
+          : (input.dkimConfigured ?? existing?.dkim_configured ?? false);
+      dmarcConfigured =
+        provider === 'brevo'
+          ? (input.dmarcConfigured as boolean)
+          : (input.dmarcConfigured ?? existing?.dmarc_configured ?? false);
 
       if (provider === 'brevo' || provider === 'resend') {
         const rawFrom = (input.fromEmail ?? existing?.from_email ?? '').trim();
@@ -1826,6 +1931,9 @@ export class NotificationProviderConfigService {
     const safeErrorCode = params.success
       ? null
       : (normalizeProviderErrorCode(params.errorCode) ?? 'PROVIDER_FAILURE');
+    const safeProviderRef = params.success
+      ? sanitizeProviderRefForBoundary(params.providerRef, params.providerName || row.provider)
+      : null;
 
     await this.safeDbOperation('recordTestSendOutcome', () =>
       this.dataSource!.query(
@@ -1845,7 +1953,7 @@ export class NotificationProviderConfigService {
         [
           lastTestStatus,
           params.maskedDestination.slice(0, 128),
-          params.providerRef ? params.providerRef.slice(0, 255) : null,
+          safeProviderRef,
           safeErrorCode ? safeErrorCode.slice(0, 128) : null,
           promoteLiveReadiness,
           params.actor,
@@ -2284,7 +2392,7 @@ export class NotificationProviderConfigService {
         lastTest: {
           status: row.last_test_status,
           destinationMasked: row.last_test_destination_masked,
-          providerRef: row.last_test_provider_ref,
+          providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
           errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
           deliveryTestedAt: null,
@@ -2335,7 +2443,7 @@ export class NotificationProviderConfigService {
         lastTest: {
           status: row.last_test_status,
           destinationMasked: row.last_test_destination_masked,
-          providerRef: row.last_test_provider_ref,
+          providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
           errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
           deliveryTestedAt: null,
@@ -2429,7 +2537,7 @@ export class NotificationProviderConfigService {
       lastTest: {
         status: row.last_test_status,
         destinationMasked: row.last_test_destination_masked,
-        providerRef: row.last_test_provider_ref,
+        providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
         errorCode: normalizeProviderErrorCode(row.last_test_error_code),
         testedAt: toIsoOrNull(row.last_test_at),
         deliveryTestedAt: toIsoOrNull(row.delivery_tested_at),

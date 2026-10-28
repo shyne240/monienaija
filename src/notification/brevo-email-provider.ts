@@ -10,6 +10,7 @@ import {
   classifyBrevoErrorCode,
   classifyTransportErrorName,
   createPinnedProviderHttpFetch,
+  deriveSafeVendorProviderRef,
   formatSafeHttpStatus,
   isPinnedProviderEndpointUrl,
 } from './provider-security';
@@ -78,11 +79,6 @@ export type BrevoFetchFn = (
 
 const DEFAULT_BREVO_FETCH: BrevoFetchFn =
   createPinnedProviderHttpFetch() as unknown as BrevoFetchFn;
-
-interface BrevoSendSuccessBody {
-  messageId?: unknown;
-  messageIds?: unknown;
-}
 
 interface BrevoErrorBody {
   code?: unknown;
@@ -434,17 +430,31 @@ export class BrevoEmailProvider implements NotificationProvider {
       }
 
       if (response.ok) {
-        const body = parsed as BrevoSendSuccessBody | null;
-        let providerRef: string | null = null;
-        if (typeof body?.messageId === 'string' && body.messageId.length > 0) {
-          providerRef = body.messageId.slice(0, 255);
-        } else if (
-          Array.isArray(body?.messageIds) &&
-          typeof body.messageIds[0] === 'string' &&
-          body.messageIds[0].length > 0
-        ) {
-          providerRef = body.messageIds[0].slice(0, 255);
+        let rawCandidateId: unknown = null;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const rec = parsed as Record<string, unknown>;
+          if ('messageId' in rec && rec['messageId'] !== undefined && rec['messageId'] !== null) {
+            rawCandidateId = rec['messageId'];
+          } else if (
+            'messageIds' in rec &&
+            rec['messageIds'] !== undefined &&
+            rec['messageIds'] !== null
+          ) {
+            if (
+              Array.isArray(rec['messageIds']) &&
+              rec['messageIds'].length > 0 &&
+              rec['messageIds'].length <= 50
+            ) {
+              rawCandidateId = rec['messageIds'][0];
+            }
+          }
         }
+
+        const providerRef = deriveSafeVendorProviderRef(
+          'brevo',
+          rawCandidateId,
+          this.config.apiKey,
+        );
 
         if (!providerRef) {
           this.logger.warn({

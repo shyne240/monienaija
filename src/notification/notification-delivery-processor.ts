@@ -5,6 +5,7 @@ import type { NotificationChannelResolverService } from './notification-channel-
 import type { NotificationTemplateService } from './notification-template.service';
 import { canonicalNotificationEvent } from './notification-template.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
+import { sanitizeProviderRefForBoundary } from './provider-security';
 import type { NotificationProvider, NotificationSendResult } from './notification.types';
 
 interface DeliveryRow {
@@ -279,7 +280,13 @@ export class NotificationDeliveryProcessor {
       const outcome = result.success ? 'SENT' : this.failureOutcome(result, row.attempts);
       const reason = outcome === 'SENT' ? null : outcome === 'UNKNOWN' ? 'PROVIDER_OUTCOME_UNKNOWN' :
         outcome === 'DEAD' ? 'PROVIDER_REJECTED_OR_EXHAUSTED' : 'PROVIDER_REJECTED_RETRYABLE';
-      const saved = await this.finish(row, outcome, reason, result.success ? result.providerRef ?? null : null);
+      // F-01 boundary sanitization: never persist a raw provider-controlled success
+      // identifier; store only the opaque keyed-HMAC reference (idempotent pass-through
+      // for already-opaque pvr1: tokens and safe local harness refs).
+      const safeProviderRef = result.success
+        ? sanitizeProviderRefForBoundary(result.providerRef, provider?.name)
+        : null;
+      const saved = await this.finish(row, outcome, reason, safeProviderRef);
       return saved ? outcome : 'LOST';
     } catch {
       // Once STARTED is durable a failed status write may hide provider acceptance. Leave the

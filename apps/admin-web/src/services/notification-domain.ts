@@ -930,6 +930,16 @@ export function validateProviderConfigProposalDraft(
     }
   }
 
+  if (draft.channel === 'EMAIL' && provider === 'brevo') {
+    for (const field of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      if (typeof draft[field] !== 'boolean') {
+        errors.push(
+          `Brevo configuration proposals must explicitly specify ${field} as a boolean (true or false).`,
+        );
+      }
+    }
+  }
+
   if (draft.credentialAction === 'SET_ENCRYPTED') {
     if (!isExternal) {
       errors.push('Encrypted API keys can only be configured for external providers (Robase, Brevo, Resend).');

@@ -14,6 +14,11 @@ import {
   parseSenderIdentity,
   verifyBrevoConnection,
 } from '../src/notification/brevo-email-provider';
+import {
+  SAFE_PROVIDER_REF_PATTERN,
+  deriveSafeVendorProviderRef,
+  sanitizeProviderRefForBoundary,
+} from '../src/notification/provider-security';
 import { NotificationProviderConfigService } from '../src/notification/notification-provider-config.service';
 import {
   computeKeyFingerprint,
@@ -182,8 +187,14 @@ describe('BrevoEmailProvider & verifyBrevoConnection (documented v3 contract, mo
 
     expect(res).toEqual({
       success: true,
-      providerRef: '<202610281200.998877@smtp-relay.mailin.fr>',
+      providerRef: deriveSafeVendorProviderRef(
+        'brevo',
+        '<202610281200.998877@smtp-relay.mailin.fr>',
+        SAMPLE_BREVO_KEY,
+      ),
     });
+    expect(res.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    expect(res.providerRef).not.toContain('smtp-relay.mailin.fr');
     expect(calls.length).toBe(1);
     expect(calls[0]!.url).toBe('https://api.brevo.com/v3/smtp/email');
     expect(calls[0]!.method).toBe('POST');
@@ -860,5 +871,244 @@ describe('Sprint 1 Remediation F-01 & F-02 — Closed error-code allowlist & pin
       'ROBASE_HTTP_401:unknown',
     );
     expect(normalizeProviderErrorCode('TX_NGN_950000_RAW_LEAK')).toBe('PROVIDER_FAILURE');
+  });
+
+  it('F-01: Brevo 2xx messageId/messageIds sentinels are converted into domain-separated HMAC references before logging or returning, malformed 2xx IDs fail closed without truncation, and historical audit reads sanitize raw providerRef without losing unrelated fields', async () => {
+    const capturedLogs: string[] = [];
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation((msg: unknown) => {
+      capturedLogs.push(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    });
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation((msg: unknown) => {
+      capturedLogs.push(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    });
+
+    try {
+      const sentinelMessageId =
+        '<xkeysib-2XX_BREVO_CRED_88776655@TX-NGN-95000000-ACCT-0123456789.example>';
+      const sentinelBatchId =
+        'MNNPS1:v1:2XX_BATCH_LEAK:robe_998877665544:re_112233445566:PIN_4910';
+
+      const singleProvider = new BrevoEmailProvider(
+        {
+          baseUrl: 'https://api.brevo.com',
+          apiKey: SAMPLE_BREVO_KEY,
+          fromEmail: 'notifications@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({
+          ok: true,
+          status: 201,
+          json: async () => ({ messageId: sentinelMessageId }),
+        }),
+      );
+      const singleRes = await singleProvider.send(emailRequest());
+      expect(singleRes.success).toBe(true);
+      expect(singleRes.providerRef).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+
+      const batchProvider = new BrevoEmailProvider(
+        {
+          baseUrl: 'https://api.brevo.com',
+          apiKey: SAMPLE_BREVO_KEY,
+          fromEmail: 'notifications@monienaija.ng',
+          requestTimeoutMs: 5000,
+        },
+        async () => ({
+          ok: true,
+          status: 201,
+          json: async () => ({ messageIds: [sentinelBatchId] }),
+        }),
+      );
+      const batchRes = await batchProvider.send(emailRequest());
+      expect(batchRes.success).toBe(true);
+      expect(batchRes.providerRef).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+
+      // Malformed 2xx variants (arrays, objects, numbers, overlong >512 without truncation, control chars)
+      const malformedPayloads: unknown[] = [
+        {},
+        null,
+        ['array-top-level'],
+        { messageId: '' },
+        { messageId: '   ' },
+        { messageId: 12345 },
+        { messageId: ['xkeysib-array-leak'], messageIds: ['fallback-must-not-run'] },
+        { messageId: { nested: 'xkeysib-obj-leak' } },
+        { messageIds: [] },
+        { messageIds: [999] },
+        { messageId: 'xkeysib-overlong-' + 'z'.repeat(550) },
+        { messageId: 'xkeysib-crlf\r\ninjected' },
+        { messageId: 'xkeysib-nul\u0000byte' },
+      ];
+      for (const badBody of malformedPayloads) {
+        const badAdapter = new BrevoEmailProvider(
+          {
+            baseUrl: 'https://api.brevo.com',
+            apiKey: SAMPLE_BREVO_KEY,
+            fromEmail: 'notifications@monienaija.ng',
+            requestTimeoutMs: 5000,
+          },
+          async () => ({
+            ok: true,
+            status: 201,
+            json: async () => badBody,
+          }),
+        );
+        expect(await badAdapter.send(emailRequest())).toEqual({
+          success: false,
+          error: 'BREVO_INVALID_RESPONSE',
+        });
+      }
+
+      const allOutput = JSON.stringify({ singleRes, batchRes, capturedLogs });
+      expect(allOutput).not.toContain('2XX_BREVO_CRED_88776655');
+      expect(allOutput).not.toContain('TX-NGN-95000000');
+      expect(allOutput).not.toContain('0123456789');
+      expect(allOutput).not.toContain('2XX_BATCH_LEAK');
+      expect(allOutput).not.toContain('MNNPS1:');
+      expect(allOutput).not.toContain('xkeysib-');
+      expect(allOutput).not.toContain('robe_');
+      expect(allOutput).not.toContain('re_112233');
+      expect(capturedLogs.some((entry) => entry.includes(singleRes.providerRef!))).toBe(true);
+
+      // Domain separation across vendors for identical raw input
+      const sameRaw = '0123456789';
+      const robaseDigest = deriveSafeVendorProviderRef('robase', sameRaw, SAMPLE_BREVO_KEY);
+      const brevoDigest = deriveSafeVendorProviderRef('brevo', sameRaw, SAMPLE_BREVO_KEY);
+      const resendDigest = deriveSafeVendorProviderRef('resend', sameRaw, SAMPLE_BREVO_KEY);
+      expect(robaseDigest).toMatch(/^pvr1:robase:[0-9a-f]{32}$/);
+      expect(brevoDigest).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      expect(resendDigest).toMatch(/^pvr1:resend:[0-9a-f]{32}$/);
+      expect(new Set([robaseDigest, brevoDigest, resendDigest]).size).toBe(3);
+
+      // Boundary idempotency and historical/harness rules
+      expect(sanitizeProviderRefForBoundary(brevoDigest, 'brevo')).toBe(brevoDigest);
+      expect(
+        sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'test-email'),
+      ).toBe('test-email-1793207380288-a1b2');
+      // External vendor NEVER passes through even a harness-shaped string
+      expect(
+        sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'brevo'),
+      ).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+
+      // Historical NOTIFICATION_TEST_SEND audit read projection sanitizes raw providerRef while keeping unrelated fields intact
+      const historicalEvent = {
+        id: randomUUID(),
+        entityType: 'NOTIFICATION_TEST_SEND',
+        entityId: randomUUID(),
+        action: 'NOTIFICATION_TEST_SENT',
+        actor: 'ops-1',
+        correlationId: 'corr-hist-1',
+        requestId: 'req-hist-1',
+        previousValues: null,
+        newValues: {
+          channel: 'EMAIL',
+          provider: 'brevo',
+          destination: 'op***@monienaija.ng',
+          providerRef: 'xkeysib-HISTORICAL_AUDIT_SENTINEL_998877_NGN_420000',
+          errorCode: 'BREVO_HTTP_401:xkeysib-legacy-err',
+          unrelatedAuditNote: 'PRESERVED_FORENSIC_CONTEXT_77',
+        },
+        occurredAt: new Date(),
+      } as unknown as AuditEvent;
+
+      const mockRepo = {
+        createQueryBuilder: () => {
+          const qb = {
+            andWhere: () => qb,
+            orderBy: () => qb,
+            take: () => qb,
+            getMany: async () => [historicalEvent],
+          };
+          return qb;
+        },
+      } as unknown as Repository<AuditEvent>;
+
+      const auditSvc = new AuditService(mockRepo);
+      const views = await auditSvc.listWithNotificationProviderOversight({
+        entityType: 'NOTIFICATION_TEST_SEND',
+      });
+      expect(views.length).toBe(1);
+      expect(views[0]!.newValues?.['providerRef']).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      expect(views[0]!.newValues?.['errorCode']).toBe('BREVO_HTTP_401');
+      expect(views[0]!.newValues?.['unrelatedAuditNote']).toBe('PRESERVED_FORENSIC_CONTEXT_77');
+      expect(JSON.stringify(views)).not.toContain('HISTORICAL_AUDIT_SENTINEL');
+      expect(JSON.stringify(views)).not.toContain('xkeysib-');
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('F-05: NotificationProviderConfigService.proposeChange requires explicit boolean spfConfigured, dkimConfigured, and dmarcConfigured on Brevo proposals before any DB mutation', async () => {
+    let dbMutations = 0;
+    const mockDs = {
+      isInitialized: true,
+      query: async () => [],
+      transaction: async () => {
+        dbMutations += 1;
+        throw new Error('Transaction must not start on invalid Brevo proposal');
+      },
+    } as unknown as DataSource;
+
+    const encSvc = new NotificationSecretEncryptionService(
+      makeConfig({
+        NOTIFICATION_PROVIDER_ENCRYPTION_KEY: KEY_V1,
+        NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
+      }),
+    );
+    const mockApprovals = {
+      request: jest.fn(),
+    } as unknown as PrivilegedActionApprovalService;
+
+    const svc = new NotificationProviderConfigService(
+      makeConfig({ NODE_ENV: 'test' }) as unknown as ConfigService<Environment, true>,
+      encSvc,
+      mockDs,
+      mockApprovals,
+    );
+
+    const superAdmin: AuthorizationPrincipal = {
+      type: 'PRIVILEGED',
+      principalId: randomUUID(),
+      audience: 'workforce-admin',
+      assuranceLevel: 'MFA',
+      roles: ['SUPER_ADMIN'],
+      scopes: ['notification.provider.configure', 'notification.provider.view'],
+      customerAccess: 'ANY',
+    };
+
+    const validBase = {
+      channel: 'EMAIL' as const,
+      expectedVersion: 0,
+      provider: 'brevo',
+      enabled: false,
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'notifications@monienaija.ng',
+      fromName: 'MonieNaija',
+      credentialAction: 'SET_ENCRYPTED' as const,
+      apiKey: SAMPLE_BREVO_KEY,
+      spfConfigured: false,
+      dkimConfigured: false,
+      dmarcConfigured: false,
+      reason: 'Stage Brevo provider configuration with explicit DNS flags',
+    };
+
+    for (const omittedField of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      const candidate = { ...validBase } as Record<string, unknown>;
+      delete candidate[omittedField];
+      await expect(
+        svc.proposeChange(superAdmin, candidate as unknown as typeof validBase),
+      ).rejects.toThrow(new RegExp(`${omittedField}.*required.*Brevo`, 'i'));
+    }
+
+    for (const field of ['spfConfigured', 'dkimConfigured', 'dmarcConfigured'] as const) {
+      for (const badVal of ['false', 'true', 0, 1, null, [], {}]) {
+        const candidate = { ...validBase, [field]: badVal };
+        await expect(
+          svc.proposeChange(superAdmin, candidate as unknown as typeof validBase),
+        ).rejects.toThrow(new RegExp(`${field}.*boolean`, 'i'));
+      }
+    }
+
+    expect(dbMutations).toBe(0);
   });
 });

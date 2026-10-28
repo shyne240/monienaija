@@ -319,9 +319,9 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       ...(isExternal && emailCredAction === 'SET_ENCRYPTED'
         ? { apiKey: emailApiKey.trim() }
         : {}),
-      spfConfigured: emailSpf,
-      dkimConfigured: emailDkim,
-      dmarcConfigured: emailDmarc,
+      spfConfigured: Boolean(emailSpf),
+      dkimConfigured: Boolean(emailDkim),
+      dmarcConfigured: Boolean(emailDmarc),
       reason: emailReason.trim(),
     };
 

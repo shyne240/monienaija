@@ -8,6 +8,7 @@ import {
   classifyResendErrorCode,
   classifyTransportErrorName,
   createPinnedProviderHttpFetch,
+  deriveSafeVendorProviderRef,
   formatSafeHttpStatus,
   isPinnedProviderEndpointUrl,
 } from './provider-security';
@@ -143,9 +144,22 @@ export class ResendEmailProvider implements NotificationProvider {
       }
 
       if (response.ok) {
-        const parsed = (await response.json()) as { id?: unknown };
-        if (typeof parsed?.id === 'string' && parsed.id.length > 0 && parsed.id.length <= 255) {
-          return { success: true, providerRef: parsed.id };
+        let parsed: unknown = null;
+        try {
+          parsed = await response.json();
+        } catch {
+          return { success: false, error: 'RESEND_UNRECOGNIZED_SUCCESS_RESPONSE' };
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          return { success: false, error: 'RESEND_UNRECOGNIZED_SUCCESS_RESPONSE' };
+        }
+        const safeProviderRef = deriveSafeVendorProviderRef(
+          'resend',
+          (parsed as { id?: unknown }).id,
+          this.config.apiKey,
+        );
+        if (safeProviderRef) {
+          return { success: true, providerRef: safeProviderRef };
         }
         return { success: false, error: 'RESEND_UNRECOGNIZED_SUCCESS_RESPONSE' };
       }
