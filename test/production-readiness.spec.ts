@@ -19,9 +19,9 @@ class ReadinessDataSource {
     if (sql.includes('LIMIT 1')) {
       return Promise.resolve([
         {
-          timestamp: this.compatible ? '1785753600100' : '1785753600004',
+          timestamp: this.compatible ? '1785753600101' : '1785753600004',
           name: this.compatible
-            ? 'CreateNotificationProviderConfiguration1785753600100'
+            ? 'NotificationReliability1785753600101'
             : 'RepairM6UuidDefaults1785753600004',
         },
       ]);

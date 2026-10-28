@@ -138,7 +138,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const customerId = randomUUID();
     await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-${randomUUID()}`]);
     await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary) VALUES ($1,$2,'PHONE',$3,$3,true)`, [randomUUID(), customerId, phone10]);
+    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
     try {
       await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` });
     } catch {}

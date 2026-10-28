@@ -152,7 +152,7 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const customerId = customerIdOverride ?? randomUUID();
     await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-${randomUUID()}`]);
     await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary) VALUES ($1,$2,'PHONE',$3,$3,true)`, [randomUUID(), customerId, phone10]);
+    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
     try { await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` }); } catch {}
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
@@ -294,7 +294,7 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     // Outbox event for support.ticket.created
     const outbox: Array<{ payload: any; correlation_id: string; event_key: string }> = await dataSource.query(`SELECT payload, correlation_id, event_key FROM outbox_events WHERE event_type='support.ticket.created' ORDER BY created_at DESC LIMIT 1`);
     expect(outbox.length).toBe(1);
-    await dispatcher.dispatch({ eventType: 'support.ticket.created', eventKey: outbox[0]!.event_key as string, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
+    await dispatcher.dispatch({ eventType: 'support.ticket.created', eventKey: (outbox[0]!.event_key as string | null) ?? `support.ticket.created:${ticketId}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
     const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
     expect(inbox.body.items.some((i: any) => i.type === 'support.ticket.created')).toBe(true);
   });

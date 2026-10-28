@@ -737,10 +737,9 @@ export class CustomerRegistrationService {
           );
         });
       }
-    } catch (error) {
-      this.logger.warn(
-        `Registration OTP delivery failed via ${this.provider.name}: ${(error as Error).message}`,
-      );
+    } catch {
+      // Provider exceptions can contain the OTP, destination or request body.
+      this.logger.warn({ event: 'customer.registration_otp_delivery_failed' });
       await this.dataSource.transaction(async (manager) => {
         await this.audit(
           manager,

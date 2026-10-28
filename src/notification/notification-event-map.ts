@@ -1,3 +1,4 @@
+import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import type { NotificationIntent } from './notification.types';
 import { canonicalNotificationEvent } from './notification-template.service';
 
@@ -153,8 +154,13 @@ export function mapEventToIntents(
   // Cash-to-cash initiation targets a phone directly so registration is not a prerequisite.
   // The phone is used as a recipient key only; template output is limited to explicit safe vars.
   if (eventType === 'cash_to_cash.created') {
-    const beneficiaryPhone = payload.beneficiaryPhone as string | undefined;
-    if (!beneficiaryPhone || !/^[789][0-9]{9}$/.test(beneficiaryPhone)) return [];
+    let beneficiaryPhone: string;
+    try {
+      if (typeof payload.beneficiaryPhone !== 'string') return [];
+      beneficiaryPhone = normalizeNigerianPhone(payload.beneficiaryPhone).canonical;
+    } catch {
+      return [];
+    }
     return [
       {
         recipientType: 'PHONE',

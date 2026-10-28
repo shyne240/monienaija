@@ -15,15 +15,16 @@ export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
 // 1785753600099-AllowPhoneNotificationRecipients; recipient_id is varchar(255) — UUID for
 // CUSTOMER/AGENT, canonical phone for PHONE recipients).
 export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
-export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN' | 'DEAD';
 
 /**
  * V1-005 Notification Delivery Foundation
  * Additive persistence for provider-neutral dispatch.
  * One row per (outbox eventKey, recipient, channel) — deterministic idempotency.
  * Payload is redacted (no PIN/OTP/token/secret); destination is phone or device token.
- * Status lifecycle: PENDING -> SENT | FAILED | SKIPPED (dependency missing e.g. Push token)
- * Retries are via existing outbox retry (notification failure does not reverse financial state).
+ * Delivery attempts are independently leased and fenced. SENT means provider acceptance;
+ * UNKNOWN denotes an ambiguous outcome and DEAD denotes a terminal/exhausted attempt.
+ * Notification failure never reverses financial state or changes shared outbox progress.
  */
 @Entity({ name: 'notification_deliveries' })
 @Index('uq_notification_deliveries_event_recipient_channel', ['eventKey', 'recipientId', 'channel'], {
@@ -34,7 +35,7 @@ export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPE
 @Index('idx_notification_deliveries_event_type', ['eventType', 'createdAt'])
 @Check('chk_notification_deliveries_channel', "channel IN ('SMS', 'PUSH', 'EMAIL')")
 @Check('chk_notification_deliveries_recipient_type', "recipient_type IN ('CUSTOMER', 'AGENT', 'PHONE')")
-@Check('chk_notification_deliveries_status', "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')")
+@Check('chk_notification_deliveries_status', "status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD')")
 @Check('chk_notification_deliveries_attempts', 'attempts >= 0')
 export class NotificationDelivery {
   @PrimaryGeneratedColumn('uuid')
@@ -68,8 +69,23 @@ export class NotificationDelivery {
   @Column({ type: 'jsonb' })
   payload!: Record<string, unknown>;
 
-  @Column({ type: 'varchar', length: 1000, nullable: true })
+  @Column({ type: 'varchar', length: 4000, nullable: true })
   message!: string | null;
+
+  @Column({ name: 'rendered_subject', type: 'varchar', length: 200, nullable: true })
+  renderedSubject!: string | null;
+
+  @Column({ name: 'rendered_html', type: 'text', nullable: true })
+  renderedHtml!: string | null;
+
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken!: string | null;
+
+  @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
+  leaseExpiresAt!: Date | null;
+
+  @Column({ name: 'next_attempt_at', type: 'timestamptz', nullable: true })
+  nextAttemptAt!: Date | null;
 
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
   status!: NotificationDeliveryStatus;

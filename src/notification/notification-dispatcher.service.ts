@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, no-empty */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
 import {
@@ -8,17 +8,15 @@ import {
   NOTIFICATION_PROVIDER_TOKEN,
 } from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
+import { NotificationDeliveryProcessor } from './notification-delivery-processor';
 import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
-import { NotificationTemplateService } from './notification-template.service';
+import { NoneEmailProvider } from './email-provider.interface';
+import { ConsoleNotificationProvider } from './notification-provider.interface';
+import { NotificationTemplateService, canonicalNotificationEvent } from './notification-template.service';
 import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
-import type {
-  NotificationEmailTemplateLookup,
-  NotificationProvider,
-  NotificationTemplateKey,
-  RenderedEmail,
-} from './notification.types';
+import type { NotificationEmailTemplateLookup, NotificationIntent, NotificationProvider, NotificationTemplateKey } from './notification.types';
 
 export interface DispatchCommand {
   eventType: string;
@@ -47,6 +45,22 @@ export interface DispatchResult {
   }>;
 }
 
+interface OutboxRow {
+  id: string;
+  event_type: string;
+  event_key: string | null;
+  schema_version: number;
+  aggregate_type: string;
+  aggregate_id: string;
+  payload: Record<string, unknown>;
+  correlation_id: string | null;
+  causation_id: string | null;
+  occurred_at: Date;
+}
+
+const CONSUMER = 'notification.v1';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class NotificationDispatcherService {
   private readonly logger = new Logger(NotificationDispatcherService.name);
@@ -56,406 +70,228 @@ export class NotificationDispatcherService {
     private readonly channelResolver: NotificationChannelResolverService,
     private readonly templateService: NotificationTemplateService,
     @Inject(NOTIFICATION_PROVIDER_TOKEN) @Optional() private readonly injectedProvider: NotificationProvider | null,
-    // ARENA3-NOTIFICATION-EMAIL — EMAIL-only provider + template seam. SMS/PUSH routing is
-    // untouched: `provider` above remains the sole send path for those channels.
     @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly injectedEmailProvider: NotificationProvider | null,
     @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
     @Optional() private readonly providerConfig?: NotificationProviderConfigService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
-  private get provider(): NotificationProvider {
-    if (this.injectedProvider) return this.injectedProvider;
-    // Fallback console provider (should not happen in prod, but safe for tests)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ConsoleNotificationProvider } = require('./notification-provider.interface');
-    return new ConsoleNotificationProvider();
-  }
-
-  /**
-   * EMAIL provider — fail-closed: unlike SMS (console fallback for tests), a missing
-   * EMAIL provider binding resolves to NoneEmailProvider (email stays dark, never logs).
-   */
-  private get emailProvider(): NotificationProvider {
-    if (this.injectedEmailProvider) return this.injectedEmailProvider;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { NoneEmailProvider } = require('./email-provider.interface');
-    return new NoneEmailProvider();
-  }
-
-  /** Email rendering seam — default code-backed implementation (Arena 1 registry swaps the token binding). */
+  private get provider(): NotificationProvider { return this.injectedProvider ?? new ConsoleNotificationProvider(); }
+  private get emailProvider(): NotificationProvider { return this.injectedEmailProvider ?? new NoneEmailProvider(); }
   private get emailTemplates(): NotificationEmailTemplateLookup {
-    if (this.injectedEmailTemplates) return this.injectedEmailTemplates;
-    return new CodeNotificationEmailTemplateService(this.templateService);
+    return this.injectedEmailTemplates ?? new CodeNotificationEmailTemplateService(this.templateService);
   }
 
   /**
-   * Dispatch notifications for a business outbox event.
-   * - Reuses existing outbox eventKey for idempotency (deterministic: eventKey + recipient + channel)
-   * - Redacted payload/message (no secrets)
-   * - Provider failure isolated (marks FAILED, does not throw to reverse financial state)
-   * - Duplicate event → idempotent (ON CONFLICT DO NOTHING, second call dispatched count 0)
-   * - Internal support notes never dispatched (filtered in mapEventToIntents)
+   * Materialize all intents in one transaction. The legacy direct-call convenience still
+   * attempts newly inserted rows, but only AFTER that transaction commits. A caller-supplied
+   * manager only materializes; it can never make a provider call before its owner commits.
+   * Refresh provider configuration before entering a transaction: the configuration service
+   * uses its own database connection and must not exhaust the pool while row locks are held.
+   * A caller supplying its own manager is responsible for refreshing configuration before
+   * opening that transaction; the outbox subscriber performs that refresh itself.
    */
-  async dispatch(
-    command: DispatchCommand,
-    manager?: EntityManager,
-  ): Promise<DispatchResult> {
+  async dispatch(command: DispatchCommand, manager?: EntityManager): Promise<DispatchResult> {
+    if (manager) return this.materialize(command, manager);
+    await this.providerConfig?.refreshRuntimeCache();
+    const result = await this.dataSource.transaction((tx) => this.materialize(command, tx));
+    const processor = new NotificationDeliveryProcessor({
+      dataSource: this.dataSource,
+      resolver: this.channelResolver,
+      templates: this.templateService,
+      smsProvider: this.provider,
+      emailProvider: this.emailProvider,
+      maxAttempts: this.config?.get<number>('SMS_RETRY_MAX_ATTEMPTS') ?? 3,
+      baseDelaySeconds: this.config?.get<number>('SMS_RETRY_BASE_DELAY_SECONDS') ?? 60,
+    });
+    // Only new rows are PENDING in the returned list; duplicates are never re-submitted here.
+    for (const delivery of result.deliveries) {
+      if (delivery.status !== 'PENDING' || !(delivery as { inserted?: boolean }).inserted) continue;
+      await processor.processOne(delivery.id);
+      const rows = await this.dataSource.query<Array<{ status: string; provider_ref: string | null }>>(
+        `SELECT status, provider_ref FROM notification_deliveries WHERE id=$1`, [delivery.id],
+      );
+      if (rows[0]) {
+        delivery.status = rows[0].status;
+        delivery.providerRef = rows[0].provider_ref;
+        if (delivery.status === 'SENT') result.dispatched += 1;
+        else if (['FAILED', 'DEAD', 'UNKNOWN'].includes(delivery.status)) result.failed += 1;
+        else if (delivery.status === 'SKIPPED') result.skipped += 1;
+      }
+    }
+    for (const delivery of result.deliveries) delete (delivery as { inserted?: boolean }).inserted;
+    return result;
+  }
+
+  private async materialize(command: DispatchCommand, manager: EntityManager): Promise<DispatchResult> {
     const eventType = command.eventType?.trim();
     if (!eventType) throw new Error('eventType is required');
-    // These direct-send flows must never persist an OTP/credential in a delivery row.
-    if (isSecurityCriticalNotificationEvent(eventType)) {
-      throw new Error('Security notifications cannot use the outbox dispatcher');
-    }
+    if (isSecurityCriticalNotificationEvent(eventType)) throw new Error('Security notifications cannot use the outbox dispatcher');
+    const eventKey = command.eventKey?.trim() ||
+      (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
+    if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
+    const payload = command.payload ?? {};
+    const safePayload = this.templateService.redactPayload(payload, eventType);
+    const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
-    const payload = (command.payload ?? {}) as Record<string, unknown>;
-    const redactedPayload = this.templateService.redactPayload(payload, eventType) as Record<string, unknown>;
-
-    // Deterministic eventKey: use provided eventKey or fallback to aggregate+type+occurredAt hash-like
-    const eventKey =
-      command.eventKey?.trim() ||
-      `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt?.toISOString() ?? Date.now()}`;
-
-    if (eventKey.length > 180) throw new Error('eventKey must be at most 180 characters');
-
-    const queryRunner = (manager as any)?.query ? (manager as any) : this.dataSource;
-
+    // A completed internal transfer needs both sides; a producer missing either side is
+    // quarantined for the Arena 3 producer handoff rather than partially acknowledged.
+    if (eventType === 'transfer.completed' && (!payload.sourceCustomerId || !payload.destinationCustomerId)) return result;
+    // A missing internal/public marker is not evidence that a support message is public.
+    if (eventType === 'support.ticket.message_added' && payload.isInternal !== false) return result;
     let intents = mapEventToIntents(eventType, payload, {
       correlationId: command.correlationId ?? null,
       causationId: command.causationId ?? null,
     });
-
-    // Fallback for support events where payload lacks customerId/agentId (e.g., assigned/status_changed)
-    // Resolve via support_tickets table using ticketId or aggregateId
     if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
-      // internal notes already filtered, but double-check
-      if (eventType === 'support.ticket.message_added' && (payload.isInternal as boolean) === true) {
-        return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
-      }
-      try {
-        const ticketId = (payload.ticketId as string | undefined) ?? command.aggregateId ?? undefined;
-        if (ticketId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId)) {
-          const rows: Array<{ customer_id: string | null; agent_id: string | null }> = await queryRunner.query(
-            `SELECT customer_id, agent_id FROM support_tickets WHERE id=$1 LIMIT 1`,
-            [ticketId],
-          );
-          const row = rows[0];
-          if (row) {
-            const fallback: typeof intents = [];
-            // Use template mapping similar to mapEventToIntents but with DB-derived ids
-            let templateKey = eventType;
-            if (eventType === 'support.ticket.status_changed') {
-              const status = (payload as any).status ?? (payload as any).to ?? (payload as any).newStatus;
-              if (status === 'RESOLVED') templateKey = 'support.ticket.resolved';
-              else if (status === 'CLOSED') templateKey = 'support.ticket.closed';
-            }
-            if (row.customer_id) {
-              fallback.push({
-                recipientType: 'CUSTOMER',
-                recipientId: row.customer_id,
-                channel: 'SMS',
-                templateKey,
-                correlationId: command.correlationId ?? null,
-                causationId: command.causationId ?? null,
-              });
-            }
-            if (row.agent_id) {
-              fallback.push({
-                recipientType: 'AGENT',
-                recipientId: row.agent_id,
-                channel: 'SMS',
-                templateKey,
-                correlationId: command.correlationId ?? null,
-                causationId: command.causationId ?? null,
-              });
-            }
-            if (fallback.length > 0) intents = fallback;
-          }
+      const ticketId = typeof payload.ticketId === 'string' ? payload.ticketId : command.aggregateId;
+      if (ticketId && UUID_PATTERN.test(ticketId)) {
+        const rows = await manager.query<Array<{ customer_id: string | null; agent_id: string | null }>>(
+          `SELECT customer_id, agent_id FROM support_tickets WHERE id=$1 LIMIT 1`, [ticketId],
+        );
+        const row = rows[0];
+        let templateKey = eventType;
+        if (eventType === 'support.ticket.status_changed') {
+          const status = payload.status ?? payload.to ?? payload.newStatus;
+          if (status === 'RESOLVED') templateKey = 'support.ticket.resolved';
+          else if (status === 'CLOSED') templateKey = 'support.ticket.closed';
         }
-      } catch {
-        // ignore fallback errors
+        const fallback: NotificationIntent[] = [];
+        if (row?.customer_id) fallback.push({ recipientType: 'CUSTOMER', recipientId: row.customer_id, channel: 'SMS', templateKey });
+        if (row?.agent_id) fallback.push({ recipientType: 'AGENT', recipientId: row.agent_id, channel: 'SMS', templateKey });
+        intents = fallback;
       }
     }
-
-    // ARENA3-NOTIFICATION-EMAIL: append CUSTOMER EMAIL copies ONLY when an email provider
-    // is configured. While dark (provider 'none'), no EMAIL intents exist at all — existing
-    // SMS/PUSH behaviour (generated/dispatched/skipped counts, delivery rows) is byte-identical.
-    await this.providerConfig?.refreshRuntimeCache();
-    if (this.emailProvider.name !== 'none') {
-      intents = appendCustomerEmailIntents(eventType, intents);
-    }
-
-    if (intents.length === 0) {
-      return { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
-    }
-
-    const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
+    if (this.emailProvider.name !== 'none') intents = appendCustomerEmailIntents(eventType, intents);
 
     for (const intent of intents) {
-      // Configuration is checked before preferences/destination. Disabled events are recorded
-      // SKIPPED under the same delivery idempotency key; PUSH keeps its existing dependency path.
-      // INTEGRATION: Arena 1 gated SMS only; EMAIL is now gated by the same persistent registry
-      // (notification_event_configurations channel='EMAIL'), so per-event email enablement is
-      // enforced at dispatch. PUSH has no registry row and stays ungated (dependency path).
-      const enabled =
-        intent.channel === 'SMS' || intent.channel === 'EMAIL'
-          ? await this.templateService.isEventEnabled(queryRunner, eventType, intent.channel)
-          : true;
+      if (intent.recipientType !== 'PHONE' && !UUID_PATTERN.test(intent.recipientId)) {
+        throw new Error('Invalid notification recipient');
+      }
+      const enabled = intent.channel === 'SMS' || intent.channel === 'EMAIL'
+        ? await this.templateService.isEventEnabled(manager, eventType, intent.channel) : true;
       const resolved = enabled
-        ? await this.channelResolver.resolve(intent.recipientType, intent.recipientId, intent.channel, queryRunner, eventType)
+        ? await this.channelResolver.resolve(intent.recipientType, intent.recipientId, intent.channel, manager, eventType)
         : { destination: null, reason: 'EVENT_DISABLED' };
-
-      const destination = resolved.destination;
-      const isSkipped = !destination;
-
-      // INTEGRATION: Arena 1 registry rendering (SMS) + Arena 3 email seam (EMAIL) unified.
-      // EMAIL renders through the template seam (subject/text/html); SMS renders the ACTIVE
-      // registry version; disabled events persist a safe fixed message. PUSH keeps buildMessage.
-      // Arena 4's C2C non-disclosure contract is enforced inside render()/redactPayload()
-      // (eventType-aware allowlist subset), so raw cash_to_cash.created payloads never reach
-      // template variables, delivery rows or providers on ANY channel path.
-      const emailRender: RenderedEmail | null =
-        enabled && intent.channel === 'EMAIL'
-          ? await this.emailTemplates.buildEmail(
-              intent.templateKey as NotificationTemplateKey,
-              payload,
-              queryRunner,
-            )
-          : null;
-      const message = !enabled
-        ? 'Notification disabled.'
-        : intent.channel === 'SMS'
-          ? (await this.templateService.renderActive(queryRunner, intent.templateKey, 'SMS', payload)).body
-          : emailRender
-            ? emailRender.text
-            : this.templateService.buildMessage(intent.templateKey, payload);
-
-      // Build redacted delivery payload with templateKey for audit (still redacted, no secrets)
-      const deliveryPayload: Record<string, unknown> = {
-        ...redactedPayload,
-        _templateKey: intent.templateKey,
-      };
-
-      // Insert delivery record — idempotent via unique constraint
-      let deliveryId: string | null = null;
-      let wasInserted = false;
-
-      // Try insert; if conflict, fetch existing
-      try {
-        const insertRows: Array<{ id: string }> = await queryRunner.query(
-          `INSERT INTO notification_deliveries
-              (event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id, channel, destination, payload, message, status, attempts, correlation_id, causation_id, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,0,$12,$13,NOW(),NOW())
-           ON CONFLICT (event_key, recipient_id, channel) DO NOTHING
-           RETURNING id`,
-          [
-            eventType,
-            eventKey,
-            command.aggregateType ?? null,
-            command.aggregateId ?? null,
-            intent.recipientType,
-            intent.recipientId,
-            intent.channel,
-            destination ?? `SKIPPED:${resolved.reason ?? 'UNKNOWN'}`,
-            JSON.stringify(deliveryPayload),
-            message.slice(0, 1000),
-            isSkipped ? 'SKIPPED' : 'PENDING',
-            command.correlationId ?? null,
-            command.causationId ?? null,
-          ],
+      const email = enabled && intent.channel === 'EMAIL'
+        ? await this.emailTemplates.buildEmail(intent.templateKey as NotificationTemplateKey, safePayload, manager) : null;
+      const message = !enabled ? 'Notification disabled.' : intent.channel === 'SMS'
+        ? (await this.templateService.renderActive(manager, intent.templateKey, 'SMS', safePayload)).body
+        : email ? email.text : this.templateService.buildMessage(intent.templateKey, safePayload);
+      const destination = resolved.destination ?? `SKIPPED:${resolved.reason ?? 'UNKNOWN'}`;
+      const status = resolved.destination ? 'PENDING' : 'SKIPPED';
+      const inserted = await manager.query<Array<{ id: string }>>(
+        `INSERT INTO notification_deliveries
+          (event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id,
+           channel, destination, payload, message, rendered_subject, rendered_html, status,
+           attempts, last_error, correlation_id, causation_id, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,0,$14,$15,$16,NOW(),NOW())
+         ON CONFLICT (event_key, recipient_id, channel) DO NOTHING RETURNING id`,
+        [eventType, eventKey, command.aggregateType ?? null, command.aggregateId ?? null,
+          intent.recipientType, intent.recipientId, intent.channel, destination,
+          JSON.stringify({ ...safePayload, _templateKey: intent.templateKey }), message,
+          email?.subject ?? null, email?.html ?? null, status, resolved.reason ?? null,
+          command.correlationId ?? null, command.causationId ?? null],
+      );
+      let delivery: DispatchResult['deliveries'][number] & { inserted?: boolean };
+      if (inserted[0]) {
+        result.generated += 1;
+        if (status === 'SKIPPED') result.skipped += 1;
+        delivery = { id: inserted[0].id, recipientType: intent.recipientType, recipientId: intent.recipientId,
+          channel: intent.channel, destination, status, providerRef: null, inserted: true };
+      } else {
+        const existing = await manager.query<Array<{ id: string; status: string; provider_ref: string | null; destination: string }>>(
+          `SELECT id, status, provider_ref, destination FROM notification_deliveries
+            WHERE event_key=$1 AND recipient_id=$2 AND channel=$3 LIMIT 1`,
+          [eventKey, intent.recipientId, intent.channel],
         );
-        if (insertRows.length > 0) {
-          deliveryId = insertRows[0]!.id;
-          wasInserted = true;
-          result.generated += 1;
-          if (isSkipped) result.skipped += 1;
-        } else {
-          // Conflict — fetch existing delivery
-          const existing: Array<{ id: string; status: string; provider_ref: string | null }> =
-            await queryRunner.query(
-              `SELECT id, status, provider_ref FROM notification_deliveries
-                WHERE event_key=$1 AND recipient_id=$2 AND channel=$3 LIMIT 1`,
-              [eventKey, intent.recipientId, intent.channel],
-            );
-          if (existing[0]) {
-            deliveryId = existing[0].id;
-            // Not counted as generated; idempotent replay
-            result.deliveries.push({
-              id: existing[0].id,
-              recipientType: intent.recipientType,
-              recipientId: intent.recipientId,
-              channel: intent.channel,
-              destination: destination ?? `SKIPPED:${resolved.reason ?? 'UNKNOWN'}`,
-              status: existing[0].status,
-              providerRef: existing[0].provider_ref,
-            });
-            continue;
-          } else {
-            // Should not happen
-            continue;
-          }
-        }
-      } catch {
-        // SQL errors can include bound destinations or rendered text; never log them.
-        this.logger.warn('Failed to insert notification delivery');
-        result.failed += 1;
-        continue;
+        if (!existing[0]) throw new Error('Notification idempotency conflict unavailable');
+        delivery = { id: existing[0].id, recipientType: intent.recipientType, recipientId: intent.recipientId,
+          channel: intent.channel, destination: existing[0].destination, status: existing[0].status,
+          providerRef: existing[0].provider_ref };
       }
-
-      if (isSkipped) {
-        // Update SKIPPED reason
-        try {
-          await queryRunner.query(
-            `UPDATE notification_deliveries SET status='SKIPPED', last_error=$1, updated_at=NOW() WHERE id=$2`,
-            [resolved.reason?.slice(0, 1000) ?? 'SKIPPED', deliveryId],
-          );
-        } catch {}
-        if (wasInserted) {
-          result.deliveries.push({
-            id: deliveryId!,
-            recipientType: intent.recipientType,
-            recipientId: intent.recipientId,
-            channel: intent.channel,
-            destination: `SKIPPED:${resolved.reason ?? 'UNKNOWN'}`,
-            status: 'SKIPPED',
-            providerRef: null,
-          });
-        }
-        continue;
-      }
-
-      // Attempt provider send — isolated failure (do not throw to caller that would reverse financial state)
-      let providerRef: string | null = null;
-      let lastError: string | null = null;
-      let status: string = 'PENDING';
-      const attemptsIncrement = 1;
-
-      try {
-        // Channel-routed provider selection: EMAIL → email provider (NOTIFICATION_EMAIL_PROVIDER_TOKEN);
-        // SMS/PUSH → existing provider (NOTIFICATION_PROVIDER_TOKEN) — unchanged.
-        const providerForChannel = intent.channel === 'EMAIL' ? this.emailProvider : this.provider;
-        const sendResult = await providerForChannel.send({
-          channel: intent.channel,
-          destination: destination!,
-          message,
-          payload: redactedPayload,
-          correlationId: command.correlationId ?? null,
-          eventType,
-          eventKey,
-          recipientType: intent.recipientType,
-          recipientId: intent.recipientId,
-          ...(emailRender ? { subject: emailRender.subject, html: emailRender.html } : {}),
-        });
-
-        if (sendResult.success) {
-          providerRef = sendResult.providerRef ?? null;
-          status = 'SENT';
-          result.dispatched += 1;
-        } else {
-          lastError = (sendResult.error ?? 'Provider returned failure').slice(0, 1000);
-          status = 'FAILED';
-          result.failed += 1;
-        }
-      } catch (err) {
-        lastError = ((err as Error).message ?? 'Provider threw').slice(0, 1000);
-        status = 'FAILED';
-        result.failed += 1;
-      }
-
-      // Update delivery record with result — preserve idempotency even if provider fails
-      try {
-        const now = new Date();
-        if (status === 'SENT') {
-          await queryRunner.query(
-            `UPDATE notification_deliveries
-                SET status='SENT', attempts=attempts+$1, provider_ref=$2, sent_at=$3, last_error=NULL, updated_at=NOW()
-              WHERE id=$4`,
-            [attemptsIncrement, providerRef, now, deliveryId],
-          );
-        } else {
-          await queryRunner.query(
-            `UPDATE notification_deliveries
-                SET status='FAILED', attempts=attempts+$1, last_error=$2, failed_at=$3, updated_at=NOW()
-              WHERE id=$4`,
-            [attemptsIncrement, lastError, now, deliveryId],
-          );
-        }
-      } catch {
-        this.logger.warn('Failed to update notification delivery status');
-      }
-
-      result.deliveries.push({
-        id: deliveryId!,
-        recipientType: intent.recipientType,
-        recipientId: intent.recipientId,
-        channel: intent.channel,
-        destination: destination!,
-        status,
-        providerRef,
-      });
+      result.deliveries.push(delivery);
     }
-
     return result;
   }
 
-  /**
-   * Process pending outbox events (for background polling) — claims PENDING/FAILED outbox events
-   * and dispatches notifications. Reuses OutboxService claim semantics via direct query to avoid circular.
-   * For V1 tests we can invoke dispatch() directly after business transaction; this method is for completeness.
-   */
+  /** Independent subscriber; no writes to shared outbox status, attempts, or other consumers. */
   async processPendingOutboxEvents(limit = 10): Promise<number> {
-    const events: Array<{
-      id: string;
-      event_type: string;
-      event_key: string | null;
-      aggregate_type: string;
-      aggregate_id: string;
-      payload: Record<string, unknown>;
-      correlation_id: string | null;
-      causation_id: string | null;
-      occurred_at: Date;
-    }> = await this.dataSource.query(
-      `SELECT id, event_type, event_key, aggregate_type, aggregate_id, payload, correlation_id, causation_id, occurred_at
-         FROM outbox_events
-        WHERE status IN ('PENDING','FAILED') AND available_at <= NOW()
-        ORDER BY created_at ASC
-        LIMIT $1`,
-      [limit],
-    );
-
+    await this.providerConfig?.refreshRuntimeCache();
     let processed = 0;
-    for (const ev of events) {
+    for (let i = 0; i < Math.max(0, Math.min(500, limit)); i += 1) {
+      let selectedId: string | null = null;
       try {
-        await this.dispatch({
-          eventType: ev.event_type,
-          eventKey: ev.event_key,
-          aggregateType: ev.aggregate_type,
-          aggregateId: ev.aggregate_id,
-          payload: ev.payload as Record<string, unknown>,
-          correlationId: ev.correlation_id,
-          causationId: ev.causation_id,
-          occurredAt: ev.occurred_at,
+        const found = await this.dataSource.transaction(async (manager) => {
+          const events = await manager.query<OutboxRow[]>(
+            `SELECT o.id, o.event_type, o.event_key, o.schema_version, o.aggregate_type, o.aggregate_id,
+                    o.payload, o.correlation_id, o.causation_id, o.occurred_at
+               FROM outbox_events o LEFT JOIN notification_outbox_receipts r
+                 ON r.outbox_event_id=o.id AND r.consumer_name=$1
+              WHERE r.outbox_event_id IS NULL OR
+                    (r.status='FAILED' AND r.next_attempt_at <= NOW())
+              ORDER BY o.created_at, o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED`, [CONSUMER],
+          );
+          const event = events[0];
+          if (!event) return false;
+          selectedId = event.id;
+          let status: 'MATERIALIZED' | 'SUPPRESSED' | 'UNSUPPORTED' | 'QUARANTINED';
+          let reason: string | null = null;
+          const canonical = canonicalNotificationEvent(event.event_type);
+          if (isSecurityCriticalNotificationEvent(event.event_type)) {
+            status = 'QUARANTINED'; reason = 'SECURITY_DIRECT_ONLY';
+          } else if (!this.templateService.definition(canonical)) {
+            status = 'QUARANTINED'; reason = 'EVENT_TYPE_UNSUPPORTED';
+          } else if (event.schema_version !== 1) {
+            status = 'QUARANTINED'; reason = 'UNSUPPORTED_SCHEMA_VERSION';
+          } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal === true) {
+            status = 'SUPPRESSED'; reason = 'INTERNAL_SUPPORT_MESSAGE';
+          } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal !== false) {
+            status = 'QUARANTINED'; reason = 'SUPPORT_VISIBILITY_UNKNOWN';
+          } else {
+            const result = await this.dispatch({ eventType: event.event_type, eventKey: event.event_key,
+              aggregateType: event.aggregate_type, aggregateId: event.aggregate_id, payload: event.payload ?? {},
+              correlationId: event.correlation_id, causationId: event.causation_id, occurredAt: event.occurred_at }, manager);
+            status = result.deliveries.length > 0 ? 'MATERIALIZED' : 'QUARANTINED';
+            if (status === 'QUARANTINED') reason = 'NO_NOTIFICATION_INTENTS';
+          }
+          await manager.query(
+            `INSERT INTO notification_outbox_receipts
+              (consumer_name, outbox_event_id, status, reason, attempts, next_attempt_at)
+             VALUES ($1,$2,$3,$4,1,NULL)
+             ON CONFLICT (consumer_name, outbox_event_id) DO UPDATE SET
+               status=EXCLUDED.status, reason=EXCLUDED.reason,
+               attempts=notification_outbox_receipts.attempts+1, next_attempt_at=NULL, updated_at=NOW()`,
+            [CONSUMER, event.id, status, reason],
+          );
+          return true;
         });
+        if (!found) break;
         processed += 1;
-        // Mark outbox as PUBLISHED after dispatch attempt (even if some deliveries SKIPPED/FAILED — provider failure isolated, outbox still published)
-        await this.dataSource.query(
-          `UPDATE outbox_events SET status='PUBLISHED', attempts=attempts+1, published_at=NOW() WHERE id=$1`,
-          [ev.id],
-        );
       } catch {
-        // Never persist driver messages/SQL parameters, which may contain customer data.
-        await this.dataSource.query(
-          `UPDATE outbox_events SET status='FAILED', attempts=attempts+1, last_error=$1, available_at=NOW() + INTERVAL '60 seconds' WHERE id=$2`,
-          ['NOTIFICATION_DISPATCH_FAILED', ev.id],
-        );
+        // No bound parameters, exception messages, event payloads or destinations enter logs.
+        this.logger.warn({ event: 'notification.materialization_failed' });
+        if (!selectedId) break;
+        try {
+          await this.dataSource.query(
+            `INSERT INTO notification_outbox_receipts
+              (consumer_name, outbox_event_id, status, reason, attempts, next_attempt_at)
+             VALUES ($1,$2,'FAILED','MATERIALIZATION_FAILED',1,NOW()+INTERVAL '60 seconds')
+             ON CONFLICT (consumer_name, outbox_event_id) DO UPDATE SET
+               attempts=notification_outbox_receipts.attempts+1,
+               status=CASE WHEN notification_outbox_receipts.attempts+1 >= 5 THEN 'QUARANTINED' ELSE 'FAILED' END,
+               reason=CASE WHEN notification_outbox_receipts.attempts+1 >= 5 THEN 'MATERIALIZATION_EXHAUSTED' ELSE 'MATERIALIZATION_FAILED' END,
+               next_attempt_at=CASE WHEN notification_outbox_receipts.attempts+1 >= 5 THEN NULL ELSE NOW()+INTERVAL '60 seconds' END,
+               updated_at=NOW()
+             WHERE notification_outbox_receipts.status='FAILED'`, [CONSUMER, selectedId],
+          );
+        } catch { break; }
       }
     }
     return processed;
   }
 
-  /**
-   * Helper for tests: fetch deliveries for eventKey.
-   */
-  async listDeliveriesForEventKey(eventKey: string): Promise<Array<any>> {
+  async listDeliveriesForEventKey(eventKey: string): Promise<Array<Record<string, unknown>>> {
     return this.dataSource.query(`SELECT * FROM notification_deliveries WHERE event_key=$1 ORDER BY created_at ASC`, [eventKey]);
   }
 }

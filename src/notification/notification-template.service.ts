@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { redactRecord } from '../common/sensitive-data-redaction';
 import { NOTIFICATION_DEFAULTS_V1 } from './notification-defaults-v1';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 
@@ -44,23 +43,59 @@ export class NotificationTemplateService {
    * (the beneficiary phone lives in the delivery destination, never in payload JSON).
    */
   redactPayload(payload: Record<string, unknown>, eventType?: string): Record<string, unknown> {
-    const redacted = redactRecord(payload);
-    if (canonicalNotificationEvent(eventType ?? '') !== 'cash_to_cash.created') return redacted;
-
+    const canonical = canonicalNotificationEvent(eventType ?? '');
+    const definition = this.definition(canonical);
+    if (!definition) return {};
     const safe: Record<string, unknown> = {};
-    if (typeof redacted.senderDisplayName === 'string')
-      safe.senderDisplayName = redacted.senderDisplayName;
-    if (typeof redacted.amountMinor === 'string' && /^[1-9][0-9]*$/.test(redacted.amountMinor)) {
-      safe.amountMinor = redacted.amountMinor;
+
+    if (canonical === 'cash_to_cash.created') {
+      if (typeof payload.senderDisplayName === 'string') {
+        const name = stripControlCharacters(payload.senderDisplayName).trim().slice(0, 80);
+        try {
+          this.assertSafe(name);
+          if (name && !/\d{6,}/.test(name)) safe.senderDisplayName = name;
+        } catch { /* use generic sender */ }
+      }
+      if (typeof payload.amountMinor === 'string' && /^[1-9][0-9]{0,14}$/.test(payload.amountMinor)) {
+        safe.amountMinor = payload.amountMinor;
+      }
+      if (payload.currency === 'NGN') safe.currency = 'NGN';
+      if (typeof payload.locatorUrl === 'string') {
+        try {
+          const url = new URL(payload.locatorUrl);
+          const locator = url.toString();
+          this.assertSafe(locator);
+          if (url.protocol === 'https:' && !url.username && !url.password &&
+              !url.search && !url.hash && locator.length <= 240) safe.locatorUrl = locator;
+        } catch { /* omit unsafe locator */ }
+      }
+      return safe;
     }
-    if (redacted.currency === 'NGN') safe.currency = 'NGN';
-    if (typeof redacted.locatorUrl === 'string') {
-      try {
-        const url = new URL(redacted.locatorUrl);
-        if (url.protocol === 'https:' && !url.username && !url.password)
-          safe.locatorUrl = url.toString();
-      } catch {
-        // Invalid URLs are not copied into delivery/provider payloads.
+
+    // Financial and operational payloads are projected from the variables of this specific
+    // event, not a generic denylist. Journal/ledger ids, rejection prose, contacts, and any
+    // future unknown fields cannot silently become durable notification payloads.
+    const variables: readonly string[] = definition.variables;
+    if (variables.includes('amount_clause') || variables.includes('amount')) {
+      for (const key of ['amountMinor', 'principal_minor'] as const) {
+        const value = payload[key];
+        if ((typeof value === 'string' || typeof value === 'number') && /^\d{1,15}$/.test(String(value))) {
+          safe[key] = value;
+        }
+      }
+    }
+    if (variables.includes('reference')) {
+      for (const key of ['reference', 'transferId', 'fundingRequestId', 'ticketId'] as const) {
+        const raw = payload[key];
+        if (typeof raw !== 'string') continue;
+        const candidate = key === 'reference' ? (raw.length > 20 ? raw.slice(0, 8) : raw) : raw.slice(0, 8);
+        if (this.isSafePublicReference(candidate)) safe[key] = candidate;
+      }
+    }
+    if (variables.includes('status')) {
+      const statuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
+      for (const key of ['status', 'newStatus'] as const) {
+        if (typeof payload[key] === 'string' && statuses.includes(payload[key])) safe[key] = payload[key];
       }
     }
     return safe;
@@ -265,6 +300,15 @@ export class NotificationTemplateService {
     const def = this.definition(canonical);
     if (!def) return 'You have a new update. Please check your account.';
     return this.render(canonical, 'SMS', { subject: null, body: def.body }, payload).body;
+  }
+
+  private isSafePublicReference(candidate: string): boolean {
+    const publicShape =
+      /^(?:CF|FUND|SUP|TRF|REF|AG|SAMPLE|CASH_TO_CASH)-[A-Za-z0-9_-]+$/i.test(candidate) ||
+      /^[a-f0-9]{8}$/i.test(candidate);
+    if (!publicShape || candidate.length > 20 || candidate.replace(/\D/g, '').length >= 6 ||
+        /otp|pin|password|passcode|credential|secret|token|api.?key|ledger|journal|robe_/i.test(candidate)) return false;
+    try { this.assertSafe(candidate); return true; } catch { return false; }
   }
 
   private resolveVariables(

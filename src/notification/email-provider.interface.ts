@@ -13,9 +13,8 @@ import type { NotificationProvider, NotificationSendRequest, NotificationSendRes
 
 /**
  * Dark-posture provider: the default. Email is NOT configured, so no EMAIL delivery can
- * be attempted. The dispatcher short-circuits EMAIL intents to SKIPPED
- * (EMAIL_PROVIDER_NOT_CONFIGURED) when this provider is selected; send() also fails closed
- * for any direct caller (e.g. worker retry of a pre-existing FAILED row after a
+ * be attempted. The dispatcher does not create EMAIL intents while this provider is selected;
+ * send() also fails closed for any direct caller (e.g. a pending delivery after a
  * configuration rollback).
  */
 export class NoneEmailProvider implements NotificationProvider {
@@ -32,17 +31,15 @@ export class NoneEmailProvider implements NotificationProvider {
  */
 export class ConsoleEmailProvider implements NotificationProvider {
   readonly name = 'console';
-  public readonly sent: Array<NotificationSendRequest & { providerRef: string; sentAt: Date }> = [];
+  public readonly sent: Array<{ providerRef: string; sentAt: Date }> = [];
 
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (request.channel !== 'EMAIL') {
       return { success: false, error: 'CONSOLE_EMAIL_UNSUPPORTED_CHANNEL' };
     }
     const providerRef = `console-email-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    this.sent.push({ ...request, providerRef, sentAt: new Date() });
-    console.log(
-      `[Notification][EMAIL] ${request.recipientType}:${request.recipientId} -> ${request.destination} | ${request.eventType} | subject=${request.subject ?? ''} | ref=${providerRef}`,
-    );
+    this.sent.push({ providerRef, sentAt: new Date() });
+    console.log(JSON.stringify({ event: 'notification.console_simulated', channel: 'EMAIL' }));
     return { success: true, providerRef };
   }
 
@@ -65,7 +62,7 @@ export class TestEmailProvider implements NotificationProvider {
       return { success: false, error: 'TEST_EMAIL_UNSUPPORTED_CHANNEL' };
     }
     if (this.shouldFail) {
-      return { success: false, error: this.failMessage };
+      return { success: false, error: this.failMessage, failureDisposition: 'RETRYABLE' };
     }
     const providerRef = `test-email-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.sent.push({ ...request, providerRef, sentAt: new Date() });

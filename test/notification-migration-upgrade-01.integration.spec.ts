@@ -9,6 +9,7 @@ import {
 import { AddEmailNotificationChannel1785753600097 } from '../src/migrations/1785753600097-AddEmailNotificationChannel';
 import { CreateNotificationTemplateRegistry1785753600098 } from '../src/migrations/1785753600098-CreateNotificationTemplateRegistry';
 import { AllowPhoneNotificationRecipients1785753600099 } from '../src/migrations/1785753600099-AllowPhoneNotificationRecipients';
+import { NotificationReliability1785753600101 } from '../src/migrations/1785753600101-NotificationReliability';
 
 /**
  * ARENA 3 INTEGRATION (Phase 2) — upgrade-from-baseline on real PostgreSQL.
@@ -77,6 +78,14 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       [smsKey, customerId, pushKey, agentId],
     );
 
+    const legacyPublished = randomUUID();
+    const legacyPending = randomUUID();
+    await dataSource.query(`INSERT INTO outbox_events
+      (id,event_type,aggregate_type,aggregate_id,payload,status,available_at)
+      VALUES ($1,'transfer.completed','TRANSFER',$3,'{}','PUBLISHED',NOW()),
+             ($2,'transfer.failed','TRANSFER',$3,'{}','PENDING',NOW())`,
+      [legacyPublished, legacyPending, randomUUID()]);
+
     // Baseline posture: EMAIL channel and PHONE recipient type are rejected.
     await expect(
       dataSource.query(
@@ -111,10 +120,12 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       'CreateNotificationTemplateRegistry1785753600098',
       'AllowPhoneNotificationRecipients1785753600099',
       'CreateNotificationProviderConfiguration1785753600100',
+      'NotificationReliability1785753600101',
     ]);
     expect(await dataSource.showMigrations()).toBe(false);
 
-    // Legacy evidence survived byte-identical (recipient_id widened uuid -> varchar losslessly).
+    // Legacy evidence survives; an old FAILED send is explicitly UNKNOWN because the old
+    // implementation could not prove whether the provider accepted it before a crash.
     const legacy: Array<{ channel: string; status: string; recipient_id: string; provider_ref: string | null; message: string | null }> =
       await dataSource.query(
         `SELECT channel, status, recipient_id::text AS recipient_id, provider_ref, message
@@ -122,8 +133,16 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       );
     expect(legacy).toEqual([
       { channel: 'SMS', status: 'SENT', recipient_id: customerId, provider_ref: 'sms-ref-legacy', message: 'Transfer of NGN 250.00 completed.' },
-      { channel: 'PUSH', status: 'FAILED', recipient_id: agentId, provider_ref: null, message: 'Funding approved.' },
+      { channel: 'PUSH', status: 'UNKNOWN', recipient_id: agentId, provider_ref: null, message: 'Funding approved.' },
     ]);
+
+    const legacyReceipts = await dataSource.query<Array<{ outbox_event_id: string; status: string; reason: string }>>(
+      `SELECT outbox_event_id,status,reason FROM notification_outbox_receipts ORDER BY outbox_event_id`,
+    );
+    expect(legacyReceipts).toEqual([{ outbox_event_id: legacyPublished, status: 'QUARANTINED', reason: 'LEGACY_PUBLISHED_UNVERIFIED' }]);
+    const outbox = await dataSource.query<Array<{ id: string; status: string }>>(`SELECT id,status FROM outbox_events WHERE id=ANY($1::uuid[]) ORDER BY id`, [[legacyPublished, legacyPending]]);
+    expect(outbox.find((event) => event.id === legacyPublished)?.status).toBe('PUBLISHED');
+    expect(outbox.find((event) => event.id === legacyPending)?.status).toBe('PENDING');
 
     // EMAIL + PHONE now accepted.
     await dataSource.query(
@@ -174,6 +193,10 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
         await runner.release();
       }
     }
+
+    // 101 cannot be rolled back into the unsafe legacy state and discard its evidence.
+    await expect(inTransaction((runner) => new NotificationReliability1785753600101().down(runner)))
+      .rejects.toThrow(/forward-only/);
 
     // 097 down refuses while EMAIL delivery rows exist (rows inserted by test 1 persist).
     await expect(

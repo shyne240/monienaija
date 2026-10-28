@@ -5,12 +5,13 @@ export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
 // ARENA4-INTEGRATION: PHONE widened for unregistered Cash-to-Cash beneficiaries. Migration
 // 1785753600099-AllowPhoneNotificationRecipients widens recipient_type + recipient_id.
 export type NotificationRecipientType = 'CUSTOMER' | 'AGENT' | 'PHONE';
-export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+export type NotificationDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN' | 'DEAD';
 
 /**
  * Provider-neutral dispatch abstraction.
  * V1-005 uses Console/Test adapter (replaceable, not invented credentials).
- * Reporting distinguishes: NOTIFICATION EVENT GENERATED (outbox) vs DISPATCHED (delivery SENT) vs PROVIDER DELIVERY (providerRef).
+ * Reporting distinguishes an outbox event and durable delivery from provider acceptance.
+ * A provider reference or SENT status does not confirm end-recipient delivery.
  */
 export interface NotificationSendRequest {
   channel: NotificationChannel;
@@ -32,6 +33,8 @@ export interface NotificationSendResult {
   success: boolean;
   providerRef?: string | null;
   error?: string | null;
+  /** Explicit provider knowledge; absence is treated conservatively as an ambiguous outcome. */
+  failureDisposition?: 'RETRYABLE' | 'PERMANENT' | 'UNKNOWN';
 }
 
 export interface NotificationProvider {

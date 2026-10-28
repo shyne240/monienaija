@@ -162,7 +162,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-${randomUUID()}`]);
     await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0,4)}`]);
     // contact method - authoritative
-    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary) VALUES ($1,$2,'PHONE',$3,$3,true)`, [randomUUID(), customerId, phone10]);
+    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
     // wallet for NGN
     try { await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` }); } catch {}
     // preference row - use correct schema columns (notification_* + security_*)
@@ -374,7 +374,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     // Non-existent customer
     const missing = await resolver.resolve('CUSTOMER', randomUUID(), 'SMS');
     expect(missing.destination).toBeNull();
-    expect(missing.reason).toBe('CUSTOMER_PHONE_MISSING');
+    expect(missing.reason).toBe('SMS_PREFERENCE_UNAVAILABLE');
   });
 
   it('7. Push channel dependency missing — SKIPPED, respects notification_push_enabled', async () => {
@@ -447,7 +447,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     const deliveries: Array<{ status: string; attempts: number; last_error: string }> = await dataSource.query(`SELECT status, attempts, last_error FROM notification_deliveries WHERE event_key=$1`, [key]);
     expect(deliveries[0]!.status).toBe('FAILED');
     expect(deliveries[0]!.attempts).toBe(1);
-    expect(deliveries[0]!.last_error).toContain('Simulated provider failure');
+    expect(deliveries[0]!.last_error).toBe('PROVIDER_REJECTED_RETRYABLE');
     // Financial state would still be approved — simulate funding flow with provider failure not rolling back
     // Create a real funding request and approve, then dispatch with failing provider — verify funding still APPROVED in DB
     testProvider.shouldFail = false; // reset for setup
@@ -521,7 +521,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     const deliveries: Array<{ payload: any; message: string }> = await dataSource.query(`SELECT payload, message FROM notification_deliveries WHERE event_key=$1`, [key]);
     const stored = JSON.stringify(deliveries[0]!.payload).toLowerCase();
     expect(stored).not.toContain('1234');
-    expect(stored).toContain('[redacted]');
+    expect(stored).not.toContain('[redacted]'); // unknown/secret keys are omitted, not copied
     expect(deliveries[0]!.message.toLowerCase()).not.toContain('pin');
     expect(deliveries[0]!.message.toLowerCase()).not.toContain('password');
     expect(deliveries[0]!.message.toLowerCase()).not.toContain('token');
@@ -665,7 +665,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     await dataSource.query(`INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, event_key, schema_version, classification, retention_class, occurred_at, correlation_id, payload, status, attempts, available_at) VALUES ($1,'customer.funding.approved','CUSTOMER_FUNDING_REQUEST',$2,$3,1,'INTERNAL_OPERATIONS','OPERATIONS_DEFAULT',NOW(),'corr', $4::jsonb,'PENDING',0,NOW())`, [randomUUID(), randomUUID(), key, JSON.stringify({ customerId: custId })]);
     const outbox: Array<{ status: string }> = await dataSource.query(`SELECT status FROM outbox_events WHERE event_key=$1`, [key]);
     expect(outbox[0]!.status).toBe('PENDING'); // GENERATED
-    // After dispatch, outbox would be marked PUBLISHED via processPendingOutboxEvents, but notification delivery is separate
+    // The notification consumer has a separate receipt and does not change shared outbox status.
   });
 
   it('22. Event catalogue explicit mapping verified', async () => {
