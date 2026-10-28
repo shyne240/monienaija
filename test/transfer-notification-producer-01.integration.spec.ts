@@ -285,7 +285,10 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
       // Rendered message: committed amount + short public reference only.
       expect(d.message).toContain('NGN 120.00');
       expect(d.message).toContain('completed');
-      expect(d.message).toMatch(/Ref [0-9a-f]{8}/);
+      // The template reference guard deliberately rejects 8-hex prefixes carrying >= 6
+      // digits (financial-identifier shape) and falls back to the safe default, so the
+      // rendered reference is UUID-prefix dependent by design — assert the real contract.
+      expect(d.message).toMatch(/Ref (?:[0-9a-f]{8}|your request)\./);
       // Privacy: no journal id, payment reference, request hash, narration prose, or PIN.
       for (const forbidden of [String(view.journalId), 'transfer-ref', String(payload.requestHash),
         'sentinel-narration', '123456', 'integration transfer']) {
