@@ -43,15 +43,24 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
+      const raw = token.replace('workforce-', '').toUpperCase();
+      const noScope = raw.endsWith('-NOSCOPE');
+      const type = noScope ? raw.slice(0, -'-NOSCOPE'.length) : raw;
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER'];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
+        principalId: `workforce-${raw.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        // SPRINT 1 (F-02 / P0-02): AdminNotificationController.listDeliveries now enforces
+        // `notification.view_deliveries` via AuthorizationService.requireFunction(). Only
+        // workforce tokens without `-NOSCOPE` carry the function code in this mocked harness;
+        // real catalogue role enforcement is proven without mocks in
+        // v1-sprint1-notification-delivery-authorization.integration.spec.ts.
+        scopes: !noScope && ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+          ? ['notification.view_deliveries']
+          : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -257,6 +266,21 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await insertDelivery({ status: 'SENT' });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').expect(401);
     expect(res.status).toBe(401);
+  });
+
+  it('7b. workforce principals lacking notification.view_deliveries denied with 403 and AGGREGATOR denied with 401', async () => {
+    await insertDelivery({ status: 'SENT' });
+    for (const type of ['OPERATOR-NOSCOPE', 'SUPPORT-NOSCOPE', 'SERVICE-NOSCOPE', 'PRIVILEGED-NOSCOPE']) {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/deliveries')
+        .set('Authorization', `Bearer ${workforceToken(type)}`)
+        .expect(403);
+      expect(String(res.body.message ?? '')).toContain('FUNCTION_MISSING');
+    }
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/notifications/deliveries')
+      .set('Authorization', `Bearer ${workforceToken('AGGREGATOR')}`)
+      .expect(401);
   });
 
   it('8. PENDING delivery visible', async () => {

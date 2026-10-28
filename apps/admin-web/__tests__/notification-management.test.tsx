@@ -1164,4 +1164,54 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     fireEvent.click(shortcutBtn);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
+
+  test('FINANCE_CONTROLLER checker without notification.view_deliveries never requests delivery history and sees deliveries-scope-denied', async () => {
+    mockIntegratedRegistryBackend();
+    seedPrincipal({
+      roles: ['FINANCE_CONTROLLER'],
+      scopes: ['privileged:approve'],
+      assuranceLevel: 'MFA',
+    });
+
+    const view = render(<NotificationManagementScreen initialTab="deliveries" />);
+    const deniedAlert = await view.findByTestId('deliveries-scope-denied');
+    expect((deniedAlert.textContent ?? '').includes('notification.view_deliveries')).toBe(true);
+    expect(ApiClient.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/internal/notifications/deliveries'),
+    );
+  });
+
+  test('SystemHealthScreen supports EMAIL channel filtering and handles backend 403 fail-closed without retry', async () => {
+    mockIntegratedRegistryBackend();
+    seedPrincipal({
+      roles: ['FINANCE_AUDITOR'],
+      scopes: ['notification.view_deliveries'],
+    });
+
+    const view = render(<SystemHealthScreen />);
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith('/internal/notifications/deliveries?page=1&limit=20'),
+    );
+
+    fireEvent.change(view.getByLabelText('Channel'), { target: { value: 'EMAIL' } });
+    fireEvent.click(view.getByRole('button', { name: 'Search' }));
+    await waitFor(() =>
+      expect(ApiClient.get).toHaveBeenCalledWith(
+        '/internal/notifications/deliveries?page=1&limit=20&channel=EMAIL',
+      ),
+    );
+
+    // Simulate backend 403 FUNCTION_MISSING if session scopes became stale — fail-closed, single call
+    (ApiClient.get as jest.Mock).mockClear();
+    (ApiClient.get as jest.Mock).mockRejectedValueOnce(
+      new ApiError('Authorization denied: FUNCTION_MISSING', 403),
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() =>
+      expect(
+        (view.container.textContent ?? '').includes('Authorization denied: FUNCTION_MISSING'),
+      ).toBe(true),
+    );
+    expect((ApiClient.get as jest.Mock).mock.calls.length).toBe(1);
+  });
 });

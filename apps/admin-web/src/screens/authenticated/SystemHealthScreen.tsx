@@ -186,7 +186,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
                 </label>
                 <label style={filterLabel}>Channel
                   <select value={deliveryChannel} onChange={(event) => setDeliveryChannel(event.target.value)} style={select}>
-                    <option value="">All</option><option value="SMS">SMS</option><option value="PUSH">PUSH</option>
+                    <option value="">All</option><option value="SMS">SMS</option><option value="EMAIL">EMAIL</option><option value="PUSH">PUSH</option>
                   </select>
                 </label>
                 <label style={filterLabel}>Event type
@@ -214,7 +214,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
       )}
 
       <div style={note}>
-        Operational panels are read-only; this screen does not mutate delivery, reconciliation, or ledger state. The notification endpoint's controller currently applies a workforce-type check rather than its matching catalogue function, so the UI scope gate does not resolve that backend authorization gap.
+        Operational panels are read-only; this screen does not mutate delivery, reconciliation, or ledger state. Each panel is backed by server-side catalogue function enforcement (<code>metrics.view</code>, <code>diagnostics.view</code>, <code>outbox.view</code>, and <code>notification.view_deliveries</code>).
       </div>
     </div>
   );
