@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { AuthorizationRole } from '../authorization-catalogue/authorization-role.entity';
+import { CustomerComplianceModule } from '../customer-compliance/customer-compliance.module';
 import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 import { DashboardController } from './dashboard.controller';
 import { DashboardSeedService } from './dashboard-seed.service';
@@ -20,6 +21,7 @@ import { RoleDashboardAssignment } from './role-dashboard-assignment.entity';
   imports: [
     TypeOrmModule.forFeature([DashboardTemplate, RoleDashboardAssignment, AuthorizationRole]),
     AuthorizationModule,
+    CustomerComplianceModule,
     ReconciliationModule,
   ],
   controllers: [DashboardController],

@@ -194,6 +194,27 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // Compliance cases are highly restricted workforce records, not customer self-service.
+    // The class-level case guard checks the applicable database-backed function/access type;
+    // the service also scopes every case and child record to its customer and category.
+    if (/^\/api\/v1\/customers\/[^/]+\/compliance-cases(?:\/.*)?$/.test(path)) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: 'customer-compliance-case',
+        resourceId: input.params?.caseId,
+        customerId: input.params?.id,
+        policy: {
+          resourceType: 'customer-compliance-case',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          customerAccess: 'SELF',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Secure Proof of Address documents are workforce-only and never inherit the customer
     // self-service policy. The controller additionally requires the dedicated catalogue
     // function for each metadata, upload, content, withdrawal, and archive operation.

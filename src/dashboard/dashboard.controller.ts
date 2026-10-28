@@ -3,6 +3,8 @@ import type { FastifyRequest } from 'fastify';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal, AuthorizationPrincipalType } from '../authorization/authorization.types';
+import { CustomerComplianceAccessGuard } from '../customer-compliance/customer-compliance-access.guard';
+import { ComplianceCaseCategory } from '../customer-compliance/customer-compliance.enums';
 import { DashboardService } from './dashboard.service';
 import { DashboardWidgetDataService, resolvePeriod } from './dashboard-widget-data.service';
 import { findWidgetDefinition } from './dashboard-widget-registry';
@@ -21,6 +23,7 @@ export class DashboardController {
     private readonly dashboardService: DashboardService,
     private readonly widgetDataService: DashboardWidgetDataService,
     private readonly auth: AuthorizationService,
+    private readonly complianceAccess: CustomerComplianceAccessGuard,
   ) {}
 
   @Get('templates')
@@ -130,10 +133,20 @@ export class DashboardController {
         return this.widgetDataService.agentLifecycleSummary();
       case 'kyc-queue-summary':
         return this.widgetDataService.kycQueueSummary();
-      case 'compliance-case-summary':
+      case 'compliance-case-summary': {
+        const access = await this.complianceAccess.resolveAccess(req.authorizationPrincipal, 'GET');
+        if (!access.categories.includes(ComplianceCaseCategory.AML)) {
+          throw new ForbiddenException('Compliance case access required');
+        }
         return this.widgetDataService.complianceCaseSummary();
-      case 'fraud-case-summary':
+      }
+      case 'fraud-case-summary': {
+        const access = await this.complianceAccess.resolveAccess(req.authorizationPrincipal, 'GET');
+        if (!access.categories.includes(ComplianceCaseCategory.FRAUD)) {
+          throw new ForbiddenException('Fraud case access required');
+        }
         return this.widgetDataService.fraudCaseSummary();
+      }
       default:
         throw new NotFoundException(`Widget '${widgetKey}' has no registered data handler.`);
     }

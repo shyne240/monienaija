@@ -1,6 +1,12 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { FindOperator } from 'typeorm';
 import type {
   DataSource,
   DeepPartial,
@@ -59,7 +65,9 @@ class MemoryRepository<T extends ObjectLiteral> {
       [...this.records.values()].find((entity) =>
         Object.entries(conditions).every(([key, expected]) => {
           const actual = (entity as Record<string, unknown>)[key];
-          return actual === expected;
+          return expected instanceof FindOperator && expected.type === 'in'
+            ? (expected.value as unknown[]).includes(actual)
+            : actual === expected;
         }),
       ) ?? null,
     );
@@ -71,7 +79,9 @@ class MemoryRepository<T extends ObjectLiteral> {
       [...this.records.values()].filter((entity) =>
         Object.entries(conditions).every(([key, expected]) => {
           const actual = (entity as Record<string, unknown>)[key];
-          return actual === expected;
+          return expected instanceof FindOperator && expected.type === 'in'
+            ? (expected.value as unknown[]).includes(actual)
+            : actual === expected;
         }),
       ),
     );
@@ -107,6 +117,10 @@ class MemoryDataSource {
 }
 
 describe('CustomerComplianceService', () => {
+  const access = (actor = 'compliance-ops') => ({
+    actor,
+    categories: Object.values(ComplianceCaseCategory),
+  });
   function fixture() {
     const caseRepository = new MemoryRepository<CustomerComplianceCase>();
     const historyRepository = new MemoryRepository<ComplianceCaseHistory>();
@@ -171,19 +185,22 @@ describe('CustomerComplianceService', () => {
     customerId: string,
     caseNumber = 'case-001',
   ) {
-    return testFixture.service.createCase(customerId, {
-      caseNumber,
-      category: ComplianceCaseCategory.KYC,
-      severity: ComplianceCaseSeverity.MEDIUM,
-      actor: 'compliance-ops',
-    });
+    return testFixture.service.createCase(
+      customerId,
+      {
+        caseNumber,
+        category: ComplianceCaseCategory.KYC,
+        severity: ComplianceCaseSeverity.MEDIUM,
+      },
+      access('compliance-ops'),
+    );
   }
 
   it('creates compliance cases, rejects duplicate numbers, and audits creation history', async () => {
     const testFixture = fixture();
     const customer = await createCustomer(testFixture);
     const complianceCase = await createCase(testFixture, customer.id);
-    const history = await testFixture.service.listHistory(customer.id, complianceCase.id);
+    const history = await testFixture.service.listHistory(customer.id, complianceCase.id, access());
 
     expect(complianceCase.status).toBe(ComplianceCaseStatus.OPEN);
     expect(complianceCase.openedBy).toBe('compliance-ops');
@@ -200,33 +217,53 @@ describe('CustomerComplianceService', () => {
     const testFixture = fixture();
     const customer = await createCustomer(testFixture);
     const complianceCase = await createCase(testFixture, customer.id);
-    const reviewed = await testFixture.service.updateCase(customer.id, complianceCase.id, {
-      status: ComplianceCaseStatus.UNDER_REVIEW,
-      actor: 'compliance-ops',
-    });
+    const reviewed = await testFixture.service.updateCase(
+      customer.id,
+      complianceCase.id,
+      {
+        status: ComplianceCaseStatus.UNDER_REVIEW,
+      },
+      access('compliance-ops'),
+    );
     expect(reviewed.status).toBe(ComplianceCaseStatus.UNDER_REVIEW);
-    const resolved = await testFixture.service.updateCase(customer.id, complianceCase.id, {
-      status: ComplianceCaseStatus.RESOLVED,
-      resolution: 'Metadata review completed',
-      actor: 'compliance-ops',
-    });
+    const resolved = await testFixture.service.updateCase(
+      customer.id,
+      complianceCase.id,
+      {
+        status: ComplianceCaseStatus.RESOLVED,
+        resolution: 'Metadata review completed',
+      },
+      access('compliance-ops'),
+    );
     expect(resolved.resolution).toBe('Metadata review completed');
-    const closed = await testFixture.service.updateCase(customer.id, complianceCase.id, {
-      status: ComplianceCaseStatus.CLOSED,
-      actor: 'compliance-ops',
-    });
+    const closed = await testFixture.service.updateCase(
+      customer.id,
+      complianceCase.id,
+      {
+        status: ComplianceCaseStatus.CLOSED,
+      },
+      access('compliance-ops'),
+    );
     expect(closed.closedAt).toBeDefined();
     await expect(
-      testFixture.service.updateCase(customer.id, complianceCase.id, {
-        status: ComplianceCaseStatus.OPEN,
-        actor: 'compliance-ops',
-      }),
+      testFixture.service.updateCase(
+        customer.id,
+        complianceCase.id,
+        {
+          status: ComplianceCaseStatus.OPEN,
+        },
+        access('compliance-ops'),
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
     await expect(
-      testFixture.service.addComment(customer.id, complianceCase.id, {
-        comment: 'Closed case mutation',
-        actor: 'compliance-ops',
-      }),
+      testFixture.service.addComment(
+        customer.id,
+        complianceCase.id,
+        {
+          comment: 'Closed case mutation',
+        },
+        access('compliance-ops'),
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -234,29 +271,57 @@ describe('CustomerComplianceService', () => {
     const testFixture = fixture();
     const customer = await createCustomer(testFixture);
     const complianceCase = await createCase(testFixture, customer.id, 'case-append');
-    await testFixture.service.assignCase(customer.id, complianceCase.id, {
-      assignedTo: 'analyst-one',
-      actor: 'compliance-lead',
-    });
-    await testFixture.service.assignCase(customer.id, complianceCase.id, {
-      assignedTo: 'analyst-two',
-      actor: 'compliance-lead',
-    });
-    await testFixture.service.addComment(customer.id, complianceCase.id, {
-      comment: 'Case comment is immutable',
-      actor: 'analyst-two',
-    });
-    await testFixture.service.addEvidence(customer.id, complianceCase.id, {
-      documentName: 'Review note',
-      documentType: 'INTERNAL_NOTE',
-      reference: 'evidence-001',
-      uploadedBy: 'analyst-two',
-    });
+    await testFixture.service.assignCase(
+      customer.id,
+      complianceCase.id,
+      {
+        assignedTo: 'analyst-one',
+      },
+      access('compliance-lead'),
+    );
+    await testFixture.service.assignCase(
+      customer.id,
+      complianceCase.id,
+      {
+        assignedTo: 'analyst-two',
+      },
+      access('compliance-lead'),
+    );
+    await testFixture.service.addComment(
+      customer.id,
+      complianceCase.id,
+      {
+        comment: 'Case comment is immutable',
+      },
+      access('analyst-two'),
+    );
+    await testFixture.service.addEvidence(
+      customer.id,
+      complianceCase.id,
+      {
+        documentName: 'Review note',
+        documentType: 'INTERNAL_NOTE',
+        reference: 'evidence-001',
+      },
+      access('analyst-two'),
+    );
 
-    const assignments = await testFixture.service.listAssignments(customer.id, complianceCase.id);
-    const comments = await testFixture.service.listComments(customer.id, complianceCase.id);
-    const evidence = await testFixture.service.listEvidence(customer.id, complianceCase.id);
-    const history = await testFixture.service.listHistory(customer.id, complianceCase.id);
+    const assignments = await testFixture.service.listAssignments(
+      customer.id,
+      complianceCase.id,
+      access(),
+    );
+    const comments = await testFixture.service.listComments(
+      customer.id,
+      complianceCase.id,
+      access(),
+    );
+    const evidence = await testFixture.service.listEvidence(
+      customer.id,
+      complianceCase.id,
+      access(),
+    );
+    const history = await testFixture.service.listHistory(customer.id, complianceCase.id, access());
 
     expect(assignments).toHaveLength(2);
     expect(assignments[0]?.assignedTo).toBe('analyst-one');
@@ -270,6 +335,103 @@ describe('CustomerComplianceService', () => {
         ComplianceCaseHistoryAction.EVIDENCE_ADDED,
       ]),
     );
+  });
+
+  it('fails closed on missing or wrong category scope while retaining complete internal policy evidence', async () => {
+    const testFixture = fixture();
+    const customer = await createCustomer(testFixture);
+    const kyc = await createCase(testFixture, customer.id, 'case-kyc-scope');
+    const fraudAccess = { actor: 'fraud-analyst', categories: [ComplianceCaseCategory.FRAUD] };
+    const fraud = await testFixture.service.createCase(
+      customer.id,
+      {
+        caseNumber: 'case-fraud-scope',
+        category: ComplianceCaseCategory.FRAUD,
+        severity: ComplianceCaseSeverity.HIGH,
+      },
+      fraudAccess,
+    );
+
+    expect(
+      (await testFixture.service.listCases(customer.id, fraudAccess)).map((item) => item.id),
+    ).toEqual([fraud.id]);
+    expect(
+      (await testFixture.service.listCasesForPolicyEvidence(customer.id)).map((item) => item.id),
+    ).toEqual(expect.arrayContaining([kyc.id, fraud.id]));
+    await expect(
+      testFixture.service.getCase(customer.id, kyc.id, fraudAccess),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      testFixture.service.createCase(
+        customer.id,
+        {
+          caseNumber: 'denied-kyc',
+          category: ComplianceCaseCategory.KYC,
+          severity: ComplianceCaseSeverity.LOW,
+        },
+        fraudAccess,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      testFixture.service.listCases(customer.id, { actor: 'nobody', categories: [] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      testFixture.service.listCases(customer.id, undefined as never),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects missing guard context at every service entry point without writing', async () => {
+    const testFixture = fixture();
+    const customer = await createCustomer(testFixture);
+    const existing = await createCase(testFixture, customer.id);
+    const missing = undefined as never;
+    const calls = [
+      () =>
+        testFixture.service.createCase(
+          customer.id,
+          {
+            caseNumber: 'missing-context',
+            category: ComplianceCaseCategory.KYC,
+            severity: ComplianceCaseSeverity.LOW,
+          },
+          missing,
+        ),
+      () => testFixture.service.listCases(customer.id, missing),
+      () => testFixture.service.getCase(customer.id, existing.id, missing),
+      () =>
+        testFixture.service.updateCase(
+          customer.id,
+          existing.id,
+          { status: ComplianceCaseStatus.UNDER_REVIEW },
+          missing,
+        ),
+      () =>
+        testFixture.service.addComment(customer.id, existing.id, { comment: 'denied' }, missing),
+      () => testFixture.service.listComments(customer.id, existing.id, missing),
+      () =>
+        testFixture.service.addEvidence(
+          customer.id,
+          existing.id,
+          {
+            documentName: 'denied',
+            documentType: 'NOTE',
+            reference: 'denied',
+          },
+          missing,
+        ),
+      () => testFixture.service.listEvidence(customer.id, existing.id, missing),
+      () =>
+        testFixture.service.assignCase(customer.id, existing.id, { assignedTo: 'denied' }, missing),
+      () => testFixture.service.listAssignments(customer.id, existing.id, missing),
+      () => testFixture.service.listHistory(customer.id, existing.id, missing),
+    ];
+    const callsBefore = testFixture.audit.record.mock.calls.length;
+    for (const call of calls) await expect(call()).rejects.toBeInstanceOf(ForbiddenException);
+    expect(testFixture.audit.record).toHaveBeenCalledTimes(callsBefore);
+    expect(testFixture.repositories.caseRepository.records.size).toBe(1);
+    expect(testFixture.repositories.commentRepository.records.size).toBe(0);
+    expect(testFixture.repositories.evidenceRepository.records.size).toBe(0);
+    expect(testFixture.repositories.assignmentRepository.records.size).toBe(0);
   });
 
   it('validates DTOs and UUID parameters', async () => {
@@ -293,7 +455,7 @@ describe('CustomerComplianceService', () => {
     expect(updateErrors.some((error) => error.property === 'status')).toBe(true);
 
     const testFixture = fixture();
-    await expect(testFixture.service.listCases('not-a-uuid')).rejects.toBeInstanceOf(
+    await expect(testFixture.service.listCases('not-a-uuid', access())).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });

@@ -3,20 +3,26 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 
 import { Customer } from '../customer/customer.entity';
 import { AuditService } from '../operations/audit.service';
+import type { ComplianceCaseAccess } from './customer-compliance-access';
 import { ComplianceCaseAssignment } from './compliance-case-assignment.entity';
 import { ComplianceCaseComment } from './compliance-case-comment.entity';
 import { ComplianceCaseEvidence } from './compliance-case-evidence.entity';
 import { ComplianceCaseHistory } from './compliance-case-history.entity';
 import { CustomerComplianceCase } from './customer-compliance-case.entity';
-import { ComplianceCaseHistoryAction, ComplianceCaseStatus } from './customer-compliance.enums';
+import {
+  ComplianceCaseCategory,
+  ComplianceCaseHistoryAction,
+  ComplianceCaseStatus,
+} from './customer-compliance.enums';
 import type {
   CreateComplianceCaseAssignmentCommand,
   CreateComplianceCaseCommentCommand,
@@ -47,9 +53,13 @@ export class CustomerComplianceService {
   async createCase(
     customerId: string,
     command: CreateComplianceCaseCommand,
+    access: ComplianceCaseAccess,
   ): Promise<CustomerComplianceCase> {
     this.assertUuid(customerId, 'customerId');
-    const actor = this.normalizeActor(command.actor);
+    if (!this.categories(access).includes(command.category)) {
+      throw new ForbiddenException('Compliance case category not authorized');
+    }
+    const actor = this.actorFromAccess(access);
     const caseNumber = this.normalizeCaseNumber(command.caseNumber);
     try {
       return await this.dataSource.transaction(async (manager) => {
@@ -109,35 +119,60 @@ export class CustomerComplianceService {
     }
   }
 
-  async listCases(customerId: string): Promise<CustomerComplianceCase[]> {
+  async listCases(
+    customerId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<CustomerComplianceCase[]> {
+    this.assertUuid(customerId, 'customerId');
+    const categories = this.categories(access);
+    await this.requireCustomer(this.customerRepository, customerId);
+    const cases = await this.caseRepository.find({
+      where: { customerId, category: In(categories) },
+    });
+    return this.sortByCreatedAt(cases.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+  }
+
+  /** Internal policy evaluation needs the complete evidence set; this is not an HTTP case API. */
+  async listCasesForPolicyEvidence(customerId: string): Promise<CustomerComplianceCase[]> {
     this.assertUuid(customerId, 'customerId');
     await this.requireCustomer(this.customerRepository, customerId);
     const cases = await this.caseRepository.find({ where: { customerId } });
     return this.sortByCreatedAt(cases.filter((entry) => this.isNotDeleted(entry.deletedAt)));
   }
 
-  async getCase(customerId: string, caseId: string): Promise<CustomerComplianceCase> {
+  async getCase(
+    customerId: string,
+    caseId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<CustomerComplianceCase> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
     await this.requireCustomer(this.customerRepository, customerId);
-    return this.requireCase(this.caseRepository, customerId, caseId);
+    return this.requireCase(this.caseRepository, customerId, caseId, access);
   }
 
   async updateCase(
     customerId: string,
     caseId: string,
     command: UpdateComplianceCaseCommand,
+    access: ComplianceCaseAccess,
   ): Promise<CustomerComplianceCase> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    const actor = this.normalizeActor(command.actor);
+    const actor = this.actorFromAccess(access);
     const resolution =
       command.resolution === undefined
         ? undefined
         : this.normalizeOptionalText(command.resolution, 'resolution', 1000);
     return this.dataSource.transaction(async (manager) => {
       const repository = manager.getRepository(CustomerComplianceCase);
-      const complianceCase = await this.requireCase(repository, customerId, caseId);
+      const complianceCase = await this.requireCase(
+        repository,
+        customerId,
+        caseId,
+        access,
+        'pessimistic_write',
+      );
       if (complianceCase.status === ComplianceCaseStatus.CLOSED) {
         throw new ConflictException('Closed compliance cases cannot be modified');
       }
@@ -229,16 +264,19 @@ export class CustomerComplianceService {
     customerId: string,
     caseId: string,
     command: CreateComplianceCaseCommentCommand,
+    access: ComplianceCaseAccess,
   ): Promise<ComplianceCaseComment> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    const actor = this.normalizeActor(command.actor);
+    const actor = this.actorFromAccess(access);
     const commentText = this.normalizeText(command.comment, 'comment', 4000);
     return this.dataSource.transaction(async (manager) => {
       const complianceCase = await this.requireCase(
         manager.getRepository(CustomerComplianceCase),
         customerId,
         caseId,
+        access,
+        'pessimistic_write',
       );
       this.assertCaseMutable(complianceCase);
       const comment = await manager.getRepository(ComplianceCaseComment).save(
@@ -277,31 +315,48 @@ export class CustomerComplianceService {
     });
   }
 
-  async listComments(customerId: string, caseId: string): Promise<ComplianceCaseComment[]> {
+  async listComments(
+    customerId: string,
+    caseId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<ComplianceCaseComment[]> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    await this.requireCustomer(this.customerRepository, customerId);
-    await this.requireCase(this.caseRepository, customerId, caseId);
-    const comments = await this.commentRepository.find({ where: { caseId, customerId } });
-    return this.sortByCreatedAt(comments.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireCustomer(manager.getRepository(Customer), customerId);
+      await this.requireCase(
+        manager.getRepository(CustomerComplianceCase),
+        customerId,
+        caseId,
+        access,
+        'pessimistic_read',
+      );
+      const comments = await manager
+        .getRepository(ComplianceCaseComment)
+        .find({ where: { caseId, customerId } });
+      return this.sortByCreatedAt(comments.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    });
   }
 
   async addEvidence(
     customerId: string,
     caseId: string,
     command: CreateComplianceCaseEvidenceCommand,
+    access: ComplianceCaseAccess,
   ): Promise<ComplianceCaseEvidence> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
     const documentName = this.normalizeText(command.documentName, 'documentName', 200);
     const documentType = this.normalizeText(command.documentType, 'documentType', 80);
     const reference = this.normalizeText(command.reference, 'reference', 160);
-    const uploadedBy = this.normalizeActor(command.uploadedBy);
+    const uploadedBy = this.actorFromAccess(access);
     return this.dataSource.transaction(async (manager) => {
       const complianceCase = await this.requireCase(
         manager.getRepository(CustomerComplianceCase),
         customerId,
         caseId,
+        access,
+        'pessimistic_write',
       );
       this.assertCaseMutable(complianceCase);
       const evidence = await manager.getRepository(ComplianceCaseEvidence).save(
@@ -343,27 +398,48 @@ export class CustomerComplianceService {
     });
   }
 
-  async listEvidence(customerId: string, caseId: string): Promise<ComplianceCaseEvidence[]> {
+  async listEvidence(
+    customerId: string,
+    caseId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<ComplianceCaseEvidence[]> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    await this.requireCustomer(this.customerRepository, customerId);
-    await this.requireCase(this.caseRepository, customerId, caseId);
-    const evidence = await this.evidenceRepository.find({ where: { caseId, customerId } });
-    return this.sortByCreatedAt(evidence.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireCustomer(manager.getRepository(Customer), customerId);
+      await this.requireCase(
+        manager.getRepository(CustomerComplianceCase),
+        customerId,
+        caseId,
+        access,
+        'pessimistic_read',
+      );
+      const evidence = await manager
+        .getRepository(ComplianceCaseEvidence)
+        .find({ where: { caseId, customerId } });
+      return this.sortByCreatedAt(evidence.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    });
   }
 
   async assignCase(
     customerId: string,
     caseId: string,
     command: CreateComplianceCaseAssignmentCommand,
+    access: ComplianceCaseAccess,
   ): Promise<ComplianceCaseAssignment> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    const actor = this.normalizeActor(command.actor);
+    const actor = this.actorFromAccess(access);
     const assignedTo = this.normalizeActor(command.assignedTo);
     return this.dataSource.transaction(async (manager) => {
       const repository = manager.getRepository(CustomerComplianceCase);
-      const complianceCase = await this.requireCase(repository, customerId, caseId);
+      const complianceCase = await this.requireCase(
+        repository,
+        customerId,
+        caseId,
+        access,
+        'pessimistic_write',
+      );
       this.assertCaseMutable(complianceCase);
       const previousAssignee = complianceCase.assignedTo;
       complianceCase.assignedTo = assignedTo;
@@ -414,22 +490,52 @@ export class CustomerComplianceService {
     });
   }
 
-  async listAssignments(customerId: string, caseId: string): Promise<ComplianceCaseAssignment[]> {
+  async listAssignments(
+    customerId: string,
+    caseId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<ComplianceCaseAssignment[]> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    await this.requireCustomer(this.customerRepository, customerId);
-    await this.requireCase(this.caseRepository, customerId, caseId);
-    const assignments = await this.assignmentRepository.find({ where: { caseId, customerId } });
-    return this.sortByCreatedAt(assignments.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireCustomer(manager.getRepository(Customer), customerId);
+      await this.requireCase(
+        manager.getRepository(CustomerComplianceCase),
+        customerId,
+        caseId,
+        access,
+        'pessimistic_read',
+      );
+      const assignments = await manager
+        .getRepository(ComplianceCaseAssignment)
+        .find({ where: { caseId, customerId } });
+      return this.sortByCreatedAt(
+        assignments.filter((entry) => this.isNotDeleted(entry.deletedAt)),
+      );
+    });
   }
 
-  async listHistory(customerId: string, caseId: string): Promise<ComplianceCaseHistory[]> {
+  async listHistory(
+    customerId: string,
+    caseId: string,
+    access: ComplianceCaseAccess,
+  ): Promise<ComplianceCaseHistory[]> {
     this.assertUuid(customerId, 'customerId');
     this.assertUuid(caseId, 'caseId');
-    await this.requireCustomer(this.customerRepository, customerId);
-    await this.requireCase(this.caseRepository, customerId, caseId);
-    const history = await this.historyRepository.find({ where: { caseId } });
-    return this.sortByCreatedAt(history.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireCustomer(manager.getRepository(Customer), customerId);
+      await this.requireCase(
+        manager.getRepository(CustomerComplianceCase),
+        customerId,
+        caseId,
+        access,
+        'pessimistic_read',
+      );
+      const history = await manager
+        .getRepository(ComplianceCaseHistory)
+        .find({ where: { caseId } });
+      return this.sortByCreatedAt(history.filter((entry) => this.isNotDeleted(entry.deletedAt)));
+    });
   }
 
   private async requireCustomer(
@@ -441,12 +547,45 @@ export class CustomerComplianceService {
     return customer;
   }
 
+  private actorFromAccess(access: ComplianceCaseAccess): string {
+    // Fail closed at the service boundary too, even if an internal caller omitted the guard context.
+    this.categories(access);
+    return this.normalizeActor(access.actor);
+  }
+
+  private categories(access: ComplianceCaseAccess): ComplianceCaseCategory[] {
+    if (
+      !access ||
+      typeof access.actor !== 'string' ||
+      !access.actor.trim() ||
+      !Array.isArray(access.categories) ||
+      access.categories.length === 0
+    ) {
+      throw new ForbiddenException('Compliance case access required');
+    }
+    const valid = new Set<string>(Object.values(ComplianceCaseCategory));
+    const result: ComplianceCaseCategory[] = [];
+    for (const category of access.categories as unknown[]) {
+      if (typeof category !== 'string' || !valid.has(category)) {
+        throw new ForbiddenException('Invalid compliance case access');
+      }
+      result.push(category as ComplianceCaseCategory);
+    }
+    return result;
+  }
+
   private async requireCase(
     repository: Repository<CustomerComplianceCase>,
     customerId: string,
     caseId: string,
+    access: ComplianceCaseAccess,
+    lock?: 'pessimistic_read' | 'pessimistic_write',
   ): Promise<CustomerComplianceCase> {
-    const complianceCase = await repository.findOne({ where: { id: caseId, customerId } });
+    const complianceCase = await repository.findOne({
+      where: { id: caseId, customerId, category: In(this.categories(access)) },
+      ...(lock ? { lock: { mode: lock } } : {}),
+    });
+    // Wrong customer, hidden category and nonexistent case are indistinguishable.
     if (!complianceCase || !this.isNotDeleted(complianceCase.deletedAt))
       throw new NotFoundException(`Compliance case ${caseId} was not found`);
     return complianceCase;

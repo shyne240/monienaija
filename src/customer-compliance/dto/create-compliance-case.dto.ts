@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 import { ComplianceCaseCategory, ComplianceCaseSeverity } from '../customer-compliance.enums';
 
@@ -19,9 +19,11 @@ export class CreateComplianceCaseDto {
   @IsEnum(ComplianceCaseSeverity)
   severity!: ComplianceCaseSeverity;
 
+  // Accepted for compatibility only; the authenticated workforce principal is authoritative.
+  @IsOptional()
   @IsString()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @MinLength(1)
   @MaxLength(160)
-  actor!: string;
+  actor?: string;
 }

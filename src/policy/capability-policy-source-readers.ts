@@ -291,7 +291,7 @@ export class ComplianceSourceEvidenceReader implements PolicyEvidenceReader {
   async read(context: PolicyEvidenceCollectionContext): Promise<PolicyEvidenceReadResult> {
     const observedAt = new Date().toISOString();
     try {
-      const cases = await this.complianceService.listCases(context.customerId);
+      const cases = await this.complianceService.listCasesForPolicyEvidence(context.customerId);
       const items = cases.map((complianceCase) =>
         record({
           sourceId: complianceCase.id,
