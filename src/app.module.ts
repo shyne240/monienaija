@@ -125,6 +125,7 @@ import { WalletModule } from './wallet/wallet.module';
             'req.body.applicantAccessToken',
             'req.body.refreshToken',
             'req.body.secret',
+            'req.body.apiKey',
             'req.body.code',
             'req.body.codeHash',
             'req.body.challengeHash',

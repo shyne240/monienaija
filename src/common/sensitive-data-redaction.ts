@@ -21,6 +21,8 @@ const SENSITIVE_KEY_NAMES = new Set([
   'secretkey',
   'clientsecret',
   'apikey',
+  'encryptedapikey',
+  'proposedencryptedapikey',
   'authorization',
   'cookie',
   'code',
@@ -46,10 +48,17 @@ export function redactRecord(value: Record<string, unknown>): Record<string, unk
 }
 
 export function redactSensitiveText(value: string): string {
-  return value.replace(
-    /(temporaryPassword|passwordHash|pin|pinHash|tokenHash|applicantAccessToken|accessToken|refreshToken|secret|apiKey|authorization|cookie|codeHash|challengeHash|providedHash|fingerprintHash|transferCode|transferCodeHash)\s*[:=]\s*([^,\s}]+)/gi,
-    (_match, key: string) => `${key}=${REDACTED_VALUE}`,
-  );
+  return value
+    .replace(
+      /(temporaryPassword|passwordHash|pin|pinHash|tokenHash|applicantAccessToken|accessToken|refreshToken|secret|apiKey|encryptedApiKey|proposedEncryptedApiKey|authorization|cookie|codeHash|challengeHash|providedHash|fingerprintHash|transferCode|transferCodeHash)\s*[:=]\s*([^,\s}]+)/gi,
+      (_match, key: string) => `${key}=${REDACTED_VALUE}`,
+    )
+    .replace(
+      /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
+      REDACTED_VALUE,
+    )
+    .replace(/\b(?:robe|re)_[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
+    .replace(/\bx(?:keysib|smtpsib)-[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE);
 }
 
 function redact(value: unknown, seen: WeakSet<object>): unknown {

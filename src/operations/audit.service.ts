@@ -8,6 +8,8 @@ import { redactRecord } from '../common/sensitive-data-redaction';
 import { AuditEvent } from './audit-event.entity';
 import type { AuditEventCommand, AuditQuery, AuditView } from './operations.types';
 
+const ALLOW_NOTIFICATION_PROVIDER_AUDIT = Symbol('ALLOW_NOTIFICATION_PROVIDER_AUDIT');
+
 @Injectable()
 export class AuditService {
   constructor(
@@ -94,6 +96,37 @@ export class AuditService {
         correlationId: query.correlationId,
       });
     }
+    const includeNotificationProviderRecords = Boolean(
+      (query as Record<symbol, unknown>)[ALLOW_NOTIFICATION_PROVIDER_AUDIT],
+    );
+    if (!includeNotificationProviderRecords) {
+      // Restrict operational provider configuration & test-send audit metadata (key fingerprints,
+      // sender configuration, base URLs, verification/test error codes, masked test destinations,
+      // and maker-checker approval records/comments tied to NOTIFICATION_PROVIDER_CONFIG_PROPOSAL)
+      // unless the caller holds `notification.provider.view`.
+      // Records remain intact in `audit_events` for authorized oversight.
+      builder.andWhere('audit.entity_type NOT IN (:...providerAuditTypes)', {
+        providerAuditTypes: ['NOTIFICATION_PROVIDER_CONFIG', 'NOTIFICATION_TEST_SEND'],
+      });
+      builder.andWhere(
+        `NOT (
+          audit.entity_type = :providerApprovalEntityType
+          AND (
+            audit.new_values ->> 'resourceType' = :providerProposalResourceType
+            OR EXISTS (
+              SELECT 1
+                FROM privileged_action_approvals paa
+               WHERE paa.id = audit.entity_id
+                 AND paa.resource_type = :providerProposalResourceType
+            )
+          )
+        )`,
+        {
+          providerApprovalEntityType: 'PRIVILEGED_ACTION_APPROVAL',
+          providerProposalResourceType: 'NOTIFICATION_PROVIDER_CONFIG_PROPOSAL',
+        },
+      );
+    }
     const events = await builder.orderBy('audit.occurred_at', 'DESC').take(take).getMany();
     return events.map((event) => ({
       id: event.id,
@@ -107,5 +140,17 @@ export class AuditService {
       newValues: event.newValues,
       occurredAt: event.occurredAt,
     }));
+  }
+
+  /**
+   * Internal oversight read path used only after server-side `notification.provider.view`
+   * authorization has succeeded. Delegates through `list(...)` so all other category filters
+   * (such as compliance-case restrictions) remain enforced.
+   */
+  async listWithNotificationProviderOversight(query: AuditQuery = {}): Promise<AuditView[]> {
+    const scopedQuery = Object.assign({}, query, {
+      [ALLOW_NOTIFICATION_PROVIDER_AUDIT]: true,
+    });
+    return this.list(scopedQuery);
   }
 }

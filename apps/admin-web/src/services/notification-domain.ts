@@ -102,6 +102,10 @@ export interface NotificationProviderStatus {
   sms: {
     provider: string;
     operationalStatus: 'READY' | 'CONSOLE_ONLY' | 'MISCONFIGURED' | 'DEGRADED';
+    lifecycleState?: ProviderLifecycleState;
+    gates?: ProviderReadinessGates;
+    senderId?: string | null;
+    lastTest?: ProviderChannelSnapshot['lastTest'];
     baseUrl: string | null;
     apiKeyConfigured: boolean;
     apiKeyPrefixValid: boolean;
@@ -116,6 +120,9 @@ export interface NotificationProviderStatus {
     channelEnabledInSchema: boolean;
     provider: string | null;
     operationalStatus: 'READY' | 'CONSOLE_ONLY' | 'NOT_CONFIGURED' | 'DEGRADED';
+    lifecycleState?: ProviderLifecycleState;
+    gates?: ProviderReadinessGates;
+    lastTest?: ProviderChannelSnapshot['lastTest'];
     credentialsConfigured: boolean;
     credentialFingerprint: string | null;
     fromAddress: string | null;
@@ -170,6 +177,8 @@ export const NOTIFICATION_MODULE_SCOPES = [
   'notification.manage_configuration',
   'notification.approve_configuration',
   'notification.view_provider_status',
+  'notification.provider.view',
+  'notification.provider.configure',
   'notification.test_send',
 ] as const;
 
@@ -182,6 +191,10 @@ export interface NotificationPermissions {
   canManageConfiguration: boolean;
   canApproveConfiguration: boolean;
   canViewProviderStatus: boolean;
+  canViewProviderConfig: boolean;
+  canProposeProviderConfig: boolean;
+  canApproveProviderConfig: boolean;
+  canActivateProviderConfig: boolean;
   canTestSend: boolean;
   canUseWorkforceApprovalEndpoint: boolean;
   canViewOutbox: boolean;
@@ -223,9 +236,25 @@ export function deriveNotificationPermissions(
     canApproveConfiguration: has('notification.approve_configuration') || isFinanceControllerChecker,
     canViewProviderStatus:
       has('notification.view_provider_status') ||
+      has('notification.provider.view') ||
       has('notification.view_events') ||
       has('notification.view_deliveries') ||
       has('diagnostics.view'),
+    canViewProviderConfig:
+      has('notification.provider.view') ||
+      has('notification.view_deliveries') ||
+      isFinanceControllerChecker,
+    canProposeProviderConfig:
+      (has('notification.provider.configure') || isSuperAdminMaker) &&
+      roles.has('SUPER_ADMIN'),
+    canApproveProviderConfig:
+      (has('notification.provider.configure') || isFinanceControllerChecker) &&
+      roles.has('FINANCE_CONTROLLER'),
+    canActivateProviderConfig:
+      (has('notification.provider.configure') ||
+        isSuperAdminMaker ||
+        isFinanceControllerChecker) &&
+      (roles.has('SUPER_ADMIN') || roles.has('FINANCE_CONTROLLER')),
     canTestSend: has('notification.test_send'),
     canUseWorkforceApprovalEndpoint: isFinanceControllerChecker,
     canViewOutbox: has('outbox.view'),
@@ -635,18 +664,31 @@ const SAFE_CREDENTIAL_METADATA_KEYS = new Set([
   'credentialsConfigured',
   'credentialFingerprint',
   'idempotencyRetentionSeconds',
+  'keyFingerprint',
+  'proposedKeyFingerprint',
+  'encryptionKeyVersion',
+  'proposedEncryptionKeyVersion',
+  'encryptionKeyAvailable',
+  'credentialSource',
+  'credentialAction',
+  'hasStoredCredential',
 ]);
 
-const SECRET_KEY_PATTERN = /(api[_-]?key|secret|password|private[_-]?key|bearer|smtp[_-]?pass|auth[_-]?token)/i;
+const SECRET_KEY_PATTERN =
+  /(api[_-]?key|encrypted[_-]?api[_-]?key|secret|password|private[_-]?key|bearer|smtp[_-]?pass|auth[_-]?token)/i;
+
+const RAW_SECRET_VALUE_PATTERN =
+  /\b(robe_[0-9a-zA-Z_-]{4,}|xkeysib-[0-9a-zA-Z_-]{4,}|xsmtpsib-[0-9a-zA-Z_-]{4,}|re_[0-9a-zA-Z_-]{8,}|MNNPS1:[A-Za-z0-9._-]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+)/g;
 
 /**
  * Defensive secret sanitizer for provider configuration/status payloads (Audit Finding F-S5).
- * Strips any unexpected credential/key property and masks any string matching `robe_<hex>`.
+ * Strips any unexpected credential/key property and masks any string matching provider key
+ * prefixes (`robe_`, `xkeysib-`, `xsmtpsib-`, `re_`) or `MNNPS1:` encrypted envelopes.
  */
 export function sanitizeProviderStatusForDisplay<T>(input: T): T {
   if (input === null || input === undefined) return input;
   if (typeof input === 'string') {
-    return input.replace(/\brobe_[0-9a-zA-Z_-]+/g, '[REDACTED_KEY]') as unknown as T;
+    return input.replace(RAW_SECRET_VALUE_PATTERN, '[REDACTED_KEY]') as unknown as T;
   }
   if (Array.isArray(input)) {
     return input.map((item) => sanitizeProviderStatusForDisplay(item)) as unknown as T;
@@ -665,11 +707,268 @@ export function sanitizeProviderStatusForDisplay<T>(input: T): T {
         out[key] = value.slice(-4);
         continue;
       }
+      if (
+        (key === 'keyFingerprint' || key === 'proposedKeyFingerprint') &&
+        typeof value === 'string' &&
+        value.length > 8
+      ) {
+        out[key] = `****${value.slice(-4)}`;
+        continue;
+      }
       out[key] = sanitizeProviderStatusForDisplay(value);
     }
     return out as T;
   }
   return input;
+}
+
+export type ManagedProviderChannel = 'SMS' | 'EMAIL';
+export type ProviderLifecycleState =
+  | 'NOT_CONFIGURED'
+  | 'CONSOLE_ONLY'
+  | 'MISCONFIGURED'
+  | 'CONFIGURED'
+  | 'VERIFIED'
+  | 'ENABLED'
+  | 'DELIVERY_TESTED'
+  | 'PRODUCTION_READY';
+
+export interface ProviderReadinessGates {
+  configured: boolean;
+  verified: boolean;
+  enabled: boolean;
+  deliveryTested: boolean;
+  productionReady: boolean;
+}
+
+export interface ProviderChannelSnapshot {
+  channel: ManagedProviderChannel;
+  source: 'DATABASE' | 'ENVIRONMENT';
+  provider: string;
+  enabled: boolean;
+  lifecycleState: ProviderLifecycleState;
+  gates: ProviderReadinessGates;
+  baseUrl: string | null;
+  requestTimeoutMs: number;
+  senderId: string | null;
+  senderIdNote: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  replyToEmail: string | null;
+  credentialSource: 'NONE' | 'ENCRYPTED_DB' | 'ENV_SECRET';
+  hasStoredCredential: boolean;
+  keyFingerprint: string | null;
+  encryptionKeyVersion: string | null;
+  encryptionKeyAvailable: boolean;
+  misconfigurationCode: string | null;
+  domainAuthentication: {
+    spfConfigured: boolean;
+    dkimConfigured: boolean;
+    dmarcConfigured: boolean;
+    allConfigured: boolean;
+  } | null;
+  verification: {
+    verifiedAt: string | null;
+    verifiedBy: string | null;
+    verificationMethod: string | null;
+    lastVerificationError: string | null;
+  };
+  lastTest: {
+    status: 'SENT' | 'FAILED' | 'CONSOLE_SIMULATED' | null;
+    destinationMasked: string | null;
+    providerRef: string | null;
+    errorCode: string | null;
+    testedAt: string | null;
+    deliveryTestedAt: string | null;
+    deliveryTestedBy: string | null;
+  };
+  version: number;
+  updatedBy: string | null;
+  approvedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProviderConfigurationOverview {
+  sms: ProviderChannelSnapshot;
+  email: ProviderChannelSnapshot;
+  encryption: {
+    available: boolean;
+    mode: 'KEYRING_JSON' | 'SINGLE_KEY' | 'MISSING_KEY' | 'INVALID_KEY';
+    activeKeyVersion: string | null;
+    keyVersions: string[];
+  };
+  worker: {
+    enabled: boolean;
+    pollIntervalMs: number;
+    batchSize: number;
+    smsRetryMaxAttempts: number;
+    smsRetryBaseDelaySeconds: number;
+  };
+  contracts: {
+    robase: {
+      verifiedEndpoint: string;
+      senderIdBehaviour: string;
+      verificationBehaviour: string;
+    };
+    brevo: {
+      verifiedEndpoint: string;
+      verifyEndpoints: string[];
+      domainAuthRequirements: string[];
+    };
+  };
+}
+
+export type ProviderCredentialAction =
+  | 'KEEP_EXISTING'
+  | 'SET_ENCRYPTED'
+  | 'USE_ENV_SECRET'
+  | 'CLEAR';
+
+export interface ProviderConfigProposal {
+  id: string;
+  channel: ManagedProviderChannel;
+  expectedVersion: number;
+  proposedProvider: string;
+  proposedEnabled: boolean;
+  proposedBaseUrl: string | null;
+  proposedRequestTimeoutMs: number;
+  proposedSenderId: string | null;
+  proposedFromEmail: string | null;
+  proposedFromName: string | null;
+  proposedReplyToEmail: string | null;
+  credentialAction: ProviderCredentialAction;
+  proposedKeyFingerprint: string | null;
+  proposedEncryptionKeyVersion: string | null;
+  proposedDomainAuthentication: {
+    spfConfigured: boolean;
+    dkimConfigured: boolean;
+    dmarcConfigured: boolean;
+  };
+  reason: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'ACTIVATED';
+  proposerPrincipalId: string;
+  approvalId: string;
+  actionFingerprint: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  activatedBy: string | null;
+  activatedAt: string | null;
+  resultingVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProposeProviderConfigPayload {
+  channel: ManagedProviderChannel;
+  expectedVersion: number;
+  provider: string;
+  enabled: boolean;
+  baseUrl?: string | null;
+  requestTimeoutMs?: number;
+  senderId?: string | null;
+  fromEmail?: string | null;
+  fromName?: string | null;
+  replyToEmail?: string | null;
+  credentialAction: ProviderCredentialAction;
+  apiKey?: string;
+  spfConfigured?: boolean;
+  dkimConfigured?: boolean;
+  dmarcConfigured?: boolean;
+  reason: string;
+}
+
+export function validateProviderConfigProposalDraft(
+  draft: ProposeProviderConfigPayload,
+  hasExistingStoredCredential: boolean,
+): string[] {
+  const errors: string[] = [];
+  const provider = draft.provider.trim();
+  const isExternal = provider === 'robase' || provider === 'brevo' || provider === 'resend';
+
+  if (draft.channel === 'SMS' && provider !== 'console' && provider !== 'robase') {
+    errors.push('SMS provider must be "robase" or "console".');
+  }
+  if (
+    draft.channel === 'EMAIL' &&
+    provider !== 'none' &&
+    provider !== 'console' &&
+    provider !== 'brevo' &&
+    provider !== 'resend'
+  ) {
+    errors.push('Email provider must be "brevo", "resend", "none", or "console".');
+  }
+  if (provider === 'none' && draft.enabled) {
+    errors.push('Provider "none" cannot be enabled.');
+  }
+
+  if (isExternal) {
+    const rawUrl = (draft.baseUrl ?? '').trim();
+    if (!rawUrl || !rawUrl.startsWith('https://')) {
+      errors.push('External provider Base URL must begin with https://.');
+    }
+  }
+
+  if (draft.channel === 'SMS' && draft.senderId && draft.senderId.trim().length > 0) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9 -]{1,9}[A-Za-z0-9]$/.test(draft.senderId.trim())) {
+      errors.push('SMS Sender ID must be 3 to 11 alphanumeric characters.');
+    }
+  }
+
+  if (draft.channel === 'EMAIL' && (provider === 'brevo' || provider === 'resend')) {
+    const fromEmail = (draft.fromEmail ?? '').trim();
+    if (!fromEmail || !/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(fromEmail)) {
+      errors.push('Enter a valid verified sender email address (e.g. notifications@monienaija.ng).');
+    }
+    if (draft.replyToEmail && draft.replyToEmail.trim().length > 0) {
+      if (!/^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/.test(draft.replyToEmail.trim())) {
+        errors.push('Reply-To address must be a valid email address when specified.');
+      }
+    }
+  }
+
+  if (draft.credentialAction === 'SET_ENCRYPTED') {
+    if (!isExternal) {
+      errors.push('Encrypted API keys can only be configured for external providers (Robase, Brevo, Resend).');
+    } else {
+      const key = (draft.apiKey ?? '').trim();
+      if (!key) {
+        errors.push('Enter the provider API key to encrypt at rest.');
+      } else if (/\s/.test(key)) {
+        errors.push('API key must not contain spaces or line breaks.');
+      } else if (provider === 'robase' && !/^robe_[A-Za-z0-9_-]{15,500}$/.test(key)) {
+        errors.push('Robase API key must use the verified live key format (robe_ prefix, 20+ characters).');
+      } else if (provider === 'brevo') {
+        if (key.startsWith('xsmtpsib-')) {
+          errors.push(
+            'SMTP relay keys (xsmtpsib- prefix) are not valid for the Brevo v3 HTTP API. Enter a Brevo v3 REST API key (xkeysib- prefix).',
+          );
+        } else if (!/^xkeysib-[A-Za-z0-9_-]{15,500}$/.test(key)) {
+          errors.push('Brevo API key must use the v3 REST API key format (xkeysib- prefix, 23+ characters).');
+        }
+      } else if (provider === 'resend' && !/^re_[A-Za-z0-9_-]{12,500}$/.test(key)) {
+        errors.push('Resend API key must use the live key format (re_ prefix).');
+      }
+    }
+  } else if (draft.credentialAction === 'KEEP_EXISTING' && isExternal && !hasExistingStoredCredential) {
+    errors.push('No stored credential exists yet for this channel; select "Set / Rotate Encrypted API Key" or "Use Server Environment Secret".');
+  } else if (draft.credentialAction === 'CLEAR' && isExternal && draft.enabled) {
+    errors.push('Cannot clear credentials while the external provider is enabled.');
+  }
+
+  const timeout = draft.requestTimeoutMs ?? 10000;
+  if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 60000) {
+    errors.push('Request timeout must be an integer between 1,000 ms and 60,000 ms.');
+  }
+
+  const trimmedReason = draft.reason.trim();
+  if (trimmedReason.length < 10) {
+    errors.push('Governance audit reason must be at least 10 characters.');
+  } else if (trimmedReason.length > 500) {
+    errors.push('Governance audit reason must not exceed 500 characters.');
+  }
+
+  return errors;
 }
 
 const AMOUNT_VAR: ApprovedTemplateVariable = {

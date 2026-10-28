@@ -11,6 +11,7 @@ import { NotificationChannelResolverService } from './notification-channel-resol
 import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
 import { NotificationTemplateService } from './notification-template.service';
+import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 import type {
   NotificationEmailTemplateLookup,
@@ -59,6 +60,7 @@ export class NotificationDispatcherService {
     // untouched: `provider` above remains the sole send path for those channels.
     @Inject(NOTIFICATION_EMAIL_PROVIDER_TOKEN) @Optional() private readonly injectedEmailProvider: NotificationProvider | null,
     @Inject(NOTIFICATION_EMAIL_TEMPLATE_TOKEN) @Optional() private readonly injectedEmailTemplates: NotificationEmailTemplateLookup | null,
+    @Optional() private readonly providerConfig?: NotificationProviderConfigService,
   ) {}
 
   private get provider(): NotificationProvider {
@@ -177,6 +179,7 @@ export class NotificationDispatcherService {
     // ARENA3-NOTIFICATION-EMAIL: append CUSTOMER EMAIL copies ONLY when an email provider
     // is configured. While dark (provider 'none'), no EMAIL intents exist at all — existing
     // SMS/PUSH behaviour (generated/dispatched/skipped counts, delivery rows) is byte-identical.
+    await this.providerConfig?.refreshRuntimeCache();
     if (this.emailProvider.name !== 'none') {
       intents = appendCustomerEmailIntents(eventType, intents);
     }

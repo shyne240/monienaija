@@ -60,19 +60,41 @@ export class OperationsController {
   // Not migrated — see class-level comment: SUPPORT is a proven, tested consumer of this exact
   // route and is not a catalogue-governed principal type. Left on authentication-only (the
   // pre-existing behaviour), per the explicit SUPPORT audit-only instruction.
+  // Provider configuration audit metadata (`NOTIFICATION_PROVIDER_CONFIG` / `NOTIFICATION_TEST_SEND`)
+  // is restricted unless the caller holds `notification.provider.view`.
   @Get('audit')
-  getAudit(
+  async getAudit(
+    @Req() req?: AuthenticatedRequest,
     @Query('entityType') entityType?: string,
     @Query('entityId') entityId?: string,
     @Query('correlationId') correlationId?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.auditService.list({
+    const policy = {
+      resourceType: 'notification-provider-config-audit',
+      action: 'notification.provider.view',
+      allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'] as const,
+      requiredFunctions: ['notification.provider.view'],
+      customerAccess: 'NONE' as const,
+    };
+    const resource = { type: 'notification-provider-config-audit' };
+    const normalizedEntityType = entityType?.trim().toUpperCase();
+    const targetsProviderAudit =
+      normalizedEntityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
+      normalizedEntityType === 'NOTIFICATION_TEST_SEND';
+    const decision = targetsProviderAudit
+      ? await this.auth.authorize(req?.authorizationPrincipal, policy, resource)
+      : this.auth.evaluate(req?.authorizationPrincipal, policy, resource);
+
+    const auditQuery = {
       entityType,
       entityId,
       correlationId,
       limit: limit ? Number(limit) : undefined,
-    });
+    };
+    return decision.allowed
+      ? this.auditService.listWithNotificationProviderOversight(auditQuery)
+      : this.auditService.list(auditQuery);
   }
 
   @Get('outbox')

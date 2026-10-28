@@ -153,6 +153,8 @@ export function canAccessAdminView(
         'notification.manage_configuration',
         'notification.approve_configuration',
         'notification.view_provider_status',
+        'notification.provider.view',
+        'notification.provider.configure',
         'notification.test_send',
       );
     case 'systemHealth':

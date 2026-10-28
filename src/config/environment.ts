@@ -152,12 +152,21 @@ export const environmentSchema = z
     DB_SSL: booleanFromEnvironment.default(false),
     DB_SSL_REJECT_UNAUTHORIZED: booleanFromEnvironment.default(true),
     // SMS-V1-01 — provider-neutral SMS production configuration.
-    // Provider selection: 'console' (default, keeps dev/test provider-neutral) or 'robase'.
-    NOTIFICATION_SMS_PROVIDER: z.enum(['console', 'robase']).default('console'),
+    // Provider selection: 'console' (default, keeps dev/test provider-neutral), 'robase'
+    // (env-supplied key), or 'managed' (governed DB-encrypted runtime configuration).
+    NOTIFICATION_SMS_PROVIDER: z.enum(['console', 'robase', 'managed']).default('console'),
     // Robase verified contract: POST {base}/v1/sms/send with Bearer robe_* key (docs.robase.dev).
     ROBASE_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.robase.dev'),
     ROBASE_API_KEY: optionalEnvironmentSecret,
     ROBASE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(10_000),
+    // Server-side AES-256-GCM encryption keys for governed provider credentials stored in PostgreSQL.
+    NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON: optionalEnvironmentJson,
+    NOTIFICATION_PROVIDER_ENCRYPTION_KEY: optionalEnvironmentString,
+    NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .default('v1'),
     // Background delivery worker (provider-neutral). Disabled by default; enable per environment.
     NOTIFICATION_WORKER_ENABLED: booleanFromEnvironment.default(false),
     NOTIFICATION_WORKER_POLL_INTERVAL_MS: z.coerce
@@ -173,15 +182,26 @@ export const environmentSchema = z
     // ARENA3-NOTIFICATION-EMAIL — provider-neutral EMAIL configuration (mirrors the SMS posture).
     // 'none' (default): email DARK — dispatcher generates no EMAIL intents, worker fails closed.
     // 'console': dev/test only (logs + in-memory; rejected in production by refinement below).
-    // 'resend': production adapter — requires RESEND_API_KEY (re_ prefix) + NOTIFICATION_EMAIL_FROM.
-    NOTIFICATION_EMAIL_PROVIDER: z.enum(['none', 'console', 'resend']).default('none'),
+    // 'brevo': Brevo v3 Transactional Email API — requires BREVO_API_KEY (xkeysib- prefix) + NOTIFICATION_EMAIL_FROM.
+    // 'resend': Resend HTTP API — requires RESEND_API_KEY (re_ prefix) + NOTIFICATION_EMAIL_FROM.
+    // 'managed': governed DB-encrypted runtime configuration via Admin Web.
+    NOTIFICATION_EMAIL_PROVIDER: z
+      .enum(['none', 'console', 'brevo', 'resend', 'managed'])
+      .default('none'),
+    BREVO_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.brevo.com'),
+    BREVO_API_KEY: optionalEnvironmentSecret,
+    BREVO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
     RESEND_API_BASE_URL: z.string().trim().url().max(2048).default('https://api.resend.com'),
     RESEND_API_KEY: optionalEnvironmentSecret,
     RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
-    // Verified sender identity, e.g. "MonieNaija <notifications@monienaija.ng>".
+    // Verified sender identity, e.g. "notifications@monienaija.ng" or "MonieNaija <notifications@monienaija.ng>".
     NOTIFICATION_EMAIL_FROM: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.string().trim().min(3).max(320).optional(),
+    ),
+    NOTIFICATION_EMAIL_FROM_NAME: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().trim().min(1).max(120).optional(),
     ),
     NOTIFICATION_EMAIL_REPLY_TO: z.preprocess(
       (value) => (value === '' ? undefined : value),
@@ -220,13 +240,18 @@ export const environmentSchema = z
     // configuration validation fast forces an explicit, informed choice of a real provider
     // for the production tier specifically; development/test/staging keep defaulting to
     // 'console' unchanged.
-    if (config.NODE_ENV === 'production' && config.NOTIFICATION_SMS_PROVIDER !== 'robase') {
+    if (
+      config.NODE_ENV === 'production' &&
+      config.NOTIFICATION_SMS_PROVIDER !== 'robase' &&
+      config.NOTIFICATION_SMS_PROVIDER !== 'managed'
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['NOTIFICATION_SMS_PROVIDER'],
         message:
           'A production deployment must set NOTIFICATION_SMS_PROVIDER=robase (with a valid ' +
-          'ROBASE_API_KEY) — the default "console" provider never delivers real SMS and would ' +
+          'ROBASE_API_KEY) or NOTIFICATION_SMS_PROVIDER=managed (governed DB-encrypted runtime ' +
+          'configuration) — the default "console" provider never delivers real SMS and would ' +
           'silently break OTP-gated customer flows while logging live OTP codes to server stdout.',
       });
     }
@@ -249,6 +274,79 @@ export const environmentSchema = z
       }
     }
 
+    // Validate optional server-side AES-256-GCM keyring/key for governed provider secrets.
+    let hasValidNotificationEncryptionKey = false;
+    if (config.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON) {
+      try {
+        const parsed = JSON.parse(config.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON must be a JSON object');
+        }
+        const entries = Object.entries(parsed as Record<string, unknown>);
+        if (entries.length === 0) {
+          throw new Error(
+            'NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON must contain at least one key version',
+          );
+        }
+        for (const [version, encoded] of entries) {
+          if (!/^[A-Za-z0-9._-]{1,64}$/.test(version) || typeof encoded !== 'string') {
+            throw new Error(`Invalid notification encryption key entry for version "${version}"`);
+          }
+          const normalized = encoded.trim();
+          const decoded = Buffer.from(normalized, 'base64');
+          if (decoded.length !== 32 || decoded.toString('base64') !== normalized) {
+            throw new Error(
+              `Notification encryption key version "${version}" must decode to 32 bytes base64`,
+            );
+          }
+        }
+        if (
+          !(parsed as Record<string, unknown>)[
+            config.NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION
+          ]
+        ) {
+          throw new Error(
+            `NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION "${config.NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION}" is missing from NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON`,
+          );
+        }
+        hasValidNotificationEncryptionKey = true;
+      } catch (error) {
+        context.addIssue({
+          code: 'custom',
+          path: ['NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON'],
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Invalid NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON',
+        });
+      }
+    } else if (config.NOTIFICATION_PROVIDER_ENCRYPTION_KEY) {
+      const normalized = config.NOTIFICATION_PROVIDER_ENCRYPTION_KEY.trim();
+      const decoded = Buffer.from(normalized, 'base64');
+      if (decoded.length !== 32 || decoded.toString('base64') !== normalized) {
+        context.addIssue({
+          code: 'custom',
+          path: ['NOTIFICATION_PROVIDER_ENCRYPTION_KEY'],
+          message: 'NOTIFICATION_PROVIDER_ENCRYPTION_KEY must be a base64-encoded 32-byte key',
+        });
+      } else {
+        hasValidNotificationEncryptionKey = true;
+      }
+    }
+
+    if (
+      (config.NOTIFICATION_SMS_PROVIDER === 'managed' ||
+        config.NOTIFICATION_EMAIL_PROVIDER === 'managed') &&
+      !hasValidNotificationEncryptionKey
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON'],
+        message:
+          'NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON or NOTIFICATION_PROVIDER_ENCRYPTION_KEY is required when NOTIFICATION_SMS_PROVIDER=managed or NOTIFICATION_EMAIL_PROVIDER=managed',
+      });
+    }
+
     // ARENA3-NOTIFICATION-EMAIL: production must never run the console email adapter — it
     // writes full message bodies (potentially transaction details) to stdout and delivers
     // nothing. 'none' stays legal in production: email is a dark channel until operations
@@ -259,8 +357,41 @@ export const environmentSchema = z
         path: ['NOTIFICATION_EMAIL_PROVIDER'],
         message:
           'NOTIFICATION_EMAIL_PROVIDER=console is restricted to development/test — production ' +
-          'must use "resend" (real delivery) or "none" (email dark).',
+          'must use "brevo", "resend", "managed", or "none" (email dark).',
       });
+    }
+
+    // Fail-fast credential validation when Brevo is selected via environment variables.
+    if (config.NOTIFICATION_EMAIL_PROVIDER === 'brevo') {
+      if (!config.BREVO_API_KEY) {
+        context.addIssue({
+          code: 'custom',
+          path: ['BREVO_API_KEY'],
+          message: 'BREVO_API_KEY is required when NOTIFICATION_EMAIL_PROVIDER=brevo',
+        });
+      } else if (config.BREVO_API_KEY.startsWith('xsmtpsib-')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['BREVO_API_KEY'],
+          message:
+            'BREVO_API_KEY appears to be an SMTP relay key (xsmtpsib- prefix); Brevo HTTP v3 transactional email requires a REST API key (xkeysib- prefix)',
+        });
+      } else if (!config.BREVO_API_KEY.startsWith('xkeysib-')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['BREVO_API_KEY'],
+          message: 'BREVO_API_KEY must be a Brevo v3 REST API key (xkeysib- prefix)',
+        });
+      }
+      if (!config.NOTIFICATION_EMAIL_FROM || !config.NOTIFICATION_EMAIL_FROM.includes('@')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['NOTIFICATION_EMAIL_FROM'],
+          message:
+            'NOTIFICATION_EMAIL_FROM (verified sender identity containing @) is required when ' +
+            'NOTIFICATION_EMAIL_PROVIDER=brevo',
+        });
+      }
     }
 
     // ARENA3-NOTIFICATION-EMAIL: fail-fast credential validation when Resend is selected —

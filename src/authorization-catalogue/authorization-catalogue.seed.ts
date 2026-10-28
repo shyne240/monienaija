@@ -236,6 +236,11 @@ export const AUTHORIZATION_FUNCTION_SEED: AuthorizationFunctionSeed[] = [
   // ARENA3-NOTIFICATION-EMAIL: controlled notification connectivity test (SMS/EMAIL).
   // Fixed safe content, rate limited (5/hour/principal), audited with masked destination.
   { functionCode: 'notification.test_send', domain: 'OPERATIONS', name: 'Send notification test', description: 'Send a controlled, non-financial notification connectivity test (SMS/EMAIL) to an operator-provided destination. Rate limited and audited.', sensitivity: OPERATIONAL, v1Status: IMPLEMENTED, assignable: true },
+  // Governed SMS (Robase) & Email (Brevo) provider runtime configuration.
+  // Non-secret view is READ-sensitivity; proposing/approving/activating provider changes and
+  // credential rotations is PRIVILEGED with mandatory maker-checker + step-up MFA.
+  { functionCode: 'notification.provider.view', domain: 'OPERATIONS', name: 'View notification provider configuration', description: 'View non-secret SMS and Email provider configuration, masked credential fingerprints, readiness gates, and governed proposals.', sensitivity: READ, v1Status: IMPLEMENTED, assignable: true },
+  { functionCode: 'notification.provider.configure', domain: 'OPERATIONS', name: 'Configure notification providers', description: 'Propose, independently approve, and activate SMS and Email provider settings, credential rotations, and enablement under maker-checker and MFA.', sensitivity: PRIVILEGED, v1Status: IMPLEMENTED, assignable: true, makerCheckerRequired: true, approvalRequired: true },
 
   // --------------------------------------------------------------- REPORTING
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: a deliberately narrow, new aggregate-only
@@ -399,6 +404,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('SUPER_ADMIN', 'diagnostics.view', VIEW),
   nowAssign('SUPER_ADMIN', 'notification.view_deliveries', VIEW),
   nowAssign('SUPER_ADMIN', 'notification.test_send', EXECUTE),
+  nowAssign('SUPER_ADMIN', 'notification.provider.view', VIEW),
+  nowAssign('SUPER_ADMIN', 'notification.provider.configure', INITIATE),
   nowAssign('SUPER_ADMIN', 'ledger.view', VIEW),
   nowAssign('SUPER_ADMIN', 'reconciliation.view', VIEW),
   nowAssign('SUPER_ADMIN', 'transaction.view', VIEW),
@@ -466,6 +473,8 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_CONTROLLER', 'workforce.role.view', VIEW),
   nowAssign('FINANCE_CONTROLLER', 'agent.fund', APPROVE),
   nowAssign('FINANCE_CONTROLLER', 'agent.defund', APPROVE),
+  nowAssign('FINANCE_CONTROLLER', 'notification.provider.view', VIEW),
+  nowAssign('FINANCE_CONTROLLER', 'notification.provider.configure', APPROVE),
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
   nowAssign('FINANCE_CONTROLLER', 'reporting.transaction_summary.view', VIEW),
   // NOTE: FINANCE_CONTROLLER deliberately does NOT hold ledger.post/reverse (maker-only
@@ -499,6 +508,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('FINANCE_AUDITOR', 'metrics.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'diagnostics.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'notification.view_deliveries', VIEW),
+  nowAssign('FINANCE_AUDITOR', 'notification.provider.view', VIEW),
   nowAssign('FINANCE_AUDITOR', 'reconciliation.view', VIEW),
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
   nowAssign('FINANCE_AUDITOR', 'reporting.transaction_summary.view', VIEW),
@@ -529,6 +539,7 @@ export const AUTHORIZATION_ROLE_FUNCTION_SEED: AuthorizationRoleFunctionSeed[] =
   nowAssign('OPERATIONS', 'diagnostics.view', VIEW),
   nowAssign('OPERATIONS', 'notification.view_deliveries', VIEW),
   nowAssign('OPERATIONS', 'notification.test_send', EXECUTE),
+  nowAssign('OPERATIONS', 'notification.provider.view', VIEW),
   nowAssign('OPERATIONS', 'transaction.view', VIEW),
   // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
   nowAssign('OPERATIONS', 'reporting.transaction_summary.view', VIEW),
