@@ -230,14 +230,19 @@ function responseMessage(exceptionResponse: unknown): unknown {
  * Sanitizes the message value. Array elements are individually sanitized; a hostile array
  * (throwing element access) fails closed to the generic redaction. Non-string values fail
  * closed inside redactSensitiveText's own type guard.
+ *
+ * Report 23 finding 2: `Array.isArray()` itself throws a TypeError on a revoked Proxy
+ * ("Cannot perform 'IsArray' on a proxy that has been revoked"), so the array check and the
+ * mapping share one guard — a revoked/hostile message value degrades to `[REDACTED]` and can
+ * never abort the response.
  */
 function sanitizeMessageValue(message: unknown): string | string[] {
-  if (Array.isArray(message)) {
-    try {
+  try {
+    if (Array.isArray(message)) {
       return (message as unknown[]).map((item) => redactSensitiveText(item as string));
-    } catch {
-      return REDACTED_VALUE;
     }
+  } catch {
+    return REDACTED_VALUE;
   }
   return redactSensitiveText(message as string);
 }
