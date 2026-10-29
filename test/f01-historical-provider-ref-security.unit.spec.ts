@@ -307,4 +307,96 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
       `Delivery recorded providerRef=${safeToken}`,
     );
   });
+
+  /**
+   * R-03 (Arena 4 report 13, final F-01 acceptance of 30c3445): the text-redactor exemption
+   * previously accepted any value STARTING with a canonical `pvr1:<scope>:<32 hex>` prefix
+   * (`\b` word boundary after the digest), so a malformed value such as
+   * `pvr1:brevo:<32hex>:F01_SUFFIX_SENTINEL_TX_NGN_999000` bypassed redaction IN FULL.
+   * The exemption now requires the ENTIRE captured value to be a canonical token: it must be
+   * followed by a value terminator (comma, closing brace, whitespace, quote) or end of string.
+   */
+  it('R-03: redacts malformed pvr1-prefixed values in full — colon suffixes, appended credentials and financial sentinels', () => {
+    const digest = '0123456789abcdef0123456789abcdef';
+    const cases: Array<[string, string]> = [
+      // The exact audit finding: valid token + colon suffix carrying a financial sentinel.
+      [`providerRef=pvr1:brevo:${digest}:F01_SUFFIX_SENTINEL_TX_NGN_999000`, 'F01_SUFFIX_SENTINEL_TX_NGN_999000'],
+      // Appended credential material directly after the digest (no separator).
+      [`provider_ref=pvr1:robase:${digest}xkeysib-APPENDED_CREDENTIAL_123456`, 'APPENDED_CREDENTIAL_123456'],
+      // Appended financial prose/sentinel after a non-canonical separator.
+      [`lastTestProviderRef=pvr1:external:${digest}-NGN_999000_JOURNAL_LEAK`, 'NGN_999000_JOURNAL_LEAK'],
+      [`last_test_provider_ref=pvr1:resend:${digest}:SUFFIX`, 'SUFFIX'],
+      [`last_tested_provider_ref=pvr1:brevo:${digest};TRAILING_SECRET_777`, 'TRAILING_SECRET_777'],
+    ];
+    for (const [input, forbidden] of cases) {
+      const redacted = redactSensitiveText(input);
+      expect(redacted).not.toContain(forbidden);
+      expect(redacted).not.toContain(digest);
+      expect(redacted).toContain(REDACTED_VALUE);
+    }
+  });
+
+  it('R-03: redacts JSON-quoted malformed provider references while keeping output JSON-parseable', () => {
+    const digest = 'fedcba9876543210fedcba9876543210';
+    const malicious = `{"status":"SENT","providerRef":"pvr1:brevo:${digest}:F01_JSON_SUFFIX_TX_NGN_999000"}`;
+    const redacted = redactSensitiveText(malicious);
+    expect(redacted).not.toContain('F01_JSON_SUFFIX_TX_NGN_999000');
+    expect(redacted).not.toContain(digest);
+    // Separator (including the JSON quotes/colon) is preserved, so structure stays parseable.
+    const parsed = JSON.parse(redacted) as Record<string, unknown>;
+    expect(parsed.status).toBe('SENT');
+    expect(parsed.providerRef).toBe(REDACTED_VALUE);
+
+    // A legitimate JSON-quoted canonical token is preserved verbatim and stays parseable.
+    const legitimate = `{"status":"SENT","providerRef":"pvr1:brevo:${digest}"}`;
+    expect(redactSensitiveText(legitimate)).toBe(legitimate);
+  });
+
+  it('R-03: whitespace and delimiter boundaries — exempt canonical tokens end at the value boundary only', () => {
+    const digest = 'abcdef0123456789abcdef0123456789';
+    const token = `pvr1:resend:${digest}`;
+    // Whitespace around the separator, token followed by space/comma/brace/end: all preserved.
+    expect(redactSensitiveText(`providerRef = ${token} and more text`)).toBe(`providerRef = ${token} and more text`);
+    expect(redactSensitiveText(`providerRef=${token}, status=SENT`)).toBe(`providerRef=${token}, status=SENT`);
+    expect(redactSensitiveText(`{"providerRef":"${token}"}`)).toBe(`{"providerRef":"${token}"}`);
+    expect(redactSensitiveText(`providerRef=${token}`)).toBe(`providerRef=${token}`);
+    // A malicious value whose suffix contains whitespace still loses everything up to the boundary.
+    const spaced = redactSensitiveText(`providerRef=${token}:SECRET suffix after space`);
+    expect(spaced).not.toContain('SECRET');
+    expect(spaced).toContain(`providerRef=${REDACTED_VALUE}`);
+  });
+
+  it('R-03: malformed scopes and digests are never exempt', () => {
+    const digest = '11223344556677889900aabbccddeeff';
+    const malformed: string[] = [
+      `providerRef=pvr1:mailgun:${digest}`, // non-canonical scope
+      `providerRef=pvr1:brevo:${digest.slice(0, 31)}`, // 31-hex digest
+      `providerRef=pvr1:brevo:${digest}0`, // 33-hex digest
+      `providerRef=pvr1:brevo:${digest.replace('f', 'z')}`, // non-hex character in digest
+      `providerRef=pvr2:brevo:${digest}`, // wrong token version
+      `providerRef=PVR1:brevo:${digest}:SUFFIX_SENTINEL_999`, // suffix still redacts despite casing
+    ];
+    for (const input of malformed) {
+      const redacted = redactSensitiveText(input);
+      expect(redacted).toContain(`providerRef=${REDACTED_VALUE}`);
+      expect(redacted).not.toContain('SUFFIX_SENTINEL_999');
+      expect(redacted).not.toMatch(/pvr\d:brevo:[0-9a-f]{8}/i);
+    }
+  });
+
+  it('R-03: preserves legitimate exact canonical tokens for every scope in both separator forms', () => {
+    const tokens = [
+      'pvr1:robase:0123456789abcdef0123456789abcdef',
+      'pvr1:brevo:fedcba9876543210fedcba9876543210',
+      'pvr1:resend:abcdef0123456789abcdef0123456789',
+      'pvr1:external:11223344556677889900aabbccddeeff',
+    ];
+    for (const token of tokens) {
+      expect(redactSensitiveText(`providerRef=${token}`)).toBe(`providerRef=${token}`);
+      expect(redactSensitiveText(`provider_ref: ${token}`)).toBe(`provider_ref: ${token}`);
+      expect(redactSensitiveText(`delivered providerRef=${token}, attempts=1`)).toBe(
+        `delivered providerRef=${token}, attempts=1`,
+      );
+    }
+  });
 });

@@ -54,8 +54,19 @@ export function redactSensitiveText(value: string): string {
       (_match, key: string) => `${key}=${REDACTED_VALUE}`,
     )
     .replace(
-      /(providerRef|provider_ref|lastTestProviderRef|last_tested_provider_ref|last_test_provider_ref)\s*[:=]\s*(?!pvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}\b)([^,\s}"']+)/gi,
-      (_match, key: string) => `${key}=${REDACTED_VALUE}`,
+      /**
+       * SPRINT1-F01 residual R-03 (Arena 4 report 13): the exemption lookahead previously ended
+       * with `\b` after the 32-hex digest, so ANY value merely STARTING with a canonical
+       * `pvr1:<scope>:<32 hex>` token (e.g. `pvr1:brevo:<32hex>:<SENSITIVE_SUFFIX>`) bypassed
+       * redaction in full and leaked through 4xx bodies / 5xx structured logs. The exemption now
+       * requires the ENTIRE captured value to be a canonical token: the digest must be followed
+       * by a value terminator (anything outside the value character class: comma, closing brace,
+       * whitespace, quote) or end of string; everything else is redacted completely.
+       * The separator group additionally accepts JSON-quoted forms (`"providerRef":"..."`) and is
+       * preserved verbatim in the replacement so redacted JSON text stays parseable.
+       */
+      /(providerRef|provider_ref|lastTestProviderRef|last_tested_provider_ref|last_test_provider_ref)(["']?\s*[:=]\s*["']?)(?!pvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?![^,\s}"']))([^,\s}"']+)/gi,
+      (_match, key: string, separator: string) => `${key}${separator}${REDACTED_VALUE}`,
     )
     .replace(
       /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
