@@ -4,6 +4,8 @@
 
 **Status:** discovery complete; proposals await Product Owner approval. No redesign implementation, feature, provider activation, deployment or financial/security change is included. Existing notification reliability work is not production-ready and Arena 4's independent security acceptance remains open.
 
+**Follow-up:** the [M0 design validation and owner decision pack](m0/README.md) adds targeted simulated verification, explicit decisions, nonfunctional concepts and a proposed M1 file boundary. Approval and a separately provisioned design workspace are still required before M1.
+
 ## Executive assessment
 
 MonieNaija has a stronger functional foundation than its fragmented visual language suggests: Customer 360 has coherent responsive styling and form semantics; Agent mobile already distinguishes many backend outcomes and gates services using server capabilities; admin navigation contains permission checks; several flows preserve replay/unknown outcomes and secret handling. A premium redesign should **retain those controls**, make money/state/identity more legible, and reduce operator cognitive load—not replace domain behavior.
