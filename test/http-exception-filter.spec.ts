@@ -224,3 +224,65 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
     expect(logged).not.toContain('HOSTILE_SPACE_SENTINEL_998');
   });
 });
+
+/**
+ * Arena 4 report 15 (retest of d59689e) at the HTTP boundary: unicode-escaped JSON keys,
+ * unquoted Bearer credentials and key-less canonical-reference whitespace suffixes must not
+ * survive 4xx bodies, 5xx structured logs or validation arrays; ordinary `code: 400`
+ * diagnostics must stay readable.
+ */
+describe('GlobalExceptionFilter — report-15 residual findings', () => {
+  const VALID_TOKEN = 'pvr1:brevo:fedcba9876543210fedcba9876543210';
+
+  it('4xx: unicode-escaped JSON property names are decoded and their values redacted', () => {
+    const { response } = runFilter(
+      new BadRequestException(`{"api\\u004Bey":"UNICODE_KEY_HTTP_SENTINEL","provider\\u0052ef":"${VALID_TOKEN} UNICODE_REF_SUFFIX_SENTINEL"}`),
+    );
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain('UNICODE_KEY_HTTP_SENTINEL');
+    expect(serialized).not.toContain('UNICODE_REF_SUFFIX_SENTINEL');
+    expect(serialized).not.toContain(VALID_TOKEN);
+  });
+
+  it('5xx: unquoted Authorization Bearer credentials cannot reach the structured log', () => {
+    const { response, loggerCalls } = runFilter(
+      new Error('upstream rejected authorization: Bearer BEARER_HTTP_SENTINEL_999 for request'),
+    );
+    expect(response.statusCode).toBe(500);
+    const logged = JSON.stringify(loggerCalls[0]);
+    expect(logged).not.toContain('BEARER_HTTP_SENTINEL_999');
+    expect(logged).toContain(REDACTED_VALUE);
+    expect(logged).toContain('for request'); // trailing prose after a delimiter stays readable
+  });
+
+  it('4xx: key-less canonical reference with a whitespace suffix is redacted from the body', () => {
+    const { response } = runFilter(
+      new BadRequestException(`Opaque reference ${VALID_TOKEN} KEYLESS_HTTP_SENTINEL`),
+    );
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain('KEYLESS_HTTP_SENTINEL');
+    expect(serialized).toContain('Opaque reference');
+  });
+
+  it('4xx: validation-array items with escaped keys and Bearer credentials are redacted', () => {
+    const exception = new BadRequestException({
+      message: [
+        `{"authorization":"Bearer ARRAY_BEARER_SENTINEL_A"}`,
+        `plain authorization: Bearer ARRAY_BEARER_SENTINEL_B`,
+        `{"retry\\u0041fter":"unused"}`,
+      ],
+      error: 'Bad Request',
+    });
+    const { response } = runFilter(exception);
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain('ARRAY_BEARER_SENTINEL_A');
+    expect(serialized).not.toContain('ARRAY_BEARER_SENTINEL_B');
+    const messages = response.body.message as string[];
+    expect(messages[2]).toBe(`{"retry\\u0041fter":"unused"}`); // non-sensitive escaped key preserved verbatim
+  });
+
+  it('4xx: ordinary code/statusCode diagnostics remain readable end-to-end', () => {
+    const { response } = runFilter(new BadRequestException('The code: 400 was expected'));
+    expect(response.body.message).toBe('The code: 400 was expected');
+  });
+});

@@ -297,3 +297,182 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
     });
   });
 });
+
+/**
+ * Arena 4 report 15 (retest of d59689e) — five residual findings, permanent adversarial tests.
+ * Reproductions (all FAILED on d59689e before the report-15 scanner rework):
+ *  F1 unicode-escaped JSON keys; F2 unquoted multi-word authorization values;
+ *  F3 key-less canonical token + whitespace suffix; F4 nested JSON-in-string truncation;
+ *  F5 `code: 400` false positive.
+ */
+describe('redactSensitiveText — report-15 findings (escaped keys, headers, key-less refs, nested JSON, code fidelity)', () => {
+  const BREVO = 'pvr1:brevo:fedcba9876543210fedcba9876543210';
+  const ROBASE = 'pvr1:robase:0123456789abcdef0123456789abcdef';
+
+  describe('F1 — JSON unicode-escaped sensitive property names', () => {
+    it('redacts values under unicode-escaped apiKey/authorization/secret/token keys in valid JSON', () => {
+      const input = `{"api\\u004Bey":"UNICODE_KEY_SECRET_SENTINEL"}`;
+      const out = redactSensitiveText(input);
+      expect(out).not.toContain('UNICODE_KEY_SECRET_SENTINEL');
+      const parsed = JSON.parse(out) as Record<string, unknown>;
+      expect(parsed.apiKey).toBe(REDACTED_VALUE);
+
+      const mixed = `{"auth\\u006frization":"UNICODE_AUTH_SENTINEL","\\u0073ecret":"UNICODE_SECRET_SENTINEL","token":"UNICODE_TOKEN_SENTINEL"}`;
+      const outMixed = redactSensitiveText(mixed);
+      for (const s of ['UNICODE_AUTH_SENTINEL', 'UNICODE_SECRET_SENTINEL', 'UNICODE_TOKEN_SENTINEL']) {
+        expect(outMixed).not.toContain(s);
+      }
+      const parsedMixed = JSON.parse(outMixed) as Record<string, unknown>;
+      expect(parsedMixed.authorization).toBe(REDACTED_VALUE);
+      expect(parsedMixed.secret).toBe(REDACTED_VALUE);
+      expect(parsedMixed.token).toBe(REDACTED_VALUE);
+    });
+
+    it('redacts an escaped providerRef key whose value carries a whitespace suffix', () => {
+      const input = `{"provider\\u0052ef":"${BREVO} SUFFIX_SENTINEL"}`;
+      const out = redactSensitiveText(input);
+      expect(out).not.toContain('SUFFIX_SENTINEL');
+      expect(out).not.toContain(BREVO);
+      const parsed = JSON.parse(out) as Record<string, unknown>;
+      expect(parsed.providerRef).toBe(REDACTED_VALUE);
+    });
+
+    it('preserves an escaped providerRef key whose complete value is a canonical token', () => {
+      const input = `{"provider\\u0052ef":"${ROBASE}"}`;
+      const out = redactSensitiveText(input);
+      expect(JSON.parse(out)).toEqual({ providerRef: ROBASE });
+    });
+
+    it('fails safe on malformed (unbalanced) text containing escaped key spellings', () => {
+      const unbalanced = `{"api\\u004Bey":"UNICODE_MALFORMED_SENTINEL"`;
+      const out = redactSensitiveText(unbalanced);
+      expect(out).not.toContain('UNICODE_MALFORMED_SENTINEL');
+      expect(out).toContain(REDACTED_VALUE);
+
+      const bareEscapes = `\\u0061\\u0070\\u0069\\u004B\\u0065\\u0079=FULLY_ESCAPED_KEY_SENTINEL`;
+      const outBare = redactSensitiveText(bareEscapes);
+      expect(outBare).not.toContain('FULLY_ESCAPED_KEY_SENTINEL');
+    });
+  });
+
+  describe('F2 — unquoted multi-word authorization/header values', () => {
+    it('redacts the complete Bearer/Basic credential region, not just the scheme word', () => {
+      expect(redactSensitiveText('authorization: Bearer BEARER_SECRET_SENTINEL')).toBe(
+        `authorization: ${REDACTED_VALUE}`,
+      );
+      expect(redactSensitiveText('Authorization: Basic BASIC_CRED_SENTINEL_123')).toBe(
+        `Authorization: ${REDACTED_VALUE}`,
+      );
+      expect(redactSensitiveText('AUTHORIZATION = BEARER UPPER_CRED_SENTINEL')).toBe(
+        `AUTHORIZATION = ${REDACTED_VALUE}`,
+      );
+      // Region extension consumes sentinel-shaped runs but stops before ordinary prose
+      // ("confirm ordinary error text is not unnecessarily destroyed" — report 15).
+      expect(redactSensitiveText('x-api-key: XAPI_SECRET_SENTINEL tail')).toBe(
+        `x-api-key: ${REDACTED_VALUE} tail`,
+      );
+    });
+
+    it('consumes multi-run unquoted values for generic sensitive keys up to a safe delimiter', () => {
+      expect(redactSensitiveText('apiKey=SECRET_PART_ONE SECRET_PART_TWO')).toBe(`apiKey=${REDACTED_VALUE}`);
+      // A following key=value pair or hard delimiter stops the region (diagnostics preserved).
+      expect(redactSensitiveText('token=TOK_A TOK_B, status=FAILED')).toBe(
+        `token=${REDACTED_VALUE}, status=FAILED`,
+      );
+      // Newline terminates header-style values.
+      expect(redactSensitiveText('authorization: Bearer MULTI_LINE_CRED\nrequestId=req-1')).toBe(
+        `authorization: ${REDACTED_VALUE}\nrequestId=req-1`,
+      );
+    });
+  });
+
+  describe('F3 — key-less canonical provider reference with whitespace/newline suffix', () => {
+    it('fails safe when a sentinel-shaped run follows a bare canonical token', () => {
+      const out = redactSensitiveText(`Opaque reference ${BREVO} KEYLESS_SPACE_SENTINEL`);
+      expect(out).not.toContain('KEYLESS_SPACE_SENTINEL');
+      expect(out).not.toContain(BREVO);
+      expect(out).toBe(`Opaque reference ${REDACTED_VALUE}`);
+
+      const outNl = redactSensitiveText(`Opaque reference ${BREVO}\nKEYLESS_NEWLINE_SENTINEL`);
+      expect(outNl).not.toContain('KEYLESS_NEWLINE_SENTINEL');
+
+      const outJson = redactSensitiveText(`{"msg":"ref ${BREVO} KEYLESS_JSON_SENTINEL tail"}`);
+      expect(outJson).not.toContain('KEYLESS_JSON_SENTINEL');
+      expect(JSON.parse(outJson).msg).toContain(REDACTED_VALUE);
+    });
+
+    it('preserves bare canonical tokens surrounded by ordinary prose (no indiscriminate destruction)', () => {
+      expect(redactSensitiveText(`Opaque reference ${BREVO} recorded successfully`)).toBe(
+        `Opaque reference ${BREVO} recorded successfully`,
+      );
+      expect(redactSensitiveText(`Delivery ${ROBASE} completed at 2026-10-30T09:00:00Z`)).toBe(
+        `Delivery ${ROBASE} completed at 2026-10-30T09:00:00Z`,
+      );
+    });
+  });
+
+  describe('F4 — nested JSON-in-a-string keeps complete non-sensitive structure', () => {
+    it('redacts a stringified inner JSON secret while preserving sibling fields and outer validity', () => {
+      const input = JSON.stringify({
+        message: JSON.stringify({ apiKey: 'EMBED_SECRET_SENTINEL', next: 'PRESERVE_ME' }),
+        requestId: 'req-42',
+      });
+      const out = redactSensitiveText(input);
+      expect(out).not.toContain('EMBED_SECRET_SENTINEL');
+      const outer = JSON.parse(out) as { message: string; requestId: string };
+      expect(outer.requestId).toBe('req-42');
+      const inner = JSON.parse(outer.message) as Record<string, unknown>;
+      expect(inner.apiKey).toBe(REDACTED_VALUE);
+      expect(inner.next).toBe('PRESERVE_ME');
+    });
+
+    it('preserves trailing message text after an embedded stringified object', () => {
+      const input = JSON.stringify({
+        message: `${JSON.stringify({ token: 'EMBED_TOK_SENTINEL' })} trailing diagnostic text`,
+      });
+      const out = redactSensitiveText(input);
+      expect(out).not.toContain('EMBED_TOK_SENTINEL');
+      const outer = JSON.parse(out) as { message: string };
+      expect(outer.message).toContain('trailing diagnostic text');
+      expect(outer.message).toContain(REDACTED_VALUE);
+    });
+
+    it('handles three nesting levels and preserves canonical refs inside stringified JSON', () => {
+      const input = JSON.stringify({
+        a: JSON.stringify({ b: JSON.stringify({ secret: 'DEEP_SECRET_SENTINEL', keep: 'DEEP_KEEP' }) }),
+      });
+      const out = redactSensitiveText(input);
+      expect(out).not.toContain('DEEP_SECRET_SENTINEL');
+      const l1 = JSON.parse(out) as { a: string };
+      const l2 = JSON.parse(l1.a) as { b: string };
+      const l3 = JSON.parse(l2.b) as Record<string, unknown>;
+      expect(l3.secret).toBe(REDACTED_VALUE);
+      expect(l3.keep).toBe('DEEP_KEEP');
+
+      const withRef = JSON.stringify({ m: JSON.stringify({ providerRef: ROBASE, note: 'ok' }) });
+      const outRef = redactSensitiveText(withRef);
+      const m1 = JSON.parse(outRef) as { m: string };
+      const m2 = JSON.parse(m1.m) as Record<string, unknown>;
+      expect(m2.providerRef).toBe(ROBASE);
+      expect(m2.note).toBe('ok');
+    });
+  });
+
+  describe('F5 — ordinary diagnostic metadata stays readable', () => {
+    it('does not redact bare code/statusCode/errorCode prose or JSON fields', () => {
+      expect(redactSensitiveText('The code: 400 was expected')).toBe('The code: 400 was expected');
+      expect(redactSensitiveText('error code: BAD_REQUEST')).toBe('error code: BAD_REQUEST');
+      const body = `{"statusCode":500,"code":"INTERNAL_SERVER_ERROR","message":"boom","errorCode":"E_42"}`;
+      expect(redactSensitiveText(body)).toBe(body);
+    });
+
+    it('keeps genuinely sensitive code-family keys redacted', () => {
+      expect(redactSensitiveText('codeHash=CODEHASH_SENTINEL')).toBe(`codeHash=${REDACTED_VALUE}`);
+      expect(redactSensitiveText('recoveryCode=RECOVERY_SENTINEL')).toBe(`recoveryCode=${REDACTED_VALUE}`);
+      expect(redactSensitiveText('transferCode=TRANSFER_SENTINEL')).toBe(`transferCode=${REDACTED_VALUE}`);
+      expect(redactSensitiveText('{"challengeHash":"CHALLENGE_SENTINEL"}')).toBe(
+        `{"challengeHash":"${REDACTED_VALUE}"}`,
+      );
+    });
+  });
+});
