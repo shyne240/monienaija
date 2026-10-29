@@ -3,6 +3,7 @@ import type { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { SAFE_PROVIDER_REF_PATTERN } from '../notification/provider-security';
 import type { AuditService } from '../operations/audit.service';
 
 import { AdminNotificationController } from './admin-notification.controller';
@@ -325,9 +326,15 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
     expect(result.data[1]?.recipientId).toBe(AGENT_UUID);
     expect(result.data[2]?.recipientType).toBe('PHONE');
     expect(result.data[2]?.recipientId).toBe('*******678');
+    expect(result.data[0]?.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    expect(result.data[1]?.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    expect(result.data[2]?.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
 
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain('8012345678');
+    expect(serialized).not.toContain('resend-1');
+    expect(serialized).not.toContain('robase-1');
+    expect(serialized).not.toContain('robase-2');
     expect(serialized).not.toContain('"destination"');
     expect(serialized).not.toContain('"payload"');
     // SPRINT1-P0-02: rendered message text and raw provider errors are never projected.
@@ -396,5 +403,71 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
     const dataSql = String(query.mock.calls[1]?.[0] ?? '');
     expect(dataSql).not.toMatch(/\bmessage\b/);
     expect(dataSql).toMatch(/last_error/); // read solely to derive the sanitized errorCode
+  });
+
+  it('SPRINT1-F01: sanitizes historical raw provider_ref values across Robase, Brevo, Resend, and unknown providers while preserving already-safe pvr1 tokens', async () => {
+    const { controller, query } = setup();
+    const makeRow = (id: string, channel: 'SMS' | 'EMAIL', providerRef: string | null) => ({
+      id,
+      event_type: 'transfer.completed',
+      event_key: `evt-${id}`,
+      aggregate_type: 'WALLET_TRANSFER',
+      aggregate_id: null,
+      recipient_type: 'CUSTOMER',
+      recipient_id: CUSTOMER_UUID,
+      channel,
+      status: 'SENT',
+      attempts: 1,
+      provider_ref: providerRef,
+      correlation_id: null,
+      causation_id: null,
+      last_error: null,
+      created_at: new Date('2026-10-28T08:00:00.000Z'),
+      updated_at: new Date('2026-10-28T08:00:00.000Z'),
+      sent_at: new Date('2026-10-28T08:00:00.000Z'),
+      failed_at: null,
+    });
+
+    const safeRobase = 'pvr1:robase:0123456789abcdef0123456789abcdef';
+    const safeBrevo = 'pvr1:brevo:fedcba9876543210fedcba9876543210';
+    const safeResend = 'pvr1:resend:abcdef0123456789abcdef0123456789';
+    const safeExternal = 'pvr1:external:11223344556677889900aabbccddeeff';
+    const rawRobase = 'robe_HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890';
+    const rawBrevo = 'xkeysib-HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890';
+    const rawResend = 're_HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890';
+    const rawUnknown = 'unknown_sms_gateway:sk_live_HISTORICAL_UNKNOWN_TX_NGN_999999';
+
+    query.mockResolvedValueOnce([{ count: '8' }]).mockResolvedValueOnce([
+      makeRow('30000000-0000-4000-8000-000000000001', 'SMS', rawRobase),
+      makeRow('30000000-0000-4000-8000-000000000002', 'EMAIL', rawBrevo),
+      makeRow('30000000-0000-4000-8000-000000000003', 'EMAIL', rawResend),
+      makeRow('30000000-0000-4000-8000-000000000004', 'SMS', rawUnknown),
+      makeRow('30000000-0000-4000-8000-000000000005', 'SMS', safeRobase),
+      makeRow('30000000-0000-4000-8000-000000000006', 'EMAIL', safeBrevo),
+      makeRow('30000000-0000-4000-8000-000000000007', 'EMAIL', safeResend),
+      makeRow('30000000-0000-4000-8000-000000000008', 'SMS', safeExternal),
+    ]);
+
+    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
+    const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+
+    for (const item of result.data.slice(0, 4)) {
+      expect(item.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);
+    }
+    expect(result.data[4]?.providerRef).toBe(safeRobase);
+    expect(result.data[5]?.providerRef).toBe(safeBrevo);
+    expect(result.data[6]?.providerRef).toBe(safeResend);
+    expect(result.data[7]?.providerRef).toBe(safeExternal);
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('HISTORICAL_SENTINEL');
+    expect(serialized).not.toContain('HISTORICAL_UNKNOWN');
+    expect(serialized).not.toContain('750000');
+    expect(serialized).not.toContain('999999');
+    expect(serialized).not.toContain('1234567890');
+    expect(serialized).not.toContain('xkeysib-');
+    expect(serialized).not.toContain('robe_');
+    expect(serialized).not.toContain('re_HISTORICAL');
+    expect(serialized).not.toContain('unknown_sms_gateway');
   });
 });

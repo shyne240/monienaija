@@ -22,6 +22,12 @@ export class AuditService {
   ) {}
 
   async record(manager: EntityManager, command: AuditEventCommand): Promise<AuditEvent> {
+    const sanitizedPrevious = command.previousValues
+      ? sanitizeNotificationProviderAuditPayload(command.entityType, command.previousValues)
+      : null;
+    const sanitizedNew = command.newValues
+      ? sanitizeNotificationProviderAuditPayload(command.entityType, command.newValues)
+      : null;
     const event = manager.getRepository(AuditEvent).create({
       id: randomUUID(),
       entityType: command.entityType,
@@ -30,8 +36,8 @@ export class AuditService {
       actor: command.actor,
       correlationId: command.correlationId ?? null,
       requestId: command.requestId ?? null,
-      previousValues: command.previousValues ? redactRecord(command.previousValues) : null,
-      newValues: command.newValues ? redactRecord(command.newValues) : null,
+      previousValues: sanitizedPrevious ? redactRecord(sanitizedPrevious) : null,
+      newValues: sanitizedNew ? redactRecord(sanitizedNew) : null,
       occurredAt: command.occurredAt ?? new Date(),
     });
     return manager.getRepository(AuditEvent).save(event);
@@ -166,6 +172,101 @@ export class AuditService {
   }
 }
 
+const PROVIDER_REF_AUDIT_KEYS: ReadonlySet<string> = new Set([
+  'providerRef',
+  'provider_ref',
+  'lastTestProviderRef',
+  'last_tested_provider_ref',
+  'last_test_provider_ref',
+]);
+
+const PROVIDER_ERROR_AUDIT_KEYS: ReadonlySet<string> = new Set([
+  'errorCode',
+  'lastTestErrorCode',
+  'lastVerificationError',
+]);
+
+const KNOWN_NOTIFICATION_PROVIDER_LABELS: ReadonlySet<string> = new Set([
+  'robase',
+  'brevo',
+  'resend',
+  'console',
+  'console-email',
+  'none',
+  'test',
+  'test-email',
+  'managed',
+]);
+
+function sanitizeAuditValueTree(
+  value: unknown,
+  normalizeProviderErrors: boolean,
+  inheritedProviderHint: unknown,
+  seen: WeakSet<object>,
+): unknown {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const mapped = value.map((item) => {
+      const next = sanitizeAuditValueTree(
+        item,
+        normalizeProviderErrors,
+        inheritedProviderHint,
+        seen,
+      );
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? mapped : value;
+  }
+  if (!value || typeof value !== 'object' || value instanceof Date) {
+    return value;
+  }
+  if (seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+
+  const record = value as Record<string, unknown>;
+  const localProviderHint = 'provider' in record ? record['provider'] : inheritedProviderHint;
+  const hasProviderRefSibling = Object.keys(record).some((k) => PROVIDER_REF_AUDIT_KEYS.has(k));
+  let cloned: Record<string, unknown> | null = null;
+
+  for (const [key, entryValue] of Object.entries(record)) {
+    let nextValue: unknown = entryValue;
+    if (PROVIDER_REF_AUDIT_KEYS.has(key)) {
+      nextValue = sanitizeProviderRefForBoundary(entryValue, localProviderHint);
+    } else if (
+      key === 'provider' &&
+      (normalizeProviderErrors || hasProviderRefSibling) &&
+      typeof entryValue === 'string' &&
+      !KNOWN_NOTIFICATION_PROVIDER_LABELS.has(entryValue.trim().toLowerCase())
+    ) {
+      nextValue = 'external';
+    } else if (
+      normalizeProviderErrors &&
+      PROVIDER_ERROR_AUDIT_KEYS.has(key) &&
+      entryValue !== null &&
+      entryValue !== undefined
+    ) {
+      nextValue = normalizeProviderErrorCode(entryValue);
+    } else if (entryValue && typeof entryValue === 'object') {
+      nextValue = sanitizeAuditValueTree(
+        entryValue,
+        normalizeProviderErrors,
+        localProviderHint,
+        seen,
+      );
+    }
+
+    if (nextValue !== entryValue) {
+      if (!cloned) cloned = { ...record };
+      cloned[key] = nextValue;
+    }
+  }
+
+  return cloned ?? record;
+}
+
 function sanitizeNotificationProviderAuditPayload(
   entityType: string,
   payload: Record<string, unknown> | null,
@@ -173,61 +274,13 @@ function sanitizeNotificationProviderAuditPayload(
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return payload;
   }
-  if (
-    entityType !== 'NOTIFICATION_TEST_SEND' &&
-    entityType !== 'NOTIFICATION_PROVIDER_CONFIG'
-  ) {
-    return payload;
-  }
-
-  const hasDiagnosticField =
-    'providerRef' in payload ||
-    'lastTestProviderRef' in payload ||
-    'errorCode' in payload ||
-    'lastTestErrorCode' in payload ||
-    'lastVerificationError' in payload;
-  if (!hasDiagnosticField) {
-    return payload;
-  }
-
-  const sanitized: Record<string, unknown> = { ...payload };
-  const providerHint = payload['provider'];
-
-  if ('providerRef' in sanitized) {
-    sanitized['providerRef'] = sanitizeProviderRefForBoundary(
-      sanitized['providerRef'],
-      providerHint,
-    );
-  }
-  if ('lastTestProviderRef' in sanitized) {
-    sanitized['lastTestProviderRef'] = sanitizeProviderRefForBoundary(
-      sanitized['lastTestProviderRef'],
-      providerHint,
-    );
-  }
-  if (
-    'errorCode' in sanitized &&
-    sanitized['errorCode'] !== null &&
-    sanitized['errorCode'] !== undefined
-  ) {
-    sanitized['errorCode'] = normalizeProviderErrorCode(sanitized['errorCode']);
-  }
-  if (
-    'lastTestErrorCode' in sanitized &&
-    sanitized['lastTestErrorCode'] !== null &&
-    sanitized['lastTestErrorCode'] !== undefined
-  ) {
-    sanitized['lastTestErrorCode'] = normalizeProviderErrorCode(sanitized['lastTestErrorCode']);
-  }
-  if (
-    'lastVerificationError' in sanitized &&
-    sanitized['lastVerificationError'] !== null &&
-    sanitized['lastVerificationError'] !== undefined
-  ) {
-    sanitized['lastVerificationError'] = normalizeProviderErrorCode(
-      sanitized['lastVerificationError'],
-    );
-  }
-
-  return sanitized;
+  const normalizeProviderErrors =
+    entityType === 'NOTIFICATION_TEST_SEND' ||
+    entityType === 'NOTIFICATION_PROVIDER_CONFIG';
+  return sanitizeAuditValueTree(
+    payload,
+    normalizeProviderErrors,
+    payload['provider'],
+    new WeakSet<object>(),
+  ) as Record<string, unknown>;
 }

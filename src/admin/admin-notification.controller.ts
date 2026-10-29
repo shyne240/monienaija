@@ -9,6 +9,11 @@ import { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import {
+  redactDeliveryRecipientId,
+  sanitizeDeliveryErrorCode,
+  sanitizeProviderRefForBoundary,
+} from '../notification/provider-security';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -23,85 +28,12 @@ const SAFE_RECEIPT_REASONS = new Set([
   'MATERIALIZATION_FAILED', 'MATERIALIZATION_EXHAUSTED', 'LEGACY_PUBLISHED_UNVERIFIED',
 ]);
 
-/**
- * SPRINT1-P0-02 REMEDIATION (Arena 4 independent acceptance, 08-FINAL report): the diagnostics
- * projection previously returned the stored rendered `message` and the raw `last_error` string.
- * Rendered content can carry transaction amounts and recipient-specific data, and provider
- * error strings are an unverified disclosure surface. Both fields are removed from the SQL
- * projection and the JSON response. Failure/skip triage keeps a CLOSED allowlist of fixed
- * first-party operational codes (written by NotificationDispatcherService,
- * NotificationChannelResolverService and NotificationWorkerService — never provider prose);
- * any other non-null stored error is exposed only as the fixed sentinel 'UNCLASSIFIED'.
- * The raw value remains in the database for authorized server-side investigation; no
- * "preview" of message content is exposed pending data-owner approval.
- */
-const SAFE_DELIVERY_ERROR_CODES: ReadonlySet<string> = new Set([
-  'SKIPPED',
-  'EVENT_DISABLED',
-  'UNSAFE_MESSAGE',
-  'SMS_OPT_OUT',
-  'EMAIL_OPT_OUT',
-  'PUSH_OPT_OUT',
-  'PUSH_TOKEN_DEPENDENCY_MISSING',
-  'CUSTOMER_PHONE_MISSING',
-  'CUSTOMER_EMAIL_MISSING',
-  'AGENT_PHONE_DEPENDENCY_MISSING',
-  'AGENT_EMAIL_DEPENDENCY_MISSING',
-  'INVALID_PHONE_RECIPIENT',
-  'UNSUPPORTED_RECIPIENT',
-  'SMS_PREFERENCE_UNAVAILABLE',
-  'EMAIL_PREFERENCE_UNAVAILABLE',
-  'PUSH_PREFERENCE_UNAVAILABLE',
-  'CUSTOMER_PHONE_VERIFIED_MISSING',
-  'CUSTOMER_EMAIL_VERIFIED_MISSING',
-  'CUSTOMER_PHONE_INVALID',
-  'PHONE_RECIPIENT_UNVERIFIED',
-  'DESTINATION_CHANGED',
-  'SECURITY_DIRECT_ONLY',
-  'PRE_SEND_FAILED',
-  'PROVIDER_OR_CONTENT_UNAVAILABLE',
-  'PROVIDER_OUTCOME_UNKNOWN',
-  'PROVIDER_REJECTED_RETRYABLE',
-  'PROVIDER_REJECTED_OR_EXHAUSTED',
-  'LEASE_EXPIRED_AFTER_START',
-  'LEASE_EXPIRED_BEFORE_SEND',
-  'ATTEMPTS_EXHAUSTED',
-  'LEGACY_DELIVERY_OUTCOME_UNKNOWN',
-]);
-
-/** Maps a stored last_error to a safe response code: allowlisted code, 'UNCLASSIFIED', or null. */
-function sanitizeDeliveryErrorCode(lastError: string | null): string | null {
-  if (lastError === null || lastError === undefined || lastError.trim() === '') return null;
-  return SAFE_DELIVERY_ERROR_CODES.has(lastError) ? lastError : 'UNCLASSIFIED';
-}
 const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT', 'PHONE']);
 // ARENA3-NOTIFICATION-EMAIL: EMAIL rows are filterable in delivery diagnostics.
 const VALID_CHANNELS = new Set(['SMS', 'PUSH', 'EMAIL']);
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-}
-
-/**
- * Redacts direct recipient identifiers (such as unregistered Cash-to-Cash beneficiary phone
- * numbers stored in `recipient_id` for `recipient_type = 'PHONE'`) while preserving opaque
- * `CUSTOMER` and `AGENT` UUIDs. Raw destination values are never projected.
- */
-function redactRecipientId(recipientType: string, recipientId: string): string {
-  if (recipientType !== 'PHONE' && isUuid(recipientId)) {
-    return recipientId;
-  }
-  if (recipientId.includes('@')) {
-    const [local = '', domain = ''] = recipientId.split('@');
-    const keep = Math.min(2, local.length);
-    return `${local.slice(0, keep)}***@${domain}`;
-  }
-  const digits = recipientId.replace(/\D/g, '');
-  if (digits.length === 0) {
-    return '***';
-  }
-  const keep = Math.min(3, digits.length);
-  return `${recipientId.slice(0, Math.max(0, recipientId.length - keep)).replace(/\d/g, '*')}${digits.slice(-keep)}`;
 }
 
 @Controller('internal/notifications')
@@ -215,11 +147,11 @@ export class AdminNotificationController {
       aggregateType: r.aggregate_type,
       aggregateId: r.aggregate_id,
       recipientType: r.recipient_type,
-      recipientId: redactRecipientId(r.recipient_type, r.recipient_id),
+      recipientId: redactDeliveryRecipientId(r.recipient_type, r.recipient_id),
       channel: r.channel,
       status: r.status,
       attempts: r.attempts,
-      providerRef: r.provider_ref,
+      providerRef: sanitizeProviderRefForBoundary(r.provider_ref),
       correlationId: r.correlation_id,
       causationId: r.causation_id,
       errorCode: sanitizeDeliveryErrorCode(r.last_error),
