@@ -1,3 +1,4 @@
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import type { NotificationIntent } from './notification.types';
 import { canonicalNotificationEvent } from './notification-template.service';
@@ -19,7 +20,12 @@ export function mapEventToIntents(
   payload: Record<string, unknown>,
   outbox: { correlationId: string | null; causationId: string | null },
 ): NotificationIntent[] {
-  const correlationId = outbox.correlationId;
+  // Report 26 (N-02): correlation ids persisted on outbox rows by
+  // pre-remediation producers (or any future non-choke-point writer) are
+  // sanitized here so every generated intent — and thus every delivery record
+  // and provider log derived from it — can only carry a bounded, redacted
+  // value. Deterministic: legitimate ids pass through byte-for-byte.
+  const correlationId = sanitizeDiagnosticIdentifier(outbox.correlationId) ?? null;
   const causationId = outbox.causationId;
 
   // Customer funding approved / rejected — single CUSTOMER SMS

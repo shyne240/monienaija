@@ -12,6 +12,7 @@ import {
   REDACTED_VALUE,
   redactDiagnosticPath,
   redactSensitiveText,
+  stripDiagnosticUrlQueries,
 } from './common/sensitive-data-redaction';
 import { getRequestContext, type RequestContext } from './production/request-context';
 
@@ -228,25 +229,32 @@ function responseMessage(exceptionResponse: unknown): unknown {
  * ("Cannot perform 'IsArray' on a proxy that has been revoked"), so the array check and the
  * mapping share one guard — a revoked/hostile message value degrades to `[REDACTED]` and can
  * never abort the response.
+ *
+ * Report 26 finding N-01: messages can embed raw request URLs (Nest's unmatched-route
+ * `Cannot <METHOD> <url>` carries the query string), so URL-shaped tokens are truncated at
+ * the first '?'/'#' BEFORE credential redaction — arbitrary query parameters and
+ * percent-encoded scheme credentials can never be reflected into error bodies.
  */
 function sanitizeMessageValue(message: unknown): string | string[] {
   try {
     if (Array.isArray(message)) {
-      return (message as unknown[]).map((item) => redactSensitiveText(item as string));
+      return (message as unknown[]).map((item) =>
+        redactSensitiveText(stripDiagnosticUrlQueries(item as string)),
+      );
     }
   } catch {
     return REDACTED_VALUE;
   }
-  return redactSensitiveText(message as string);
+  return redactSensitiveText(stripDiagnosticUrlQueries(message as string));
 }
 
 /**
  * Report 19 finding B + report 21 finding 2: the returned `error` field is sanitized when it
  * is a readable string and fails closed to the canonical code when it is absent, unreadable
- * (throwing getter) or not a string.
+ * (throwing getter) or not a string. Report 26: URL query stripping applies here too.
  */
 function responseErrorField(exceptionResponse: unknown, code: string): string {
   if (typeof exceptionResponse !== 'object' || exceptionResponse === null) return code;
   const error = safeGet(exceptionResponse, 'error');
-  return typeof error === 'string' ? redactSensitiveText(error) : code;
+  return typeof error === 'string' ? redactSensitiveText(stripDiagnosticUrlQueries(error)) : code;
 }

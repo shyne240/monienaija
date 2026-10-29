@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { PrivilegedActionApproval } from '../authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
@@ -33,7 +34,7 @@ export function fundingFingerprint(
     currency: normalizeCurrency(input.currency ?? 'NGN'),
     idempotencyKey: input.idempotencyKey.trim(),
     reference: input.reference?.trim() || `${direction}-${input.idempotencyKey.trim()}`,
-    correlationId: input.correlationId?.trim() || null,
+    correlationId: sanitizeDiagnosticIdentifier(input.correlationId) ?? null,
     description: input.description?.trim() || null,
     metadata: input.metadata ?? {},
   });
@@ -103,7 +104,7 @@ export class AgentFundingGovernanceService {
         currency: normalizeCurrency(input.currency ?? 'NGN'),
         idempotencyKey: input.idempotencyKey.trim(),
         reference: input.reference?.trim() || `${direction}-${input.idempotencyKey.trim()}`,
-        correlationId: input.correlationId?.trim() || null,
+        correlationId: sanitizeDiagnosticIdentifier(input.correlationId) ?? null,
         description: input.description?.trim() || null,
         metadata: input.metadata ?? {},
       },

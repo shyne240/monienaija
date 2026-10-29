@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
 
@@ -58,7 +59,9 @@ export class AgentCashToCashExpiryService {
       throw new BadRequestException('statementTimeoutMs must be an integer between 100 and 60000');
     }
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-    const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
+    // Report 26 (N-02): bounded, deterministic sanitization of the caller-supplied
+    // business correlation id (legitimate ids preserved byte-for-byte).
+    const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
     const actor = input.actor?.trim() ? input.actor.trim() : 'system-expiry';
 
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {

@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
+
 import {
   NOTIFICATION_EMAIL_PROVIDER_TOKEN,
   NOTIFICATION_EMAIL_TEMPLATE_TOKEN,
@@ -137,6 +139,11 @@ export class NotificationDispatcherService {
     if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
     const payload = command.payload ?? {};
     const safePayload = this.templateService.redactPayload(payload, eventType);
+    // Report 26 (N-02): the caller/outbox-supplied correlation id is sanitized
+    // ONCE here, before it reaches intent mapping and the delivery-row INSERT;
+    // rows persisted by pre-remediation producers are covered by this same
+    // normalization when their events are (re)dispatched.
+    const correlationId = sanitizeDiagnosticIdentifier(command.correlationId) ?? null;
     const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     // A completed internal transfer needs both sides; a producer missing either side is
@@ -145,7 +152,7 @@ export class NotificationDispatcherService {
     // A missing internal/public marker is not evidence that a support message is public.
     if (eventType === 'support.ticket.message_added' && payload.isInternal !== false) return result;
     let intents = mapEventToIntents(eventType, payload, {
-      correlationId: command.correlationId ?? null,
+      correlationId,
       causationId: command.causationId ?? null,
     });
     if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
@@ -196,7 +203,7 @@ export class NotificationDispatcherService {
           intent.recipientType, intent.recipientId, intent.channel, destination,
           JSON.stringify({ ...safePayload, _templateKey: intent.templateKey }), message,
           email?.subject ?? null, email?.html ?? null, status, resolved.reason ?? null,
-          command.correlationId ?? null, command.causationId ?? null],
+          correlationId, command.causationId ?? null],
       );
       let delivery: DispatchResult['deliveries'][number] & { inserted?: boolean };
       if (inserted[0]) {
@@ -316,6 +323,9 @@ export class NotificationDispatcherService {
           : row['recipient_id'],
         provider_ref: sanitizeProviderRefForBoundary(row['provider_ref']),
         last_error: sanitizeDeliveryErrorCode(row['last_error']),
+        // Report 26 (row 15): read-boundary protection — delivery rows persisted
+        // before write-side sanitization are masked when projected to consumers.
+        correlation_id: sanitizeDiagnosticIdentifier(row['correlation_id']) ?? null,
       };
       delete sanitized['message'];
       delete sanitized['rendered_subject'];

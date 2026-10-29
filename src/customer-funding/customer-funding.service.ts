@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
@@ -140,7 +141,9 @@ export class CustomerFundingService {
     const externalReference = this.optionalText(input.externalReference, 'externalReference', 255);
     const channel = this.optionalText(input.channel, 'channel', 64);
     const description = this.optionalText(input.description, 'description', 255);
-    const correlationId = this.optionalText(input.correlationId, 'correlationId', 255);
+    const correlationId = sanitizeDiagnosticIdentifier(
+      this.optionalText(input.correlationId, 'correlationId', 255),
+    );
     const principal = this.assertWorkforcePrincipal(input.principal, 'create');
     // Create allowed for SUPPORT, OPERATOR, SERVICE, PRIVILEGED
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
@@ -285,7 +288,9 @@ export class CustomerFundingService {
 
   async approve(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
     const fundingRequestId = this.assertUuid(input.fundingRequestId, 'fundingRequestId');
-    const correlationId = this.optionalText(input.correlationId, 'correlationId', 255);
+    const correlationId = sanitizeDiagnosticIdentifier(
+      this.optionalText(input.correlationId, 'correlationId', 255),
+    );
     const principal = this.assertWorkforcePrincipal(input.principal, 'approve');
     const checkerId = principal.principalId;
     const checkerType = principal.type;
@@ -562,7 +567,9 @@ export class CustomerFundingService {
 
   async reject(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
     const fundingRequestId = this.assertUuid(input.fundingRequestId, 'fundingRequestId');
-    const correlationId = this.optionalText(input.correlationId, 'correlationId', 255);
+    const correlationId = sanitizeDiagnosticIdentifier(
+      this.optionalText(input.correlationId, 'correlationId', 255),
+    );
     const rejectionReason = this.optionalText(input.rejectionReason, 'rejectionReason', 500);
     if (!rejectionReason || rejectionReason.trim().length === 0) {
       throw new BadRequestException('rejectionReason is required for rejection');

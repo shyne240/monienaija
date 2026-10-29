@@ -14,6 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
@@ -208,7 +209,9 @@ export class AgentCashToCashService {
     const description = input.description?.trim()
       ? input.description.trim()
       : `Cash→Cash ${amountString} NGN from Agent ${agentId} to ${canonicalPhone}`;
-    const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
+    // Report 26 (N-02): bounded, deterministic sanitization of the caller-supplied
+    // business correlation id (legitimate ids preserved byte-for-byte).
+    const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
     // For ledger post, we need unclaimed account id. Fetch outside transaction or inside.
     const unclaimedAccount = await this.getUnclaimedAccount();

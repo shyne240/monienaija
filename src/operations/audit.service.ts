@@ -4,7 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
-import { redactRecord } from '../common/sensitive-data-redaction';
+import { redactRecord, sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import {
   normalizeProviderErrorCode,
   sanitizeProviderRefForBoundary,
@@ -34,7 +34,11 @@ export class AuditService {
       entityId: command.entityId,
       action: command.action,
       actor: command.actor,
-      correlationId: command.correlationId ?? null,
+      // Report 26 (N-02): caller-supplied business correlation ids reach this choke
+      // point from DTOs/commands that never pass through the request-context
+      // sanitizer; they are bounded and redacted deterministically before
+      // persistence (legitimate ids are preserved byte-for-byte).
+      correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
       requestId: command.requestId ?? null,
       previousValues: sanitizedPrevious ? redactRecord(sanitizedPrevious) : null,
       newValues: sanitizedNew ? redactRecord(sanitizedNew) : null,
@@ -102,9 +106,15 @@ export class AuditService {
       builder.andWhere('audit.entity_id = :entityId', { entityId: query.entityId });
     }
     if (query.correlationId) {
-      builder.andWhere('audit.correlation_id = :correlationId', {
-        correlationId: query.correlationId,
-      });
+      // Report 26 (N-02): the query side applies the SAME deterministic
+      // sanitization as the write side, so legitimate-id lookups are unchanged
+      // and credential-shaped lookups match the sanitized stored values.
+      const correlationFilter = sanitizeDiagnosticIdentifier(query.correlationId);
+      if (correlationFilter) {
+        builder.andWhere('audit.correlation_id = :correlationId', {
+          correlationId: correlationFilter,
+        });
+      }
     }
     const includeNotificationProviderRecords = Boolean(
       (query as Record<symbol, unknown>)[ALLOW_NOTIFICATION_PROVIDER_AUDIT],
@@ -148,7 +158,9 @@ export class AuditService {
       entityId: event.entityId,
       action: event.action,
       actor: event.actor,
-      correlationId: event.correlationId,
+      // Report 26 (row 15): read-boundary protection — persisted rows written
+      // before this remediation are masked when projected to consumers.
+      correlationId: sanitizeDiagnosticIdentifier(event.correlationId) ?? null,
       requestId: event.requestId,
       previousValues: sanitizeNotificationProviderAuditPayload(
         event.entityType,

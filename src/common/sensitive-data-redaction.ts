@@ -1083,3 +1083,50 @@ export function sanitizeDiagnosticParams(value: unknown): Record<string, string>
   }
   return output;
 }
+
+/**
+ * Report 26 (N-01): error messages can embed full request URLs — Nest's
+ * unmatched-route handler throws `Cannot <METHOD> <url>` with the RAW url including
+ * the query string, and arbitrary query parameters (or percent-encoded scheme
+ * credentials such as `e=bearer%20abcdefgh`, where the encoded space defeats the
+ * literal-whitespace scheme rule) were reflected verbatim into 404 response bodies.
+ * Query strings and fragments have no diagnostic value in error messages (report 19
+ * policy), so URL-shaped tokens — a run starting with `/` or `http(s)://`, delimited
+ * by start-of-string/whitespace/quotes/backtick/opening paren — are truncated at the
+ * first `?` or `#`. Ordinary prose (including question marks not preceded by a
+ * URL-shaped token) is never touched. Pure string operations, linear single pass:
+ * cannot throw; non-strings fail closed to the canonical redaction marker.
+ */
+export function stripDiagnosticUrlQueries(text: unknown): string {
+  if (typeof text !== 'string') return REDACTED_VALUE;
+  if (text.length === 0) return text;
+  return text.replace(
+    /(^|[\s"'`(])((?:https?:\/\/|\/)[^\s"',()[\]{}|?#]*)[?#][^\s"',()[\]{}|]*/gi,
+    (_match: string, prefix: string, path: string) => `${prefix}${path}`,
+  );
+}
+
+/**
+ * Report 26 (N-02): bounded sanitization policy for CALLER-SUPPLIED business
+ * diagnostic identifiers (correlation ids from DTO request bodies, service commands
+ * and persisted events) — identifiers that never pass through the request-context
+ * choke point. Mirrors the `safeIdentifier` policy of `request-context.ts`: trim,
+ * bound to 255 characters, then pass through the full redaction boundary.
+ *
+ * Deterministic: legitimate identifiers are preserved byte-for-byte, so equality,
+ * idempotency and lookup semantics for legitimate callers are unchanged (verified:
+ * financial idempotency is keyed by `idempotencyKey`/`eventKey`, never by
+ * correlationId; the only correlationId lookup is the audit list filter, which
+ * applies the same function symmetrically). Credential-shaped values collapse to
+ * the canonical marker at EVERY write, echo and lookup boundary — distinct
+ * credential-shaped ids become indistinguishable, an accepted trade-off affecting
+ * only hostile/garbage inputs (documented, report 26). Empty, oversized or
+ * non-string values are treated as absent (`undefined`), matching the existing
+ * `trim() ? … : undefined` service idiom and failing closed.
+ */
+export function sanitizeDiagnosticIdentifier(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 255) return undefined;
+  return redactSensitiveText(trimmed);
+}

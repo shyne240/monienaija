@@ -4,7 +4,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
-import { redactRecord } from '../common/sensitive-data-redaction';
+import { redactRecord, sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { OutboxEvent } from './outbox-event.entity';
 import { OutboxEventStatus } from './operations.enums';
 import type { OutboxEventCommand, OutboxQuery, OutboxView } from './operations.types';
@@ -27,7 +27,10 @@ export class OutboxService {
       classification: command.classification ?? 'INTERNAL_OPERATIONS',
       retentionClass: command.retentionClass ?? 'OPERATIONS_DEFAULT',
       occurredAt: command.occurredAt ?? new Date(),
-      correlationId: command.correlationId ?? null,
+      // Report 26 (N-02): caller-supplied correlation ids are bounded and
+      // redacted deterministically before persistence; legitimate ids are
+      // preserved byte-for-byte.
+      correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
       causationId: command.causationId ?? null,
       payload: redactRecord(command.payload),
       status: OutboxEventStatus.PENDING,
@@ -47,17 +50,23 @@ export class OutboxService {
     if (!eventKey || eventKey.length > 180) {
       throw new ConflictException('Outbox eventKey is invalid');
     }
+    // Report 26 (N-02): normalize the correlation id ONCE up front so the
+    // deduplication comparison (assertSameEvent) and the stored row always use
+    // the same deterministic value — an identical retry can never produce a
+    // false "event key reused" conflict, and legitimate ids compare unchanged.
+    const normalizedCommand: OutboxEventCommand & { eventKey: string } = {
+      ...command,
+      eventKey,
+      correlationId: sanitizeDiagnosticIdentifier(command.correlationId),
+    };
     const repository = manager.getRepository(OutboxEvent);
     const existing = await repository.findOne({ where: { eventKey } });
     if (existing) {
-      this.assertSameEvent(existing, command);
+      this.assertSameEvent(existing, normalizedCommand);
       return existing;
     }
 
-    return this.enqueue(manager, {
-      ...command,
-      eventKey,
-    });
+    return this.enqueue(manager, normalizedCommand);
   }
 
   async list(query: OutboxQuery = {}): Promise<OutboxView[]> {
@@ -179,7 +188,9 @@ export class OutboxService {
       classification: event.classification,
       retentionClass: event.retentionClass,
       occurredAt: event.occurredAt,
-      correlationId: event.correlationId,
+      // Report 26 (row 15): read-boundary protection for rows persisted before
+      // the write-side sanitization existed.
+      correlationId: sanitizeDiagnosticIdentifier(event.correlationId) ?? null,
       causationId: event.causationId,
       payload: event.payload,
       status: event.status,

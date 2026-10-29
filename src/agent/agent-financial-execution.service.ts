@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 
 import { AuditService } from '../operations/audit.service';
@@ -91,8 +92,15 @@ export class AgentFinancialExecutionService {
    *  - Audit without PIN/secrets
    */
   async execute(
-    input: AgentFinancialExecutionInput,
+    rawInput: AgentFinancialExecutionInput,
   ): Promise<AgentFinancialExecutionResult> {
+    // Report 26 (N-02): normalize the caller-supplied correlation identifier ONCE at the
+    // execution boundary so every downstream sink (journal, limit decisions, commercial
+    // accounting, policy decisions, metadata) can only persist sanitized values.
+    const input: AgentFinancialExecutionInput = {
+      ...rawInput,
+      correlationId: sanitizeDiagnosticIdentifier(rawInput.correlationId),
+    };
     const ctx = input.authorizedContext;
     if (!ctx || !ctx.agentId || !ctx.principal || !ctx.canonicalService) {
       throw new UnauthorizedException('Agent financial execution requires an authorized transaction context');

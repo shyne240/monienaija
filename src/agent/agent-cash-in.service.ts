@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
@@ -142,7 +143,9 @@ export class AgentCashInService {
     const description = input.description?.trim()
       ? input.description.trim()
       : `Cash→Wallet ${amountString} NGN from Agent ${agentId} to Customer ${customerId}`;
-    const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
+    // Report 26 (N-02): bounded, deterministic sanitization of the caller-supplied
+    // business correlation id (legitimate ids preserved byte-for-byte).
+    const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
     const executionResult = await this.financialExecutionService.execute({
       authorizedContext,

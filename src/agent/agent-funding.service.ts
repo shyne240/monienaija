@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
 import type { EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
@@ -1415,7 +1416,7 @@ export class AgentFundingService {
     }
     const reference = input.reference?.trim() || `${direction}-${idempotencyKey}`;
     if (reference.length > 255) throw new BadRequestException('reference too long');
-    const correlationId = input.correlationId?.trim() || null;
+    const correlationId = sanitizeDiagnosticIdentifier(input.correlationId) ?? null;
     const description = input.description?.trim() ||
       `${direction} ${amountMinor} NGN for Agent ${agentId}${aggregatorId ? ` via Aggregator ${aggregatorId}` : ' via platform'}`;
     if (description.length > 255) throw new BadRequestException('description too long');

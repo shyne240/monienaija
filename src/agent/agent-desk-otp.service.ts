@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
 import { MfaExecutionService } from '../customer-authentication/mfa-execution.service';
 import type { IssueMfaChallengeCommand } from '../customer-authentication/mfa-execution.types';
@@ -218,7 +219,7 @@ export class AgentDeskOtpService {
           `MoneyNaija: your verification code is ${code}. It expires in ${minutes} minutes. ` +
           `Only share it with the agent serving you. If you did not expect this, contact support.`,
         payload: {},
-        correlationId: command.correlationId ?? null,
+        correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
         eventType: AGENT_DESK_OTP_EVENT_TYPE,
         eventKey: `agent-desk-otp:${challenge.id}`,
         recipientType: 'CUSTOMER',

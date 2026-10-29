@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
+
 import type { NotificationChannelResolverService } from './notification-channel-resolver.service';
 import type { NotificationTemplateService } from './notification-template.service';
 import { canonicalNotificationEvent } from './notification-template.service';
@@ -267,7 +269,7 @@ export class NotificationDeliveryProcessor {
           destination: row.destination,
           message: row.message ?? '',
           payload: row.payload ?? {},
-          correlationId: row.correlation_id,
+          correlationId: sanitizeDiagnosticIdentifier(row.correlation_id) ?? null,
           eventType: row.event_type,
           eventKey: row.event_key,
           recipientType: row.recipient_type,

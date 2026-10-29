@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AGENT_DESK_OTP_PURPOSE_CASH_TO_CASH_CLAIM } from './agent-desk-otp.constants';
 
 import { LimitEnforcementService } from '../limit-catalog/limit-enforcement.service';
@@ -259,7 +260,9 @@ export class AgentCashToCashClaimService {
       : redemptionMethod === 'AGENT_CASH'
         ? `Cash→Cash cash redemption ${transferId} at Agent ${claimantAgentId}`
         : `Cash→Cash wallet redemption ${transferId} to Customer ${customerId}`;
-    const correlationId = input.correlationId?.trim() ? input.correlationId.trim() : undefined;
+    // Report 26 (N-02): bounded, deterministic sanitization of the caller-supplied
+    // business correlation id (legitimate ids preserved byte-for-byte).
+    const correlationId = sanitizeDiagnosticIdentifier(input.correlationId);
 
     const unclaimedAccount = await this.getUnclaimedAccount();
     if (!unclaimedAccount) throw new BadRequestException('Unclaimed ledger account not provisioned');

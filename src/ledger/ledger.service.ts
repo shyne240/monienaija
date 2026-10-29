@@ -18,6 +18,7 @@ import {
   normalizeCurrency,
   parsePositiveMinorUnits,
 } from '../common/money';
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { MetricsService } from '../operations/metrics.service';
 import { LedgerAccount } from './ledger-account.entity';
 import {
@@ -374,7 +375,7 @@ export class LedgerService {
       status: LedgerJournalStatus.POSTED,
       reference: command.reference ?? null,
       description: command.description ?? null,
-      correlationId: command.correlationId ?? null,
+      correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
       reversalOfJournalId: command.reversalOfJournalId ?? null,
       metadata: command.metadata ?? {},
       totalMinor: command.totalMinor.toString(),
@@ -557,7 +558,9 @@ export class LedgerService {
 
     const reference = this.optionalText(command.reference, 'reference');
     const description = this.optionalText(command.description, 'description');
-    const correlationId = this.optionalText(command.correlationId, 'correlationId');
+    const correlationId = sanitizeDiagnosticIdentifier(
+      this.optionalText(command.correlationId, 'correlationId'),
+    );
     const metadata = this.normalizedMetadata(command.metadata);
     const reversalOfJournalId = command.reversalOfJournalId;
     if (reversalOfJournalId !== undefined && !UUID_PATTERN.test(reversalOfJournalId)) {
