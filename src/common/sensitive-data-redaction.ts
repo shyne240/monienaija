@@ -840,6 +840,16 @@ function applyCredentialShapes(text: string): string {
       /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\x5b\]]+/gi,
       REDACTED_VALUE,
     )
+    // Report 21 finding 1: an explicit authentication scheme prefix supplies credential
+    // context. `Basic`/`Bearer` (any case) + horizontal whitespace + a token-like run of >=8
+    // characters is redacted as a complete region when the run carries a base64/opaque-token
+    // marker ([A-Z0-9+/=_]), ends on a token character and stops at quotes, separators or
+    // JSON boundaries. Ordinary lowercase prose after the scheme word and context-free Base64
+    // strings without a scheme prefix are never touched.
+    .replace(
+      /\b(?:[bB][aA][sS][iI][cC]|[bB][eE][aA][rR][eE][rR])[ \t]+(?=[^\s"',;:()[\]{}|\\`]*[A-Z0-9+/=_])[^\s"',;:()[\]{}|\\`]{7,}[A-Za-z0-9+/=_-]/g,
+      REDACTED_VALUE,
+    )
     // Report 19 finding B variant: a bare (key-less) JWT in a diagnostic field is a credential
     // wherever it appears. `eyJ` is the base64url encoding of `{"` — the universal JWT header
     // marker — so a three-segment eyJ token is redacted without touching ordinary prose.
