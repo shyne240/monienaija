@@ -50,7 +50,13 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
     });
 
     it('preserves every provider-ref key spelling (camel and snake)', () => {
-      for (const key of ['providerRef', 'provider_ref', 'lastTestProviderRef', 'last_tested_provider_ref', 'last_test_provider_ref']) {
+      for (const key of [
+        'providerRef',
+        'provider_ref',
+        'lastTestProviderRef',
+        'last_tested_provider_ref',
+        'last_test_provider_ref',
+      ]) {
         expect(redactSensitiveText(`${key}=${EXTERNAL}`)).toBe(`${key}=${EXTERNAL}`);
         expect(redactSensitiveText(`{"${key}":"${EXTERNAL}"}`)).toBe(`{"${key}":"${EXTERNAL}"}`);
       }
@@ -135,7 +141,9 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
       expect(redactSensitiveText(`secret=SEC_SENTINEL_3 token=TOK_SENTINEL_4`)).toBe(
         `secret=${REDACTED_VALUE} token=${REDACTED_VALUE}`,
       );
-      expect(redactSensitiveText(`{'apiKey':'SEC_SENTINEL_5'}`)).toBe(`{'apiKey':'${REDACTED_VALUE}'}`);
+      expect(redactSensitiveText(`{'apiKey':'SEC_SENTINEL_5'}`)).toBe(
+        `{'apiKey':'${REDACTED_VALUE}'}`,
+      );
       expect(redactSensitiveText(`token: "TOK_SENTINEL_6"`)).toBe(`token: "${REDACTED_VALUE}"`);
     });
 
@@ -158,18 +166,35 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
       const out = redactSensitiveText(
         'passwordHash=PH_SENTINEL temporaryPassword=TP_SENTINEL applicantAccessToken=AAT_SENTINEL tokenHash=TH_SENTINEL encryptedApiKey=EAK_SENTINEL proposedEncryptedApiKey=PEAK_SENTINEL cookie=CK_SENTINEL challengeHash=CH_SENTINEL providedHash=PRH_SENTINEL fingerprintHash=FPH_SENTINEL transferCode=TC_SENTINEL transferCodeHash=TCH_SENTINEL pin=PIN_SENTINEL safe=visible',
       );
-      for (const sentinel of ['PH_SENTINEL', 'TP_SENTINEL', 'AAT_SENTINEL', 'TH_SENTINEL', 'EAK_SENTINEL', 'PEAK_SENTINEL', 'CK_SENTINEL', 'CH_SENTINEL', 'PRH_SENTINEL', 'FPH_SENTINEL', 'TC_SENTINEL', 'TCH_SENTINEL', 'PIN_SENTINEL']) {
+      for (const sentinel of [
+        'PH_SENTINEL',
+        'TP_SENTINEL',
+        'AAT_SENTINEL',
+        'TH_SENTINEL',
+        'EAK_SENTINEL',
+        'PEAK_SENTINEL',
+        'CK_SENTINEL',
+        'CH_SENTINEL',
+        'PRH_SENTINEL',
+        'FPH_SENTINEL',
+        'TC_SENTINEL',
+        'TCH_SENTINEL',
+        'PIN_SENTINEL',
+      ]) {
         expect(out).not.toContain(sentinel);
       }
       expect(out).toContain('safe=visible');
       // snake_case spellings of the same secrets are now covered by normalization
-      const snake = redactSensitiveText('api_key=SNAKE_SENTINEL_1 encrypted_api_key=SNAKE_SENTINEL_2');
+      const snake = redactSensitiveText(
+        'api_key=SNAKE_SENTINEL_1 encrypted_api_key=SNAKE_SENTINEL_2',
+      );
       expect(snake).not.toContain('SNAKE_SENTINEL_1');
       expect(snake).not.toContain('SNAKE_SENTINEL_2');
     });
 
     it('does not create false positives on ordinary words containing key substrings', () => {
-      const ordinary = 'statusCode=500 errorCode=PROVIDER_REJECTED_RETRYABLE tokenize(input) pinnedAt=2026-01-01 cookies=none';
+      const ordinary =
+        'statusCode=500 errorCode=PROVIDER_REJECTED_RETRYABLE tokenize(input) pinnedAt=2026-01-01 cookies=none';
       expect(redactSensitiveText(ordinary)).toBe(ordinary);
     });
   });
@@ -259,15 +284,25 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
 
   describe('7. alternate separators and multiple sensitive values in one message', () => {
     it('handles =>, spaced colons and quoted separators', () => {
-      expect(redactSensitiveText(`providerRef => ${BREVO} ARROW_SENTINEL_TX_NGN_1`)).not.toContain('ARROW_SENTINEL_TX_NGN_1');
+      expect(redactSensitiveText(`providerRef => ${BREVO} ARROW_SENTINEL_TX_NGN_1`)).not.toContain(
+        'ARROW_SENTINEL_TX_NGN_1',
+      );
       expect(redactSensitiveText(`providerRef : ${BREVO}`)).toBe(`providerRef : ${BREVO}`);
-      expect(redactSensitiveText(`apiKey = "EQ_SECRET_SENTINEL"`)).toBe(`apiKey = "${REDACTED_VALUE}"`);
+      expect(redactSensitiveText(`apiKey = "EQ_SECRET_SENTINEL"`)).toBe(
+        `apiKey = "${REDACTED_VALUE}"`,
+      );
     });
 
     it('redacts multiple heterogeneous sensitive values in a single message', () => {
       const input = `Failure while testing: providerRef=${BREVO}:COLON_SENTINEL_A then {"providerRef":"${ROBASE} QUOTED_SPACE_SENTINEL_B","apiKey":"KEY_SENTINEL_C"} and password=PW_SENTINEL_D, token=TOK_SENTINEL_E`;
       const out = redactSensitiveText(input);
-      for (const s of ['COLON_SENTINEL_A', 'QUOTED_SPACE_SENTINEL_B', 'KEY_SENTINEL_C', 'PW_SENTINEL_D', 'TOK_SENTINEL_E']) {
+      for (const s of [
+        'COLON_SENTINEL_A',
+        'QUOTED_SPACE_SENTINEL_B',
+        'KEY_SENTINEL_C',
+        'PW_SENTINEL_D',
+        'TOK_SENTINEL_E',
+      ]) {
         expect(out).not.toContain(s);
       }
     });
@@ -275,7 +310,8 @@ describe('redactSensitiveText — R-03/R-04 adversarial matrix', () => {
 
   describe('8. ordinary non-sensitive messages are preserved', () => {
     it('leaves plain prose and non-sensitive key=value text untouched', () => {
-      const plain = 'Customer notification delivery delayed; retry scheduled for 2026-10-30T09:00:00Z (attempts=2, channel=SMS, status=PENDING)';
+      const plain =
+        'Customer notification delivery delayed; retry scheduled for 2026-10-30T09:00:00Z (attempts=2, channel=SMS, status=PENDING)';
       expect(redactSensitiveText(plain)).toBe(plain);
       const mixed = `Delivery ${BREVO} recorded successfully`;
       expect(redactSensitiveText(mixed)).toBe(mixed); // bare token in prose is opaque and safe
@@ -319,7 +355,11 @@ describe('redactSensitiveText — report-15 findings (escaped keys, headers, key
 
       const mixed = `{"auth\\u006frization":"UNICODE_AUTH_SENTINEL","\\u0073ecret":"UNICODE_SECRET_SENTINEL","token":"UNICODE_TOKEN_SENTINEL"}`;
       const outMixed = redactSensitiveText(mixed);
-      for (const s of ['UNICODE_AUTH_SENTINEL', 'UNICODE_SECRET_SENTINEL', 'UNICODE_TOKEN_SENTINEL']) {
+      for (const s of [
+        'UNICODE_AUTH_SENTINEL',
+        'UNICODE_SECRET_SENTINEL',
+        'UNICODE_TOKEN_SENTINEL',
+      ]) {
         expect(outMixed).not.toContain(s);
       }
       const parsedMixed = JSON.parse(outMixed) as Record<string, unknown>;
@@ -374,7 +414,9 @@ describe('redactSensitiveText — report-15 findings (escaped keys, headers, key
     });
 
     it('consumes multi-run unquoted values for generic sensitive keys up to a safe delimiter', () => {
-      expect(redactSensitiveText('apiKey=SECRET_PART_ONE SECRET_PART_TWO')).toBe(`apiKey=${REDACTED_VALUE}`);
+      expect(redactSensitiveText('apiKey=SECRET_PART_ONE SECRET_PART_TWO')).toBe(
+        `apiKey=${REDACTED_VALUE}`,
+      );
       // A following key=value pair or hard delimiter stops the region (diagnostics preserved).
       expect(redactSensitiveText('token=TOK_A TOK_B, status=FAILED')).toBe(
         `token=${REDACTED_VALUE}, status=FAILED`,
@@ -398,7 +440,8 @@ describe('redactSensitiveText — report-15 findings (escaped keys, headers, key
 
       const outJson = redactSensitiveText(`{"msg":"ref ${BREVO} KEYLESS_JSON_SENTINEL tail"}`);
       expect(outJson).not.toContain('KEYLESS_JSON_SENTINEL');
-      expect(JSON.parse(outJson).msg).toContain(REDACTED_VALUE);
+      const parsed = JSON.parse(outJson) as { msg: string };
+      expect(parsed.msg).toContain(REDACTED_VALUE);
     });
 
     it('preserves bare canonical tokens surrounded by ordinary prose (no indiscriminate destruction)', () => {
@@ -439,7 +482,9 @@ describe('redactSensitiveText — report-15 findings (escaped keys, headers, key
 
     it('handles three nesting levels and preserves canonical refs inside stringified JSON', () => {
       const input = JSON.stringify({
-        a: JSON.stringify({ b: JSON.stringify({ secret: 'DEEP_SECRET_SENTINEL', keep: 'DEEP_KEEP' }) }),
+        a: JSON.stringify({
+          b: JSON.stringify({ secret: 'DEEP_SECRET_SENTINEL', keep: 'DEEP_KEEP' }),
+        }),
       });
       const out = redactSensitiveText(input);
       expect(out).not.toContain('DEEP_SECRET_SENTINEL');
@@ -468,8 +513,12 @@ describe('redactSensitiveText — report-15 findings (escaped keys, headers, key
 
     it('keeps genuinely sensitive code-family keys redacted', () => {
       expect(redactSensitiveText('codeHash=CODEHASH_SENTINEL')).toBe(`codeHash=${REDACTED_VALUE}`);
-      expect(redactSensitiveText('recoveryCode=RECOVERY_SENTINEL')).toBe(`recoveryCode=${REDACTED_VALUE}`);
-      expect(redactSensitiveText('transferCode=TRANSFER_SENTINEL')).toBe(`transferCode=${REDACTED_VALUE}`);
+      expect(redactSensitiveText('recoveryCode=RECOVERY_SENTINEL')).toBe(
+        `recoveryCode=${REDACTED_VALUE}`,
+      );
+      expect(redactSensitiveText('transferCode=TRANSFER_SENTINEL')).toBe(
+        `transferCode=${REDACTED_VALUE}`,
+      );
       expect(redactSensitiveText('{"challengeHash":"CHALLENGE_SENTINEL"}')).toBe(
         `{"challengeHash":"${REDACTED_VALUE}"}`,
       );

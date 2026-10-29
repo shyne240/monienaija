@@ -24,6 +24,9 @@ const SENSITIVE_KEY_NAMES = new Set([
   'encryptedapikey',
   'proposedencryptedapikey',
   'authorization',
+  'proxyauthorization',
+  'xapikey',
+  'xauthtoken',
   'cookie',
   'code',
   'codehash',
@@ -38,8 +41,75 @@ const SENSITIVE_KEY_NAMES = new Set([
   'transfercodehash',
 ]);
 
+const PROVIDER_REF_KEYS = new Set(['providerref', 'lasttestproviderref', 'lasttestedproviderref']);
+const TEXT_SENSITIVE_KEYS = new Set([...SENSITIVE_KEY_NAMES].filter((key) => key !== 'code'));
+const SAFE_DIAGNOSTIC_KEYS = new Set([
+  'status',
+  'statuscode',
+  'errorcode',
+  'requestid',
+  'correlationid',
+  'traceid',
+  'path',
+  'method',
+  'operationname',
+  'attempts',
+  'channel',
+  'eventtype',
+  'eventkey',
+]);
+const VALUE_BOUNDARY_KEYS = new Set([
+  ...TEXT_SENSITIVE_KEYS,
+  ...PROVIDER_REF_KEYS,
+  ...SAFE_DIAGNOSTIC_KEYS,
+  'code',
+]);
+const CANONICAL_PROVIDER_REF = /^pvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}$/i;
+const CANONICAL_PROVIDER_REF_GLOBAL = /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}/gi;
+
+// Explicit budgets apply to structured JSON, prose, and direct objects. On structured-parser
+// failure, the separately bounded raw scanner may still produce sanitized output; if it cannot
+// prove that result safe, processing falls back to a generic message.
+const MAX_INPUT_LENGTH = 256 * 1024;
+const MAX_JSON_DEPTH = 32;
+const MAX_TEXT_DEPTH = 12;
+const MAX_JSON_NODES = 12_000;
+const MAX_TEXT_KEY_MATCHES = 2_048;
+const MAX_SCAN_OPERATIONS = 1_000_000;
+const MAX_KEYLESS_CANDIDATES = 1_024;
+const MAX_KEYLESS_LOOKAHEAD = 8_192;
+const MAX_KEYLESS_SUFFIX_PARTS = 8;
+const SAFE_JSON_DIAGNOSTIC_CODES = new Set([
+  'BAD_REQUEST',
+  'UNAUTHORIZED',
+  'PAYMENT_REQUIRED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'METHOD_NOT_ALLOWED',
+  'NOT_ACCEPTABLE',
+  'REQUEST_TIMEOUT',
+  'CONFLICT',
+  'GONE',
+  'LENGTH_REQUIRED',
+  'PRECONDITION_FAILED',
+  'PAYLOAD_TOO_LARGE',
+  'UNSUPPORTED_MEDIA_TYPE',
+  'UNPROCESSABLE_ENTITY',
+  'TOO_MANY_REQUESTS',
+  'INTERNAL_SERVER_ERROR',
+  'NOT_IMPLEMENTED',
+  'BAD_GATEWAY',
+  'SERVICE_UNAVAILABLE',
+  'GATEWAY_TIMEOUT',
+]);
+
 export function redactSensitiveData(value: unknown): unknown {
-  return redact(value, new WeakSet<object>());
+  try {
+    const budget = { nodes: 0 };
+    return redactObjectValue(value, new WeakSet<object>(), 0, budget);
+  } catch {
+    return REDACTED_VALUE;
+  }
 }
 
 export function redactRecord(value: Record<string, unknown>): Record<string, unknown> {
@@ -47,288 +117,796 @@ export function redactRecord(value: Record<string, unknown>): Record<string, unk
   return isRecord(redacted) ? redacted : {};
 }
 
-/*
- * ============================================================================
- * ERROR/LOG TEXT REDACTION (SPRINT1-F01 residuals R-03/R-04, Arena 4 reports
- * 13–15). Architecture: four separated layers instead of interleaved regex
- * exemptions —
- *
- *  A. STRUCTURED JSON: when the whole string is valid JSON, parse it and walk
- *     the structure. JSON.parse decodes `\uXXXX`-escaped property names, so
- *     escaped key spellings (`{"api\u004Bey":...}`) cannot bypass key
- *     classification (report 15, F1). String VALUES are walked recursively
- *     (stringified inner JSON is parsed, redacted and re-serialized), which
- *     preserves complete non-sensitive nested structure instead of truncating
- *     it (report 15, F4). Unchanged structures are returned byte-identical.
- *  B. EMBEDDED JSON FRAGMENTS: balanced `{...}`/`[...]` candidates inside
- *     prose are string/escape-aware scanned, parse-attempted and walked like
- *     layer A; failed candidates fall through to layer C. Bounded candidate
- *     count and fragment length keep hostile inputs linear.
- *  C. UNSTRUCTURED KEY/VALUE SCANNER: word-boundary key matching (maximal
- *     `[A-Za-z0-9_-]` runs, `\uXXXX` escape groups decoded for classification,
- *     normalized like the object-level redactor) against TEXT_SENSITIVE_KEYS
- *     and the provider-reference key set. Separators (`:`/`=`/`=>`, optional
- *     whitespace, optional — including backslash-escaped — quotes) are
- *     preserved verbatim so redacted JSON stays parseable (report 14, R-04).
- *     Quoted values are captured through the matching quote honoring escape
- *     pairs and the escaped-open context (`\"..\"` inside stringified JSON).
- *     Unquoted values use syntax-aware regions (report 15, F2): the first run
- *     is always redacted; the region then extends over sentinel-shaped runs
- *     (`_`-bearing or all-caps/digit) so multi-word credentials such as
- *     `Authorization: Bearer <cred>` or `apiKey=PART_ONE PART_TWO` are fully
- *     consumed, stopping at hard delimiters, newlines (header semantics) and
- *     the next `key=value` pair so ordinary diagnostics survive. A canonical
- *     provider token followed by whitespace is ambiguous (a malformed
- *     reference with a whitespace suffix cannot be ruled out) and fails safe
- *     through the next hard delimiter (report 14, R-03).
- *  D. KEY-LESS PROVIDER REFERENCES: a bare canonical `pvr1:` token followed by
- *     whitespace-separated sentinel-shaped runs is redacted as a region
- *     (report 15, F3); tokens surrounded by ordinary prose are preserved.
- *  E. CREDENTIAL SHAPE PATTERNS: attached malformed `pvr1:` suffixes, MNNPS1
- *     envelopes, `robe_`/`re_`/`xkeysib-`/`smtpsib-` credential shapes.
- *
- * Policy notes:
- *  - Only a COMPLETE canonical token (`^pvr1:(robase|brevo|resend|external):
- *    [0-9a-f]{32}$`) is ever exempt; prefixes/ suffixes/ malformed scopes or
- *    digests are redacted in full.
- *  - `code` is excluded from TEXT-level keys (report 15, F5): `code: 400`,
- *    `statusCode` and `errorCode` are ordinary diagnostics. Genuinely secret
- *    code-family keys (`codeHash`, `recoveryCode`, `transferCode`,
- *    `challengeHash`, ...) remain redacted, and the object-level redactor
- *    (audit/outbox payloads) keeps its full historical key set.
- *  - No regex backtracking on key/value paths; parsing is depth-, candidate-
- *    and length-bounded; hostile multi-MB inputs stay linear.
- * ============================================================================
- */
-
-/** Index-safe char read (this project compiles with noUncheckedIndexedAccess). */
-function charAt(text: string, index: number): string {
-  return text[index] ?? '';
-}
-
-function normalizeKeyName(key: string): string {
-  return key.toLowerCase().replace(/[-_]/g, '');
-}
-
-/** Provider-reference key spellings (normalized). */
-const PROVIDER_REF_TEXT_KEYS = new Set([
-  'providerref',
-  'lasttestproviderref',
-  'lasttestedproviderref',
-]);
-
 /**
- * Text/JSON-in-error-text sensitive keys: the full object-level list (preserving its intended
- * coverage: bare `token`, `password`, `apiKey`, `authorization`, `secret`, ...) minus `code`
- * (ordinary diagnostic metadata — report 15 F5) plus common HTTP header spellings.
+ * Redacts error/log text with bounded, fail-closed processing:
+ *
+ * 1. A small lossless JSON tokenizer handles complete JSON. It decodes property names, processes
+ *    every raw property occurrence (including duplicate keys), enforces node/depth budgets, and
+ *    re-emits source slices so unchanged JSON remains byte-identical. Sensitive values are
+ *    replaced in-place with a JSON string; nested JSON strings are recursively processed within
+ *    the same budgets.
+ * 2. Non-JSON text is scanned once for sensitive key/value pairs and known credential shapes.
+ *    Authorization values are consumed as a complete region to a safe boundary; no token-shape
+ *    heuristic is used to decide whether a recognized Authorization value is secret.
+ * 3. Key-less canonical provider references are preserved only when they are complete tokens or
+ *    followed by ordinary prose. Credential-shaped suffixes (JWT, long opaque tokens, secret
+ *    sentinels) cause the reference and suffix region to be removed.
+ *
+ * Oversized/text-depth input, direct-object budget exhaustion, or an unprovable raw-scan result
+ * becomes the generic redacted *message*. Malformed/deep JSON is offered to the separately
+ * bounded raw scanner; it returns sanitized text only if that scan completes safely, otherwise
+ * the generic message. No parse/scan failure returns the original text. Context-free values
+ * named `code` are diagnostics only for recognized HTTP status/error codes; other values redact.
  */
-const TEXT_SENSITIVE_KEYS = new Set<string>([
-  ...Array.from(SENSITIVE_KEY_NAMES).filter((key) => key !== 'code'),
-  'xapikey',
-  'xauthtoken',
-  'proxyauthorization',
-]);
-
-/** The ONLY provider-reference shape exempt from redaction: a complete canonical token. */
-const CANONICAL_PROVIDER_REF = /^pvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}$/i;
-
-/** Bare canonical tokens in text (used by the key-less region pass). */
-const CANONICAL_PROVIDER_REF_GLOBAL = /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}/gi;
-
-/** Hard delimiters that terminate value regions and key-less regions. */
-const HARD_REGION_STOPPERS = new Set([',', ';', '{', '}', '(', ')', '[', ']', '"', "'"]);
-
-/** Terminators of a single unquoted value run. */
-const UNQUOTED_RUN_TERMINATORS = new Set([',', '}', ']', '"', "'"]);
-
-const MAX_STRUCTURE_DEPTH = 16;
-const MAX_FRAGMENT_CANDIDATES = 128;
-const MAX_FRAGMENT_LENGTH = 65_536;
-
 export function redactSensitiveText(value: string): string {
-  return redactTextAtDepth(value, 0);
-}
-
-function redactTextAtDepth(value: string, depth: number): string {
-  if (depth < MAX_STRUCTURE_DEPTH) {
-    const trimmed = value.trim();
-    const first = charAt(trimmed, 0);
-    if (first === '{' || first === '[') {
-      const parsed = tryParseJson(trimmed);
-      if (parsed !== undefined) {
-        const walked = walkValue(parsed, depth + 1);
-        // Byte-preserve untouched diagnostics; re-serialize only when something was redacted.
-        return applyShapePatterns(
-          walked.changed ? JSON.stringify(walked.value) : value,
-        );
-      }
-    }
-  }
-  const withFragments = redactEmbeddedJsonFragments(value, depth);
-  const scanned = redactKeyValueText(withFragments);
-  const keyless = redactKeylessProviderRegions(scanned);
-  return applyShapePatterns(keyless);
-}
-
-function tryParseJson(text: string): unknown | undefined {
+  if (typeof value !== 'string') return REDACTED_VALUE;
+  if (value.length > MAX_INPUT_LENGTH) return REDACTED_VALUE;
   try {
-    return JSON.parse(text) as unknown;
+    return redactTextBounded(value, 0);
   } catch {
-    return undefined;
+    return REDACTED_VALUE;
   }
 }
 
-interface WalkResult {
-  value: unknown;
-  changed: boolean;
+interface WorkBudget {
+  operations: number;
 }
 
-function walkValue(node: unknown, depth: number): WalkResult {
-  if (Array.isArray(node)) {
-    let changed = false;
-    const items = node.map((item) => {
-      const walked = walkValue(item, depth + 1);
-      changed = changed || walked.changed;
-      return walked.value;
-    });
-    return { value: items, changed };
-  }
-  if (isRecord(node)) {
-    let changed = false;
-    const output: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(node)) {
-      const normalized = normalizeKeyName(key);
-      const isProviderRef = PROVIDER_REF_TEXT_KEYS.has(normalized);
-      const isSensitive = !isProviderRef && TEXT_SENSITIVE_KEYS.has(normalized);
-      if (isProviderRef || isSensitive) {
-        // `null`/`undefined` carry no secret; keep them for diagnostic fidelity.
-        if (nested === null || nested === undefined) {
-          output[key] = nested;
-          continue;
-        }
-        const exempt =
-          isProviderRef && typeof nested === 'string' && CANONICAL_PROVIDER_REF.test(nested);
-        output[key] = exempt ? nested : REDACTED_VALUE;
-        changed = changed || !exempt && nested !== REDACTED_VALUE;
-        continue;
-      }
-      const walked = walkValue(nested, depth + 1);
-      changed = changed || walked.changed;
-      output[key] = walked.value;
-    }
-    return { value: output, changed };
-  }
-  if (typeof node === 'string') {
-    return walkString(node, depth);
-  }
-  return { value: node, changed: false };
-}
-
-/**
- * String values inside parsed JSON: either they are themselves serialized JSON
- * (stringified inner objects — parse, walk, re-serialize so the COMPLETE structure
- * survives; report 15 F4) or prose (run the fragment/key-value/key-less layers).
- */
-function walkString(text: string, depth: number): WalkResult {
-  if (depth >= MAX_STRUCTURE_DEPTH) {
-    return { value: text, changed: false };
-  }
-  const trimmed = text.trim();
-  const first = charAt(trimmed, 0);
-  if (first === '{' || first === '[') {
-    const parsed = tryParseJson(trimmed);
-    if (parsed !== undefined) {
-      const walked = walkValue(parsed, depth + 1);
-      return walked.changed
-        ? { value: JSON.stringify(walked.value), changed: true }
-        : { value: text, changed: false };
+function redactTextBounded(text: string, textDepth: number): string {
+  if (text.length > MAX_INPUT_LENGTH || textDepth > MAX_TEXT_DEPTH) return REDACTED_VALUE;
+  const start = skipWhitespace(text, 0);
+  if (isLikelyJsonStart(text, start)) {
+    try {
+      const parser = new JsonTextRedactor(text, textDepth);
+      const prefix = parser.parseDocumentPrefix();
+      const suffix = text.slice(prefix.end);
+      if (skipWhitespace(suffix, 0) === suffix.length) return prefix.output + suffix;
+      // A valid embedded JSON value followed by diagnostics is not malformed; sanitize the
+      // suffix independently and preserve both spans.
+      return prefix.output + redactTextBounded(suffix, textDepth + 1);
+    } catch {
+      // Try the bounded raw scanner for malformed/escaped fragments. If it cannot establish a
+      // safe sanitization, return only the generic message—not the original structured text.
+      const fallback = redactUnstructuredText(text);
+      return fallback === text ? REDACTED_VALUE : fallback;
     }
   }
-  const withFragments = redactEmbeddedJsonFragments(text, depth + 1);
-  const scanned = redactKeyValueText(withFragments);
-  const keyless = redactKeylessProviderRegions(scanned);
-  const shaped = applyShapePatterns(keyless);
-  return { value: shaped, changed: shaped !== text };
+  return redactUnstructuredText(text);
 }
 
-/** String/escape-aware scan for the balanced closing bracket of a JSON fragment. */
-function findBalancedJsonEnd(text: string, start: number): number {
-  const n = text.length;
-  const limit = Math.min(n, start + MAX_FRAGMENT_LENGTH + 1);
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < limit; i += 1) {
-    const c = charAt(text, i);
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === '\\') escaped = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') inString = true;
-    else if (c === '{' || c === '[') depth += 1;
-    else if (c === '}' || c === ']') {
-      depth -= 1;
-      if (depth === 0) return i;
-      if (depth < 0) return -1;
-    }
-  }
-  return -1;
+function redactUnstructuredText(text: string): string {
+  const budget: WorkBudget = { operations: 0 };
+  const textRedacted = redactKeyValueText(text, budget);
+  if (textRedacted === null) return REDACTED_VALUE;
+  const keyless = redactKeylessProviderRegions(textRedacted, budget);
+  if (keyless === null) return REDACTED_VALUE;
+  return applyCredentialShapes(keyless);
 }
 
-/** Layer B: redact balanced, parseable JSON fragments embedded in prose. */
-function redactEmbeddedJsonFragments(text: string, depth: number): string {
-  if (depth >= MAX_STRUCTURE_DEPTH) return text;
-  const n = text.length;
-  let out = '';
-  let last = 0;
-  let i = 0;
-  let candidates = 0;
-  while (i < n) {
-    const c = charAt(text, i);
-    if ((c === '{' || c === '[') && candidates < MAX_FRAGMENT_CANDIDATES) {
-      candidates += 1;
-      const end = findBalancedJsonEnd(text, i);
-      if (end !== -1) {
-        const fragment = text.slice(i, end + 1);
-        const parsed = tryParseJson(fragment);
-        if (parsed !== undefined) {
-          const walked = walkValue(parsed, depth + 1);
-          out += text.slice(last, i);
-          out += walked.changed ? JSON.stringify(walked.value) : fragment;
-          last = end + 1;
-          i = end + 1;
-          continue;
-        }
-      }
-    }
-    i += 1;
-  }
-  out += text.slice(last);
-  return out;
-}
-
-function isWordChar(c: string): boolean {
+function isLikelyJsonStart(text: string, start: number): boolean {
+  const first = charAt(text, start);
+  const next = charAt(text, skipWhitespace(text, start + 1));
+  if (first === '"') return true;
+  if (first === '{') return next === '"' || next === '}';
+  if (first !== '[') return false;
   return (
-    (c >= 'a' && c <= 'z') ||
-    (c >= 'A' && c <= 'Z') ||
-    (c >= '0' && c <= '9') ||
-    c === '_' ||
-    c === '-'
+    next === '"' ||
+    next === '{' ||
+    next === '[' ||
+    next === ']' ||
+    next === '-' ||
+    isDigit(next) ||
+    next === 't' ||
+    next === 'f' ||
+    next === 'n'
   );
 }
 
-function isQuoteChar(c: string): boolean {
-  return c === '"' || c === "'";
+interface JsonValueResult {
+  output: string;
+  kind: 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null';
+  scalar?: string | number | boolean | null;
+  changed: boolean;
 }
 
-function isWhitespaceChar(c: string): boolean {
-  return c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v';
+/** Lossless-enough recursive JSON tokenizer; duplicate property occurrences are never collapsed. */
+class JsonTextRedactor {
+  private index = 0;
+  private nodes = 0;
+  private operations = 0;
+  private readonly text: string;
+  private readonly textDepth: number;
+
+  constructor(text: string, textDepth: number) {
+    this.text = text;
+    this.textDepth = textDepth;
+  }
+
+  parseDocumentPrefix(): { output: string; end: number } {
+    const leadingEnd = skipWhitespace(this.text, 0);
+    this.index = leadingEnd;
+    const result = this.parseValue(0);
+    return { output: this.text.slice(0, leadingEnd) + result.output, end: this.index };
+  }
+
+  private parseValue(depth: number): JsonValueResult {
+    this.bumpNode(depth);
+    this.skipSpace();
+    const char = charAt(this.text, this.index);
+    if (char === '{') return this.parseObject(depth);
+    if (char === '[') return this.parseArray(depth);
+    if (char === '"') return this.parseString(depth);
+    if (char === 't') return this.parseLiteral('true', 'boolean', true);
+    if (char === 'f') return this.parseLiteral('false', 'boolean', false);
+    if (char === 'n') return this.parseLiteral('null', 'null', null);
+    if (char === '-' || isDigit(char)) return this.parseNumber();
+    throw new Error('invalid JSON value');
+  }
+
+  private parseObject(depth: number): JsonValueResult {
+    const parts: string[] = ['{'];
+    let changed = false;
+    this.index += 1;
+    let wsStart = this.index;
+    this.skipSpace();
+    parts.push(this.text.slice(wsStart, this.index));
+    if (charAt(this.text, this.index) === '}') {
+      parts.push('}');
+      this.index += 1;
+      return { output: parts.join(''), kind: 'object', changed: false };
+    }
+
+    for (;;) {
+      if (charAt(this.text, this.index) !== '"') throw new Error('object key must be a string');
+      const keyToken = this.readStringToken();
+      const key = keyToken.value;
+      parts.push(keyToken.raw);
+
+      wsStart = this.index;
+      this.skipSpace();
+      parts.push(this.text.slice(wsStart, this.index));
+      if (charAt(this.text, this.index) !== ':') throw new Error('missing object colon');
+      parts.push(':');
+      this.index += 1;
+      wsStart = this.index;
+      this.skipSpace();
+      parts.push(this.text.slice(wsStart, this.index));
+
+      const child = this.parseValue(depth + 1);
+      const replacement = shouldRedactJsonProperty(key, child);
+      if (replacement) {
+        parts.push(JSON.stringify(REDACTED_VALUE));
+        changed = true;
+      } else {
+        parts.push(child.output);
+        changed = changed || child.changed;
+      }
+
+      wsStart = this.index;
+      this.skipSpace();
+      parts.push(this.text.slice(wsStart, this.index));
+      const separator = charAt(this.text, this.index);
+      if (separator === ',') {
+        parts.push(',');
+        this.index += 1;
+        wsStart = this.index;
+        this.skipSpace();
+        parts.push(this.text.slice(wsStart, this.index));
+        continue;
+      }
+      if (separator === '}') {
+        parts.push('}');
+        this.index += 1;
+        break;
+      }
+      throw new Error('unterminated JSON object');
+    }
+    return { output: parts.join(''), kind: 'object', changed };
+  }
+
+  private parseArray(depth: number): JsonValueResult {
+    const parts: string[] = ['['];
+    let changed = false;
+    this.index += 1;
+    let wsStart = this.index;
+    this.skipSpace();
+    parts.push(this.text.slice(wsStart, this.index));
+    if (charAt(this.text, this.index) === ']') {
+      parts.push(']');
+      this.index += 1;
+      return { output: parts.join(''), kind: 'array', changed: false };
+    }
+
+    for (;;) {
+      const child = this.parseValue(depth + 1);
+      parts.push(child.output);
+      changed = changed || child.changed;
+      wsStart = this.index;
+      this.skipSpace();
+      parts.push(this.text.slice(wsStart, this.index));
+      const separator = charAt(this.text, this.index);
+      if (separator === ',') {
+        parts.push(',');
+        this.index += 1;
+        wsStart = this.index;
+        this.skipSpace();
+        parts.push(this.text.slice(wsStart, this.index));
+        continue;
+      }
+      if (separator === ']') {
+        parts.push(']');
+        this.index += 1;
+        break;
+      }
+      throw new Error('unterminated JSON array');
+    }
+    return { output: parts.join(''), kind: 'array', changed };
+  }
+
+  private parseString(depth: number): JsonValueResult {
+    const token = this.readStringToken();
+    const sanitized = redactTextBounded(token.value, this.textDepth + depth + 1);
+    const changed = sanitized !== token.value;
+    return {
+      output: changed ? JSON.stringify(sanitized) : token.raw,
+      kind: 'string',
+      scalar: token.value,
+      changed,
+    };
+  }
+
+  private parseNumber(): JsonValueResult {
+    const start = this.index;
+    while (this.index < this.text.length && /[0-9eE+\-.]/.test(charAt(this.text, this.index))) {
+      this.index += 1;
+      this.bumpOperation();
+    }
+    const raw = this.text.slice(start, this.index);
+    if (!/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/.test(raw)) {
+      throw new Error('invalid JSON number');
+    }
+    return { output: raw, kind: 'number', scalar: Number(raw), changed: false };
+  }
+
+  private parseLiteral<T extends 'boolean' | 'null'>(
+    literal: string,
+    kind: T,
+    scalar: T extends 'boolean' ? boolean : null,
+  ): JsonValueResult {
+    if (this.text.slice(this.index, this.index + literal.length) !== literal) {
+      throw new Error('invalid JSON literal');
+    }
+    this.index += literal.length;
+    this.bumpOperation(literal.length);
+    return { output: literal, kind, scalar, changed: false };
+  }
+
+  private readStringToken(): { raw: string; value: string } {
+    const start = this.index;
+    this.index += 1;
+    let closed = false;
+    while (this.index < this.text.length) {
+      const char = charAt(this.text, this.index);
+      if (char === '"') {
+        this.index += 1;
+        closed = true;
+        break;
+      }
+      if (char === '\\') {
+        this.index += 2;
+      } else {
+        if (char.charCodeAt(0) < 0x20) throw new Error('control character in JSON string');
+        this.index += 1;
+      }
+      this.bumpOperation();
+    }
+    if (!closed) throw new Error('unterminated JSON string');
+    const raw = this.text.slice(start, this.index);
+    const value = JSON.parse(raw) as string;
+    this.bumpOperation(raw.length);
+    return { raw, value };
+  }
+
+  private skipSpace(): void {
+    while (isJsonWhitespace(charAt(this.text, this.index))) {
+      this.index += 1;
+      this.bumpOperation();
+    }
+  }
+
+  private bumpNode(depth: number): void {
+    if (depth > MAX_JSON_DEPTH) throw new Error('JSON nesting limit exceeded');
+    this.nodes += 1;
+    if (this.nodes > MAX_JSON_NODES) throw new Error('JSON node limit exceeded');
+    this.bumpOperation();
+  }
+
+  private bumpOperation(amount = 1): void {
+    // Parsing is linear and input length is already capped. This local guard also protects
+    // against future parser changes that accidentally revisit spans super-linearly.
+    this.operations += amount;
+    if (this.operations > MAX_SCAN_OPERATIONS) throw new Error('JSON processing limit exceeded');
+  }
 }
 
-function isHexDigit(c: string): boolean {
-  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+function shouldRedactJsonProperty(key: string, value: JsonValueResult): boolean {
+  const normalized = normalizeKeyName(key);
+  if (value.kind === 'null' || (value.kind === 'string' && value.scalar === REDACTED_VALUE))
+    return false;
+  if (PROVIDER_REF_KEYS.has(normalized)) {
+    return !(
+      value.kind === 'string' &&
+      typeof value.scalar === 'string' &&
+      CANONICAL_PROVIDER_REF.test(value.scalar)
+    );
+  }
+  if (normalized === 'code') return !isDiagnosticCode(value);
+  return TEXT_SENSITIVE_KEYS.has(normalized);
+}
+
+function isDiagnosticCode(value: JsonValueResult): boolean {
+  if (value.kind === 'number' && typeof value.scalar === 'number') {
+    return Number.isInteger(value.scalar) && value.scalar >= 100 && value.scalar <= 599;
+  }
+  if (value.kind !== 'string' || typeof value.scalar !== 'string') return false;
+  const code = value.scalar.toUpperCase();
+  return SAFE_JSON_DIAGNOSTIC_CODES.has(code) || /^E_[A-Z0-9_]{1,32}$/.test(code);
+}
+
+interface TextKey {
+  rawEnd: number;
+  normalized: string;
+}
+
+function scanTextKey(text: string, start: number): TextKey | null {
+  if (start > 0 && isTextWordChar(charAt(text, start - 1))) return null;
+  const pieces: string[] = [];
+  let index = start;
+  let tooLong = false;
+  while (index < text.length) {
+    const char = charAt(text, index);
+    if (isTextWordChar(char)) {
+      if (!tooLong) pieces.push(char);
+      index += 1;
+    } else if (isUnicodeEscapeAt(text, index)) {
+      if (!tooLong)
+        pieces.push(String.fromCharCode(parseInt(text.slice(index + 2, index + 6), 16)));
+      index += 6;
+    } else {
+      break;
+    }
+    if (index - start > 256) {
+      tooLong = true;
+      pieces.length = 0;
+    }
+  }
+  if (index === start || tooLong) return null;
+  return { rawEnd: index, normalized: normalizeKeyName(pieces.join('')) };
+}
+
+interface TextSeparator {
+  start: number;
+  valueStart: number;
+  valueQuote: string | null;
+  escapedOpen: boolean;
+}
+
+function scanTextSeparator(text: string, start: number): TextSeparator | null {
+  let index = start;
+  while (isHorizontalWhitespace(charAt(text, index))) index += 1;
+  if (charAt(text, index) === '\\' && isQuoteChar(charAt(text, index + 1))) index += 2;
+  else if (isQuoteChar(charAt(text, index))) index += 1;
+  while (isHorizontalWhitespace(charAt(text, index))) index += 1;
+  if (charAt(text, index) !== ':' && charAt(text, index) !== '=') return null;
+  index += 1;
+  if (charAt(text, index) === '>') index += 1;
+  while (isHorizontalWhitespace(charAt(text, index))) index += 1;
+  let valueQuote: string | null = null;
+  let escapedOpen = false;
+  if (charAt(text, index) === '\\' && isQuoteChar(charAt(text, index + 1))) {
+    valueQuote = charAt(text, index + 1);
+    escapedOpen = true;
+    index += 2;
+  } else if (isQuoteChar(charAt(text, index))) {
+    valueQuote = charAt(text, index);
+    index += 1;
+  }
+  return { start, valueStart: index, valueQuote, escapedOpen };
+}
+
+function redactKeyValueText(text: string, budget: WorkBudget): string | null {
+  const chunks: string[] = [];
+  let changed = false;
+  let outputCursor = 0;
+  let index = 0;
+  let matches = 0;
+  while (index < text.length) {
+    budget.operations += 1;
+    if (budget.operations > MAX_SCAN_OPERATIONS) return null;
+    if (!isTextWordStart(text, index)) {
+      index += 1;
+      continue;
+    }
+    const key = scanTextKey(text, index);
+    if (!key) {
+      index += 1;
+      continue;
+    }
+    const isProviderRef = PROVIDER_REF_KEYS.has(key.normalized);
+    const isAuthorization =
+      key.normalized === 'authorization' || key.normalized === 'proxyauthorization';
+    const isCodeKey = key.normalized === 'code';
+    const isSensitive = !isProviderRef && (TEXT_SENSITIVE_KEYS.has(key.normalized) || isCodeKey);
+    if (!isProviderRef && !isSensitive) {
+      index = key.rawEnd;
+      continue;
+    }
+    const separator = scanTextSeparator(text, key.rawEnd);
+    if (!separator) {
+      index = key.rawEnd;
+      continue;
+    }
+    matches += 1;
+    if (matches > MAX_TEXT_KEY_MATCHES) return null;
+    const valueStart = separator.valueStart;
+    let valueEnd: number;
+    let replacement = true;
+
+    if (separator.valueQuote !== null) {
+      if (separator.escapedOpen) {
+        // An escaped inner quote has ambiguous ownership in malformed/prose context. The whole
+        // message is safer than guessing which escaped quote closes the secret value.
+        return REDACTED_VALUE;
+      }
+      const quoted = scanQuotedText(text, valueStart, separator.valueQuote);
+      valueEnd = quoted.end;
+      if (isProviderRef && quoted.closed && CANONICAL_PROVIDER_REF.test(quoted.value))
+        replacement = false;
+      if (isCodeKey && quoted.closed && isPlainDiagnosticCode(quoted.value)) replacement = false;
+      if (!quoted.closed) valueEnd = text.length;
+    } else {
+      const runEnd = scanSingleRunEnd(text, valueStart);
+      const firstRun = text.slice(valueStart, runEnd);
+      if (isProviderRef && CANONICAL_PROVIDER_REF.test(firstRun)) {
+        const next = charAt(text, runEnd);
+        if (isSafeProviderBoundary(next)) {
+          index = key.rawEnd;
+          continue;
+        }
+        valueEnd = findProviderFieldEnd(text, valueStart, budget);
+      } else if (isProviderRef) {
+        valueEnd = findProviderFieldEnd(text, valueStart, budget);
+      } else if (isCodeKey && isPlainDiagnosticCode(firstRun)) {
+        index = key.rawEnd;
+        continue;
+      } else if (isAuthorization) {
+        valueEnd = findUnquotedFieldEnd(text, valueStart, budget);
+      } else {
+        valueEnd = findGenericSecretEnd(text, valueStart, budget);
+      }
+      if (valueEnd < 0) return null;
+      if (valueStart === valueEnd) valueEnd = Math.min(text.length, valueStart);
+    }
+
+    if (replacement) {
+      chunks.push(text.slice(outputCursor, valueStart));
+      chunks.push(REDACTED_VALUE);
+      if (
+        separator.valueQuote !== null &&
+        valueEnd > valueStart &&
+        text[valueEnd - 1] === separator.valueQuote
+      ) {
+        chunks.push(separator.valueQuote);
+      }
+      outputCursor = valueEnd;
+      changed = true;
+      index = Math.max(valueEnd, key.rawEnd);
+    } else {
+      index = key.rawEnd;
+    }
+  }
+  if (!changed) return text;
+  chunks.push(text.slice(outputCursor));
+  return chunks.join('');
+}
+
+function scanQuotedText(
+  text: string,
+  start: number,
+  quote: string,
+): { value: string; end: number; closed: boolean } {
+  let index = start;
+  while (index < text.length) {
+    const char = charAt(text, index);
+    if (char === '\\') {
+      index += index + 1 < text.length ? 2 : 1;
+      continue;
+    }
+    if (char === quote) return { value: text.slice(start, index), end: index + 1, closed: true };
+    index += 1;
+  }
+  return { value: text.slice(start), end: text.length, closed: false };
+}
+
+function scanSingleRunEnd(text: string, start: number): number {
+  let index = start;
+  while (
+    index < text.length &&
+    !isWhitespace(charAt(text, index)) &&
+    !isTextDelimiter(charAt(text, index))
+  )
+    index += 1;
+  return index;
+}
+
+function findUnquotedFieldEnd(text: string, start: number, budget: WorkBudget): number {
+  let index = start;
+  while (index < text.length) {
+    budget.operations += 1;
+    if (budget.operations > MAX_SCAN_OPERATIONS) return -1;
+    const char = charAt(text, index);
+    if (
+      char === '\n' ||
+      char === '\r' ||
+      char === ',' ||
+      char === ';' ||
+      char === '}' ||
+      char === ']' ||
+      char === ')' ||
+      char === '"' ||
+      char === "'"
+    )
+      return index;
+    if (isWhitespace(char)) {
+      const next = skipWhitespace(text, index);
+      if (looksLikeKeyValueAt(text, next)) return index;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+
+function findGenericSecretEnd(text: string, start: number, budget: WorkBudget): number {
+  let end = scanSingleRunEnd(text, start);
+  if (end === start) return end;
+  let priorRun = text.slice(start, end).toLowerCase();
+  for (let part = 0; part < MAX_KEYLESS_SUFFIX_PARTS; part += 1) {
+    let next = end;
+    while (isHorizontalWhitespace(charAt(text, next))) next += 1;
+    if (next === end || looksLikeKeyValueAt(text, next)) break;
+    const candidateEnd = scanSingleRunEnd(text, next);
+    if (candidateEnd === next) break;
+    const candidate = text.slice(next, candidateEnd);
+    const schemeFollowup = priorRun === 'bearer' || priorRun === 'basic';
+    if (!schemeFollowup && !isCredentialLike(candidate)) break;
+    end = candidateEnd;
+    priorRun = candidate.toLowerCase();
+    budget.operations += candidateEnd - next;
+    if (budget.operations > MAX_SCAN_OPERATIONS) return -1;
+  }
+  return end;
+}
+
+function findProviderFieldEnd(text: string, start: number, budget: WorkBudget): number {
+  let index = start;
+  while (index < text.length) {
+    budget.operations += 1;
+    if (budget.operations > MAX_SCAN_OPERATIONS) return -1;
+    const char = charAt(text, index);
+    if (
+      char === ',' ||
+      char === '}' ||
+      char === ']' ||
+      char === ')' ||
+      char === '"' ||
+      char === "'"
+    )
+      return index;
+    if (char === ';') {
+      const next = skipWhitespace(text, index + 1);
+      if (charAt(text, next) === '{' || looksLikeKeyValueAt(text, next)) return index;
+    }
+    if (isWhitespace(char)) {
+      const next = skipWhitespace(text, index);
+      if (looksLikeKeyValueAt(text, next)) return index;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+
+function isSafeProviderBoundary(char: string): boolean {
+  return (
+    char === '' ||
+    char === ',' ||
+    char === '}' ||
+    char === ']' ||
+    char === ')' ||
+    char === '"' ||
+    char === "'"
+  );
+}
+
+function looksLikeKeyValueAt(text: string, start: number): boolean {
+  const key = scanTextKey(text, start);
+  if (!key) return false;
+  if (!VALUE_BOUNDARY_KEYS.has(key.normalized)) return false;
+  return scanTextSeparator(text, key.rawEnd) !== null;
+}
+
+interface ProviderSuffix {
+  credential: boolean;
+  end: number;
+}
+
+function inspectProviderSuffix(text: string, runEnd: number, budget: WorkBudget): ProviderSuffix {
+  let index = runEnd;
+  let parts = 0;
+  let foundCredential = false;
+  let credentialEnd = runEnd;
+  const stop = Math.min(text.length, runEnd + MAX_KEYLESS_LOOKAHEAD);
+  while (index < stop && parts < MAX_KEYLESS_SUFFIX_PARTS) {
+    const whitespaceStart = index;
+    while (index < stop && isWhitespace(charAt(text, index))) {
+      index += 1;
+      budget.operations += 1;
+    }
+    if (index === whitespaceStart || index >= stop || isTextDelimiter(charAt(text, index))) break;
+    if (looksLikeKeyValueAt(text, index)) break;
+    const partStart = index;
+    while (
+      index < stop &&
+      !isWhitespace(charAt(text, index)) &&
+      !isTextDelimiter(charAt(text, index))
+    ) {
+      index += 1;
+      budget.operations += 1;
+    }
+    const part = text.slice(partStart, index);
+    parts += 1;
+    if (isCredentialLike(part)) {
+      foundCredential = true;
+      credentialEnd = index;
+      break;
+    }
+    if (budget.operations > MAX_SCAN_OPERATIONS) return { credential: true, end: -1 };
+  }
+  return { credential: foundCredential, end: credentialEnd };
+}
+
+function redactKeylessProviderRegions(text: string, budget: WorkBudget): string | null {
+  CANONICAL_PROVIDER_REF_GLOBAL.lastIndex = 0;
+  const chunks: string[] = [];
+  let cursor = 0;
+  let candidates = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CANONICAL_PROVIDER_REF_GLOBAL.exec(text)) !== null) {
+    candidates += 1;
+    if (candidates > MAX_KEYLESS_CANDIDATES) return null;
+    const endToken = match.index + match[0].length;
+    const suffix = inspectProviderSuffix(text, endToken, budget);
+    if (suffix.end < 0) return null;
+    if (suffix.credential && suffix.end > endToken) {
+      chunks.push(text.slice(cursor, match.index), REDACTED_VALUE);
+      cursor = suffix.end;
+      CANONICAL_PROVIDER_REF_GLOBAL.lastIndex = Math.max(
+        CANONICAL_PROVIDER_REF_GLOBAL.lastIndex,
+        cursor,
+      );
+    }
+    if (budget.operations > MAX_SCAN_OPERATIONS) return null;
+  }
+  if (cursor === 0) return text;
+  chunks.push(text.slice(cursor));
+  return chunks.join('');
+}
+
+function applyCredentialShapes(text: string): string {
+  return text
+    .replace(
+      /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
+      REDACTED_VALUE,
+    )
+    .replace(/\b(?:robe|re)_[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
+    .replace(/\b(?:xkeysib|xsmtpsib)-[A-Za-z0-9_-]{8,}\b/gi, REDACTED_VALUE)
+    .replace(
+      /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\x5b\]]+/gi,
+      REDACTED_VALUE,
+    );
+}
+
+function isCredentialLike(value: string): boolean {
+  if (value.length < 4) return false;
+  if (value.includes('_') && /[A-Z]/.test(value) && /[A-Z0-9]/.test(value)) return true;
+  if (value.length < 8) return false;
+  if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) return true;
+  if (
+    value.length >= 32 &&
+    /^[A-Za-z0-9_-]+$/.test(value) &&
+    /[A-Za-z]/.test(value) &&
+    /[0-9]/.test(value)
+  )
+    return true;
+  if (/^[a-f0-9]{24,}$/i.test(value) && /[0-9]/.test(value)) return true;
+  if (/(?:xkeysib|xsmtpsib)-[A-Za-z0-9_-]{8,}|(?:robe|re)_[A-Za-z0-9_-]{8,}/i.test(value))
+    return true;
+  if (value.includes('_') && /[A-Z]/.test(value) && /[A-Z0-9]/.test(value)) return true;
+  return /^[A-Z0-9]{8,}$/.test(value) && /[0-9]/.test(value) && /[A-Z]/.test(value);
+}
+
+function isPlainDiagnosticCode(value: string): boolean {
+  const trimmed = value.trim();
+  if (/^\d{3}$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    return numeric >= 100 && numeric <= 599;
+  }
+  const normalized = trimmed.toUpperCase();
+  return SAFE_JSON_DIAGNOSTIC_CODES.has(normalized) || /^E_[A-Z0-9_]{1,32}$/.test(normalized);
+}
+
+function normalizeKeyName(value: string): string {
+  return value.toLowerCase().replace(/[-_]/g, '');
+}
+
+function isTextWordStart(text: string, index: number): boolean {
+  if (index > 0 && isTextWordChar(charAt(text, index - 1))) return false;
+  return isTextWordChar(charAt(text, index)) || isUnicodeEscapeAt(text, index);
+}
+
+function isTextWordChar(char: string): boolean {
+  return (
+    (char >= 'a' && char <= 'z') ||
+    (char >= 'A' && char <= 'Z') ||
+    (char >= '0' && char <= '9') ||
+    char === '_' ||
+    char === '-'
+  );
+}
+
+function isTextDelimiter(char: string): boolean {
+  return (
+    char === ',' ||
+    char === ';' ||
+    char === '}' ||
+    char === ']' ||
+    char === ')' ||
+    char === '(' ||
+    char === '"' ||
+    char === "'" ||
+    char === '{' ||
+    char === '['
+  );
+}
+
+function isHorizontalWhitespace(char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\f' || char === '\v';
+}
+
+function isWhitespace(char: string): boolean {
+  return (
+    char === ' ' ||
+    char === '\t' ||
+    char === '\n' ||
+    char === '\r' ||
+    char === '\f' ||
+    char === '\v'
+  );
+}
+
+function isJsonWhitespace(char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r';
+}
+
+function isQuoteChar(char: string): boolean {
+  return char === '"' || char === "'";
+}
+
+function isDigit(char: string): boolean {
+  return char >= '0' && char <= '9';
+}
+
+function isHexDigit(char: string): boolean {
+  return isDigit(char) || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F');
 }
 
 function isUnicodeEscapeAt(text: string, index: number): boolean {
@@ -342,342 +920,52 @@ function isUnicodeEscapeAt(text: string, index: number): boolean {
   );
 }
 
-function isWordStart(text: string, index: number): boolean {
-  if (index > 0 && isWordChar(charAt(text, index - 1))) return false;
-  return isWordChar(charAt(text, index)) || isUnicodeEscapeAt(text, index);
-}
-
-interface WordRun {
-  raw: string;
-  decoded: string;
-  end: number;
-}
-
-/**
- * Maximal word run: `[A-Za-z0-9_-]` characters plus embedded `\uXXXX` JSON escape
- * groups, which are decoded for key classification (report 15 F1) while the raw
- * source text is preserved in the output.
- */
-function scanWordRun(text: string, start: number): WordRun {
-  const n = text.length;
-  let raw = '';
-  let decoded = '';
-  let i = start;
-  while (i < n) {
-    const c = charAt(text, i);
-    if (isWordChar(c)) {
-      raw += c;
-      decoded += c;
-      i += 1;
-      continue;
-    }
-    if (isUnicodeEscapeAt(text, i)) {
-      raw += text.slice(i, i + 6);
-      decoded += String.fromCharCode(parseInt(text.slice(i + 2, i + 6), 16));
-      i += 6;
-      continue;
-    }
-    break;
-  }
-  return { raw, decoded, end: i };
-}
-
-interface SeparatorScan {
-  text: string;
-  end: number;
-  quoteChar: string | null;
-  escapedQuote: boolean;
-}
-
-function scanSeparator(text: string, start: number): SeparatorScan | null {
-  const n = text.length;
-  let i = start;
-  while (i < n && isWhitespaceChar(charAt(text, i))) i += 1;
-  // optional (possibly backslash-escaped) closing quote of a JSON-style key
-  if (i < n && charAt(text, i) === '\\' && isQuoteChar(charAt(text, i + 1))) i += 2;
-  else if (i < n && isQuoteChar(charAt(text, i))) i += 1;
-  while (i < n && isWhitespaceChar(charAt(text, i))) i += 1;
-  if (i >= n || (charAt(text, i) !== ':' && charAt(text, i) !== '=')) return null;
-  i += 1;
-  if (i < n && charAt(text, i) === '>') i += 1; // alternate separator: `=>`
-  while (i < n && isWhitespaceChar(charAt(text, i))) i += 1;
-  let quoteChar: string | null = null;
-  let escapedQuote = false;
-  if (i < n && charAt(text, i) === '\\' && isQuoteChar(charAt(text, i + 1))) {
-    quoteChar = charAt(text, i + 1);
-    escapedQuote = true;
-    i += 2;
-  } else if (i < n && isQuoteChar(charAt(text, i))) {
-    quoteChar = charAt(text, i);
-    i += 1;
-  }
-  return { text: text.slice(start, i), end: i, quoteChar, escapedQuote };
-}
-
-interface QuotedValueScan {
-  value: string;
-  end: number;
-  closing: string;
-}
-
-/**
- * Reads a quoted value through its MATCHING quote, honoring backslash escape pairs.
- * When the opening quote was itself escaped (`\"`, i.e. stringified-JSON context),
- * the closing delimiter is the escaped quote `\"` — so escaped inner structure is
- * not over-captured as outer grammar (report 15 F4). Unbalanced quotes fail safe:
- * the remainder of the string counts as the value.
- */
-function scanQuotedValue(
-  text: string,
-  start: number,
-  quote: string,
-  escapedOpen: boolean,
-): QuotedValueScan {
-  const n = text.length;
-  let i = start;
-  while (i < n) {
-    const c = charAt(text, i);
-    if (c === '\\') {
-      if (charAt(text, i + 1) === quote) {
-        if (escapedOpen) {
-          return { value: text.slice(start, i), end: i + 2, closing: `\\${quote}` };
-        }
-        i += 2;
-        continue;
-      }
-      i += i + 1 < n ? 2 : 1;
-      continue;
-    }
-    if (c === quote) {
-      return { value: text.slice(start, i), end: i + 1, closing: quote };
-    }
-    i += 1;
-  }
-  return { value: text.slice(start, n), end: n, closing: '' };
-}
-
-interface UnquotedRunScan {
-  run: string;
-  end: number;
-}
-
-function scanUnquotedRun(text: string, start: number): UnquotedRunScan {
-  const n = text.length;
-  let i = start;
-  while (i < n && !isWhitespaceChar(charAt(text, i)) && !UNQUOTED_RUN_TERMINATORS.has(charAt(text, i))) {
-    i += 1;
-  }
-  let valueEnd = i;
-  // Trailing backslashes belong to surrounding escape structure (e.g. \" inside
-  // stringified JSON), not to the secret value; keep them outside the redaction.
-  while (valueEnd > start && charAt(text, valueEnd - 1) === '\\') valueEnd -= 1;
-  return { run: text.slice(start, valueEnd), end: i };
-}
-
-/** A run shaped like `key=` / `key:` — the start of the next pair; regions stop before it. */
-function looksLikeKeyValuePair(run: string): boolean {
-  return /^[A-Za-z0-9_-]+["']?[:=]/.test(run);
-}
-
-/**
- * Narrow sentinel-shape heuristic (report 15 F2/F3): `_`-bearing identifiers or
- * all-caps/digit runs. Ordinary prose words and timestamps do not match, so
- * diagnostics are not indiscriminately destroyed.
- */
-function isSuspiciousRun(run: string): boolean {
-  if (run.length < 4) return false;
-  if (run.includes('_')) return true;
-  return /^[A-Z0-9]{6,}$/.test(run) && /[0-9]/.test(run) && /[A-Z]/.test(run);
-}
-
-/**
- * Region extension for redacted unquoted values: consumes whitespace-separated
- * sentinel-shaped runs (multi-word credentials such as `Bearer <cred>` or
- * `SECRET_PART_ONE SECRET_PART_TWO`) and stops at hard delimiters, the next
- * key/value pair, ordinary prose, and — for header semantics — newlines
- * (provider references cross newlines because malformed references may embed them).
- */
-function extendRedactionRegion(text: string, start: number, crossNewlines: boolean): number {
-  const n = text.length;
-  let regionEnd = start;
-  let i = start;
-  for (;;) {
-    let sawNewline = false;
-    let j = i;
-    while (j < n && isWhitespaceChar(charAt(text, j))) {
-      if (charAt(text, j) === '\n') sawNewline = true;
-      j += 1;
-    }
-    if (!crossNewlines && sawNewline) return regionEnd;
-    if (j >= n || HARD_REGION_STOPPERS.has(charAt(text, j))) return regionEnd;
-    let k = j;
-    while (k < n && !isWhitespaceChar(charAt(text, k)) && !HARD_REGION_STOPPERS.has(charAt(text, k))) {
-      k += 1;
-    }
-    const candidate = text.slice(j, k);
-    if (looksLikeKeyValuePair(candidate) || !isSuspiciousRun(candidate)) return regionEnd;
-    regionEnd = k;
-    i = k;
-  }
-}
-
-/**
- * Ambiguous canonical-token region (report 14 R-03): an unquoted complete token
- * followed by whitespace may be a malformed reference with a whitespace/newline
- * suffix, so everything through the next hard delimiter fails safe.
- */
-function scanAmbiguousRegionEnd(text: string, start: number): number {
-  const n = text.length;
-  let i = start;
-  while (i < n && !HARD_REGION_STOPPERS.has(charAt(text, i))) i += 1;
-  return i;
-}
-
-/** Layer C: the unstructured key/value scanner. */
-function redactKeyValueText(text: string): string {
-  const n = text.length;
-  let out = '';
-  let i = 0;
-  while (i < n) {
-    if (!isWordStart(text, i)) {
-      out += charAt(text, i);
-      i += 1;
-      continue;
-    }
-    const word = scanWordRun(text, i);
-    if (word.raw.length === 0) {
-      out += charAt(text, i);
-      i += 1;
-      continue;
-    }
-    const normalized = normalizeKeyName(word.decoded);
-    const isProviderRef = PROVIDER_REF_TEXT_KEYS.has(normalized);
-    const isSensitive = !isProviderRef && TEXT_SENSITIVE_KEYS.has(normalized);
-    if (!isProviderRef && !isSensitive) {
-      out += word.raw;
-      i = word.end;
-      continue;
-    }
-    const separator = scanSeparator(text, word.end);
-    if (!separator) {
-      out += word.raw;
-      i = word.end;
-      continue;
-    }
-    if (separator.quoteChar !== null) {
-      const quoted = scanQuotedValue(text, separator.end, separator.quoteChar, separator.escapedQuote);
-      const exempt = isProviderRef && CANONICAL_PROVIDER_REF.test(quoted.value);
-      out += word.raw + separator.text + (exempt ? quoted.value : REDACTED_VALUE) + quoted.closing;
-      i = quoted.end;
-      continue;
-    }
-    const unquoted = scanUnquotedRun(text, separator.end);
-    const trailingEscapes = text.slice(separator.end + unquoted.run.length, unquoted.end);
-    if (isProviderRef && CANONICAL_PROVIDER_REF.test(unquoted.run)) {
-      const nextChar = charAt(text, unquoted.end);
-      if (nextChar !== '' && isWhitespaceChar(nextChar)) {
-        out += word.raw + separator.text + REDACTED_VALUE + trailingEscapes;
-        i = scanAmbiguousRegionEnd(text, unquoted.end);
-        continue;
-      }
-      // Complete canonical token at a hard boundary or end of string: preserve verbatim.
-      out += word.raw + separator.text + unquoted.run + trailingEscapes;
-      i = unquoted.end;
-      continue;
-    }
-    const regionEnd =
-      unquoted.run.length > 0
-        ? extendRedactionRegion(text, unquoted.end, isProviderRef)
-        : unquoted.end;
-    out += word.raw + separator.text + REDACTED_VALUE + trailingEscapes;
-    i = regionEnd;
-  }
-  return out;
-}
-
-/** Layer D: key-less canonical provider references with sentinel-shaped suffix regions. */
-function redactKeylessProviderRegions(text: string): string {
-  const n = text.length;
-  CANONICAL_PROVIDER_REF_GLOBAL.lastIndex = 0;
-  let out = '';
-  let last = 0;
-  let match: RegExpExecArray | null = CANONICAL_PROVIDER_REF_GLOBAL.exec(text);
-  while (match !== null) {
-    const tokenStart = match.index;
-    const tokenEnd = tokenStart + match[0].length;
-    match = CANONICAL_PROVIDER_REF_GLOBAL.exec(text);
-    if (tokenStart < last) continue;
-    const after = charAt(text, tokenEnd);
-    if (after === '' || !isWhitespaceChar(after)) continue; // attached suffixes: layer E
-    let regionEnd = tokenEnd;
-    let suspicious = false;
-    let i = tokenEnd;
-    for (;;) {
-      let j = i;
-      while (j < n && isWhitespaceChar(charAt(text, j))) j += 1;
-      if (j >= n || HARD_REGION_STOPPERS.has(charAt(text, j))) break;
-      let k = j;
-      while (k < n && !isWhitespaceChar(charAt(text, k)) && !HARD_REGION_STOPPERS.has(charAt(text, k))) {
-        k += 1;
-      }
-      const candidate = text.slice(j, k);
-      if (looksLikeKeyValuePair(candidate)) break;
-      if (isSuspiciousRun(candidate)) suspicious = true;
-      regionEnd = k;
-      i = k;
-    }
-    if (suspicious) {
-      out += text.slice(last, tokenStart) + REDACTED_VALUE;
-      last = regionEnd;
-    }
-  }
-  out += text.slice(last);
-  return out;
-}
-
-/** Layer E: credential-shaped patterns (retained from the historical redactor). */
-function applyShapePatterns(text: string): string {
-  return (
-    text
-      // Key-less malformed canonical-token shapes with an ATTACHED suffix (complete exact
-      // tokens followed by a hard delimiter are not matched). A following `\"` is an escaped
-      // closing quote (stringified-JSON boundary), not a suffix — the lookahead preserves it
-      // so escaped structure stays intact.
-      .replace(
-        /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\[\]]+/gi,
-        REDACTED_VALUE,
-      )
-      .replace(
-        /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
-        REDACTED_VALUE,
-      )
-      .replace(/\b(?:robe|re)_[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
-      .replace(/\bx(?:keysib|smtpsib)-[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
-  );
-}
-
-function redact(value: unknown, seen: WeakSet<object>): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => redact(item, seen));
-  }
-  if (value instanceof Date || value === null || typeof value !== 'object') {
-    return value;
-  }
-  if (seen.has(value)) {
-    return REDACTED_VALUE;
-  }
-  seen.add(value);
-  const output: Record<string, unknown> = {};
-  for (const [key, nestedValue] of Object.entries(value)) {
-    output[key] = isSensitiveKey(key) ? REDACTED_VALUE : redact(nestedValue, seen);
-  }
-  return output;
-}
-
-function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEY_NAMES.has(normalizeKeyName(key));
+function skipWhitespace(text: string, start: number): number {
+  let index = start;
+  while (isWhitespace(charAt(text, index))) index += 1;
+  return index;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+interface ObjectBudget {
+  nodes: number;
+}
+
+function redactObjectValue(
+  value: unknown,
+  seen: WeakSet<object>,
+  depth: number,
+  budget: ObjectBudget,
+): unknown {
+  budget.nodes += 1;
+  if (depth > MAX_JSON_DEPTH || budget.nodes > MAX_JSON_NODES)
+    throw new Error('object redaction budget exceeded');
+  if (Array.isArray(value)) {
+    const output: unknown[] = [];
+    for (const item of value) output.push(redactObjectValue(item, seen, depth + 1, budget));
+    return output;
+  }
+  if (value instanceof Date || value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return REDACTED_VALUE;
+  seen.add(value);
+  const output: Record<string, unknown> = {};
+  for (const key in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const nestedValue = (value as Record<string, unknown>)[key];
+    output[key] = isObjectSensitiveKey(key)
+      ? REDACTED_VALUE
+      : redactObjectValue(nestedValue, seen, depth + 1, budget);
+  }
+  return output;
+}
+
+function isObjectSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_NAMES.has(normalizeKeyName(key));
+}
+
+function charAt(text: string, index: number): string {
+  return text[index] ?? '';
 }

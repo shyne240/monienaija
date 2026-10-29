@@ -82,7 +82,9 @@ describe('GlobalExceptionFilter — provider-reference error-text redaction (F-0
 
   it('4xx: JSON-quoted malformed provider references are redacted without exposing the suffix', () => {
     const { response } = runFilter(
-      new BadRequestException(`Payload rejected: {"providerRef":"${VALID_TOKEN}:F01_SUFFIX_SENTINEL_TX_NGN_999000"}`),
+      new BadRequestException(
+        `Payload rejected: {"providerRef":"${VALID_TOKEN}:F01_SUFFIX_SENTINEL_TX_NGN_999000"}`,
+      ),
     );
     const serialized = JSON.stringify(response.body);
     expect(serialized).not.toContain('F01_SUFFIX_SENTINEL_TX_NGN_999000');
@@ -123,7 +125,9 @@ describe('GlobalExceptionFilter — provider-reference error-text redaction (F-0
   });
 
   it('5xx: a legitimate exact canonical pvr1 token in the logged error is preserved unchanged', () => {
-    const { loggerCalls } = runFilter(new Error(`Delivery already recorded providerRef=${VALID_TOKEN}`));
+    const { loggerCalls } = runFilter(
+      new Error(`Delivery already recorded providerRef=${VALID_TOKEN}`),
+    );
     expect(loggerCalls).toHaveLength(1);
     expect((loggerCalls[0] as { errorMessage: string }).errorMessage).toBe(
       `Delivery already recorded providerRef=${VALID_TOKEN}`,
@@ -146,7 +150,9 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
     expect(serialized).not.toContain('SPACE_SUFFIX_SENTINEL_TX_NGN_998000');
     expect(serialized).not.toContain('JSON_KEY_SENTINEL_123');
     expect(serialized).not.toContain('TX_NGN_998000');
-    expect(response.body.message).toBe(`providerRef=${REDACTED_VALUE}; {"apiKey":"${REDACTED_VALUE}"}`);
+    expect(response.body.message).toBe(
+      `providerRef=${REDACTED_VALUE}; {"apiKey":"${REDACTED_VALUE}"}`,
+    );
   });
 
   it('5xx: the exact report-14 probe cannot reach the structured error log', () => {
@@ -166,7 +172,9 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
     const message = String(response.body.message);
     expect(message).not.toContain('SENTINEL_JSON_SPACE_TX_NGN_999000');
     expect(message).toBe(`Payload rejected: {"providerRef":"${REDACTED_VALUE}"}`);
-    expect(JSON.parse(message.replace('Payload rejected: ', ''))).toEqual({ providerRef: REDACTED_VALUE });
+    expect(JSON.parse(message.replace('Payload rejected: ', ''))).toEqual({
+      providerRef: REDACTED_VALUE,
+    });
 
     const quotedNewline = `{"providerRef":"${VALID_TOKEN}\\nSENTINEL_ESC_NL_TX_NGN_777000"}`;
     const { response: respNl } = runFilter(new BadRequestException(quotedNewline));
@@ -193,7 +201,9 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
   it('4xx/5xx: R-04 quoted secret keys (apiKey, authorization, secret, token) are redacted in body and log', () => {
     const payload = `{"apiKey":"K_SENTINEL_1","authorization":"A_SENTINEL_2","secret":"S_SENTINEL_3","token":"T_SENTINEL_4"}`;
     const four = runFilter(new BadRequestException(payload));
-    expect(JSON.stringify(four.response.body)).not.toMatch(/K_SENTINEL_1|A_SENTINEL_2|S_SENTINEL_3|T_SENTINEL_4/);
+    expect(JSON.stringify(four.response.body)).not.toMatch(
+      /K_SENTINEL_1|A_SENTINEL_2|S_SENTINEL_3|T_SENTINEL_4/,
+    );
     expect(JSON.parse(String(four.response.body.message))).toEqual({
       apiKey: REDACTED_VALUE,
       authorization: REDACTED_VALUE,
@@ -201,7 +211,9 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
       token: REDACTED_VALUE,
     });
     const five = runFilter(new Error(payload));
-    expect(JSON.stringify(five.loggerCalls[0])).not.toMatch(/K_SENTINEL_1|A_SENTINEL_2|S_SENTINEL_3|T_SENTINEL_4/);
+    expect(JSON.stringify(five.loggerCalls[0])).not.toMatch(
+      /K_SENTINEL_1|A_SENTINEL_2|S_SENTINEL_3|T_SENTINEL_4/,
+    );
   });
 
   it('preserves ordinary non-sensitive 4xx messages and legitimate tokens at hard boundaries', () => {
@@ -210,7 +222,9 @@ describe('GlobalExceptionFilter — R-03 whitespace suffix + R-04 JSON-quoted ke
     const legitimate = runFilter(
       new BadRequestException(`Duplicate delivery providerRef=${VALID_TOKEN}, attempts=1`),
     );
-    expect(legitimate.response.body.message).toBe(`Duplicate delivery providerRef=${VALID_TOKEN}, attempts=1`);
+    expect(legitimate.response.body.message).toBe(
+      `Duplicate delivery providerRef=${VALID_TOKEN}, attempts=1`,
+    );
   });
 
   it('handles a hostile 200 KB error message without hanging or leaking the terminal sentinel', () => {
@@ -236,7 +250,9 @@ describe('GlobalExceptionFilter — report-15 residual findings', () => {
 
   it('4xx: unicode-escaped JSON property names are decoded and their values redacted', () => {
     const { response } = runFilter(
-      new BadRequestException(`{"api\\u004Bey":"UNICODE_KEY_HTTP_SENTINEL","provider\\u0052ef":"${VALID_TOKEN} UNICODE_REF_SUFFIX_SENTINEL"}`),
+      new BadRequestException(
+        `{"api\\u004Bey":"UNICODE_KEY_HTTP_SENTINEL","provider\\u0052ef":"${VALID_TOKEN} UNICODE_REF_SUFFIX_SENTINEL"}`,
+      ),
     );
     const serialized = JSON.stringify(response.body);
     expect(serialized).not.toContain('UNICODE_KEY_HTTP_SENTINEL');
@@ -246,7 +262,7 @@ describe('GlobalExceptionFilter — report-15 residual findings', () => {
 
   it('5xx: unquoted Authorization Bearer credentials cannot reach the structured log', () => {
     const { response, loggerCalls } = runFilter(
-      new Error('upstream rejected authorization: Bearer BEARER_HTTP_SENTINEL_999 for request'),
+      new Error('upstream rejected authorization: Bearer BEARER_HTTP_SENTINEL_999; for request'),
     );
     expect(response.statusCode).toBe(500);
     const logged = JSON.stringify(loggerCalls[0]);
