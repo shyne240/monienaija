@@ -187,11 +187,18 @@ describe('report 23 finding 1 — short/lowercase scheme credentials are redacte
     expect(response.headers['X-Correlation-Id']).toContain(REDACTED_VALUE);
   });
 
-  it('preservation: lowercase prose scheme words keep their ordinary runs', () => {
+  // SUPERSEDED BY REPORT 25 (documented policy change): this test originally pinned
+  // the Branch B lowercase-prose exemption ('a basic understanding …' preserved). The
+  // independent audit demonstrated that exemption is exactly the R-04 bypass
+  // (`bearer abcdefgh` / `bearer abc` survived), and report 25 mandates preferring
+  // explicit authentication credentials over ambiguous prose. Under the unified
+  // case-insensitive scheme rule (no marker, no length floor) a scheme word followed
+  // by whitespace and an ordinary word is conservatively redacted.
+  it('report-25 policy: prose runs directly after a scheme word are conservatively redacted', () => {
     const prose1 = 'a basic understanding of the system is required';
-    expect(redactSensitiveText(prose1)).toBe(prose1);
+    expect(redactSensitiveText(prose1)).toBe(`a ${REDACTED_VALUE} of the system is required`);
     const prose2 = 'the bearer of good news arrived';
-    expect(redactSensitiveText(prose2)).toBe(prose2);
+    expect(redactSensitiveText(prose2)).toBe(`the ${REDACTED_VALUE} good news arrived`);
   });
 
   it('preservation: context-free tokens and Base64 without a scheme are untouched', () => {

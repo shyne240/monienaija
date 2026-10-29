@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
-import type { FastifyRequest } from 'fastify';
 
 import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
@@ -55,7 +54,7 @@ import { B2FAccountingTreatmentModule } from './policy/b2f-accounting-treatment.
 import { B2FFinanceControlModule } from './policy/b2f-finance-control.module';
 import { B2FFiscalPeriodModule } from './policy/b2f-fiscal-period.module';
 import { B2FJournalGovernanceModule } from './policy/b2f-journal-governance.module';
-import { getRequestContext } from './production/request-context';
+import { buildPinoHttpOptions } from './production/pino-config';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
 import { FeeModule } from './fee/fee.module';
@@ -101,45 +100,7 @@ import { WalletModule } from './wallet/wallet.module';
       validate: validateEnvironment,
     }),
     LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.LOG_LEVEL ?? 'info',
-        genReqId: (request) => getRequestContext(request as unknown as FastifyRequest).requestId,
-        redact: {
-          paths: [
-            'req.headers.authorization',
-            'req.headers.cookie',
-            'req.headers.x-api-key',
-            'req.body.password',
-            'req.body.currentPassword',
-            'req.body.newPassword',
-            'req.body.temporaryPassword',
-            'req.body.passwordHash',
-            'req.body.pin',
-            'req.body.customerPin',
-            'req.body.agentPin',
-            'req.body.otp',
-            'req.body.pinHash',
-            'req.body.token',
-            'req.body.tokenHash',
-            'req.body.accessToken',
-            'req.body.applicantAccessToken',
-            'req.body.refreshToken',
-            'req.body.secret',
-            'req.body.apiKey',
-            'req.body.code',
-            'req.body.codeHash',
-            'req.body.challengeHash',
-            'req.body.transferCode',
-            'req.body.transferCodeHash',
-            'req.body.providedHash',
-            'req.body.deviceFingerprintHash',
-            'req.body.fingerprintHash',
-            'res.headers.set-cookie',
-          ],
-          censor: '[REDACTED]',
-        },
-        customProps: (request) => getRequestContext(request as unknown as FastifyRequest),
-      },
+      pinoHttp: buildPinoHttpOptions(),
     }),
     TypeOrmModule.forRootAsync({
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),

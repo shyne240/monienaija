@@ -829,39 +829,38 @@ function redactKeylessProviderRegions(text: string, budget: WorkBudget): string 
 }
 
 function applyCredentialShapes(text: string): string {
-  return text
-    .replace(
-      /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
-      REDACTED_VALUE,
-    )
-    .replace(/\b(?:robe|re)_[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
-    .replace(/\b(?:xkeysib|xsmtpsib)-[A-Za-z0-9_-]{8,}\b/gi, REDACTED_VALUE)
-    .replace(
-      /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\x5b\]]+/gi,
-      REDACTED_VALUE,
-    )
-    // Report 21/23 findings: an explicit authentication scheme prefix is credential context.
-    // Branch A — canonical header casing (`Basic`/`BASIC`/`Bearer`/`BEARER`) followed by any
-    // whitespace and a run of >=4 characters is redacted as a complete region with NO
-    // composition requirement: valid credentials may be short (`dTpw` = base64 `u:p`) or
-    // all-lowercase (`abcdefgh`), and header-style values may be line-wrapped in diagnostics.
-    .replace(
-      /\b(?:Basic|BASIC|Bearer|BEARER)\s+[^\s"',;:()[\]{}|\\`]{3,}[A-Za-z0-9+/=_-]/g,
-      REDACTED_VALUE,
-    )
-    // Branch B — any casing of the scheme word (e.g. `BaSiC`, `basic`) still redacts the run
-    // when it carries a base64/opaque-token marker ([A-Z0-9+/=_]), so mixed-case short
-    // credentials are caught regardless of scheme spelling, while all-lowercase prose runs
-    // after lowercase scheme words (`a basic understanding …`, `the bearer of …`) and
-    // context-free Base64 without any scheme prefix are never touched.
-    .replace(
-      /\b(?:[bB][aA][sS][iI][cC]|[bB][eE][aA][rR][eE][rR])[ \t]+(?=[^\s"',;:()[\]{}|\\`]*[A-Z0-9+/=_])[^\s"',;:()[\]{}|\\`]{3,}[A-Za-z0-9+/=_-]/g,
-      REDACTED_VALUE,
-    )
-    // Report 19 finding B variant: a bare (key-less) JWT in a diagnostic field is a credential
-    // wherever it appears. `eyJ` is the base64url encoding of `{"` — the universal JWT header
-    // marker — so a three-segment eyJ token is redacted without touching ordinary prose.
-    .replace(/\beyJ[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}/g, REDACTED_VALUE);
+  return (
+    text
+      .replace(
+        /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
+        REDACTED_VALUE,
+      )
+      .replace(/\b(?:robe|re)_[A-Za-z0-9_-]{8,}\b/g, REDACTED_VALUE)
+      .replace(/\b(?:xkeysib|xsmtpsib)-[A-Za-z0-9_-]{8,}\b/gi, REDACTED_VALUE)
+      .replace(
+        /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\x5b\]]+/gi,
+        REDACTED_VALUE,
+      )
+      // Report 21/23/25 findings: an explicit authentication scheme prefix is credential
+      // context. HTTP auth schemes are case-insensitive (RFC 7235) and RFC 6750 b64token
+      // permits one-or-more token characters, so report 25 replaced the former two-branch
+      // shape (canonical-casing Branch A and marker-gated Branch B, both with a >=4-character
+      // floor) with a single unified rule: any casing of `basic`/`bearer` (word-bounded)
+      // followed by whitespace and a run of at least one token character is redacted as a
+      // complete credential region. Documented policy trade-off (report 25 mandate: explicit
+      // credentials outweigh ambiguous prose): an ordinary word directly after a scheme word
+      // (`the bearer of good news`) is conservatively redacted, while a scheme word followed
+      // by a colon (`Basic: ...`), bare scheme words, and context-free strings without a
+      // scheme prefix are never touched by this shape.
+      .replace(
+        /\b(?:[bB][aA][sS][iI][cC]|[bB][eE][aA][rR][eE][rR])\s+[^\s"',;:()[\]{}|\\`]*[A-Za-z0-9+/=_-]/g,
+        REDACTED_VALUE,
+      )
+      // Report 19 finding B variant: a bare (key-less) JWT in a diagnostic field is a credential
+      // wherever it appears. `eyJ` is the base64url encoding of `{"` — the universal JWT header
+      // marker — so a three-segment eyJ token is redacted without touching ordinary prose.
+      .replace(/\beyJ[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}/g, REDACTED_VALUE)
+  );
 }
 
 function isCredentialLike(value: string): boolean {
@@ -1017,4 +1016,70 @@ function isObjectSensitiveKey(key: string): boolean {
 
 function charAt(text: string, index: number): string {
   return text[index] ?? '';
+}
+
+/**
+ * Report 25: shared diagnostic-path boundary for URL-derived strings (moved verbatim
+ * out of `GlobalExceptionFilter` so every URL sink uses one implementation). Query
+ * strings and fragments routinely carry credentials (signed links, integration
+ * callbacks, misconfigured clients) and have no diagnostic value, so everything from
+ * the first '?' or '#' is excluded and the remainder still passes through the full
+ * redaction boundary. Pure string operations: malformed URLs cannot throw.
+ */
+export function redactDiagnosticPath(url: unknown): string {
+  if (typeof url !== 'string' || url.length === 0) return REDACTED_VALUE;
+  const cut = url.search(/[?#]/);
+  const path = cut >= 0 ? url.slice(0, cut) : url;
+  return redactSensitiveText(path);
+}
+
+/**
+ * Report 25: variant of `redactDiagnosticPath` for raw request URLs. Percent-encoded
+ * sequences can smuggle a scheme credential (`bearer%20abcdefgh`) past the text rule,
+ * so the query-free path is percent-decoded before redaction; malformed escapes fall
+ * back to the raw path, which is still redacted. Bounded: cannot throw.
+ */
+export function redactRequestUrl(url: unknown): string {
+  if (typeof url !== 'string' || url.length === 0) return REDACTED_VALUE;
+  const cut = url.search(/[?#]/);
+  const rawPath = cut >= 0 ? url.slice(0, cut) : url;
+  let decoded = rawPath;
+  try {
+    decoded = decodeURIComponent(rawPath);
+  } catch {
+    // Malformed percent-encoding must never throw at a diagnostic boundary.
+  }
+  return redactDiagnosticPath(decoded);
+}
+
+/**
+ * Report 25: sanitizes route-parameter values for structured request logs. Parameter
+ * keys come from the application's own route templates (trusted); values are
+ * client-controlled and pass through the full redaction boundary. Hostile or
+ * unserializable values fail closed to the canonical redaction marker.
+ */
+export function sanitizeDiagnosticParams(value: unknown): Record<string, string> {
+  const output: Record<string, string> = {};
+  if (typeof value !== 'object' || value === null) return output;
+  try {
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (raw === undefined) continue;
+      try {
+        if (typeof raw === 'string') {
+          output[key] = redactSensitiveText(raw);
+        } else if (Array.isArray(raw)) {
+          // Array.isArray throws on revoked Proxies; join may throw on hostile
+          // arrays — both degrade to the canonical marker below.
+          output[key] = redactSensitiveText(raw.join(','));
+        } else {
+          output[key] = REDACTED_VALUE;
+        }
+      } catch {
+        output[key] = REDACTED_VALUE;
+      }
+    }
+  } catch {
+    // A hostile object (e.g. throwing entries/getters) fails closed to what was built.
+  }
+  return output;
 }

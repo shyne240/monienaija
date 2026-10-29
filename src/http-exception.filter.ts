@@ -10,6 +10,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import {
   REDACTED_VALUE,
+  redactDiagnosticPath,
   redactSensitiveText,
 } from './common/sensitive-data-redaction';
 import { getRequestContext, type RequestContext } from './production/request-context';
@@ -56,18 +57,10 @@ function isErrorValue(value: unknown): value is Error {
   }
 }
 
-/**
- * Report 19 finding C: query strings routinely carry credentials (signed links, integration
- * callbacks, misconfigured clients) and have no diagnostic value in error bodies or logs, so
- * the diagnostic path excludes everything from the first '?' or '#' and the remainder still
- * passes through the redaction boundary. Pure string operations: malformed URLs cannot throw.
- */
-function diagnosticPath(url: unknown): string {
-  if (typeof url !== 'string' || url.length === 0) return REDACTED_VALUE;
-  const cut = url.search(/[?#]/);
-  const path = cut >= 0 ? url.slice(0, cut) : url;
-  return redactSensitiveText(path);
-}
+// Report 19 finding C / report 25: the diagnostic-path boundary (query and fragment
+// excluded, remainder redacted) lives in the shared redaction module
+// (`redactDiagnosticPath`) so every URL sink — error bodies, error logs and structured
+// request logs — uses one implementation.
 
 /** A hostile exception (throwing toString/message getter) must never crash the filter. */
 function safeExceptionText(exception: unknown): string {
@@ -153,7 +146,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   private safeDiagnosticPath(request: FastifyRequest): string {
     try {
-      return diagnosticPath(request.url);
+      return redactDiagnosticPath(request.url);
     } catch {
       return REDACTED_VALUE;
     }

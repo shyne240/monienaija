@@ -197,11 +197,18 @@ describe('report 21 finding 1 — explicit Basic-scheme credentials are redacted
     expect(redactSensitiveText(input)).toBe(input);
   });
 
-  it('ordinary prose around the scheme word is preserved', () => {
+  // SUPERSEDED BY REPORT 25 (documented policy change): the lowercase-prose
+  // exemption this test pinned was demonstrated by the independent audit to be the
+  // R-04 bypass (`bearer abcdefgh` / `bearer abc` survived). Report 25 mandates
+  // preferring explicit authentication credentials over ambiguous prose, so prose
+  // runs directly after a scheme word are now conservatively redacted. Prose that is
+  // NOT a scheme+whitespace+run shape remains preserved (colon-blocked forms such as
+  // 'Basic: the fundamentals …', bare scheme words, and context-free tokens).
+  it('report-25 policy: ordinary prose directly after the scheme word is conservatively redacted', () => {
     const input = 'a basic understanding of the system is required';
-    expect(redactSensitiveText(input)).toBe(input);
+    expect(redactSensitiveText(input)).toBe(`a ${REDACTED_VALUE} of the system is required`);
     const input2 = 'the bearer of good news arrived';
-    expect(redactSensitiveText(input2)).toBe(input2);
+    expect(redactSensitiveText(input2)).toBe(`the ${REDACTED_VALUE} good news arrived`);
   });
 });
 
@@ -301,9 +308,7 @@ describe('report 21 finding 2 — hostile objects cannot make the filter throw b
         return Reflect.get(target, key) as unknown;
       },
     });
-    const { response } = runFilterWith(
-      new HttpException({ message: hostileArray } as never, 400),
-    );
+    const { response } = runFilterWith(new HttpException({ message: hostileArray } as never, 400));
     expect(response.statusCode).toBe(400);
     expect(response.body.message).toBe(REDACTED_VALUE);
     expect(JSON.stringify(response.body)).not.toContain('element trap');
