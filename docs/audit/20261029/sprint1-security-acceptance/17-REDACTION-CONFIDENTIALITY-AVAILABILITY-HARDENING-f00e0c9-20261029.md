@@ -66,7 +66,7 @@ The new suite uses synthetic-only values and verifies direct redaction plus 4xx 
 - Full backend unit suite: **204 suites, 2,101 tests passed**.
 - Available focused embedded-PostgreSQL notification diagnostics, migration-upgrade, registry, delivery, email, and inbox suites: **6 suites, 101 tests passed**.
 
-The target baseline contains additional F-01/provider-reference and notification reliability/transfer-producer PostgreSQL suites that are not present on the earlier documentation branch; those suites were run against the exact target baseline as listed above. No PostgreSQL suite failed in the final runs.
+The target baseline contains additional F-01/provider-reference and notification reliability/transfer-producer PostgreSQL suites that are not present on the earlier documentation branch; those suites were run against the exact target baseline as listed above. Repository inspection found no separate F-02, F-03, F-04, or F-05 PostgreSQL spec files at the target SHA, so this report does not claim those absent suites passed. No PostgreSQL suite that was run failed in the final runs.
 
 ## Residual risks and acceptance request
 
