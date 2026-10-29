@@ -232,6 +232,75 @@ export function isExternalNotificationVendor(
 export type SafeProviderRefScope = ExternalNotificationVendor | 'external';
 
 /**
+ * Closed allowlist of first-party operational delivery skip/failure reason codes (`SPRINT1-P0-02`).
+ * Any non-empty stored `last_error` outside this allowlist collapses to `'UNCLASSIFIED'` so raw
+ * upstream provider error prose can never cross diagnostic or service read boundaries.
+ */
+export const SAFE_DELIVERY_ERROR_CODES: ReadonlySet<string> = new Set([
+  'SKIPPED',
+  'EVENT_DISABLED',
+  'UNSAFE_MESSAGE',
+  'SMS_OPT_OUT',
+  'EMAIL_OPT_OUT',
+  'PUSH_OPT_OUT',
+  'PUSH_TOKEN_DEPENDENCY_MISSING',
+  'CUSTOMER_PHONE_MISSING',
+  'CUSTOMER_EMAIL_MISSING',
+  'AGENT_PHONE_DEPENDENCY_MISSING',
+  'AGENT_EMAIL_DEPENDENCY_MISSING',
+  'INVALID_PHONE_RECIPIENT',
+  'UNSUPPORTED_RECIPIENT',
+  'SMS_PREFERENCE_UNAVAILABLE',
+  'EMAIL_PREFERENCE_UNAVAILABLE',
+  'PUSH_PREFERENCE_UNAVAILABLE',
+  'CUSTOMER_PHONE_VERIFIED_MISSING',
+  'CUSTOMER_EMAIL_VERIFIED_MISSING',
+  'CUSTOMER_PHONE_INVALID',
+  'PHONE_RECIPIENT_UNVERIFIED',
+  'DESTINATION_CHANGED',
+  'SECURITY_DIRECT_ONLY',
+  'PRE_SEND_FAILED',
+  'PROVIDER_OR_CONTENT_UNAVAILABLE',
+  'PROVIDER_OUTCOME_UNKNOWN',
+  'PROVIDER_REJECTED_RETRYABLE',
+  'PROVIDER_REJECTED_OR_EXHAUSTED',
+  'LEASE_EXPIRED_AFTER_START',
+  'LEASE_EXPIRED_BEFORE_SEND',
+  'ATTEMPTS_EXHAUSTED',
+  'LEGACY_DELIVERY_OUTCOME_UNKNOWN',
+]);
+
+export function sanitizeDeliveryErrorCode(lastError: unknown): string | null {
+  if (lastError === null || lastError === undefined || typeof lastError !== 'string') {
+    return null;
+  }
+  if (lastError.trim() === '') {
+    return null;
+  }
+  return SAFE_DELIVERY_ERROR_CODES.has(lastError) ? lastError : 'UNCLASSIFIED';
+}
+
+const DELIVERY_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function redactDeliveryRecipientId(recipientType: string, recipientId: string): string {
+  if (recipientType !== 'PHONE' && DELIVERY_UUID_PATTERN.test(recipientId)) {
+    return recipientId;
+  }
+  if (recipientId.includes('@')) {
+    const [local = '', domain = ''] = recipientId.split('@');
+    const keep = Math.min(2, local.length);
+    return `${local.slice(0, keep)}***@${domain}`;
+  }
+  const digits = recipientId.replace(/\D/g, '');
+  if (digits.length === 0) {
+    return '***';
+  }
+  const keep = Math.min(3, digits.length);
+  return `${recipientId.slice(0, Math.max(0, recipientId.length - keep)).replace(/\d/g, '*')}${digits.slice(-keep)}`;
+}
+
+/**
  * Canonical opaque provider-reference token format:
  * `pvr1:<robase|brevo|resend|external>:<32 lowercase hex HMAC-SHA256 digest chars>`.
  *
@@ -247,8 +316,23 @@ export const SAFE_PROVIDER_REF_PATTERN =
  * `TestEmailProvider`). Strictly constrained to `<prefix>-<unix_ms>-<alphanumeric_nonce>` and
  * never matched when the provider is an external vendor (`robase`, `brevo`, `resend`).
  */
+/**
+ * First-party local non-network synthetic harness/console references generated inside
+ * MonieNaija (`ConsoleNotificationProvider`, `ConsoleEmailProvider`, `TestNotificationProvider`,
+ * `TestEmailProvider`). Strictly constrained to `<prefix>-<unix_ms>-<alphanumeric_nonce>`,
+ * rejected in `NODE_ENV=production`, and never matched when `providerName` identifies an
+ * external or unknown provider.
+ */
 export const SAFE_LOCAL_HARNESS_REF_PATTERN =
   /^(console|console-email|test|test-email)-[0-9]{10,16}-[a-z0-9]{1,12}$/;
+
+const FIRST_PARTY_LOCAL_PROVIDER_NAMES: ReadonlySet<string> = new Set([
+  '',
+  'console',
+  'console-email',
+  'test',
+  'test-email',
+]);
 
 export const MAX_RAW_VENDOR_PROVIDER_ID_LENGTH = 512;
 
@@ -279,7 +363,7 @@ function resolveCanonicalKeyringSeed(): string | null {
         }
       }
     } catch {
-      // Fall through to single-key / adapter-secret / ephemeral seed.
+      // Fall through to single-key / configured provider secret / non-production ephemeral seed.
     }
   }
 
@@ -290,7 +374,69 @@ function resolveCanonicalKeyringSeed(): string | null {
   return null;
 }
 
-function resolveProviderRefHmacKey(secretMaterial?: string | null): Buffer {
+function resolveConfiguredProviderEnvSecretBuffer(scope: SafeProviderRefScope): Buffer | null {
+  if (scope === 'robase') {
+    const robaseKey = process.env['ROBASE_API_KEY'];
+    if (typeof robaseKey === 'string' && robaseKey.trim().length > 0) {
+      return createHash('sha256')
+        .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:secret:${robaseKey.trim()}`, 'utf8')
+        .digest();
+    }
+  } else if (scope === 'brevo') {
+    const brevoKey = process.env['BREVO_API_KEY'];
+    if (typeof brevoKey === 'string' && brevoKey.trim().length > 0) {
+      return createHash('sha256')
+        .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:secret:${brevoKey.trim()}`, 'utf8')
+        .digest();
+    }
+  } else if (scope === 'resend') {
+    const resendKey = process.env['RESEND_API_KEY'];
+    if (typeof resendKey === 'string' && resendKey.trim().length > 0) {
+      return createHash('sha256')
+        .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:secret:${resendKey.trim()}`, 'utf8')
+        .digest();
+    }
+  }
+
+  const configuredProviderEntries = (
+    [
+      ['robase', process.env['ROBASE_API_KEY']],
+      ['brevo', process.env['BREVO_API_KEY']],
+      ['resend', process.env['RESEND_API_KEY']],
+    ] as const
+  )
+    .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+    .map(([vendor, value]) => `${vendor}=${(value as string).trim()}`);
+
+  if (configuredProviderEntries.length > 0) {
+    return createHash('sha256')
+      .update(
+        `${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:env-providers:${configuredProviderEntries.join('|')}`,
+        'utf8',
+      )
+      .digest();
+  }
+  return null;
+}
+
+/**
+ * Resolves the HMAC-SHA256 key used to derive opaque `pvr1:<scope>:<32-hex>` references.
+ *
+ * Production invariant (F-01): `NODE_ENV=production` NEVER silently falls back to the
+ * process-ephemeral secret. If neither encryption keyring/key, caller-supplied adapter secret,
+ * nor configured provider environment secret is present in production, derivation fails closed
+ * rather than emitting unstable per-process digests or exposing raw identifiers.
+ *
+ * Key-rotation note (R-01 assessment): already-persisted `pvr1:*` tokens pass through unchanged
+ * across key rotations, whereas recomputing a digest for un-backfilled legacy raw rows reflects
+ * the active keyring/credential seed. If cross-rotation digest stability is required in future,
+ * introduce an authorized dedicated versioned HMAC keyring (`pvr2:<keyVersion>:<scope>:<hex>`)
+ * decoupled from AES-256-GCM credential encryption keys and vendor API keys.
+ */
+function resolveProviderRefHmacKey(
+  scope: SafeProviderRefScope,
+  secretMaterial?: string | null,
+): Buffer {
   const keyringSeed = resolveCanonicalKeyringSeed();
   if (keyringSeed) {
     return createHash('sha256')
@@ -301,6 +447,15 @@ function resolveProviderRefHmacKey(secretMaterial?: string | null): Buffer {
     return createHash('sha256')
       .update(`${PROVIDER_REF_KEY_DERIVATION_DOMAIN}:secret:${secretMaterial.trim()}`, 'utf8')
       .digest();
+  }
+  const envProviderBuffer = resolveConfiguredProviderEnvSecretBuffer(scope);
+  if (envProviderBuffer) {
+    return envProviderBuffer;
+  }
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error(
+      'Durable notification secret material is required in production to derive opaque provider references.',
+    );
   }
   return createHash('sha256')
     .update(PROVIDER_REF_KEY_DERIVATION_DOMAIN, 'utf8')
@@ -313,11 +468,13 @@ function computeOpaqueProviderRefDigest(
   scope: SafeProviderRefScope,
   canonicalId: string,
   secretMaterial?: string | null,
+  domainScopeOverride?: string,
 ): string {
-  const key = resolveProviderRefHmacKey(secretMaterial);
+  const key = resolveProviderRefHmacKey(scope, secretMaterial);
+  const hmacScope = domainScopeOverride ?? scope;
   const tagHex = createHmac('sha256', key)
     .update(
-      `${PROVIDER_REF_HMAC_DOMAIN}\0${scope.length}:${scope}\0${canonicalId.length}:${canonicalId}`,
+      `${PROVIDER_REF_HMAC_DOMAIN}\0${hmacScope.length}:${hmacScope}\0${canonicalId.length}:${canonicalId}`,
       'utf8',
     )
     .digest('hex')
@@ -367,13 +524,16 @@ export function deriveSafeVendorProviderRef(
 
 /**
  * Shared boundary normalizer enforced at controller, service, delivery dispatcher/worker,
- * configuration snapshot, historical database backfill, and audit-read boundaries.
+ * configuration snapshot, entity-load, and audit-read boundaries.
  *
  * - Already-opaque `pvr1:<scope>:<32-hex>` tokens pass through unchanged (idempotent).
- * - Genuine first-party local console/test-harness timestamp-nonce IDs pass through ONLY
- *   when `providerName` is not an external vendor (`robase`, `brevo`, `resend`).
- * - Every other non-empty string (including historical persisted raw vendor references) is
- *   converted into `pvr1:<vendor|external>:<32-hex>` without exposing any raw character.
+ * - Genuine first-party local console/test-harness timestamp-nonce IDs pass through ONLY in
+ *   non-production environments when `providerName` is empty or an explicit local harness
+ *   (`console`, `console-email`, `test`, `test-email`) — never for external or unknown
+ *   provider names and never in `NODE_ENV=production`.
+ * - Every other non-empty string (including historical persisted raw vendor or unknown-provider
+ *   references) is converted into `pvr1:<vendor|external>:<32-hex>` with provider-scope domain
+ *   separation and zero raw characters exposed.
  */
 export function sanitizeProviderRefForBoundary(
   rawRef: unknown,
@@ -395,16 +555,32 @@ export function sanitizeProviderRefForBoundary(
   }
 
   const normalizedProvider =
-    typeof providerName === 'string' ? providerName.trim().toLowerCase() : '';
+    typeof providerName === 'string'
+      ? providerName.trim().toLowerCase().slice(0, 128)
+      : '';
   const isExternalVendor = isExternalNotificationVendor(normalizedProvider);
+  const isFirstPartyLocalProvider = FIRST_PARTY_LOCAL_PROVIDER_NAMES.has(normalizedProvider);
 
-  if (!isExternalVendor && SAFE_LOCAL_HARNESS_REF_PATTERN.test(trimmed)) {
+  if (
+    process.env['NODE_ENV'] !== 'production' &&
+    isFirstPartyLocalProvider &&
+    SAFE_LOCAL_HARNESS_REF_PATTERN.test(trimmed)
+  ) {
     return trimmed;
   }
 
   const scope: SafeProviderRefScope = isExternalVendor ? normalizedProvider : 'external';
+  const domainScopeOverride =
+    !isExternalVendor && !isFirstPartyLocalProvider
+      ? `external:${normalizedProvider}`
+      : undefined;
   const boundedCanonical = trimmed.length > 4096 ? trimmed.slice(0, 4096) : trimmed;
-  return computeOpaqueProviderRefDigest(scope, boundedCanonical, secretMaterial);
+  return computeOpaqueProviderRefDigest(
+    scope,
+    boundedCanonical,
+    secretMaterial,
+    domainScopeOverride,
+  );
 }
 
 /**

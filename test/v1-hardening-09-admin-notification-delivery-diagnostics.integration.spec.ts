@@ -292,14 +292,16 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     expect(res.body.data.find((d: any) => d.id === id).attempts).toBe(0);
   });
 
-  it('9. SENT delivery visible with providerRef', async () => {
+  it('9. SENT delivery visible with sanitized opaque providerRef (F-01)', async () => {
     const cid = await createCustomerWithPhone('8010000009');
     const id = await insertDelivery({ recipientId: cid, status: 'SENT', providerRef: 'test-ref-123' });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=SENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
     const found = res.body.data.find((d: any) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('SENT');
-    expect(found.providerRef).toBe('test-ref-123');
+    expect(found.providerRef).toMatch(/^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/);
+    expect(found.providerRef).not.toBe('test-ref-123');
+    expect(JSON.stringify(res.body)).not.toContain('test-ref-123');
     expect(found.sentAt).toBeDefined();
   });
 
@@ -406,7 +408,8 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     expect(found.channel).toBeDefined();
     expect(found.status).toBe('SENT');
     expect(found.attempts).toBeDefined();
-    expect(found.providerRef).toBe('test-abc123');
+    expect(found.providerRef).toMatch(/^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/);
+    expect(found.providerRef).not.toBe('test-abc123');
     expect(found.createdAt).toBeDefined();
     // SPRINT1-P0-02: the rendered message (with its financial amount) is NEVER projected.
     expect(found).not.toHaveProperty('message');

@@ -8,6 +8,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+import { sanitizeProviderRefForBoundary } from './provider-security';
+
 // ARENA3-NOTIFICATION-EMAIL: EMAIL widened. DB CHECK constraint replaced by migration
 // 1785753600097-AddEmailNotificationChannel (existing SMS/PUSH rows untouched).
 export type NotificationChannel = 'SMS' | 'PUSH' | 'EMAIL';
@@ -93,7 +95,16 @@ export class NotificationDelivery {
   @Column({ type: 'integer', default: 0 })
   attempts!: number;
 
-  @Column({ name: 'provider_ref', type: 'varchar', length: 320, nullable: true })
+  @Column({
+    name: 'provider_ref',
+    type: 'varchar',
+    length: 320,
+    nullable: true,
+    transformer: {
+      to: (value: string | null | undefined) => sanitizeProviderRefForBoundary(value),
+      from: (value: string | null | undefined) => sanitizeProviderRefForBoundary(value),
+    },
+  })
   providerRef!: string | null;
 
   @Column({ name: 'correlation_id', type: 'varchar', length: 255, nullable: true })

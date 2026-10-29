@@ -16,6 +16,11 @@ import { ConsoleNotificationProvider } from './notification-provider.interface';
 import { NotificationTemplateService, canonicalNotificationEvent } from './notification-template.service';
 import { NotificationProviderConfigService } from './notification-provider-config.service';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
+import {
+  redactDeliveryRecipientId,
+  sanitizeDeliveryErrorCode,
+  sanitizeProviderRefForBoundary,
+} from './provider-security';
 import type { NotificationEmailTemplateLookup, NotificationIntent, NotificationProvider, NotificationTemplateKey } from './notification.types';
 
 export interface DispatchCommand {
@@ -113,7 +118,7 @@ export class NotificationDispatcherService {
       );
       if (rows[0]) {
         delivery.status = rows[0].status;
-        delivery.providerRef = rows[0].provider_ref;
+        delivery.providerRef = sanitizeProviderRefForBoundary(rows[0].provider_ref);
         if (delivery.status === 'SENT') result.dispatched += 1;
         else if (['FAILED', 'DEAD', 'UNKNOWN'].includes(delivery.status)) result.failed += 1;
         else if (delivery.status === 'SKIPPED') result.skipped += 1;
@@ -208,7 +213,7 @@ export class NotificationDispatcherService {
         if (!existing[0]) throw new Error('Notification idempotency conflict unavailable');
         delivery = { id: existing[0].id, recipientType: intent.recipientType, recipientId: intent.recipientId,
           channel: intent.channel, destination: existing[0].destination, status: existing[0].status,
-          providerRef: existing[0].provider_ref };
+          providerRef: sanitizeProviderRefForBoundary(existing[0].provider_ref) };
       }
       result.deliveries.push(delivery);
     }
@@ -292,6 +297,36 @@ export class NotificationDispatcherService {
   }
 
   async listDeliveriesForEventKey(eventKey: string): Promise<Array<Record<string, unknown>>> {
-    return this.dataSource.query(`SELECT * FROM notification_deliveries WHERE event_key=$1 ORDER BY created_at ASC`, [eventKey]);
+    const rows = await this.dataSource.query<Array<Record<string, unknown>>>(
+      `SELECT id, event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id,
+              channel, status, attempts, provider_ref, correlation_id, causation_id, last_error,
+              created_at, updated_at, sent_at, failed_at
+         FROM notification_deliveries
+        WHERE event_key=$1
+        ORDER BY created_at ASC`,
+      [eventKey],
+    );
+    return rows.map((row) => {
+      const recipientType = typeof row['recipient_type'] === 'string' ? row['recipient_type'] : '';
+      const recipientId = typeof row['recipient_id'] === 'string' ? row['recipient_id'] : '';
+      const sanitized: Record<string, unknown> = {
+        ...row,
+        recipient_id: recipientId
+          ? redactDeliveryRecipientId(recipientType, recipientId)
+          : row['recipient_id'],
+        provider_ref: sanitizeProviderRefForBoundary(row['provider_ref']),
+        last_error: sanitizeDeliveryErrorCode(row['last_error']),
+      };
+      delete sanitized['message'];
+      delete sanitized['rendered_subject'];
+      delete sanitized['rendered_html'];
+      delete sanitized['destination'];
+      delete sanitized['payload'];
+      delete sanitized['lease_token'];
+      if ('providerRef' in sanitized) {
+        sanitized['providerRef'] = sanitizeProviderRefForBoundary(sanitized['providerRef']);
+      }
+      return sanitized;
+    });
   }
 }

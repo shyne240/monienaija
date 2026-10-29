@@ -54,6 +54,10 @@ export function redactSensitiveText(value: string): string {
       (_match, key: string) => `${key}=${REDACTED_VALUE}`,
     )
     .replace(
+      /(providerRef|provider_ref|lastTestProviderRef|last_tested_provider_ref|last_test_provider_ref)\s*[:=]\s*(?!pvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}\b)([^,\s}"']+)/gi,
+      (_match, key: string) => `${key}=${REDACTED_VALUE}`,
+    )
+    .replace(
       /\bMNNPS1:[A-Za-z0-9._-]{1,64}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}:[A-Za-z0-9+/=]{8,}/g,
       REDACTED_VALUE,
     )
