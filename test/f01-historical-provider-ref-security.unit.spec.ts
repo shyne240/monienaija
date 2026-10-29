@@ -355,8 +355,12 @@ describe('Sprint 1 F-01 — Historical & Cross-Boundary Provider Reference Sanit
   it('R-03: whitespace and delimiter boundaries — exempt canonical tokens end at the value boundary only', () => {
     const digest = 'abcdef0123456789abcdef0123456789';
     const token = `pvr1:resend:${digest}`;
-    // Whitespace around the separator, token followed by space/comma/brace/end: all preserved.
-    expect(redactSensitiveText(`providerRef = ${token} and more text`)).toBe(`providerRef = ${token} and more text`);
+    // R-03 (Arena 4 report 14): an UNQUOTED canonical token followed by whitespace is ambiguous
+    // (a malformed reference with a whitespace suffix cannot be ruled out), so the whole region
+    // through the next hard delimiter fails safe and is redacted — the old expectation that
+    // `token and more text` stays unchanged was the exact gap report 14 rejected. Hard
+    // boundaries (comma/brace/quote/end-of-string) remain unambiguous and are preserved.
+    expect(redactSensitiveText(`providerRef = ${token} and more text`)).toBe(`providerRef = ${REDACTED_VALUE}`);
     expect(redactSensitiveText(`providerRef=${token}, status=SENT`)).toBe(`providerRef=${token}, status=SENT`);
     expect(redactSensitiveText(`{"providerRef":"${token}"}`)).toBe(`{"providerRef":"${token}"}`);
     expect(redactSensitiveText(`providerRef=${token}`)).toBe(`providerRef=${token}`);
