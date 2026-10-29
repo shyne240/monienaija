@@ -745,7 +745,34 @@ function inspectProviderSuffix(text: string, runEnd: number, budget: WorkBudget)
   let foundCredential = false;
   let credentialEnd = runEnd;
   const stop = Math.min(text.length, runEnd + MAX_KEYLESS_LOOKAHEAD);
-  while (index < stop && parts < MAX_KEYLESS_SUFFIX_PARTS) {
+  // Report 19 finding A: a fragment ATTACHED directly to the canonical token (no whitespace)
+  // belongs to the same provider-reference region. Scan it as the first suffix part so a
+  // credential-shaped part later in the region still removes the complete region, instead of
+  // stopping the scan before the attachment and leaving the credential visible.
+  if (
+    index < stop &&
+    !isWhitespace(charAt(text, index)) &&
+    !isTextDelimiter(charAt(text, index)) &&
+    !looksLikeKeyValueAt(text, index)
+  ) {
+    const partStart = index;
+    while (
+      index < stop &&
+      !isWhitespace(charAt(text, index)) &&
+      !isTextDelimiter(charAt(text, index))
+    ) {
+      index += 1;
+      budget.operations += 1;
+    }
+    parts += 1;
+    const part = text.slice(partStart, index);
+    if (isCredentialLike(part)) {
+      foundCredential = true;
+      credentialEnd = index;
+    }
+    if (budget.operations > MAX_SCAN_OPERATIONS) return { credential: true, end: -1 };
+  }
+  while (!foundCredential && index < stop && parts < MAX_KEYLESS_SUFFIX_PARTS) {
     const whitespaceStart = index;
     while (index < stop && isWhitespace(charAt(text, index))) {
       index += 1;
@@ -812,7 +839,11 @@ function applyCredentialShapes(text: string): string {
     .replace(
       /\bpvr1:(?:robase|brevo|resend|external):[0-9a-f]{32}(?!\\["'])[^,\s}"';)(\x5b\]]+/gi,
       REDACTED_VALUE,
-    );
+    )
+    // Report 19 finding B variant: a bare (key-less) JWT in a diagnostic field is a credential
+    // wherever it appears. `eyJ` is the base64url encoding of `{"` — the universal JWT header
+    // marker — so a three-segment eyJ token is redacted without touching ordinary prose.
+    .replace(/\beyJ[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}/g, REDACTED_VALUE);
 }
 
 function isCredentialLike(value: string): boolean {

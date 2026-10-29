@@ -8,12 +8,51 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-import { redactSensitiveText } from './common/sensitive-data-redaction';
-import { getRequestContext } from './production/request-context';
+import {
+  REDACTED_VALUE,
+  redactSensitiveText,
+} from './common/sensitive-data-redaction';
+import { getRequestContext, type RequestContext } from './production/request-context';
 
 interface ErrorResponse {
   message?: string | string[];
   error?: string;
+}
+
+/**
+ * Report 19 §2 boundary rule: every untrusted string copied into an HTTP error response or a
+ * structured error log passes through the bounded redaction boundary (or is replaced with safe
+ * canonical metadata). Request-context ids may echo client-supplied headers, so they are
+ * untrusted at this boundary even though legitimate ids pass through unchanged.
+ */
+function sanitizeRequestContext(context: RequestContext): RequestContext {
+  return {
+    requestId: redactSensitiveText(context.requestId),
+    correlationId: redactSensitiveText(context.correlationId),
+    traceId: redactSensitiveText(context.traceId),
+  };
+}
+
+/**
+ * Report 19 finding C: query strings routinely carry credentials (signed links, integration
+ * callbacks, misconfigured clients) and have no diagnostic value in error bodies or logs, so
+ * the diagnostic path excludes everything from the first '?' or '#' and the remainder still
+ * passes through the redaction boundary. Pure string operations: malformed URLs cannot throw.
+ */
+function diagnosticPath(url: unknown): string {
+  if (typeof url !== 'string' || url.length === 0) return REDACTED_VALUE;
+  const cut = url.search(/[?#]/);
+  const path = cut >= 0 ? url.slice(0, cut) : url;
+  return redactSensitiveText(path);
+}
+
+/** A hostile exception (throwing toString/message getter) must never crash the filter. */
+function safeExceptionText(exception: unknown): string {
+  try {
+    return exception instanceof Error ? exception.message : String(exception);
+  } catch {
+    return REDACTED_VALUE;
+  }
 }
 
 @Catch()
@@ -24,7 +63,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const context = host.switchToHttp();
     const response = context.getResponse<FastifyReply>();
     const request = context.getRequest<FastifyRequest>();
-    const requestContext = getRequestContext(request);
+    const requestContext = sanitizeRequestContext(getRequestContext(request));
+    const path = diagnosticPath(request.url);
     const isHttpException = exception instanceof HttpException;
     const statusCode = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const exceptionResponse = isHttpException ? exception.getResponse() : undefined;
@@ -50,11 +90,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (statusCode >= 500) {
       this.logger.error(
         {
-          errorMessage: redactSensitiveText(
-            exception instanceof Error ? exception.message : String(exception),
-          ),
+          errorMessage: redactSensitiveText(safeExceptionText(exception)),
           ...requestContext,
-          path: request.url,
+          path,
           operationName: request.method,
         },
         'Unhandled request error',
@@ -65,9 +103,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode,
       code,
       message: safeMessage,
-      error: details.error ?? code,
+      error: typeof details.error === 'string' ? redactSensitiveText(details.error) : code,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path,
       requestId: requestContext.requestId,
       correlationId: requestContext.correlationId,
       traceId: requestContext.traceId,
