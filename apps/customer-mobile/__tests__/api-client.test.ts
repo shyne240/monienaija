@@ -1,4 +1,11 @@
-import { ApiClient, ApiError, getBaseUrl, setBaseUrl } from '../src/services/api-client';
+import {
+  ApiClient,
+  ApiError,
+  getBaseUrl,
+  onCustomerSessionExpired,
+  resolveCustomerApiUrl,
+  setBaseUrl,
+} from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
 
 jest.mock('../src/services/secure-storage', () => ({
@@ -113,5 +120,97 @@ describe('ApiClient tests', () => {
         message: 'Invalid destination wallet format',
       }),
     );
+  });
+
+  test('normalizes /api/v1 prefix across bare origins and pre-prefixed base URLs without double-prefixing', () => {
+    expect(resolveCustomerApiUrl('http://10.0.2.2:3000', '/customers/sessions')).toBe(
+      'http://10.0.2.2:3000/api/v1/customers/sessions',
+    );
+    expect(resolveCustomerApiUrl('https://api.moneynaija.ng/', '/customers/me/wallets')).toBe(
+      'https://api.moneynaija.ng/api/v1/customers/me/wallets',
+    );
+    expect(resolveCustomerApiUrl('https://api.moneynaija.ng/api/v1/', '/customers/me/wallets')).toBe(
+      'https://api.moneynaija.ng/api/v1/customers/me/wallets',
+    );
+    expect(resolveCustomerApiUrl('https://api.moneynaija.ng/api/v1', '/api/v1/customers/me')).toBe(
+      'https://api.moneynaija.ng/api/v1/customers/me',
+    );
+  });
+
+  test('omits Content-Type header on bodyless POST requests such as /customers/sessions/logout so Fastify does not reject empty JSON bodies', async () => {
+    setBaseUrl('https://api.moneynaija.ng');
+    (SecureStorage.get as jest.Mock).mockResolvedValue('active-customer-token');
+    globalFetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ revoked: true }),
+    });
+
+    await ApiClient.post('/customers/sessions/logout');
+
+    const [, requestInit] = globalFetchMock.mock.calls[0];
+    expect(requestInit.method).toBe('POST');
+    expect(requestInit.headers.Authorization).toBe('Bearer active-customer-token');
+    expect(requestInit.headers['Content-Type']).toBeUndefined();
+  });
+
+  test('preserves active customer bearer session on 401 step-up PIN and password rejections', async () => {
+    setBaseUrl('https://api.moneynaija.ng');
+    (SecureStorage.get as jest.Mock).mockResolvedValue('active-customer-token');
+    const expiredListener = jest.fn();
+    const unsubscribe = onCustomerSessionExpired(expiredListener);
+
+    try {
+      for (const pinOrPasswordMessage of [
+        'Invalid PIN',
+        'Customer PIN is locked',
+        'Current PIN is incorrect',
+        'Current password is incorrect',
+      ]) {
+        globalFetchMock.mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ message: pinOrPasswordMessage }),
+        });
+
+        await expect(
+          ApiClient.post('/customers/me/transfers', { amountMinor: '1000', pin: '0000' }),
+        ).rejects.toThrow(ApiError);
+      }
+
+      expect(SecureStorage.remove).not.toHaveBeenCalled();
+      expect(expiredListener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('purges customer session storage and notifies listeners on 401 bearer-session expiry while preserving pending transfer intent', async () => {
+    setBaseUrl('https://api.moneynaija.ng');
+    (SecureStorage.get as jest.Mock).mockResolvedValue('expired-customer-token');
+    const expiredListener = jest.fn();
+    const unsubscribe = onCustomerSessionExpired(expiredListener);
+
+    try {
+      globalFetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ message: 'Authentication required' }),
+      });
+
+      await expect(ApiClient.get('/customers/me/wallets')).rejects.toThrow(ApiError);
+
+      expect(SecureStorage.remove).toHaveBeenCalledWith('auth_session_token');
+      expect(SecureStorage.remove).toHaveBeenCalledWith('auth_customer_id');
+      expect(SecureStorage.remove).toHaveBeenCalledWith('auth_session_data');
+      expect(SecureStorage.remove).not.toHaveBeenCalledWith(
+        expect.stringMatching(/^pending_wallet_transfer_intent:/),
+      );
+      expect(expiredListener).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
   });
 });
