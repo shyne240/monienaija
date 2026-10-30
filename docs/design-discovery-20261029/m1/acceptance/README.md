@@ -365,3 +365,21 @@ ctx history w/ customer.view_transactions only: true
 ctx history without customerId                : false
 section group ids: commercial, compliance, finance, home, money, platform, servicing  (7)
 ```
+
+---
+
+## Permalink and commit record
+
+| Record | Value |
+|---|---|
+| Assigned branch | `arena/d4ef0b81-monienaija` |
+| Acceptance review commit | `0e5475fc25185fe7ae5c334b2f3269a8a300a178` |
+| Review report permalink | https://github.com/shyne240/monienaija/blob/0e5475fc25185fe7ae5c334b2f3269a8a300a178/docs/design-discovery-20261029/m1/acceptance/README.md |
+| Evidence directory permalink | https://github.com/shyne240/monienaija/tree/0e5475fc25185fe7ae5c334b2f3269a8a300a178/docs/design-discovery-20261029/m1/acceptance/evidence |
+| M1 implementation commit | `d7a8af4eb2d049691cb6e5da9868eb32189e9bf9` |
+| M1 report (previous stage) | https://github.com/shyne240/monienaija/blob/d7a8af4eb2d049691cb6e5da9868eb32189e9bf9/docs/design-discovery-20261029/m1/README.md |
+| `origin/main` reviewed | `39a9e504e3881911c94438321e7c60f771469d21` |
+| Merge base | `3d05aaec1d569dc8a5200ebb3b350e2cc1f78510` |
+
+The commit immediately after `0e5475f` is documentation-only: it pins the permalinks above so they resolve to an immutable SHA, exactly as the M1 report did at `53d87f9`.
+
