@@ -14,6 +14,16 @@ const production = (overrides: Record<string, string> = {}) => ({
   ...base,
   NODE_ENV: 'production',
   DB_PASSWORD: 'a-strong-unique-production-password',
+  // INTEGRATION NOTE (integration/main-backend-frontend-20261030): the integrated environment schema also carries Lineage A's SMS-V1-01
+  // refinement, which refuses the default 'console' SMS provider in production because it never
+  // delivers real SMS and would log live OTP codes to stdout. 'managed' (governed DB-encrypted
+  // runtime configuration) satisfies it without introducing a vendor credential into this fixture.
+  // 'managed' would additionally require a provider-encryption keyring, so the fixture selects the
+  // robase provider with a clearly synthetic, prefix-valid key: no real vendor credential exists here
+  // and no vendor call is made. No assertion in this file is relaxed; the SMS requirement itself is
+  // asserted by test/environment.spec.ts.
+  NOTIFICATION_SMS_PROVIDER: 'robase',
+  ROBASE_API_KEY: `robe_${'a'.repeat(60)}`,
   ...overrides,
 });
 

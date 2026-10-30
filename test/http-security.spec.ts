@@ -21,7 +21,18 @@ function environment(overrides: Record<string, string> = {}): Environment {
     DB_HOST: 'localhost',
     DB_NAME: 'monienaija',
     DB_USER: 'monienaija',
-    DB_PASSWORD: 'local-test-password',
+    // INTEGRATION NOTE (integration/main-backend-frontend-20261030): 'local-test-password' is 17 characters but Lineage A's production
+    // secret rule (carried into the integrated schema from main's own phase 16-20 hardening) also
+    // rejects documented placeholder values; this suite promotes the fixture to NODE_ENV=production
+    // for the HSTS case, so the base password must satisfy the production profile. The value is a
+    // test fixture, not a credential.
+    DB_PASSWORD: 'http-security-spec-fixture-password',
+    // Lineage A's SMS-V1-01 refinement refuses the default 'console' SMS provider in production,
+    // and this suite promotes the fixture to NODE_ENV=production for the HSTS case. Synthetic,
+    // prefix-valid fixture key; no real credential and no vendor call. Ignored by the non-production
+    // profiles the other cases in this file use.
+    NOTIFICATION_SMS_PROVIDER: 'robase',
+    ROBASE_API_KEY: `robe_${'a'.repeat(60)}`,
     ...overrides,
   });
 }

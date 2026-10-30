@@ -419,6 +419,11 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
   ): Promise<{ success: boolean; error?: any; view?: any }> {
     try {
       const view = await transferService.createTransfer({
+// INTEGRATION (integration/main-backend-frontend-20261030): main's required
+                                                        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+                                                        // directly with no HTTP principal, so an INTERNAL binding is used — which
+                                                        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+        ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
         sourceWalletId: sourceId,
         destinationWalletId: destId,
         amountMinor: amount,

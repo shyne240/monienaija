@@ -1,10 +1,17 @@
 import { validateEnvironment } from '../src/config/environment';
 
+// INTEGRATION NOTE (integration/main-backend-frontend-20261030): 'local-password' satisfied this suite when it was written, but the
+// integrated schema also carries main's phase 16-20 production secret rule (>= 16 characters, no
+// documented placeholder value or prefix, no single-character repetition), and several cases below
+// promote this fixture to NODE_ENV=production. The base password therefore conforms to the
+// production profile; non-production cases are unaffected because the rule returns early for them,
+// and the placeholder-rejection cases below still override DB_PASSWORD explicitly, so they keep
+// failing for the documented reason they assert.
 const validEnvironment = {
   DB_HOST: 'localhost',
   DB_NAME: 'monienaija',
   DB_USER: 'monienaija',
-  DB_PASSWORD: 'local-password',
+  DB_PASSWORD: 'environment-spec-fixture-password',
 };
 
 describe('validateEnvironment', () => {

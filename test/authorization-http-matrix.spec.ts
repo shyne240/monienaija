@@ -12,6 +12,8 @@ import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry'
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
+import { AgentAuthenticationSessionService } from '../src/agent-authentication/agent-authentication-session.service';
+import { SupportAuthenticationService } from '../src/support-authentication/support-authentication.service';
 import { A2SecurityRateLimitService } from '../src/authorization/security-rate-limit.service';
 import type { A2RateLimitRuleV1 } from '../src/authorization/workforce-authentication.types';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -101,6 +103,21 @@ describe('HTTP authorization matrix', () => {
     revokeAllForCredential: jest.fn(),
   };
   const workforceSessions = { validate: jest.fn() };
+  // INTEGRATION (integration/main-backend-frontend-20261030): the integrated RuntimeAccessGuard is
+  // Lineage A's, which additionally resolves Agent and SUPPORT sessions (its V1-OPS-01 SUPPORT
+  // fallback and its Agent-before-Customer resolution order). This suite was written against main's
+  // guard, which had neither dependency, so its testing module could not compile the guard at all.
+  // Both are supplied as NON-THROWING negatives: `agentSessionService.validate` is called first and
+  // unguarded in the default branch, so a throwing mock would turn every default-branch route into a
+  // 401 and mask the behaviour these cases assert. Returning `{ valid: false }` / `undefined`
+  // reproduces exactly the "token is not an Agent/SUPPORT credential" fall-through this suite's
+  // customer and workforce tokens rely on. No assertion in this file is relaxed by this.
+  const agentSessionService = {
+    validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }),
+  };
+  const supportAuthenticationService = {
+    validate: jest.fn().mockResolvedValue(undefined),
+  };
   const workforceConfig = {
     enabled: true,
     internalAudience: 'workforce-admin',
@@ -180,6 +197,8 @@ describe('HTTP authorization matrix', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    agentSessionService.validate.mockResolvedValue({ valid: false, reason: 'NOT_FOUND' });
+    supportAuthenticationService.validate.mockResolvedValue(undefined);
     for (const service of mutationServices) {
       for (const method of Object.values(service)) {
         method.mockResolvedValue({ id: 'ok' });
@@ -253,6 +272,8 @@ describe('HTTP authorization matrix', () => {
         },
         { provide: AuthenticationSessionService, useValue: sessionService },
         { provide: A2WorkforceSessionService, useValue: workforceSessions },
+        { provide: AgentAuthenticationSessionService, useValue: agentSessionService },
+        { provide: SupportAuthenticationService, useValue: supportAuthenticationService },
         { provide: A2_WORKFORCE_CONFIG, useValue: workforceConfig },
         { provide: APP_GUARD, useClass: RuntimeAccessGuard },
         { provide: AuditService, useValue: auditService },

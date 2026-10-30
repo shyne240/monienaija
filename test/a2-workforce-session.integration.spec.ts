@@ -319,13 +319,18 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
     expect(validated.assuranceLevel).toBe('MFA');
   });
 
+  // INTEGRATION (integration/main-backend-frontend-20261030): main added this case against its own
+  // resolve(), which returned an empty role set. The integrated service is Lineage A's, whose
+  // V1-ADMIN-AUTHORIZATION-RUNTIME-01 hardening refuses to establish a workforce session for a
+  // principal holding no recognized role at all ('No valid workforce roles'), and whose own
+  // `establishSession` helper above documents that "roleless sessions are rejected". The case now
+  // asserts that strictly stronger outcome: instead of a zero-privilege session existing, no session
+  // is issued. The intent — a principal with no finance role assignment gains nothing — is preserved
+  // and tightened. Flagged for independent Arena 4 review.
   it('grants no roles or scopes while no finance role assignment exists', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
-    const validated = await sessions.validate(session.accessToken, config.internalAudience);
-    expect(validated.roles).toEqual([]);
-    expect(validated.scopes).toEqual([]);
-    expect(validated.type).toBe('OPERATOR');
+    await expect(sessions.establish(evidence)).rejects.toThrow('No valid workforce roles');
+    await expect(sessions.establish(evidence)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('never escalates a principal resembling the removed development mock subject', async () => {
@@ -335,16 +340,24 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
       signJwt(assertionPayload({ sub: 'mock-sandbox-subject' })),
     );
     expect(evidence.principalId).toContain('mock-sandbox-subject');
-    const session = await sessions.establish(evidence);
-    const validated = await sessions.validate(session.accessToken, config.internalAudience);
-    expect(validated.roles).toEqual([]);
-    expect(validated.scopes).toEqual([]);
-    expect(validated.type).toBe('OPERATOR');
+    // INTEGRATION: see the note on the case above. Two independent layers now deny this principal:
+    // main retired the `mock-sandbox-token-*` string bypass in A2WorkforceOidcService (so this
+    // principal can only ever arrive via a genuinely signed assertion), and Lineage A's resolve()
+    // refuses any principal with no recognized role — so the retired blanket grant that used to sit
+    // in resolve() is gone and no session is issued at all. Strictly stronger than the zero-role
+    // session main asserted. Flagged for independent Arena 4 review.
+    await expect(sessions.establish(evidence)).rejects.toThrow('No valid workforce roles');
+    await expect(sessions.establish(evidence)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('resolves roles and scopes from an active finance role assignment instead', async () => {
     const evidence = await oidc.validate(signJwt(assertionPayload()));
-    const session = await sessions.establish(evidence);
+    // INTEGRATION: the assignment is created BEFORE the session is established. main's original
+    // order (establish, then insert, then validate) relied on a zero-role session being issuable,
+    // which Lineage A's fail-closed resolve() rejects. Creating the assignment first is what this
+    // suite's own `establishSession` helper already does, and it leaves the assertion set below
+    // untouched: roles, scopes and principal type are still resolved from the real ACTIVE
+    // assignment. Flagged for independent Arena 4 review.
     await dataSource.query(
       `INSERT INTO a2_finance_role_assignments
          (id, assignment_reference, assignment_version, principal_id, role_key, scopes, status,
@@ -355,6 +368,7 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
                now(), '[]'::jsonb, '[]'::jsonb)`,
       [`integration-${randomUUID()}`, evidence.principalId],
     );
+    const session = await sessions.establish(evidence);
     const validated = await sessions.validate(session.accessToken, config.internalAudience);
     expect(validated.roles).toEqual(['FINANCE_AUDITOR']);
     expect(validated.scopes).toEqual(['finance:audit']);
