@@ -297,6 +297,8 @@ The baseline renders in `evidence/` were produced by the same serialisation meth
 |---|---|
 | Baseline | `57368852f20a2cad0845545bd945273fc6ca594a` |
 | Branch | `arena/d4ef0b81-monienaija` |
-| Report permalink | `https://github.com/shyne240/monienaija/blob/M1_IMPLEMENTATION_SHA/docs/design-discovery-20261029/m1/README.md` |
+| Implementation commit | `d7a8af4eb2d049691cb6e5da9868eb32189e9bf9` |
+| Report permalink | https://github.com/shyne240/monienaija/blob/d7a8af4eb2d049691cb6e5da9868eb32189e9bf9/docs/design-discovery-20261029/m1/README.md |
+| Evidence directory permalink | https://github.com/shyne240/monienaija/tree/d7a8af4eb2d049691cb6e5da9868eb32189e9bf9/docs/design-discovery-20261029/m1/evidence |
 
-The `M1_IMPLEMENTATION_SHA` placeholder above is replaced by the final commit SHA in the commit that follows this document; the SHA is also stated in the hand-over message and in the commit log on the branch.
+`d7a8af4` contains the complete M1 implementation, tests and this report. The commit immediately after it is documentation-only: it pins the permalinks above so they resolve to a permanent, immutable SHA rather than to a moving branch head.
