@@ -58,7 +58,14 @@ const SESSION_A = '00000000-0000-4000-8000-0000000000a2';
 const SESSION_B = '00000000-0000-4000-8000-0000000000b2';
 const CREDENTIAL_A = '00000000-0000-4000-8000-0000000000a3';
 
-const WORKFORCE_TOKEN = 'workforce-token';
+// REPORT-32 H-01: catalogue-backed workforce fixtures replace the retired `internal:access`
+// fixture. A real A2WorkforceSessionService copies the function codes of every ACTIVE catalogue
+// role into `principal.scopes` (workforce-session.service.ts `resolve()`), so these fixtures mirror
+// real session shapes instead of inventing a legacy internal scope no role is ever granted.
+const FINANCE_AUDITOR_TOKEN = 'workforce-token-finance-auditor';
+const OPERATIONS_TOKEN = 'workforce-token-operations';
+const SUPPORT_TOKEN = 'workforce-token-support';
+const LEGACY_INTERNAL_SCOPE_TOKEN = 'workforce-token-legacy-internal-scope';
 const WORKFORCE_TOKEN_WITHOUT_SCOPE = 'workforce-token-noscope';
 const TOKEN_A = 'session-token-customer-a';
 const TOKEN_B = 'session-token-customer-b';
@@ -234,10 +241,59 @@ describe('HTTP authorization matrix', () => {
           assuranceLevel: 'MFA',
         };
       }
-      if (token === WORKFORCE_TOKEN) {
+      if (token === FINANCE_AUDITOR_TOKEN) {
+        // SUPER_ADMIN/FINANCE_AUDITOR shape: holds every operational read function.
         return {
           type: 'OPERATOR',
-          principalId: 'https://issuer.test:operator',
+          principalId: 'https://issuer.test:finance-auditor',
+          sessionId: SESSION_A,
+          audience: 'workforce-admin',
+          roles: ['FINANCE_AUDITOR'],
+          scopes: [
+            'audit.view',
+            'diagnostics.view',
+            'metrics.view',
+            'outbox.view',
+            'reconciliation.view',
+          ],
+          customerAccess: 'NONE',
+          assuranceLevel: 'MFA',
+          readOnlyPrincipal: true,
+        };
+      }
+      if (token === OPERATIONS_TOKEN) {
+        // OPERATIONS shape: platform operations reads, but no reconciliation.view in V1.
+        return {
+          type: 'OPERATOR',
+          principalId: 'https://issuer.test:operations',
+          sessionId: SESSION_A,
+          audience: 'workforce-admin',
+          roles: ['OPERATIONS'],
+          scopes: ['diagnostics.view', 'metrics.view', 'outbox.view'],
+          customerAccess: 'NONE',
+          assuranceLevel: 'MFA',
+          readOnlyPrincipal: true,
+        };
+      }
+      if (token === SUPPORT_TOKEN) {
+        // Real SUPPORT principal shape (support-authentication.service.ts principalFor()).
+        return {
+          type: 'SUPPORT',
+          principalId: 'support-user-1',
+          sessionId: SESSION_A,
+          audience: 'support-workforce',
+          roles: ['SUPPORT'],
+          scopes: ['support:ticket:read', 'customer.manage_support_case'],
+          customerAccess: 'NONE',
+          assuranceLevel: 'PASSWORD',
+        };
+      }
+      if (token === LEGACY_INTERNAL_SCOPE_TOKEN) {
+        // The retired fixture: a scope no catalogue role is ever granted. It must no longer be
+        // sufficient for any internal operational route.
+        return {
+          type: 'OPERATOR',
+          principalId: 'https://issuer.test:legacy-internal-scope',
           sessionId: SESSION_A,
           audience: 'workforce-admin',
           roles: ['FINANCE_AUDITOR'],
@@ -338,134 +394,108 @@ describe('HTTP authorization matrix', () => {
     });
   });
 
-  describe('customer self-service', () => {
-    it('binds deposit creation to the authenticated customer, not to request input', async () => {
+  /**
+   * REPORT-32 remediation of obsolete expectations #2-#7 (see the remediation report).
+   *
+   * The selected V1 product boundary serves customers through `/customers/me/*` and keeps the
+   * generic financial commands workforce-only: the integrated controllers (Lineage A) disable
+   * those commands for customer principals outright. The superseded expectations asserted that a
+   * customer could deposit, withdraw, transfer, list wallets and read deposit/withdrawal records
+   * through the generic routes - they described main's alternative design, not this contract.
+   *
+   * They are replaced - not deleted - by real-HTTP assertions on the approved contract: every
+   * generic customer financial command and read is denied with 403 and never reaches a
+   * money-movement service. The positive side of the contract lives in
+   * `test/runtime-access.guard.spec.ts` (CUSTOMER SELF resolution for `/customers/me/*`) and in
+   * `src/customer-app/customer-app.controller.ts`, whose `POST /customers/me/transfers` derives
+   * the `CUSTOMER_SELF` source-wallet binding from the session (request input cannot supply it).
+   */
+  describe('customer financial surface (selected /customers/me/* contract)', () => {
+    it.each(['/api/v1/deposits', '/api/v1/withdrawals', '/api/v1/transfers'])(
+      'denies a customer 403 on the generic command POST %s',
+      async (path) => {
+        await request(app.getHttpServer())
+          .post(path)
+          .set(asCustomer(TOKEN_A))
+          .set('idempotency-key', `matrix-generic-${path}`)
+          .send({
+            walletId: WALLET_A,
+            sourceWalletId: WALLET_A,
+            destinationWalletId: WALLET_B,
+            amountMinor: '1000',
+            currency: 'NGN',
+          })
+          .expect(403);
+      },
+    );
+
+    it('never reaches a money-movement service from a denied generic command', async () => {
       await request(app.getHttpServer())
         .post('/api/v1/deposits')
         .set(asCustomer(TOKEN_A))
-        .set('idempotency-key', 'matrix-deposit-1')
+        .set('idempotency-key', 'matrix-denied-deposit')
         .send({ walletId: WALLET_A, amountMinor: '1000', currency: 'NGN' })
-        .expect(201);
-
-      expect(depositService.createDeposit).toHaveBeenCalledTimes(1);
-      expect(depositService.createDeposit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          walletId: WALLET_A,
-          ownership: { kind: 'CUSTOMER_SELF', customerId: CUSTOMER_A },
-        }),
-      );
-    });
-
-    it('rejects spoofed ownership fields in the request body', async () => {
-      const response = await request(app.getHttpServer())
-        .post('/api/v1/deposits')
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/v1/withdrawals')
         .set(asCustomer(TOKEN_A))
-        .set('idempotency-key', 'matrix-deposit-2')
-        .send({ walletId: WALLET_A, amountMinor: '1000', currency: 'NGN', customerId: CUSTOMER_B });
-
-      expect(response.status).toBe(400);
-      expect(depositService.createDeposit).not.toHaveBeenCalled();
-    });
-
-    it('binds a customer transfer to the authenticated customer as source-wallet owner', async () => {
+        .set('idempotency-key', 'matrix-denied-withdrawal')
+        .send({ walletId: WALLET_A, amountMinor: '1000', currency: 'NGN' })
+        .expect(403);
       await request(app.getHttpServer())
         .post('/api/v1/transfers')
         .set(asCustomer(TOKEN_B))
-        .set('idempotency-key', 'matrix-transfer-1')
+        .set('idempotency-key', 'matrix-denied-transfer')
         .send({
           sourceWalletId: WALLET_B,
           destinationWalletId: WALLET_A,
           amountMinor: '500',
           currency: 'NGN',
         })
-        .expect(201);
-
-      expect(transferService.createTransfer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sourceWalletId: WALLET_B,
-          destinationWalletId: WALLET_A,
-          ownership: { kind: 'CUSTOMER_SELF', customerId: CUSTOMER_B },
-        }),
-      );
-    });
-
-    it('cannot widen a wallet listing with a foreign customerId query parameter', async () => {
-      await request(app.getHttpServer())
-        .get(`/api/v1/wallets?customerId=${CUSTOMER_B}`)
-        .set(asCustomer(TOKEN_A))
         .expect(403);
+
+      expect(depositService.createDeposit).not.toHaveBeenCalled();
+      expect(withdrawalService.createWithdrawal).not.toHaveBeenCalled();
+      expect(transferService.createTransfer).not.toHaveBeenCalled();
+    });
+
+    it('cannot widen reach by spoofing another customer id in the request body', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/deposits')
+        .set(asCustomer(TOKEN_A))
+        .set('idempotency-key', 'matrix-deposit-spoof')
+        .send({ walletId: WALLET_A, amountMinor: '1000', currency: 'NGN', customerId: CUSTOMER_B });
+
+      // Denied by route policy (403) rather than by body validation (400): the command does not
+      // exist for customer principals at all, so no request shape can reach it.
+      expect(response.status).toBe(403);
+      expect(depositService.createDeposit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['/api/v1/deposits'],
+      ['/api/v1/withdrawals'],
+      ['/api/v1/wallets'],
+      ['/api/v1/wallets?customerId=' + CUSTOMER_B],
+      ['/api/v1/deposits?walletId=' + WALLET_A],
+      [`/api/v1/deposits/${DEPOSIT_A}`],
+      [`/api/v1/withdrawals/${WITHDRAWAL_A}`],
+      [`/api/v1/transfers/${TRANSFER_A}`],
+      [`/api/v1/wallets/${WALLET_A}/balance`],
+      [`/api/v1/wallets/${WALLET_A}/transactions`],
+    ])('denies a customer 403 on the generic collection/read %s', async (path) => {
+      await request(app.getHttpServer()).get(path).set(asCustomer(TOKEN_A)).expect(403);
+
+      // No unscoped collection read and no cross-customer read can be served: none of the
+      // workforce-oriented service entry points are reachable from a customer principal.
       expect(walletService.listWallets).not.toHaveBeenCalled();
-
-      await request(app.getHttpServer())
-        .get('/api/v1/wallets')
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(walletService.listWallets).toHaveBeenCalledWith(CUSTOMER_A);
-    });
-
-    it('routes customer-scoped reads through ownership-checked service methods', async () => {
-      await request(app.getHttpServer())
-        .get(`/api/v1/deposits/${DEPOSIT_A}`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(depositService.getDepositForCustomer).toHaveBeenCalledWith(DEPOSIT_A, CUSTOMER_A);
+      expect(walletService.getWalletBalance).not.toHaveBeenCalled();
+      expect(depositService.listDeposits).not.toHaveBeenCalled();
       expect(depositService.getDeposit).not.toHaveBeenCalled();
-
-      await request(app.getHttpServer())
-        .get(`/api/v1/withdrawals/${WITHDRAWAL_A}`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(withdrawalService.getWithdrawalForCustomer).toHaveBeenCalledWith(
-        WITHDRAWAL_A,
-        CUSTOMER_A,
-      );
-
-      await request(app.getHttpServer())
-        .get(`/api/v1/wallets/${WALLET_A}/balance`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(walletService.getWalletBalanceForCustomer).toHaveBeenCalledWith(WALLET_A, CUSTOMER_A);
-
-      await request(app.getHttpServer())
-        .get(`/api/v1/wallets/${WALLET_A}/transactions`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(transferService.getWalletTransactionsForCustomer).toHaveBeenCalledWith(
-        WALLET_A,
-        CUSTOMER_A,
-        undefined,
-        undefined,
-      );
-
-      await request(app.getHttpServer())
-        .get(`/api/v1/transfers/${TRANSFER_A}`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(transferService.getTransferForCustomer).toHaveBeenCalledWith(TRANSFER_A, CUSTOMER_A);
-
-      await request(app.getHttpServer())
-        .get(`/api/v1/deposits?walletId=${WALLET_A}`)
-        .set(asCustomer(TOKEN_A))
-        .expect(200);
-      expect(depositService.listDepositsForCustomer).toHaveBeenCalledWith(CUSTOMER_A, WALLET_A);
-    });
-
-    it('never lets a customer substitute another customer id as the wallet owner', async () => {
-      await request(app.getHttpServer())
-        .post('/api/v1/withdrawals')
-        .set(asCustomer(TOKEN_B))
-        .set('idempotency-key', 'matrix-withdrawal-1')
-        .send({ walletId: WALLET_A, amountMinor: '700', currency: 'NGN' })
-        .expect(201);
-
-      // The service receives customer B's identity, so the wallet-ownership check rejects customer
-      // A's wallet; nothing is ever authorised by the supplied walletId alone.
-      expect(withdrawalService.createWithdrawal).toHaveBeenCalledWith(
-        expect.objectContaining({
-          walletId: WALLET_A,
-          ownership: { kind: 'CUSTOMER_SELF', customerId: CUSTOMER_B },
-        }),
-      );
+      expect(withdrawalService.listWithdrawals).not.toHaveBeenCalled();
+      expect(withdrawalService.getWithdrawal).not.toHaveBeenCalled();
+      expect(transferService.getTransfer).not.toHaveBeenCalled();
+      expect(transferService.getWalletTransactions).not.toHaveBeenCalled();
     });
   });
 
@@ -516,8 +546,10 @@ describe('HTTP authorization matrix', () => {
     it('does not accept a workforce session token on customer routes', async () => {
       await request(app.getHttpServer())
         .get('/api/v1/wallets')
-        .set({ authorization: `Bearer ${WORKFORCE_TOKEN}` })
-        .expect(401);
+        .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
+        // REPORT-32 disposition #9: the principal is recognised but disallowed by route policy, so
+        // 403 is the correct authorization result (previously mis-asserted as 401).
+        .expect(403);
     });
   });
 
@@ -533,39 +565,126 @@ describe('HTTP authorization matrix', () => {
       '/api/v1/internal/version',
     ];
 
+    // REPORT-32 H-01 positive coverage: a principal holding the catalogue functions the policy
+    // declares reaches every permitted internal operational endpoint.
     it.each(operationalPaths)(
-      'allows a workforce session holding internal:access on %s',
+      'allows a catalogue-privileged workforce session (FINANCE_AUDITOR shape) on %s',
       async (path) => {
         await request(app.getHttpServer())
           .get(path)
-          .set({ authorization: `Bearer ${WORKFORCE_TOKEN}` })
+          .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
           .expect(200);
       },
     );
 
-    it('denies a workforce session without internal:access', async () => {
+    // REPORT-32 H-01 negative coverage: a genuine SUPPORT session (read + funding-maker +
+    // support-queue only, holding none of these catalogue functions) is denied on every gated
+    // endpoint, and never reaches the underlying service.
+    const gatedOperationalPaths = operationalPaths.filter(
+      (path) => path !== '/api/v1/internal/audit',
+    );
+    it.each(gatedOperationalPaths)('denies a SUPPORT session 403 on %s', async (path) => {
       await request(app.getHttpServer())
-        .get('/api/v1/internal/readiness')
-        .set({ authorization: `Bearer ${WORKFORCE_TOKEN_WITHOUT_SCOPE}` })
+        .get(path)
+        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
         .expect(403);
+      expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
+      expect(productionConfigurationService.getSafeConfiguration).not.toHaveBeenCalled();
+      expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      expect(diagnosticsService.getDiagnostics).not.toHaveBeenCalled();
+      expect(metricsService.getMetrics).not.toHaveBeenCalled();
+      expect(outboxService.list).not.toHaveBeenCalled();
+    });
+
+    // The approved product decision keeps the generic audit listing available to SUPPORT; it is
+    // declared explicitly in the registry instead of being inherited from the un-gated catch-all.
+    it('allows a SUPPORT session to read the generic audit listing (documented decision)', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
+        .expect(200);
+      expect(auditService.list).toHaveBeenCalled();
+    });
+
+    // Least privilege is per-route, not per-type: OPERATIONS holds metrics/diagnostics/outbox but
+    // not reconciliation.view, so readiness/deployment (which embed reconciliation state) deny it
+    // while the operational reads it does own are allowed.
+    it.each([
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/outbox',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/version',
+    ])('allows an OPERATIONS-shape session on %s', async (path) => {
+      await request(app.getHttpServer())
+        .get(path)
+        .set({ authorization: `Bearer ${OPERATIONS_TOKEN}` })
+        .expect(200);
+    });
+
+    it.each(['/api/v1/internal/readiness', '/api/v1/internal/deployment'])(
+      'denies an OPERATIONS-shape session 403 on %s (no reconciliation.view)',
+      async (path) => {
+        await request(app.getHttpServer())
+          .get(path)
+          .set({ authorization: `Bearer ${OPERATIONS_TOKEN}` })
+          .expect(403);
+        expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      },
+    );
+
+    // The retired `internal:access` fixture must no longer grant anything: no catalogue role is
+    // ever issued that scope, so a principal holding only it is not authorised.
+    it.each(gatedOperationalPaths)(
+      'denies a session holding only the retired internal:access scope 403 on %s',
+      async (path) => {
+        await request(app.getHttpServer())
+          .get(path)
+          .set({ authorization: `Bearer ${LEGACY_INTERNAL_SCOPE_TOKEN}` })
+          .expect(403);
+      },
+    );
+
+    it('denies a workforce session with no scopes at all 403 on every gated operational route', async () => {
+      for (const path of gatedOperationalPaths) {
+        await request(app.getHttpServer())
+          .get(path)
+          .set({ authorization: `Bearer ${WORKFORCE_TOKEN_WITHOUT_SCOPE}` })
+          .expect(403);
+      }
     });
 
     it('never resolves an operational route through the customer session service', async () => {
       sessionService.validate.mockClear();
       await request(app.getHttpServer())
         .get('/api/v1/internal/readiness')
-        .set({ authorization: `Bearer ${WORKFORCE_TOKEN}` })
+        .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
         .expect(200);
       expect(sessionService.validate).not.toHaveBeenCalled();
     });
   });
 
   describe('anonymous authentication and registration', () => {
-    it('registers a customer anonymously', async () => {
+    // REPORT-32 disposition #14/#15: anonymous self-service registration through the workforce
+    // customer-creation command is superseded by the OTP registration lifecycle
+    // (`POST /customers/registration/otp` -> `.../otp/verify` -> `POST /customers/registration`),
+    // whose public status and abuse controls are asserted in test/runtime-access.guard.spec.ts and
+    // the customer-onboarding suites. The workforce command itself must stay closed to anonymous
+    // callers.
+    it('denies anonymous access to the workforce customer-creation command', async () => {
       await request(app.getHttpServer())
         .post('/api/v1/customers')
         .send({ reference: 'matrix-registration', type: 'INDIVIDUAL', actor: 'self-service' })
-        .expect(201);
+        .expect(401);
+      expect(customerService.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the OTP registration front door public while the workforce command stays closed', () => {
+      const registry = new RoutePolicyRegistry();
+      expect(registry.isPublic('POST', '/api/v1/customers/registration/otp')).toBe(true);
+      expect(registry.isPublic('POST', '/api/v1/customers/registration/otp/verify')).toBe(true);
+      expect(registry.isPublic('POST', '/api/v1/customers/registration')).toBe(true);
+      expect(registry.isPublic('POST', '/api/v1/customers')).toBe(false);
     });
 
     it('exchanges credentials for a session without returning credential material', async () => {

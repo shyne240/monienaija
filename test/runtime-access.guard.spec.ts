@@ -20,14 +20,20 @@ function context(request: Record<string, unknown>) {
 }
 
 describe('RoutePolicyRegistry', () => {
-  it('allows only the explicit health, registration and credential-exchange public routes', () => {
+  it('allows only the explicit health, OTP-registration and credential-exchange public routes', () => {
     const registry = new RoutePolicyRegistry();
     expect(registry.isPublic('GET', '/api/v1/health')).toBe(true);
     expect(registry.isPublic('GET', '/api/v1/health/ready')).toBe(true);
-    expect(registry.isPublic('POST', '/api/v1/customers')).toBe(true);
+    // Selected V1 API contract: the anonymous customer front door is the OTP registration
+    // lifecycle, never the workforce customer-creation command.
+    expect(registry.isPublic('POST', '/api/v1/customers/registration/otp')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers/registration/otp/verify')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers/registration')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers')).toBe(false);
     expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(true);
 
-    // Operational routes are never public.
+    // Operational routes are never public, including the API version metadata
+    // (REPORT-32 M-01: `/internal/version` used to sit in PUBLIC_ROUTES).
     expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(false);
     expect(registry.isPublic('GET', '/api/v1/internal/diagnostics')).toBe(false);
     expect(registry.isPublic('GET', '/api/v1/internal/readiness')).toBe(false);
@@ -54,50 +60,85 @@ describe('RoutePolicyRegistry', () => {
     );
   });
 
-  it('keeps operational routes behind internal:access for workforce principals only', () => {
+  it('requires explicit catalogue capabilities on every internal operational route', () => {
     const registry = new RoutePolicyRegistry();
-    for (const path of [
-      '/api/v1/internal/version',
-      '/api/v1/internal/readiness',
-      '/api/v1/internal/deployment',
-      '/api/v1/internal/configuration',
-      '/api/v1/internal/diagnostics',
-      '/api/v1/internal/metrics',
-      '/api/v1/internal/audit',
-      '/api/v1/internal/outbox',
-    ]) {
+    // REPORT-32 H-01 / M-01: a principal type is not an authorization decision. Each of these
+    // routes must declare the catalogue function(s) that actually govern it, and must not admit
+    // SUPPORT (whose approved V1 scope is read + funding-maker + support-queue only).
+    const expectations: Array<[string, string[]]> = [
+      ['/api/v1/internal/readiness', ['diagnostics.view', 'reconciliation.view']],
+      ['/api/v1/internal/deployment', ['diagnostics.view', 'reconciliation.view']],
+      ['/api/v1/internal/configuration', ['diagnostics.view']],
+      ['/api/v1/internal/version', ['diagnostics.view']],
+      ['/api/v1/internal/diagnostics', ['diagnostics.view']],
+      ['/api/v1/internal/metrics', ['metrics.view']],
+      ['/api/v1/internal/outbox', ['outbox.view']],
+    ];
+    for (const [path, requiredFunctions] of expectations) {
       const resolution = registry.resolve({ method: 'GET', url: path });
       expect(resolution.public).toBe(false);
-      expect(resolution.policy?.requiredScopes).toEqual(['internal:access']);
+      expect(resolution.authenticationMode).toBe('WORKFORCE_SESSION');
+      expect(resolution.policy?.requiredFunctions).toEqual(requiredFunctions);
+      expect(resolution.policy?.requiredScopes).toBeUndefined();
       expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('SUPPORT');
       expect(resolution.policy?.customerAccess).toBe('NONE');
     }
+
+    // The generic audit listing keeps SUPPORT reach by explicit, documented product decision
+    // (SUPPORT is a proven consumer and is not catalogue-governed). It is declared explicitly
+    // rather than inherited from the un-gated catch-all, and it still denies non-workforce
+    // principals.
+    const audit = registry.resolve({ method: 'GET', url: '/api/v1/internal/audit' });
+    expect(audit.public).toBe(false);
+    expect(audit.authenticationMode).toBe('WORKFORCE_SESSION');
+    expect(audit.resourceType).toBe('internal-audit-read');
+    expect(audit.policy?.allowedPrincipalTypes).toEqual([
+      'SUPPORT',
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
+    expect(audit.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+    expect(audit.policy?.allowedPrincipalTypes).not.toContain('AGENT');
   });
 
-  it('exposes only money-movement self-service routes to customers and keeps internal scopes for workforce', () => {
+  it('keeps customers on the selected self-service contract and off the generic financial commands', () => {
     const registry = new RoutePolicyRegistry();
 
-    const customerRoutes: Array<[string, string]> = [
+    // Selected V1 contract: customers transact through /customers/me/*, which is CUSTOMER SELF.
+    for (const [method, url] of [
+      ['GET', '/api/v1/customers/me'],
+      ['GET', '/api/v1/customers/me/wallets'],
+      ['POST', '/api/v1/customers/me/transfers'],
+    ] as Array<[string, string]>) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).toContain('CUSTOMER');
+      expect(resolution.policy?.customerAccess).toBe('SELF');
+    }
+
+    // Generic financial commands and collections remain workforce-only: the integrated
+    // controllers disable the generic customer command endpoints outright, so no registry entry
+    // may widen reach to customer principals (that is what made main's design unsafe without
+    // main's controllers).
+    for (const [method, url] of [
       ['POST', '/api/v1/deposits'],
       ['GET', '/api/v1/deposits'],
       ['GET', `/api/v1/deposits/${CUSTOMER_ID}`],
       ['POST', '/api/v1/withdrawals'],
       ['GET', '/api/v1/withdrawals'],
-      ['GET', `/api/v1/withdrawals/${CUSTOMER_ID}`],
       ['POST', '/api/v1/transfers'],
       ['GET', `/api/v1/transfers/${CUSTOMER_ID}`],
       ['GET', '/api/v1/wallets'],
       ['GET', `/api/v1/wallets/${CUSTOMER_ID}`],
       ['GET', `/api/v1/wallets/${CUSTOMER_ID}/balance`],
       ['GET', `/api/v1/wallets/${CUSTOMER_ID}/transactions`],
-    ];
-    for (const [method, url] of customerRoutes) {
+    ] as Array<[string, string]>) {
       const resolution = registry.resolve({ method, url });
       expect(resolution.public).toBe(false);
-      expect(resolution.policy?.allowedPrincipalTypes).toContain('CUSTOMER');
-      // The pre-existing internal gate is unchanged for non-customer principals.
-      expect(resolution.policy?.internalScopes).toEqual(['internal:access']);
-      expect(resolution.policy?.requiredScopes).toBeUndefined();
+      expect(resolution.policy?.allowedPrincipalTypes).toContain('OPERATOR');
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
     }
 
     // Settlement and state-transition routes stay internal-only.
@@ -115,7 +156,6 @@ describe('RoutePolicyRegistry', () => {
       const resolution = registry.resolve({ method, url });
       expect(resolution.public).toBe(false);
       expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
-      expect(resolution.policy?.requiredScopes).toEqual(['internal:access']);
     }
   });
 });

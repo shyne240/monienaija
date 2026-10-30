@@ -365,12 +365,46 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     expect(bodyStr).not.toContain('otp');
   });
 
-  it('12. Production/readiness reads', async () => {
-    // version is public
-    await request(app.getHttpServer()).get('/api/v1/internal/version').expect(200);
-    const token = workforceToken('SUPPORT');
-    await request(app.getHttpServer()).get('/api/v1/internal/readiness').set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app.getHttpServer()).get('/api/v1/internal/configuration').set('Authorization', `Bearer ${token}`).expect(200);
+  it('12. Production/readiness reads require explicit operational catalogue functions', async () => {
+    // REPORT-32 M-01: internal version metadata is no longer publicly readable.
+    await request(app.getHttpServer()).get('/api/v1/internal/version').expect(401);
+
+    // REPORT-32 H-01: a genuine SUPPORT-shaped session (CUSTOMER_SERVICE catalogue role, whose
+    // approved scope is support-queue work) holds none of the operational catalogue functions and
+    // is denied every operational read it previously reached on authentication alone.
+    const supportToken = workforceToken('SUPPORT', 'CUSTOMER_SERVICE');
+    for (const path of [
+      '/api/v1/internal/version',
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/outbox',
+    ]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${supportToken}`)
+        .expect(403);
+    }
+
+    // A principal holding the declared catalogue functions (diagnostics.view, reconciliation.view,
+    // metrics.view, outbox.view) is authorised on exactly the same set.
+    const auditorToken = workforceToken('OPERATOR', 'FINANCE_AUDITOR');
+    for (const path of [
+      '/api/v1/internal/version',
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/outbox',
+    ]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${auditorToken}`)
+        .expect(200);
+    }
   });
 
   it('13. No arbitrary customer mutation via admin (should be 404)', async () => {

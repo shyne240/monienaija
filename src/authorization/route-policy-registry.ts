@@ -34,7 +34,13 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/v1/public/agents/cash-to-cash-outlets',
   'GET /api/v1/health',
   'GET /api/v1/health/ready',
-  'GET /api/v1/internal/version',
+  // REPORT-32 M-01 (remediated on integration/main-backend-frontend-20261030): the API version
+  // metadata moved OFF this list. It used to be public even though the generic internal contract
+  // (and this file's own generic-branch comment) declares `/internal/**` non-public, so an
+  // anonymous caller could read current/supported API version headers from an internal path.
+  // It is now an explicit catalogue-gated workforce read (see
+  // INTERNAL_OPERATIONAL_ROUTE_POLICIES below). Public liveness/probe needs remain covered by
+  // `GET /api/v1/health` and `GET /api/v1/health/ready`.
   // V1-CUSTOMER-ONBOARDING-01 — customer registration front door (decided hybrid model,
   // docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md). Unauthenticated by design: no session-
   // bearing auth mode exists pre-registration. Abuse is bounded inside the registration
@@ -44,6 +50,105 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration/otp/verify',
   'POST /api/v1/customers/registration',
 ]);
+
+/**
+ * REPORT-32 H-01 / M-01 — explicit least-privilege policies for the internal operational read
+ * surface.
+ *
+ * Before this table existed, every one of these paths fell through to the registry's generic
+ * `/api/v1/internal/` catch-all, whose policy listed the four workforce principal *types* and
+ * declared no function, role or scope gate. `RuntimeAccessGuard` only enforces gates a policy
+ * explicitly declares, so a valid SUPPORT session (or any OPERATOR/SERVICE/PRIVILEGED session,
+ * whatever catalogue role it actually held) could read deployment readiness, migration metadata,
+ * reconciliation status, pending-outbox counts, safe configuration and API version metadata.
+ * `OperationsController` already re-checked metrics/diagnostics/outbox at the controller with
+ * `requireFunction`, but `ProductionController` performed no capability check at all.
+ *
+ * A principal type is authentication evidence, not an authorization decision. Each route below
+ * therefore requires an explicit, existing catalogue function from
+ * `src/authorization-catalogue/authorization-catalogue.seed.ts` — no function identifier is
+ * invented here, and none of these grants is broader than the function's documented meaning:
+ *
+ *   - `diagnostics.view`  — "View operational diagnostics endpoints" (SUPER_ADMIN,
+ *                           FINANCE_AUDITOR, OPERATIONS).
+ *   - `reconciliation.view` — "View reconciliation run status/exceptions" (SUPER_ADMIN,
+ *                           FINANCE_AUDITOR, TREASURY).
+ *   - `metrics.view`      — "View operational metrics" (SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS).
+ *   - `outbox.view`       — "View the transactional outbox/event delivery queue"
+ *                           (SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS).
+ *
+ * `GET /internal/readiness` and `GET /internal/deployment` return the SAME payload
+ * (`ProductionReadinessService.getReadiness()`), which embeds reconciliation PASS/WARNING/ERROR
+ * alongside data-source, migration and pending-outbox state. They therefore require BOTH
+ * `diagnostics.view` (schema/deployment diagnostics) and `reconciliation.view` (financial
+ * reconciliation state) — an all-of gate, so they are reachable only by roles holding both, i.e.
+ * SUPER_ADMIN and FINANCE_AUDITOR. OPERATIONS keeps metrics/diagnostics/outbox/configuration and
+ * the public `/health/ready` probe; TREASURY (whose V1 grant is exactly `reconciliation.view`)
+ * does not gain deployment or migration visibility from that single function.
+ *
+ * SUPPORT is deliberately absent from `allowedPrincipalTypes` for every route in this table: the
+ * approved V1 SUPPORT scope is "read + funding-maker + support-queue only" (UAT-SEC-005 /
+ * UAT-ADMIN-011) and a SUPPORT principal holds none of these function codes. Denial is therefore
+ * doubly enforced — principal type, then function.
+ *
+ * This is a guard-level policy (defense in depth) layered on top of, never instead of, the
+ * controller-level `requireFunction` checks in `OperationsController`. No controller check is
+ * removed by this table, and no route is granted a capability it did not already declare.
+ */
+const INTERNAL_OPERATIONAL_ROUTE_POLICIES: Record<
+  string,
+  { resourceType: string; requiredFunctions: readonly string[] }
+> = {
+  'GET /api/v1/internal/readiness': {
+    resourceType: 'internal-readiness',
+    requiredFunctions: ['diagnostics.view', 'reconciliation.view'],
+  },
+  'GET /api/v1/internal/deployment': {
+    resourceType: 'internal-deployment',
+    requiredFunctions: ['diagnostics.view', 'reconciliation.view'],
+  },
+  'GET /api/v1/internal/configuration': {
+    resourceType: 'internal-configuration',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/version': {
+    resourceType: 'internal-version',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/metrics': {
+    resourceType: 'internal-metrics',
+    requiredFunctions: ['metrics.view'],
+  },
+  'GET /api/v1/internal/diagnostics': {
+    resourceType: 'internal-diagnostics',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/outbox': {
+    resourceType: 'internal-outbox',
+    requiredFunctions: ['outbox.view'],
+  },
+};
+
+/**
+ * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
+ *
+ * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
+ * does not gate it behind `audit.view`, because a genuine SUPPORT workforce session is a proven,
+ * pre-existing consumer (a22-admin-foundation "Audit reads via workforce and no sensitive fields"),
+ * SUPPORT is not a catalogue-governed principal type, and withdrawing that capability would be an
+ * unapproved reduction of SUPPORT's approved scope. The remediation decision (recorded in the
+ * Report 32 remediation report) is to keep the capability but make it an explicit, documented
+ * policy rather than an accident of the generic catch-all, so the reachable principal set for
+ * audit is stated in one auditable place and cannot silently widen.
+ *
+ * The narrower `notification.provider.view` restriction on provider-configuration audit rows is
+ * still enforced inside the controller, unchanged.
+ */
+const INTERNAL_AUDIT_READ = {
+  resourceType: 'internal-audit-read',
+  allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'] as const,
+};
+
 
   // INTEGRATION (integration/main-backend-frontend-20261030) — constructs carried over from
   // main (39a9e504, phase 16-20 production readiness). Two of main's four registry additions are
@@ -971,6 +1076,47 @@ export class RoutePolicyRegistry {
           resourceType: 'capability-registry',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // REPORT-32 H-01 / M-01 — explicit capability gates for the internal operational read
+    // surface. Must precede the generic `/api/v1/internal/` branch below, which declares no
+    // function/role/scope gate and therefore only authenticated a caller. See
+    // INTERNAL_OPERATIONAL_ROUTE_POLICIES and INTERNAL_AUDIT_READ at the top of this file.
+    const operationalPolicy = INTERNAL_OPERATIONAL_ROUTE_POLICIES[`${method} ${path}`];
+    if (operationalPolicy) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: operationalPolicy.resourceType,
+        policy: {
+          resourceType: operationalPolicy.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [...operationalPolicy.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // REPORT-32 H-01 — generic audit listing keeps SUPPORT reach by explicit product decision;
+    // stated here so the reachable principal set is deliberate and auditable. See
+    // INTERNAL_AUDIT_READ.
+    if (method === 'GET' && path === '/api/v1/internal/audit') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: INTERNAL_AUDIT_READ.resourceType,
+        policy: {
+          resourceType: INTERNAL_AUDIT_READ.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: [...INTERNAL_AUDIT_READ.allowedPrincipalTypes],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
