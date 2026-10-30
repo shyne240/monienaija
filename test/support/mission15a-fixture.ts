@@ -94,7 +94,7 @@ export async function createMission15aFixture(label: string) {
       payload: { agentId: identity.id, password: identity.password },
     });
     if (response.statusCode !== 200) throw new Error(`Agent test login failed: ${response.statusCode}`);
-    const body = response.json() as { accessToken: string; sessionId: string };
+    const body = response.json<{ accessToken: string; sessionId: string }>();
     return { token: body.accessToken, sessionId: body.sessionId };
   }
 

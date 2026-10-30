@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { AgentAuthenticationExecutionService } from '../src/agent-authentication/agent-authentication-execution.service';
 import { AgentAuthenticationSessionService } from '../src/agent-authentication/agent-authentication-session.service';
 import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';

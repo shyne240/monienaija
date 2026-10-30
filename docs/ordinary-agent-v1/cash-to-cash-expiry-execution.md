@@ -75,7 +75,7 @@ Only `CASH_TO_CASH_EXPIRY` seed metadata was corrected, with implementation evid
 
 The existing seed service inserts missing codes but **does not overwrite an existing capability row**. This source correction therefore does not repair an already-populated production registry automatically. Have the authorized registry owner review/apply the same evidence-backed metadata through the existing versioned/audited capability update process. Do not truncate/reseed a populated registry or infer activation from static seed metadata.
 
-ARENA 2: **no HTTP request/response, authorization, mobile or admin-web contract change**. Worker operational state is not exposed as a new API. No funding controller, product-catalog module or authorization catalogue was changed. No new migration is required by this task; normal baseline schema prerequisites still apply. No production schema was executed here.
+At the time of this worker handoff, no HTTP endpoint was added. **Mission 15A supersedes that statement:** it adds a read-only, `transaction.view`-protected backlog/status endpoint, including process-local worker state; see [the Mission 15A API contract](mission-15a-api-contract-20261030.md#3-cash-to-cash-expiry-and-oversight). It does not expose a manual sweep or fund disposition, add a dashboard/alert/heartbeat, or make the local timer a fleet-wide health signal. The `CASH_TO_CASH_EXPIRY` capability seed above still says `apiStatus: NOT_EXPOSED` and does not mention the new status-only read; the registry owner must review the distinction through the existing governed process, not infer sweep availability or worker activation. No new migration was required by the worker or Mission 15A; no production schema was executed here.
 
 ## Verification
 
