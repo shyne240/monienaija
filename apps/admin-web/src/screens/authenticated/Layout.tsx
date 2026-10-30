@@ -39,6 +39,8 @@ type View = AdminView;
 
 interface NavContext {
   customerId?: string;
+  agentId?: string;
+  openAgentApplications?: boolean;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -205,8 +207,8 @@ export const Layout: React.FC = () => {
       title: '3. Money Movement',
       items: [
         { key: 'transfers' as View, label: '💸 Transaction & Fee Ops — Transfers (W2W)', visible: isVisible('transfers') },
-        { key: 'cashIn' as View, label: '💸 Transaction & Fee Ops — Cash-In (C2W)', visible: isVisible('transfers') },
-        { key: 'cashOut' as View, label: '💸 Transaction & Fee Ops — Cash-Out (W2C)', visible: isVisible('transfers') },
+        { key: 'cashIn' as View, label: '💸 Transaction & Fee Ops — Deposits', visible: isVisible('transfers') },
+        { key: 'cashOut' as View, label: '💸 Transaction & Fee Ops — Withdrawals', visible: isVisible('transfers') },
         { key: 'cashToCashOps' as View, label: '💸 Cash-to-Cash Operations', visible: isVisible('cashToCashOps') },
       ],
     },
@@ -295,13 +297,43 @@ export const Layout: React.FC = () => {
 
     const effectiveView = canonicalAdminView(currentView);
     switch (effectiveView) {
-      case 'dashboard': return <DashboardScreen onNavigateToCustomers={() => handleNav('customers')} />;
+      case 'dashboard':
+        return (
+          <DashboardScreen
+            onNavigateToCustomers={() => handleNav('customers')}
+            onNavigateToAgents={(opts) =>
+              handleNav('agents', opts?.openApplications ? { openAgentApplications: true } : undefined)
+            }
+          />
+        );
       case 'dashboardSettings': return <DashboardSettingsScreen />;
       case 'customers': return <CustomerDirectoryScreen onNavigate={(view, customerId) => navigateWithCustomer(view as View, customerId)} selectedCustomerId={navContext.customerId} />;
-      case 'agents': return <AgentNetworkScreen />;
+      case 'agents':
+        return (
+          <AgentNetworkScreen
+            initialAgentId={navContext.agentId}
+            initialOpenApplications={navContext.openAgentApplications}
+            onNavigateToSupportTickets={
+              isVisible('support')
+                ? (agentId: string) => handleNav('support', { agentId })
+                : undefined
+            }
+          />
+        );
       case 'agentClasses': return <AgentClassesScreen />;
       case 'cashToCashOps': return <CashToCashOperationsScreen />;
-      case 'support': return <SupportTicketsScreen initialCustomerId={navContext.customerId} />;
+      case 'support':
+        return (
+          <SupportTicketsScreen
+            initialCustomerId={navContext.customerId}
+            initialAgentId={navContext.agentId}
+            onBackToAgent={
+              navContext.agentId && isVisible('agents')
+                ? () => handleNav('agents', { agentId: navContext.agentId })
+                : undefined
+            }
+          />
+        );
       case 'transfers': return <TransactionObservabilityScreen initialType="TRANSFER" initialCustomerId={navContext.customerId} onBackToCustomer={navContext.customerId ? () => handleNav('customers', { customerId: navContext.customerId }) : undefined} />;
       case 'cashIn': return <TransactionObservabilityScreen initialType="DEPOSIT" initialCustomerId={navContext.customerId} />;
       case 'cashOut': return <TransactionObservabilityScreen initialType="WITHDRAWAL" initialCustomerId={navContext.customerId} />;

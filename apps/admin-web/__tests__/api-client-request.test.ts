@@ -38,5 +38,17 @@ describe('Admin Web API client requests', () => {
     );
     const init = fetchSpy.mock.calls[0]?.[1] as { headers: Record<string, string> };
     expect(init.headers['Authorization']).toBe('Bearer workforce-token-123');
+    expect(init.headers['Content-Type']).toBeUndefined();
+  });
+
+  it('sets Content-Type application/json only when a JSON body is supplied', async () => {
+    await ApiClient.post('/internal/agents/applications/app-1/review');
+    const bodylessInit = fetchSpy.mock.calls[0]?.[1] as { headers: Record<string, string> };
+    expect(bodylessInit.headers['Content-Type']).toBeUndefined();
+
+    await ApiClient.post('/agents/applications', { applicantReference: 'AGT-001' });
+    const jsonInit = fetchSpy.mock.calls[1]?.[1] as { headers: Record<string, string>; body?: string };
+    expect(jsonInit.headers['Content-Type']).toBe('application/json');
+    expect(jsonInit.body).toBe(JSON.stringify({ applicantReference: 'AGT-001' }));
   });
 });

@@ -77,11 +77,12 @@ describe('Admin Web batch 03: limit read-only diagnostics', () => {
     expect(view.queryByText('requestHash')).toBeNull();
   });
 
-  test('assignment-only principals do not issue diagnostics requests without limit.view', async () => {
+  test('assignment-only principals do not issue assignment list or diagnostics GET requests without limit.view', async () => {
     setPrincipal(['AGENT_NETWORK_MANAGER'], ['agent.assign_limit']);
     const view = render(<LimitAssignmentScreen />);
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments'));
+    expect(view.getByTestId('limit-view-required-notice')).toBeTruthy();
     expect(view.getByText(/shown only to principals with/)).toBeTruthy();
+    expect(ApiClient.get).not.toHaveBeenCalled();
     expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining('/internal/limit-usages'));
     expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining('/internal/limit-reservations'));
   });
