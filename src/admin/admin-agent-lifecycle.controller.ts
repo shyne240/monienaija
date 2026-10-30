@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { AgentLifecycleService } from '../agent/agent-lifecycle.service';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -10,6 +11,9 @@ interface AuthenticatedRequest {
 }
 
 class ReasonDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
   reason?: string;
 }
 

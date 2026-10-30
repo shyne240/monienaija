@@ -2,6 +2,7 @@ import { Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 
 import { AgentAuthenticationService } from '../agent-authentication/agent-authentication.service';
+import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
 import { AgentPasswordHashAlgorithm } from '../agent-authentication/agent-authentication.enums';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -38,6 +39,7 @@ export class AdminAgentCredentialsController {
   constructor(
     private readonly agentAuthenticationService: AgentAuthenticationService,
     private readonly auth: AuthorizationService,
+    private readonly sessions: AgentAuthenticationSessionService,
   ) {}
 
   @Post(':id/credentials')
@@ -66,6 +68,15 @@ export class AdminAgentCredentialsController {
       actor,
     });
     return this.issuanceView(credential.id, credential.agentId, plaintext, credential.passwordExpiresAt);
+  }
+
+  /** Revokes existing sessions only; it neither issues nor changes a credential. */
+  @Post(':id/sessions/revoke')
+  @HttpCode(200)
+  async revokeActiveSessions(@Param('id') agentId: string, @Req() req: AuthenticatedRequest) {
+    const actor = await this.requireOperational(req);
+    const revokedSessionCount = await this.sessions.revokeAllForAgent(agentId, actor);
+    return { agentId, revokedSessionCount };
   }
 
   private generateTemporaryCredential(): { plaintext: string; hash: string } {
