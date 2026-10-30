@@ -30,9 +30,9 @@
  *      (agent.suspend / customer.suspend) — `principal.type === 'OPERATOR'` continues to never
  *      substitute for a function grant, on the read surface exactly as it does not on the
  *      mutation surface Hardening-01 already proved.
- *   D. `/internal/audit` is deliberately left unmigrated (SUPPORT-blocked, see the class-level
- *      comment in operations.controller.ts) — any authenticated workforce session can still
- *      reach it, confirming this task did not accidentally restrict a capability out of scope.
+ *   D. `/internal/audit` now requires `audit.view` for catalogue-governed principals (REPORT-34
+ *      H-01-R2), with SUPPORT's expressly approved exception preserved. TREASURY and OPERATIONS
+ *      are denied; FINANCE_AUDITOR is allowed.
  */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -329,14 +329,50 @@ describe('V1-ADMIN-AUTHORIZATION-READ-SURFACE-01 — read surface + 401/403 auth
   });
 
   // =====================================================================================
-  // D. /internal/audit is deliberately NOT migrated (SUPPORT-blocked, documented gap)
+  // D. /internal/audit — REPORT-34 H-01-R2 strict gate
   // =====================================================================================
 
-  describe('D. /internal/audit remains unmigrated by design (out of scope — SUPPORT is not catalogue-governed)', () => {
-    it('D1. any authenticated workforce session (even one holding none of the new read functions) can still reach /internal/audit, confirming this task did not narrow it', async () => {
+  describe('D. /internal/audit requires audit.view for catalogue-governed workforce principals', () => {
+    // Superseded expectation: this case previously asserted that ANY authenticated workforce
+    // session (TREASURY holds only reconciliation.view) could read the generic audit listing. That
+    // was the over-grant Report 34 flagged as H-01-R2; the approved contract requires audit.view
+    // (catalogue: SUPER_ADMIN, FINANCE_AUDITOR) and keeps SUPPORT's documented exception. SUPPORT
+    // is not a catalogue-governed principal type, so its exemption is covered by
+    // test/authorization-http-matrix.spec.ts with a real SUPPORT principal shape.
+    it('D1. denies a catalogue role without audit.view (TREASURY) 403 on GET and HEAD', async () => {
       const token = await tokenForRole('TREASURY');
-      const res = await request(app.getHttpServer()).get('/api/v1/internal/audit?limit=1').set(auth(token));
-      expect(res.status).toBe(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?limit=1')
+        .set(auth(token))
+        .expect(403);
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set(auth(token))
+        .expect(403);
+    });
+
+    it('D2. denies OPERATIONS (metrics/diagnostics/outbox but not audit.view) 403 on GET and HEAD', async () => {
+      const token = await tokenForRole('OPERATIONS');
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?limit=1')
+        .set(auth(token))
+        .expect(403);
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set(auth(token))
+        .expect(403);
+    });
+
+    it('D3. allows FINANCE_AUDITOR, which holds audit.view, on GET and HEAD', async () => {
+      const token = await tokenForRole('FINANCE_AUDITOR');
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?limit=1')
+        .set(auth(token))
+        .expect(200);
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set(auth(token))
+        .expect(200);
     });
   });
 });

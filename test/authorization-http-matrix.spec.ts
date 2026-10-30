@@ -181,7 +181,12 @@ describe('HTTP authorization matrix', () => {
   const diagnosticsService = { getDiagnostics: jest.fn() };
   const metricsService = { getMetrics: jest.fn() };
   const outboxService = { list: jest.fn(), listOutbox: jest.fn() };
-  const auditService = { record: jest.fn(), list: jest.fn(), listAudit: jest.fn() };
+  const auditService = {
+    record: jest.fn(),
+    list: jest.fn(),
+    listAudit: jest.fn(),
+    listWithNotificationProviderOversight: jest.fn(),
+  };
   const securityRateLimits = {
     consume: jest.fn<Promise<void>, [A2RateLimitRuleV1, readonly string[], string]>(),
   };
@@ -661,6 +666,211 @@ describe('HTTP authorization matrix', () => {
         .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
         .expect(200);
       expect(sessionService.validate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * REPORT-34 H-01-R1 — HTTP method parity.
+   *
+   * Fastify answers a HEAD request with the matching GET handler (bodies are suppressed, the
+   * handler still runs). Route policies are keyed by `"<METHOD> <path>"`, so before the
+   * remediation a HEAD request matched no operational policy and fell through to the generic,
+   * un-gated `/internal/*` branch — which admits SUPPORT and declares no function requirement.
+   * SUPPORT could therefore invoke readiness/deployment/configuration/version through HEAD.
+   *
+   * `RoutePolicyRegistry.resolve()` now resolves HEAD through the GET policy. These cases prove
+   * the fix at both layers: the policy resolution is identical for HEAD and GET, and the real
+   * HTTP surface denies/permits HEAD exactly as it does GET, with denied requests never reaching
+   * the protected service.
+   */
+  describe('HEAD method parity with GET (REPORT-34 H-01-R1)', () => {
+    const gatedPaths = [
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/outbox',
+      '/api/v1/internal/version',
+    ];
+    const allOperationalPaths = [...gatedPaths, '/api/v1/internal/audit'];
+
+    function resolutionFor(method: string, path: string) {
+      const resolution = new RoutePolicyRegistry().resolve({ method, url: path });
+      // `action` intentionally records the real request method, so it is normalised away here.
+      return {
+        ...resolution,
+        policy: resolution.policy ? { ...resolution.policy, action: 'normalised' } : undefined,
+      };
+    }
+
+    it.each(allOperationalPaths)(
+      'resolves HEAD through exactly the GET policy for %s',
+      (path) => {
+        expect(resolutionFor('HEAD', path)).toEqual(resolutionFor('GET', path));
+      },
+    );
+
+    it.each(allOperationalPaths)(
+      'never falls through to the un-gated generic internal policy on HEAD %s',
+      (path) => {
+        const head = new RoutePolicyRegistry().resolve({ method: 'HEAD', url: path });
+        expect(head.resourceType).not.toBe('internal-route');
+        // The gated operational routes exclude SUPPORT by principal type; the audit route admits
+        // SUPPORT (approved exception) but must declare the audit.view function gate instead of
+        // relying on the un-gated fallback.
+        if (path.endsWith('/audit')) {
+          expect(head.policy?.requiredFunctions).toEqual(['audit.view']);
+        } else {
+          expect(head.policy?.allowedPrincipalTypes).not.toContain('SUPPORT');
+          expect((head.policy?.requiredFunctions?.length ?? 0) > 0).toBe(true);
+        }
+      },
+    );
+
+    // ---- negative coverage on HEAD -------------------------------------------------------
+    it.each(allOperationalPaths)('denies anonymous HEAD 401 on %s', async (path) => {
+      await request(app.getHttpServer()).head(path).expect(401);
+      expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
+      expect(auditService.list).not.toHaveBeenCalled();
+    });
+
+    it.each(allOperationalPaths)('denies a CUSTOMER HEAD 403 on %s', async (path) => {
+      await request(app.getHttpServer())
+        .head(path)
+        .set(asCustomer(TOKEN_A))
+        .expect(403);
+      expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
+      expect(auditService.list).not.toHaveBeenCalled();
+    });
+
+    it.each(gatedPaths)('denies a SUPPORT HEAD 403 on %s and never invokes the handler', async (path) => {
+      await request(app.getHttpServer())
+        .head(path)
+        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
+        .expect(403);
+      expect(apiVersionService.getVersionMetadata).not.toHaveBeenCalled();
+      expect(productionConfigurationService.getSafeConfiguration).not.toHaveBeenCalled();
+      expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      expect(diagnosticsService.getDiagnostics).not.toHaveBeenCalled();
+      expect(metricsService.getMetrics).not.toHaveBeenCalled();
+      expect(outboxService.list).not.toHaveBeenCalled();
+    });
+
+    it.each(gatedPaths)(
+      'denies a workforce principal holding only the retired internal:access scope on HEAD %s',
+      async (path) => {
+        await request(app.getHttpServer())
+          .head(path)
+          .set({ authorization: `Bearer ${LEGACY_INTERNAL_SCOPE_TOKEN}` })
+          .expect(403);
+        expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(gatedPaths)('denies a scope-less workforce principal on HEAD %s', async (path) => {
+      await request(app.getHttpServer())
+        .head(path)
+        .set({ authorization: `Bearer ${WORKFORCE_TOKEN_WITHOUT_SCOPE}` })
+        .expect(403);
+    });
+
+    it.each(['/api/v1/internal/readiness', '/api/v1/internal/deployment'])(
+      'denies an OPERATIONS-shape principal on HEAD %s (no reconciliation.view)',
+      async (path) => {
+        await request(app.getHttpServer())
+          .head(path)
+          .set({ authorization: `Bearer ${OPERATIONS_TOKEN}` })
+          .expect(403);
+        expect(productionReadinessService.getReadiness).not.toHaveBeenCalled();
+      },
+    );
+
+    // ---- positive coverage on HEAD -------------------------------------------------------
+    it.each(allOperationalPaths)(
+      'allows a FINANCE_AUDITOR-shape principal on HEAD %s',
+      async (path) => {
+        await request(app.getHttpServer())
+          .head(path)
+          .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
+          .expect(200);
+      },
+    );
+
+    it.each([
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/outbox',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/version',
+    ])('allows an OPERATIONS-shape principal on HEAD %s', async (path) => {
+      await request(app.getHttpServer())
+        .head(path)
+        .set({ authorization: `Bearer ${OPERATIONS_TOKEN}` })
+        .expect(200);
+    });
+
+    it('allows the approved SUPPORT exception on HEAD /internal/audit', async () => {
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
+        .expect(200);
+      expect(auditService.list).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * REPORT-34 H-01-R2 — the approved SUPPORT audit exception is SUPPORT-only.
+   *
+   * Retaining SUPPORT's documented audit read never authorised every other workforce principal:
+   * the catalogue grants `audit.view` to SUPER_ADMIN and FINANCE_AUDITOR and deliberately not to
+   * OPERATIONS. `GET /internal/audit` therefore requires `audit.view` from catalogue-governed
+   * principals and exempts only SUPPORT.
+   */
+  describe('audit least privilege (REPORT-34 H-01-R2)', () => {
+    it('allows SUPPORT (approved exception, not catalogue-governed)', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${SUPPORT_TOKEN}` })
+        .expect(200);
+      expect(auditService.list).toHaveBeenCalled();
+    });
+
+    it('allows FINANCE_AUDITOR, which holds audit.view', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${FINANCE_AUDITOR_TOKEN}` })
+        .expect(200);
+      expect(auditService.list).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['OPERATIONS (holds metrics/diagnostics/outbox but not audit.view)', OPERATIONS_TOKEN],
+      ['a principal holding only the retired internal:access scope', LEGACY_INTERNAL_SCOPE_TOKEN],
+      ['a scope-less workforce principal', WORKFORCE_TOKEN_WITHOUT_SCOPE],
+    ])('denies %s 403 on GET and HEAD audit, and never lists audit records', async (_label, token) => {
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${token}` })
+        .expect(403);
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set({ authorization: `Bearer ${token}` })
+        .expect(403);
+      expect(auditService.list).not.toHaveBeenCalled();
+      expect(auditService.listWithNotificationProviderOversight).not.toHaveBeenCalled();
+    });
+
+    it('declares audit.view as the audit gate while exempting only SUPPORT', () => {
+      const resolution = new RoutePolicyRegistry().resolve({
+        method: 'GET',
+        url: '/api/v1/internal/audit',
+      });
+      expect(resolution.policy?.requiredFunctions).toEqual(['audit.view']);
+      expect(resolution.policy?.requiredFunctionsExemptPrincipalTypes).toEqual(['SUPPORT']);
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
     });
   });
 

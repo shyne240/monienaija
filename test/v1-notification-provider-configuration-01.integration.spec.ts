@@ -1318,73 +1318,114 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
     );
     expect(Number(dbProviderAuditCount[0]!.count)).toBeGreaterThanOrEqual(4);
 
-    // Unentitled callers (COMPLIANCE, CUSTOMER_SERVICE, FINANCE_PREPARER) see general audit rows ONLY — zero provider audit sentinels
-    for (const unentitled of [compliance, customerService, financePreparer]) {
-      const genericList = await request(app.getHttpServer())
+    // REPORT-34 H-01-R2 (decision C — strict gate): GET/HEAD /internal/audit now requires
+    // `audit.view`, with the approved SUPPORT exception as the only exemption. Catalogue roles that
+    // do not hold audit.view are denied at the guard and never reach the audit handler, so they
+    // cannot even observe whether provider records exist.
+    //
+    // OPEN PRODUCT ITEM (recorded, not silently dropped): OPERATIONS and FINANCE_CONTROLLER hold
+    // `notification.provider.view` but not `audit.view`, so the strict gate also removes their
+    // provider-audit oversight. That regression is deliberate under the approved decision and is
+    // logged in the remediation report for a follow-up (a dedicated provider-audit read route).
+    for (const denied of [
+      { label: 'COMPLIANCE', session: compliance },
+      { label: 'CUSTOMER_SERVICE', session: customerService },
+      { label: 'FINANCE_PREPARER', session: financePreparer },
+      { label: 'OPERATIONS (provider.view without audit.view)', session: operations },
+      { label: 'FINANCE_CONTROLLER (provider.view without audit.view)', session: controller },
+    ]) {
+      const deniedGet = await request(app.getHttpServer())
         .get('/api/v1/internal/audit?limit=200')
-        .set(auth(unentitled.token))
-        .expect(200);
+        .set(auth(denied.session.token))
+        .expect(403);
+      expect(JSON.stringify(deniedGet.body)).not.toContain(auditSentinelEmail);
+      expect(JSON.stringify(deniedGet.body)).not.toContain(LIVE_BREVO_KEY_1);
 
-      expect(Array.isArray(genericList.body)).toBe(true);
-      const genericItems = genericList.body as Array<{ action?: string; entityType?: string }>;
-      expect(
-        genericItems.some((e) => e.action === 'GENERAL_AUDIT_VISIBLE_SENTINEL'),
-      ).toBe(true);
-      expect(
-        genericItems.some(
-          (e) =>
-            e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
-            e.entityType === 'NOTIFICATION_TEST_SEND',
-        ),
-      ).toBe(false);
+      // The same denial must hold for the HEAD alias of the route.
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set(auth(denied.session.token))
+        .expect(403);
 
-      const serializedGeneric = JSON.stringify(genericList.body);
-      expect(serializedGeneric).not.toContain(auditSentinelEmail);
-      expect(serializedGeneric).not.toContain(auditSentinelName);
-      expect(serializedGeneric).not.toContain(auditSentinelComment);
-      expect(serializedGeneric).not.toContain('****Key1');
-      expect(serializedGeneric).not.toContain('au***@monienaija.ng');
-
-      // Direct entityType / entityId filters also return empty [] for unentitled callers
-      const byEntityType = await request(app.getHttpServer())
+      // ...and for the direct entityType/entityId filters.
+      await request(app.getHttpServer())
         .get('/api/v1/internal/audit?entityType=NOTIFICATION_PROVIDER_CONFIG')
-        .set(auth(unentitled.token))
-        .expect(200);
-      expect(byEntityType.body).toEqual([]);
-
-      const byTestType = await request(app.getHttpServer())
-        .get('/api/v1/internal/audit?entityType=NOTIFICATION_TEST_SEND')
-        .set(auth(unentitled.token))
-        .expect(200);
-      expect(byTestType.body).toEqual([]);
-
-      const byEntityId = await request(app.getHttpServer())
+        .set(auth(denied.session.token))
+        .expect(403);
+      await request(app.getHttpServer())
         .get(`/api/v1/internal/audit?entityId=${proposalId}`)
-        .set(auth(unentitled.token))
-        .expect(200);
-      const byEntityIdItems = byEntityId.body as Array<{ entityType?: string }>;
-      expect(
-        byEntityIdItems.some(
-          (e) =>
-            e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
-            e.entityType === 'NOTIFICATION_TEST_SEND' ||
-            e.entityType === 'PRIVILEGED_ACTION_APPROVAL',
-        ),
-      ).toBe(false);
-      const serializedByEntityId = JSON.stringify(byEntityId.body);
-      expect(serializedByEntityId).not.toContain(auditSentinelEmail);
-      expect(serializedByEntityId).not.toContain(auditSentinelName);
-      expect(serializedByEntityId).not.toContain(auditSentinelComment);
-      expect(serializedByEntityId).not.toContain('****Key1');
+        .set(auth(denied.session.token))
+        .expect(403);
     }
 
-    // Authorized oversight callers (FINANCE_AUDITOR, SUPER_ADMIN, FINANCE_CONTROLLER, OPERATIONS) see full non-secret provider audit records
-    for (const entitledToken of [
-      auditor.token,
-      superAdminToken,
-      controller.token,
-      operations.token,
-    ]) {
+    // The controller-level `notification.provider.view` filter is still exercised: a real SUPPORT
+    // workforce session is exempt from the audit.view gate (approved exception) but holds no
+    // provider function, so it sees general audit rows and zero provider records. The protection
+    // is preserved rather than made unreachable.
+    const supportUsername = `audit.filter.support.${randomUUID().slice(0, 8)}`;
+    const supportProvision = await request(app.getHttpServer())
+      .post('/api/v1/internal/admin/support/workforce-users')
+      .set(auth(superAdminToken))
+      .send({ username: supportUsername })
+      .expect(201);
+    const supportLogin = await request(app.getHttpServer())
+      .post('/api/v1/internal/support/workforce-sessions')
+      .send({ username: supportUsername, password: supportProvision.body.temporaryPassword })
+      .expect(200);
+    const supportToken = supportLogin.body.accessToken as string;
+
+    const supportGeneric = await request(app.getHttpServer())
+      .get('/api/v1/internal/audit?limit=200')
+      .set(auth(supportToken))
+      .expect(200);
+    const supportItems = supportGeneric.body as Array<{ action?: string; entityType?: string }>;
+    expect(supportItems.some((e) => e.action === 'GENERAL_AUDIT_VISIBLE_SENTINEL')).toBe(true);
+    expect(
+      supportItems.some(
+        (e) =>
+          e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
+          e.entityType === 'NOTIFICATION_TEST_SEND',
+      ),
+    ).toBe(false);
+    const serializedSupport = JSON.stringify(supportGeneric.body);
+    expect(serializedSupport).not.toContain(auditSentinelEmail);
+    expect(serializedSupport).not.toContain(auditSentinelName);
+    expect(serializedSupport).not.toContain(auditSentinelComment);
+    expect(serializedSupport).not.toContain('****Key1');
+    expect(serializedSupport).not.toContain('au***@monienaija.ng');
+
+    const supportByEntityType = await request(app.getHttpServer())
+      .get('/api/v1/internal/audit?entityType=NOTIFICATION_PROVIDER_CONFIG')
+      .set(auth(supportToken))
+      .expect(200);
+    expect(supportByEntityType.body).toEqual([]);
+
+    const supportByTestType = await request(app.getHttpServer())
+      .get('/api/v1/internal/audit?entityType=NOTIFICATION_TEST_SEND')
+      .set(auth(supportToken))
+      .expect(200);
+    expect(supportByTestType.body).toEqual([]);
+
+    const supportByEntityId = await request(app.getHttpServer())
+      .get(`/api/v1/internal/audit?entityId=${proposalId}`)
+      .set(auth(supportToken))
+      .expect(200);
+    expect(
+      (supportByEntityId.body as Array<{ entityType?: string }>).some(
+        (e) =>
+          e.entityType === 'NOTIFICATION_PROVIDER_CONFIG' ||
+          e.entityType === 'NOTIFICATION_TEST_SEND' ||
+          e.entityType === 'PRIVILEGED_ACTION_APPROVAL',
+      ),
+    ).toBe(false);
+    const serializedSupportById = JSON.stringify(supportByEntityId.body);
+    expect(serializedSupportById).not.toContain(auditSentinelEmail);
+    expect(serializedSupportById).not.toContain(auditSentinelComment);
+    expect(serializedSupportById).not.toContain('****Key1');
+
+    // Authorized oversight callers under the strict gate: only roles holding BOTH audit.view and
+    // notification.provider.view (FINANCE_AUDITOR, SUPER_ADMIN) reach the provider records.
+    for (const entitledToken of [auditor.token, superAdminToken]) {
       const oversightRes = await request(app.getHttpServer())
         .get('/api/v1/internal/audit?entityType=NOTIFICATION_PROVIDER_CONFIG&limit=50')
         .set(auth(entitledToken))

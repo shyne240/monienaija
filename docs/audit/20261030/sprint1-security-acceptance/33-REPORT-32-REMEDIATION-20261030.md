@@ -196,3 +196,19 @@ NODE_ENV=test PG_TEST_RUN_ID=r32fixa ./node_modules/.bin/jest \
   test/a22-admin-foundation.integration.spec.ts \
   test/v1-admin-authorization-read-surface-01.integration.spec.ts
 ```
+
+---
+
+## Addendum — correction to §6 / §7 (Report 34, finding R-01)
+
+**Date:** 2026-10-30  **Raised by:** independent review 34 (`docs/audit/20261030/sprint1-security-acceptance/34-INTEGRATION-0C828EA-REPORT33-INDEPENDENT-REACCEPTANCE-20261030.md`)
+
+This report stated that `GET /internal/readiness` "creates no reconciliation record, posts no journal, moves no money and mutates no state", and that the scan "is read-only". The first three claims are correct; the last one is **too broad** and is corrected here.
+
+`ReconciliationService.runReconciliation()` runs its ledger and customer-financial queries inside `REPEATABLE READ` with `SET TRANSACTION READ ONLY`, so no journal, balance, wallet, ledger or reconciliation record is written. **After** that transaction commits/ends, the same method calls `MetricsService.observeDuration('reconciliation.duration_ms', startedAt)`, which issues `INSERT … ON CONFLICT DO UPDATE` against `operational_metrics` through the standalone `DataSource`.
+
+Accurate characterization: **the readiness scan is financially read-only, but each invocation writes one operational duration metric row.**
+
+No code was changed in response, and the readiness-decoupling proposal in §6 remains unimplemented. Metrics writes nothing financial, moves no money and cannot alter customer balances or ledger state.
+
+Related remediation: Report 34 also found two authorization defects (HEAD method parity and the audit function gate); both are closed in `35-REPORT-34-REMEDIATION-20261030.md`.

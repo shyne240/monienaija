@@ -69,6 +69,18 @@ export interface AuthorizationPolicy {
    * does not replace either, it is a separate, catalogue-sourced authority a route may require.
    */
   requiredFunctions?: readonly string[];
+  /**
+   * REPORT-34 H-01-R2. Principal types exempt from `requiredFunctions` on this route.
+   *
+   * Exists for exactly one approved case: `GET /api/v1/internal/audit` keeps its documented,
+   * tested SUPPORT audit-read capability (SUPPORT is not a catalogue-governed principal type and
+   * holds no catalogue function codes), while every catalogue-governed workforce principal must
+   * still present `audit.view`. It is a narrow, per-route, per-type exemption — never a global
+   * bypass — and it only ever relaxes the function gate, never `allowedPrincipalTypes`, scopes,
+   * roles or customer/agent/aggregator scoping. Omitting the field (the default) means no
+   * principal is exempt.
+   */
+  requiredFunctionsExemptPrincipalTypes?: readonly AuthorizationPrincipalType[];
   allowedPrincipalTypes?: readonly AuthorizationPrincipalType[];
   customerAccess?: CustomerAccessScope;
   agentAccess?: AgentAccessScope;

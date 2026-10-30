@@ -195,6 +195,15 @@ export class RuntimeAccessGuard implements CanActivate {
             ...(declaredPolicy.requiredFunctions
               ? { requiredFunctions: declaredPolicy.requiredFunctions }
               : {}),
+            // REPORT-34 H-01-R2: carry the narrow, per-route function-gate exemption (today only
+            // SUPPORT on GET/HEAD /internal/audit) into the evaluated policy. Omitting it would
+            // silently turn the approved SUPPORT exception into a denial.
+            ...(declaredPolicy.requiredFunctionsExemptPrincipalTypes
+              ? {
+                  requiredFunctionsExemptPrincipalTypes:
+                    declaredPolicy.requiredFunctionsExemptPrincipalTypes,
+                }
+              : {}),
             customerAccess: 'NONE',
             agentAccess: 'NONE',
             aggregatorAccess: 'NONE',

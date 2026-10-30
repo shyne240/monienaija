@@ -197,7 +197,14 @@ export class AuthorizationService {
         principalId: principal.principalId,
       };
     }
-    if (!requiredFunctions.every((fn) => principal.scopes.includes(fn))) {
+    // REPORT-34 H-01-R2: `requiredFunctionsExemptPrincipalTypes` is a narrow, per-route exception
+    // for principal types that are not catalogue-governed but hold an expressly approved
+    // capability on that route (today: SUPPORT on GET /internal/audit). It relaxes only this
+    // function check — the principal still had to pass allowedPrincipalTypes, scope, role,
+    // audience, assurance and customer/agent/aggregator scoping above.
+    const functionGateExempt =
+      policy.requiredFunctionsExemptPrincipalTypes?.includes(principal.type) === true;
+    if (!functionGateExempt && !requiredFunctions.every((fn) => principal.scopes.includes(fn))) {
       return {
         ...base,
         allowed: false,

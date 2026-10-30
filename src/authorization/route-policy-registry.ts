@@ -146,7 +146,16 @@ const INTERNAL_OPERATIONAL_ROUTE_POLICIES: Record<
  */
 const INTERNAL_AUDIT_READ = {
   resourceType: 'internal-audit-read',
+  // REPORT-34 H-01-R2 — the approved SUPPORT exception is SUPPORT-only. It never implied that
+  // every other workforce principal may read the audit trail: the catalogue assigns `audit.view`
+  // to SUPER_ADMIN and FINANCE_AUDITOR, and deliberately not to OPERATIONS. So the route now
+  // requires `audit.view` from every catalogue-governed workforce principal (OPERATOR, SERVICE,
+  // PRIVILEGED) and exempts only the non-catalogue SUPPORT principal, whose read capability is
+  // the expressly approved exception (UAT-SEC-005/UAT-ADMIN-011 scope plus a proven, pre-existing
+  // consumer in a22-admin-foundation). Denial for CUSTOMER/AGENT/AGGREGATOR is unchanged.
   allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'] as const,
+  requiredFunctions: ['audit.view'] as const,
+  requiredFunctionsExemptPrincipalTypes: ['SUPPORT'] as const,
 };
 
 
@@ -180,12 +189,34 @@ const CUSTOMER_AUTHENTICATION_ROUTE =
 export class RoutePolicyRegistry {
   resolve(input: RoutePolicyInput): RoutePolicyResolution {
     const method = input.method.toUpperCase();
+    // REPORT-34 H-01-R1 — HTTP method normalization for policy resolution.
+    //
+    // The runtime adapter is Fastify, which (by default `exposeHeadRoutes: true`) answers a `HEAD`
+    // request with the matching GET handler. Route policies, however, are keyed by an exact
+    // `"<METHOD> <path>"` string, and only GET entries exist. Before this normalization a
+    // `HEAD /api/v1/internal/readiness` (and every other GET-backed internal operational route)
+    // matched no policy at all and fell through to the generic `/api/v1/internal/*` branch — which
+    // admits SUPPORT and declares no function/role/scope gate. The handler still ran (Fastify
+    // suppresses only the body, not the side effects), so SUPPORT could invoke readiness/
+    // deployment/configuration/version handlers through HEAD while the GET path denied it. The
+    // same alias gap applied to any other GET-backed route in the application.
+    //
+    // Resolving HEAD through the GET policy closes the alias globally, in one place, for every
+    // current and future route: HEAD can never reach a policy broader than the one its GET
+    // counterpart is given. This is a pure restriction — no route gains reach — and `action`
+    // keeps the real request method so audit records stay accurate. Fastify never serves HEAD for
+    // a POST/PUT/PATCH/DELETE-only handler, so this normalization has no effect there. Every
+    // matching condition below (including the read-versus-write discrimination inside the
+    // agents/classes, outlets/terminals and aggregator branches) uses `lookedUpMethod`, so a HEAD
+    // request can only ever receive the policy its GET counterpart receives — never a write
+    // policy, never a broader one.
+    const lookedUpMethod = method === 'HEAD' ? 'GET' : method;
     const path = input.url.split('?', 1)[0] ?? input.url;
-    if (PUBLIC_ROUTES.has(`${method} ${path}`)) {
+    if (PUBLIC_ROUTES.has(`${lookedUpMethod} ${path}`)) {
       return { public: true, resourceType: 'public-route' };
     }
 
-    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/a2/workforce/sessions') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_ASSERTION',
@@ -197,7 +228,7 @@ export class RoutePolicyRegistry {
     // (unauthenticated at the HTTP layer, hard-gated on A2_WORKFORCE_ENABLED=true by
     // RuntimeAccessGuard); LocalAdminAuthenticationService then independently refuses outside
     // NODE_ENV=development/test regardless of this route ever being reachable.
-    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_ASSERTION',
@@ -212,7 +243,7 @@ export class RoutePolicyRegistry {
       };
     }
 
-    if (method === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
       return {
         public: false,
         authenticationMode: 'PROVIDER_CALLBACK',
@@ -228,7 +259,7 @@ export class RoutePolicyRegistry {
 
     // Customer App — login is unauthenticated (CUSTOMER_LOGIN)
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       (path === '/api/v1/customers/sessions' || path === '/api/v1/customers/login')
     ) {
       return {
@@ -241,7 +272,7 @@ export class RoutePolicyRegistry {
     // Customer initial-credential rotation (V1-CUSTOMER-CREDENTIALS-01) — unauthenticated
     // like login: the customer proves the temporary password and receives its first session
     // only AFTER rotation completes inside this handler. No bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/customers/credentials/rotate') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/customers/credentials/rotate') {
       return {
         public: false,
         authenticationMode: 'CUSTOMER_LOGIN',
@@ -274,7 +305,7 @@ export class RoutePolicyRegistry {
     // OPERATOR/SERVICE/PRIVILEGED only, mirroring the agent-lifecycle branch's
     // SUPPORT-exclusion recorded below (V1-003 decision).
     // Self-service remains available under /customers/me/* (checked above).
-    if (method === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
+    if (lookedUpMethod === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -377,7 +408,7 @@ export class RoutePolicyRegistry {
     // per-client-address / per-account rate limiting. Without this entry the route falls to the
     // generic `/customers/:id` branch below, whose customerAccess:'SELF' policy demands a bearer
     // token and makes the login route unreachable.
-    if (method === 'POST' && CUSTOMER_AUTHENTICATION_ROUTE.test(path)) {
+    if (lookedUpMethod === 'POST' && CUSTOMER_AUTHENTICATION_ROUTE.test(path)) {
       return { public: true, resourceType: 'customer-authentication' };
     }
 
@@ -399,14 +430,14 @@ export class RoutePolicyRegistry {
 
     // Agent authentication HTTP surface (A7) — Agent-owned routes
     // Login is unauthenticated (AGENT_LOGIN) and must not require a bearer token.
-    if (method === 'POST' && path === '/api/v1/agents/sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/sessions') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
         resourceType: 'agent-session',
       };
     }
-    if (method === 'POST' && path === '/api/v1/agents/login') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/login') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -417,7 +448,7 @@ export class RoutePolicyRegistry {
     // Agent initial-credential rotation (V1-AGENT-CREDENTIALS-01) — unauthenticated like
     // login: the Agent proves the temporary password and receives its first session only
     // AFTER rotation completes inside this handler. No bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/agents/credentials/rotate') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/credentials/rotate') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -450,7 +481,7 @@ export class RoutePolicyRegistry {
 
     // A8 application creation remains public. Subsequent applicant access uses the one-time
     // capability returned at creation; workforce review uses its own catalogue function.
-    if (method === 'POST' && path === '/api/v1/agents/applications') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/applications') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -468,9 +499,9 @@ export class RoutePolicyRegistry {
     // Outlets & Terminals via Aggregator — internal privileged (A20)
     // Must be checked before generic aggregator block; Aggregator context is via A18 relationship
     if (
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
     ) {
       return {
@@ -501,10 +532,10 @@ export class RoutePolicyRegistry {
           resourceType: 'aggregator',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['aggregator.manage'] }),
+          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['aggregator.manage'] }),
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -521,7 +552,7 @@ export class RoutePolicyRegistry {
     // SUPPORT is excluded (it holds no agent-domain functions by policy). Declared here for
     // defense in depth; the controller enforces the identical gate via requireFunction.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/transactions$/.test(path)
     ) {
       return {
@@ -550,7 +581,7 @@ export class RoutePolicyRegistry {
     // support-authentication.service.ts principalFor) and the read is bound to the
     // agent.view catalogue function, matching the classes GET gate below.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/receiving-number$/.test(path)
     ) {
       return {
@@ -572,7 +603,7 @@ export class RoutePolicyRegistry {
     if (
       /^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)
     ) {
-      const functionCode = method === 'GET' ? 'agent.view' : 'agent.manage_classes';
+      const functionCode = lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_classes';
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -593,8 +624,8 @@ export class RoutePolicyRegistry {
     // AGENT_NETWORK_MANAGER/FINANCE_CONTROLLER governance is checked again by the controller
     // and the funding service before any journal can post.
     if (
-      (method === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(path)) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(path)) ||
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
     ) {
       const functionCode = path.endsWith('/defund') || path.endsWith('/defund-request')
@@ -624,7 +655,7 @@ export class RoutePolicyRegistry {
     // other Agent Network function; the maker's own requests are excluded server-side so
     // maker-checker independence is preserved.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       path === '/api/v1/internal/agents/funding-requests'
     ) {
       return {
@@ -645,7 +676,7 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/funding-requests$/.test(path)
     ) {
       return {
@@ -664,7 +695,7 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/agents\/funding-requests\/[^/]+\/(execute|reject)$/.test(path)
     ) {
       return {
@@ -697,10 +728,10 @@ export class RoutePolicyRegistry {
           resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -725,10 +756,10 @@ export class RoutePolicyRegistry {
               : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -741,11 +772,11 @@ export class RoutePolicyRegistry {
     // New consolidated routes /internal/admin/agents/:id/{...} are authoritative admin surface
     // Both require OPERATOR/SERVICE/PRIVILEGED (SUPPORT denied) — documented V1-003 decision
     if (
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
           path,
         )) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/activate$/.test(path))
     ) {
       return {
@@ -769,7 +800,7 @@ export class RoutePolicyRegistry {
     // privileged workforce surface mirroring the agent credential issuance vocabulary
     // (controller enforces OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as well).
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/admin\/customers\/[^/]+\/credentials(\/reissue)?$/.test(path)
     ) {
       return {
@@ -788,7 +819,7 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)
     ) {
       return {
@@ -811,7 +842,7 @@ export class RoutePolicyRegistry {
     // itself or another SUPPORT identity, so it is explicitly excluded here (defense in
     // depth alongside AdminSupportCredentialsController's own check).
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(path)
     ) {
       return {
@@ -832,7 +863,7 @@ export class RoutePolicyRegistry {
     // SUPPORT workforce login (V1-OPS-01) — unauthenticated, like /agents/sessions and
     // /customers/sessions. The Support user proves its own credential inside the handler;
     // no bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/internal/support/workforce-sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/support/workforce-sessions') {
       return {
         public: false,
         authenticationMode: 'SUPPORT_LOGIN',
@@ -842,7 +873,7 @@ export class RoutePolicyRegistry {
 
     if (
       path.startsWith('/api/v1/internal/admin/agents/') &&
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
         path,
       ) ||
@@ -900,7 +931,7 @@ export class RoutePolicyRegistry {
     // its separate stricter PRIVILEGED-only controller gate (reservation release is NOT conflated
     // with diagnostics reads).
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       (path === '/api/v1/internal/limit-usages' || path === '/api/v1/internal/limit-reservations')
     ) {
       return {
@@ -1087,7 +1118,7 @@ export class RoutePolicyRegistry {
     // surface. Must precede the generic `/api/v1/internal/` branch below, which declares no
     // function/role/scope gate and therefore only authenticated a caller. See
     // INTERNAL_OPERATIONAL_ROUTE_POLICIES and INTERNAL_AUDIT_READ at the top of this file.
-    const operationalPolicy = INTERNAL_OPERATIONAL_ROUTE_POLICIES[`${method} ${path}`];
+    const operationalPolicy = INTERNAL_OPERATIONAL_ROUTE_POLICIES[`${lookedUpMethod} ${path}`];
     if (operationalPolicy) {
       return {
         public: false,
@@ -1108,7 +1139,7 @@ export class RoutePolicyRegistry {
     // REPORT-32 H-01 — generic audit listing keeps SUPPORT reach by explicit product decision;
     // stated here so the reachable principal set is deliberate and auditable. See
     // INTERNAL_AUDIT_READ.
-    if (method === 'GET' && path === '/api/v1/internal/audit') {
+    if (lookedUpMethod === 'GET' && path === '/api/v1/internal/audit') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -1117,6 +1148,10 @@ export class RoutePolicyRegistry {
           resourceType: INTERNAL_AUDIT_READ.resourceType,
           action: `${method}:${path}`,
           allowedPrincipalTypes: [...INTERNAL_AUDIT_READ.allowedPrincipalTypes],
+          requiredFunctions: [...INTERNAL_AUDIT_READ.requiredFunctions],
+          requiredFunctionsExemptPrincipalTypes: [
+            ...INTERNAL_AUDIT_READ.requiredFunctionsExemptPrincipalTypes,
+          ],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',

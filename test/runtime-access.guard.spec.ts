@@ -89,6 +89,8 @@ describe('RoutePolicyRegistry', () => {
     // (SUPPORT is a proven consumer and is not catalogue-governed). It is declared explicitly
     // rather than inherited from the un-gated catch-all, and it still denies non-workforce
     // principals.
+    // REPORT-34 H-01-R2: the audit read keeps the approved SUPPORT exception but requires
+    // audit.view from every catalogue-governed workforce principal (OPERATIONS is denied).
     const audit = registry.resolve({ method: 'GET', url: '/api/v1/internal/audit' });
     expect(audit.public).toBe(false);
     expect(audit.authenticationMode).toBe('WORKFORCE_SESSION');
@@ -101,6 +103,46 @@ describe('RoutePolicyRegistry', () => {
     ]);
     expect(audit.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
     expect(audit.policy?.allowedPrincipalTypes).not.toContain('AGENT');
+    expect(audit.policy?.requiredFunctions).toEqual(['audit.view']);
+    expect(audit.policy?.requiredFunctionsExemptPrincipalTypes).toEqual(['SUPPORT']);
+  });
+
+  it('resolves HEAD through the GET policy for every GET-backed route (REPORT-34 H-01-R1)', () => {
+    const registry = new RoutePolicyRegistry();
+    // Fastify serves HEAD for GET handlers, so a HEAD request must never be able to reach a
+    // policy broader than its GET counterpart. This holds globally, not only for /internal.
+    const paths = [
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/version',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/outbox',
+      '/api/v1/internal/audit',
+      '/api/v1/internal/agents',
+      '/api/v1/internal/customers',
+      '/api/v1/internal/aggregators',
+      '/api/v1/customers/me',
+      '/api/v1/customers/me/wallets',
+      '/api/v1/wallets',
+      '/api/v1/wallets/' + CUSTOMER_ID + '/balance',
+      '/api/v1/deposits',
+      '/api/v1/withdrawals',
+      '/api/v1/ledger/accounts',
+      `/api/v1/agents/me`,
+      '/api/v1/health',
+    ];
+    for (const path of paths) {
+      const get = registry.resolve({ method: 'GET', url: path });
+      const head = registry.resolve({ method: 'HEAD', url: path });
+      expect({ ...head, policy: head.policy && { ...head.policy, action: 'x' } }).toEqual({
+        ...get,
+        policy: get.policy && { ...get.policy, action: 'x' },
+      });
+      // The real request method is still recorded for audit purposes.
+      expect(head.policy?.action ?? `HEAD:${path}`).toBe(get.policy ? `HEAD:${path}` : `HEAD:${path}`);
+    }
   });
 
   it('keeps customers on the selected self-service contract and off the generic financial commands', () => {
