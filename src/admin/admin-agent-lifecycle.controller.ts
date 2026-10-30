@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, Param, Post, Req } from '@nestjs/common';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { AgentLifecycleService } from '../agent/agent-lifecycle.service';
+import type { Agent } from '../agent/agent.entity';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -23,8 +24,8 @@ class ReasonDto {
  * Route aliases under /internal/admin/agents/* plus legacy /internal/agents/* remain via AgentLifecycleController.
  *
  * V1-ADMIN-AUTHORIZATION-HARDENING-01: authorization is now function-based via the
- * `authorization_functions` catalogue (agent.suspend/.terminate/.reactivate/.activate/
- * .review_application), not a bare principal-type check. `allowedPrincipalTypes:
+ * `authorization_functions` catalogue (agent.suspend/.terminate/.reactivate/.activate),
+ * not a bare principal-type check. `allowedPrincipalTypes:
  * ['OPERATOR','SERVICE','PRIVILEGED']` is retained and AND-combined with the function
  * requirement (see AuthorizationService.requireFunction) so SUPPORT/CUSTOMER/AGENT/AGGREGATOR
  * remain denied exactly as before, and OPERATOR-type principals that lack the specific
@@ -73,12 +74,7 @@ export class AdminAgentLifecycleController {
   @HttpCode(200)
   async activate(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const actor = await this.requireFunction(req, 'agent.activate');
-    try {
-      const viaApplication = await this.lifecycleService.activateFromApplication(id, actor);
-      return this.sanitize(viaApplication);
-    } catch {
-      return this.sanitize(await this.lifecycleService.activate(id, actor));
-    }
+    return this.sanitize(await this.lifecycleService.activateCompatibleTarget(id, actor));
   }
 
   @Post('applications/:applicationId/activate')
@@ -87,7 +83,7 @@ export class AdminAgentLifecycleController {
     @Param('applicationId') applicationId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const actor = await this.requireFunction(req, 'agent.review_application');
+    const actor = await this.requireFunction(req, 'agent.activate');
     return this.sanitize(await this.lifecycleService.activateFromApplication(applicationId, actor));
   }
 
@@ -99,10 +95,9 @@ export class AdminAgentLifecycleController {
     ]);
   }
 
-  private sanitize(agent: any): any {
-    // Safe projection — reuse Agent entity fields only (no credentials, no secrets)
-    if (!agent) return agent;
-    const { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt } = agent as any;
+  private sanitize(agent: Agent) {
+    // Safe projection — reuse Agent entity fields only (no credentials, no secrets).
+    const { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt } = agent;
     return { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt };
   }
 }

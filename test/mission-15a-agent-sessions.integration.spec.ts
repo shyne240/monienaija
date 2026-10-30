@@ -69,6 +69,18 @@ describe('Mission 15A — Agent session lifecycle and administrative revocation 
     },
   );
 
+  it.each(['suspend', 'terminate'] as const)('legacy %s alias revokes sessions even with no request body', async (action) => {
+    const agent = await f.agent();
+    const session = await f.login(agent);
+    const response = await f.app.inject({
+      method: 'POST', url: `/api/v1/internal/agents/${agent.id}/${action}`, headers: bearer(manager.token),
+    });
+    expect(response.statusCode).toBe(200);
+    expect((await f.app.inject({ method: 'GET', url: '/api/v1/agents/me', headers: bearer(session.token) })).statusCode).toBe(401);
+    const [row] = await f.dataSource.query(`SELECT status FROM agent_authentication_sessions WHERE id=$1`, [session.sessionId]);
+    expect(row.status).toBe('REVOKED');
+  });
+
   it.each(['PENDING', 'SUSPENDED', 'TERMINATED', 'DELETED'] as const)(
     'rejects an existing session after an out-of-band %s change', async (state) => {
       const agent = await f.agent();

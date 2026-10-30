@@ -58,6 +58,16 @@ export class AgentLifecycleService {
     return this.transition(agentId, AgentStatus.TERMINATED, actor, 'TERMINATED', reason);
   }
 
+  /** Legacy :id/activate accepts either an application ID or an Agent ID.
+   * Do not fall back to direct Agent activation when an application exists but is
+   * unapproved, deleted, or otherwise fails: that would mask its approval boundary.
+   */
+  async activateCompatibleTarget(id: string, actor: string): Promise<Agent> {
+    this.assertUuid(id, 'id');
+    const application = await this.applicationRepository.findOne({ where: { id }, withDeleted: true });
+    return application ? this.activateFromApplication(id, actor) : this.activate(id, actor);
+  }
+
   /**
    * Activates the canonical Agent for an approved application.
    * - If application has no agentId, creates a PENDING Agent (J)

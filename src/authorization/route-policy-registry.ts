@@ -27,6 +27,8 @@ export interface RoutePolicyResolution {
   customerId?: string;
   agentId?: string;
   aggregatorId?: string;
+  /** Preserve the controller's denied-function audit when this route is stopped by the guard. */
+  auditDeniedWorkforceFunction?: boolean;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -723,6 +725,7 @@ export class RoutePolicyRegistry {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
         policy: {
           resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
@@ -731,7 +734,7 @@ export class RoutePolicyRegistry {
             lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -745,13 +748,14 @@ export class RoutePolicyRegistry {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType:
-          path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+          path.includes('/terminals') || path.startsWith('/api/v1/internal/terminals/')
             ? 'agent-terminal'
             : 'agent-outlet',
         policy: {
           resourceType:
-            path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+            path.includes('/terminals') || path.startsWith('/api/v1/internal/terminals/')
               ? 'agent-terminal'
               : 'agent-outlet',
           action: `${method}:${path}`,
@@ -759,7 +763,7 @@ export class RoutePolicyRegistry {
             lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -782,11 +786,13 @@ export class RoutePolicyRegistry {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'agent-lifecycle',
         policy: {
           resourceType: 'agent-lifecycle',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [`agent.${path.split('/').pop()}`],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -820,16 +826,18 @@ export class RoutePolicyRegistry {
 
     if (
       lookedUpMethod === 'POST' &&
-      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)
+      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(?:credentials(?:\/reissue)?|sessions\/revoke)$/.test(path)
     ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'agent-credential-issuance',
         policy: {
           resourceType: 'agent-credential-issuance',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.manage_credentials'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -877,20 +885,18 @@ export class RoutePolicyRegistry {
       (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
         path,
       ) ||
-        /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path) ||
-        path.endsWith('/suspend') ||
-        path.endsWith('/terminate') ||
-        path.endsWith('/reactivate') ||
-        path.endsWith('/activate'))
+        /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path))
     ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'admin-agent-lifecycle',
         policy: {
           resourceType: 'admin-agent-lifecycle',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [`agent.${path.split('/').pop()}`],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -1155,6 +1161,68 @@ export class RoutePolicyRegistry {
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Application review is distinct from activation. Public applicant capability routes
+    // remain in APPLICATION_ACCESS above; these are the workforce-only review routes.
+    if (
+      (lookedUpMethod === 'GET' && /^\/api\/v1\/internal\/agents\/applications(?:\/[^/]+)?$/.test(path)) ||
+      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/(review|approve|reject)$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'agent-application',
+        policy: {
+          resourceType: 'agent-application',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: ['agent.review_application'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Directory, detail and financial-position reads mirror AdminAgentController. More
+    // specific classes, funding, receiving-number and history branches are matched above.
+    if (
+      lookedUpMethod === 'GET' &&
+      /^\/api\/v1\/internal\/agents(?:\/[^/]+(?:\/financial-position)?)?$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'internal-agents',
+        policy: {
+          resourceType: 'internal-agents',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      lookedUpMethod === 'GET' &&
+      (path === '/api/v1/internal/admin/cash-to-cash/transfers' ||
+        path === '/api/v1/internal/admin/cash-to-cash/expiry-status')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'agent-cash-to-cash-operations',
+        policy: {
+          resourceType: 'agent-cash-to-cash-operations',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['transaction.view'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
         },
       };
     }
