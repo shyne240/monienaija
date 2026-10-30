@@ -22,6 +22,11 @@
  * couple of near-simultaneous calls) no longer produces spurious 503s; (2) the intentional 429
  * "rate limit exceeded" business outcome is untouched by the retry wiring; (3) a genuinely
  * invalid rate-limit rule configuration still fails safely with 503, exactly as before.
+ *
+ * On the accepted outcomes of (1): a caller may legitimately exhaust the bounded 3-attempt
+ * SERIALIZABLE retry budget and receive the documented retryable 409, so the concurrency
+ * assertion accepts `fulfilled` or `409` and nothing else. A 503, a 429 (the bucket is far
+ * under capacity in this scenario), or any unclassified rejection still fails the suite.
  */
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -65,7 +70,7 @@ describe('V1-HARDEN-01 A2SecurityRateLimitService SERIALIZABLE contention (real 
     await expect(rateLimitService.consume(rule, dims, 'corr-1')).resolves.toBeUndefined();
   });
 
-  it('realistic concurrency (2 and 3 simultaneous requests) on the same fresh bucket never produces a spurious 503, across many trials', async () => {
+  it('realistic concurrency (2 and 3 simultaneous requests) on the same fresh bucket never produces a spurious 503, an under-capacity 429, or any unapproved rejection, across many trials', async () => {
     const rule = { category: 'harden01-realistic', capacity: 50, refillRatePerSecond: 1, enabled: true } as any;
     for (const n of [2, 3]) {
       for (let trial = 0; trial < 15; trial += 1) {
@@ -77,7 +82,30 @@ describe('V1-HARDEN-01 A2SecurityRateLimitService SERIALIZABLE contention (real 
           (r) => r.status === 'rejected' && (r.reason as ServiceUnavailableException).getStatus?.() === 503,
         );
         expect(unexpected503s).toHaveLength(0);
-        expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+
+        // The bucket here holds 50 tokens and only 2-3 calls are made, so no request may be
+        // refused on capacity grounds: a 429 is a defect in this scenario, not a business outcome.
+        const unexpected429s = results.filter(
+          (r) => r.status === 'rejected' && (r.reason as { getStatus?: () => number }).getStatus?.() === 429,
+        );
+        expect(unexpected429s).toHaveLength(0);
+
+        // V1-INFRA-03 Part D contract: when the bounded 3-attempt `runSerializableWithRetry`
+        // budget is exhausted, the helper raises ConflictException (409) and `consume()`
+        // deliberately re-throws it instead of flattening it to 503 — the caller is expected to
+        // retry. A 409 is therefore the documented, contract-correct outcome for a caller that
+        // lost the cold-start race three times running, and is explicitly NOT a defect.
+        //
+        // Everything else remains fatal: 503 (spurious unavailability, asserted above), 429
+        // (asserted above), and any other/unclassified rejection.
+        const classify = (r: PromiseSettledResult<void>): string => {
+          if (r.status === 'fulfilled') return 'fulfilled';
+          const status = (r.reason as { getStatus?: () => number } | undefined)?.getStatus?.();
+          return status === undefined ? 'unclassified-rejection' : `http-${status}`;
+        };
+        const outcomes = results.map(classify);
+        const unapproved = outcomes.filter((o) => o !== 'fulfilled' && o !== 'http-409');
+        expect(unapproved).toHaveLength(0);
       }
     }
   }, 60000);

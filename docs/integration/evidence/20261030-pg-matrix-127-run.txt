@@ -1,0 +1,173 @@
+# Mission 12 - full PostgreSQL matrix, extracted evidence (verbatim lines from the run log)
+# Target commit: bbf3efeeb4b87b5bed6afcef7dd7e96a35e96a6b  branch integration/main-backend-frontend-20261030
+# Command: PG_TEST_CONCURRENCY=1 NODE_ENV=test npm run test:pg
+# Executed: 2026-10-30 (log written 19:16 UTC)
+# Full raw log (2.8 MB, not committed): /home/user/pg-matrix-127.log
+
+## Per-batch boundaries, suite verdicts and per-batch test totals
+
+=== PG integration run id: rfd6f4a59efe7 (database namespace mn_it_*_rfd6f4a59efe7_*) ===
+=== PG integration batch 1/9 (15 files) starting ===
+PASS test/a16-agent-cash-to-cash-claim.integration.spec.ts (48.622 s)
+PASS test/v1-notification-provider-configuration-01.integration.spec.ts (26.8 s)
+PASS test/v1-commission-runtime-wiring.integration.spec.ts (40.951 s)
+PASS test/v1-commercial-accounting-01.integration.spec.ts (58.717 s)
+PASS test/a14-agent-cash-out.integration.spec.ts (9.484 s)
+PASS test/v1-limit-05-flow-matrix.integration.spec.ts (30.221 s)
+PASS test/hardening-04-customer-transaction-history.integration.spec.ts (42.189 s)
+PASS test/v1-commercial-scenario-matrix-01.integration.spec.ts (44.561 s)
+PASS test/a13-agent-cash-in.integration.spec.ts (9.333 s)
+PASS test/v1-007-support-ticket.integration.spec.ts (40.422 s)
+PASS test/a5-payment-lifecycle.integration.spec.ts (75.134 s)
+PASS test/a24-customer-transaction-pin-hardening.integration.spec.ts (36.696 s)
+PASS test/a17-agent-cash-to-cash-expiry.integration.spec.ts (13.573 s)
+PASS test/v1-005-notification-delivery.integration.spec.ts (33.945 s)
+PASS test/v1-hardening-06-admin-customer-investigation.integration.spec.ts (24.088 s)
+Tests:       635 passed, 635 total
+=== PG integration batch 1/9 finished (exit 0) ===
+=== PG integration batch 2/9 (15 files) starting ===
+PASS test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts (10.182 s)
+PASS test/v1-fee-runtime-wiring.integration.spec.ts (19.937 s)
+PASS test/p0-p1-security-remediation.integration.spec.ts (5.289 s)
+PASS test/v1-email-notification-01.integration.spec.ts (29.371 s)
+PASS test/a7-product-financial-effect.integration.spec.ts (8.75 s)
+PASS test/v1-hardening-01-customer-beneficiary.integration.spec.ts (50.47 s)
+PASS test/v1-006-customer-notification-inbox.integration.spec.ts (29.545 s)
+PASS test/a25-customer-history-hardening.integration.spec.ts (26.379 s)
+PASS test/v1-limit-02-limit-assignment.integration.spec.ts (21.164 s)
+PASS test/v1-reward-01-reward-engine.integration.spec.ts (28.894 s)
+PASS test/v1-001-customer-funding.integration.spec.ts (33.858 s)
+PASS test/v1-agent-history-01.integration.spec.ts (28.16 s)
+PASS test/v1-commission-settlement-01.integration.spec.ts (12.931 s)
+PASS test/v1-commission-01-commission-engine.integration.spec.ts (30.633 s)
+PASS test/a15-agent-cash-to-cash.integration.spec.ts (10.192 s)
+Tests:       290 passed, 290 total
+=== PG integration batch 2/9 finished (exit 0) ===
+=== PG integration batch 3/9 (15 files) starting ===
+PASS test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts (60.123 s)
+PASS test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts (94.226 s)
+PASS test/customer-compliance-authorization.integration.spec.ts (31.388 s)
+PASS test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts
+PASS test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts
+PASS test/v1-commercial-decision-01-snapshot.integration.spec.ts (38.735 s)
+PASS test/v1-limit-04-limit-runtime.integration.spec.ts (43.206 s)
+PASS test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts (14.093 s)
+PASS test/phase1-agent-security.integration.spec.ts (5.716 s)
+PASS test/v1-limit-03-limit-usage.integration.spec.ts (28.782 s)
+PASS test/v1-admin-authorization-hardening-01.integration.spec.ts (61.321 s)
+PASS test/notification-reliability.integration.spec.ts (16.27 s)
+PASS test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts (25.642 s)
+PASS test/a20-outlets-terminals.integration.spec.ts
+PASS test/v1-limit-01-limit-catalogue.integration.spec.ts (20.634 s)
+Tests:       324 passed, 324 total
+=== PG integration batch 3/9 finished (exit 0) ===
+=== PG integration batch 4/9 (15 files) starting ===
+PASS test/a12-agent-financial-execution.integration.spec.ts (9.194 s)
+PASS test/v1-003-admin-operational-writes.integration.spec.ts (21.958 s)
+PASS test/a23-customer-app.integration.spec.ts (18.234 s)
+PASS test/v1-customer-onboarding-01.integration.spec.ts (27.778 s)
+PASS test/v1-admin-authorization-customer-read-01.integration.spec.ts (113.27 s)
+PASS test/a5-ledger-reversal.integration.spec.ts (24.531 s)
+PASS test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts (64.124 s)
+PASS test/a7-product-lifecycle.integration.spec.ts (7.546 s)
+PASS test/v1-sprint1-notification-delivery-authorization.integration.spec.ts (23.898 s)
+PASS test/v1-agent-mfa-api-01.integration.spec.ts (5.52 s)
+PASS test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts (5.098 s)
+PASS test/a14-otp-hardening.integration.spec.ts (5.201 s)
+PASS test/a26-customer-profile-hardening.integration.spec.ts (25.397 s)
+PASS test/v1-sprint3-agent-history-workforce.integration.spec.ts (5.879 s)
+PASS test/sms-v1-01.integration.spec.ts (12.775 s)
+Tests:       293 passed, 293 total
+=== PG integration batch 4/9 finished (exit 0) ===
+=== PG integration batch 5/9 (15 files) starting ===
+PASS test/v1-commercial-02-product-catalogue.integration.spec.ts (23.523 s)
+PASS test/notification-registry.integration.spec.ts (12.177 s)
+PASS test/v1-commercial-03-fee-rule-schema.integration.spec.ts (15.592 s)
+PASS test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts (11.933 s)
+PASS test/a19-agent-funding.integration.spec.ts (5.393 s)
+PASS test/v1-capability-registry.integration.spec.ts (21.733 s)
+PASS test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts
+PASS test/v1-admin-authorization-kyc-01.integration.spec.ts (43.062 s)
+PASS test/v1-security-super-admin-recovery-01.integration.spec.ts (26.385 s)
+PASS test/a18-aggregator-foundation.integration.spec.ts (5.049 s)
+PASS test/v1-limit-05-diagnostics.integration.spec.ts (15.73 s)
+PASS test/v1-commercial-04-fee-rule-resolver.integration.spec.ts (25.702 s)
+PASS test/a8-agent-lifecycle.integration.spec.ts (31.489 s)
+PASS test/a11-agent-transaction-authorization.integration.spec.ts (5.238 s)
+PASS test/transfer-notification-producer-01.integration.spec.ts (7.546 s)
+Tests:       254 passed, 254 total
+=== PG integration batch 5/9 finished (exit 0) ===
+=== PG integration batch 6/9 (15 files) starting ===
+PASS test/v1-agent-05-transaction-pin-security.integration.spec.ts (24.018 s)
+PASS test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts
+PASS test/batch-01-customer-servicing.integration.spec.ts (5.754 s)
+PASS test/v1-customer-credentials-01.integration.spec.ts (16.616 s)
+PASS test/a22-admin-foundation.integration.spec.ts
+PASS test/v1-customer-onboarding-02.integration.spec.ts (10.465 s)
+PASS test/v1-customer-05-transaction-pin-security.integration.spec.ts (18.686 s)
+PASS test/v1-agent-credentials-01.integration.spec.ts (19.449 s)
+PASS test/report26-correlation-persistence.integration.spec.ts
+PASS test/v1-ops-01-support-workforce-operational.integration.spec.ts (15.284 s)
+PASS test/v1-harden-01-support-adversarial.integration.spec.ts (14.626 s)
+PASS test/a6-settlement-lifecycle.integration.spec.ts (15.913 s)
+PASS test/batch-2a-customer-registration.integration.spec.ts (6.617 s)
+PASS test/a7-agent-authentication-http.integration.spec.ts (27.221 s)
+PASS test/v1-commercial-rule-governance.integration.spec.ts (16.683 s)
+Tests:       178 passed, 178 total
+=== PG integration batch 6/9 finished (exit 0) ===
+=== PG integration batch 7/9 (15 files) starting ===
+PASS test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts (22.753 s)
+PASS test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts (92.926 s)
+PASS test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts (8.583 s)
+PASS test/v1-admin-authorization-read-surface-01.integration.spec.ts (22.621 s)
+PASS test/v1-workforce-bootstrap-01.integration.spec.ts (10.088 s)
+PASS test/b2f-finance-lifecycle.integration.spec.ts (15.298 s)
+PASS test/v1-customer-08-limits-view.integration.spec.ts (11.007 s)
+PASS test/a2-workforce-session.integration.spec.ts (20.365 s)
+PASS test/a21-agent-app.integration.spec.ts (14.996 s)
+PASS test/a5-transfer-lifecycle.integration.spec.ts (16.501 s)
+PASS test/v1-limit-05-recovery.integration.spec.ts (10.68 s)
+PASS test/a10-agent-service-capability.integration.spec.ts (5.097 s)
+PASS test/v1-admin-p1-authorization-hardening.integration.spec.ts (24.209 s)
+PASS test/v1-ledger-reversal-governance.integration.spec.ts (10.622 s)
+PASS test/a9-agent-receiving-number.integration.spec.ts
+Tests:       234 passed, 234 total
+=== PG integration batch 7/9 finished (exit 0) ===
+=== PG integration batch 8/9 (15 files) starting ===
+PASS test/v1-funding-approvals-inbox.integration.spec.ts (7.901 s)
+PASS test/v1-agent-receiving-number-authorization.integration.spec.ts (18.191 s)
+PASS test/a5t11-b2f03-convergence.integration.spec.ts (11.344 s)
+PASS test/v1-w2w-recovery-audit-01.integration.spec.ts (5.457 s)
+PASS test/v1-admin-authorization-foundation-01.integration.spec.ts
+PASS test/v1-admin-local-login-01.integration.spec.ts (14.022 s)
+PASS test/notification-migration-upgrade-01.integration.spec.ts
+PASS test/final-integration-gates-focus.integration.spec.ts (7.945 s)
+PASS test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts (7.074 s)
+PASS test/v1-mobile-idempotency-recovery-01.integration.spec.ts
+PASS test/v1-customer-09-support-workforce-boundary.integration.spec.ts
+PASS test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts
+PASS test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts (7.682 s)
+PASS test/migration-chain.integration.spec.ts (7.082 s)
+PASS test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts (5.494 s)
+Tests:       148 passed, 148 total
+=== PG integration batch 8/9 finished (exit 0) ===
+=== PG integration batch 9/9 (7 files) starting ===
+PASS test/transaction-boundary.integration.spec.ts
+PASS test/v1-customer-self-service-lifecycle.integration.spec.ts (5.622 s)
+PASS test/v1-agent-cash-to-cash-operations.integration.spec.ts
+PASS test/agent-application-access-migration-upgrade.integration.spec.ts
+PASS test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts
+PASS test/v1-release-01-production-readiness-migration-sync.integration.spec.ts
+PASS test/v1-harden-01-support-provision-race.integration.spec.ts
+Tests:       26 passed, 26 total
+=== PG integration batch 9/9 finished (exit 0) ===
+=== PG integration suite: 9 batch(es), 127 files, concurrency=1 — all passed ===
+
+## Final exit code
+EXIT_CODE=0
+
+## Counts
+PASS suite lines: 127
+FAIL suite lines: 0
+Total tests passed: 2382
+Occurrences of "skipped": 0
