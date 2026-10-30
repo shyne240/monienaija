@@ -1,0 +1,431 @@
+/*
+ * MonieNaija Admin — M1 Customer Directory pilot.
+ *
+ * Scope: only elements explicitly owned by this screen, addressed through
+ * `mn-dir-*` classes. The shared `customer-management.css` is intentionally not
+ * modified: it still styles the embedded registration wizard and Customer 360°,
+ * which are outside the M1 visual scope. Nothing here uses element selectors or
+ * descendant-wide overrides, so an embedded workflow rendered inside the same
+ * <main> keeps its existing presentation.
+ */
+
+/* ------------------------------------------------------------ Page header */
+
+.mn-dir-header {
+  margin: 0 0 var(--mn-space-6);
+}
+
+.mn-dir-header .mn-page-header__eyebrow {
+  color: var(--mn-action-primary);
+}
+
+.mn-dir-header .mn-page-header__title {
+  font-size: var(--mn-font-size-2xl);
+}
+
+@media (min-width: 1024px) {
+  .mn-dir-header .mn-page-header__title {
+    font-size: var(--mn-font-size-3xl);
+  }
+}
+
+/* Registration entry point wrapper: intentionally carries no declarations so the
+ * embedded wizard keeps its own layout, margin and typography. The class exists
+ * only as an `aria-controls` target and a regression-test hook. */
+
+/* ---------------------------------------------------------------- Panel */
+
+.mn-dir-panel {
+  box-sizing: border-box;
+  display: block;
+  /* Size container: the toolbar, the scroll cue and the table density respond to
+   * the width actually available to the panel, not only to the viewport. */
+  container-type: inline-size;
+  container-name: mn-dir-panel;
+  padding: var(--mn-space-4);
+  border: 1px solid var(--mn-border-subtle);
+  border-radius: var(--mn-radius-md);
+  background: var(--mn-surface-raised);
+  box-shadow: var(--mn-shadow-1);
+  font-family: var(--mn-font-sans);
+  color: var(--mn-text-primary);
+}
+
+@media (min-width: 768px) {
+  .mn-dir-panel {
+    padding: var(--mn-space-6);
+  }
+}
+
+/* --------------------------------------------------------------- Toolbar */
+
+.mn-dir-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mn-space-3);
+  margin: 0 0 var(--mn-space-4);
+}
+
+.mn-dir-toolbar__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mn-space-3);
+}
+
+.mn-dir-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mn-space-2);
+}
+
+.mn-dir-toolbar__status {
+  margin-right: auto;
+  font-size: var(--mn-font-size-xs);
+  font-weight: 600;
+  color: var(--mn-text-secondary);
+}
+
+@media (min-width: 600px) {
+  .mn-dir-toolbar__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mn-dir-filter--search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1100px) {
+  .mn-dir-toolbar__filters {
+    grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(0, 1fr));
+  }
+
+  .mn-dir-filter--search {
+    grid-column: auto;
+  }
+
+  .mn-dir-toolbar__actions {
+    justify-content: flex-end;
+  }
+}
+
+/* Container-query refinement. The media queries above remain the baseline for
+ * engines without container query support; these rules win where available. */
+@container mn-dir-panel (min-width: 640px) {
+  .mn-dir-toolbar__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mn-dir-filter--search {
+    grid-column: 1 / -1;
+  }
+}
+
+@container mn-dir-panel (min-width: 980px) {
+  .mn-dir-toolbar__filters {
+    grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(0, 1fr));
+  }
+
+  .mn-dir-filter--search {
+    grid-column: auto;
+  }
+
+  .mn-dir-toolbar__actions {
+    justify-content: flex-end;
+  }
+}
+
+/* ------------------------------------------------------------ Result meta */
+
+.mn-dir-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--mn-space-2) var(--mn-space-4);
+  margin: 0 0 var(--mn-space-3);
+  padding: 0 2px;
+  font-size: var(--mn-font-size-sm);
+  color: var(--mn-text-secondary);
+}
+
+.mn-dir-meta__count {
+  font-weight: 600;
+  color: var(--mn-text-primary);
+}
+
+.mn-dir-meta__flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--mn-status-warning);
+}
+
+.mn-dir-meta__flag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ----------------------------------------------------------------- Table */
+
+.mn-dir-table {
+  width: 100%;
+  min-width: 840px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--mn-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--mn-text-primary);
+  text-align: left;
+}
+
+.mn-dir-table__head-cell {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--mn-border-strong);
+  background: var(--mn-surface-sunken);
+  font-size: var(--mn-font-size-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mn-text-secondary);
+  white-space: nowrap;
+}
+
+.mn-dir-table__cell {
+  padding: 12px;
+  border-bottom: 1px solid var(--mn-border-subtle);
+  vertical-align: top;
+  line-height: var(--mn-line-snug);
+}
+
+.mn-dir-table__row:hover .mn-dir-table__cell {
+  background: var(--mn-surface-row-hover);
+}
+
+.mn-dir-table__row:last-child .mn-dir-table__cell {
+  border-bottom: 0;
+}
+
+/* Row context stays visible during horizontal scroll on narrow screens. */
+.mn-dir-table__sticky {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--mn-surface-raised);
+  box-shadow: 1px 0 0 var(--mn-border-subtle);
+}
+
+.mn-dir-table__head-cell.mn-dir-table__sticky {
+  z-index: 3;
+  background: var(--mn-surface-sunken);
+}
+
+.mn-dir-table__row:hover .mn-dir-table__sticky {
+  background: var(--mn-surface-row-hover);
+}
+
+.mn-dir-table__identity {
+  display: block;
+  font-weight: 600;
+  color: var(--mn-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.mn-dir-table__secondary {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--mn-font-size-xs);
+  color: var(--mn-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mn-dir-table__reference {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--mn-font-size-xs);
+  letter-spacing: 0.01em;
+  color: var(--mn-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mn-dir-table__kyc {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.mn-dir-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--mn-border-strong);
+  border-radius: var(--mn-radius-xs);
+  background: var(--mn-surface-sunken);
+  font-size: var(--mn-font-size-2xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--mn-text-secondary);
+  white-space: nowrap;
+}
+
+.mn-dir-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mn-dir-table__empty {
+  padding: var(--mn-space-8) var(--mn-space-4);
+  text-align: center;
+  color: var(--mn-text-secondary);
+}
+
+/* ----------------------------------------------------- Empty / loading */
+
+.mn-dir-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mn-space-2);
+  min-width: 260px;
+  font-family: var(--mn-font-sans);
+}
+
+.mn-dir-state__title {
+  margin: 0;
+  font-size: var(--mn-font-size-base);
+  font-weight: 600;
+  color: var(--mn-text-primary);
+}
+
+.mn-dir-state__hint {
+  margin: 0;
+  font-size: var(--mn-font-size-sm);
+  color: var(--mn-text-secondary);
+}
+
+.mn-dir-state__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--mn-surface-mint);
+  color: var(--mn-action-primary);
+  font-size: var(--mn-font-size-md);
+  line-height: 1;
+}
+
+.mn-dir-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--mn-font-size-sm);
+  color: var(--mn-text-secondary);
+}
+
+.mn-dir-loading__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mn-action-primary);
+  animation: mn-dir-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes mn-dir-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- Pagination */
+
+.mn-dir-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mn-space-3);
+  margin-top: var(--mn-space-4);
+  padding-top: var(--mn-space-4);
+  border-top: 1px solid var(--mn-border-subtle);
+}
+
+.mn-dir-pagination__summary {
+  font-size: var(--mn-font-size-sm);
+  color: var(--mn-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mn-dir-pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--mn-space-2);
+}
+
+.mn-dir-pagination__page {
+  font-size: var(--mn-font-size-sm);
+  font-weight: 600;
+  color: var(--mn-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- Alerts */
+
+.mn-dir-alert {
+  margin: 0 0 var(--mn-space-4);
+}
+
+/* Scroll cue is only meaningful where the table can actually scroll. */
+@media (max-width: 900px) {
+  .mn-dir-scroll-hint .mn-scroll-region__hint {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+}
+
+@container mn-dir-panel (max-width: 900px) {
+  .mn-dir-scroll-hint .mn-scroll-region__hint {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+}
+
+@container mn-dir-panel (min-width: 901px) {
+  .mn-dir-scroll-hint .mn-scroll-region__hint {
+    display: none;
+  }
+}
+
+@media (max-width: 599px) {
+  .mn-dir-panel {
+    padding: var(--mn-space-3);
+  }
+
+  .mn-dir-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mn-dir-pagination__controls {
+    justify-content: space-between;
+  }
+
+  .mn-dir-pagination__controls .mn-btn {
+    flex: 1 1 auto;
+  }
+}

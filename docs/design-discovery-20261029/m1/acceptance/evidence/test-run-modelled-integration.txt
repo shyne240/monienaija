@@ -1,0 +1,52 @@
+# M1 acceptance — modelled post-integration Admin Web run
+# Tree = assigned branch HEAD + the four origin/main-only admin-web files
+#        (build-config.ts, production-auth-safety.test.ts, api-client-config.test.ts, api-client-request.test.ts)
+# This models a merge that resolves the four conflicted admin-web files in favour of the branch.
+# captured: 2026-10-30T10:22:25Z
+
+## npx tsc
+exit=0
+
+## npx jest --watchAll=false --runInBand
+FAIL __tests__/api-client-config.test.ts
+  ● Admin Web API client configuration safety › refuses to send requests when the build did not configure an API base URL
+      26 |     await expect(ApiClient.get('/internal/readiness')).rejects.toBeInstanceOf(NetworkError);
+    > 27 |     expect(fetchSpy).not.toHaveBeenCalled();
+PASS __tests__/notification-management.test.tsx
+PASS __tests__/menu-visibility-11-roles.test.tsx
+PASS __tests__/sprint3-admin-web-integration.test.tsx
+PASS __tests__/customer-personal-information.test.tsx
+PASS __tests__/sprint2-ordinary-agent-operations.test.tsx
+PASS __tests__/customer-registration-wizard.test.tsx
+PASS __tests__/customer-proof-of-address.test.tsx
+PASS __tests__/m1-customer-directory.test.tsx
+PASS __tests__/customer-servicing.test.tsx
+PASS __tests__/agent-network-ordinary-v1.test.tsx
+PASS __tests__/batch-01-customer-servicing.test.tsx
+PASS __tests__/agent-classes-and-cash-to-cash-operations.test.tsx
+PASS __tests__/dashboard.test.tsx
+PASS __tests__/provider-configuration.test.tsx
+PASS __tests__/m1-shell.test.tsx
+PASS __tests__/admin-shared-panels.test.tsx
+PASS __tests__/m1-style-isolation.test.tsx
+PASS __tests__/ledger-operations.test.tsx
+PASS __tests__/customer-360-workspace.test.tsx
+PASS __tests__/customer-360.test.tsx
+PASS __tests__/agent-funding-panel.test.tsx
+PASS __tests__/app.test.tsx
+PASS __tests__/admin-batch-02-support-approvals.test.tsx
+PASS __tests__/country-select.test.tsx
+PASS __tests__/transaction-observability.test.tsx
+PASS __tests__/admin-batch-03-limit-diagnostics.test.tsx
+PASS __tests__/admin-operational-role-assignment.test.tsx
+PASS __tests__/reconciliation-observability.test.tsx
+PASS __tests__/api-client.test.ts
+PASS __tests__/auth-store.test.ts
+PASS __tests__/production-auth-safety.test.ts
+PASS __tests__/api-client-request.test.ts
+FAIL __tests__/api-client-config.test.ts
+  ● Admin Web API client configuration safety › refuses to send requests when the build did not configure an API base URL
+      26 |     await expect(ApiClient.get('/internal/readiness')).rejects.toBeInstanceOf(NetworkError);
+    > 27 |     expect(fetchSpy).not.toHaveBeenCalled();
+Test Suites: 1 failed, 32 passed, 33 total
+Tests:       1 failed, 241 passed, 242 total

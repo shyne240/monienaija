@@ -1,0 +1,1274 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>MonieNaija Admin — baseline render</title>
+<style>
+.customer-management {
+  --cm-ink: #17302d;
+  --cm-muted: #667772;
+  --cm-border: #dce6e2;
+  --cm-panel: #ffffff;
+  --cm-canvas: #f4f8f6;
+  --cm-brand: #0b6a52;
+  --cm-brand-strong: #07533f;
+  --cm-brand-soft: #e8f4ef;
+  --cm-gold: #d8a94f;
+  --cm-danger: #a63d35;
+  color: var(--cm-ink);
+  min-height: 100%;
+  padding: 28px clamp(16px, 3vw, 36px) 40px;
+  background: var(--cm-canvas);
+}
+
+.customer-management * {
+  box-sizing: border-box;
+}
+.cm-page-header,
+.cm-profile-header,
+.cm-card-heading,
+.cm-workspace-topline,
+.cm-pagination,
+.cm-table-meta,
+.cm-actions-row,
+.cm-address-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cm-page-header {
+  align-items: flex-end;
+  margin: 0 auto 24px;
+  max-width: 1440px;
+}
+.cm-page-header h1,
+.cm-profile-heading h1 {
+  margin: 3px 0 6px;
+  font-size: clamp(25px, 3vw, 34px);
+  letter-spacing: -0.035em;
+}
+.cm-eyebrow {
+  margin: 0;
+  color: var(--cm-brand);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+.cm-subtitle {
+  margin: 0;
+  color: var(--cm-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cm-workspace-label {
+  color: var(--cm-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+.cm-panel,
+.cm-create-panel,
+.cm-card {
+  border: 1px solid var(--cm-border);
+  border-radius: 16px;
+  background: var(--cm-panel);
+  box-shadow: 0 8px 24px rgba(21, 55, 46, 0.045);
+}
+.cm-panel {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.cm-create-panel {
+  max-width: 1440px;
+  margin: 0 auto 16px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(200px, 1fr) minmax(160px, 0.7fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+.cm-create-panel h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.cm-create-panel p {
+  margin: 0;
+  color: var(--cm-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.cm-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.cm-filter-grid label,
+.cm-create-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #435751;
+  font-size: 11px;
+  font-weight: 700;
+}
+.cm-filter-grid input,
+.cm-filter-grid select,
+.cm-create-panel input,
+.cm-create-panel select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.cm-filter-grid input:focus,
+.cm-filter-grid select:focus,
+.cm-create-panel input:focus,
+.cm-create-panel select:focus {
+  border-color: var(--cm-brand);
+  box-shadow: 0 0 0 3px rgba(11, 106, 82, 0.12);
+}
+.cm-button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.cm-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.cm-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+.cm-button-primary {
+  color: #fff;
+  background: var(--cm-brand);
+}
+.cm-button-primary:hover:not(:disabled) {
+  background: var(--cm-brand-strong);
+}
+.cm-button-secondary {
+  color: #34564d;
+  border-color: #cbdad4;
+  background: #fff;
+}
+.cm-button-secondary:hover:not(:disabled) {
+  border-color: #91b4a7;
+  background: #f5faf7;
+}
+.cm-button-danger {
+  color: #fff;
+  background: var(--cm-danger);
+}
+.cm-button-danger:hover:not(:disabled) {
+  background: #882c25;
+}
+.cm-text-button,
+.cm-back-button {
+  border: 0;
+  padding: 4px 0;
+  color: var(--cm-brand);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.cm-text-button:hover,
+.cm-back-button:hover {
+  color: var(--cm-brand-strong);
+  text-decoration: underline;
+}
+.cm-back-button {
+  color: #425e56;
+}
+.cm-notice,
+.cm-error {
+  max-width: 1440px;
+  margin: 0 auto 14px;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12px;
+}
+.cm-notice {
+  border: 1px solid #c7e5d5;
+  color: #1f624b;
+  background: #edf8f1;
+}
+.cm-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #efd0c8;
+  color: #8a332a;
+  background: #fff5f2;
+}
+.cm-table-meta {
+  margin: 2px 0 12px;
+  color: var(--cm-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.cm-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--cm-border);
+  border-radius: 12px;
+}
+.cm-customer-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.cm-customer-table th {
+  height: 42px;
+  padding: 0 13px;
+  color: #667772;
+  background: #f8fbf9;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cm-customer-table td {
+  min-height: 57px;
+  padding: 12px 13px;
+  border-top: 1px solid #edf1ef;
+  color: #344a43;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.cm-customer-table tbody tr:hover {
+  background: #fbfdfc;
+}
+.cm-customer-table td strong {
+  display: block;
+  color: #1b3530;
+  font-size: 12px;
+}
+.cm-secondary-line {
+  display: block;
+  margin-top: 4px;
+  color: var(--cm-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.cm-reference {
+  color: #49675e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cm-kyc-level {
+  font-weight: 800;
+}
+.cm-status,
+.cm-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.cm-status {
+  color: #486359;
+  background: #edf2ef;
+}
+.cm-status-active {
+  color: #126245;
+  background: #e4f5eb;
+}
+.cm-status-draft {
+  color: #805d20;
+  background: #fff4da;
+}
+.cm-status-suspended,
+.cm-status-closed {
+  color: #903d34;
+  background: #fbe9e6;
+}
+.cm-chip {
+  color: #49645d;
+  background: #eef4f1;
+}
+.cm-open-button {
+  white-space: nowrap;
+}
+.cm-empty-row {
+  height: 92px;
+  text-align: center !important;
+  color: var(--cm-muted) !important;
+}
+.cm-pagination {
+  justify-content: center;
+  margin: 16px 0 0;
+  color: var(--cm-muted);
+  font-size: 11px;
+}
+.cm-pagination > span {
+  min-width: 150px;
+  text-align: center;
+}
+.cm-workspace {
+  max-width: none;
+}
+.cm-workspace-topline {
+  max-width: 1440px;
+  margin: 0 auto 18px;
+}
+.cm-profile-header {
+  max-width: 1440px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  margin: 0 auto 23px;
+}
+.cm-avatar {
+  display: grid;
+  flex: 0 0 54px;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 1px solid #d1e6dc;
+  border-radius: 16px;
+  color: var(--cm-brand);
+  background: var(--cm-brand-soft);
+  font-size: 22px;
+  font-weight: 800;
+}
+.cm-profile-heading {
+  min-width: 0;
+}
+.cm-profile-heading h1 {
+  margin-top: 2px;
+}
+.cm-profile-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cm-tabs {
+  display: flex;
+  max-width: 1440px;
+  margin: 0 auto 16px;
+  border-bottom: 1px solid var(--cm-border);
+  gap: 24px;
+}
+.cm-tab {
+  position: relative;
+  border: 0;
+  padding: 12px 2px;
+  color: var(--cm-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.cm-tab.is-active {
+  color: var(--cm-brand);
+}
+.cm-tab.is-active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cm-brand);
+  content: '';
+}
+.cm-workspace-content {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.cm-overview-grid,
+.cm-personal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+.cm-card {
+  min-width: 0;
+  padding: 19px;
+}
+.cm-card-wide {
+  grid-column: span 2;
+}
+.cm-card-heading {
+  align-items: flex-start;
+  margin-bottom: 17px;
+}
+.cm-card-heading h2 {
+  margin: 3px 0 0;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+.cm-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 17px 22px;
+  margin: 0;
+}
+.cm-detail-grid > div,
+.cm-technical-details dl > div {
+  min-width: 0;
+}
+.cm-detail-grid dt,
+.cm-technical-details dt {
+  color: var(--cm-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cm-detail-grid dd,
+.cm-technical-details dd {
+  margin: 5px 0 0;
+  color: var(--cm-ink);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.cm-technical-details {
+  margin-top: 19px;
+  border-top: 1px solid #eaf0ed;
+  padding-top: 12px;
+}
+.cm-technical-details summary {
+  color: #557068;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.cm-technical-details dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 12px 0 2px;
+}
+.cm-technical-details code {
+  color: #3e5c53;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.cm-actions-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.cm-large-value {
+  margin: 2px 0 8px;
+  color: #24433a;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.cm-positive {
+  color: #17704d;
+}
+.cm-warning {
+  color: #a06a18;
+}
+.cm-supporting-text {
+  margin: 0;
+  color: #3d5850;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cm-muted,
+.cm-empty-state {
+  margin: 8px 0 0;
+  color: var(--cm-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.cm-empty-state {
+  border-radius: 9px;
+  padding: 12px;
+  background: #f7faf8;
+}
+.cm-wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.cm-wallet-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid #e5eeea;
+  border-radius: 11px;
+  padding: 13px;
+  background: #fbfdfc;
+}
+.cm-wallet-item strong {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.cm-wallet-currency {
+  font-size: 13px;
+  font-weight: 800;
+}
+.cm-transaction-list {
+  display: flex;
+  flex-direction: column;
+}
+.cm-transaction-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  border-top: 1px solid #edf1ef;
+  padding: 12px 2px;
+}
+.cm-transaction-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.cm-transaction-row strong {
+  display: block;
+  font-size: 12px;
+}
+.cm-transaction-amount {
+  flex: 0 0 auto;
+  text-align: right;
+}
+.cm-transaction-amount strong {
+  font-size: 13px;
+}
+.cm-loading-panel {
+  max-width: 1440px;
+  margin: 0 auto;
+  color: var(--cm-muted);
+  font-size: 12px;
+}
+.cm-record-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cm-record-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid #edf1ef;
+  padding: 12px 0;
+}
+.cm-record-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.cm-record-list strong {
+  font-size: 12px;
+}
+.cm-record-value {
+  max-width: 65%;
+  color: #38574d;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.cm-address-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 11px;
+}
+.cm-address-item {
+  border: 1px solid #e5eeea;
+  border-radius: 11px;
+  padding: 13px;
+  background: #fbfdfc;
+}
+.cm-address-title {
+  justify-content: flex-start;
+  gap: 9px;
+}
+.cm-address-title strong {
+  font-size: 12px;
+}
+.cm-address-item p {
+  margin: 7px 0 0;
+  color: #435b53;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.cm-modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 34, 29, 0.42);
+}
+.cm-confirm-dialog {
+  width: min(480px, 100%);
+  border: 1px solid var(--cm-border);
+  border-radius: 16px;
+  padding: 23px;
+  background: #fff;
+  box-shadow: 0 22px 70px rgba(9, 35, 28, 0.2);
+}
+.cm-confirm-dialog h2 {
+  margin: 5px 0 10px;
+  font-size: 19px;
+}
+.cm-confirm-dialog p:not(.cm-eyebrow) {
+  color: #536960;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cm-confirm-note {
+  border-left: 3px solid var(--cm-gold);
+  padding-left: 10px;
+}
+.cm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1050px) {
+  .cm-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cm-search-field {
+    grid-column: span 3;
+  }
+  .cm-create-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cm-create-panel > div {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 680px) {
+  .customer-management {
+    padding: 18px 12px 28px;
+  }
+  .cm-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .cm-page-header .cm-button {
+    align-self: stretch;
+  }
+  .cm-panel {
+    padding: 13px;
+  }
+  .cm-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .cm-search-field {
+    grid-column: span 2;
+  }
+  .cm-create-panel {
+    grid-template-columns: 1fr;
+    padding: 15px;
+  }
+  .cm-create-panel > div {
+    grid-column: auto;
+  }
+  .cm-create-panel > .cm-button {
+    width: 100%;
+  }
+  .cm-profile-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .cm-avatar {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+  }
+  .cm-overview-grid,
+  .cm-personal-grid {
+    grid-template-columns: 1fr;
+  }
+  .cm-card-wide {
+    grid-column: auto;
+  }
+  .cm-card {
+    padding: 15px;
+  }
+  .cm-detail-grid {
+    gap: 14px;
+  }
+  .cm-profile-chips {
+    gap: 6px;
+  }
+  .cm-transaction-row {
+    align-items: flex-start;
+  }
+  .cm-workspace-topline {
+    align-items: flex-start;
+  }
+  .cm-tabs {
+    gap: 17px;
+    overflow-x: auto;
+  }
+  .cm-tab {
+    white-space: nowrap;
+  }
+  .cm-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.cm-registration-wizard {
+  display: block;
+  max-width: 1440px;
+  margin-bottom: 16px;
+  padding: 22px;
+}
+.cm-wizard-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.cm-wizard-heading h2 {
+  margin: 4px 0 7px;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+.cm-wizard-heading p:not(.cm-eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: var(--cm-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cm-wizard-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+.cm-wizard-stepper li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid #e1eae6;
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--cm-muted);
+  background: #fbfdfc;
+}
+.cm-wizard-stepper li > span {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #537066;
+  background: #eaf0ed;
+  font-size: 10px;
+  font-weight: 800;
+}
+.cm-wizard-stepper li small {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.cm-wizard-stepper li.is-active {
+  border-color: #8cbbaa;
+  color: var(--cm-brand-strong);
+  background: #f1f9f5;
+}
+.cm-wizard-stepper li.is-active > span,
+.cm-wizard-stepper li.is-complete > span {
+  color: #fff;
+  background: var(--cm-brand);
+}
+.cm-wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.cm-wizard-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.cm-wizard-field-grid label,
+.cm-otp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #435751;
+  font-size: 11px;
+  font-weight: 750;
+}
+.cm-wizard-field-grid input,
+.cm-wizard-field-grid select,
+.cm-otp-form input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.cm-wizard-field-grid input:focus,
+.cm-wizard-field-grid select:focus,
+.cm-otp-form input:focus {
+  border-color: var(--cm-brand);
+  box-shadow: 0 0 0 3px rgba(11, 106, 82, 0.12);
+}
+.cm-wizard-field-grid .cm-country-select__control,
+.cm-country-select-field .cm-country-select__control {
+  width: 100%;
+}
+.cm-wizard-field-grid .cm-country-select__control input,
+.cm-country-select-field .cm-country-select__control input {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}
+.cm-wizard-field-grid .cm-country-select__control input:focus,
+.cm-country-select-field .cm-country-select__control input:focus {
+  border: 0;
+  box-shadow: none;
+}
+.cm-country-select-field .cm-country-select__control:has(input[aria-invalid='true']) {
+  border-color: #bf6255;
+}
+.cm-required-indicator,
+.cm-optional-indicator {
+  margin-left: 5px;
+  color: #61756d;
+  font-size: 9px;
+  font-weight: 650;
+}
+.cm-required-indicator {
+  color: #94652a;
+}
+.cm-field-error {
+  display: block;
+  margin-top: 3px;
+  color: #8a332a;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.cm-wizard-field-grid input[aria-invalid='true'],
+.cm-wizard-field-grid select[aria-invalid='true'] {
+  border-color: #bf6255;
+}
+.cm-wizard-field-grid input[aria-invalid='true']:focus,
+.cm-wizard-field-grid select[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(166, 61, 53, 0.12);
+}
+.cm-form-help {
+  margin: 0;
+  color: var(--cm-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.cm-phone-field {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  min-width: 0;
+}
+.cm-phone-number-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+.cm-phone-number-field > label,
+.cm-country-select-field > label {
+  color: #435751;
+  font-size: 11px;
+  font-weight: 750;
+}
+.cm-phone-field .cm-form-help {
+  grid-column: 1 / -1;
+}
+.cm-country-select-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+.cm-country-select-field .cm-country-select__control {
+  min-height: 42px;
+}
+.cm-phone-number-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.cm-phone-number-field input:focus {
+  border-color: var(--cm-brand);
+  box-shadow: 0 0 0 3px rgba(11, 106, 82, 0.12);
+}
+.cm-phone-number-field input[aria-invalid='true'] {
+  border-color: #bf6255;
+}
+.cm-wizard-message {
+  max-width: none;
+  margin: 0 0 13px;
+}
+.cm-otp-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 540px;
+  border: 1px solid #e4ece8;
+  border-radius: 11px;
+  padding: 13px;
+  background: #f8fbf9;
+}
+.cm-otp-form label {
+  flex: 1 1 auto;
+}
+.cm-registration-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+.cm-summary-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  border: 1px solid #c9e4d6;
+  border-radius: 12px;
+  padding: 15px;
+  background: #f2faf5;
+}
+.cm-summary-success h3 {
+  margin: 4px 0 4px;
+  font-size: 17px;
+}
+.cm-summary-success p:not(.cm-eyebrow) {
+  margin: 0;
+}
+.cm-summary-check {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--cm-brand);
+  font-weight: 800;
+}
+.cm-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.cm-summary-grid > div {
+  border: 1px solid #e5eeea;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdfc;
+}
+.cm-summary-grid dt {
+  color: var(--cm-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cm-summary-grid dd {
+  margin: 5px 0 0;
+  color: var(--cm-ink);
+  font-size: 12px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+.cm-summary-warning {
+  margin: 0;
+  border-left: 3px solid #d8a94f;
+  padding: 7px 0 7px 11px;
+  color: #805d20;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 800px) {
+  .cm-wizard-stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cm-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .cm-registration-wizard {
+    padding: 15px;
+  }
+  .cm-wizard-heading {
+    align-items: flex-start;
+  }
+  .cm-wizard-heading .cm-button {
+    flex: 0 0 auto;
+  }
+  .cm-wizard-stepper {
+    gap: 6px;
+  }
+  .cm-wizard-stepper li {
+    padding: 8px 6px;
+  }
+  .cm-wizard-stepper li small {
+    font-size: 9px;
+  }
+  .cm-wizard-field-grid,
+  .cm-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .cm-otp-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cm-otp-form .cm-button {
+    width: 100%;
+  }
+}
+
+.cm-identity-draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cm-identity-draft {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #e5eeea;
+  border-radius: 12px;
+  padding: 14px;
+}
+.cm-identity-draft legend {
+  padding: 0 6px;
+  color: #34564d;
+  font-size: 11px;
+  font-weight: 800;
+}
+.cm-identity-saved-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #344a43;
+  font-size: 12px;
+}
+.cm-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 15px;
+  border-top: 1px solid #e9f0ec;
+  padding-top: 15px;
+}
+.cm-editor-form h3 {
+  margin: 0;
+  color: #24433a;
+  font-size: 13px;
+}
+.cm-editor-actions,
+.cm-record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cm-managed-record {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center !important;
+  gap: 12px !important;
+}
+.cm-managed-value {
+  display: block;
+  margin-top: 5px;
+  color: #38574d;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.cm-record-actions {
+  max-width: 260px;
+}
+.cm-contact-otp {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 560px;
+}
+.cm-checkbox-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 9px !important;
+  min-height: 42px;
+}
+.cm-checkbox-label input {
+  width: 16px !important;
+  min-height: 16px !important;
+  accent-color: var(--cm-brand);
+}
+
+@media (max-width: 680px) {
+  .cm-managed-record {
+    grid-template-columns: 1fr;
+  }
+  .cm-record-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .cm-editor-actions {
+    justify-content: flex-start;
+  }
+}
+
+.cm-policy-notice {
+  margin: 14px 0;
+  border: 1px solid #e4d9b7;
+  border-left: 3px solid var(--cm-gold);
+  border-radius: 9px;
+  padding: 11px 13px;
+  color: #70551e;
+  background: #fffaf0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.cm-policy-notice-warning {
+  border-color: #efd0c8;
+  border-left-color: var(--cm-danger);
+  color: #7c3a32;
+  background: #fff5f2;
+}
+.cm-proof-address-stack {
+  display: grid;
+  gap: 15px;
+}
+.cm-poa-metadata-preview {
+  margin-top: 16px;
+}
+.cm-poa-metadata-preview label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #435751;
+  font-size: 11px;
+  font-weight: 750;
+}
+.cm-poa-metadata-preview input,
+.cm-poa-metadata-preview select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cedbd6;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: var(--cm-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+.cm-poa-metadata-preview input:disabled,
+.cm-poa-metadata-preview select:disabled {
+  color: #73827c;
+  background: #f2f5f3;
+  cursor: not-allowed;
+}
+.cm-poa-history-heading {
+  justify-content: flex-start;
+  gap: 12px;
+  margin-top: 20px;
+}
+.cm-poa-history-heading span:last-child {
+  font-weight: 500;
+}
+.cm-readiness-grid {
+  margin-top: 14px;
+}
+.cm-readiness-grid > div {
+  border: 1px solid #e6eeea;
+  border-radius: 10px;
+  padding: 11px;
+  background: #fbfdfc;
+}
+.cm-readiness-grid dd {
+  margin: 6px 0 0;
+  color: #344a43;
+  font-size: 12px;
+  font-weight: 750;
+}
+.cm-readiness-grid small {
+  display: block;
+  margin-top: 5px;
+  color: var(--cm-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+
+/* Injected by Layout.tsx at module scope (baseline behaviour) */
+
+    @media (max-width: 768px) {
+      [data-testid="desktop-nav"] { display: none !important; }
+      [data-testid="mobile-header"] { display: flex !important; }
+      [data-testid="main-content"] { margin-top: 56px; }
+    }
+    @media (min-width: 769px) {
+      [data-testid="mobile-header"] { display: none !important; }
+      [data-testid="mobile-nav"] { display: none !important; }
+    }
+  
+</style></head>
+<body>
+<div id="root"><div style="display: flex; min-height: 100vh; background-color: rgb(248, 250, 252); font-family: system-ui, -apple-system, sans-serif;"><div style="width: 280px; background-color: rgb(3, 43, 20); color: rgb(255, 255, 255); display: flex; flex-direction: column; padding: 24px; box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05); overflow-y: auto;" data-testid="desktop-nav"><div style="display: flex; align-items: center; gap: 12px; margin-bottom: 32px;"><img src="assets/favicon.png" alt="MonieNaija" style="width: 36px; height: 36px; object-fit: contain;"><span style="font-size: 18px; font-weight: bold; letter-spacing: 1px; color: rgb(255, 255, 255);">MonieNaija</span></div><div style="display: flex; align-items: center; gap: 12px; background-color: rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 28px;"><div style="width: 40px; height: 40px; border-radius: 20px; background-color: rgb(255, 183, 3); color: rgb(3, 43, 20); display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 16px;">W</div><div style="display: flex; flex-direction: column; flex: 1; overflow: hidden;"><span style="font-size: 13px; font-weight: bold; color: rgb(248, 250, 252); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;" title="issuer:workforce.operator.demo">workforce.operator.demo</span><div style="margin-top: 4px;"><span style="font-size: 9px; font-weight: bold; color: rgb(255, 183, 3); border-color: #ffb703; border-width: 1px; border-style: solid; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; display: inline-block;">OPERATIONS_MANAGER</span></div></div></div><nav style="display: flex; flex-direction: column; gap: 8px; flex: 1;" aria-label="Main navigation"><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-home"><span>1. Home &amp; My Work</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-dashboard" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">📊 Operational Dashboard</button><button data-testid="nav-dashboardSettings" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">⚙️ Dashboard Settings</button></div></div><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-servicing"><span>2. Customer &amp; Agent Servicing</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-customers" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 600; color: rgb(255, 255, 255); background-color: rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer;" aria-current="page">👥 Customer &amp; KYC Servicing</button></div></div><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-money"><span>3. Money Movement</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-transfers" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">💸 Transaction &amp; Fee Ops — Transfers (W2W)</button><button data-testid="nav-cashIn" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">💸 Transaction &amp; Fee Ops — Cash-In (C2W)</button><button data-testid="nav-cashOut" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">💸 Transaction &amp; Fee Ops — Cash-Out (W2C)</button><button data-testid="nav-cashToCashOps" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">💸 Cash-to-Cash Operations</button></div></div><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-finance"><span>4. Finance &amp; Ledger</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-ledgerExplorer" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">📖 Ledger &amp; Reversals</button><button data-testid="nav-reconciliation" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">⚖️ Reconciliation &amp; Breaks</button></div></div><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-commercial"><span>5. Commercial &amp; Risk Controls</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-feeRules" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">5.1 Fee Rules</button></div></div><div style="margin-bottom: 8px;"><button style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); background-color: rgba(255, 255, 255, 0.05); border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;" aria-expanded="true" data-testid="section-platform"><span>7. Platform Administration</span><span style="font-size: 12px;">▾</span></button><div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1); margin-left: 4px;"><button data-testid="nav-workforceAccess" style="display: block; width: 100%; padding: 10px 12px; text-align: left; font-size: 13px; font-weight: 500; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer; transition: all 0.2s;">👷 Workforce Overview &amp; Support Provisioning</button></div></div></nav><button style="margin-top: auto; background-color: rgb(239, 68, 68); color: rgb(255, 255, 255); border-radius: 6px; padding: 12px; font-size: 13px; font-weight: 600; cursor: pointer;">🚪 Log Out Session</button></div><div style="display: none; position: fixed; top: 0px; left: 0px; right: 0px; height: 56px; background-color: rgb(3, 43, 20); color: rgb(255, 255, 255); align-items: center; padding: 0px 12px; gap: 12px; z-index: 100;" data-testid="mobile-header"><button aria-label="Open navigation menu" data-testid="mobile-menu-toggle" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: rgb(255, 255, 255); font-size: 22px; border-radius: 6px; padding: 4px 10px; cursor: pointer;">☰</button><span style="font-weight: 700; letter-spacing: 0.5px;">MonieNaija</span><span style="margin-left: auto; font-size: 10px; border: 1px solid #ffb703; color: rgb(255, 183, 3); padding: 2px 6px; border-radius: 4px;">OPERATIONS_MANAGER</span><div style="position: fixed; top: 56px; left: 0px; right: 0px; bottom: 0px; background-color: rgb(3, 43, 20); padding: 16px; overflow-y: auto; z-index: 99;" data-testid="mobile-nav"><nav aria-label="Mobile navigation" style="display: flex; flex-direction: column; gap: 8px;"><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-home"><span>1. Home &amp; My Work</span><span>▾</span></button><button data-testid="mobile-nav-dashboard" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">📊 Operational Dashboard</button><button data-testid="mobile-nav-dashboardSettings" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">⚙️ Dashboard Settings</button></div><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-servicing"><span>2. Customer &amp; Agent Servicing</span><span>▾</span></button><button data-testid="mobile-nav-customers" aria-current="page" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; font-weight: 600; color: rgb(255, 255, 255); background-color: rgba(255, 255, 255, 0.1); border-radius: 6px; cursor: pointer;">👥 Customer &amp; KYC Servicing</button></div><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-money"><span>3. Money Movement</span><span>▾</span></button><button data-testid="mobile-nav-transfers" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">💸 Transaction &amp; Fee Ops — Transfers (W2W)</button><button data-testid="mobile-nav-cashIn" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">💸 Transaction &amp; Fee Ops — Cash-In (C2W)</button><button data-testid="mobile-nav-cashOut" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">💸 Transaction &amp; Fee Ops — Cash-Out (W2C)</button><button data-testid="mobile-nav-cashToCashOps" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">💸 Cash-to-Cash Operations</button></div><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-finance"><span>4. Finance &amp; Ledger</span><span>▾</span></button><button data-testid="mobile-nav-ledgerExplorer" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">📖 Ledger &amp; Reversals</button><button data-testid="mobile-nav-reconciliation" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">⚖️ Reconciliation &amp; Breaks</button></div><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-commercial"><span>5. Commercial &amp; Risk Controls</span><span>▾</span></button><button data-testid="mobile-nav-feeRules" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">5.1 Fee Rules</button></div><div style="margin-bottom: 12px;"><button type="button" style="display: flex; justify-content: space-between; width: 100%; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 700; color: rgb(255, 183, 3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; padding-left: 4px;" aria-expanded="true" data-testid="mobile-section-platform"><span>7. Platform Administration</span><span>▾</span></button><button data-testid="mobile-nav-workforceAccess" style="width: 100%; padding: 12px 16px; text-align: left; font-size: 14px; color: rgb(203, 213, 225); background-color: transparent; border-radius: 6px; cursor: pointer;">👷 Workforce Overview &amp; Support Provisioning</button></div><button style="margin-top: 16px; background-color: rgb(239, 68, 68); color: rgb(255, 255, 255); border-radius: 6px; padding: 12px; font-weight: 600; cursor: pointer;">🚪 Log Out</button></nav></div></div><div style="flex: 1; overflow-y: auto;" data-testid="main-content"><main class="customer-management"><header class="cm-page-header"><div><p class="cm-eyebrow">CUSTOMER SERVICING</p><h1>Customer directory</h1><p class="cm-subtitle">Search authorized customer records and open a read-first Customer 360° workspace.</p></div><button class="cm-button cm-button-primary" type="button" aria-expanded="false">New Customer</button></header><section class="cm-panel" aria-label="Customer search and results"><div class="cm-filter-grid"><label class="cm-search-field">Search<input type="search" placeholder="Name, reference or authorized contact" aria-label="Search customers" value=""></label><label>Status<select><option value="">All statuses</option><option value="DRAFT">DRAFT</option><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option><option value="CLOSED">CLOSED</option></select></label><label>Type<select><option value="">All types</option><option value="INDIVIDUAL">INDIVIDUAL</option><option value="BUSINESS">BUSINESS</option></select></label><label>KYC level<select><option value="">All levels</option><option value="NONE">NONE</option><option value="LEVEL_1">LEVEL_1</option><option value="LEVEL_2">LEVEL_2</option><option value="LEVEL_3">LEVEL_3</option></select></label><label>KYC status<select><option value="">All KYC statuses</option><option value="NOT_STARTED">NOT_STARTED</option><option value="PENDING">PENDING</option><option value="APPROVED">APPROVED</option><option value="REJECTED">REJECTED</option></select></label></div><div class="cm-table-meta"><span>41 customers</span><span>Page 1 of 3</span></div><div class="cm-table-wrap"><table class="cm-customer-table"><thead><tr><th scope="col">Customer</th><th scope="col">Reference</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">KYC</th><th scope="col">Primary contact</th><th scope="col">Registered</th><th scope="col"><span class="cm-visually-hidden">Customer actions</span></th></tr></thead><tbody><tr><td><strong>Amaka Obi</strong><span class="cm-secondary-line">Legal name: Amaka Chidinma Obi</span></td><td><span class="cm-reference">mn-••••4821</span></td><td>INDIVIDUAL</td><td><span class="cm-status cm-status-active">ACTIVE</span></td><td><span class="cm-kyc-level">LEVEL_2</span><span class="cm-secondary-line">APPROVED</span></td><td><span>+234*****4321</span><span class="cm-secondary-line">Verified</span></td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Amaka Obi">Open Customer 360°</button></td></tr><tr><td><strong>Tunde Balogun Stores</strong><span class="cm-secondary-line">Legal name: Tunde Balogun Stores Ltd</span></td><td><span class="cm-reference">mn-••••7390</span></td><td>BUSINESS</td><td><span class="cm-status cm-status-active">ACTIVE</span></td><td><span class="cm-kyc-level">LEVEL_3</span><span class="cm-secondary-line">APPROVED</span></td><td><span>t•••@example.test</span><span class="cm-secondary-line">Verified</span></td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Tunde Balogun Stores">Open Customer 360°</button></td></tr><tr><td><strong>Nneka Eze</strong></td><td><span class="cm-reference">mn-••••1155</span></td><td>INDIVIDUAL</td><td><span class="cm-status cm-status-draft">DRAFT</span></td><td><span class="cm-kyc-level">NONE</span><span class="cm-secondary-line">NOT_STARTED</span></td><td>Not recorded</td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Nneka Eze">Open Customer 360°</button></td></tr><tr><td><strong>Ibrahim Musa</strong></td><td><span class="cm-reference">mn-••••6234</span></td><td>INDIVIDUAL</td><td><span class="cm-status cm-status-suspended">SUSPENDED</span></td><td><span class="cm-kyc-level">LEVEL_1</span><span class="cm-secondary-line">PENDING</span></td><td><span>+234*****9090</span><span class="cm-secondary-line">Not verified</span></td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Ibrahim Musa">Open Customer 360°</button></td></tr><tr><td><strong>Grace Adeyemi</strong><span class="cm-secondary-line">Legal name: Grace Adeyemi Ventures</span></td><td><span class="cm-reference">mn-••••0517</span></td><td>BUSINESS</td><td><span class="cm-status cm-status-active">ACTIVE</span></td><td><span class="cm-kyc-level">LEVEL_2</span><span class="cm-secondary-line">APPROVED</span></td><td><span>+234*****3311</span><span class="cm-secondary-line">Verified</span></td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Grace Adeyemi">Open Customer 360°</button></td></tr><tr><td><strong>Emeka Nwosu</strong></td><td><span class="cm-reference">mn-••••9402</span></td><td>INDIVIDUAL</td><td><span class="cm-status cm-status-closed">CLOSED</span></td><td><span class="cm-kyc-level">LEVEL_1</span><span class="cm-secondary-line">REJECTED</span></td><td>Not recorded</td><td>10 Sept 2026</td><td><button class="cm-button cm-button-secondary cm-open-button" type="button" aria-label="Open Customer 360° for Emeka Nwosu">Open Customer 360°</button></td></tr></tbody></table></div><nav class="cm-pagination" aria-label="Customer directory pages"><button class="cm-button cm-button-secondary" type="button" disabled="">Previous</button><span>Showing page 1 of 3</span><button class="cm-button cm-button-secondary" type="button">Next</button></nav></section></main></div></div></div>
+</body></html>

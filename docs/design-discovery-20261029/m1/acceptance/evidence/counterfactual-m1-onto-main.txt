@@ -1,0 +1,43 @@
+# M1 acceptance — counterfactual: applying M1's diff directly onto origin/main
+# Tree = git archive origin/main  +  the 10 M1 files from 5736885..HEAD
+# Purpose: prove that origin/main is NOT a viable integration target for M1.
+# captured: 2026-10-30T10:23:10Z
+
+## origin/main admin-web size: 30 files
+## branch admin-web size:      99 files
+
+## Files M1 imports that do not exist on origin/main:
+  ABSENT   navigation-access.ts
+  ABSENT   customer-management.css
+  ABSENT   Customer360Workspace.tsx
+  ABSENT   CustomerRegistrationWizard.tsx
+  ABSENT   customer-masking.ts
+  ABSENT   DashboardSettingsScreen.tsx
+  ABSENT   AgentNetworkScreen.tsx
+  ABSENT   NotificationManagementScreen.tsx
+
+## npx tsc on main + M1 overlay
+__tests__/m1-shell.test.tsx(7,72): error TS2307: Cannot find module '../src/screens/authenticated/navigation-access' or its corresponding type declarations.
+src/screens/authenticated/CustomerDirectoryScreen.tsx(15,44): error TS2307: Cannot find module './CustomerRegistrationWizard' or its corresponding type declarations.
+src/screens/authenticated/CustomerDirectoryScreen.tsx(16,39): error TS2307: Cannot find module './customer-masking' or its corresponding type declarations.
+src/screens/authenticated/CustomerDirectoryScreen.tsx(17,62): error TS2307: Cannot find module './Customer360Workspace' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(7,41): error TS2307: Cannot find module './DashboardSettingsScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(14,36): error TS2307: Cannot find module './AgentNetworkScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(15,36): error TS2307: Cannot find module './AgentClassesScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(16,44): error TS2307: Cannot find module './CashToCashOperationsScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(17,38): error TS2307: Cannot find module './SupportTicketsScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(18,34): error TS2307: Cannot find module './ComplianceScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(19,33): error TS2307: Cannot find module './RiskFraudScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(20,38): error TS2307: Cannot find module './WorkforceAdminScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(21,36): error TS2307: Cannot find module './SystemHealthScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(22,46): error TS2307: Cannot find module './NotificationManagementScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(23,39): error TS2307: Cannot find module './CommercialRulesScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(24,42): error TS2307: Cannot find module './SuperAdminRecoveryScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(25,34): error TS2307: Cannot find module './AuditTrailScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(26,39): error TS2307: Cannot find module './LimitAssignmentScreen' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(27,72): error TS2307: Cannot find module './navigation-access' or its corresponding type declarations.
+src/screens/authenticated/Layout.tsx(298,49): error TS2322: Type '{ onNavigateToCustomers: () => void; }' is not assignable to type 'IntrinsicAttributes'.
+src/screens/authenticated/Layout.tsx(305,64): error TS2322: Type '{ initialType: string; initialCustomerId: string | undefined; onBackToCustomer: (() => void) | undefined; }' is not assignable to type 'IntrinsicAttributes'.
+src/screens/authenticated/Layout.tsx(306,61): error TS2322: Type '{ initialType: string; initialCustomerId: string | undefined; }' is not assignable to type 'IntrinsicAttributes'.
+src/screens/authenticated/Layout.tsx(307,62): error TS2322: Type '{ initialType: string; initialCustomerId: string | undefined; }' is not assignable to type 'IntrinsicAttributes'.
+  total errors: 23

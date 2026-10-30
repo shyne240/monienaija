@@ -1,0 +1,100 @@
+{
+  "engine": "axe-core 4.10.2",
+  "dom": "jsdom (no layout engine)",
+  "documents": {
+    "after-shell-directory-loaded.html": {
+      "passes": 37,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "after-shell-drawer-open.html": {
+      "passes": 40,
+      "violations": [],
+      "needsBrowserReview": []
+    },
+    "before-shell-directory-loaded.html": {
+      "passes": 29,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "nodes": 2,
+          "targets": [
+            "div[data-testid=\"desktop-nav\"] > div:nth-child(1)",
+            "div[data-testid=\"desktop-nav\"] > div:nth-child(2)"
+          ]
+        }
+      ],
+      "needsBrowserReview": [
+        "form-field-multiple-labels",
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "before-shell-drawer-open.html": {
+      "passes": 29,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "nodes": 2,
+          "targets": [
+            "div[data-testid=\"desktop-nav\"] > div:nth-child(1)",
+            "div[data-testid=\"desktop-nav\"] > div:nth-child(2)"
+          ]
+        }
+      ],
+      "needsBrowserReview": [
+        "form-field-multiple-labels",
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "state-empty.html": {
+      "passes": 34,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "state-error.html": {
+      "passes": 33,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one",
+        "th-has-data-cells"
+      ]
+    },
+    "state-loading.html": {
+      "passes": 34,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "state-restricted-contact.html": {
+      "passes": 34,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    },
+    "state-stale-after-failed-refresh.html": {
+      "passes": 34,
+      "violations": [],
+      "needsBrowserReview": [
+        "landmark-one-main",
+        "page-has-heading-one"
+      ]
+    }
+  }
+}
