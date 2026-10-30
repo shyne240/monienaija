@@ -1,7 +1,7 @@
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 
 const roles = [
-  role('FINANCE_ADMIN', ['privileged:execute'], {
+  role('SUPER_ADMIN', ['privileged:execute'], {
     administrativeCapability: true,
     makerEligible: true,
     applicableActions: ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],
@@ -20,12 +20,13 @@ const roles = [
     ],
   }),
   role('FINANCE_AUDITOR', ['finance:audit']),
+  role('ADMINISTRATOR', []),
 ];
 const rules = ['FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE', 'FINANCE_CONTROL_POLICY_ACTIVATE'].map(
   (action) => ({
     action,
     initiatingRoles: [
-      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'FINANCE_ADMIN',
+      action === 'FINANCE_CONTROL_POLICY_ACTIVATE' ? 'FINANCE_PREPARER' : 'SUPER_ADMIN',
     ],
     approvingRoles: ['FINANCE_CONTROLLER'],
     minimumApprovals: 1,
@@ -103,7 +104,7 @@ describe('A2T11 workforce configuration validation', () => {
       workforceConfiguration(valid({ A2_FINANCE_ROLES_JSON: JSON.stringify([{ roleKey: 1 }]) })),
     ).toThrow('A2_FINANCE_ROLES_JSON'));
   it('rejects duplicate role keys', () => {
-    const changed = [...roles.slice(0, 3), roles[0]];
+    const changed = [...roles.slice(0, 4), roles[0]];
     expect(() =>
       workforceConfiguration(valid({ A2_FINANCE_ROLES_JSON: JSON.stringify(changed) })),
     ).toThrow('duplicate role key');
@@ -187,6 +188,90 @@ describe('A2T11 workforce configuration validation', () => {
     expect(() =>
       workforceConfiguration(valid({ A2_WORKFORCE_OIDC_JWKS_URI: 'http://identity.example/jwks' })),
     ).toThrow('HTTPS required'));
+
+  // V1-SECURITY-SUPER-ADMIN-RECOVERY-01: recovery configuration is independent of bootstrap
+  // (own enable flag, own trusted-key set, own audience) but reuses the identical validation
+  // shape — these tests mirror the bootstrap-key tests above one-for-one.
+  describe('SUPER_ADMIN recovery configuration (V1-SECURITY-SUPER-ADMIN-RECOVERY-01)', () => {
+    it('defaults recovery to disabled and empty', () => {
+      const cfg = workforceConfiguration(valid());
+      expect(cfg.recoveryEnabled).toBe(false);
+      expect(cfg.recoveryAudience).toBe('');
+      expect(cfg.recoveryKeys).toEqual([]);
+    });
+    it('keeps disabled configuration safely empty for recovery too', () =>
+      expect(workforceConfiguration({}).recoveryEnabled).toBe(false));
+    it('accepts a coherent recovery configuration, independent of bootstrap keys', () => {
+      const key = bootstrapKey({ kid: 'recovery-key-1' });
+      const cfg = workforceConfiguration(
+        valid({
+          A2_RECOVERY_ENABLED: 'true',
+          A2_RECOVERY_AUDIENCE: 'monienaija-v1-super-admin-recovery',
+          A2_RECOVERY_JWKS_JSON: JSON.stringify([key]),
+        }),
+      );
+      expect(cfg.recoveryEnabled).toBe(true);
+      expect(cfg.recoveryAudience).toBe('monienaija-v1-super-admin-recovery');
+      expect(cfg.recoveryKeys).toEqual([key]);
+      // Bootstrap trust remains completely untouched by enabling recovery.
+      expect(cfg.bootstrapKeys).toEqual([]);
+    });
+    it('fails closed: recovery enabled without any trusted key', () =>
+      expect(() =>
+        workforceConfiguration(
+          valid({
+            A2_RECOVERY_ENABLED: 'true',
+            A2_RECOVERY_AUDIENCE: 'aud',
+            A2_RECOVERY_JWKS_JSON: '[]',
+          }),
+        ),
+      ).toThrow('A2_RECOVERY_JWKS_JSON: at least one trusted key required when recovery enabled'));
+    it('fails closed: recovery enabled without an audience', () =>
+      expect(() =>
+        workforceConfiguration(
+          valid({
+            A2_RECOVERY_ENABLED: 'true',
+            A2_RECOVERY_JWKS_JSON: JSON.stringify([bootstrapKey({ kid: 'r1' })]),
+          }),
+        ),
+      ).toThrow('A2_RECOVERY_AUDIENCE'));
+    it('rejects malformed recovery keys', () => {
+      const item = bootstrapKey({ kty: 'EC' });
+      expect(() =>
+        workforceConfiguration(
+          valid({
+            A2_RECOVERY_ENABLED: 'true',
+            A2_RECOVERY_AUDIENCE: 'aud',
+            A2_RECOVERY_JWKS_JSON: JSON.stringify([item]),
+          }),
+        ),
+      ).toThrow('A2_RECOVERY_JWKS_JSON');
+    });
+    it('rejects duplicate recovery key IDs', () => {
+      const item = bootstrapKey({ kid: 'dup' });
+      expect(() =>
+        workforceConfiguration(
+          valid({
+            A2_RECOVERY_ENABLED: 'true',
+            A2_RECOVERY_AUDIENCE: 'aud',
+            A2_RECOVERY_JWKS_JSON: JSON.stringify([item, item]),
+          }),
+        ),
+      ).toThrow('duplicate key ID');
+    });
+    it('rejects a recovery key minted for a different environment', () =>
+      expect(() =>
+        workforceConfiguration(
+          valid({
+            A2_RECOVERY_ENABLED: 'true',
+            A2_RECOVERY_AUDIENCE: 'aud',
+            A2_RECOVERY_JWKS_JSON: JSON.stringify([
+              bootstrapKey({ kid: 'r1', environment: 'staging' }),
+            ]),
+          }),
+        ),
+      ).toThrow('environment mismatch'));
+  });
 });
 function bootstrapKey(overrides: Record<string, unknown> = {}) {
   return {

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -11,69 +12,86 @@ import {
   Req,
 } from '@nestjs/common';
 
-import { currentPrincipal, type PrincipalRequest } from '../authorization/current-principal';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { PaymentReasonDto } from '../payment/dto/payment-reason.dto';
 import { DepositService } from './deposit.service';
-import { customerSelfId, walletOwnershipBinding } from '../wallet/wallet-ownership';
+import { AuthorizationService } from '../authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+
+interface AuthenticatedRequest {
+  headers: Record<string, string | string[] | undefined>;
+  authorizationPrincipal?: AuthorizationPrincipal;
+}
 
 @Controller('deposits')
 export class DepositController {
-  constructor(private readonly depositService: DepositService) {}
+  constructor(private readonly depositService: DepositService, private readonly auth: AuthorizationService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  createDeposit(
+  async createDeposit(
     @Body() dto: CreateDepositDto,
-    @Req() request: PrincipalRequest,
     @Headers('idempotency-key') idempotencyKey?: string,
+    @Req() req?: AuthenticatedRequest,
   ) {
-    // The credited wallet must belong to the authenticated customer; the binding is derived from
-    // the session, never from the request body.
-    return this.depositService.createDeposit({
-      walletId: dto.walletId,
-      ownership: walletOwnershipBinding(currentPrincipal(request)),
-      amountMinor: dto.amountMinor,
-      currency: dto.currency,
-      idempotencyKey: idempotencyKey ?? '',
-      reference: dto.reference,
-      narration: dto.narration,
-    });
+    void dto;
+    void idempotencyKey;
+    void req;
+    throw new ForbiddenException(
+      'Generic deposit commands are disabled; this endpoint cannot create or assert external settlement',
+    );
   }
 
   @Get()
-  listDeposits(@Req() request: PrincipalRequest, @Query('walletId') walletId?: string) {
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId) {
-      return this.depositService.listDepositsForCustomer(customerId, walletId);
-    }
+  async listDeposits(@Query('walletId') walletId?: string, @Req() req?: AuthenticatedRequest) {
+    if (this.isWorkforce(req)) await this.requireFunction(req!, 'transaction.view');
     return this.depositService.listDeposits(walletId);
   }
 
   @Get(':depositId')
-  getDeposit(@Param('depositId') depositId: string, @Req() request: PrincipalRequest) {
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId) {
-      return this.depositService.getDepositForCustomer(depositId, customerId);
-    }
+  async getDeposit(@Param('depositId') depositId: string, @Req() req: AuthenticatedRequest) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'transaction.view');
     return this.depositService.getDeposit(depositId);
   }
 
   @Post(':depositId/complete')
   @HttpCode(HttpStatus.OK)
-  completeDeposit(@Param('depositId') depositId: string) {
-    return this.depositService.completeDeposit(depositId);
+  async completeDeposit(@Param('depositId') depositId: string, @Req() req: AuthenticatedRequest) {
+    void depositId;
+    void req;
+    throw new ForbiddenException(
+      'Manual sandbox completion is disabled; this endpoint is not evidence of external settlement',
+    );
   }
 
   @Post(':depositId/fail')
   @HttpCode(HttpStatus.OK)
-  failDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto) {
-    return this.depositService.failDeposit(depositId, dto.reason);
+  async failDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+    void depositId;
+    void dto;
+    void req;
+    throw new ForbiddenException('Generic deposit state changes are disabled');
   }
 
   @Post(':depositId/cancel')
   @HttpCode(HttpStatus.OK)
-  cancelDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto) {
-    return this.depositService.cancelDeposit(depositId, dto.reason);
+  async cancelDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+    void depositId;
+    void dto;
+    void req;
+    throw new ForbiddenException('Generic deposit state changes are disabled');
+  }
+
+  private isWorkforce(req?: AuthenticatedRequest): boolean {
+    const t = req?.authorizationPrincipal?.type;
+    return t === 'SUPPORT' || t === 'OPERATOR' || t === 'SERVICE' || t === 'PRIVILEGED';
+  }
+
+  private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'deposits', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 }

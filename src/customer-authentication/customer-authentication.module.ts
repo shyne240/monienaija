@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { Customer } from '../customer/customer.entity';
+import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
 import { OperationsModule } from '../operations/operations.module';
 import {
   CUSTOMER_AUTH_RATE_LIMIT_RULES,
@@ -37,6 +38,7 @@ import { TrustedDevice } from './trusted-device.entity';
     forwardRef(() => AuthorizationModule),
     TypeOrmModule.forFeature([
       Customer,
+      CustomerContactMethod,
       CustomerAuthenticationCredential,
       AuthenticationSession,
       MfaChallenge,
@@ -70,6 +72,7 @@ import { TrustedDevice } from './trusted-device.entity';
     AuthenticationSessionService,
     CustomerAuthenticationRuntimeService,
     MfaExecutionService,
+    PasswordHashVerificationService,
   ],
 })
 export class CustomerAuthenticationModule {}

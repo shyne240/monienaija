@@ -1,5 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
+import { AuthorizationService } from '../authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CreateCustomerEligibilityDto } from './dto/create-customer-eligibility.dto';
 import { CreateCustomerLimitProfileDto } from './dto/create-customer-limit-profile.dto';
 import { CreateCustomerOperatingPermissionDto } from './dto/create-customer-operating-permission.dto';
@@ -10,9 +21,16 @@ import { UpdateCustomerLimitProfileDto } from './dto/update-customer-limit-profi
 import { UpdateCustomerProductEnrollmentDto } from './dto/update-customer-product-enrollment.dto';
 import { CustomerEligibilityService } from './customer-eligibility.service';
 
+interface AuthenticatedRequest {
+  authorizationPrincipal?: AuthorizationPrincipal;
+}
+
 @Controller('customers')
 export class CustomerEligibilityController {
-  constructor(private readonly eligibilityService: CustomerEligibilityService) {}
+  constructor(
+    private readonly eligibilityService: CustomerEligibilityService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post(':id/eligibility')
   createEligibility(@Param('id') id: string, @Body() dto: CreateCustomerEligibilityDto) {
@@ -20,8 +38,17 @@ export class CustomerEligibilityController {
   }
 
   @Get(':id/eligibility')
-  getEligibility(@Param('id') id: string) {
-    return this.eligibilityService.getEligibility(id);
+  async getEligibility(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
+    const eligibility = await this.eligibilityService.getEligibility(id);
+    // The customer-service summary exposes only the decision state and timestamp. Reviewer
+    // identity, internal reason text, and onboarding linkage remain outside this V1 overview.
+    return {
+      customerId: eligibility.customerId,
+      status: eligibility.status,
+      statusChangedAt: eligibility.statusChangedAt,
+      updatedAt: eligibility.updatedAt,
+    };
   }
 
   @Patch(':id/eligibility')
@@ -84,7 +111,28 @@ export class CustomerEligibilityController {
   }
 
   @Get(':id/operating-status')
-  getOperatingStatus(@Param('id') id: string) {
-    return this.eligibilityService.getOperatingStatus(id);
+  async getOperatingStatus(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    await this.requireCustomerView(req);
+    const operatingStatus = await this.eligibilityService.getOperatingStatus(id);
+    // Do not expose the full permissions/restrictions/block-reason projection from this
+    // generic customer read route; detailed access-control operations belong to a later batch.
+    return {
+      customerId: operatingStatus.customerId,
+      status: operatingStatus.status,
+      canOperate: operatingStatus.canOperate,
+      eligibilityStatus: operatingStatus.eligibilityStatus,
+    };
+  }
+
+  private async requireCustomerView(req: AuthenticatedRequest): Promise<void> {
+    const principal = req.authorizationPrincipal;
+    if (!principal) throw new UnauthorizedException('Authentication required');
+    if (principal.type === 'CUSTOMER') return;
+    await this.auth.requireFunction(
+      principal,
+      'customer.view',
+      'customer',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

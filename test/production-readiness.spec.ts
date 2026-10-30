@@ -71,7 +71,25 @@ class ReconciliationStub {
 
 describe('M8 production readiness', () => {
   it('accepts the expected migration head and rejects an incompatible schema', async () => {
-    expect(migrationHead.name).toBe('CreateA2WorkforceAuthenticationTables1785753600052');
+    // INTEGRATION NOTE (integration/main-backend-frontend-20261030): main pinned this to
+    // 'CreateA2WorkforceAuthenticationTables1785753600052', which was main's own chain head.
+    // The integrated chain continues to 1785753600101, so a hardcoded head name is exactly the
+    // rot this file's repository-derived mechanism exists to avoid. The contract is asserted
+    // instead: the chain is complete, strictly ordered and unique, the derived head really is the
+    // newest migration in src/migrations, and the customer proof-of-address migrations are present.
+    const repositoryHeads = repositoryMigrations();
+    expect(repositoryHeads.length).toBeGreaterThan(1);
+    expect(migrationHead).toEqual(repositoryHeads[repositoryHeads.length - 1]);
+    expect(previousMigrationHead).toEqual(repositoryHeads[repositoryHeads.length - 2]!);
+    expect(new Set(repositoryHeads.map((entry) => entry.timestamp)).size).toBe(repositoryHeads.length);
+    expect(
+      repositoryHeads.every(
+        (entry, index) => index === 0 || repositoryHeads[index - 1]!.timestamp < entry.timestamp,
+      ),
+    ).toBe(true);
+    expect(repositoryHeads.map((entry) => entry.timestamp)).toEqual(
+      expect.arrayContaining(['1785753600093', '1785753600094']),
+    );
 
     const compatible = new ProductionReadinessService(
       new ReadinessDataSource() as unknown as DataSource,

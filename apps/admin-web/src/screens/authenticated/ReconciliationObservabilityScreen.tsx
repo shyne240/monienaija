@@ -70,9 +70,51 @@ interface TrialBalanceReport {
   rows: TrialBalanceRow[];
 }
 
+interface AccountTypeTotal {
+  accountType: 'ASSET' | 'LIABILITY';
+  currency: string;
+  accountingUnit: string;
+  totalBalanceMinor: string;
+}
+
+interface JournalIntegrityReport {
+  generatedAt: string;
+  totalJournals: number;
+  invalidJournals: number;
+  totalLines: number;
+  orphanLines: number;
+  balanced: boolean;
+}
+
+interface AccountActivitySummary {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  currency: string;
+  accountingUnit: string;
+  entryCount: number;
+  totalDebitsMinor: string;
+  totalCreditsMinor: string;
+  balanceMinor: string;
+  firstActivityAt: string | null;
+  lastActivityAt: string | null;
+}
+
+interface FinanceVerificationReport {
+  generatedAt: string;
+  trialBalance: TrialBalanceReport;
+  totalAssets: AccountTypeTotal[];
+  totalLiabilities: AccountTypeTotal[];
+  journalIntegrity: JournalIntegrityReport;
+  balanceConservation: TrialBalanceDimension[];
+  accountActivity: AccountActivitySummary[];
+}
+
 export const ReconciliationObservabilityScreen: React.FC = () => {
   const { principal } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance'>('runs');
+  const canView = principal?.scopes.includes('reconciliation.view') ?? false;
+  const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance' | 'finance'>('runs');
 
   // Reconciliation Runs State
   const [report, setReport] = useState<ReconciliationReport | null>(null);
@@ -84,10 +126,17 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
   const [tbLoading, setTbLoading] = useState(false);
   const [tbError, setTbError] = useState('');
 
-  // Check roles
-  const isOperator = (principal?.roles?.length ?? 0) > 0;
+  // Finance Verification & Account Activity State
+  const [financeReport, setFinanceReport] = useState<FinanceVerificationReport | null>(null);
+  const [financeLoading, setFinanceLoading] = useState(false);
+  const [financeError, setFinanceError] = useState('');
+  const [accountActivityId, setAccountActivityId] = useState('');
+  const [accountActivityRows, setAccountActivityRows] = useState<AccountActivitySummary[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState('');
 
   const handleRunReconciliation = async () => {
+    if (!canView) return;
     setRunError('');
     setReport(null);
     setRunLoading(true);
@@ -104,6 +153,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
   };
 
   const handleLoadTrialBalance = async () => {
+    if (!canView) return;
     setTbError('');
     setTbReport(null);
     setTbLoading(true);
@@ -118,6 +168,51 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
       setTbLoading(false);
     }
   };
+
+  const handleLoadFinanceVerification = async () => {
+    if (!canView) return;
+    setFinanceError('');
+    setFinanceLoading(true);
+    try {
+      const res = await ApiClient.get<FinanceVerificationReport>('/internal/reconciliation/finance');
+      setFinanceReport(res);
+    } catch (err: any) {
+      setFinanceError(err?.message || 'Finance verification query failed.');
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const handleInspectAccountActivity = async (targetAccountId?: string) => {
+    if (!canView) return;
+    const id = (targetAccountId ?? accountActivityId).trim();
+    if (!id) {
+      setActivityError('Ledger Account UUID is required.');
+      return;
+    }
+    setAccountActivityId(id);
+    setActivityError('');
+    setActivityLoading(true);
+    try {
+      const rows = await ApiClient.get<AccountActivitySummary[]>(
+        `/internal/reconciliation/accounts/${encodeURIComponent(id)}/activity`,
+      );
+      setAccountActivityRows(Array.isArray(rows) ? rows : []);
+    } catch (err: any) {
+      setAccountActivityRows(null);
+      setActivityError(err?.message || 'Account activity lookup failed.');
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  if (!canView) {
+    return (
+      <div style={styles.container} role="alert">
+        <div style={styles.errorBox}>This screen requires <code>reconciliation.view</code>.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -145,6 +240,12 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
           onClick={() => { setActiveTab('trial-balance'); setTbError(''); handleLoadTrialBalance(); }}
         >
           ⚖️ General Trial Balance
+        </button>
+        <button
+          style={activeTab === 'finance' ? styles.activeTabBtn : styles.tabBtn}
+          onClick={() => { setActiveTab('finance'); setFinanceError(''); void handleLoadFinanceVerification(); }}
+        >
+          🏦 Finance Verification &amp; Activity
         </button>
       </div>
 
@@ -230,7 +331,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
             </div>
           )}
         </div>
-      ) : (
+      ) : activeTab === 'trial-balance' ? (
         <div style={styles.content}>
           {tbError && <div style={styles.errorBox}>{tbError}</div>}
 
@@ -284,6 +385,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                       <th style={styles.th}>Total Debits</th>
                       <th style={styles.th}>Total Credits</th>
                       <th style={styles.th}>Closing Balance</th>
+                      <th style={styles.th}>Activity</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -297,6 +399,18 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                         <td style={{ ...styles.td, fontWeight: 'bold', color: '#0A3D25' }}>
                           ₦{(parseFloat(r.balanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
                         </td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('finance');
+                              void handleInspectAccountActivity(r.accountId);
+                            }}
+                            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFF', cursor: 'pointer', fontSize: 12 }}
+                          >
+                            Inspect activity
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -304,6 +418,121 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      ) : (
+        <div style={styles.content}>
+          <div style={styles.actionRow}>
+            <button
+              disabled={financeLoading}
+              onClick={() => void handleLoadFinanceVerification()}
+              style={styles.actionBtn}
+            >
+              {financeLoading ? 'Loading Finance Verification...' : 'Refresh Finance Verification'}
+            </button>
+          </div>
+
+          {financeError && <div style={styles.errorBox} role="alert">{financeError}</div>}
+
+          {financeReport && (
+            <div style={styles.resultsGrid} data-testid="finance-verification-summary">
+              <div style={styles.summaryCard}>
+                <h4 style={styles.cardTitle}>Journal Integrity</h4>
+                <div style={styles.metaRow}>
+                  <span style={styles.metaLabel}>Balanced:</span>
+                  <span style={financeReport.journalIntegrity.balanced ? styles.passStatus : styles.failStatus}>
+                    {financeReport.journalIntegrity.balanced ? 'BALANCED' : 'UNBALANCED'}
+                  </span>
+                </div>
+                <div style={styles.metaRow}>
+                  <span style={styles.metaLabel}>Total Journals:</span>
+                  <span style={styles.metaValue}>{financeReport.journalIntegrity.totalJournals}</span>
+                </div>
+                <div style={styles.metaRow}>
+                  <span style={styles.metaLabel}>Invalid Journals:</span>
+                  <span style={styles.metaValue}>{financeReport.journalIntegrity.invalidJournals}</span>
+                </div>
+                <div style={styles.metaRow}>
+                  <span style={styles.metaLabel}>Orphan Lines:</span>
+                  <span style={styles.metaValue}>{financeReport.journalIntegrity.orphanLines}</span>
+                </div>
+              </div>
+
+              <div style={styles.summaryCard}>
+                <h4 style={styles.cardTitle}>Assets vs Liabilities</h4>
+                {financeReport.totalAssets.map((item) => (
+                  <div key={`asset:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
+                    <span style={styles.metaLabel}>ASSET ({item.currency}/{item.accountingUnit}):</span>
+                    <span style={styles.metaValue}>₦{(parseFloat(item.totalBalanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+                {financeReport.totalLiabilities.map((item) => (
+                  <div key={`liab:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
+                    <span style={styles.metaLabel}>LIABILITY ({item.currency}/{item.accountingUnit}):</span>
+                    <span style={styles.metaValue}>₦{(parseFloat(item.totalBalanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ ...styles.summaryCard, marginTop: 20 }}>
+            <h4 style={styles.cardTitle}>Account Activity Inspector</h4>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+              <input
+                aria-label="Ledger Account UUID"
+                placeholder="Ledger Account UUID"
+                value={accountActivityId}
+                onChange={(e) => {
+                  setAccountActivityId(e.target.value);
+                  setActivityError('');
+                }}
+                style={{ flex: '1 1 260px', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1' }}
+              />
+              <button
+                type="button"
+                disabled={activityLoading || !accountActivityId.trim()}
+                onClick={() => void handleInspectAccountActivity()}
+                style={styles.actionBtn}
+              >
+                {activityLoading ? 'Loading Activity...' : 'Load Account Activity'}
+              </button>
+            </div>
+            {activityError && <div style={styles.errorBox} role="alert">{activityError}</div>}
+            {accountActivityRows && (
+              accountActivityRows.length === 0 ? (
+                <p style={styles.emptyText}>No ledger activity returned for this account.</p>
+              ) : (
+                <div style={styles.tableWrapper}>
+                  <table style={styles.table} data-testid="account-activity-table">
+                    <thead>
+                      <tr style={styles.thRow}>
+                        <th style={styles.th}>Code</th>
+                        <th style={styles.th}>Account</th>
+                        <th style={styles.th}>Entries</th>
+                        <th style={styles.th}>Debits</th>
+                        <th style={styles.th}>Credits</th>
+                        <th style={styles.th}>Balance</th>
+                        <th style={styles.th}>Last Activity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accountActivityRows.map((row) => (
+                        <tr key={row.accountId} style={styles.tableRow}>
+                          <td style={styles.tdCode}>{row.accountCode}</td>
+                          <td style={styles.td}>{row.accountName}</td>
+                          <td style={styles.td}>{row.entryCount}</td>
+                          <td style={styles.td}>₦{(parseFloat(row.totalDebitsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                          <td style={styles.td}>₦{(parseFloat(row.totalCreditsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                          <td style={styles.td}>₦{(parseFloat(row.balanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                          <td style={styles.td}>{row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -364,6 +593,7 @@ const styles = {
     fontWeight: '500',
     color: '#64748B',
     border: 'none',
+    borderBottom: '2px solid transparent',
     backgroundColor: 'transparent',
     cursor: 'pointer',
   },

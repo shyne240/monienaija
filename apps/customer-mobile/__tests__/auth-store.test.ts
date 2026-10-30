@@ -25,6 +25,17 @@ jest.mock('../src/services/secure-storage', () => ({
   },
 }));
 
+/**
+ * V1-CUSTOMER-02 — rewritten against the REAL backend session contract:
+ *   POST /customers/sessions         { identifier, password }
+ *     -> { accessToken, tokenType, expiresAt, customerId, sessionId }
+ *     -> or { rotationRequired: true, customerId } (no session issued)
+ *   POST /customers/sessions/logout  (Bearer token only, no body)
+ *
+ * The previous version of this test asserted a fabricated
+ * `{ authenticated, session }` response shape that the backend has never
+ * returned. That made a real authentication bug look like a passing test.
+ */
 describe('Auth Store (Zustand) tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -34,6 +45,7 @@ describe('Auth Store (Zustand) tests', () => {
       session: null,
       customerId: null,
       error: null,
+      rotationRequired: false,
     });
   });
 
@@ -45,19 +57,20 @@ describe('Auth Store (Zustand) tests', () => {
   });
 
   test('should handle login successfully and write to SecureStorage', async () => {
-    const mockSession = {
-      accessToken: 'test-token',
-      sessionId: 'session-123',
-      expiresAt: new Date(Date.now() + 60000).toISOString(),
-      audience: 'customer-api',
-    };
-
     (ApiClient.post as jest.Mock).mockResolvedValue({
-      authenticated: true,
-      session: mockSession,
+      accessToken: 'test-token',
+      tokenType: 'Bearer',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      customerId: 'cust-id-999',
+      sessionId: 'session-123',
     });
 
-    await useAuthStore.getState().login('cust-id-999', 'secure-pin-123');
+    await useAuthStore.getState().login('08012345678', 'secure-pin-123');
+
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/sessions', {
+      identifier: '08012345678',
+      password: 'secure-pin-123',
+    });
 
     const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(true);
@@ -66,6 +79,31 @@ describe('Auth Store (Zustand) tests', () => {
 
     expect(SecureStorage.set).toHaveBeenCalledWith('auth_session_token', 'test-token');
     expect(SecureStorage.set).toHaveBeenCalledWith('auth_customer_id', 'cust-id-999');
+  });
+
+  test('should surface rotationRequired without fabricating a session', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      rotationRequired: true,
+      customerId: 'cust-id-999',
+    });
+
+    await useAuthStore.getState().login('08012345678', 'temp-password');
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.session).toBeNull();
+    expect(state.rotationRequired).toBe(true);
+    expect(state.error).toBeTruthy();
+  });
+
+  test('should fail closed when the backend omits required session data', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValue({});
+
+    await expect(useAuthStore.getState().login('08012345678', 'secure-pin-123')).rejects.toThrow();
+
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.session).toBeNull();
   });
 
   test('should restore session from SecureStorage correctly', async () => {
@@ -92,7 +130,7 @@ describe('Auth Store (Zustand) tests', () => {
     expect(state.session?.accessToken).toBe('saved-token');
   });
 
-  test('should handle logout correctly', async () => {
+  test('should handle logout correctly without re-sending the token in the body', async () => {
     useAuthStore.setState({
       isAuthenticated: true,
       session: {
@@ -104,8 +142,11 @@ describe('Auth Store (Zustand) tests', () => {
       },
       customerId: 'cust-id-888',
     });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ revoked: true });
 
     await useAuthStore.getState().logout();
+
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/sessions/logout');
 
     const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(false);

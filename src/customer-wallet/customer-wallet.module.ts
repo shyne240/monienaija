@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer } from '../customer/customer.entity';
 import { CustomerEligibility } from '../customer-eligibility/customer-eligibility.entity';
 import { CustomerOnboarding } from '../customer-onboarding/customer-onboarding.entity';
+import { AuthorizationModule } from '../authorization/authorization.module';
 import { OperationsModule } from '../operations/operations.module';
 import { CustomerWallet } from './customer-wallet.entity';
 import { CustomerWalletController } from './customer-wallet.controller';
@@ -15,6 +16,7 @@ import { WalletProvisioningHistory } from './wallet-provisioning-history.entity'
 @Module({
   imports: [
     OperationsModule,
+    AuthorizationModule,
     TypeOrmModule.forFeature([
       Customer,
       CustomerOnboarding,

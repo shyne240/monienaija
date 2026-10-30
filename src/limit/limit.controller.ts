@@ -9,7 +9,7 @@ export class LimitController {
 
   @Post('evaluate')
   @HttpCode(HttpStatus.OK)
-  evaluate(@Body() dto: EvaluateLimitDto) {
+  async evaluate(@Body() dto: EvaluateLimitDto) {
     return this.limitEngine.evaluate(dto);
   }
 }

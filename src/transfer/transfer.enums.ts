@@ -18,6 +18,11 @@ export enum TransferFailureCode {
   DESTINATION_WALLET_NOT_FOUND = 'DESTINATION_WALLET_NOT_FOUND',
   SELF_TRANSFER = 'SELF_TRANSFER',
   WALLET_NOT_ACTIVE = 'WALLET_NOT_ACTIVE',
+  // V1-SYSTEM-01: a wallet's owning customer is no longer ACTIVE (SUSPENDED/DRAFT/CLOSED).
+  // WalletStatus alone is insufficient — wallets are never transitioned away from ACTIVE
+  // when a customer is suspended, so the customer's own lifecycle status must be checked
+  // independently (mirrors the existing check already applied in cash-in/cash-out/C2C-claim).
+  CUSTOMER_NOT_ACTIVE = 'CUSTOMER_NOT_ACTIVE',
   CURRENCY_MISMATCH = 'CURRENCY_MISMATCH',
   INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
   LEDGER_REJECTED = 'LEDGER_REJECTED',
@@ -27,4 +32,47 @@ export enum TransferFailureCode {
   PERSISTENCE_REJECTED = 'PERSISTENCE_REJECTED',
   UNKNOWN_OUTCOME = 'UNKNOWN_OUTCOME',
   TRANSFER_CANCELLED = 'TRANSFER_CANCELLED',
+  // ── V1-LIMIT-05: stable LIMIT_* failure codes (mirrors src/limit-catalog/limit-error.codes.ts).
+  // Persisted into transfers.failure_code VARCHAR(64); additive, no API contract change.
+  LIMIT_MIN_AMOUNT_NOT_MET = 'LIMIT_MIN_AMOUNT_NOT_MET',
+  LIMIT_MAX_AMOUNT_EXCEEDED = 'LIMIT_MAX_AMOUNT_EXCEEDED',
+  LIMIT_DAILY_AMOUNT_EXCEEDED = 'LIMIT_DAILY_AMOUNT_EXCEEDED',
+  LIMIT_WEEKLY_AMOUNT_EXCEEDED = 'LIMIT_WEEKLY_AMOUNT_EXCEEDED',
+  LIMIT_MONTHLY_AMOUNT_EXCEEDED = 'LIMIT_MONTHLY_AMOUNT_EXCEEDED',
+  LIMIT_YEARLY_AMOUNT_EXCEEDED = 'LIMIT_YEARLY_AMOUNT_EXCEEDED',
+  LIMIT_DAILY_COUNT_EXCEEDED = 'LIMIT_DAILY_COUNT_EXCEEDED',
+  LIMIT_WEEKLY_COUNT_EXCEEDED = 'LIMIT_WEEKLY_COUNT_EXCEEDED',
+  LIMIT_MONTHLY_COUNT_EXCEEDED = 'LIMIT_MONTHLY_COUNT_EXCEEDED',
+  LIMIT_YEARLY_COUNT_EXCEEDED = 'LIMIT_YEARLY_COUNT_EXCEEDED',
+  LIMIT_WALLET_BALANCE_EXCEEDED = 'LIMIT_WALLET_BALANCE_EXCEEDED',
+  LIMIT_PROFILE_MISSING = 'LIMIT_PROFILE_MISSING',
+  LIMIT_RULE_INVALID = 'LIMIT_RULE_INVALID',
+  LIMIT_CONFIGURATION_INVALID = 'LIMIT_CONFIGURATION_INVALID',
+  LIMIT_RESERVATION_FAILED = 'LIMIT_RESERVATION_FAILED',
+}
+
+/**
+ * V1-LIMIT-05: type-safe narrowing of the stable LIMIT_* failure-code union onto
+ * TransferFailureCode. Returns null for codes outside the established union so callers
+ * never widen the contract implicitly.
+ */
+export function limitCodeToTransferFailureCode(code: string): TransferFailureCode | null {
+  const limitCodes = new Set<string>([
+    TransferFailureCode.LIMIT_MIN_AMOUNT_NOT_MET,
+    TransferFailureCode.LIMIT_MAX_AMOUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_DAILY_AMOUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_WEEKLY_AMOUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_MONTHLY_AMOUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_YEARLY_AMOUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_DAILY_COUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_WEEKLY_COUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_MONTHLY_COUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_YEARLY_COUNT_EXCEEDED,
+    TransferFailureCode.LIMIT_WALLET_BALANCE_EXCEEDED,
+    TransferFailureCode.LIMIT_PROFILE_MISSING,
+    TransferFailureCode.LIMIT_RULE_INVALID,
+    TransferFailureCode.LIMIT_CONFIGURATION_INVALID,
+    TransferFailureCode.LIMIT_RESERVATION_FAILED,
+  ]);
+  return limitCodes.has(code) ? (code as TransferFailureCode) : null;
 }

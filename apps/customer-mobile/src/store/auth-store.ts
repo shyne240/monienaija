@@ -17,48 +17,67 @@ interface AuthState {
   session: UserSession | null;
   customerId: string | null;
   error: string | null;
-  login: (customerId: string, pinOrPassword: string) => Promise<void>;
+  rotationRequired: boolean;
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearError: () => void;
 }
 
+/**
+ * V1-CUSTOMER-02 — login is wired to the real, hardened backend session
+ * contract (`POST /customers/sessions`, see `CustomerAppController.login`
+ * and `docs/V1/A23-CUSTOMER-APP-CONTRACT.md`). There is no mock/sandbox
+ * authentication fallback: an authentication failure is always a real
+ * failure, never a locally-fabricated session. This app never mints its
+ * own bearer tokens.
+ */
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   isLoading: true,
   session: null,
   customerId: null,
   error: null,
+  rotationRequired: false,
 
-  login: async (customerId: string, pinOrPassword: string) => {
-    set({ isLoading: true, error: null });
+  login: async (identifier: string, password: string) => {
+    set({ isLoading: true, error: null, rotationRequired: false });
     try {
-      // Clean inputs
-      const normalizedCustomerId = customerId.trim().toLowerCase();
+      const trimmedIdentifier = identifier.trim();
 
-      // Real backend credential exchange. There is no mock or fallback session: a 401/403/404/5xx
-      // or network failure is surfaced to the caller so authentication can never silently succeed.
       const response = await ApiClient.post<{
-        authenticated: boolean;
-        customerId: string;
-        session: {
-          accessToken: string;
-          sessionId: string;
-          expiresAt: string;
-          audience?: string;
-        };
-      }>(`/customers/${normalizedCustomerId}/authenticate`, { password: pinOrPassword });
+        rotationRequired?: boolean;
+        customerId?: string;
+        accessToken?: string;
+        tokenType?: string;
+        expiresAt?: string;
+        sessionId?: string;
+      }>('/customers/sessions', { identifier: trimmedIdentifier, password });
 
-      if (!response.authenticated || !response.session?.accessToken) {
-        throw new Error('Invalid credentials');
+      if (response.rotationRequired) {
+        // Workforce-issued temporary credential: no session is issued yet.
+        // The customer must rotate the credential before a real session can
+        // exist (see `POST /customers/credentials/rotate`). This app does not
+        // yet implement a rotation screen; surface the true backend state
+        // rather than fabricating a session.
+        set({
+          isLoading: false,
+          rotationRequired: true,
+          error: 'Your temporary password must be changed before you can sign in. Credential rotation is not yet supported in this app version.',
+        });
+        return;
+      }
+
+      if (!response.accessToken || !response.customerId) {
+        throw new Error('Authentication response was missing required session data');
       }
 
       const sessionData: UserSession = {
-        accessToken: response.session.accessToken,
-        sessionId: response.session.sessionId,
-        expiresAt: response.session.expiresAt,
-        customerId: response.customerId || normalizedCustomerId,
-        audience: response.session.audience || 'customer-api',
+        accessToken: response.accessToken,
+        sessionId: response.sessionId ?? '',
+        expiresAt: response.expiresAt ?? new Date(Date.now() + 3600 * 1000).toISOString(),
+        customerId: response.customerId,
+        audience: 'customer-api',
       };
 
       await SecureStorage.set('auth_session_token', sessionData.accessToken);
@@ -90,17 +109,32 @@ export const useAuthStore = create<AuthState>((set) => ({
       const session = useAuthStore.getState().session;
       if (session) {
         try {
-          // Real backend session revocation; local credentials are always cleared afterwards.
-          await ApiClient.delete(`/customers/${session.customerId}/sessions/current`);
+          // Bearer token is attached automatically by ApiClient from SecureStorage;
+          // never send the raw access token in a request body.
+          await ApiClient.post('/customers/sessions/logout');
         } catch {
-          // A failed revoke must not keep the operator signed in locally.
+          // Best-effort server-side revocation; local session is cleared regardless.
         }
       }
     } finally {
       await SecureStorage.remove('auth_session_token');
       await SecureStorage.remove('auth_customer_id');
       await SecureStorage.remove('auth_session_data');
-
+      // V1-MOBILE-REAL-WORLD-VALIDATION-01: logout deliberately does NOT clear this customer's
+      // pending Wallet-to-Wallet transfer intent. A pending intent only ever exists because the
+      // last attempt ended AMBIGUOUSLY (every definitive outcome — success or a 4xx rejection —
+      // already clears it immediately in SendMoneyScreen). Discarding it on logout previously
+      // meant: ambiguous transfer failure -> customer logs out -> logs back in as the SAME
+      // customer -> re-submits the SAME transfer -> a brand-new Idempotency-Key is minted
+      // because the old one was wiped -> if the original ambiguous request had actually already
+      // committed server-side, this creates a SECOND, duplicate debit/credit. The storage key
+      // is already scoped by `customerId` (`pending_wallet_transfer_intent:<customerId>`, see
+      // storageKeyFor() in pending-transfer.ts), so a DIFFERENT customer signing into this
+      // device can never read or collide with this record regardless of whether logout clears
+      // it — clearing on logout was removing real retry-safety for no actual isolation benefit.
+      // The 24-hour staleness window (MAX_PENDING_AGE_MS) still bounds how long an unresolved
+      // intent can ever be resumed, logout or not. See
+      // docs/V1/V1-MOBILE-REAL-WORLD-VALIDATION-01.md Part 16.
       set({
         isAuthenticated: false,
         isLoading: false,

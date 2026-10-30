@@ -3,13 +3,18 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
-import type { FastifyRequest } from 'fastify';
 
 import { AuthorizationModule } from './authorization/authorization.module';
 import { RuntimeAccessGuard } from './authorization/runtime-access.guard';
 import { createDatabaseOptions } from './config/database.config';
 import { validateEnvironment } from './config/environment';
+import { AgentModule } from './agent/agent.module';
+import { AggregatorModule } from './aggregator/aggregator.module';
+import { OutletModule } from './outlet/outlet.module';
+import { AgentAuthenticationModule } from './agent-authentication/agent-authentication.module';
 import { CustomerModule } from './customer/customer.module';
+import { CustomerProofOfAddressModule } from './customer-proof-of-address/customer-proof-of-address.module';
+import { CustomerRegistrationModule } from './customer-registration/customer-registration.module';
 import { CustomerAuthenticationModule } from './customer-authentication/customer-authentication.module';
 import { CustomerBeneficiaryModule } from './customer-beneficiary/customer-beneficiary.module';
 import { CustomerComplianceModule } from './customer-compliance/customer-compliance.module';
@@ -49,7 +54,7 @@ import { B2FAccountingTreatmentModule } from './policy/b2f-accounting-treatment.
 import { B2FFinanceControlModule } from './policy/b2f-finance-control.module';
 import { B2FFiscalPeriodModule } from './policy/b2f-fiscal-period.module';
 import { B2FJournalGovernanceModule } from './policy/b2f-journal-governance.module';
-import { getRequestContext } from './production/request-context';
+import { buildPinoHttpOptions } from './production/pino-config';
 import { BankModule } from './bank/bank.module';
 import { BeneficiaryModule } from './beneficiary/beneficiary.module';
 import { FeeModule } from './fee/fee.module';
@@ -68,6 +73,23 @@ import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { TransferModule } from './transfer/transfer.module';
 import { VirtualAccountModule } from './virtual-account/virtual-account.module';
 import { WithdrawalModule } from './withdrawal/withdrawal.module';
+import { AdminModule } from './admin/admin.module';
+import { CapabilityRegistryModule } from './capability-registry/capability.module';
+import { AuthorizationCatalogueModule } from './authorization-catalogue/authorization-catalogue.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { CommercialDecisionModule } from './commercial-decision/commercial-decision.module';
+import { CommissionModule } from './commission/commission.module';
+import { CommercialAccountingModule } from './commercial-accounting/commercial-accounting.module';
+import { RewardModule } from './reward/reward.module';
+import { FeeRulesModule } from './fee-rules/fee-rules.module';
+import { LimitCatalogModule } from './limit-catalog/limit-catalog.module';
+import { ProductCatalogModule } from './product-catalog/product-catalog.module';
+import { CustomerAppModule } from './customer-app/customer-app.module';
+import { CustomerFundingModule } from './customer-funding/customer-funding.module';
+import { NotificationModule } from './notification/notification.module';
+import { SupportModule } from './support/support.module';
+import { SupportAuthenticationModule } from './support-authentication/support-authentication.module';
+import { LocalAdminAuthenticationModule } from './local-admin-authentication/local-admin-authentication.module';
 import { WalletModule } from './wallet/wallet.module';
 
 @Module({
@@ -78,40 +100,20 @@ import { WalletModule } from './wallet/wallet.module';
       validate: validateEnvironment,
     }),
     LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.LOG_LEVEL ?? 'info',
-        genReqId: (request) => getRequestContext(request as unknown as FastifyRequest).requestId,
-        redact: {
-          paths: [
-            'req.headers.authorization',
-            'req.headers.cookie',
-            'req.headers.x-api-key',
-            'req.body.password',
-            'req.body.passwordHash',
-            'req.body.token',
-            'req.body.tokenHash',
-            'req.body.accessToken',
-            'req.body.refreshToken',
-            'req.body.secret',
-            'req.body.code',
-            'req.body.codeHash',
-            'req.body.challengeHash',
-            'req.body.providedHash',
-            'req.body.deviceFingerprintHash',
-            'req.body.fingerprintHash',
-            'res.headers.set-cookie',
-          ],
-          censor: '[REDACTED]',
-        },
-        customProps: (request) => getRequestContext(request as unknown as FastifyRequest),
-      },
+      pinoHttp: buildPinoHttpOptions(),
     }),
     TypeOrmModule.forRootAsync({
       useFactory: () => createDatabaseOptions(validateEnvironment(process.env)),
     }),
     HealthModule,
+    AgentModule,
+    AggregatorModule,
+    OutletModule,
+    AgentAuthenticationModule,
     AuthorizationModule,
     CustomerModule,
+    CustomerProofOfAddressModule,
+    CustomerRegistrationModule,
     CustomerAuthenticationModule,
     CustomerBeneficiaryModule,
     CustomerComplianceModule,
@@ -169,6 +171,23 @@ import { WalletModule } from './wallet/wallet.module';
     VirtualAccountModule,
     WalletModule,
     WithdrawalModule,
+    AdminModule,
+    CapabilityRegistryModule,
+    AuthorizationCatalogueModule,
+    DashboardModule,
+    CommercialDecisionModule,
+    CommissionModule,
+    CommercialAccountingModule, // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (inert unless enabled)
+    RewardModule,
+    FeeRulesModule,
+    LimitCatalogModule,
+    ProductCatalogModule,
+    CustomerAppModule,
+    CustomerFundingModule,
+    NotificationModule,
+    SupportModule,
+    SupportAuthenticationModule,
+    LocalAdminAuthenticationModule,
   ],
   providers: [{ provide: APP_GUARD, useExisting: RuntimeAccessGuard }],
 })

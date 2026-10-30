@@ -10,6 +10,9 @@ export interface IssueMfaChallengeCommand {
   actor: string;
   ttlSeconds?: number;
   now?: Date;
+  /** V1-AGENT-MFA-API-01 — optional purpose bound at issuance (max 64 chars, no
+   *  whitespace). Omitted → NULL (legacy purpose-generic). */
+  purpose?: string;
 }
 
 export interface VerifyMfaChallengeCommand {
@@ -18,6 +21,10 @@ export interface VerifyMfaChallengeCommand {
   providedHash: string;
   actor: string;
   now?: Date;
+  /** V1-AGENT-MFA-API-01 — consumer declares the purpose it is verifying for.
+   *  If the challenge carries a purpose and it differs → WRONG_PURPOSE.
+   *  If the challenge purpose is NULL (legacy), verification is unchanged. */
+  expectedPurpose?: string;
 }
 
 export interface CheckTrustedDeviceCommand {
@@ -36,6 +43,8 @@ export interface MfaChallengeView {
   sessionId: string;
   methodType: MfaMethodType;
   status: MfaChallengeStatus;
+  /** V1-AGENT-MFA-API-01 — purpose bound at issuance; null for legacy generic challenges. */
+  purpose?: string | null;
   issuedAt: Date;
   expiresAt: Date;
 }
@@ -58,6 +67,7 @@ export interface MfaChallengeResult {
     | 'MFA_UNAVAILABLE'
     | 'EXPIRED'
     | 'REPLAYED'
+    | 'WRONG_PURPOSE'
     | 'MISMATCH';
 }
 

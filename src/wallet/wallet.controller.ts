@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -12,65 +11,64 @@ import {
   Req,
 } from '@nestjs/common';
 
-import { currentPrincipal, type PrincipalRequest } from '../authorization/current-principal';
-import { customerSelfId } from './wallet-ownership';
 import { CreateWalletDto } from './dto/create-wallet.dto';
 import { ListWalletsDto } from './dto/list-wallets.dto';
 import { WalletService } from './wallet.service';
+import { AuthorizationService } from '../authorization/authorization.service';
+import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+
+interface AuthenticatedRequest {
+  headers: Record<string, string | string[] | undefined>;
+  authorizationPrincipal?: AuthorizationPrincipal;
+}
 
 @Controller('wallets')
 export class WalletController {
-  constructor(private readonly walletService: WalletService) {}
+  constructor(private readonly walletService: WalletService, private readonly auth: AuthorizationService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  createWallet(
+  async createWallet(
     @Body() dto: CreateWalletDto,
-    @Req() request: PrincipalRequest,
     @Headers('idempotency-key') headerIdempotencyKey?: string,
+    @Req() req?: AuthenticatedRequest,
   ) {
-    // Defence in depth for a route that is currently internal-only: if an authenticated customer
-    // ever reaches it, the wallet owner is taken from the session and a body that names a different
-    // customer is refused. The customer-facing creation path is `POST /customers/:id/wallets`.
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId && dto.customerId.trim() !== customerId) {
-      throw new ForbiddenException('Authorization denied');
-    }
+    if (this.isWorkforce(req)) await this.requireFunction(req!, 'customer.view_wallets');
     return this.walletService.createWallet({
-      customerId: customerId ?? dto.customerId,
+      customerId: dto.customerId,
       currency: dto.currency,
       idempotencyKey: dto.idempotencyKey ?? headerIdempotencyKey ?? '',
     });
   }
 
   @Get()
-  listWallets(@Req() request: PrincipalRequest, @Query() query: ListWalletsDto) {
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId) {
-      // A customer may only ever list their own wallets; the query parameter cannot widen the scope.
-      if (query.customerId && query.customerId.trim() !== customerId) {
-        throw new ForbiddenException('Authorization denied');
-      }
-      return this.walletService.listWallets(customerId);
-    }
+  async listWallets(@Query() query: ListWalletsDto, @Req() req: AuthenticatedRequest) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'customer.view_wallets');
     return this.walletService.listWallets(query.customerId);
   }
 
   @Get(':walletId/balance')
-  getBalance(@Param('walletId') walletId: string, @Req() request: PrincipalRequest) {
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId) {
-      return this.walletService.getWalletBalanceForCustomer(walletId, customerId);
-    }
+  async getBalance(@Param('walletId') walletId: string, @Req() req: AuthenticatedRequest) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'customer.view_wallets');
     return this.walletService.getWalletBalance(walletId);
   }
 
   @Get(':walletId')
-  getWallet(@Param('walletId') walletId: string, @Req() request: PrincipalRequest) {
-    const customerId = customerSelfId(currentPrincipal(request));
-    if (customerId) {
-      return this.walletService.getWalletForCustomer(walletId, customerId);
-    }
+  async getWallet(@Param('walletId') walletId: string, @Req() req: AuthenticatedRequest) {
+    if (this.isWorkforce(req)) await this.requireFunction(req, 'customer.view_wallets');
     return this.walletService.getWallet(walletId);
+  }
+
+  private isWorkforce(req?: AuthenticatedRequest): boolean {
+    const t = req?.authorizationPrincipal?.type;
+    return t === 'SUPPORT' || t === 'OPERATOR' || t === 'SERVICE' || t === 'PRIVILEGED';
+  }
+
+  private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
+    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'wallets', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 }

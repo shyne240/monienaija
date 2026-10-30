@@ -1061,6 +1061,12 @@ function makeIdempotencyRow(overrides: Record<string, unknown> = {}): Record<str
     status: 'COMPLETED',
     request_hash: SETTLEMENT_REQUEST_HASH,
     resource_id: SETTLEMENT_ID,
+    // V1-CUSTOMER-02 (both sides of this merge independently fixed the same rot): the fixture
+    // used a fixed date ('2026-09-01'), which made the idempotency hint evaluate as EXPIRED once
+    // real wall-clock time passed it (the service compares against Date.now()), turning a PASS
+    // fixture into a false ERROR with no change to production code. The expiry is therefore
+    // derived from "now" so the record is always currently valid; main expresses the same fix
+    // through the shared futureExpiry() helper, which is kept here for consistency.
     expires_at: futureExpiry(),
     ...overrides,
   };

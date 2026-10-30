@@ -1,14 +1,29 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { seedNotificationDefaultsV1 } from '../../src/notification/notification-defaults-v1';
+import {
+  AUTHORIZATION_FUNCTION_SEED,
+  AUTHORIZATION_ROLE_FUNCTION_SEED,
+  AUTHORIZATION_ROLE_SEED,
+} from '../../src/authorization-catalogue/authorization-catalogue.seed';
+import {
+  DASHBOARD_TEMPLATE_SEED,
+  ROLE_DASHBOARD_ASSIGNMENT_SEED,
+} from '../../src/dashboard/dashboard-templates.seed';
+import {
+  assertOwnRunDatabaseName,
+  resolveRunIdentifier,
+} from './pg-run-namespace';
 
 /**
  * Real-PostgreSQL integration harness.
  *
- * Every suite gets its own database, named per process id, so that suites running in
- * separate Jest workers never share schema or rows. Nothing here mocks PostgreSQL: if the
- * server is unreachable the harness throws so the suite fails loudly rather than silently
- * skipping and reporting false coverage.
+ * Every suite gets its own database, named per run namespace + process id, so that suites
+ * running in separate Jest workers never share schema or rows AND a new run can never collide
+ * with databases left behind by previous runs (see test/support/pg-run-namespace.ts). Nothing
+ * here mocks PostgreSQL: if the server is unreachable the harness throws so the suite fails
+ * loudly rather than silently skipping and reporting false coverage.
  */
 
 export interface PostgresAdminConfig {
@@ -71,12 +86,44 @@ export async function assertPostgresAvailable(): Promise<void> {
   }
 }
 
+/**
+ * Suite database name for this run: `mn_it_<label>_<runId>_<pid>`. The run identifier
+ * (PG_TEST_RUN_ID) namespaces the whole run; the pid keeps suites in separate Jest processes
+ * isolated. Throws when PG_TEST_RUN_ID is missing or invalid — never falls back to the old
+ * un-namespaced scheme.
+ */
 export function integrationDatabaseName(label: string): string {
   const safe = label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .slice(0, 24);
-  return `mn_it_${safe}_${process.pid}`;
+  return `mn_it_${safe}_${resolveRunIdentifier()}_${process.pid}`;
+}
+
+/**
+ * Migration-template database name for this run: `mn_it_tpl_<runId>_<pid>`. Scoped to this run
+ * namespace and process id, matching integrationDatabaseName's scheme. Under the required
+ * `--runInBand` execution model every suite in a run shares one process, so this is built at
+ * most once per run and reused by every suite in it; a different run always builds its own.
+ * See test/support/pg-template-sweep.ts for the matching cleanup.
+ */
+export function migrationTemplateDatabaseName(): string {
+  return `mn_it_tpl_${resolveRunIdentifier()}_${process.pid}`;
+}
+
+/**
+ * Drops a database that belongs to THIS run's namespace, refusing anything else. Every DROP
+ * in the harness goes through here so cleanup can never touch a pre-existing or foreign
+ * database (e.g. `mn_it_h04unify_20364`) even if it were handed an unexpected name.
+ */
+async function dropOwnDatabase(ds: DataSource, name: string): Promise<void> {
+  assertOwnRunDatabaseName(name);
+  await ds.query(
+    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE datname = $1 AND pid <> pg_backend_pid()`,
+    [name],
+  );
+  await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
 }
 
 export function buildIntegrationDataSource(name: string): DataSource {
@@ -102,17 +149,83 @@ export async function createEmptyIntegrationDataSource(label: string): Promise<D
   await assertPostgresAvailable();
   const name = integrationDatabaseName(label);
   await withAdmin(async (ds) => {
-    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await dropOwnDatabase(ds, name);
     await ds.query(`CREATE DATABASE "${name}"`);
   });
   return buildIntegrationDataSource(name);
 }
 
+async function templateDatabaseExists(ds: DataSource, name: string): Promise<boolean> {
+  const rows: Array<{ exists: boolean }> = await ds.query(
+    `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
+    [name],
+  );
+  return firstRow(rows, 'template database existence check').exists;
+}
+
 /**
- * Creates a dedicated database for the suite and runs the complete migration chain against
- * it. The returned DataSource uses the same entity and migration registration as production.
+ * Ensures a fully-migrated template database exists for this test process, building it once
+ * (the real, complete migration chain run against a genuinely empty database — identical to
+ * what createIntegrationDataSourceFromScratch does) and reusing it for the rest of the run.
+ *
+ * Measured in this repo: a from-scratch create+migrate costs ~930-1050ms per suite; cloning
+ * this template via `CREATE DATABASE ... TEMPLATE` costs ~55-90ms. Every suite that only
+ * needs a correctly-migrated, empty-of-data schema to test application behaviour against
+ * (which is nearly all of them) gets the exact same schema much faster. This is not a
+ * behavioural shortcut: the schema is bit-for-bit what the full migration chain produces,
+ * because it IS that exact migration run, filesystem-cloned by PostgreSQL itself.
+ *
+ * Suites whose entire purpose is proving the real migration chain succeeds end-to-end against
+ * a genuinely empty database (migration-chain.integration.spec.ts,
+ * v1-release-01-production-readiness-migration-sync.integration.spec.ts) must not go through
+ * this path — they use createEmptyIntegrationDataSource / createIntegrationDataSourceFromScratch
+ * instead, so that coverage of the migration chain itself is never short-circuited.
+ */
+async function ensureMigrationTemplateDatabase(): Promise<string> {
+  const name = migrationTemplateDatabaseName();
+  await withAdmin(async (ds) => {
+    if (await templateDatabaseExists(ds, name)) return;
+    await ds.query(`CREATE DATABASE "${name}"`);
+    const template = buildIntegrationDataSource(name);
+    await template.initialize();
+    try {
+      await template.runMigrations({ transaction: 'all' });
+    } finally {
+      await template.destroy();
+    }
+  });
+  return name;
+}
+
+/**
+ * Creates a dedicated database for the suite, pre-populated with the full, real migration
+ * chain, by cloning a once-built template database (see `ensureMigrationTemplateDatabase`).
+ * The returned DataSource uses the same entity and migration registration as production, and
+ * the resulting schema is identical to running the full migration chain fresh — it is simply
+ * built once per test run and cloned, rather than re-run from scratch for every suite.
  */
 export async function createIntegrationDataSource(label: string): Promise<DataSource> {
+  await assertPostgresAvailable();
+  const templateName = await ensureMigrationTemplateDatabase();
+  const name = integrationDatabaseName(label);
+  await withAdmin(async (ds) => {
+    await dropOwnDatabase(ds, name);
+    await ds.query(`CREATE DATABASE "${name}" TEMPLATE "${templateName}"`);
+  });
+  const dataSource = buildIntegrationDataSource(name);
+  await dataSource.initialize();
+  return dataSource;
+}
+
+/**
+ * Identical to createIntegrationDataSource before the template-clone optimization: creates a
+ * genuinely empty database and runs the complete migration chain against it from scratch.
+ * Reserved for suites whose entire purpose is proving the real migration chain itself
+ * succeeds end-to-end against an empty database. Everything else should use
+ * createIntegrationDataSource, which clones a once-built template for speed while producing
+ * the identical schema.
+ */
+export async function createIntegrationDataSourceFromScratch(label: string): Promise<DataSource> {
   const dataSource = await createEmptyIntegrationDataSource(label);
   await dataSource.initialize();
   await dataSource.runMigrations({ transaction: 'all' });
@@ -126,12 +239,7 @@ export async function destroyIntegrationDataSource(dataSource: DataSource): Prom
     await dataSource.destroy();
   }
   await withAdmin(async (ds) => {
-    await ds.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-        WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [name],
-    );
-    await ds.query(`DROP DATABASE IF EXISTS "${name}"`);
+    await dropOwnDatabase(ds, name);
   });
 }
 
@@ -143,6 +251,157 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
   if (!rows.length) return;
   const list = rows.map((r) => `"${r.tablename}"`).join(', ');
   await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  // V1-ADMIN-AUTHORIZATION-HARDENING-01: `authorization_functions`/`authorization_roles`/
+  // `authorization_role_functions` are bootstrap REFERENCE/governance data (seeded exactly once
+  // by AuthorizationCatalogueSeedService.onApplicationBootstrap() when the Nest app under test
+  // is created), not test-authored business rows — conceptually closer to `typeorm_migrations`
+  // (excluded above) than to a table a test expects to start empty. Before this task nothing in
+  // the live runtime actually depended on this data surviving a mid-suite TRUNCATE (the two
+  // pre-existing `requiredFunctions` call sites — FINANCE_ROLE_ASSIGN/REVOKE — are exercised by
+  // suites that provision their own role assignments per-test and happened not to hit this
+  // gap), so the gap was latent. This task wires `requiredFunctions` into several more
+  // `AuthorizationService.requireFunction()` call sites reached via real, non-mocked workforce
+  // sessions (e.g. the real local-admin SUPER_ADMIN login in
+  // test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts), which DOES
+  // depend on this data surviving every `beforeEach(truncateAllTables)` call, not just the
+  // one-time bootstrap seed — so the catalogue is restored here, every time, to the exact
+  // reference data `AuthorizationCatalogueSeedService` would (idempotently) converge on anyway.
+  // Suites that specifically want to test the seeder/catalogue's own empty-table behavior use
+  // `AuthorizationCatalogueSeedService.reseed()` directly (truncate-then-seed in one call) and
+  // are unaffected by this — they do not rely on `truncateAllTables` leaving the catalogue empty.
+  await reseedAuthorizationCatalogue(dataSource);
+  // V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01: identical rationale — `dashboard_templates`/
+  // `role_dashboard_assignments` are bootstrap reference data seeded once by
+  // `DashboardSeedService.onApplicationBootstrap()`, and suites that exercise `/my-dashboard`,
+  // `/widgets/:widgetKey`, or the dashboard settings endpoints via a real, non-mocked app need it
+  // to survive every `beforeEach(truncateAllTables)` call, not just the first test.
+  await reseedDashboardPlatform(dataSource);
+  // Registry defaults are migration-owned reference data; restore them after the test-only
+  // wholesale TRUNCATE, just like the authorization and dashboard catalogues above.
+  const registry: Array<{ present: boolean }> = await dataSource.query(
+    `SELECT to_regclass('public.notification_templates') IS NOT NULL AS present`,
+  );
+  if (registry[0]?.present) await seedNotificationDefaultsV1(dataSource.manager);
+}
+
+/**
+ * Re-inserts the `authorization_functions`/`authorization_roles`/`authorization_role_functions`
+ * bootstrap reference data directly via the DataSource (no NestJS DI/app context required),
+ * mirroring AuthorizationCatalogueSeedService's insert logic exactly against the same exported
+ * seed arrays it uses. Safe to call against already-empty (just-truncated) catalogue tables.
+ */
+async function reseedAuthorizationCatalogue(dataSource: DataSource): Promise<void> {
+  const tableCheck: Array<{ exists: boolean }> = await dataSource.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'authorization_functions') AS exists`,
+  );
+  if (!tableCheck[0]?.exists) return; // migration not present in this suite's schema — nothing to do
+
+  const now = new Date();
+  for (const item of AUTHORIZATION_FUNCTION_SEED) {
+    await dataSource.query(
+      `INSERT INTO authorization_functions
+         (function_code, domain, name, description, sensitivity, v1_status, assignable,
+          finance_class_restricted, maker_checker_required, approval_required,
+          super_admin_excluded, auditor_visible, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+       ON CONFLICT (function_code) DO NOTHING`,
+      [
+        item.functionCode,
+        item.domain,
+        item.name,
+        item.description,
+        item.sensitivity,
+        item.v1Status,
+        item.assignable,
+        item.financeClassRestricted ?? false,
+        item.makerCheckerRequired ?? false,
+        item.approvalRequired ?? false,
+        item.superAdminExcluded ?? false,
+        item.auditorVisible ?? true,
+        item.notes ?? null,
+        now,
+      ],
+    );
+  }
+
+  const roleIdByKey = new Map<string, string>();
+  for (const item of AUTHORIZATION_ROLE_SEED) {
+    const existing: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM authorization_roles WHERE role_key = $1`,
+      [item.roleKey],
+    );
+    if (existing[0]) {
+      roleIdByKey.set(item.roleKey, existing[0].id);
+      continue;
+    }
+    const id = randomUUID();
+    await dataSource.query(
+      `INSERT INTO authorization_roles
+         (id, role_key, display_name, description, is_active, is_system_seeded,
+          finance_role_class, administrative_capability, read_only, maker_eligible,
+          checker_eligible, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,true,true,$5,$6,$7,$8,$9,'SYSTEM_SEED',$10,$10)
+       ON CONFLICT (role_key) DO NOTHING`,
+      [
+        id,
+        item.roleKey,
+        item.displayName,
+        item.description,
+        item.financeRoleClass ?? false,
+        item.administrativeCapability ?? false,
+        item.readOnly ?? false,
+        item.makerEligible ?? false,
+        item.checkerEligible ?? false,
+        now,
+      ],
+    );
+    roleIdByKey.set(item.roleKey, id);
+  }
+
+  for (const item of AUTHORIZATION_ROLE_FUNCTION_SEED) {
+    const roleId = roleIdByKey.get(item.roleKey);
+    if (!roleId) continue;
+    await dataSource.query(
+      `INSERT INTO authorization_role_functions
+         (id, role_id, function_code, access_type, is_active, assigned_by, assigned_at, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,true,'SYSTEM_SEED',$5,$5,$5)
+       ON CONFLICT DO NOTHING`,
+      [randomUUID(), roleId, item.functionCode, item.accessType, now],
+    );
+  }
+}
+
+/**
+ * Re-inserts the `dashboard_templates`/`role_dashboard_assignments` bootstrap reference data
+ * directly via the DataSource, mirroring `DashboardSeedService`'s insert-missing-only logic
+ * against the same exported seed arrays it uses. Safe to call against already-empty
+ * (just-truncated) tables, and a no-op if the migration hasn't run in this suite's schema.
+ */
+async function reseedDashboardPlatform(dataSource: DataSource): Promise<void> {
+  const tableCheck: Array<{ exists: boolean }> = await dataSource.query(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'dashboard_templates') AS exists`,
+  );
+  if (!tableCheck[0]?.exists) return;
+
+  const now = new Date();
+  for (const item of DASHBOARD_TEMPLATE_SEED) {
+    await dataSource.query(
+      `INSERT INTO dashboard_templates
+         (template_key, display_name, description, operational_area, layout, is_active, metadata, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,true,NULL,$6,$6)
+       ON CONFLICT (template_key) DO NOTHING`,
+      [item.templateKey, item.displayName, item.description, item.operationalArea, JSON.stringify({ widgets: item.widgets }), now],
+    );
+  }
+  for (const item of ROLE_DASHBOARD_ASSIGNMENT_SEED) {
+    await dataSource.query(
+      `INSERT INTO role_dashboard_assignments
+         (role_key, template_key, assigned_by, assigned_at, reason, created_at, updated_at)
+       VALUES ($1,$2,'SYSTEM_SEED',$3,$4,$3,$3)
+       ON CONFLICT (role_key) DO NOTHING`,
+      [item.roleKey, item.templateKey, now, item.reason],
+    );
+  }
 }
 
 /** Reads a required single scalar from a query result without unchecked index access. */

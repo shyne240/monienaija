@@ -23,8 +23,40 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletStatus } from '../wallet/wallet.enums';
+import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
+import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
+import { CommissionEngine } from '../commission/commission.engine';
+import { CommercialAccountingService } from '../commercial-accounting/commercial-accounting.service';
+import {
+  annotateCommissionDecisionWithPosting,
+  annotateFeeDecisionWithPosting,
+} from '../commercial-accounting/commercial-decision-accounting.annotators';
+import { CommercialDecisionSnapshotService } from '../commercial-decision/commercial-decision-snapshot.service';
+import {
+  commissionAllocatedAtAccountingBoundary,
+  commissionFeeBasisMinor,
+  commissionFeeCollectionStateOf,
+  commissionNone,
+  feeNotConfigured,
+  limitApproved,
+  limitNotEvaluated,
+  rewardNone,
+} from '../commercial-decision/commercial-decision.defaults';
 import { Transfer } from './transfer.entity';
-import { TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
+import {
+  buildAuditedInternalTransferCompletedEvent,
+  buildAuditedInternalTransferFailedEvent,
+  INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+  INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+  INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+  INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
+  INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
+  transferCompletedEventKey,
+  transferFailedEventKey,
+  type AuditedTransferRecipientIdentity,
+} from './transfer-events';
+import { limitCodeToTransferFailureCode, TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
 import type {
   CreateTransferCommand,
   TransferFailure,
@@ -69,6 +101,26 @@ export class TransferService {
     private readonly outboxService?: OutboxService,
     @Optional()
     private readonly metricsService?: MetricsService,
+    @Optional()
+    private readonly limitEnforcementService?: LimitEnforcementService,
+    // V1-COMMERCIAL-DECISION-02 — pilot snapshot wiring (WALLET_TRANSFER only). Both optional so
+    // unit tests constructing TransferService directly keep compiling; absent → no snapshot.
+    @Optional()
+    private readonly feeRuleResolverService?: FeeRuleResolverService,
+    @Optional()
+    private readonly commercialDecisionSnapshotService?: CommercialDecisionSnapshotService,
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — single fee computation authority (optional; absent →
+    // legacy evidence shape for manual-construction unit tests).
+    @Optional()
+    private readonly feeRuleCalculatorService?: FeeRuleCalculatorService,
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — single commission decision authority (optional; absent →
+    // legacy commissionNone() shape for manual-construction unit tests).
+    @Optional()
+    private readonly commissionEngine?: CommissionEngine,
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — @Optional so pre-existing unit constructions
+    // (manual new TransferService(...)) keep working; absent = legacy evidence-only behavior.
+    @Optional()
+    private readonly commercialAccountingService?: CommercialAccountingService,
   ) {}
 
   async createTransfer(command: CreateTransferCommand): Promise<TransferView> {
@@ -81,9 +133,27 @@ export class TransferService {
           return this.executeWithinTransaction(manager, normalized);
         });
       } catch (error) {
-        if (this.isRetryableTransactionError(error) && attempt < 2) {
-          await this.metricsService?.increment(undefined, 'retries');
-          continue;
+        if (this.isRetryableTransactionError(error)) {
+          if (attempt < 2) {
+            await this.metricsService?.increment(undefined, 'retries');
+            continue;
+          }
+          // V1-INFRA-03: the bounded retry budget (3 attempts, matching the A5 Ledger /
+          // V1-TEST-01 precedent) is exhausted and PostgreSQL is still reporting a genuine
+          // serialization failure or deadlock (SQLSTATE 40001/40P01). This is a real,
+          // demonstrated-live-under-concurrency outcome — not a bug to retry forever — so it
+          // must surface as the structured, retryable-by-the-client 409 Conflict below instead
+          // of re-throwing the raw QueryFailedError (which the global exception filter would
+          // otherwise turn into an opaque, non-actionable 500 Internal Server Error).
+          //
+          // V1-INFRA-03 (follow-up): the exception carries the stable, documented machine code
+          // `TRANSACTION_CONTENTION_RETRY_EXHAUSTED` — the existing house convention already
+          // established in AgentCashToCashService.transactionContentionExhaustedException() —
+          // rather than the generic NestJS "Conflict" reason phrase, so a caller (and the
+          // V1-LIMIT-05 test harness's own transient-contention retry wrapper) can distinguish
+          // "transient contention, safe to retry the whole request" from a final/permanent
+          // conflict, without ever re-exposing the raw PostgreSQL SQLSTATE or driver error type.
+          throw this.transactionContentionExhaustedException();
         }
 
         if (this.isConstraintViolation(error, 'uq_transfers_idempotency_key')) {
@@ -106,7 +176,7 @@ export class TransferService {
     }
 
     if (!result) {
-      throw new ConflictException('The transfer could not be completed after concurrent retries');
+      throw this.transactionContentionExhaustedException();
     }
 
     if (result.failure) {
@@ -301,6 +371,13 @@ export class TransferService {
     });
     await transferRepository.save(transfer);
 
+    // Authoritative recipient identity for the versioned notification event contract,
+    // derived from the pessimistically-locked wallet rows that back the ledger posting.
+    const notificationRecipients: AuditedTransferRecipientIdentity = {
+      sourceCustomerId: sourceWallet.customerId,
+      destinationCustomerId: destinationWallet.customerId,
+    };
+
     if (
       sourceWallet.status !== WalletStatus.ACTIVE ||
       destinationWallet.status !== WalletStatus.ACTIVE
@@ -309,7 +386,52 @@ export class TransferService {
         code: TransferFailureCode.WALLET_NOT_ACTIVE,
         statusCode: 409,
         message: 'Both wallets must be active to transfer funds',
-      });
+      }, notificationRecipients);
+    }
+
+    // V1-SYSTEM-01: WalletAccount.status alone is not authoritative for whether the owning
+    // customer may send or receive funds — wallets are created ACTIVE and are never
+    // transitioned when a customer is later SUSPENDED/CLOSED. Re-check the owning customer's
+    // CURRENT lifecycle status here, at the financial boundary, for both legs of the transfer.
+    // This mirrors the existing, already-correct pattern used by agent cash-in, agent cash-out,
+    // and agent C2C claim (all of which independently check `customers.status === 'ACTIVE'`
+    // before moving money). Non-UUID customerId values identify internal/system wallets
+    // (e.g. fee/commission/suspense accounts) and are intentionally skipped. A UUID-shaped
+    // customerId with NO backing `customers` row is also intentionally NOT blocked here: in
+    // production every real wallet is created with a genuine customerId from the customer
+    // bounded context (WalletAccount.customerId is documented as an "opaque reference" that
+    // this service must not assume is always a customer), so an absent row only ever occurs
+    // for non-customer/system wallets — blocking on absence would reject legitimate non-customer
+    // principals, not add any real protection against suspended customers.
+    const customerWalletCustomerIds = [sourceWallet.customerId, destinationWallet.customerId]
+      .filter((id, index, arr) => arr.indexOf(id) === index)
+      .filter((id) => UUID_PATTERN.test(id));
+    if (customerWalletCustomerIds.length > 0) {
+      const statusRows: Array<{ id: string; status: string; deleted_at: string | null }> =
+        await manager.query(
+          `SELECT id, status, deleted_at FROM customers WHERE id = ANY($1::uuid[])`,
+          [customerWalletCustomerIds],
+        );
+      const statusById = new Map(statusRows.map((row) => [row.id, row]));
+      const sourceIneligible =
+        UUID_PATTERN.test(sourceWallet.customerId) &&
+        (() => {
+          const row = statusById.get(sourceWallet.customerId);
+          return !!row && (row.deleted_at !== null || row.status !== 'ACTIVE');
+        })();
+      const destinationIneligible =
+        UUID_PATTERN.test(destinationWallet.customerId) &&
+        (() => {
+          const row = statusById.get(destinationWallet.customerId);
+          return !!row && (row.deleted_at !== null || row.status !== 'ACTIVE');
+        })();
+      if (sourceIneligible || destinationIneligible) {
+        return this.markFailed(manager, transfer, {
+          code: TransferFailureCode.CUSTOMER_NOT_ACTIVE,
+          statusCode: 409,
+          message: 'Both the sending and receiving customer must be active to transfer funds',
+        }, notificationRecipients);
+      }
     }
 
     if (
@@ -321,7 +443,52 @@ export class TransferService {
         code: TransferFailureCode.CURRENCY_MISMATCH,
         statusCode: 409,
         message: 'Source, destination, and transfer currencies must match',
-      });
+      }, notificationRecipients);
+    }
+
+    // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
+    let limitIdempotencyKey: string | null = null;
+    // V1-COMMERCIAL-DECISION-02: capture the AUTHORITATIVE enforcement result (profile, rules,
+    // reservations, usages) so the commercial snapshot records what actually governed this
+    // transfer — no second evaluation is ever performed.
+    let limitOutcome: EnforceResult | null = null;
+    if (this.limitEnforcementService && UUID_PATTERN.test(sourceWallet.customerId)) {
+      const limitProduct = 'WALLET_TRANSFER';
+      const limitDirection = 'OUTGOING';
+      const amountMinorStr = command.amountMinor.toString();
+      limitIdempotencyKey = command.idempotencyKey;
+      try {
+        limitOutcome = await this.limitEnforcementService.enforceWithManager(manager, {
+          principalType: 'CUSTOMER',
+          principalId: sourceWallet.customerId,
+          product: limitProduct,
+          currency: command.currency,
+          direction: limitDirection,
+          channel: null,
+          amountMinor: amountMinorStr,
+          idempotencyKey: limitIdempotencyKey,
+          requestHash: command.requestHash,
+          correlationId: `transfer:${transfer.id}`,
+          now: new Date(),
+          walletLedgerAccountId: sourceWallet.ledgerAccountId,
+          principalWalletCustomerId: sourceWallet.customerId,
+        });
+      } catch (error) {
+        if (error instanceof HttpException) {
+          const resp: any = error.getResponse();
+          const rawCode = (resp && (resp.error || resp.code)) as string | undefined;
+          // V1-LIMIT-05: type-safe mapping of the stable LIMIT_* union onto TransferFailureCode
+          const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
+          if (limitCode) {
+            return this.markFailed(manager, transfer, {
+              code: limitCode,
+              statusCode: error.getStatus(),
+              message: (resp.message as string) ?? String(limitCode),
+            }, notificationRecipients);
+          }
+        }
+        throw error;
+      }
     }
 
     let journalId: string;
@@ -356,8 +523,38 @@ export class TransferService {
         throw error;
       }
 
-      return this.markFailed(manager, transfer, this.failureFromLedgerException(error));
+      if (limitIdempotencyKey && this.limitEnforcementService) {
+        try {
+          await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+        } catch {
+          // best-effort release; if no reservations exist this is a no-op
+        }
+      }
+      return this.markFailed(manager, transfer, this.failureFromLedgerException(error), notificationRecipients);
     }
+
+    if (limitIdempotencyKey && this.limitEnforcementService) {
+      try {
+        await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+      } catch {
+        // best-effort commit; if no reservations exist this is a no-op
+      }
+    }
+
+    // — V1-COMMERCIAL-DECISION-02 (pilot): record the immutable commercial decision snapshot
+    // INSIDE this same SERIALIZABLE transaction, after the ledger posted and limits committed,
+    // and only for transfers that reach COMPLETED. It commits atomically with the financial
+    // state on success and rolls back with it on any downstream failure. NO fee is charged:
+    // the fee decision stays NOT_CONFIGURED (zero production rules; ruleRefs merely capture the
+    // resolved registry evidence when a rule exists).
+    await this.recordCommercialDecisionSnapshot(manager, {
+      transfer,
+      command,
+      sourceCustomerId: sourceWallet.customerId,
+      journalId,
+      limitOutcome,
+      payerLedgerAccountId: sourceWallet.ledgerAccountId,
+    });
 
     transfer.status = TransferStatus.COMPLETED;
     transfer.journalId = journalId;
@@ -378,19 +575,210 @@ export class TransferService {
         amountMinor: transfer.amountMinor,
       },
     });
-    await this.outboxService?.enqueue(manager, {
-      eventType: 'transfer.completed',
+    // Notification producer contract v1 (Arena 3 producer correction): the audited
+    // completion path emits the same versioned event identity as the lifecycle producer —
+    // stable eventKey, schemaVersion 1, RESTRICTED_FINANCIAL/A5 classification — and the
+    // authoritative recipient identity/safe facts the notification.v1 consumer requires
+    // (locked-wallet customer ids + committed amount/currency). Enqueued inside the same
+    // SERIALIZABLE transaction as the financial state (atomicity preserved); enqueueOnce
+    // makes replays converge without duplicates. Ledger/accounting logic is untouched.
+    await this.outboxService?.enqueueOnce(manager, {
+      eventKey: transferCompletedEventKey(transfer.id),
+      eventType: INTERNAL_TRANSFER_COMPLETED_EVENT_TYPE,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
-      payload: {
-        transferId: transfer.id,
-        journalId: transfer.journalId,
-        paymentReference: transfer.paymentReference,
-      },
+      schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+      classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+      retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+      occurredAt: transfer.completedAt ?? new Date(),
+      correlationId: `transfer:${transfer.id}`,
+      payload: buildAuditedInternalTransferCompletedEvent(
+        transfer,
+        notificationRecipients,
+        transfer.completedAt ?? new Date(),
+      ),
     });
     await this.metricsService?.increment(manager, 'transfers.completed');
 
     return { transferId: transfer.id };
+  }
+
+  /**
+   * V1-COMMERCIAL-DECISION-02 — pilot commercial snapshot capture for WALLET_TRANSFER.
+   *
+   * Runs inside the existing SERIALIZABLE transfer transaction via
+   * `recordDecisionWithManager` (never `recordDecision`, which would open a second
+   * transaction). Read-only fee resolution via `FeeRuleResolverService.resolveWithManager`
+   * participates in the same transaction; its result is EVIDENCE ONLY — no fee is calculated
+   * or charged and the ledger is untouched by this method.
+   *
+   * Fee decision semantics (DECISION-01 precedent): status stays NOT_CONFIGURED while V1 is
+   * fee-free; when a fee rule exists its ruleId/version/effective parameters are captured in
+   * fee_decision.ruleRefs for future APPLIED decisions; an AMBIGUOUS resolution is recorded
+   * honestly without selecting a rule. Limit evidence comes from the authoritative
+   * EnforceResult captured during this same transfer — never re-evaluated.
+   */
+  private async recordCommercialDecisionSnapshot(
+    manager: EntityManager,
+    ctx: {
+      transfer: Transfer;
+      command: NormalizedTransfer;
+      sourceCustomerId: string;
+      journalId: string;
+      limitOutcome: EnforceResult | null;
+      /** Payer-side ledger account for the commercial accounting legs (source wallet in WT). */
+      payerLedgerAccountId: string;
+    },
+  ): Promise<void> {
+    if (!this.feeRuleResolverService || !this.commercialDecisionSnapshotService) return;
+    if (!UUID_PATTERN.test(ctx.sourceCustomerId)) return;
+
+    const productCode = 'WALLET_TRANSFER';
+    const decisionAt = new Date();
+    const amountMinor = ctx.command.amountMinor.toString();
+
+    const resolution = await this.feeRuleResolverService.resolveWithManager(manager, {
+      productCode,
+      currency: ctx.command.currency,
+      at: decisionAt,
+    });
+
+    // V1-COMMERCIAL-IMPLEMENTATION-01 — authoritative fee computation (single calculator authority);
+    // legacy inline evidence retained only for calculator-absent (manual-construction) wiring.
+    let feeDecision: Record<string, unknown>;
+    if (this.feeRuleCalculatorService) {
+      feeDecision = {
+        ...this.feeRuleCalculatorService.compute({
+          resolution,
+          principalAmountMinor: amountMinor,
+          currency: ctx.command.currency,
+        }),
+
+      };
+    } else {
+      feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
+      if (resolution.status === 'RESOLVED' && resolution.rule) {
+        feeDecision.ruleRefs = [
+          {
+            ruleId: resolution.rule.ruleId,
+            ruleVersion: resolution.rule.ruleVersion,
+            flatFeeMinor: resolution.rule.flatFeeMinor,
+            percentageBps: resolution.rule.percentageBps,
+            minimumFeeMinor: resolution.rule.minimumFeeMinor,
+            maximumFeeMinor: resolution.rule.maximumFeeMinor,
+            vatBps: resolution.rule.vatBps,
+            effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
+            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            priority: resolution.rule.priority,
+          },
+        ];
+      } else if (resolution.status === 'AMBIGUOUS') {
+        feeDecision.resolutionStatus = 'AMBIGUOUS';
+        feeDecision.ambiguousRuleIds = resolution.ambiguousRuleIds ?? [];
+      }
+    }
+
+    // V1-COMMERCIAL-IMPLEMENTATION-02 — authoritative commission decision evaluated by the single
+    // commission engine authority (rule resolver + calculator + decision facade) INSIDE this same
+    // SERIALIZABLE transaction. The flow never computes commission itself; an empty rule registry
+    // yields the identical byte-shape NONE as before, so an unwired/empty configuration cannot
+    // change behavior by accident. Fail-closed: AMBIGUOUS rules or an unavailable FEE base throw
+    // (409/400) and abort BEFORE money commits — no silent rule pick, no partial snapshot.
+    // WALLET_TRANSFER has no acting agent, so no agentId/agentClassId context is supplied;
+    // aggregator commission is disabled (aggregatorId never supplied).
+    let commissionDecision: Record<string, unknown> = commissionNone();
+    if (this.commissionEngine) {
+      const engineDecision = await this.commissionEngine.decideWithManager(
+        manager,
+        {
+          productCode,
+          currency: ctx.command.currency,
+          agentId: null,
+          agentClassId: null,
+          aggregatorId: null,
+          at: decisionAt,
+        },
+        {
+          principalMinor: amountMinor,
+          feeMinor: commissionFeeBasisMinor(feeDecision),
+        },
+      );
+      if (engineDecision.status === 'ALLOCATED') {
+        commissionDecision = {
+          ...commissionAllocatedAtAccountingBoundary(engineDecision, {
+            feeCollectionState: commissionFeeCollectionStateOf(feeDecision),
+            commissionEvent: 'TRANSACTION_COMPLETION',
+          }),
+        };
+      }
+    }
+
+    // V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — approved-decision accounting posting INSIDE
+    // this same SERIALIZABLE transaction (DP-02=A / DP-15=A). Config-gated: disabled (the default
+    // without COMMERCIAL_ACCOUNTING_ENABLED=true) leaves every decision byte-shape unchanged.
+    // Any blocker throws here → the whole operation (principal journal + snapshot) rolls back.
+    if (this.commercialAccountingService && this.commercialAccountingService.isEnabled()) {
+      const accountingOutcome = await this.commercialAccountingService.postForCompletion(manager, {
+        productCode,
+        currency: ctx.command.currency,
+        baseIdempotencyKey: `transfer:${ctx.transfer.id}`,
+        correlationId: `transfer:${ctx.transfer.id}`,
+        reference: ctx.command.reference ?? null,
+        snapshotIdempotencyKey: `transfer:${ctx.transfer.id}`,
+        metadata: {
+          flow: 'WALLET_TRANSFER',
+          transferId: ctx.transfer.id,
+          sourceCustomerId: ctx.sourceCustomerId,
+        },
+        feePayerLedgerAccountId: ctx.payerLedgerAccountId,
+        feePayerCustomerId: ctx.sourceCustomerId,
+        feeDecision,
+        commissionDecision,
+      });
+      feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
+      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
+        commissionEvent: 'TRANSACTION_COMPLETION',
+      });
+    }
+
+    const limitDecision = ctx.limitOutcome
+      ? limitApproved({
+          profileCode: ctx.limitOutcome.limitProfileCode ?? null,
+          assignmentId: ctx.limitOutcome.assignmentId ?? null,
+          ruleRefs: (ctx.limitOutcome.ruleRefs ?? []).map((r) => ({
+            ruleId: r.ruleId,
+            dimension: r.dimension,
+            limitValueMinor: r.limitValueMinor,
+            limitValueCount: r.limitValueCount,
+          })),
+          reservationIds: ctx.limitOutcome.reservationIds ?? [],
+          usageIds: ctx.limitOutcome.usageIds ?? [],
+        })
+      : limitNotEvaluated();
+
+    await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
+      idempotencyKey: `transfer:${ctx.transfer.id}`,
+      product: productCode,
+      direction: 'OUTGOING',
+      channel: null,
+      principalType: 'CUSTOMER',
+      principalId: ctx.sourceCustomerId,
+      currency: ctx.command.currency,
+      principalAmountMinor: amountMinor,
+      transactionReference: ctx.transfer.id,
+      correlationId: `transfer:${ctx.transfer.id}`,
+      journalId: ctx.journalId,
+      decisionStatus: 'FINAL',
+      decidedAt: decisionAt,
+      finalizedAt: decisionAt,
+      feeDecision: feeDecision as never,
+      commissionDecision: commissionDecision as never,
+      rewardDecision: rewardNone(),
+      limitDecision,
+      revenueDecision: null,
+      configurationVersion: null,
+      createdBy: 'transfer-service',
+    });
   }
 
   private async lockWallets(manager: EntityManager, walletIds: string[]): Promise<WalletAccount[]> {
@@ -408,6 +796,7 @@ export class TransferService {
     manager: EntityManager,
     transfer: Transfer,
     failure: TransferFailure,
+    recipients: AuditedTransferRecipientIdentity,
   ): Promise<TransferTransactionResult> {
     transfer.status = TransferStatus.FAILED;
     transfer.journalId = null;
@@ -424,11 +813,27 @@ export class TransferService {
       correlationId: `transfer:${transfer.id}`,
       newValues: { status: transfer.status, failureCode: transfer.failureCode },
     });
-    await this.outboxService?.enqueue(manager, {
-      eventType: 'transfer.failed',
+    // Notification producer contract v1 (Arena 3 producer correction): authoritative
+    // recipient identity from the locked wallet rows so the notification.v1 consumer can
+    // address the failure notice to the source customer instead of quarantining the event.
+    // No journal exists for a failed transfer and no failure prose/PIN/secret is emitted.
+    const failedAt = new Date();
+    await this.outboxService?.enqueueOnce(manager, {
+      eventKey: transferFailedEventKey(transfer.id),
+      eventType: INTERNAL_TRANSFER_FAILED_EVENT_TYPE,
       aggregateType: 'TRANSFER',
       aggregateId: transfer.id,
-      payload: { transferId: transfer.id, failureCode: transfer.failureCode },
+      schemaVersion: INTERNAL_TRANSFER_EVENT_SCHEMA_VERSION,
+      classification: INTERNAL_TRANSFER_EVENT_CLASSIFICATION,
+      retentionClass: INTERNAL_TRANSFER_EVENT_RETENTION_CLASS,
+      occurredAt: failedAt,
+      correlationId: `transfer:${transfer.id}`,
+      payload: buildAuditedInternalTransferFailedEvent(
+        transfer,
+        recipients,
+        transfer.failureCode,
+        failedAt,
+      ),
     });
     await this.metricsService?.increment(manager, 'transfers.failed');
     return { transferId: transfer.id };
@@ -598,6 +1003,19 @@ export class TransferService {
       createdAt: transfer.createdAt,
       completedAt: transfer.completedAt,
     };
+  }
+
+  // V1-INFRA-03: mirrors the established house convention in
+  // AgentCashToCashService.transactionContentionExhaustedException() — a stable, documented
+  // machine code (`TRANSACTION_CONTENTION_RETRY_EXHAUSTED`) set as both `error` and `code` in
+  // the response body, plus `.code` directly on the exception instance, so a caller never has
+  // to parse a free-text message to recognize "safe to retry the whole request".
+  private transactionContentionExhaustedException(): ConflictException {
+    const code = 'TRANSACTION_CONTENTION_RETRY_EXHAUSTED';
+    const message = 'The transfer could not be completed after concurrent retries';
+    const exception = new ConflictException({ message, error: code, code });
+    (exception as unknown as { code?: string }).code = code;
+    return exception;
   }
 
   private isRetryableTransactionError(error: unknown): boolean {

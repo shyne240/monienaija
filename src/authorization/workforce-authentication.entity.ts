@@ -50,6 +50,14 @@ export class A2WorkforceSession {
 @Index('idx_a2_finance_assignment_principal_status', ['principalId', 'status'])
 @Index('idx_a2_finance_assignment_role_status', ['roleKey', 'status'])
 @Check('chk_a2_finance_assignment_status', "status IN ('ACTIVE','REVOKED')")
+@Check(
+  'chk_a2_finance_assignment_initiated_scope',
+  "initiated_scope IN ('SUPER_ADMIN_SCOPE','ADMINISTRATOR_SCOPE')",
+)
+@Check(
+  'chk_administrator_scope_role_allowlist',
+  "initiated_scope <> 'ADMINISTRATOR_SCOPE' OR role_key IN ('OPERATIONS','AGENT_NETWORK_MANAGER','COMPLIANCE','RISK_FRAUD','CUSTOMER_SERVICE','TREASURY')",
+)
 export class A2FinanceRoleAssignment {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ name: 'assignment_reference', type: 'varchar', length: 160 })
@@ -59,6 +67,15 @@ export class A2FinanceRoleAssignment {
   @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: string;
   @Column({ type: 'jsonb' }) scopes!: readonly string[];
   @Column({ type: 'varchar', length: 16 }) status!: 'ACTIVE' | 'REVOKED';
+  /**
+   * V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 (Decision 2): immutable at write
+   * time, set by the service layer, never updated after insert. 'ADMINISTRATOR_SCOPE' rows are
+   * structurally confined (see the CHECK constraint above, mirrored in migration 1785753600085)
+   * to exactly the six ADMINISTRATOR-delegable operational roles — this is a database-level
+   * guarantee, independent of any application code path.
+   */
+  @Column({ name: 'initiated_scope', type: 'varchar', length: 32, default: 'SUPER_ADMIN_SCOPE' })
+  initiatedScope!: 'SUPER_ADMIN_SCOPE' | 'ADMINISTRATOR_SCOPE';
   @Column({ type: 'boolean', default: true }) interim!: true;
   @Column({ name: 'effective_from', type: 'timestamptz' }) effectiveFrom!: Date;
   @Column({ name: 'effective_to', type: 'timestamptz' }) effectiveTo!: Date;
@@ -87,7 +104,7 @@ export class A2WorkforceBootstrapConsumption {
   @Column({ type: 'varchar', length: 255 }) nonce!: string;
   @Column({ name: 'statement_hash', type: 'char', length: 64 }) statementHash!: string;
   @Column({ name: 'principal_id', type: 'varchar', length: 160 }) principalId!: string;
-  @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: 'FINANCE_ADMIN';
+  @Column({ name: 'role_key', type: 'varchar', length: 100 }) roleKey!: 'SUPER_ADMIN';
   @Column({ type: 'jsonb' }) scopes!: readonly string[];
   @Column({ type: 'varchar', length: 80 }) environment!: string;
   @Column({ type: 'varchar', length: 80 }) audience!: string;
@@ -95,6 +112,41 @@ export class A2WorkforceBootstrapConsumption {
   signingKeyReference!: string;
   @Column({ name: 'approval_change_reference', type: 'varchar', length: 160 })
   approvalChangeReference!: string;
+  @Column({ name: 'consumed_at', type: 'timestamptz' }) consumedAt!: Date;
+  @Column({ name: 'audit_reference', type: 'uuid' }) auditReference!: string;
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
+}
+
+/**
+ * V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — structural twin of `A2WorkforceBootstrapConsumption`
+ * (same one-time, nonce-unique consumption-ledger shape), but for the SUPER_ADMIN
+ * recovery/revocation ceremony instead of the initial-bootstrap ceremony. A row here is written
+ * in the SAME database transaction that revokes the target `A2FinanceRoleAssignment` row and
+ * every active `A2WorkforceSession` for that principal — see SuperAdminRecoveryService — so a
+ * successful consumption and its audit/replay evidence are always atomic with each other.
+ */
+@Entity({ name: 'a2_super_admin_recovery_consumptions' })
+@Index('uq_a2_super_admin_recovery_nonce', ['nonce'], { unique: true })
+@Index('idx_a2_super_admin_recovery_target', ['targetPrincipalId'])
+export class A2SuperAdminRecoveryConsumption {
+  @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column({ name: 'recovery_reference', type: 'varchar', length: 160 })
+  recoveryReference!: string;
+  @Column({ type: 'varchar', length: 255 }) nonce!: string;
+  @Column({ name: 'statement_hash', type: 'char', length: 64 }) statementHash!: string;
+  @Column({ type: 'varchar', length: 40 }) operation!: 'REVOKE_SUPER_ADMIN';
+  @Column({ name: 'target_assignment_reference', type: 'varchar', length: 160 })
+  targetAssignmentReference!: string;
+  @Column({ name: 'target_principal_id', type: 'varchar', length: 160 })
+  targetPrincipalId!: string;
+  @Column({ type: 'varchar', length: 500 }) reason!: string;
+  @Column({ type: 'varchar', length: 80 }) environment!: string;
+  @Column({ type: 'varchar', length: 80 }) audience!: string;
+  @Column({ name: 'signing_key_reference', type: 'varchar', length: 160 })
+  signingKeyReference!: string;
+  @Column({ name: 'approval_change_reference', type: 'varchar', length: 160 })
+  approvalChangeReference!: string;
+  @Column({ name: 'consumed_by', type: 'varchar', length: 160 }) consumedBy!: string;
   @Column({ name: 'consumed_at', type: 'timestamptz' }) consumedAt!: Date;
   @Column({ name: 'audit_reference', type: 'uuid' }) auditReference!: string;
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;

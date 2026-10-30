@@ -13,10 +13,12 @@ import { RegistrationScreen } from '../screens/unauthenticated/RegistrationScree
 
 import { HomeScreen } from '../screens/authenticated/HomeScreen';
 import { SendMoneyScreen } from '../screens/authenticated/SendMoneyScreen';
-import { FundWalletScreen } from '../screens/authenticated/FundWalletScreen';
-import { WithdrawScreen } from '../screens/authenticated/WithdrawScreen';
 import { TransactionsScreen } from '../screens/authenticated/TransactionsScreen';
 import { ProfileScreen } from '../screens/authenticated/ProfileScreen';
+import { TransactionPinScreen } from '../screens/authenticated/TransactionPinScreen';
+import { SupportScreen } from '../screens/authenticated/SupportScreen';
+import { CreateSupportTicketScreen } from '../screens/authenticated/CreateSupportTicketScreen';
+import { SupportTicketDetailScreen } from '../screens/authenticated/SupportTicketDetailScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -71,22 +73,12 @@ export const AppNavigator: React.FC = () => {
           <Stack.Screen
             name="Home"
             component={HomeScreen}
-            options={{ title: 'MoneyNaija' }}
+            options={{ title: 'MonieNaija' }}
           />
           <Stack.Screen
             name="SendMoney"
             component={SendMoneyScreen}
             options={{ title: 'Send Money' }}
-          />
-          <Stack.Screen
-            name="FundWallet"
-            component={FundWalletScreen}
-            options={{ title: 'Fund Wallet' }}
-          />
-          <Stack.Screen
-            name="Withdraw"
-            component={WithdrawScreen}
-            options={{ title: 'Withdraw' }}
           />
           <Stack.Screen
             name="Transactions"
@@ -97,6 +89,26 @@ export const AppNavigator: React.FC = () => {
             name="Profile"
             component={ProfileScreen}
             options={{ title: 'Profile' }}
+          />
+          <Stack.Screen
+            name="TransactionPin"
+            component={TransactionPinScreen}
+            options={{ title: 'Transaction PIN' }}
+          />
+          <Stack.Screen
+            name="Support"
+            component={SupportScreen}
+            options={{ title: 'Support' }}
+          />
+          <Stack.Screen
+            name="CreateSupportTicket"
+            component={CreateSupportTicketScreen}
+            options={{ title: 'New Ticket' }}
+          />
+          <Stack.Screen
+            name="SupportTicketDetail"
+            component={SupportTicketDetailScreen}
+            options={{ title: 'Ticket' }}
           />
         </>
       )}

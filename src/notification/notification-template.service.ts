@@ -1,0 +1,394 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+
+import { NOTIFICATION_DEFAULTS_V1 } from './notification-defaults-v1';
+import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
+
+export type TemplateChannel = 'SMS' | 'EMAIL';
+export type TemplateDefinition = (typeof NOTIFICATION_DEFAULTS_V1)[number];
+export interface TemplateContent {
+  subject: string | null;
+  body: string;
+}
+export interface RenderedTemplate extends TemplateContent {
+  variablesUsed: string[];
+}
+export interface TemplateQuery {
+  query(sql: string, parameters?: unknown[]): Promise<unknown>;
+}
+
+/** Internal aliases are normalized before config lookup; customer-facing text never contains them. */
+export function canonicalNotificationEvent(eventType: string): string {
+  if (eventType === 'transfer.unknown') return 'transfer.failed';
+  if (eventType === 'cash-to-cash.claimed') return 'cash_to_cash.claimed';
+  if (eventType === 'cash-to-cash.expired') return 'cash_to_cash.expired';
+  return eventType;
+}
+
+/** Arena 4 C2C integration: control-character strip for the verified sender display name. */
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 0x1f && code !== 0x7f;
+  }).join('');
+}
+
+/** Plain-text, allowlist-only templates. There is deliberately no expression or property evaluator. */
+@Injectable()
+export class NotificationTemplateService {
+  /**
+   * INTEGRATION (Arena 4): for cash_to_cash.created the delivery rows and provider adapters
+   * receive ONLY an explicit safe subset — verified sender display name, committed amount,
+   * currency and the configured https locator URL. Transfer number, sender phone, secret
+   * transfer code, transaction reference and beneficiary phone are structurally excluded
+   * (the beneficiary phone lives in the delivery destination, never in payload JSON).
+   */
+  redactPayload(payload: Record<string, unknown>, eventType?: string): Record<string, unknown> {
+    const canonical = canonicalNotificationEvent(eventType ?? '');
+    const definition = this.definition(canonical);
+    if (!definition) return {};
+    const safe: Record<string, unknown> = {};
+
+    if (canonical === 'cash_to_cash.created') {
+      if (typeof payload.senderDisplayName === 'string') {
+        const name = stripControlCharacters(payload.senderDisplayName).trim().slice(0, 80);
+        try {
+          this.assertSafe(name);
+          if (name && !/\d{6,}/.test(name)) safe.senderDisplayName = name;
+        } catch { /* use generic sender */ }
+      }
+      if (typeof payload.amountMinor === 'string' && /^[1-9][0-9]{0,14}$/.test(payload.amountMinor)) {
+        safe.amountMinor = payload.amountMinor;
+      }
+      if (payload.currency === 'NGN') safe.currency = 'NGN';
+      if (typeof payload.locatorUrl === 'string') {
+        try {
+          const url = new URL(payload.locatorUrl);
+          const locator = url.toString();
+          this.assertSafe(locator);
+          if (url.protocol === 'https:' && !url.username && !url.password &&
+              !url.search && !url.hash && locator.length <= 240) safe.locatorUrl = locator;
+        } catch { /* omit unsafe locator */ }
+      }
+      return safe;
+    }
+
+    // Financial and operational payloads are projected from the variables of this specific
+    // event, not a generic denylist. Journal/ledger ids, rejection prose, contacts, and any
+    // future unknown fields cannot silently become durable notification payloads.
+    const variables: readonly string[] = definition.variables;
+    if (variables.includes('amount_clause') || variables.includes('amount')) {
+      for (const key of ['amountMinor', 'principal_minor'] as const) {
+        const value = payload[key];
+        if ((typeof value === 'string' || typeof value === 'number') && /^\d{1,15}$/.test(String(value))) {
+          safe[key] = value;
+        }
+      }
+    }
+    if (variables.includes('reference')) {
+      for (const key of ['reference', 'transferId', 'fundingRequestId', 'ticketId'] as const) {
+        const raw = payload[key];
+        if (typeof raw !== 'string') continue;
+        const candidate = key === 'reference' ? (raw.length > 20 ? raw.slice(0, 8) : raw) : raw.slice(0, 8);
+        if (this.isSafePublicReference(candidate)) safe[key] = candidate;
+      }
+    }
+    if (variables.includes('status')) {
+      const statuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
+      for (const key of ['status', 'newStatus'] as const) {
+        if (typeof payload[key] === 'string' && statuses.includes(payload[key])) safe[key] = payload[key];
+      }
+    }
+    return safe;
+  }
+
+  definition(eventType: string): TemplateDefinition | undefined {
+    return NOTIFICATION_DEFAULTS_V1.find((entry) => entry.eventType === eventType);
+  }
+
+  requireDefinition(eventType: string): TemplateDefinition {
+    if (isSecurityCriticalNotificationEvent(eventType)) {
+      throw new BadRequestException('Security notifications cannot use editable templates');
+    }
+    const def = this.definition(eventType);
+    if (!def) throw new BadRequestException('Unknown notification event');
+    return def;
+  }
+
+  formatNgn(minor: string | number): string {
+    const value = String(minor).trim();
+    if (!/^\d{1,15}$/.test(value)) return '';
+    // Decimal currency formatting is exact even at the upper bound; no floating-point rounding.
+    const amount = BigInt(value);
+    return `NGN ${amount / 100n}.${(amount % 100n).toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Defence in depth for literal and rendered text. The allowlisted resolvers are the primary
+   * secret boundary; this rejects recognizable credential/control/HTML content, not every
+   * possible secret a human could deliberately paste into literal text.
+   */
+  assertSafe(message: string): void {
+    if (
+      typeof message !== 'string' ||
+      // eslint-disable-next-line no-control-regex -- reject unsafe control bytes explicitly
+      /[<>\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(message) ||
+      /\b(?:pin|otp|password|passcode|credential|secret|token|ledger|journal|authorization)\b/i.test(
+        message,
+      ) ||
+      /\b(?:api[ _-]?key|verification[ _-]?code|recovery[ _-]?code|one[ _-]?time[ _-]?code)\b/i.test(
+        message,
+      )
+    ) {
+      throw new BadRequestException('Unsafe notification content');
+    }
+  }
+
+  validateTemplate(
+    eventType: string,
+    channel: TemplateChannel,
+    content: TemplateContent,
+  ): string[] {
+    const definition = this.requireDefinition(eventType);
+    if (channel !== 'SMS' && channel !== 'EMAIL')
+      throw new BadRequestException('Unsupported template channel');
+    if (
+      typeof content.body !== 'string' ||
+      !content.body.trim() ||
+      content.body.length > (channel === 'SMS' ? 1000 : 4000)
+    ) {
+      throw new BadRequestException('Invalid template body');
+    }
+    if (channel === 'SMS' && content.subject !== null)
+      throw new BadRequestException('SMS must not have a subject');
+    if (
+      channel === 'EMAIL' &&
+      (typeof content.subject !== 'string' ||
+        !content.subject.trim() ||
+        content.subject.length > 200 ||
+        /[\r\n]/.test(content.subject))
+    ) {
+      throw new BadRequestException('Invalid email subject');
+    }
+    const used = new Set<string>();
+    for (const text of [content.body, content.subject ?? '']) {
+      this.assertSafe(text);
+      const literals = text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => {
+        if (!(definition.variables as readonly string[]).includes(name)) {
+          throw new BadRequestException('Template variable is not allowed for this event');
+        }
+        used.add(name);
+        return '';
+      });
+      if (/[{}]/.test(literals)) throw new BadRequestException('Invalid template syntax');
+      // Literal long digit sequences can carry phone numbers or one-time credentials. Monetary
+      // values and references must come through vetted variable resolvers instead.
+      if (/\d{6,}/.test(literals))
+        throw new BadRequestException('Long literal digit sequences are not allowed');
+      if (/https?:\/\/|www\.|\b[^\s@]+@[^\s@]+\.[^\s@]+/i.test(literals)) {
+        throw new BadRequestException('Literal links and email addresses are not allowed');
+      }
+    }
+    // Reject templates whose worst-case allowed substitutions could overflow at runtime. This
+    // prevents an approved template that previews successfully from wedging a later outbox event.
+    const maxima: Record<string, string> = {
+      reference: 'R'.repeat(20),
+      amount_clause: ' of NGN 9999999999999.99',
+      status: 'IN_PROGRESS',
+      // Arena 4 C2C beneficiary variables (worst-case bounded by the resolvers below).
+      sender_name: 'S'.repeat(80),
+      amount: 'NGN 9999999999999.99',
+      locator_clause: ' Find an active outlet: ' + 'h'.repeat(240),
+    };
+    const expandedLength = (text: string) =>
+      text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => maxima[name] ?? '')
+        .length;
+    if (
+      expandedLength(content.body) > (channel === 'SMS' ? 1000 : 4000) ||
+      (content.subject !== null && expandedLength(content.subject) > 200)
+    ) {
+      throw new BadRequestException('Template can exceed channel limits');
+    }
+    return [...used].sort();
+  }
+
+  render(
+    eventType: string,
+    channel: TemplateChannel,
+    content: TemplateContent,
+    payload: Record<string, unknown>,
+  ): RenderedTemplate {
+    const variablesUsed = this.validateTemplate(eventType, channel, content);
+    // eventType-aware redaction (Arena 4): cash_to_cash.created payloads are reduced to the
+    // safe subset BEFORE variable resolution, on every channel and every call path.
+    const safe = this.redactPayload(payload, eventType);
+    const values = this.resolveVariables(eventType, safe);
+    // ARENA 3 CLOSURE (Defect B): a cash_to_cash.created notification must NEVER render an
+    // empty or missing amount ('sent you .'). The amount variable resolves ONLY from the
+    // committed transfer principal — redactPayload keeps amountMinor only for positive
+    // integer strings — so when the template uses {{amount}}/{{amount_clause}} and no valid
+    // principal survived redaction, rendering fails closed: the dispatcher/outbox drain
+    // marks the delivery or event FAILED for bounded retry and no message is sent. The
+    // amount is never fabricated, defaulted, or echoed from an untrusted payload shape.
+    if (
+      canonicalNotificationEvent(eventType) === 'cash_to_cash.created' &&
+      (variablesUsed.includes('amount') || variablesUsed.includes('amount_clause')) &&
+      values.amount === ''
+    ) {
+      throw new BadRequestException('Cash-to-Cash notification amount unavailable');
+    }
+    const interpolate = (text: string) =>
+      text.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, name: string) => values[name] ?? '');
+    const body = interpolate(content.body);
+    const subject = content.subject === null ? null : interpolate(content.subject);
+    this.assertSafe(body);
+    if (subject !== null) this.assertSafe(subject);
+    if (body.length > (channel === 'SMS' ? 1000 : 4000) || (subject && subject.length > 200)) {
+      throw new BadRequestException('Rendered notification exceeds channel limits');
+    }
+    return { subject, body, variablesUsed };
+  }
+
+  /** Fixed synthetic values only: the API cannot pass user/customer sample payloads. */
+  preview(eventType: string, channel: TemplateChannel, content: TemplateContent): RenderedTemplate {
+    return this.render(eventType, channel, content, {
+      reference: 'SAMPLE-1',
+      transferId: 'a1b2c3d4-0000-4000-8000-000000000000',
+      amountMinor: '125000',
+      status: 'OPEN',
+    });
+  }
+
+  async isEventEnabled(
+    query: TemplateQuery,
+    eventType: string,
+    channel: TemplateChannel,
+  ): Promise<boolean> {
+    const canonical = canonicalNotificationEvent(eventType);
+    this.requireDefinition(canonical);
+    const rows = (await query.query(
+      `SELECT is_enabled, delivery_class FROM notification_event_configurations
+      WHERE event_type=$1 AND channel=$2`,
+      [canonical, channel],
+    )) as Array<{ is_enabled: boolean; delivery_class: string }>;
+    if (rows.length !== 1 || rows[0]!.delivery_class === 'SECURITY') {
+      throw new Error('Notification event configuration unavailable');
+    }
+    return rows[0]!.is_enabled;
+  }
+
+  async renderActive(
+    query: TemplateQuery,
+    eventType: string,
+    channel: TemplateChannel,
+    payload: Record<string, unknown>,
+  ): Promise<RenderedTemplate> {
+    this.requireDefinition(eventType);
+    const rows = (await query.query(
+      `SELECT subject, body FROM notification_templates
+        WHERE event_type=$1 AND channel=$2 AND locale='en-NG' AND is_active=true`,
+      [eventType, channel],
+    )) as Array<{ subject: string | null; body: string }>;
+    if (rows.length !== 1) throw new Error('Active notification template unavailable');
+    return this.render(eventType, channel, rows[0]!, payload);
+  }
+
+  /** Compatibility helper for direct callers; production dispatch reads the persistent registry. */
+  buildMessage(eventType: string, payload: Record<string, unknown>): string {
+    if (isSecurityCriticalNotificationEvent(eventType))
+      throw new BadRequestException('Security notifications cannot use editable templates');
+    const canonical = canonicalNotificationEvent(eventType);
+    const def = this.definition(canonical);
+    if (!def) return 'You have a new update. Please check your account.';
+    return this.render(canonical, 'SMS', { subject: null, body: def.body }, payload).body;
+  }
+
+  private isSafePublicReference(candidate: string): boolean {
+    const publicShape =
+      /^(?:CF|FUND|SUP|TRF|REF|AG|SAMPLE|CASH_TO_CASH)-[A-Za-z0-9_-]+$/i.test(candidate) ||
+      /^[a-f0-9]{8}$/i.test(candidate);
+    if (!publicShape || candidate.length > 20 || candidate.replace(/\D/g, '').length >= 6 ||
+        /otp|pin|password|passcode|credential|secret|token|api.?key|ledger|journal|robe_/i.test(candidate)) return false;
+    try { this.assertSafe(candidate); return true; } catch { return false; }
+  }
+
+  private resolveVariables(
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Record<string, string> {
+    const referenceSource =
+      eventType === 'transfer.completed' && typeof payload.transferId === 'string'
+        ? payload.transferId.slice(0, 8)
+        : typeof payload.reference === 'string'
+          ? payload.reference
+          : typeof payload.fundingRequestId === 'string'
+            ? payload.fundingRequestId.slice(0, 8)
+            : '';
+    const candidate = referenceSource.length > 20 ? referenceSource.slice(0, 8) : referenceSource;
+    let reference = 'your request';
+    // Restrict public references to known display-reference shapes or a short UUID prefix.
+    // Never copy arbitrary user text, a long digit sequence, or a credential-looking value.
+    const publicShape =
+      /^(?:CF|FUND|SUP|TRF|REF|AG|SAMPLE|CASH_TO_CASH)-[A-Za-z0-9_-]+$/i.test(candidate) ||
+      /^[a-f0-9]{8}$/i.test(candidate);
+    const digitCount = candidate.replace(/\D/g, '').length;
+    const sensitiveWord =
+      /otp|pin|password|passcode|credential|secret|token|api.?key|ledger|journal|robe_/i.test(
+        candidate,
+      );
+    if (candidate.length <= 20 && publicShape && digitCount < 6 && !sensitiveWord) {
+      try {
+        this.assertSafe(candidate);
+        reference = candidate;
+      } catch {
+        /* reject untrusted reference */
+      }
+    }
+    const minor = payload.amountMinor ?? payload.principal_minor;
+    const amount =
+      typeof minor === 'string' || typeof minor === 'number' ? this.formatNgn(minor) : '';
+    const rawStatus = payload.status ?? payload.newStatus;
+    const allowedStatuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
+    const status =
+      typeof rawStatus === 'string' && allowedStatuses.includes(rawStatus) ? rawStatus : 'updated';
+
+    // Arena 4 C2C beneficiary variables. Only reachable for cash_to_cash.created because the
+    // event's variable allowlist is ['sender_name','amount','locator_clause'] and the payload
+    // was already reduced to the safe subset by redactPayload(payload, eventType).
+    let senderName = 'A MonieNaija customer';
+    if (typeof payload.senderDisplayName === 'string') {
+      const cleaned = stripControlCharacters(payload.senderDisplayName).trim().slice(0, 80);
+      if (cleaned.length > 0) {
+        try {
+          this.assertSafe(cleaned);
+          senderName = cleaned;
+        } catch {
+          // A display name carrying markup/credential-looking words is replaced by the
+          // generic name — never rendered raw, never fails the whole notification.
+        }
+      }
+    }
+    let locatorClause = '';
+    if (typeof payload.locatorUrl === 'string') {
+      try {
+        const url = new URL(payload.locatorUrl);
+        if (url.protocol === 'https:' && !url.username && !url.password) {
+          const locator = url.toString();
+          // Bounded so the worst-case SMS body stays within the 1000-char channel limit;
+          // an over-long URL is omitted rather than truncated into a broken link.
+          if (locator.length <= 240) locatorClause = ` Find an active outlet: ${locator}`;
+        }
+      } catch {
+        // Invalid URLs are never echoed into a customer-facing message.
+      }
+    }
+
+    return {
+      reference,
+      amount_clause: amount ? ` of ${amount}` : '',
+      status,
+      sender_name: senderName,
+      amount,
+      locator_clause: locatorClause,
+    };
+  }
+}

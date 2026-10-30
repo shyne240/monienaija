@@ -4,19 +4,18 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { theme } from '../../theme';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
-import { Card } from '../../components/Card';
 import { useAuthStore } from '../../store/auth-store';
 
 export const LoginScreen: React.FC = () => {
-  const [customerId, setCustomerId] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState('');
 
   const { login, isLoading, error, clearError } = useAuthStore();
 
   const handleLogin = async () => {
-    if (!customerId.trim()) {
-      setValidationError('Customer ID is required');
+    if (!identifier.trim()) {
+      setValidationError('Phone number or Customer ID is required');
       return;
     }
     if (!password) {
@@ -28,7 +27,7 @@ export const LoginScreen: React.FC = () => {
     clearError();
 
     try {
-      await login(customerId, password);
+      await login(identifier, password);
     } catch {
       // Error handled by store error state
     }
@@ -42,16 +41,8 @@ export const LoginScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Enter your Customer ID and Password to continue</Text>
+          <Text style={styles.subtitle}>Enter your phone number or Customer ID and your password to continue</Text>
         </View>
-
-        <Card variant="flat" style={styles.devBanner}>
-          <Text style={styles.devTitle}>🔐 Secure sign-in</Text>
-          <Text style={styles.devText}>
-            Sign in with the Customer ID and password registered on your MoneyNaija account. Sessions
-            are issued by the backend and stored in the device secure store.
-          </Text>
-        </Card>
 
         {(!!validationError || !!error) && (
           <View style={styles.errorBanner}>
@@ -63,11 +54,11 @@ export const LoginScreen: React.FC = () => {
           <Input
             autoCapitalize="none"
             autoCorrect={false}
-            label="Customer ID (UUID)"
-            placeholder="e.g. 1a2b3c4d-5e6f-..."
-            value={customerId}
+            label="Phone Number or Customer ID"
+            placeholder="e.g. 08012345678"
+            value={identifier}
             onChangeText={(text) => {
-              setCustomerId(text);
+              setIdentifier(text);
               if (validationError) setValidationError('');
             }}
           />
@@ -138,42 +129,6 @@ const styles = StyleSheet.create({
     color: theme.colors.feedback.error,
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
-  },
-  devBanner: {
-    backgroundColor: theme.colors.secondary.lightest,
-    borderColor: theme.colors.secondary.main,
-    borderWidth: 1,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-  },
-  devTitle: {
-    color: theme.colors.secondary.dark,
-    fontWeight: theme.typography.weights.bold,
-    fontSize: theme.typography.sizes.sm,
-    marginBottom: 4,
-  },
-  devText: {
-    color: theme.colors.neutral.slate,
-    fontSize: theme.typography.sizes.xs,
-    lineHeight: 16,
-  },
-  prodWarningBanner: {
-    backgroundColor: theme.colors.feedback.warningLight,
-    borderColor: theme.colors.feedback.warning,
-    borderWidth: 1,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-  },
-  prodWarningTitle: {
-    color: theme.colors.feedback.warning,
-    fontWeight: theme.typography.weights.bold,
-    fontSize: theme.typography.sizes.sm,
-    marginBottom: 4,
-  },
-  prodWarningText: {
-    color: theme.colors.neutral.slate,
-    fontSize: theme.typography.sizes.xs,
-    lineHeight: 16,
   },
 });
 

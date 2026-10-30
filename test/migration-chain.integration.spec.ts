@@ -1,4 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
+import { NOTIFICATION_DEFAULTS_V1, NOTIFICATION_SECURITY_DEFAULTS_V1 } from '../src/notification/notification-defaults-v1';
 
 import {
   createEmptyIntegrationDataSource,
@@ -16,12 +19,25 @@ import {
  */
 describe('migration chain (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  const expectedMigrations = 53;
+  // V1-TEST-01: the exact migration count is derived from the filesystem rather than
+  // hardcoded. A literal number here goes stale every time a migration is added (it has
+  // already drifted twice — 67→80→81 — purely from normal feature work, with no defect in
+  // the migration chain itself each time). Counting `src/migrations/*.ts` directly proves
+  // the same invariant this suite actually cares about — "every migration that exists is
+  // discovered, runs exactly once, and nothing is silently dropped" — without requiring a
+  // manual bump on every new migration file.
+  const expectedMigrations = readdirSync(join(__dirname, '../src/migrations')).filter((f) =>
+    f.endsWith('.ts'),
+  ).length;
 
   beforeAll(async () => {
     dataSource = await createEmptyIntegrationDataSource('migchain');
     await dataSource.initialize();
   }, 120000);
+
+  it('the filesystem migration count is sane (guards against the glob silently matching nothing)', () => {
+    expect(expectedMigrations).toBeGreaterThan(70);
+  });
 
   afterAll(async () => {
     if (dataSource) await destroyIntegrationDataSource(dataSource);
@@ -49,6 +65,18 @@ describe('migration chain (real PostgreSQL)', () => {
     );
     expect(Number(firstRow(rows, 'migration ledger count').count)).toBe(expectedMigrations);
     expect(dataSource.migrations).toHaveLength(expectedMigrations);
+  });
+
+  it('seeds the notification registry during the real migration, including locked SECURITY rows', async () => {
+    const counts: Array<{ templates: number; configurations: number; security_locked: number; security_templates: number }> = await dataSource.query(`
+      SELECT (SELECT count(*)::int FROM notification_templates) AS templates,
+             (SELECT count(*)::int FROM notification_event_configurations) AS configurations,
+             (SELECT count(*)::int FROM notification_event_configurations WHERE delivery_class='SECURITY' AND is_locked) AS security_locked,
+             (SELECT count(*)::int FROM notification_templates t JOIN notification_event_configurations c
+                 ON c.event_type=t.event_type AND c.channel=t.channel WHERE c.delivery_class='SECURITY') AS security_templates`);
+    expect(counts[0]).toEqual({ templates: NOTIFICATION_DEFAULTS_V1.length * 2,
+      configurations: (NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_SECURITY_DEFAULTS_V1.length) * 2,
+      security_locked: NOTIFICATION_SECURITY_DEFAULTS_V1.length * 2, security_templates: 0 });
   });
 
   it('creates every foreign key in a validated state', async () => {
