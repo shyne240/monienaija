@@ -32,3 +32,18 @@ This register is limited to unresolved decisions relevant to backend/Admin compl
 ## Decision discipline
 
 A decision to expose an action must be paired with server-side permissions, audit and negative tests. A decision to defer closes only the scope question; it does not make the existing code complete or production-ready. The audit itself makes no product or financial-policy decisions.
+
+---
+
+## Decision updates — 2026-10-30 (Gate B; recorded per Report 30)
+
+Product Owner selections for the two priority-1 Gate B decisions. **Security co-signature: PENDING for every row.** The hybrid policy is approved product policy only — it is **not implemented and not independently accepted**; today's application behavior remains as described in Report 29 §1. Implementation is stopped pending Security review of the Report 30 architecture (§3 approval matrix) and resolution of open decisions U-1…U-6.
+
+| ID | Decision (2026-10-30) | Status |
+|---|---|---|
+| D-01 | **D-01-O2 Hybrid:** category-authorized employees read cases within permitted categories (global-within-category reads); case mutations require a valid assignment to the employee; designated supervisory leads may override with a mandatory reason and immutable audit record; SUPER_ADMIN/ADMINISTRATOR receive no automatic override and cannot self-grant; customer/agent/SUPPORT remain excluded; FRAUD vs non-FRAUD isolation unchanged | DECIDED — Security co-sign PENDING; implementation NOT STARTED (Report 30 §2, milestones M1-M6) |
+| D-01-V | VIEW-only grant activation **deferred** until the Admin UI models access-type distinctions | DECIDED — deferred |
+| D-01-N | **Server-generated opaque case numbers** for new cases (compatibility-staged; historical identifiers preserved) | DECIDED — Security co-sign PENDING; milestone M5 |
+| D-04 | **D-04-O1:** the existing nine categories and the FRAUD/non-FRAUD authorization split are ratified for V1; future changes only via the governed procedure (Report 30 §5.2). **D-04-H:** reclassification is close-and-reopen; historical category records preserved; no in-place rewrites | DECIDED — Security co-sign PENDING; corrections C-1…C-5 scheduled (backend catalogue text + frontend handoff) |
+
+Full architecture, security approval matrix, negative-test matrix, case-number transition plan and milestone sequencing: `docs/audit/20261030/sprint1-security-acceptance/30-GATE-B-D01-HYBRID-AUTHORIZATION-APPROVED-POLICY-AND-IMPLEMENTATION-PLAN-8a4a9f3-20261030.md`.
