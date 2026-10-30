@@ -216,9 +216,12 @@ git diff --numstat origin/main HEAD -- <file>              # what each side hold
 
 | Record | Value |
 |---|---|
-| Plan committed on | `arena/d4ef0b81-monienaija` |
-| Plan file | `docs/design-discovery-20261029/m1/acceptance/integration-plan.md` |
+| Plan commit | `842662672316ec8bb5edec6d9ed84f2d5cb18af5` |
+| Plan permalink | https://github.com/shyne240/monienaija/blob/842662672316ec8bb5edec6d9ed84f2d5cb18af5/docs/design-discovery-20261029/m1/acceptance/integration-plan.md |
+| Branch | `arena/d4ef0b81-monienaija` |
 | `main` reviewed | `39a9e504e3881911c94438321e7c60f771469d21` |
-| Feature branch head | `6394c3d093bcb759c03b5ee6bf38130ec7180907` |
+| Feature branch head at plan time | `6394c3d093bcb759c03b5ee6bf38130ec7180907` |
+| M1 implementation | `d7a8af4eb2d049691cb6e5da9868eb32189e9bf9` |
+| Acceptance review | `0e5475fc25185fe7ae5c334b2f3269a8a300a178` |
 
-The commit that follows this file is documentation-only and pins the SHA above, so this link stays stable.
+The commit after `8426626` is documentation-only and pins these permalinks to an immutable SHA.
