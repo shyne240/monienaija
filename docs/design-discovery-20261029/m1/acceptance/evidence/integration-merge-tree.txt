@@ -1,0 +1,70 @@
+# M1 acceptance — read-only integration assessment (git merge-tree)
+# Captured: 2026-10-30T10:22:19Z UTC
+# No merge, rebase, reset, cherry-pick or force-push was performed. git merge-tree
+# computes a hypothetical merged tree in memory and writes nothing.
+
+## Heads
+assigned branch : arena/d4ef0b81-monienaija @ 53d87f9f523145fb4494c6a10df43d76df4e0270
+origin/main     : 39a9e504e3881911c94438321e7c60f771469d21
+merge base      : 3d05aaec1d569dc8a5200ebb3b350e2cc1f78510
+
+## Divergence (left=main ahead, right=branch ahead)
+55	110
+
+## Conflicted paths in a hypothetical merge (26 files)
+  .env.example
+  .gitignore
+  README.md
+  apps/admin-web/src/config/index.ts
+  apps/admin-web/src/services/api-client.ts
+  apps/admin-web/src/store/auth-store.ts
+  apps/admin-web/vite.config.ts
+  apps/customer-mobile/__tests__/transfer.test.tsx
+  apps/customer-mobile/src/config/index.ts
+  apps/customer-mobile/src/screens/unauthenticated/LoginScreen.tsx
+  apps/customer-mobile/src/store/auth-store.ts
+  package-lock.json
+  package.json
+  src/authorization/route-policy-registry.ts
+  src/authorization/runtime-access.guard.ts
+  src/authorization/workforce-administration.controller.ts
+  src/authorization/workforce-oidc.service.ts
+  src/authorization/workforce-session.service.ts
+  src/config/environment.ts
+  src/deposit/deposit.controller.ts
+  src/transfer/transfer.controller.ts
+  src/transfer/wallet-transaction.controller.ts
+  src/wallet/wallet.controller.ts
+  src/withdrawal/withdrawal.controller.ts
+  test/external-reconciliation.service.spec.ts
+  test/production-readiness.spec.ts
+
+## Files origin/main changed in apps/admin-web since the merge base
+ apps/admin-web/__tests__/api-client-config.test.ts |  29 +++++
+ .../admin-web/__tests__/api-client-request.test.ts |  42 +++++++
+ .../__tests__/production-auth-safety.test.ts       | 135 +++++++++++++++++++++
+ apps/admin-web/jest.config.js                      |   2 +-
+ apps/admin-web/src/config/build-config.ts          |  24 ++++
+ apps/admin-web/src/config/index.ts                 |  21 +++-
+ apps/admin-web/src/services/api-client.ts          |   5 +
+ apps/admin-web/src/store/auth-store.ts             |   9 +-
+ apps/admin-web/vite.config.ts                      |  28 +++--
+ 9 files changed, 281 insertions(+), 14 deletions(-)
+
+## Do any of the ten M1 allowlisted files conflict? (expect: none)
+  -> see the conflict list above; Layout.tsx, CustomerDirectoryScreen.tsx, tokens.css,
+     primitives.tsx, primitives.css, admin-shell.css, customer-directory-pilot.css and the
+     three m1-*.test.tsx files do not appear.
+
+## Merged tree inspection (from the hypothetical merge)
+  hypothetical merged tree: 8c93b1d1eef4bec7c72a59024a016100eaac2ad4
+  Layout.tsx  merged=a5fc94a35a364a272cf1c2ff7a549513cadfc672
+  Layout.tsx  branch=a5fc94a35a364a272cf1c2ff7a549513cadfc672
+  design-system files in merged tree:
+    apps/admin-web/src/design-system/primitives.css
+    apps/admin-web/src/design-system/primitives.tsx
+    apps/admin-web/src/design-system/tokens.css
+  m1 tests in merged tree:
+    apps/admin-web/__tests__/m1-customer-directory.test.tsx
+    apps/admin-web/__tests__/m1-shell.test.tsx
+    apps/admin-web/__tests__/m1-style-isolation.test.tsx

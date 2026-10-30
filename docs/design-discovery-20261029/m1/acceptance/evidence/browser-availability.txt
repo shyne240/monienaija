@@ -1,0 +1,52 @@
+# M1 acceptance — browser and assistive-technology availability probe
+# Captured: 2026-10-30T10:22:11Z UTC on the acceptance sandbox
+
+## 1. System browser binaries
+MISSING chromium
+MISSING chromium-browser
+MISSING google-chrome
+MISSING google-chrome-stable
+MISSING chrome
+MISSING firefox
+MISSING firefox-esr
+MISSING wkhtmltoimage
+MISSING webkit2png
+
+## 2. Playwright browser cache
+  total 0
+  drwxr-xr-x 3 user user  60 Oct 30 10:19 .
+  drwxr-xr-x 3 user user  60 Oct 30 09:46 ..
+  drwxr-xr-x 2 user user 128 Oct 30 10:19 .links
+
+## 3. Puppeteer browser cache
+  ls: cannot access '/home/user/.cache/puppeteer': No such file or directory
+
+## 4. Any chrome/firefox binary on the filesystem (maxdepth 6)
+  (no output above = none found)
+
+## 5. Attempt to download a browser
+  $ npx playwright@1.64.1 install chromium
+  Error: Failed to download Chrome for Testing 156.0.8078.4 (playwright chromium v1248), caused by
+  Error: Download failure, code=1
+      at ChildProcess.<anonymous> (/home/user/.npm/_npx/13ab0715f9f30c2e/node_modules/playwright-core/lib/coreBundle.js:33774:32)
+      at ChildProcess.emit (node:events:519:28)
+      at ChildProcess._handle.onexit (node:internal/child_process:293:12)
+
+## 6. Reachability of the Playwright browser CDN from this sandbox
+  Outbound network is restricted to: github.com, codeload.github.com, api.github.com,
+  registry.npmjs.org, pypi.org, files.pythonhosted.org.
+  Playwright downloads from cdn.playwright.dev / playwright.azureedge.net, which are not
+  on that allowlist, hence 'Download failure, code=1' above.
+
+## 7. Assistive technology
+  NVDA        : Windows-only, not installable in a Linux sandbox -> UNAVAILABLE
+  JAWS        : Windows-only, commercial            -> UNAVAILABLE
+  VoiceOver   : macOS/iOS only                      -> UNAVAILABLE
+  Orca (Linux): requires an X/Wayland session + AT-SPI bus -> UNAVAILABLE (no display server)
+  DISPLAY env : (unset)
+
+## 8. What this means
+  No real-browser rendering, screenshots, keyboard runs, zoom/reflow measurement or
+  screen-reader sessions can be produced in this environment.
+  An axe-core scan in jsdom WAS possible and is recorded in axe-jsdom-scan.json; it covers
+  markup/role/name/state rules only (no colour contrast, no layout, no target size).
