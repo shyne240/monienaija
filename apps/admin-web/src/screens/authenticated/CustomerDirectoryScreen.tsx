@@ -2,10 +2,22 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import {
+  Alert,
+  Button,
+  Field,
+  PageHeader,
+  ScrollRegion,
+  StatusBadge,
+  type StatusShape,
+  type StatusTone,
+} from '../../design-system/primitives';
 import { CustomerRegistrationWizard } from './CustomerRegistrationWizard';
 import { maskCustomerReference } from './customer-masking';
 import { Customer360Workspace, type DirectoryCustomer } from './Customer360Workspace';
+import '../../design-system/tokens.css';
 import './customer-management.css';
+import './customer-directory-pilot.css';
 
 interface CustomerDirectoryResponse {
   data: DirectoryCustomer[];
@@ -46,6 +58,38 @@ function safeErrorMessage(error: unknown): string {
     if (status === 403) return 'Customer servicing is not available to this workforce role.';
   }
   return 'Customer records could not be loaded. Try again.';
+}
+
+/**
+ * Presentation-only mapping. The displayed text is always the server-returned
+ * value; the tone/shape only adds a redundant non-colour cue.
+ */
+function statusPresentation(status: string): { tone: StatusTone; shape: StatusShape } {
+  switch (status) {
+    case 'ACTIVE':
+      return { tone: 'success', shape: 'dot' };
+    case 'SUSPENDED':
+      return { tone: 'warning', shape: 'square' };
+    case 'CLOSED':
+      return { tone: 'danger', shape: 'square' };
+    case 'DRAFT':
+      return { tone: 'neutral', shape: 'hollow' };
+    default:
+      return { tone: 'neutral', shape: 'hollow' };
+  }
+}
+
+function kycPresentation(kycStatus: string): { tone: StatusTone; shape: StatusShape } {
+  switch (kycStatus) {
+    case 'APPROVED':
+      return { tone: 'success', shape: 'dot' };
+    case 'PENDING':
+      return { tone: 'warning', shape: 'square' };
+    case 'REJECTED':
+      return { tone: 'danger', shape: 'square' };
+    default:
+      return { tone: 'neutral', shape: 'hollow' };
+  }
 }
 
 export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = ({
@@ -184,170 +228,356 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
     );
   }
 
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    setStatus('');
+    setType('');
+    setKycLevel('');
+    setKycStatus('');
+    setPage(1);
+  };
+
+  const retry = () => setReloadVersion((value) => value + 1);
+
+  const activeFilterCount = [searchInput, status, type, kycLevel, kycStatus].filter(Boolean).length;
+  const previousDataVisible = Boolean(directory) && (isLoading || Boolean(error));
+  const hasRows = (directory?.data ?? []).length > 0;
+
+  // Truthful result text: an unknown total is never presented as zero.
+  let countLabel: string;
+  if (error) {
+    countLabel = directory
+      ? 'Customer count unconfirmed — showing previously loaded results'
+      : 'Customer count unavailable';
+  } else if (isLoading && !directory) {
+    countLabel = 'Loading customers…';
+  } else {
+    const total = directory?.total ?? 0;
+    countLabel = `${total} customer${total === 1 ? '' : 's'}`;
+  }
+
+  const currentPage = directory?.page ?? page;
+  const currentLimit = directory?.limit ?? pageSize;
+  const totalPages = Math.max(directory?.totalPages ?? 0, 1);
+  const totalKnown = !error && typeof directory?.total === 'number';
+  const total = directory?.total ?? 0;
+  const rangeStart = totalKnown && total > 0 ? (currentPage - 1) * currentLimit + 1 : null;
+  const rangeEnd = totalKnown && rangeStart !== null ? Math.min(currentPage * currentLimit, total) : null;
+
   return (
     <main className="customer-management">
-      <header className="cm-page-header">
-        <div>
-          <p className="cm-eyebrow">CUSTOMER SERVICING</p>
-          <h1>Customer directory</h1>
-          <p className="cm-subtitle">Search authorized customer records and open a read-first Customer 360° workspace.</p>
-        </div>
-        {canCreateCustomer && (
-          <button
-            className="cm-button cm-button-primary"
-            type="button"
-            onClick={() => {
-              setCreateOpen((value) => !value);
-            }}
-            aria-expanded={createOpen}
-          >
-            {createOpen ? 'Close registration' : 'New Customer'}
-          </button>
-        )}
-      </header>
-
+      <PageHeader
+        className="mn-dir-header"
+        eyebrow="CUSTOMER SERVICING"
+        title="Customer directory"
+        description="Search authorized customer records and open a read-first Customer 360° workspace."
+        actions={
+          canCreateCustomer ? (
+            <Button
+              variant="primary"
+              onClick={() => setCreateOpen((value) => !value)}
+              aria-expanded={createOpen}
+              aria-controls={createOpen ? 'mn-dir-registration' : undefined}
+            >
+              {createOpen ? 'Close registration' : 'New Customer'}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {createOpen && canCreateCustomer && (
-        <CustomerRegistrationWizard
-          onClose={() => setCreateOpen(false)}
-          onCustomerCreated={handleCustomerCreated}
-          onOpenCustomer={openRegistrationCustomer}
-        />
+        <div className="mn-dir-registration" id="mn-dir-registration">
+          <CustomerRegistrationWizard
+            onClose={() => setCreateOpen(false)}
+            onCustomerCreated={handleCustomerCreated}
+            onOpenCustomer={openRegistrationCustomer}
+          />
+        </div>
       )}
 
-      <section className="cm-panel" aria-label="Customer search and results">
-        <div className="cm-filter-grid">
-          <label className="cm-search-field">
-            Search
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Name, reference or authorized contact"
-              aria-label="Search customers"
-            />
-          </label>
-          <label>
-            Status
-            <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
-              <option value="">All statuses</option>
-              {CUSTOMER_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <label>
-            Type
-            <select value={type} onChange={(event) => { setType(event.target.value); setPage(1); }}>
-              <option value="">All types</option>
-              {CUSTOMER_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <label>
-            KYC level
-            <select value={kycLevel} onChange={(event) => { setKycLevel(event.target.value); setPage(1); }}>
-              <option value="">All levels</option>
-              {KYC_LEVELS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <label>
-            KYC status
-            <select value={kycStatus} onChange={(event) => { setKycStatus(event.target.value); setPage(1); }}>
-              <option value="">All KYC statuses</option>
-              {KYC_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
+      <section className="mn-dir-panel" aria-label="Customer search and results">
+        <div className="mn-dir-toolbar">
+          <div className="mn-dir-toolbar__filters">
+            <Field label="Search" htmlFor="mn-dir-search" className="mn-dir-filter mn-dir-filter--search">
+              <input
+                id="mn-dir-search"
+                className="mn-input mn-input--search"
+                type="search"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Name, reference or authorized contact"
+                aria-label="Search customers"
+              />
+            </Field>
+            <Field label="Status" htmlFor="mn-dir-status" className="mn-dir-filter">
+              <select
+                id="mn-dir-status"
+                className="mn-select"
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All statuses</option>
+                {CUSTOMER_STATUSES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Type" htmlFor="mn-dir-type" className="mn-dir-filter">
+              <select
+                id="mn-dir-type"
+                className="mn-select"
+                value={type}
+                onChange={(event) => {
+                  setType(event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All types</option>
+                {CUSTOMER_TYPES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="KYC level" htmlFor="mn-dir-kyc-level" className="mn-dir-filter">
+              <select
+                id="mn-dir-kyc-level"
+                className="mn-select"
+                value={kycLevel}
+                onChange={(event) => {
+                  setKycLevel(event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All levels</option>
+                {KYC_LEVELS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="KYC status" htmlFor="mn-dir-kyc-status" className="mn-dir-filter">
+              <select
+                id="mn-dir-kyc-status"
+                className="mn-select"
+                value={kycStatus}
+                onChange={(event) => {
+                  setKycStatus(event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All KYC statuses</option>
+                {KYC_STATUSES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div className="mn-dir-toolbar__actions">
+            {activeFilterCount > 0 ? (
+              <span className="mn-dir-toolbar__status">
+                {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
+              </span>
+            ) : null}
+            {activeFilterCount > 0 ? (
+              <Button variant="quiet" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+            <Button variant="secondary" size="sm" onClick={retry} disabled={isLoading}>
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {error && (
-          <div className="cm-error" role="alert">
-            <span>{error}</span>
-            <button className="cm-button cm-button-secondary" type="button" onClick={() => setReloadVersion((value) => value + 1)}>
-              Retry
-            </button>
-          </div>
+          <Alert
+            className="mn-dir-alert"
+            tone="danger"
+            title="Customer records unavailable"
+            action={
+              <Button variant="secondary" size="sm" onClick={retry}>
+                Retry
+              </Button>
+            }
+          >
+            {error}
+          </Alert>
         )}
-        {selectionError && <div className="cm-error" role="alert">{selectionError}</div>}
+        {selectionError && (
+          <Alert className="mn-dir-alert" tone="warning" live="assertive">
+            {selectionError}
+          </Alert>
+        )}
 
-        <div className="cm-table-meta">
-          <span>{isLoading ? 'Loading customers…' : `${directory?.total ?? 0} customer${directory?.total === 1 ? '' : 's'}`}</span>
-          <span>Page {directory?.page ?? page} of {Math.max(directory?.totalPages ?? 0, 1)}</span>
+        <div className="mn-dir-meta">
+          <span className="mn-dir-meta__count" role="status" aria-live="polite">
+            {countLabel}
+          </span>
+          {previousDataVisible ? (
+            <span className="mn-dir-meta__flag">
+              <span className="mn-dir-meta__flag-dot" aria-hidden="true" />
+              Showing previously loaded results — not yet confirmed
+            </span>
+          ) : null}
         </div>
 
-        <div className="cm-table-wrap">
-          <table className="cm-customer-table">
+        <ScrollRegion
+          className="mn-dir-scroll-hint"
+          label="Customer records table"
+          hint="Scroll horizontally to view every column and the row actions."
+        >
+          <table className="mn-dir-table" aria-busy={isLoading}>
+            <caption className="mn-visually-hidden">
+              Customer directory results, page {currentPage} of {totalPages}
+            </caption>
             <thead>
               <tr>
-                <th scope="col">Customer</th>
-                <th scope="col">Reference</th>
-                <th scope="col">Type</th>
-                <th scope="col">Status</th>
-                <th scope="col">KYC</th>
-                <th scope="col">Primary contact</th>
-                <th scope="col">Registered</th>
-                <th scope="col"><span className="cm-visually-hidden">Customer actions</span></th>
+                <th scope="col" className="mn-dir-table__head-cell mn-dir-table__sticky">Customer</th>
+                <th scope="col" className="mn-dir-table__head-cell">Reference</th>
+                <th scope="col" className="mn-dir-table__head-cell">Type</th>
+                <th scope="col" className="mn-dir-table__head-cell">Status</th>
+                <th scope="col" className="mn-dir-table__head-cell">KYC</th>
+                <th scope="col" className="mn-dir-table__head-cell">Primary contact</th>
+                <th scope="col" className="mn-dir-table__head-cell">Registered</th>
+                <th scope="col" className="mn-dir-table__head-cell mn-dir-table__actions">
+                  <span className="mn-visually-hidden">Customer actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {!isLoading && !error && directory?.data?.length === 0 && (
-                <tr><td colSpan={8} className="cm-empty-row">No customer records match these search criteria.</td></tr>
-              )}
-              {(directory?.data ?? []).map((customer) => (
-                <tr key={customer.id}>
-                  <td>
-                    <strong>{displayName(customer)}</strong>
-                    {customer.legalName && customer.legalName !== customer.displayName && (
-                      <span className="cm-secondary-line">Legal name: {customer.legalName}</span>
-                    )}
-                  </td>
-                  <td><span className="cm-reference">{maskCustomerReference(customer.reference) || 'Reference unavailable'}</span></td>
-                  <td>{customer.type}</td>
-                  <td><span className={`cm-status cm-status-${customer.status.toLowerCase()}`}>{customer.status}</span></td>
-                  <td>
-                    <span className="cm-kyc-level">{customer.kycLevel}</span>
-                    <span className="cm-secondary-line">{customer.kycStatus}</span>
-                  </td>
-                  <td>
-                    {customer.primaryContact
-                      ? <><span>{customer.primaryContact.maskedValue}</span><span className="cm-secondary-line">{customer.primaryContact.isVerified ? 'Verified' : 'Not verified'}</span></>
-                      : scopes.includes('customer.view_contact_methods')
-                        ? 'Not recorded'
-                        : 'Restricted'}
-                  </td>
-                  <td>{formatDate(customer.createdAt)}</td>
-                  <td>
-                    <button
-                      className="cm-button cm-button-secondary cm-open-button"
-                      type="button"
-                      onClick={() => setSelectedCustomer(customer)}
-                      aria-label={`Open Customer 360° for ${displayName(customer)}`}
-                    >
-                      Open Customer 360°
-                    </button>
+                <tr>
+                  <td colSpan={8} className="mn-dir-table__empty">
+                    <div className="mn-dir-state">
+                      <span className="mn-dir-state__glyph" aria-hidden="true">
+                        ⌕
+                      </span>
+                      <p className="mn-dir-state__title">
+                        No customer records match these search criteria.
+                      </p>
+                      <p className="mn-dir-state__hint">
+                        Adjust the search or filters to widen the results.
+                      </p>
+                      {activeFilterCount > 0 ? (
+                        <Button variant="secondary" size="sm" onClick={clearFilters}>
+                          Clear filters
+                        </Button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
-              ))}
-              {isLoading && !directory && <tr><td colSpan={8} className="cm-empty-row">Loading customer records…</td></tr>}
+              )}
+              {(directory?.data ?? []).map((customer) => {
+                const customerStatus = statusPresentation(customer.status);
+                const customerKyc = kycPresentation(customer.kycStatus);
+                return (
+                  <tr key={customer.id} className="mn-dir-table__row">
+                    <td className="mn-dir-table__cell mn-dir-table__sticky">
+                      <span className="mn-dir-table__identity">{displayName(customer)}</span>
+                      {customer.legalName && customer.legalName !== customer.displayName && (
+                        <span className="mn-dir-table__secondary">Legal name: {customer.legalName}</span>
+                      )}
+                    </td>
+                    <td className="mn-dir-table__cell">
+                      <span className="mn-dir-table__reference">
+                        {maskCustomerReference(customer.reference) || 'Reference unavailable'}
+                      </span>
+                    </td>
+                    <td className="mn-dir-table__cell">{customer.type}</td>
+                    <td className="mn-dir-table__cell">
+                      <StatusBadge tone={customerStatus.tone} shape={customerStatus.shape}>
+                        {customer.status}
+                      </StatusBadge>
+                    </td>
+                    <td className="mn-dir-table__cell">
+                      <span className="mn-dir-table__kyc">
+                        <span className="mn-dir-chip">{customer.kycLevel}</span>
+                        <StatusBadge tone={customerKyc.tone} shape={customerKyc.shape}>
+                          {customer.kycStatus}
+                        </StatusBadge>
+                      </span>
+                    </td>
+                    <td className="mn-dir-table__cell">
+                      {customer.primaryContact ? (
+                        <>
+                          <span>{customer.primaryContact.maskedValue}</span>
+                          <span className="mn-dir-table__secondary">
+                            {customer.primaryContact.isVerified ? 'Verified' : 'Not verified'}
+                          </span>
+                        </>
+                      ) : scopes.includes('customer.view_contact_methods') ? (
+                        'Not recorded'
+                      ) : (
+                        'Restricted'
+                      )}
+                    </td>
+                    <td className="mn-dir-table__cell">{formatDate(customer.createdAt)}</td>
+                    <td className="mn-dir-table__cell mn-dir-table__actions">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSelectedCustomer(customer)}
+                        aria-label={`Open Customer 360° for ${displayName(customer)}`}
+                      >
+                        Open Customer 360°
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {isLoading && !directory && (
+                <tr>
+                  <td colSpan={8} className="mn-dir-table__empty">
+                    <span className="mn-dir-loading">
+                      <span className="mn-dir-loading__dot" aria-hidden="true" />
+                      <span>Loading customer records…</span>
+                    </span>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
 
-        <nav className="cm-pagination" aria-label="Customer directory pages">
-          <button
-            className="cm-button cm-button-secondary"
-            type="button"
-            disabled={isLoading || !directory?.hasPreviousPage}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-          >
-            Previous
-          </button>
-          <span>Showing page {directory?.page ?? page} of {Math.max(directory?.totalPages ?? 0, 1)}</span>
-          <button
-            className="cm-button cm-button-secondary"
-            type="button"
-            disabled={isLoading || !directory?.hasNextPage}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            Next
-          </button>
+        <nav className="mn-dir-pagination" aria-label="Customer directory pages">
+          <span className="mn-dir-pagination__summary">
+            {rangeStart !== null && rangeEnd !== null
+              ? `Showing ${rangeStart}–${rangeEnd} of ${total}`
+              : hasRows
+                ? 'Result range unconfirmed'
+                : 'No matching records'}
+          </span>
+          <div className="mn-dir-pagination__controls">
+            <Button
+              variant="secondary"
+              disabled={isLoading || !directory?.hasPreviousPage}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Previous
+            </Button>
+            <span className="mn-dir-pagination__page">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="secondary"
+              disabled={isLoading || !directory?.hasNextPage}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </nav>
       </section>
     </main>

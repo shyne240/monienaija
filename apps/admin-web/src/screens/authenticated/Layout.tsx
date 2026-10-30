@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+
+import '../../design-system/tokens.css';
+import { Button } from '../../design-system/primitives';
 import { useAuthStore } from '../../store/auth-store';
 import { DashboardScreen } from './DashboardScreen';
 import { DashboardSettingsScreen } from './DashboardSettingsScreen';
@@ -22,15 +25,28 @@ import { SuperAdminRecoveryScreen } from './SuperAdminRecoveryScreen';
 import { AuditTrailScreen } from './AuditTrailScreen';
 import { LimitAssignmentScreen } from './LimitAssignmentScreen';
 import { canonicalAdminView, canAccessAdminView, type AdminView } from './navigation-access';
+import './admin-shell.css';
 
 // Seven-section Admin Web navigation. Money movement includes the dedicated read-only
 // Cash-to-Cash operations view; Agent classes are managed through their separate function scope.
 // Menu visibility and route selection use function scopes, not role labels.
+//
+// M1 presentation note: this file owns shell markup, scoped styles and focus/drawer
+// behaviour only. Section definitions, item labels, guards, aliases, customer context,
+// the route switch, logout and every destination handler are unchanged.
 
 type View = AdminView;
 
 interface NavContext {
   customerId?: string;
+}
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getFocusable(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 }
 
 export const Layout: React.FC = () => {
@@ -47,6 +63,117 @@ export const Layout: React.FC = () => {
     compliance: true,
     platform: true,
   });
+
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const drawerToggleRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocusRef = useRef(false);
+  const focusContentRef = useRef(false);
+
+  const openDrawer = useCallback(() => {
+    restoreFocusRef.current = false;
+    setMobileOpen(true);
+  }, []);
+
+  const closeDrawer = useCallback(() => {
+    restoreFocusRef.current = true;
+    setMobileOpen(false);
+  }, []);
+
+  const toggleDrawer = useCallback(() => {
+    if (mobileOpen) closeDrawer();
+    else openDrawer();
+  }, [mobileOpen, closeDrawer, openDrawer]);
+
+  // Modal drawer contract: focus moves inside, stays inside, Escape/backdrop/close
+  // dismiss it, background scrolling is prevented, and focus returns to the toggle.
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const drawer = drawerRef.current;
+    const focusables = getFocusable(drawer);
+    (focusables[0] ?? drawer)?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeDrawer();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const items = getFocusable(drawer);
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const inside = drawer ? drawer.contains(active) : false;
+
+      if (event.shiftKey) {
+        if (!inside || active === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (!inside || active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.body.style.overflow = previousOverflow;
+      if (restoreFocusRef.current) {
+        restoreFocusRef.current = false;
+        drawerToggleRef.current?.focus();
+      }
+    };
+  }, [mobileOpen, closeDrawer]);
+
+  // Leaving the compact breakpoint while the drawer is open must not strand focus
+  // in a hidden overlay. Guarded because not every test environment implements it.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    const query = window.matchMedia('(min-width: 1024px)');
+    const onChange = () => {
+      if (query.matches) closeDrawer();
+    };
+
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', onChange);
+      return () => query.removeEventListener('change', onChange);
+    }
+    if (typeof query.addListener === 'function') {
+      query.addListener(onChange);
+      return () => {
+        query.removeListener(onChange);
+      };
+    }
+    return;
+  }, [mobileOpen, closeDrawer]);
+
+  // After a successful navigation, move focus to the destination heading (or the
+  // workspace container) so keyboard and screen-reader users land on the new page.
+  useEffect(() => {
+    if (!focusContentRef.current) return;
+    focusContentRef.current = false;
+
+    const container = contentRef.current;
+    if (!container) return;
+    const heading = container.querySelector<HTMLElement>('h1, h2, [data-mn-focus-target]');
+    const target = heading ?? container;
+    if (target !== container && !target.hasAttribute('tabindex')) {
+      target.setAttribute('tabindex', '-1');
+    }
+    target.focus();
+  }, [currentView, navContext]);
 
   if (!principal) return null;
 
@@ -145,6 +272,10 @@ export const Layout: React.FC = () => {
     if (owningSection) {
       setExpandedSections((prev) => ({ ...prev, [owningSection.id]: true }));
     }
+    // A successful navigation closes the drawer and moves focus to the page, not
+    // back to the toggle; a denied navigation keeps the guard behaviour unchanged.
+    focusContentRef.current = true;
+    restoreFocusRef.current = false;
     setMobileOpen(false);
   };
 
@@ -156,7 +287,7 @@ export const Layout: React.FC = () => {
   const renderContent = () => {
     if (!canAccessAdminView(currentView, principal.scopes, principal.roles, navContext)) {
       return (
-        <div role="alert" style={styles.routeDenied}>
+        <div role="alert" className="mn-route-denied">
           This screen is not available to the current workforce principal.
         </div>
       );
@@ -196,419 +327,166 @@ export const Layout: React.FC = () => {
     }
   };
 
+  const principalHandle = principal.principalId.split(':').pop() || principal.principalId;
+  const principalInitial = principalHandle.charAt(0).toUpperCase() || 'O';
+
+  const renderNavGroups = (variant: 'rail' | 'drawer') => {
+    const prefix = variant === 'rail' ? '' : 'mobile-';
+    return sections.map((section) => {
+      const visibleItems = section.items.filter((item) => item.visible);
+      if (visibleItems.length === 0) return null;
+      const expanded = !!expandedSections[section.id];
+      const panelId = `mn-nav-${variant}-group-${section.id}`;
+
+      return (
+        <div key={section.id} className="mn-nav__group">
+          <button
+            type="button"
+            className="mn-nav__group-toggle"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            data-testid={`${prefix}section-${section.id}`}
+            onClick={() => toggleSection(section.id)}
+          >
+            <span className="mn-nav__group-title">{section.title}</span>
+            <span className="mn-nav__chevron" aria-hidden="true" />
+          </button>
+          <div className="mn-nav__items" id={panelId} hidden={!expanded}>
+            {visibleItems.map((item) => {
+              const isActive = canonicalAdminView(currentView) === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  className="mn-nav__item"
+                  data-testid={`${prefix}nav-${item.key}`}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => handleNav(item.key)}
+                >
+                  {/* Label kept as a single text node so existing accessible names and
+                      exact-text regression assertions remain unchanged. */}
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    });
+  };
+
   return (
-    <div style={styles.layout}>
-      {/* Desktop Sidebar */}
-      <div style={styles.sidebar} data-testid="desktop-nav">
-        <div style={styles.branding}>
-          <img src="/favicon.png" alt="MonieNaija" style={styles.brandIcon} />
-          <span style={styles.brandText}>MonieNaija</span>
+    <div className="mn-shell">
+      <a className="mn-skip-link" href="#mn-main-workspace">
+        Skip to main content
+      </a>
+
+      <aside className="mn-shell__sidebar" data-testid="desktop-nav">
+        <div className="mn-shell__brand">
+          <img className="mn-shell__brand-mark" src="/favicon.png" alt="" aria-hidden="true" />
+          <span className="mn-shell__brand-text">
+            <span className="mn-shell__brand-name">MonieNaija</span>
+            <span className="mn-shell__brand-sub">Workforce console</span>
+          </span>
         </div>
 
-        <div style={styles.userInfo}>
-          <div style={styles.avatar}>
-            {principal.principalId.split(':').pop()?.charAt(0).toUpperCase() || 'O'}
-          </div>
-          <div style={styles.userMeta}>
-            <span style={styles.userName} title={principal.principalId}>
-              {principal.principalId.split(':').pop()}
+        <div className="mn-identity">
+          <span className="mn-identity__avatar" aria-hidden="true">
+            {principalInitial}
+          </span>
+          <span className="mn-identity__meta">
+            <span className="mn-identity__name" title={principal.principalId}>
+              {principalHandle}
             </span>
-            <div style={styles.badgeWrapper}>
-              {principal.roles.slice(0, 1).map((role) => (
-                <span key={role} style={styles.roleBadge}>{role}</span>
-              ))}
+            {principal.roles.slice(0, 1).map((role) => (
+              <span className="mn-identity__role" key={role}>
+                {role}
+              </span>
+            ))}
+          </span>
+        </div>
+
+        <nav className="mn-nav" aria-label="Main navigation">
+          {renderNavGroups('rail')}
+        </nav>
+
+        <div className="mn-shell__logout">
+          <Button variant="secondary" onClick={logout}>
+            Log out session
+          </Button>
+        </div>
+      </aside>
+
+      {/* Compact top app bar: shown below the persistent-rail breakpoint. */}
+      <header className="mn-shell__topbar" data-testid="mobile-header">
+        <button
+          type="button"
+          className="mn-topbar__toggle"
+          ref={drawerToggleRef}
+          aria-label="Navigation menu"
+          aria-expanded={mobileOpen}
+          aria-controls="mn-navigation-drawer"
+          data-testid="mobile-menu-toggle"
+          onClick={toggleDrawer}
+        >
+          <span aria-hidden="true">{mobileOpen ? '✕' : '☰'}</span>
+        </button>
+        <span className="mn-topbar__brand">MonieNaija</span>
+        <span className="mn-topbar__role">{principal.roles[0]}</span>
+      </header>
+
+      <div
+        className="mn-shell__content"
+        id="mn-main-workspace"
+        data-testid="main-content"
+        ref={contentRef}
+        tabIndex={-1}
+      >
+        {renderContent()}
+      </div>
+
+      {mobileOpen && (
+        <div className="mn-drawer-layer">
+          <div
+            className="mn-drawer__backdrop"
+            data-testid="mobile-nav-backdrop"
+            onClick={closeDrawer}
+            aria-hidden="true"
+          />
+          <div
+            className="mn-drawer"
+            id="mn-navigation-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            data-testid="mobile-nav"
+            ref={drawerRef}
+          >
+            <div className="mn-drawer__header">
+              <span className="mn-drawer__brand">MonieNaija</span>
+              <button
+                type="button"
+                className="mn-drawer__close"
+                aria-label="Close navigation menu"
+                data-testid="mobile-menu-close"
+                onClick={closeDrawer}
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            </div>
+
+            <nav className="mn-nav mn-nav--drawer" aria-label="Mobile navigation">
+              {renderNavGroups('drawer')}
+            </nav>
+
+            <div className="mn-drawer__logout">
+              <Button variant="secondary" onClick={logout}>
+                Log out
+              </Button>
             </div>
           </div>
         </div>
-
-        <nav style={styles.nav} aria-label="Main navigation">
-          {sections.map(section => {
-            const visibleItems = section.items.filter(i => i.visible);
-            if (visibleItems.length === 0) return null;
-            return (
-              <div key={section.id} style={styles.section}>
-                <button
-                  onClick={() => toggleSection(section.id)}
-                  style={styles.sectionHeader}
-                  aria-expanded={expandedSections[section.id]}
-                  data-testid={`section-${section.id}`}
-                >
-                  <span>{section.title}</span>
-                  <span style={styles.chevron}>{expandedSections[section.id] ? '▾' : '▸'}</span>
-                </button>
-                {expandedSections[section.id] && (
-                  <div style={styles.sectionItems}>
-                    {visibleItems.map(item => {
-                      const isActive = canonicalAdminView(currentView) === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          data-testid={`nav-${item.key}`}
-                          style={isActive ? styles.activeNavLink : styles.navLink}
-                          aria-current={isActive ? 'page' : undefined}
-                          onClick={() => handleNav(item.key)}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        <button onClick={logout} style={styles.logoutBtn}>
-          🚪 Log Out Session
-        </button>
-      </div>
-
-      {/* Mobile Header + Hamburger */}
-      <div style={styles.mobileHeader} data-testid="mobile-header">
-        <button
-          aria-label="Open navigation menu"
-          data-testid="mobile-menu-toggle"
-          onClick={() => setMobileOpen(v => !v)}
-          style={styles.hamburger}
-        >
-          ☰
-        </button>
-        <span style={styles.mobileBrand}>MonieNaija</span>
-        <span style={styles.mobileRole}>{principal.roles[0]}</span>
-        {mobileOpen && (
-          <div style={styles.mobileDrawer} data-testid="mobile-nav">
-            <nav aria-label="Mobile navigation" style={styles.mobileNav}>
-              {sections.map(section => {
-                const visibleItems = section.items.filter(i => i.visible);
-                if (visibleItems.length === 0) return null;
-                return (
-                  <div key={section.id} style={styles.mobileSection}>
-                    <button
-                      type="button"
-                      style={styles.mobileSectionHeader}
-                      aria-expanded={expandedSections[section.id]}
-                      data-testid={`mobile-section-${section.id}`}
-                      onClick={() => toggleSection(section.id)}
-                    >
-                      <span>{section.title}</span>
-                      <span>{expandedSections[section.id] ? '▾' : '▸'}</span>
-                    </button>
-                    {expandedSections[section.id] && visibleItems.map(item => {
-                      const isActive = canonicalAdminView(currentView) === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          data-testid={`mobile-nav-${item.key}`}
-                          aria-current={isActive ? 'page' : undefined}
-                          style={isActive ? styles.mobileActiveLink : styles.mobileNavLink}
-                          onClick={() => handleNav(item.key)}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              <button onClick={logout} style={styles.mobileLogoutBtn}>
-                🚪 Log Out
-              </button>
-            </nav>
-          </div>
-        )}
-      </div>
-
-      {/* Main View Area */}
-      <div style={styles.content} data-testid="main-content">
-        {renderContent()}
-      </div>
+      )}
     </div>
   );
 };
-
-const styles: Record<string, React.CSSProperties> = {
-  layout: {
-    display: 'flex',
-    minHeight: '100vh',
-    backgroundColor: '#F8FAFC',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-  },
-  sidebar: {
-    width: '280px',
-    backgroundColor: '#032B14',
-    color: '#FFFFFF',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '24px',
-    boxShadow: '2px 0 8px rgba(0, 0, 0, 0.05)',
-    overflowY: 'auto',
-  },
-  branding: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '32px',
-  },
-  brandIcon: {
-    width: '36px',
-    height: '36px',
-    objectFit: 'contain',
-  },
-  brandText: {
-    fontSize: '18px',
-    fontWeight: 'bold',
-    letterSpacing: '1px',
-    color: '#FFFFFF',
-  },
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '28px',
-  },
-  avatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '20px',
-    backgroundColor: '#FFB703',
-    color: '#032B14',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontWeight: 'bold',
-    fontSize: '16px',
-  },
-  userMeta: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-    overflow: 'hidden',
-  },
-  userName: {
-    fontSize: '13px',
-    fontWeight: 'bold',
-    color: '#F8FAFC',
-    whiteSpace: 'nowrap',
-    textOverflow: 'ellipsis',
-    overflow: 'hidden',
-  },
-  badgeWrapper: {
-    marginTop: '4px',
-  },
-  roleBadge: {
-    fontSize: '9px',
-    fontWeight: 'bold',
-    color: '#FFB703',
-    borderColor: '#FFB703',
-    borderWidth: '1px',
-    borderStyle: 'solid',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    textTransform: 'uppercase',
-    display: 'inline-block',
-  },
-  nav: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    flex: 1,
-  },
-  section: {
-    marginBottom: '8px',
-  },
-  sectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    padding: '8px 12px',
-    fontSize: '11px',
-    fontWeight: '700',
-    color: '#FFB703',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-  chevron: {
-    fontSize: '12px',
-  },
-  sectionItems: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    marginTop: '6px',
-    paddingLeft: '8px',
-    borderLeft: '1px solid rgba(255,255,255,0.1)',
-    marginLeft: '4px',
-  },
-  navLink: {
-    display: 'block',
-    width: '100%',
-    padding: '10px 12px',
-    textAlign: 'left',
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#CBD5E1',
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  activeNavLink: {
-    display: 'block',
-    width: '100%',
-    padding: '10px 12px',
-    textAlign: 'left',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#FFFFFF',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  logoutBtn: {
-    marginTop: 'auto',
-    backgroundColor: '#EF4444',
-    color: '#FFFFFF',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '12px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  mobileHeader: {
-    display: 'none',
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '56px',
-    backgroundColor: '#032B14',
-    color: '#fff',
-    alignItems: 'center',
-    padding: '0 12px',
-    gap: '12px',
-    zIndex: 100,
-  } as React.CSSProperties,
-  hamburger: {
-    background: 'transparent',
-    border: '1px solid rgba(255,255,255,0.3)',
-    color: '#fff',
-    fontSize: '22px',
-    borderRadius: '6px',
-    padding: '4px 10px',
-    cursor: 'pointer',
-  },
-  mobileBrand: {
-    fontWeight: 700,
-    letterSpacing: '0.5px',
-  },
-  mobileRole: {
-    marginLeft: 'auto',
-    fontSize: '10px',
-    border: '1px solid #FFB703',
-    color: '#FFB703',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  },
-  mobileDrawer: {
-    position: 'fixed',
-    top: '56px',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#032B14',
-    padding: '16px',
-    overflowY: 'auto',
-    zIndex: 99,
-  } as React.CSSProperties,
-  mobileNav: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  } as React.CSSProperties,
-  mobileSection: {
-    marginBottom: '12px',
-  },
-  mobileSectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    width: '100%',
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    textAlign: 'left',
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#FFB703',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    marginBottom: '6px',
-    paddingLeft: '4px',
-  },
-  mobileNavLink: {
-    width: '100%',
-    padding: '12px 16px',
-    textAlign: 'left',
-    fontSize: '14px',
-    color: '#CBD5E1',
-    backgroundColor: 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  mobileActiveLink: {
-    width: '100%',
-    padding: '12px 16px',
-    textAlign: 'left',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#fff',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  mobileLogoutBtn: {
-    marginTop: '16px',
-    backgroundColor: '#EF4444',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '12px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  } as React.CSSProperties,
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-};
-
-// Inject responsive CSS for mobile header/sidebar toggle
-if (typeof document !== 'undefined' && !document.getElementById('layout-responsive-style')) {
-  const styleTag = document.createElement('style');
-  styleTag.id = 'layout-responsive-style';
-  styleTag.textContent = `
-    @media (max-width: 768px) {
-      [data-testid="desktop-nav"] { display: none !important; }
-      [data-testid="mobile-header"] { display: flex !important; }
-      [data-testid="main-content"] { margin-top: 56px; }
-    }
-    @media (min-width: 769px) {
-      [data-testid="mobile-header"] { display: none !important; }
-      [data-testid="mobile-nav"] { display: none !important; }
-    }
-  `;
-  document.head.appendChild(styleTag);
-}
