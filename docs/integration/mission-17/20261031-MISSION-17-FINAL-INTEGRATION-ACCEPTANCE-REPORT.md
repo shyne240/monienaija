@@ -12,7 +12,7 @@
 | Arena 1 | same branch tip | `dcac034bf6d37bf5cd4cd747b3ca9c45d336ffe2` (handoff doc — docs only) | 1 markdown file |
 | Arena 2 | `arena/ea070127-monienaija` | `f5abc0986b1d80e4780b14516a6583e5f523c59e` (AW-01) | Admin Web config/vite + 1 test file |
 
-**Merge commits on this branch:** `409edaf` (Arena 1) → `93b6007` (Arena 2) → code-complete tip.
+**Merge commits on this branch:** `409edaf` (Arena 1) → `93b6007` (Arena 2) → `c1d41f7a2476f0c91bd3051de4e2c2941cc463dc` (verification + this report; the only commit after the merges, and it changes no application code).
 **Verdict: PASS — recommend Arena 4 independent acceptance.**
 
 ---
