@@ -1,0 +1,56 @@
+MISSION 19A — sanitized live HTTP evidence (isolated test PostgreSQL, 2026-10-31)
+
+Baseline: bee4c00d1458128f3cc1e6d745983a16e3fc0ad8
+The baseline FINANCE_AUDITOR identity and genuine A2 session were created by the
+PostgreSQL fixture, then exercised over an actual listening Fastify TCP socket.
+The initial acceptance regression was intentionally expected to fail.
+
+  GET    /api/v1/internal/agents                         200
+  DELETE /api/v1/internal/a2/workforce/sessions/:self    403
+  GET    /api/v1/internal/agents   (same bearer replay)  200
+
+After the correction: same PostgreSQL/real-TCP regression, genuine A2 session.
+
+  GET    /api/v1/internal/agents                         200
+  DELETE /api/v1/internal/a2/workforce/sessions/:self    200
+  GET    /api/v1/internal/agents   (same bearer replay)  401
+  DELETE /api/v1/internal/a2/workforce/sessions/:self    401 (replayed bearer)
+  Persisted session status: REVOKED, with revocation timestamp and reason.
+
+Additional live HTTP test: the test-only local-admin password login issues a real
+FINANCE_AUDITOR A2 session; the credential and bearer are not printed or stored here.
+
+  POST   /api/v1/internal/a2/workforce/local-admin-sessions    201
+  GET    /api/v1/internal/a2/workforce/dashboard/my-dashboard  200
+  DELETE /api/v1/internal/a2/workforce/sessions/:self           200
+  GET    /api/v1/internal/a2/workforce/dashboard/my-dashboard  401 (same bearer)
+
+Additional post-fix live HTTP denials and non-interference:
+
+  DELETE same principal's OTHER session                   403
+  DELETE another principal's session                      403
+  DELETE nonexistent session id                           403 (same denial body)
+  DELETE current session, no/invalid bearer              401
+  DELETE unrelated role assignment                       403
+  POST role assignment / PATCH agent class / PUT dashboard assignment   403 each
+  DELETE current session with missing/empty/overlong reason             400 each
+  DELETE exact current session with query string         200
+  GET using a surviving sibling/other-principal bearer   200 each
+
+All eleven existing catalogue roles were tested over the same real TCP/PG surface:
+SUPER_ADMIN, FINANCE_PREPARER, FINANCE_CONTROLLER, FINANCE_AUDITOR, ADMINISTRATOR,
+OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE and
+TREASURY: each had a 200 protected read, 200 self-revocation and 401 bearer replay.
+
+Concurrent-validation evidence: a deterministic test pauses a previously-started
+validation after its session row was read. On the baseline, invoking the real
+session service's revoke while that validation was paused and then releasing it
+restored the row to ACTIVE. Post-fix, the same interleaving uses real TCP HTTP:
+
+  DELETE current session while the prior validation is paused  200
+  Previously-started GET after the pause is released            401
+  GET replay after logout                                      401
+  Persisted session status                                     REVOKED
+
+The live HTTP server used an ephemeral local TCP port; no real credentials, tokens,
+individual session ids, personal data, or raw request headers are included here.

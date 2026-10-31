@@ -100,16 +100,20 @@ export class A2WorkforceSessionService {
       s = await r.findOne({ where: { tokenHash: hash(token) } });
     if (!s || s.status !== 'ACTIVE' || s.expiresAt <= now || s.audience !== audience) {
       if (s && s.status === 'ACTIVE' && s.expiresAt <= now) {
-        s.status = 'EXPIRED';
-        await r.save(s);
+        // Never overwrite a revocation which won the race after this row was read.
+        await r.update({ id: s.id, status: 'ACTIVE' }, { status: 'EXPIRED' });
       }
       throw new UnauthorizedException('Invalid workforce session');
     }
     const resolved = await this.resolve(s.principalId, now);
-    s.roles = resolved.roles;
-    s.scopes = resolved.scopes;
-    s.lastSeenAt = now;
-    await r.save(s);
+    // A full save of the stale entity can restore status=ACTIVE after a concurrent logout.
+    // Update only the validation fields while the session is still active, and fail closed if
+    // revocation (or expiry) has already changed its status.
+    const refreshed = await r.update(
+      { id: s.id, status: 'ACTIVE' },
+      { roles: resolved.roles, scopes: resolved.scopes, lastSeenAt: now },
+    );
+    if (refreshed.affected !== 1) throw new UnauthorizedException('Invalid workforce session');
     return this.principal(s, resolved);
   }
   async revoke(
