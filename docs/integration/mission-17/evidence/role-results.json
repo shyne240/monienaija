@@ -1,0 +1,228 @@
+{
+  "results": [
+    {
+      "id": "R-SUPER_ADMIN-01",
+      "title": "SUPER_ADMIN: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=EXECUTIVE_GOVERNANCE title=\"Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary | Transaction Volume Trend | Recent Transactions | Ledger Summary | Reconciliation Status | Workforce Overview | Role Definition Proposals | Recent Audit Activity | System Health\" scopes=66"
+    },
+    {
+      "id": "R-SUPER_ADMIN-02",
+      "title": "SUPER_ADMIN: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "25 items, all expected"
+    },
+    {
+      "id": "R-SUPER_ADMIN-03",
+      "title": "SUPER_ADMIN: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=25/25 screens rendered; pointerBlocked=[productCatalogue,limitCatalogue] entitlementNotices=[]"
+    },
+    {
+      "id": "R-FINANCE_PREPARER-01",
+      "title": "FINANCE_PREPARER: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=FINANCE_PREPARATION title=\"Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | Ledger Summary\" scopes=20"
+    },
+    {
+      "id": "R-FINANCE_PREPARER-02",
+      "title": "FINANCE_PREPARER: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "8 items, all expected"
+    },
+    {
+      "id": "R-FINANCE_PREPARER-03",
+      "title": "FINANCE_PREPARER: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=8/8 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-FINANCE_CONTROLLER-01",
+      "title": "FINANCE_CONTROLLER: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=FINANCIAL_CONTROL_APPROVALS title=\"Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction Summary | Ledger Summary | Role Definition Proposals\" scopes=28"
+    },
+    {
+      "id": "R-FINANCE_CONTROLLER-02",
+      "title": "FINANCE_CONTROLLER: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "11 items, all expected"
+    },
+    {
+      "id": "R-FINANCE_CONTROLLER-03",
+      "title": "FINANCE_CONTROLLER: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=11/11 screens rendered; pointerBlocked=[] entitlementNotices=[agents]"
+    },
+    {
+      "id": "R-FINANCE_AUDITOR-01",
+      "title": "FINANCE_AUDITOR: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=FINANCIAL_AUDIT_ASSURANCE title=\"Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Summary | Recent Transactions | Ledger Summary | Reconciliation Status | Recent Audit Activity | System Health\" scopes=25"
+    },
+    {
+      "id": "R-FINANCE_AUDITOR-02",
+      "title": "FINANCE_AUDITOR: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "20 items, all expected"
+    },
+    {
+      "id": "R-FINANCE_AUDITOR-03",
+      "title": "FINANCE_AUDITOR: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=20/20 screens rendered; pointerBlocked=[limitAssignments] entitlementNotices=[]"
+    },
+    {
+      "id": "R-ADMINISTRATOR-01",
+      "title": "ADMINISTRATOR: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=WORKFORCE_ADMINISTRATION title=\"Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview\" scopes=12"
+    },
+    {
+      "id": "R-ADMINISTRATOR-02",
+      "title": "ADMINISTRATOR: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "8 items, all expected"
+    },
+    {
+      "id": "R-ADMINISTRATOR-03",
+      "title": "ADMINISTRATOR: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=8/8 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-OPERATIONS-01",
+      "title": "OPERATIONS: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=TRANSACTION_OPERATIONS title=\"Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary | Transaction Volume Trend | Recent Transactions | Support Ticket Queue | System Health | Customer Directory\" scopes=27"
+    },
+    {
+      "id": "R-OPERATIONS-02",
+      "title": "OPERATIONS: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "10 items, all expected"
+    },
+    {
+      "id": "R-OPERATIONS-03",
+      "title": "OPERATIONS: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=10/10 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-AGENT_NETWORK_MANAGER-01",
+      "title": "AGENT_NETWORK_MANAGER: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=AGENT_NETWORK_MANAGEMENT title=\"Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summary | Pending Agent Applications\" scopes=13"
+    },
+    {
+      "id": "R-AGENT_NETWORK_MANAGER-02",
+      "title": "AGENT_NETWORK_MANAGER: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "5 items, all expected"
+    },
+    {
+      "id": "R-AGENT_NETWORK_MANAGER-03",
+      "title": "AGENT_NETWORK_MANAGER: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=5/5 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-COMPLIANCE-01",
+      "title": "COMPLIANCE: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=COMPLIANCE_KYC title=\"Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Case Summary\" scopes=13"
+    },
+    {
+      "id": "R-COMPLIANCE-02",
+      "title": "COMPLIANCE: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "4 items, all expected"
+    },
+    {
+      "id": "R-COMPLIANCE-03",
+      "title": "COMPLIANCE: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=4/4 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-RISK_FRAUD-01",
+      "title": "RISK_FRAUD: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=FRAUD_CASE_MONITORING title=\"Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary\" scopes=1"
+    },
+    {
+      "id": "R-RISK_FRAUD-02",
+      "title": "RISK_FRAUD: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "2 items, all expected"
+    },
+    {
+      "id": "R-RISK_FRAUD-03",
+      "title": "RISK_FRAUD: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=2/2 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-CUSTOMER_SERVICE-01",
+      "title": "CUSTOMER_SERVICE: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=CUSTOMER_SERVICING title=\"Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | Customer Directory\" scopes=6"
+    },
+    {
+      "id": "R-CUSTOMER_SERVICE-02",
+      "title": "CUSTOMER_SERVICE: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "3 items, all expected"
+    },
+    {
+      "id": "R-CUSTOMER_SERVICE-03",
+      "title": "CUSTOMER_SERVICE: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=3/3 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-TREASURY-01",
+      "title": "TREASURY: real browser login + role-specific dashboard template",
+      "ok": true,
+      "detail": "template=RECONCILIATION_VISIBILITY title=\"Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation Status\" scopes=1"
+    },
+    {
+      "id": "R-TREASURY-02",
+      "title": "TREASURY: sidebar nav equals its least-privilege matrix (no missing, no over-grant)",
+      "ok": true,
+      "detail": "2 items, all expected"
+    },
+    {
+      "id": "R-TREASURY-03",
+      "title": "TREASURY: every visible nav item renders its real screen",
+      "ok": true,
+      "detail": "walked=2/2 screens rendered; pointerBlocked=[] entitlementNotices=[]"
+    },
+    {
+      "id": "R-13",
+      "title": "FINANCE_AUDITOR logout: client returns to login even when the server rejects the revocation",
+      "ok": true,
+      "detail": "login-form=true logout requests=[POST /api/v1/internal/a2/workforce/local-admin-sessions -> 201]"
+    },
+    {
+      "id": "R-11",
+      "title": "logout clears the session and a different role can log in on the same context",
+      "ok": true,
+      "detail": "login-form-after-logout=true logged-out-after-reload=true treasuryNav=2 superAdminNav=25"
+    },
+    {
+      "id": "R-12",
+      "title": "no uncaught JavaScript errors across the whole role sweep",
+      "ok": true,
+      "detail": "0 JS errors, 0 unhandled rejections"
+    },
+    {
+      "id": "R-14",
+      "title": "no unexpected non-2xx API responses during the role sweep",
+      "ok": true,
+      "detail": "total=52 N-02=48 K-01readOnlyLogout=2 N-04configProbe=2 N-05inFlight=0 unexpected=0"
+    }
+  ],
+  "passed": 37,
+  "failed": 0
+}

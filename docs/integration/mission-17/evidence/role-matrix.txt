@@ -1,0 +1,42 @@
+MISSION 17 — 11-ROLE REAL-BROWSER MATRIX (own execution)
+harness: harness/m17-roles.cjs | browser: Chromium 153.0.8010.0 | app: Vite dev server (ADMIN_WEB_API_BASE_URL unset) | backend: NestJS on :3000
+
+checks: 37 passed: 37 failed: 0
+
+PASS  R-SUPER_ADMIN-01            template=EXECUTIVE_GOVERNANCE title="Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary | Transaction Volume Trend | Recent Transactions | Ledger Summary | Reconciliation Status | Workforce Overview | Role Definition Proposals | Recent Audit Activity | System Health" scopes=66
+PASS  R-SUPER_ADMIN-02            25 items, all expected
+PASS  R-SUPER_ADMIN-03            walked=25/25 screens rendered; pointerBlocked=[productCatalogue,limitCatalogue] entitlementNotices=[]
+PASS  R-FINANCE_PREPARER-01       template=FINANCE_PREPARATION title="Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | Ledger Summary" scopes=20
+PASS  R-FINANCE_PREPARER-02       8 items, all expected
+PASS  R-FINANCE_PREPARER-03       walked=8/8 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-FINANCE_CONTROLLER-01     template=FINANCIAL_CONTROL_APPROVALS title="Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction Summary | Ledger Summary | Role Definition Proposals" scopes=28
+PASS  R-FINANCE_CONTROLLER-02     11 items, all expected
+PASS  R-FINANCE_CONTROLLER-03     walked=11/11 screens rendered; pointerBlocked=[] entitlementNotices=[agents]
+PASS  R-FINANCE_AUDITOR-01        template=FINANCIAL_AUDIT_ASSURANCE title="Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Summary | Recent Transactions | Ledger Summary | Reconciliation Status | Recent Audit Activity | System Health" scopes=25
+PASS  R-FINANCE_AUDITOR-02        20 items, all expected
+PASS  R-FINANCE_AUDITOR-03        walked=20/20 screens rendered; pointerBlocked=[limitAssignments] entitlementNotices=[]
+PASS  R-ADMINISTRATOR-01          template=WORKFORCE_ADMINISTRATION title="Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview" scopes=12
+PASS  R-ADMINISTRATOR-02          8 items, all expected
+PASS  R-ADMINISTRATOR-03          walked=8/8 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-OPERATIONS-01             template=TRANSACTION_OPERATIONS title="Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary | Transaction Volume Trend | Recent Transactions | Support Ticket Queue | System Health | Customer Directory" scopes=27
+PASS  R-OPERATIONS-02             10 items, all expected
+PASS  R-OPERATIONS-03             walked=10/10 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-AGENT_NETWORK_MANAGER-01  template=AGENT_NETWORK_MANAGEMENT title="Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summary | Pending Agent Applications" scopes=13
+PASS  R-AGENT_NETWORK_MANAGER-02  5 items, all expected
+PASS  R-AGENT_NETWORK_MANAGER-03  walked=5/5 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-COMPLIANCE-01             template=COMPLIANCE_KYC title="Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Case Summary" scopes=13
+PASS  R-COMPLIANCE-02             4 items, all expected
+PASS  R-COMPLIANCE-03             walked=4/4 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-RISK_FRAUD-01             template=FRAUD_CASE_MONITORING title="Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary" scopes=1
+PASS  R-RISK_FRAUD-02             2 items, all expected
+PASS  R-RISK_FRAUD-03             walked=2/2 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-CUSTOMER_SERVICE-01       template=CUSTOMER_SERVICING title="Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | Customer Directory" scopes=6
+PASS  R-CUSTOMER_SERVICE-02       3 items, all expected
+PASS  R-CUSTOMER_SERVICE-03       walked=3/3 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-TREASURY-01               template=RECONCILIATION_VISIBILITY title="Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation Status" scopes=1
+PASS  R-TREASURY-02               2 items, all expected
+PASS  R-TREASURY-03               walked=2/2 screens rendered; pointerBlocked=[] entitlementNotices=[]
+PASS  R-13                        login-form=true logout requests=[POST /api/v1/internal/a2/workforce/local-admin-sessions -> 201]
+PASS  R-11                        login-form-after-logout=true logged-out-after-reload=true treasuryNav=2 superAdminNav=25
+PASS  R-12                        0 JS errors, 0 unhandled rejections
+PASS  R-14                        total=52 N-02=48 K-01readOnlyLogout=2 N-04configProbe=2 N-05inFlight=0 unexpected=0

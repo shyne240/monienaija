@@ -1,0 +1,9 @@
+MISSION 17 — AW-01 TRANSPORT PROOF (no ADMIN_WEB_API_BASE_URL set)
+vite resolved apiBaseUrl from the dev-serve default '/api/v1' and proxied same-origin to the backend
+
+curl -X POST http://127.0.0.1:5173/api/v1/internal/a2/workforce/local-admin-sessions
+  -> HTTP 201, accessToken present, principal.roles=[SUPER_ADMIN], scopes=66
+
+production bundle fail-closed check (npm run build in apps/admin-web):
+  occurrences of '/api/v1' in dist/assets/*.js: 0
+  occurrences of 'localhost' in dist/assets/*.js: 0
