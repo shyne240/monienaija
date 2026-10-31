@@ -2,7 +2,8 @@
 
 **Arena:** 3 (integration owner)
 **Date:** 2026-10-31
-**Branch:** `integration/mission-20-ordinary-agent-v1-final`
+**Branch:** `integration/mission-20-ordinary-agent-v1-final` @ `6027c4689791d10f84bcbda19f4231f509583f3d`
+**Merge commits:** `a4121f4` (Arena 1) → `aa894cb` (Arena 2) → `6027c46` (verification + this report)
 **Baseline:** `integration/mission-17-ordinary-agent-v1-acceptance` @ `bee4c00d1458128f3cc1e6d745983a16e3fc0ad8`
 **Verdict: PASS — recommend Arena 4 final technical acceptance.** Both target defects (K-01, N-01) are independently verified resolved, with no regression in any previously closed correction and no loss of any Mission 17 fix.
 
