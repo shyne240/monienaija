@@ -1,0 +1,417 @@
+{
+  "generatedAt": "2026-10-31T06:45:41.541Z",
+  "api": "http://localhost:3000/api/v1",
+  "total": 68,
+  "passed": 68,
+  "failed": 0,
+  "results": [
+    {
+      "id": "API-00",
+      "title": "SUPER_ADMIN workforce session established",
+      "ok": true,
+      "detail": "tokenType=Bearer sessionId=present roles=SUPER_ADMIN"
+    },
+    {
+      "id": "API-01",
+      "title": "Unauthenticated protected read is rejected",
+      "ok": true,
+      "detail": "GET /internal/agents -> 401 (want 401)"
+    },
+    {
+      "id": "API-02",
+      "title": "Malformed bearer token is rejected",
+      "ok": true,
+      "detail": "GET /internal/agents -> 401 (want 401)"
+    },
+    {
+      "id": "API-03",
+      "title": "Create Agent Class (canonical services)",
+      "ok": true,
+      "detail": "POST /internal/agents/classes -> 201 (want 200/201)"
+    },
+    {
+      "id": "API-04",
+      "title": "List Agent Classes",
+      "ok": true,
+      "detail": "GET /internal/agents/classes -> 200 (want 200)"
+    },
+    {
+      "id": "API-05",
+      "title": "Create Agent application (public applicant path)",
+      "ok": true,
+      "detail": "POST /agents/applications -> 201 (want 201/200)"
+    },
+    {
+      "id": "API-05b",
+      "title": "Application returns one-time applicant capability",
+      "ok": true,
+      "detail": "applicationId=present applicantAccessToken=present"
+    },
+    {
+      "id": "API-05c",
+      "title": "Invalid applicant capability is rejected",
+      "ok": true,
+      "detail": "PATCH /agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303 -> 401 (want 401)"
+    },
+    {
+      "id": "API-05d",
+      "title": "Edit DRAFT with the applicant capability",
+      "ok": true,
+      "detail": "PATCH /agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303 -> 200 (want 200)"
+    },
+    {
+      "id": "API-05e",
+      "title": "Submit application (DRAFT -> SUBMITTED)",
+      "ok": true,
+      "detail": "POST /agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303/submit -> 200 (want 200)"
+    },
+    {
+      "id": "API-06",
+      "title": "Review application",
+      "ok": true,
+      "detail": "POST /internal/agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303/review -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-07",
+      "title": "Approve application",
+      "ok": true,
+      "detail": "POST /internal/agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303/approve -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-08",
+      "title": "Activate application -> creates Agent",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/applications/4de6fcff-2c10-4b49-ad2f-581befccb303/activate -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-08b",
+      "title": "Activated Agent id returned",
+      "ok": true,
+      "detail": "agentId=present"
+    },
+    {
+      "id": "API-09",
+      "title": "Create Outlet",
+      "ok": true,
+      "detail": "POST /internal/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/outlets -> 201 (want 200/201)"
+    },
+    {
+      "id": "API-10",
+      "title": "Read Agent outlets (agent.view)",
+      "ok": true,
+      "detail": "GET /internal/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/outlets -> 200 (want 200)"
+    },
+    {
+      "id": "API-11",
+      "title": "PATCH outlet metadata (valid expectedVersion)",
+      "ok": true,
+      "detail": "PATCH /internal/outlets/a23abe2c-c155-4056-9870-e2b15f9bf707 -> 200 (want 200)"
+    },
+    {
+      "id": "API-11b",
+      "title": "PATCH returns incremented version",
+      "ok": true,
+      "detail": "version 1 -> 2"
+    },
+    {
+      "id": "API-12",
+      "title": "PATCH outlet with non-whitelisted `code` is rejected 400",
+      "ok": true,
+      "detail": "PATCH /internal/outlets/a23abe2c-c155-4056-9870-e2b15f9bf707 -> 400 (want 400)"
+    },
+    {
+      "id": "API-13",
+      "title": "PATCH outlet with stale expectedVersion -> 409",
+      "ok": true,
+      "detail": "PATCH /internal/outlets/a23abe2c-c155-4056-9870-e2b15f9bf707 -> 409 (want 409)"
+    },
+    {
+      "id": "API-14",
+      "title": "PATCH outlet without expectedVersion -> 400",
+      "ok": true,
+      "detail": "PATCH /internal/outlets/a23abe2c-c155-4056-9870-e2b15f9bf707 -> 400 (want 400)"
+    },
+    {
+      "id": "API-15",
+      "title": "PATCH missing outlet -> 404",
+      "ok": true,
+      "detail": "PATCH /internal/outlets/00000000-0000-4000-8000-000000000000 -> 404 (want 404)"
+    },
+    {
+      "id": "API-16",
+      "title": "Create Terminal",
+      "ok": true,
+      "detail": "POST /internal/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/terminals -> 201 (want 200/201)"
+    },
+    {
+      "id": "API-17",
+      "title": "PATCH terminal metadata",
+      "ok": true,
+      "detail": "PATCH /internal/terminals/fb0852b3-e5a7-4f90-9787-48dee6f13de9 -> 200 (want 200)"
+    },
+    {
+      "id": "API-18",
+      "title": "PATCH terminal with `code` rejected 400",
+      "ok": true,
+      "detail": "PATCH /internal/terminals/fb0852b3-e5a7-4f90-9787-48dee6f13de9 -> 400 (want 400)"
+    },
+    {
+      "id": "API-19",
+      "title": "PATCH terminal stale version -> 409",
+      "ok": true,
+      "detail": "PATCH /internal/terminals/fb0852b3-e5a7-4f90-9787-48dee6f13de9 -> 409 (want 409)"
+    },
+    {
+      "id": "API-20",
+      "title": "Issue initial Agent credential",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/credentials -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-20b",
+      "title": "One-time temporary password returned exactly once",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "API-20c",
+      "title": "First-login credential rotation (temporary -> permanent)",
+      "ok": true,
+      "detail": "POST /agents/credentials/rotate -> 200 (want 200)"
+    },
+    {
+      "id": "API-20d",
+      "title": "Rotation yields a real Agent session",
+      "ok": true,
+      "detail": "accessToken=present"
+    },
+    {
+      "id": "API-20e",
+      "title": "Agent can read its own history (SELF scope)",
+      "ok": true,
+      "detail": "GET /agents/me/transactions -> 200 (want 200)"
+    },
+    {
+      "id": "API-20f",
+      "title": "Agent cannot read the workforce internal surface",
+      "ok": true,
+      "detail": "GET /internal/agents -> 403 (want 401/403)"
+    },
+    {
+      "id": "API-22c",
+      "title": "Agent sets its own transaction PIN",
+      "ok": true,
+      "detail": "POST /agents/me/transaction-pin -> 200 (want 200/201/400/403/409)"
+    },
+    {
+      "id": "API-21",
+      "title": "Administrative session revocation",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/sessions/revoke -> 200 (want 200)"
+    },
+    {
+      "id": "API-21b",
+      "title": "Revocation reports revokedSessionCount (the field the Admin Web now reads)",
+      "ok": true,
+      "detail": "revokedSessionCount=1 (expect >=1 after a live login)"
+    },
+    {
+      "id": "API-21c",
+      "title": "Revoked Agent session is no longer accepted",
+      "ok": true,
+      "detail": "GET /agents/me/transactions -> 401 (want 401)"
+    },
+    {
+      "id": "API-22",
+      "title": "Repeat revocation is idempotent (count 0, still audited)",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/sessions/revoke -> 200 (want 200)"
+    },
+    {
+      "id": "API-22b",
+      "title": "Second revoke count is 0",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "id": "API-22d",
+      "title": "No workforce endpoint exists to unlock/reset an Agent PIN (D6 disabled)",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/transaction-pin/reset -> 404 (want 404)"
+    },
+    {
+      "id": "API-23",
+      "title": "Suspend Agent",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/suspend -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-24",
+      "title": "Illegal transition: suspend an already SUSPENDED Agent -> 409",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/suspend -> 409 (want 409)"
+    },
+    {
+      "id": "API-25",
+      "title": "Reactivate Agent",
+      "ok": true,
+      "detail": "POST /internal/admin/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/reactivate -> 200 (want 200/201)"
+    },
+    {
+      "id": "API-26",
+      "title": "Read-only C2C expiry status (transaction.view)",
+      "ok": true,
+      "detail": "GET /internal/admin/cash-to-cash/expiry-status -> 200 (want 200)"
+    },
+    {
+      "id": "API-26b",
+      "title": "Expiry status returns nested worker object Arena 2 now parses",
+      "ok": true,
+      "detail": "worker.configuredEnabled=false dueCount=0 expiredCount=0"
+    },
+    {
+      "id": "API-27",
+      "title": "C2C oversight transfer list",
+      "ok": true,
+      "detail": "GET /internal/admin/cash-to-cash/transfers?page=1&limit=20 -> 200 (want 200)"
+    },
+    {
+      "id": "API-28",
+      "title": "Workforce receiving-number read (agent.view)",
+      "ok": true,
+      "detail": "GET /internal/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/receiving-number -> 200 (want 200)"
+    },
+    {
+      "id": "API-29",
+      "title": "Malformed UUID -> 400",
+      "ok": true,
+      "detail": "GET /internal/agents/not-a-uuid/outlets -> 400 (want 400)"
+    },
+    {
+      "id": "API-30",
+      "title": "Missing Agent -> 404",
+      "ok": true,
+      "detail": "GET /internal/agents/00000000-0000-4000-8000-000000000000/outlets -> 404 (want 404)"
+    },
+    {
+      "id": "API-31",
+      "title": "Funding maker request (agent.fund)",
+      "ok": true,
+      "detail": "POST /internal/agents/20d70bc6-7e72-49aa-84e4-890da5c69269/fund-request -> 201 (want 200/201)"
+    },
+    {
+      "id": "API-31b",
+      "title": "Maker response is a request, not a posted journal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "API-32",
+      "title": "Maker cannot self-approve (independent checker enforced)",
+      "ok": true,
+      "detail": "POST /internal/a2/workforce/approvals/8ec14b1e-051b-492b-a49b-3dceb170148d/approve -> 403 (want 403/409)"
+    },
+    {
+      "id": "API-33",
+      "title": "Maker cannot execute own request",
+      "ok": true,
+      "detail": "POST /internal/agents/funding-requests/8ec14b1e-051b-492b-a49b-3dceb170148d/execute -> 403 (want 403/409)"
+    },
+    {
+      "id": "API-34",
+      "title": "Funding request remains PENDING (no silent execution)",
+      "ok": true,
+      "detail": "GET /internal/agents/funding-requests?status=PENDING&direction=FUND&page=1&limit=20 -> 403 (want 200/403)"
+    },
+    {
+      "id": "API-35",
+      "title": "FINANCE_CONTROLLER checker inbox reachable",
+      "ok": true,
+      "detail": "status=200 items=2"
+    },
+    {
+      "id": "API-36",
+      "title": "Checker inbox shows the pending maker request",
+      "ok": true,
+      "detail": "requestSeen=true"
+    },
+    {
+      "id": "API-37",
+      "title": "Independent checker approval",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "id": "API-38",
+      "title": "Checker executes the approved funding request",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "id": "API-40-AGENT_NETWORK_MANAGER",
+      "title": "AGENT_NETWORK_MANAGER authorization matrix",
+      "ok": true,
+      "detail": "outlets=404 expiry=403 revoke=404"
+    },
+    {
+      "id": "API-40-CUSTOMER_SERVICE",
+      "title": "CUSTOMER_SERVICE authorization matrix",
+      "ok": true,
+      "detail": "outlets=403 expiry=403 revoke=403"
+    },
+    {
+      "id": "API-40-COMPLIANCE",
+      "title": "COMPLIANCE authorization matrix",
+      "ok": true,
+      "detail": "outlets=403 expiry=403 revoke=403"
+    },
+    {
+      "id": "API-40-RISK_FRAUD",
+      "title": "RISK_FRAUD authorization matrix",
+      "ok": true,
+      "detail": "outlets=403 expiry=403 revoke=403"
+    },
+    {
+      "id": "API-40-FINANCE_AUDITOR",
+      "title": "FINANCE_AUDITOR authorization matrix",
+      "ok": true,
+      "detail": "outlets=404 expiry=200 revoke=403"
+    },
+    {
+      "id": "API-40-TREASURY",
+      "title": "TREASURY authorization matrix",
+      "ok": true,
+      "detail": "outlets=403 expiry=403 revoke=403"
+    },
+    {
+      "id": "API-40-OPERATIONS",
+      "title": "OPERATIONS authorization matrix",
+      "ok": true,
+      "detail": "outlets=403 expiry=200 revoke=403"
+    },
+    {
+      "id": "API-41",
+      "title": "AGENT_NETWORK_MANAGER retains agent.view (403 vs 404 proves granted)",
+      "ok": true,
+      "detail": "status=404 (404 = authorized but entity absent)"
+    },
+    {
+      "id": "API-42-CUSTOMER_SERVICE",
+      "title": "CUSTOMER_SERVICE denied agent.view",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "id": "API-42-COMPLIANCE",
+      "title": "COMPLIANCE denied agent.view",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "id": "API-42-RISK_FRAUD",
+      "title": "RISK_FRAUD denied agent.view",
+      "ok": true,
+      "detail": "status=403"
+    }
+  ]
+}

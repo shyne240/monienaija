@@ -1,0 +1,5 @@
+# Mission 16 — backend unit suite
+# command: NODE_ENV=test LOG_LEVEL=silent jest --runInBand
+Test Suites: 224 passed, 224 total
+Tests:       2603 passed, 2603 total
+EXIT_CODE=0

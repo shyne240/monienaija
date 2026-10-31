@@ -352,10 +352,11 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...existingOutlet, version: 3 });
     fireEvent.click(view.getByRole('button', { name: 'Save outlet changes' }));
     await waitFor(() =>
+      // `code` is NOT editable via PATCH: UpdateOutletMetadataDto omits it and the global
+      // ValidationPipe uses forbidNonWhitelisted, so including it returns 400 on every save.
       expect(ApiClient.patch).toHaveBeenCalledWith(`/internal/outlets/${OUTLET_ID}`, {
         name: 'Garki Main Kiosk',
         displayName: 'Garki Kiosk',
-        code: 'GRK01',
         addressLine: '18 Tafawa Balewa Way',
         city: 'Abuja',
         state: 'FCT',
@@ -376,7 +377,6 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       expect(ApiClient.patch).toHaveBeenCalledWith(`/internal/terminals/${TERMINAL_ID}`, {
         label: 'VIP Counter POS',
         serialNumber: 'SN-99001',
-        code: 'POS01',
         expectedVersion: 1,
       }),
     );

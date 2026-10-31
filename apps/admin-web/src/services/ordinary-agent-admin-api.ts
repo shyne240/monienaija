@@ -341,9 +341,14 @@ async function callArena1Boundary<T>(
   }
 }
 
+/**
+ * Backend `UpdateOutletMetadataDto` accepts ONLY these mutable location fields plus
+ * `expectedVersion`. `code`, `reference`, ownership and lifecycle are deliberately not editable
+ * through this route, and `src/main.ts` configures `forbidNonWhitelisted: true`, so sending
+ * `code` returns 400 for every save. It is therefore omitted here rather than forwarded.
+ */
 export interface UpdateAgentOutletMetadataInput {
   name?: string;
-  code?: string | null;
   displayName?: string | null;
   addressLine?: string | null;
   city?: string | null;
@@ -359,7 +364,6 @@ export async function updateAgentOutletMetadata<T = Record<string, unknown>>(
   const endpoint = `/internal/outlets/${encodeURIComponent(outletId)}`;
   const body: Record<string, unknown> = {};
   if (input.name !== undefined) body.name = input.name.trim();
-  if (input.code !== undefined) body.code = input.code?.trim() ? input.code.trim() : null;
   if (input.displayName !== undefined) {
     body.displayName = input.displayName?.trim() ? input.displayName.trim() : null;
   }
@@ -380,8 +384,12 @@ export async function updateAgentOutletMetadata<T = Record<string, unknown>>(
   );
 }
 
+/**
+ * Backend `UpdateTerminalMetadataDto` accepts ONLY `label`, `serialNumber` and `expectedVersion`;
+ * `code`, `reference` and lifecycle are not editable here. See the outlet note above — the
+ * global whitelist pipe rejects unknown properties with 400.
+ */
 export interface UpdateAgentTerminalMetadataInput {
-  code?: string | null;
   label?: string | null;
   serialNumber?: string | null;
   expectedVersion?: number;
@@ -393,7 +401,6 @@ export async function updateAgentTerminalMetadata<T = Record<string, unknown>>(
 ): Promise<Arena1IntegrationResult<T>> {
   const endpoint = `/internal/terminals/${encodeURIComponent(terminalId)}`;
   const body: Record<string, unknown> = {};
-  if (input.code !== undefined) body.code = input.code?.trim() ? input.code.trim() : null;
   if (input.label !== undefined) body.label = input.label?.trim() ? input.label.trim() : null;
   if (input.serialNumber !== undefined) {
     body.serialNumber = input.serialNumber?.trim() ? input.serialNumber.trim() : null;
@@ -431,8 +438,16 @@ export async function revokeAgentActiveSessions(
   if (result.status === 'BLOCKED') return result;
 
   const raw = result.data && typeof result.data === 'object' ? result.data : {};
+  // Arena 1 returns `{ agentId, revokedSessionCount }` (admin-agent-credentials.controller.ts).
+  // The earlier alias list omitted that exact spelling, so a successful revocation of N sessions
+  // rendered as an unknown count. `revokedSessionCount` is checked first; the aliases are kept as
+  // harmless tolerance for older/alternate deployments.
   const countCandidate =
-    raw.revokedCount ?? raw.sessionsInvalidated ?? raw.revokedSessions ?? raw.invalidatedCount;
+    raw.revokedSessionCount ??
+    raw.revokedCount ??
+    raw.sessionsInvalidated ??
+    raw.revokedSessions ??
+    raw.invalidatedCount;
   const revokedCount =
     typeof countCandidate === 'number' && Number.isFinite(countCandidate)
       ? countCandidate
@@ -458,7 +473,21 @@ export interface CashToCashExpiryStatusView {
   batchSize?: number;
   lastSweepAt?: string | null;
   lastExpiredCount?: number;
+  /** This HTTP-serving process only — not fleet-wide worker health. */
+  schedulerRunning?: boolean;
+  tickInProgress?: boolean;
+  /** Database clock used for the snapshot, when the backend supplies it. */
+  asOf?: string | null;
 }
+
+/** Keys Arena 1 nests inside `worker`; presence of any one proves a recognised shape. */
+const EXPIRY_WORKER_NESTED_KEYS = [
+  'configuredEnabled',
+  'schedulerRunning',
+  'tickInProgress',
+  'pollIntervalMs',
+  'batchSize',
+] as const;
 
 const EXPIRY_RECOGNIZED_KEYS = [
   'workerEnabled',
@@ -511,17 +540,31 @@ export async function fetchCashToCashExpiryStatus(): Promise<
   }
 
   const raw = result.data as Record<string, unknown>;
-  const recognized = EXPIRY_RECOGNIZED_KEYS.some((key) => key in raw);
+  // Arena 1 returns worker state NESTED as `worker: { configuredEnabled, schedulerRunning,
+  // tickInProgress, pollIntervalMs, batchSize }` (agent-cash-to-cash-expiry-status.controller.ts →
+  // worker.getStatus()). The flat-only reader below would therefore report worker state as
+  // unknown. Both shapes are accepted; the nested one is authoritative when present.
+  const worker =
+    raw.worker && typeof raw.worker === 'object' && !Array.isArray(raw.worker)
+      ? (raw.worker as Record<string, unknown>)
+      : {};
+
+  const recognized =
+    EXPIRY_RECOGNIZED_KEYS.some((key) => key in raw) ||
+    EXPIRY_WORKER_NESTED_KEYS.some((key) => key in worker) ||
+    'worker' in raw;
   if (!recognized) {
     return { status: 'LIVE', data: { recognized: false } };
   }
 
   const workerEnabled =
-    typeof raw.workerEnabled === 'boolean'
-      ? raw.workerEnabled
-      : typeof raw.enabled === 'boolean'
-        ? raw.enabled
-        : undefined;
+    typeof worker.configuredEnabled === 'boolean'
+      ? worker.configuredEnabled
+      : typeof raw.workerEnabled === 'boolean'
+        ? raw.workerEnabled
+        : typeof raw.enabled === 'boolean'
+          ? raw.enabled
+          : undefined;
 
   return {
     status: 'LIVE',
@@ -534,10 +577,18 @@ export async function fetchCashToCashExpiryStatus(): Promise<
       totalUnclaimedCount: optionalFiniteNumber(raw.totalUnclaimedCount ?? raw.unclaimedCount),
       expiredTotalCount: optionalFiniteNumber(raw.expiredTotalCount ?? raw.expiredCount),
       oldestDueExpiresAt: optionalIsoString(raw.oldestDueExpiresAt ?? raw.oldestDueAt),
-      pollIntervalMs: optionalFiniteNumber(raw.pollIntervalMs ?? raw.intervalMs),
-      batchSize: optionalFiniteNumber(raw.batchSize),
+      // This-process scheduler/timer booleans, surfaced so the UI can distinguish "disabled by
+      // configuration" from "enabled but timer idle". Process-local only — never fleet health.
+      schedulerRunning:
+        typeof worker.schedulerRunning === 'boolean' ? worker.schedulerRunning : undefined,
+      tickInProgress: typeof worker.tickInProgress === 'boolean' ? worker.tickInProgress : undefined,
+      pollIntervalMs: optionalFiniteNumber(
+        worker.pollIntervalMs ?? raw.pollIntervalMs ?? raw.intervalMs,
+      ),
+      batchSize: optionalFiniteNumber(worker.batchSize ?? raw.batchSize),
       lastSweepAt: optionalIsoString(raw.lastSweepAt ?? raw.lastRunAt),
       lastExpiredCount: optionalFiniteNumber(raw.lastExpiredCount),
+      asOf: optionalIsoString(raw.asOf),
     },
   };
 }

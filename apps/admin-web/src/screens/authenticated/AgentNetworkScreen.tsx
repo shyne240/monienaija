@@ -1005,13 +1005,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       setOutletsError('Outlet name must be at least 2 characters.');
       return;
     }
-    if (
-      editingOutletForm.code.trim() &&
-      (editingOutletForm.code.trim().length < 3 || editingOutletForm.code.trim().length > 80)
-    ) {
-      setOutletsError('Outlet code must be 3–80 characters when provided.');
-      return;
-    }
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1020,7 +1013,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       const outcome = await updateAgentOutletMetadata(outlet.id, {
         name: editingOutletForm.name,
         displayName: editingOutletForm.displayName,
-        code: editingOutletForm.code,
         addressLine: editingOutletForm.addressLine,
         city: editingOutletForm.city,
         state: editingOutletForm.state,
@@ -1113,13 +1105,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   const saveTerminalMetadata = async (event: React.FormEvent, terminal: TerminalRecord) => {
     event.preventDefault();
     if (!selected || !canManageOutletsTerminals || outletBusy) return;
-    if (
-      editingTerminalForm.code.trim() &&
-      (editingTerminalForm.code.trim().length < 3 || editingTerminalForm.code.trim().length > 80)
-    ) {
-      setOutletsError('Terminal code must be 3–80 characters when provided.');
-      return;
-    }
     setOutletBusy(true);
     setOutletsError('');
     setOutletsMsg('');
@@ -1128,7 +1113,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       const outcome = await updateAgentTerminalMetadata(terminal.id, {
         label: editingTerminalForm.label,
         serialNumber: editingTerminalForm.serialNumber,
-        code: editingTerminalForm.code,
         expectedVersion: editingTerminalForm.expectedVersion,
       });
       if (outcome.status === 'BLOCKED') {
@@ -1728,7 +1712,22 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                     const busy = applicationBusyId === app.id;
                     const isDraft = app.status === 'DRAFT';
                     const canReviewOrDecide = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
-                    const canActivateFromApp = app.status === 'APPROVED' && !app.agentId;
+                    // INTEGRATION FIX (Mission 16): the backend sets `agentId` when an application
+                    // is APPROVED — it creates the Agent record in PENDING status and a separate
+                    // `POST .../applications/:id/activate` transition (agent.activate) moves it to
+                    // ACTIVE. The previous condition `APPROVED && !app.agentId` was therefore
+                    // unsatisfiable, so a newly approved Agent could never be activated from the
+                    // console and stayed PENDING forever. Offer activation whenever the application
+                    // is APPROVED and its linked Agent is not known to be already ACTIVE
+                    // (SUSPENDED/TERMINATED are not activatable; the backend answers 409 and the
+                    // error is surfaced rather than silently ignored).
+                    const linkedAgent = app.agentId
+                      ? agents.find((candidate) => candidate.id === app.agentId)
+                      : undefined;
+                    const canActivateFromApp =
+                      app.status === 'APPROVED' &&
+                      (!app.agentId ||
+                        (linkedAgent ? linkedAgent.status === 'PENDING' : true));
                     const matchedClass = classCatalog.find((c) => c.id === app.agentClassId);
                     return (
                       <tr key={app.id}>
@@ -2264,14 +2263,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                                   disabled={outletBusy}
                                 />
                                 <input
-                                  aria-label={`Edit outlet code for ${outlet.reference}`}
-                                  placeholder="Code (min 3 chars)"
-                                  value={editingOutletForm.code}
-                                  onChange={(e) => setEditingOutletForm((c) => ({ ...c, code: e.target.value }))}
-                                  style={inlineInput}
-                                  disabled={outletBusy}
-                                />
-                                <input
                                   aria-label={`Edit outlet address for ${outlet.reference}`}
                                   placeholder="Street address"
                                   value={editingOutletForm.addressLine}
@@ -2397,14 +2388,6 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                                   placeholder="Serial number"
                                   value={editingTerminalForm.serialNumber}
                                   onChange={(e) => setEditingTerminalForm((c) => ({ ...c, serialNumber: e.target.value }))}
-                                  style={inlineInput}
-                                  disabled={outletBusy}
-                                />
-                                <input
-                                  aria-label={`Edit terminal code for ${terminal.reference}`}
-                                  placeholder="Code (min 3 chars)"
-                                  value={editingTerminalForm.code}
-                                  onChange={(e) => setEditingTerminalForm((c) => ({ ...c, code: e.target.value }))}
                                   style={inlineInput}
                                   disabled={outletBusy}
                                 />
