@@ -118,7 +118,7 @@ export async function request<T>(endpoint: string, options: ApiClientOptions = {
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   const config: RequestInit = {
     method: options.method || 'GET',
-    headers: requestHeaders('application/json'),
+    headers: requestHeaders(options.body !== undefined ? 'application/json' : undefined),
     signal: options.signal,
   };
 

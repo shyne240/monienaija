@@ -40,6 +40,8 @@ export type AdminView =
 
 export interface AdminNavigationContext {
   customerId?: string;
+  agentId?: string;
+  openAgentApplications?: boolean;
 }
 
 const LEGACY_VIEW_ALIASES: Partial<Record<AdminView, AdminView>> = {
@@ -115,7 +117,7 @@ export function canAccessAdminView(
     case 'limitCatalogue':
       return has('limit.view');
     case 'limitAssignments':
-      return hasAny('limit.view', 'agent.assign_limit');
+      return hasAny('limit.view', 'limit.modify', 'agent.assign_limit');
     case 'kycQueue':
       return has('kyc.view');
     case 'complianceCases':
