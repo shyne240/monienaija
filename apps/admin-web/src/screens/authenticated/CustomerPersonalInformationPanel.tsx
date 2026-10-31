@@ -66,6 +66,34 @@ interface IdentityRecord {
   expiresAt: string | null;
 }
 
+interface CustomerPreferenceViewRecord {
+  notifications: {
+    email: boolean;
+    sms: boolean;
+    push: boolean;
+    inApp: boolean;
+  };
+  security: {
+    loginAlerts: boolean;
+    transactionAlerts: boolean;
+    deviceRegistrationAlerts: boolean;
+    biometricAllowed: boolean;
+  };
+  language: string;
+  theme: 'LIGHT' | 'DARK' | 'SYSTEM' | string;
+  version: number;
+  updatedAt: string;
+}
+
+interface CustomerPreferenceHistoryRecord {
+  id: string;
+  action: string;
+  previousValues: Record<string, unknown> | null;
+  newValues: Record<string, unknown>;
+  actor: string;
+  createdAt: string;
+}
+
 type IdentityType =
   | 'BVN'
   | 'NIN'
@@ -227,7 +255,18 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   const canWriteContacts = canViewContacts && canWriteProfile;
   const canViewIdentity = hasFunction('customer.view_identity_documents');
   const canWriteIdentity = canViewIdentity && hasFunction('kyc.review');
-  const scopesKey = scopes.join('|');
+  const isPureCustomerServiceRole = Boolean(
+    principal &&
+      principal.roles.length > 0 &&
+      principal.roles.every((role) => role === 'CUSTOMER_SERVICE'),
+  );
+  const canViewPreferences = Boolean(
+    canViewProfile &&
+      principal &&
+      (principal.type === 'OPERATOR' || principal.type === 'PRIVILEGED') &&
+      !isPureCustomerServiceRole,
+  );
+  const scopesKey = `${scopes.join('|')}::${principal?.type ?? ''}::${(principal?.roles ?? []).join(',')}`;
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -261,6 +300,10 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   const [identityStatus, setIdentityStatus] = useState<number | undefined>();
   const [identityForm, setIdentityForm] = useState<IdentityFormState | null>(null);
 
+  const [preferences, setPreferences] = useState<CustomerPreferenceViewRecord | null>(null);
+  const [preferencesStatus, setPreferencesStatus] = useState<number | undefined>();
+  const [preferenceHistory, setPreferenceHistory] = useState<CustomerPreferenceHistoryRecord[]>([]);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -290,20 +333,49 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       canViewIdentity
         ? safeGet<IdentityRecord[]>(`/customers/${id}/identity-documents`)
         : Promise.resolve(null),
+      canViewPreferences
+        ? safeGet<CustomerPreferenceViewRecord>(`/customers/${id}/preferences`)
+        : Promise.resolve(null),
+      canViewPreferences
+        ? safeGet<CustomerPreferenceHistoryRecord[]>(`/customers/${id}/preferences/history`)
+        : Promise.resolve(null),
     ]);
     requests
-      .then(([profileResult, addressResult, contactResult, identityResult]) => {
-        if (!active) return;
-        setProfile(profileResult?.value ?? null);
-        setProfileStatus(profileResult?.status);
-        setAddresses(addressResult?.value ?? null);
-        setAddressStatus(addressResult?.status);
-        setContacts(contactResult?.value ?? null);
-        setContactStatus(contactResult?.status);
-        setIdentityDocuments(identityResult?.value ?? null);
-        setIdentityStatus(identityResult?.status);
-        setLoading(false);
-      })
+      .then(
+        ([
+          profileResult,
+          addressResult,
+          contactResult,
+          identityResult,
+          preferencesResult,
+          preferenceHistoryResult,
+        ]) => {
+          if (!active) return;
+          setProfile(profileResult?.value ?? null);
+          setProfileStatus(profileResult?.status);
+          setAddresses(addressResult?.value ?? null);
+          setAddressStatus(addressResult?.status);
+          setContacts(contactResult?.value ?? null);
+          setContactStatus(contactResult?.status);
+          setIdentityDocuments(identityResult?.value ?? null);
+          setIdentityStatus(identityResult?.status);
+
+          const rawPrefs = preferencesResult?.value;
+          const validPrefs =
+            rawPrefs &&
+            !Array.isArray(rawPrefs) &&
+            typeof rawPrefs === 'object' &&
+            'notifications' in rawPrefs
+              ? rawPrefs
+              : null;
+          setPreferences(validPrefs);
+          setPreferencesStatus(preferencesResult?.status);
+          setPreferenceHistory(
+            Array.isArray(preferenceHistoryResult?.value) ? preferenceHistoryResult.value : [],
+          );
+          setLoading(false);
+        },
+      )
       .catch(() => {
         if (!active) return;
         setError('Authorized personal-information sections could not be loaded.');
@@ -1744,6 +1816,104 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
               </button>
             </div>
           </form>
+        )}
+      </article>
+
+      {/* Read-only Customer Communication & Account Preferences (F-09 — authorized OPERATOR/PRIVILEGED with customer.view, excluding CUSTOMER_SERVICE) */}
+      <article className="cm-card" data-testid="customer-preferences-card">
+        <div className="cm-card-header">
+          <div>
+            <h4>Communication &amp; account preferences (read-only)</h4>
+            <p className="cm-card-subtitle">
+              Customer-controlled notification, security alert, language, and theme settings.
+              Mandatory security OTPs bypass channel opt-outs by policy.
+            </p>
+          </div>
+          <span className="cm-badge">Read-only</span>
+        </div>
+
+        {!canViewPreferences ? (
+          <p className="cm-muted-copy" data-testid="customer-preferences-restricted">
+            Preference visibility is restricted to authorized operational and privileged workforce
+            roles with <code>customer.view</code>.
+          </p>
+        ) : preferencesStatus === 403 ? (
+          <p className="cm-muted-copy" data-testid="customer-preferences-denied">
+            Customer preferences are not permitted for your current workforce session (403).
+          </p>
+        ) : preferencesStatus === 404 ? (
+          <p className="cm-muted-copy" data-testid="customer-preferences-empty">
+            No custom preference profile initialized yet — default platform communication and
+            security alert settings apply.
+          </p>
+        ) : !preferences ? (
+          <p className="cm-muted-copy" data-testid="customer-preferences-empty">
+            No customer preference snapshot returned.
+          </p>
+        ) : (
+          <div data-testid="customer-preferences-section">
+            <dl className="cm-definition-grid">
+              <div>
+                <dt>Email notifications</dt>
+                <dd data-testid="customer-pref-email">
+                  {preferences.notifications.email ? 'Enabled' : 'Disabled'}
+                </dd>
+              </div>
+              <div>
+                <dt>SMS notifications</dt>
+                <dd data-testid="customer-pref-sms">
+                  {preferences.notifications.sms ? 'Enabled' : 'Disabled'}
+                </dd>
+              </div>
+              <div>
+                <dt>Push notifications</dt>
+                <dd data-testid="customer-pref-push">
+                  {preferences.notifications.push ? 'Enabled' : 'Disabled'}
+                </dd>
+              </div>
+              <div>
+                <dt>In-app notifications</dt>
+                <dd data-testid="customer-pref-inapp">
+                  {preferences.notifications.inApp ? 'Enabled' : 'Disabled'}
+                </dd>
+              </div>
+              <div>
+                <dt>Security alerts (login / tx / device)</dt>
+                <dd data-testid="customer-pref-security">
+                  Login: {preferences.security.loginAlerts ? 'On' : 'Off'} · Tx:{' '}
+                  {preferences.security.transactionAlerts ? 'On' : 'Off'} · Device:{' '}
+                  {preferences.security.deviceRegistrationAlerts ? 'On' : 'Off'} · Biometric:{' '}
+                  {preferences.security.biometricAllowed ? 'Allowed' : 'Disabled'}
+                </dd>
+              </div>
+              <div>
+                <dt>Language, theme &amp; version</dt>
+                <dd data-testid="customer-pref-meta">
+                  {preferences.language} · {preferences.theme} · v{preferences.version} (updated{' '}
+                  {preferences.updatedAt
+                    ? new Date(preferences.updatedAt).toLocaleString()
+                    : '—'}
+                  )
+                </dd>
+              </div>
+            </dl>
+
+            {preferenceHistory.length > 0 && (
+              <div style={{ marginTop: 12 }} data-testid="customer-preference-history-list">
+                <strong style={{ fontSize: 13 }}>
+                  Recent preference history ({preferenceHistory.length})
+                </strong>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                  {preferenceHistory.slice(0, 5).map((entry) => (
+                    <li key={entry.id} data-testid={`customer-pref-history-${entry.id}`}>
+                      <code>{entry.action}</code> by <code>{entry.actor}</code> at{' '}
+                      {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </article>
     </div>

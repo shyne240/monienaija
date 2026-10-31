@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
 import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
 import {
@@ -11,6 +11,7 @@ import {
   NotificationDeliveryPage,
   NotificationDeliveryRecord,
   NotificationEventCatalogueItem,
+  NotificationOutboxReceiptPage,
   NotificationProviderStatus,
   NotificationTemplateVersion,
   SECURITY_LOCKED_EVENT_TYPES,
@@ -73,6 +74,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       ? 'overview'
       : initialTab,
   );
+  const activeTabRef = useRef<NotificationAdminTab>(activeTab);
+  activeTabRef.current = activeTab;
   const [templateJumpEventType, setTemplateJumpEventType] = useState<string | undefined>(undefined);
 
   // Core data & boundary state
@@ -80,8 +83,19 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const [events, setEvents] = useState<NotificationEventCatalogueItem[]>(
     BASELINE_CODE_EVENT_CATALOGUE,
   );
+  const [eventsSource, setEventsSource] = useState<'LOADING' | 'LIVE' | 'OFFLINE_REFERENCE'>(
+    'LOADING',
+  );
   const [eventsBlockedMsg, setEventsBlockedMsg] = useState<string>('');
   const [templates, setTemplates] = useState<NotificationTemplateVersion[]>(BASELINE_CODE_TEMPLATES);
+  const [loadedTemplateChannels, setLoadedTemplateChannels] = useState<{
+    SMS: boolean;
+    EMAIL: boolean;
+  }>({ SMS: false, EMAIL: false });
+  const loadedTemplateChannelsRef = useRef<{ SMS: boolean; EMAIL: boolean }>({
+    SMS: false,
+    EMAIL: false,
+  });
   const [templatesBlockedMsg, setTemplatesBlockedMsg] = useState<string>('');
   const [providerStatus, setProviderStatus] = useState<NotificationProviderStatus | null>(null);
   const [providerBlockedMsg, setProviderBlockedMsg] = useState<string>('');
@@ -105,7 +119,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const [draftSmsEnabled, setDraftSmsEnabled] = useState<boolean>(true);
   const [draftEmailEnabled, setDraftEmailEnabled] = useState<boolean>(false);
   const [triggerReason, setTriggerReason] = useState<string>('');
-  const [triggerApprovalId, setTriggerApprovalId] = useState<string>('');
   const [triggerValidationErrors, setTriggerValidationErrors] = useState<string[]>([]);
   const [triggerFeedback, setTriggerFeedback] = useState<{
     kind: 'success' | 'blocked' | 'error';
@@ -122,9 +135,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   } | null>(null);
   const [isSubmittingChecker, setIsSubmittingChecker] = useState<boolean>(false);
   const [decidingChangeId, setDecidingChangeId] = useState<string | null>(null);
+  const [executingApprovalId, setExecutingApprovalId] = useState<string | null>(null);
   const [queueDecisionComment, setQueueDecisionComment] = useState<string>('');
 
-  // Deliveries & Retries State (Capability 10)
+  // Deliveries, Retries & Outbox Receipts State (Capability 10)
   const [deliveryPageData, setDeliveryPageData] = useState<NotificationDeliveryPage | null>(null);
   const [deliveryLoading, setDeliveryLoading] = useState<boolean>(false);
   const [deliveryError, setDeliveryError] = useState<string>('');
@@ -151,12 +165,17 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   } | null>(null);
   const [isRetryingDelivery, setIsRetryingDelivery] = useState<boolean>(false);
 
-  // Controlled Test-Send State (Capability 11)
+  const [outboxReceiptPageData, setOutboxReceiptPageData] =
+    useState<NotificationOutboxReceiptPage | null>(null);
+  const [outboxReceiptLoading, setOutboxReceiptLoading] = useState<boolean>(false);
+  const [outboxReceiptError, setOutboxReceiptError] = useState<string>('');
+  const [outboxReceiptBlockedMsg, setOutboxReceiptBlockedMsg] = useState<string>('');
+  const [outboxReceiptPage, setOutboxReceiptPage] = useState<number>(1);
+  const [outboxReceiptStatusFilter, setOutboxReceiptStatusFilter] = useState<string>('');
+
+  // Controlled Test-Send State (Capability 11 — fixed connectivity probe contract)
   const [testChannel, setTestChannel] = useState<ManagedNotificationChannel>('SMS');
-  const [testEventType, setTestEventType] = useState<string>('customer.funding.approved');
   const [testDestination, setTestDestination] = useState<string>('');
-  const [testReason, setTestReason] = useState<string>('');
-  const [testApprovalId, setTestApprovalId] = useState<string>('');
   const [testWorkforceConfirmed, setTestWorkforceConfirmed] = useState<boolean>(false);
   const [testValidationErrors, setTestValidationErrors] = useState<string[]>([]);
   const [testOutcome, setTestOutcome] = useState<ControlledTestSendOutcome | null>(null);
@@ -199,6 +218,98 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     }
   }, [permissions.canViewDeliveries, deliveryPage, deliveryLimit, appliedFilters]);
 
+  const fetchOutboxReceipts = useCallback(async () => {
+    if (!permissions.canViewDeliveries) return;
+    setOutboxReceiptLoading(true);
+    setOutboxReceiptError('');
+    setOutboxReceiptBlockedMsg('');
+    try {
+      const res = await NotificationManagementApi.listOutboxReceipts({
+        page: outboxReceiptPage,
+        limit: 20,
+        status: outboxReceiptStatusFilter
+          ? (outboxReceiptStatusFilter as any)
+          : undefined,
+      });
+      if (res.status === 'BLOCKED') {
+        setOutboxReceiptBlockedMsg(res.message);
+        setOutboxReceiptPageData({
+          data: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          totalPages: 0,
+          hasNextPage: false,
+        });
+      } else {
+        setOutboxReceiptPageData(res.data);
+      }
+    } catch (err: any) {
+      setOutboxReceiptError(err?.message || 'Failed to load notification outbox receipts.');
+    } finally {
+      setOutboxReceiptLoading(false);
+    }
+  }, [permissions.canViewDeliveries, outboxReceiptPage, outboxReceiptStatusFilter]);
+
+  const fetchTemplatesForChannel = useCallback(
+    async (
+      channel: ManagedNotificationChannel,
+      catalogueEvents: NotificationEventCatalogueItem[],
+      force = false,
+    ) => {
+      if (!permissions.canViewCatalogue) return;
+      if (!force && loadedTemplateChannelsRef.current[channel]) return;
+
+      const editableEventTypes = catalogueEvents
+        .filter(
+          (item) =>
+            item.templateEditable &&
+            item.deliveryClass !== 'SECURITY' &&
+            !SECURITY_LOCKED_EVENT_TYPES.has(item.eventType),
+        )
+        .map((item) => item.eventType);
+
+      try {
+        const res = await NotificationManagementApi.listTemplates({
+          channel,
+          includeHistory: true,
+          editableEventTypes,
+        });
+        if (res.status === 'BLOCKED') {
+          setTemplatesBlockedMsg(res.message);
+          loadedTemplateChannelsRef.current = {
+            ...loadedTemplateChannelsRef.current,
+            [channel]: true,
+          };
+          setLoadedTemplateChannels((prev) => ({ ...prev, [channel]: true }));
+        } else {
+          setTemplatesBlockedMsg('');
+          const normalized = res.data.map((row) => ({
+            ...row,
+            sourceOrigin: row.sourceOrigin ?? ('DATABASE' as const),
+          }));
+          setTemplates((prev) => [
+            ...prev.filter((item) => item.channel !== channel),
+            ...(normalized.length > 0
+              ? normalized
+              : BASELINE_CODE_TEMPLATES.filter((item) => item.channel === channel)),
+          ]);
+          loadedTemplateChannelsRef.current = {
+            ...loadedTemplateChannelsRef.current,
+            [channel]: true,
+          };
+          setLoadedTemplateChannels((prev) => ({ ...prev, [channel]: true }));
+        }
+      } catch (err: any) {
+        setGlobalLoadErrors((prev) => ({
+          ...prev,
+          templates: err?.message || `Failed to load ${channel} notification templates`,
+        }));
+      }
+    },
+    [permissions.canViewCatalogue],
+  );
+
   const fetchAllReadSurfaces = useCallback(async () => {
     if (!permissions.canAccessModule) {
       setLoadingInitial(false);
@@ -207,8 +318,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
     setLoadingInitial(true);
     setGlobalLoadErrors({});
+    loadedTemplateChannelsRef.current = { SMS: false, EMAIL: false };
+    setLoadedTemplateChannels({ SMS: false, EMAIL: false });
 
     const tasks: Promise<void>[] = [];
+    let resolvedEvents: NotificationEventCatalogueItem[] = BASELINE_CODE_EVENT_CATALOGUE;
 
     if (permissions.canViewCatalogue) {
       tasks.push(
@@ -216,37 +330,27 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           .then((res) => {
             if (res.status === 'BLOCKED') {
               setEventsBlockedMsg(res.message);
+              setEventsSource('OFFLINE_REFERENCE');
               setEvents(BASELINE_CODE_EVENT_CATALOGUE);
+              resolvedEvents = BASELINE_CODE_EVENT_CATALOGUE;
             } else {
               setEventsBlockedMsg('');
-              setEvents(res.data.length > 0 ? res.data : BASELINE_CODE_EVENT_CATALOGUE);
+              if (res.data.length > 0) {
+                setEventsSource('LIVE');
+                setEvents(res.data);
+                resolvedEvents = res.data;
+              } else {
+                setEventsSource('OFFLINE_REFERENCE');
+                setEvents(BASELINE_CODE_EVENT_CATALOGUE);
+                resolvedEvents = BASELINE_CODE_EVENT_CATALOGUE;
+              }
             }
           })
           .catch((err: any) => {
+            setEventsSource('OFFLINE_REFERENCE');
             setGlobalLoadErrors((prev) => ({
               ...prev,
               events: err?.message || 'Failed to load notification events',
-            }));
-          }),
-      );
-
-      tasks.push(
-        NotificationManagementApi.listTemplates({ includeHistory: true })
-          .then((res) => {
-            if (res.status === 'BLOCKED') {
-              setTemplatesBlockedMsg(res.message);
-              setTemplates(BASELINE_CODE_TEMPLATES);
-            } else {
-              setTemplatesBlockedMsg('');
-              setTemplates(
-                res.data.map((row) => ({ ...row, sourceOrigin: row.sourceOrigin ?? 'DATABASE' })),
-              );
-            }
-          })
-          .catch((err: any) => {
-            setGlobalLoadErrors((prev) => ({
-              ...prev,
-              templates: err?.message || 'Failed to load notification templates',
             }));
           }),
       );
@@ -271,14 +375,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             }));
           }),
       );
-
-      tasks.push(
-        NotificationManagementApi.getSafeRuntimeConfig()
-          .then(setRuntimeConfig)
-          .catch(() => {
-            // Non-fatal auxiliary metadata
-          }),
-      );
     }
 
     if (permissions.canViewDiagnostics) {
@@ -290,6 +386,14 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               ...prev,
               diagnostics: err?.message || 'Diagnostics unavailable',
             }));
+          }),
+      );
+
+      tasks.push(
+        NotificationManagementApi.getSafeRuntimeConfig()
+          .then(setRuntimeConfig)
+          .catch(() => {
+            // Non-fatal auxiliary metadata gated strictly by diagnostics.view
           }),
       );
     }
@@ -334,7 +438,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
     if (permissions.canViewAudit) {
       tasks.push(
-        NotificationManagementApi.listAuditEvents('NOTIFICATION_TEMPLATE', 10)
+        NotificationManagementApi.listNotificationGovernanceAudit(20)
           .then(setAuditRows)
           .catch(() => {
             // Non-fatal audit lookup
@@ -343,12 +447,40 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     }
 
     await Promise.all(tasks);
+    if (
+      permissions.canViewCatalogue &&
+      (activeTabRef.current === 'smsTemplates' || activeTabRef.current === 'emailTemplates')
+    ) {
+      await fetchTemplatesForChannel(
+        activeTabRef.current === 'smsTemplates' ? 'SMS' : 'EMAIL',
+        resolvedEvents,
+        true,
+      );
+    }
     setLoadingInitial(false);
-  }, [permissions]);
+  }, [permissions, fetchTemplatesForChannel]);
 
   useEffect(() => {
     void fetchAllReadSurfaces();
   }, [fetchAllReadSurfaces]);
+
+  useEffect(() => {
+    if (!permissions.canAccessModule || !permissions.canViewCatalogue || loadingInitial) return;
+    if (activeTab === 'smsTemplates' && !loadedTemplateChannels.SMS) {
+      void fetchTemplatesForChannel('SMS', events);
+    } else if (activeTab === 'emailTemplates' && !loadedTemplateChannels.EMAIL) {
+      void fetchTemplatesForChannel('EMAIL', events);
+    }
+  }, [
+    activeTab,
+    events,
+    loadingInitial,
+    loadedTemplateChannels.SMS,
+    loadedTemplateChannels.EMAIL,
+    permissions.canAccessModule,
+    permissions.canViewCatalogue,
+    fetchTemplatesForChannel,
+  ]);
 
   useEffect(() => {
     if (permissions.canAccessModule && permissions.canViewDeliveries) {
@@ -356,25 +488,42 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     }
   }, [permissions.canAccessModule, permissions.canViewDeliveries, fetchDeliveries]);
 
-  // Derived Overview Metrics
+  useEffect(() => {
+    if (
+      permissions.canAccessModule &&
+      permissions.canViewDeliveries &&
+      (activeTab === 'deliveries' || activeTab === 'overview')
+    ) {
+      void fetchOutboxReceipts();
+    }
+  }, [permissions.canAccessModule, permissions.canViewDeliveries, activeTab, fetchOutboxReceipts]);
+
+  // Derived Overview Metrics (explicitly scoped to the loaded page slice vs total matching count)
   const deliveryRows = deliveryPageData?.data ?? [];
   const deliverySummary = useMemo(() => {
     let sent = 0;
     let failed = 0;
+    let dead = 0;
+    let unknown = 0;
     let skipped = 0;
     let pending = 0;
     let retried = 0;
     for (const row of deliveryRows) {
       if (row.status === 'SENT') sent += 1;
       else if (row.status === 'FAILED') failed += 1;
+      else if (row.status === 'DEAD') dead += 1;
+      else if (row.status === 'UNKNOWN') unknown += 1;
       else if (row.status === 'SKIPPED') skipped += 1;
       else if (row.status === 'PENDING') pending += 1;
       if (Number(row.attempts) > 1) retried += 1;
     }
     return {
       totalAllPages: deliveryPageData?.total ?? 0,
+      loadedPageCount: deliveryRows.length,
       sent,
       failed,
+      dead,
+      unknown,
       skipped,
       pending,
       retried,
@@ -425,7 +574,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   }, [changeRequests, sessionSubmittedChanges]);
 
   const emailChannelBlocked = Boolean(
-    providerBlockedMsg || !providerStatus?.email?.channelEnabledInSchema,
+    providerBlockedMsg || (providerStatus !== null && !providerStatus.email.channelEnabledInSchema),
   );
 
   // Handlers — Event Trigger Configuration (Capability 2)
@@ -434,7 +583,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     setDraftSmsEnabled(eventItem.smsEnabled);
     setDraftEmailEnabled(eventItem.emailEnabled);
     setTriggerReason('');
-    setTriggerApprovalId('');
     setTriggerValidationErrors([]);
     setTriggerFeedback(null);
   };
@@ -451,7 +599,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       smsEnabled: draftSmsEnabled,
       emailEnabled: draftEmailEnabled,
       reason: triggerReason,
-      approvalId: triggerApprovalId,
     });
     if (errors.length > 0) {
       setTriggerValidationErrors(errors);
@@ -466,7 +613,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           smsEnabled: draftSmsEnabled,
           emailEnabled: draftEmailEnabled,
           reason: triggerReason.trim(),
-          ...(triggerApprovalId.trim() ? { approvalIds: [triggerApprovalId.trim()] } : {}),
         },
       );
 
@@ -519,7 +665,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         );
       }
       setTriggerReason('');
-      setTriggerApprovalId('');
     } catch (err: any) {
       setTriggerFeedback({
         kind: 'error',
@@ -559,11 +704,12 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       return;
     }
 
+    const targetApprovalId = record.approvalId ?? record.id;
     setDecidingChangeId(record.id);
     setCheckerFeedback(null);
     try {
       const res = await NotificationManagementApi.decideNotificationChangeRequest(
-        record.id,
+        targetApprovalId,
         decision,
         queueDecisionComment.trim(),
       );
@@ -572,7 +718,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       } else {
         setCheckerFeedback({
           kind: 'success',
-          message: `Change request ${record.id} ${decision === 'approve' ? 'approved' : 'rejected'} (${res.data.status}).`,
+          message: `Change request ${targetApprovalId} ${
+            decision === 'approve' ? 'approved and executed' : 'rejected'
+          } (${res.data.status}).`,
         });
         setQueueDecisionComment('');
         await fetchAllReadSurfaces();
@@ -584,6 +732,62 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       });
     } finally {
       setDecidingChangeId(null);
+    }
+  };
+
+  const handleExecuteApprovedChange = async (
+    approvalId: string,
+    requestedBy?: string,
+    rowId?: string,
+  ) => {
+    if (
+      (!permissions.canApproveTemplates && !permissions.canApproveConfiguration) ||
+      !permissions.hasMfaAssurance
+    ) {
+      return;
+    }
+    if (!isUuidString(approvalId)) {
+      setCheckerFeedback({
+        kind: 'error',
+        message: 'Enter a valid Workforce Approval ID (UUID) before executing an approved change.',
+      });
+      return;
+    }
+    if (requestedBy && requestedBy === currentPrincipalId) {
+      setCheckerFeedback({
+        kind: 'error',
+        message: 'Self-execution prohibited: Maker and Checker must be distinct workforce principals.',
+      });
+      return;
+    }
+    if (executingApprovalId) return;
+
+    const trackingKey = rowId ?? approvalId.trim();
+    setExecutingApprovalId(trackingKey);
+    setCheckerFeedback(null);
+    try {
+      const res = await NotificationManagementApi.executeApprovedNotificationChange(
+        approvalId.trim(),
+      );
+      if (res.status === 'BLOCKED') {
+        setCheckerFeedback({ kind: 'blocked', message: res.message });
+      } else {
+        setCheckerFeedback({
+          kind: 'success',
+          message:
+            res.data.message ??
+            `Approved notification change ${approvalId.trim()} executed (${res.data.status}).`,
+        });
+        setCheckerApprovalId('');
+        await fetchAllReadSurfaces();
+      }
+    } catch (err: any) {
+      setCheckerFeedback({
+        kind: 'error',
+        message: err?.message || 'Failed to execute approved notification change proposal.',
+      });
+    } finally {
+      setExecutingApprovalId(null);
     }
   };
 
@@ -604,11 +808,12 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       return;
     }
 
+    const trimmedApprovalId = checkerApprovalId.trim();
     setIsSubmittingChecker(true);
     setCheckerFeedback(null);
     try {
       await NotificationManagementApi.decideWorkforceApproval(
-        checkerApprovalId.trim(),
+        trimmedApprovalId,
         decision,
         checkerComment,
       );
@@ -616,11 +821,14 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         kind: 'success',
         message:
           decision === 'approve'
-            ? `Workforce approval ${checkerApprovalId.trim()} signed and approved.`
-            : `Workforce approval ${checkerApprovalId.trim()} rejected.`,
+            ? `Workforce approval ${trimmedApprovalId} signed and approved. If this is a notification proposal, execute it from the queue or via Execute Approved Proposal below to apply the change.`
+            : `Workforce approval ${trimmedApprovalId} rejected.`,
       });
-      setCheckerApprovalId('');
+      if (decision === 'reject') {
+        setCheckerApprovalId('');
+      }
       setCheckerComment('');
+      await fetchAllReadSurfaces();
     } catch (err: any) {
       setCheckerFeedback({
         kind: 'error',
@@ -689,7 +897,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     }
   };
 
-  // Handlers — Controlled Test-Send (Capability 11)
+  // Handlers — Controlled Test-Send (Capability 11 — fixed connectivity probe)
   const handleTestSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!permissions.canTestSend) return;
@@ -701,11 +909,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
     const { errors, normalizedDestination } = validateTestSendRequest({
       channel: testChannel,
-      eventType: testEventType,
       destination: testDestination,
-      reason: testReason,
       workforceDestinationConfirmed: testWorkforceConfirmed,
-      approvalId: testApprovalId,
     });
 
     if (errors.length > 0 || !normalizedDestination) {
@@ -717,11 +922,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     try {
       const res = await NotificationManagementApi.submitTestSend({
         channel: testChannel,
-        eventType: testEventType,
         destination: normalizedDestination,
-        reason: testReason.trim(),
         workforceDestinationConfirmed: true,
-        ...(testApprovalId.trim() ? { approvalId: testApprovalId.trim() } : {}),
       });
 
       if (res.status === 'BLOCKED') {
@@ -730,7 +932,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       }
 
       setTestOutcome(res.data);
-      setTestReason('');
     } catch (err: any) {
       if (err?.status === 429) {
         setTestError(
@@ -783,7 +984,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           disabled={loadingInitial}
           onClick={() => {
             void fetchAllReadSurfaces();
-            if (permissions.canViewDeliveries) void fetchDeliveries();
+            if (permissions.canViewDeliveries) {
+              void fetchDeliveries();
+              void fetchOutboxReceipts();
+            }
           }}
         >
           {loadingInitial ? 'Refreshing…' : 'Refresh Console'}
@@ -854,9 +1058,26 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   <span style={styles.blockedBadge} data-testid="overview-email-blocked-badge">
                     BLOCKED (ARENA 3)
                   </span>
+                ) : !permissions.canViewProviderStatus ? (
+                  <span style={styles.mutedBadge} data-testid="overview-email-restricted-badge">
+                    SCOPE RESTRICTED
+                  </span>
+                ) : loadingInitial && !providerStatus ? (
+                  <span style={styles.mutedBadge} data-testid="overview-email-loading-badge">
+                    LOADING…
+                  </span>
+                ) : !providerStatus ? (
+                  <span style={styles.blockedBadge} data-testid="overview-email-unavailable-badge">
+                    STATUS UNAVAILABLE
+                  </span>
+                ) : providerStatus.email.operationalStatus === 'NOT_CONFIGURED' ||
+                  String(providerStatus.email.provider).toUpperCase() === 'NONE' ? (
+                  <span style={styles.mutedBadge} data-testid="overview-email-disabled-badge">
+                    NOT CONFIGURED (DARK)
+                  </span>
                 ) : (
-                  <span style={styles.liveBadge}>
-                    {providerStatus?.email?.operationalStatus ?? 'READY'}
+                  <span style={styles.liveBadge} data-testid="overview-email-live-badge">
+                    {providerStatus.email.operationalStatus}
                   </span>
                 )}
               </div>
@@ -875,7 +1096,16 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   <strong>Runtime Status:</strong>{' '}
                   {emailChannelBlocked
                     ? 'Pending ARENA 3 schema & provider adapter integration'
-                    : `Provider: ${providerStatus?.email?.provider || 'Configured'}`}
+                    : !permissions.canViewProviderStatus
+                      ? 'Requires notification.provider.view or notification.view_deliveries'
+                      : !providerStatus
+                        ? loadingInitial
+                          ? 'Loading provider readiness…'
+                          : 'Provider status not loaded (unavailable)'
+                        : providerStatus.email.operationalStatus === 'NOT_CONFIGURED' ||
+                            String(providerStatus.email.provider).toUpperCase() === 'NONE'
+                          ? `Confirmed disabled / dark (${providerStatus.email.provider || 'NONE'})`
+                          : `Provider: ${providerStatus.email.provider}`}
                 </div>
               </div>
             </section>
@@ -883,8 +1113,16 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             <section style={styles.card} aria-label="Event catalogue and outbox health">
               <div style={styles.cardTitleRow}>
                 <h3 style={styles.cardTitle}>⚡ Event & Outbox Health</h3>
-                <span style={eventsBlockedMsg ? styles.blockedBadge : styles.liveBadge}>
-                  {eventsBlockedMsg ? 'CODE BASELINE' : 'DB REGISTRY LIVE'}
+                <span
+                  style={
+                    eventsBlockedMsg || eventsSource === 'OFFLINE_REFERENCE'
+                      ? styles.blockedBadge
+                      : styles.liveBadge
+                  }
+                >
+                  {eventsBlockedMsg || eventsSource === 'OFFLINE_REFERENCE'
+                    ? 'STATIC REFERENCE'
+                    : 'DB REGISTRY LIVE'}
                 </span>
               </div>
               <div style={styles.kvList}>
@@ -895,6 +1133,24 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 </div>
                 <div>
                   <strong>Eligible Editable Triggers:</strong> {eventStats.eligibleToggle} events
+                </div>
+                <div>
+                  <strong>Outbox Worker Posture:</strong>{' '}
+                  {providerStatus ? (
+                    providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted ? (
+                      <span data-testid="overview-worker-redacted-badge">
+                        REDACTED (MINIMAL PROJECTION)
+                      </span>
+                    ) : providerStatus.worker.enabled ? (
+                      'ENABLED'
+                    ) : (
+                      'DISABLED'
+                    )
+                  ) : permissions.canViewProviderStatus ? (
+                    'Unloaded'
+                  ) : (
+                    'Requires provider status scope'
+                  )}
                 </div>
                 <div>
                   <strong>Pending Shared Outbox:</strong>{' '}
@@ -914,34 +1170,38 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             </section>
           </div>
 
-          {/* Backend Coordination & Readiness Matrix */}
+          {/* Backend Coordination & Readiness Matrix (F-13 reconciled contracts) */}
           <section
             style={styles.card}
             aria-label="Backend integration readiness matrix"
             data-testid="backend-readiness-matrix"
           >
-            <h3 style={styles.cardTitle}>🔗 Backend API Integration & Dependency Status</h3>
+            <h3 style={styles.cardTitle}>🔗 Backend API Integration & Live Contract Reference</h3>
             <p style={styles.cardDesc}>
-              Truthful live integration status across existing MonieNaija services, ARENA 1
-              (templates & event catalogue), and ARENA 3 (email runtime, provider status & test-send).
+              Authoritative backend endpoints wired to this console. Policy-deferred capabilities
+              (manual delivery retry and single-step template activation without proposal) remain
+              explicitly disabled.
             </p>
             <div style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
                 <thead>
                   <tr>
                     <th style={styles.th}>Capability / Surface</th>
-                    <th style={styles.th}>Endpoint Boundary</th>
-                    <th style={styles.th}>Owner</th>
+                    <th style={styles.th}>Current Backend Contract</th>
+                    <th style={styles.th}>Governance / Scope</th>
                     <th style={styles.th}>Runtime State</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={styles.td}>SMS Delivery Diagnostics & Retry Telemetry</td>
+                    <td style={styles.td}>Delivery Diagnostics & Outbox Materialization Receipts</td>
                     <td style={styles.td}>
-                      <code>GET /internal/notifications/deliveries</code>
+                      <code>GET /internal/notifications/deliveries</code> ·{' '}
+                      <code>GET /internal/notifications/outbox-receipts</code>
                     </td>
-                    <td style={styles.td}>Baseline Core</td>
+                    <td style={styles.td}>
+                      <code>notification.view_deliveries</code>
+                    </td>
                     <td style={styles.td}>
                       <span style={styles.liveBadge}>LIVE</span>
                     </td>
@@ -949,31 +1209,44 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   <tr>
                     <td style={styles.td}>Shared Outbox, Diagnostics & Safe Runtime Config</td>
                     <td style={styles.td}>
-                      <code>GET /internal/outbox</code> · <code>/internal/diagnostics</code> ·{' '}
-                      <code>/internal/configuration</code>
+                      <code>GET /internal/outbox</code> · <code>GET /internal/diagnostics</code> ·{' '}
+                      <code>GET /internal/configuration</code>
                     </td>
-                    <td style={styles.td}>Baseline Core</td>
+                    <td style={styles.td}>
+                      <code>outbox.view</code> · <code>diagnostics.view</code>
+                    </td>
                     <td style={styles.td}>
                       <span style={styles.liveBadge}>LIVE</span>
                     </td>
                   </tr>
                   <tr>
-                    <td style={styles.td}>Workforce Maker-Checker Approval Decisions</td>
+                    <td style={styles.td}>Two-Step Maker-Checker Approval & Proposal Execution</td>
                     <td style={styles.td}>
-                      <code>POST /internal/a2/workforce/approvals/:id/approve|reject</code>
+                      <code>GET /internal/notifications/changes</code> ·{' '}
+                      <code>POST /internal/a2/workforce/approvals/:approvalId/approve|reject</code> ·{' '}
+                      <code>POST /internal/notifications/changes/:approvalId/execute</code>
                     </td>
-                    <td style={styles.td}>Baseline Core</td>
                     <td style={styles.td}>
-                      <span style={styles.liveBadge}>LIVE</span>
+                      <code>privileged:approve</code> (MFA, Maker ≠ Checker)
+                    </td>
+                    <td style={styles.td}>
+                      {changeRequestsBlockedMsg ? (
+                        <span style={styles.blockedBadge}>BLOCKED</span>
+                      ) : (
+                        <span style={styles.liveBadge}>LIVE</span>
+                      )}
                     </td>
                   </tr>
                   <tr>
-                    <td style={styles.td}>DB Event Catalogue & Eligible Trigger Toggles</td>
+                    <td style={styles.td}>DB Event Catalogue & Eligible Trigger Proposals</td>
                     <td style={styles.td}>
                       <code>GET /internal/notifications/events</code> ·{' '}
-                      <code>PATCH .../configuration</code>
+                      <code>PATCH /internal/notifications/events/:eventType</code>
                     </td>
-                    <td style={styles.td}>ARENA 1</td>
+                    <td style={styles.td}>
+                      <code>notification.view_events</code> ·{' '}
+                      <code>notification.manage_configuration</code>
+                    </td>
                     <td style={styles.td}>
                       {eventsBlockedMsg ? (
                         <span style={styles.blockedBadge}>BLOCKED</span>
@@ -983,12 +1256,15 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     </td>
                   </tr>
                   <tr>
-                    <td style={styles.td}>SMS & Email Template Registry, Versioning & Server Preview</td>
+                    <td style={styles.td}>Editable SMS & Email Template Registry & Fixed-Sample Preview</td>
                     <td style={styles.td}>
                       <code>GET/POST /internal/notifications/templates</code> ·{' '}
-                      <code>POST .../preview</code>
+                      <code>POST /internal/notifications/templates/preview</code>
                     </td>
-                    <td style={styles.td}>ARENA 1</td>
+                    <td style={styles.td}>
+                      <code>notification.view_events</code> ·{' '}
+                      <code>notification.manage_templates</code>
+                    </td>
                     <td style={styles.td}>
                       {templatesBlockedMsg ? (
                         <span style={styles.blockedBadge}>BLOCKED</span>
@@ -998,11 +1274,15 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     </td>
                   </tr>
                   <tr>
-                    <td style={styles.td}>Non-Secret SMS & Email Provider Readiness Status</td>
+                    <td style={styles.td}>Non-Secret Provider Status & Governed Provider Configs</td>
                     <td style={styles.td}>
-                      <code>GET /internal/notifications/provider-status</code>
+                      <code>GET /internal/notifications/provider-status</code> ·{' '}
+                      <code>GET/POST /internal/notifications/provider-configs*</code>
                     </td>
-                    <td style={styles.td}>ARENA 3</td>
+                    <td style={styles.td}>
+                      <code>notification.provider.view</code> ·{' '}
+                      <code>notification.provider.configure</code>
+                    </td>
                     <td style={styles.td}>
                       {providerBlockedMsg ? (
                         <span style={styles.blockedBadge}>BLOCKED</span>
@@ -1012,18 +1292,16 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     </td>
                   </tr>
                   <tr>
-                    <td style={styles.td}>Notification Change-Request Queue & Controlled Test-Send</td>
+                    <td style={styles.td}>Controlled Connectivity Probe Test-Send</td>
                     <td style={styles.td}>
-                      <code>GET /internal/notifications/change-requests</code> ·{' '}
-                      <code>POST /internal/notifications/test-send</code>
+                      <code>POST /internal/notifications/test-send</code> (<code>channel</code> +{' '}
+                      <code>destination</code>)
                     </td>
-                    <td style={styles.td}>ARENA 3</td>
                     <td style={styles.td}>
-                      {changeRequestsBlockedMsg ? (
-                        <span style={styles.blockedBadge}>BLOCKED</span>
-                      ) : (
-                        <span style={styles.liveBadge}>LIVE</span>
-                      )}
+                      <code>notification.test_send</code> (MFA)
+                    </td>
+                    <td style={styles.td}>
+                      <span style={styles.liveBadge}>LIVE</span>
                     </td>
                   </tr>
                 </tbody>
@@ -1045,6 +1323,18 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               <span style={styles.blockedBadge}>BLOCKED</span>{' '}
               <strong>Event Configuration Persistence Pending ARENA 1 Integration:</strong>{' '}
               {eventsBlockedMsg} Displaying read-only code-derived catalogue reference.
+            </div>
+          )}
+
+          {!eventsBlockedMsg && eventsSource === 'OFFLINE_REFERENCE' && !loadingInitial && (
+            <div
+              style={styles.infoBanner}
+              role="status"
+              data-testid="catalogue-offline-reference-banner"
+            >
+              <strong>Static V1 Defaults Reference:</strong> Live event registry data was not
+              returned; displaying static read-only defaults aligned with{' '}
+              <code>NOTIFICATION_DEFAULTS_V1</code>.
             </div>
           )}
 
@@ -1163,38 +1453,21 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   </label>
                 </div>
 
-                <div style={styles.filterGrid}>
-                  <div>
-                    <label htmlFor="trigger-audit-reason" style={styles.label}>
-                      Operational Audit Reason <span style={{ color: '#DC2626' }}>*</span>
-                    </label>
-                    <input
-                      id="trigger-audit-reason"
-                      aria-label="Operational audit reason"
-                      data-testid="trigger-reason-input"
-                      type="text"
-                      style={styles.input}
-                      placeholder="Explain why this trigger configuration is changing (min 10 chars)…"
-                      value={triggerReason}
-                      onChange={(e) => setTriggerReason(e.target.value)}
-                      disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="trigger-approval-id" style={styles.label}>
-                      Pre-Approved Checker Approval ID (Optional UUID)
-                    </label>
-                    <input
-                      id="trigger-approval-id"
-                      aria-label="Checker approval ID"
-                      type="text"
-                      style={styles.input}
-                      placeholder="Optional UUID when executing an approved change…"
-                      value={triggerApprovalId}
-                      onChange={(e) => setTriggerApprovalId(e.target.value)}
-                      disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                    />
-                  </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label htmlFor="trigger-audit-reason" style={styles.label}>
+                    Operational Audit Reason <span style={{ color: '#DC2626' }}>*</span>
+                  </label>
+                  <input
+                    id="trigger-audit-reason"
+                    aria-label="Operational audit reason"
+                    data-testid="trigger-reason-input"
+                    type="text"
+                    style={styles.input}
+                    placeholder="Explain why this trigger configuration is changing (min 10 chars)…"
+                    value={triggerReason}
+                    onChange={(e) => setTriggerReason(e.target.value)}
+                    disabled={!permissions.canManageConfiguration || isSavingTrigger}
+                  />
                 </div>
 
                 {triggerValidationErrors.length > 0 && (
@@ -1585,6 +1858,43 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                                   Reject
                                 </button>
                               </div>
+                            ) : reqRow.status === 'APPROVED' && hasCheckerScope ? (
+                              <button
+                                type="button"
+                                data-testid={`execute-change-${reqRow.id}`}
+                                disabled={
+                                  isSelf ||
+                                  !permissions.hasMfaAssurance ||
+                                  executingApprovalId !== null
+                                }
+                                title={
+                                  isSelf
+                                    ? 'Self-execution prohibited (Maker ≠ Checker)'
+                                    : !permissions.hasMfaAssurance
+                                      ? 'MFA session assurance required'
+                                      : 'Execute approved proposal via POST /internal/notifications/changes/:approvalId/execute'
+                                }
+                                style={
+                                  !isSelf &&
+                                  permissions.hasMfaAssurance &&
+                                  executingApprovalId === null
+                                    ? styles.approveSmallBtn
+                                    : styles.disabledSmallBtn
+                                }
+                                onClick={() =>
+                                  void handleExecuteApprovedChange(
+                                    reqRow.approvalId ?? reqRow.id,
+                                    reqRow.requestedBy,
+                                    reqRow.id,
+                                  )
+                                }
+                              >
+                                {isSelf
+                                  ? 'Maker ≠ Checker'
+                                  : executingApprovalId === reqRow.id
+                                    ? 'Executing…'
+                                    : 'Execute Approved'}
+                              </button>
                             ) : (
                               <span style={{ fontSize: 12, color: '#64748B' }}>—</span>
                             )}
@@ -1598,7 +1908,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             )}
           </section>
 
-          {/* LIVE Generic Workforce Approval Decision Form */}
+          {/* LIVE Generic Workforce Approval Decision & Approved Proposal Execution Form */}
           <section
             style={styles.card}
             aria-label="Direct workforce approval decision"
@@ -1606,18 +1916,22 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           >
             <div style={styles.cardTitleRow}>
               <h3 style={styles.cardTitle}>
-                ✅ Direct Workforce Approval Decision (<code>/internal/a2/workforce/approvals/:id</code>)
+                ✅ Direct Workforce Approval & Two-Step Execution (
+                <code>/internal/a2/workforce/approvals/:id</code> ·{' '}
+                <code>/internal/notifications/changes/:approvalId/execute</code>)
               </h3>
-              <span style={styles.liveBadge}>LIVE ENDPOINT</span>
+              <span style={styles.liveBadge}>LIVE ENDPOINTS</span>
             </div>
             <p style={styles.cardDesc}>
               Authorized <code>FINANCE_CONTROLLER</code> checkers with <code>privileged:approve</code>{' '}
-              and <code>MFA</code> assurance can approve or reject governed Approval IDs directly.
+              and <code>MFA</code> assurance can approve or reject governed Approval IDs directly,
+              and execute notification proposals already in <code>APPROVED</code> state (recovering
+              proposals approved in the generic Workforce Approvals queue).
             </p>
             <div style={styles.filterGrid}>
               <div>
                 <label htmlFor="direct-approval-id" style={styles.label}>
-                  Pending Approval ID (UUID)
+                  Pending or Approved Approval ID (UUID)
                 </label>
                 <input
                   id="direct-approval-id"
@@ -1631,7 +1945,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   disabled={
                     !permissions.canUseWorkforceApprovalEndpoint ||
                     !permissions.hasMfaAssurance ||
-                    isSubmittingChecker
+                    isSubmittingChecker ||
+                    executingApprovalId !== null
                   }
                 />
               </div>
@@ -1651,19 +1966,21 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   disabled={
                     !permissions.canUseWorkforceApprovalEndpoint ||
                     !permissions.hasMfaAssurance ||
-                    isSubmittingChecker
+                    isSubmittingChecker ||
+                    executingApprovalId !== null
                   }
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 data-testid="direct-workforce-approve-btn"
                 disabled={
                   !permissions.canUseWorkforceApprovalEndpoint ||
                   !permissions.hasMfaAssurance ||
-                  isSubmittingChecker
+                  isSubmittingChecker ||
+                  executingApprovalId !== null
                 }
                 style={
                   permissions.canUseWorkforceApprovalEndpoint && permissions.hasMfaAssurance
@@ -1676,11 +1993,34 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               </button>
               <button
                 type="button"
+                data-testid="direct-execute-approved-btn"
+                disabled={
+                  (!permissions.canApproveTemplates && !permissions.canApproveConfiguration) ||
+                  !permissions.hasMfaAssurance ||
+                  isSubmittingChecker ||
+                  executingApprovalId !== null
+                }
+                style={
+                  (permissions.canApproveTemplates || permissions.canApproveConfiguration) &&
+                  permissions.hasMfaAssurance &&
+                  executingApprovalId === null
+                    ? styles.secondaryBtn
+                    : styles.primaryBtnDisabled
+                }
+                onClick={() => void handleExecuteApprovedChange(checkerApprovalId)}
+              >
+                {executingApprovalId !== null
+                  ? 'Executing…'
+                  : 'Execute Approved Proposal'}
+              </button>
+              <button
+                type="button"
                 data-testid="direct-workforce-reject-btn"
                 disabled={
                   !permissions.canUseWorkforceApprovalEndpoint ||
                   !permissions.hasMfaAssurance ||
-                  isSubmittingChecker
+                  isSubmittingChecker ||
+                  executingApprovalId !== null
                 }
                 style={
                   permissions.canUseWorkforceApprovalEndpoint && permissions.hasMfaAssurance
@@ -1694,19 +2034,31 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             </div>
           </section>
 
-          {/* Governance Audit Trail */}
+          {/* Governance Audit Trail (F-02 — normalized actor + full non-provider notification governance entity coverage) */}
           {permissions.canViewAudit && (
-            <section style={styles.card} aria-label="Notification governance audit records">
-              <h3 style={styles.cardTitle}>📜 Recent Notification Template Audit Events</h3>
+            <section
+              style={styles.card}
+              aria-label="Notification governance audit records"
+              data-testid="notification-governance-audit-section"
+            >
+              <h3 style={styles.cardTitle}>📜 Recent Notification Governance Audit Events</h3>
+              <p style={styles.cardDesc}>
+                Covers <code>NOTIFICATION_TEMPLATE</code>, <code>NOTIFICATION_CHANGE</code>,{' '}
+                <code>NOTIFICATION_EVENT_CONFIGURATION</code>, and{' '}
+                <code>NOTIFICATION_TEST_SEND</code>. Provider credential configuration audit
+                remains isolated to Tab 9 (<code>SUPER_ADMIN</code> & <code>FINANCE_AUDITOR</code>{' '}
+                only).
+              </p>
               {auditRows.length === 0 ? (
                 <div style={styles.emptyBox}>
-                  No <code>NOTIFICATION_TEMPLATE</code> audit events recorded yet.
+                  No notification governance audit events recorded yet.
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={styles.table}>
+                  <table style={styles.table} data-testid="notification-governance-audit-table">
                     <thead>
                       <tr>
+                        <th style={styles.th}>Entity Type</th>
                         <th style={styles.th}>Action</th>
                         <th style={styles.th}>Entity ID</th>
                         <th style={styles.th}>Actor</th>
@@ -1716,12 +2068,17 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     <tbody>
                       {auditRows.map((row, idx) => (
                         <tr key={String(row.id ?? idx)}>
+                          <td style={styles.td}>
+                            <code>{String(row.entityType ?? 'NOTIFICATION_TEMPLATE')}</code>
+                          </td>
                           <td style={styles.td}>{String(row.action ?? '—')}</td>
                           <td style={styles.td}>
                             <code>{String(row.entityId ?? '—')}</code>
                           </td>
                           <td style={styles.td}>
-                            <code>{String(row.actorId ?? '—')}</code>
+                            <code data-testid={`governance-audit-actor-${idx}`}>
+                              {String(row.actor ?? row.actorId ?? 'SYSTEM')}
+                            </code>
                           </td>
                           <td style={styles.td}>{String(row.occurredAt ?? row.createdAt ?? '—')}</td>
                         </tr>
@@ -1921,43 +2278,73 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               )}
             </section>
 
-            {/* Worker & Live Runtime Config Card */}
+            {/* Worker & Live Runtime Config Card (F-12 MINIMAL projection honest display) */}
             <section style={styles.card} aria-label="Worker and retry runtime posture">
               <div style={styles.cardTitleRow}>
                 <h3 style={styles.cardTitle}>⚙️ Worker & Retry Policy</h3>
-                <span style={styles.liveBadge}>RUNTIME READ-ONLY</span>
+                {providerStatus &&
+                (providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted) ? (
+                  <span style={styles.mutedBadge} data-testid="provider-worker-redacted-badge">
+                    MINIMAL PROJECTION
+                  </span>
+                ) : (
+                  <span style={styles.liveBadge}>RUNTIME READ-ONLY</span>
+                )}
               </div>
-              <div style={styles.kvList}>
+              <div style={styles.kvList} data-testid="worker-runtime-status-details">
+                <div>
+                  <strong>Projection Scope:</strong>{' '}
+                  <code>{providerStatus?.projectionScope ?? 'UNLOADED'}</code>
+                </div>
                 <div>
                   <strong>Environment:</strong>{' '}
-                  <code>{providerStatus?.environment ?? runtimeConfig?.environment ?? 'unknown'}</code>
+                  <code>
+                    {providerStatus?.environment ??
+                      runtimeConfig?.environment ??
+                      (permissions.canViewDiagnostics ? 'unknown' : 'Redacted (MINIMAL projection)')}
+                  </code>
                 </div>
                 <div>
                   <strong>App / API Version:</strong>{' '}
                   <code>
-                    {runtimeConfig?.version ?? diagnostics?.version ?? '0.1.0'} (
-                    {runtimeConfig?.apiVersion ?? 'v1'})
+                    {permissions.canViewDiagnostics
+                      ? `${runtimeConfig?.version ?? diagnostics?.version ?? '0.1.0'} (${
+                          runtimeConfig?.apiVersion ?? 'v1'
+                        })`
+                      : 'Requires diagnostics.view'}
                   </code>
                 </div>
                 <div>
                   <strong>Worker Poller Enabled:</strong>{' '}
-                  {providerStatus
-                    ? providerStatus.worker.enabled
-                      ? 'ENABLED'
-                      : 'DISABLED (NOTIFICATION_WORKER_ENABLED=false)'
-                    : 'Pending provider-status (default false)'}
+                  {providerStatus ? (
+                    providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted ? (
+                      <span data-testid="provider-worker-redacted-value">
+                        REDACTED (requires notification.view_deliveries — not disabled)
+                      </span>
+                    ) : providerStatus.worker.enabled ? (
+                      'ENABLED'
+                    ) : (
+                      'DISABLED (NOTIFICATION_WORKER_ENABLED=false)'
+                    )
+                  ) : (
+                    'Unloaded'
+                  )}
                 </div>
                 <div>
                   <strong>SMS Retry Policy:</strong>{' '}
                   {providerStatus
-                    ? `Max ${providerStatus.worker.smsRetryMaxAttempts} attempts · Base ${providerStatus.worker.smsRetryBaseDelaySeconds}s exponential backoff`
+                    ? providerStatus.projectionScope === 'MINIMAL' || providerStatus.worker.redacted
+                      ? 'REDACTED in MINIMAL projection (requires notification.view_deliveries)'
+                      : `Max ${providerStatus.worker.smsRetryMaxAttempts} attempts · Base ${providerStatus.worker.smsRetryBaseDelaySeconds}s exponential backoff`
                     : 'Bounded exponential backoff (FOR UPDATE SKIP LOCKED)'}
                 </div>
                 <div>
                   <strong>Outbox Retry Delay:</strong>{' '}
                   {runtimeConfig?.outboxRetryDelaySeconds !== undefined
                     ? `${runtimeConfig.outboxRetryDelaySeconds}s`
-                    : '60s'}
+                    : permissions.canViewDiagnostics
+                      ? '60s'
+                      : 'Requires diagnostics.view'}
                 </div>
                 <div>
                   <strong>Live Pending Outbox:</strong>{' '}
@@ -1981,30 +2368,53 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             </div>
           ) : (
             <>
-              {/* Summary Strip */}
-              <div style={styles.kpiRow}>
+              {/* Summary Strip — explicitly distinguishes total matching count across all pages from current loaded page sample */}
+              <div
+                style={{ fontSize: 12, color: '#475569', marginBottom: -4 }}
+                data-testid="delivery-summary-scope-note"
+              >
+                Status counts below summarize the{' '}
+                <strong>
+                  currently loaded page ({deliverySummary.loadedPageCount} of{' '}
+                  {deliverySummary.totalAllPages} matching records
+                </strong>
+                , Page {deliveryPageData?.page ?? deliveryPage} of{' '}
+                {Math.max(1, deliveryPageData?.totalPages ?? 1)}). Use filters below for full-dataset
+                status queries.
+              </div>
+              <div style={styles.kpiRow} data-testid="delivery-summary-cards">
                 <div style={styles.kpiCard}>
-                  <div style={styles.kpiLabel}>Total Matching Records</div>
-                  <div style={styles.kpiValue}>{deliverySummary.totalAllPages}</div>
+                  <div style={styles.kpiLabel}>Total Matching Records (All Pages)</div>
+                  <div style={styles.kpiValue} data-testid="delivery-total-matching-count">
+                    {deliverySummary.totalAllPages}
+                  </div>
                 </div>
                 <div style={styles.kpiCard}>
-                  <div style={styles.kpiLabel}>Page SENT (Accepted)</div>
+                  <div style={styles.kpiLabel}>
+                    Current Page ({deliverySummary.loadedPageCount} rows) · SENT
+                  </div>
                   <div style={{ ...styles.kpiValue, color: '#166534' }}>{deliverySummary.sent}</div>
                 </div>
                 <div style={styles.kpiCard}>
-                  <div style={styles.kpiLabel}>Page FAILED</div>
+                  <div style={styles.kpiLabel}>
+                    Current Page ({deliverySummary.loadedPageCount} rows) · FAILED / DEAD
+                  </div>
                   <div style={{ ...styles.kpiValue, color: '#DC2626' }}>
-                    {deliverySummary.failed}
+                    {deliverySummary.failed + deliverySummary.dead}
                   </div>
                 </div>
                 <div style={styles.kpiCard}>
-                  <div style={styles.kpiLabel}>Page SKIPPED</div>
-                  <div style={{ ...styles.kpiValue, color: '#64748B' }}>
-                    {deliverySummary.skipped}
+                  <div style={styles.kpiLabel}>
+                    Current Page ({deliverySummary.loadedPageCount} rows) · UNKNOWN / PENDING
+                  </div>
+                  <div style={{ ...styles.kpiValue, color: '#92400E' }}>
+                    {deliverySummary.unknown + deliverySummary.pending}
                   </div>
                 </div>
                 <div style={styles.kpiCard}>
-                  <div style={styles.kpiLabel}>Retried (Attempts &gt; 1)</div>
+                  <div style={styles.kpiLabel}>
+                    Current Page ({deliverySummary.loadedPageCount} rows) · Retried (&gt;1)
+                  </div>
                   <div style={{ ...styles.kpiValue, color: '#D97706' }}>
                     {deliverySummary.retried}
                   </div>
@@ -2030,9 +2440,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                       onChange={(e) => setFilterStatus(e.target.value)}
                     >
                       <option value="">All statuses</option>
+                      <option value="PENDING">PENDING</option>
                       <option value="SENT">SENT</option>
                       <option value="FAILED">FAILED</option>
-                      <option value="PENDING">PENDING</option>
+                      <option value="DEAD">DEAD (Retry Exhausted)</option>
+                      <option value="UNKNOWN">UNKNOWN (Ambiguous Dispatch)</option>
                       <option value="SKIPPED">SKIPPED</option>
                     </select>
                   </div>
@@ -2067,6 +2479,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                       <option value="">All recipients</option>
                       <option value="CUSTOMER">CUSTOMER</option>
                       <option value="AGENT">AGENT</option>
+                      <option value="PHONE">PHONE (Direct / Non-Account)</option>
+                      <option value="WORKFORCE">WORKFORCE</option>
                     </select>
                   </div>
                   <div>
@@ -2306,9 +2720,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                                 style={
                                   row.status === 'SENT'
                                     ? styles.liveBadge
-                                    : row.status === 'FAILED'
+                                    : row.status === 'FAILED' || row.status === 'DEAD'
                                       ? styles.securityChip
-                                      : styles.mutedBadge
+                                      : row.status === 'UNKNOWN'
+                                        ? styles.blockedBadge
+                                        : styles.mutedBadge
                                 }
                               >
                                 {row.status}
@@ -2375,12 +2791,161 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   </button>
                 </div>
               </div>
+
+              {/* Outbox Materialization Receipts Section (F-04 — QUARANTINED / FAILED / SUPPRESSED / MATERIALIZED / UNSUPPORTED) */}
+              <section
+                style={styles.card}
+                aria-label="Notification outbox materialization receipts"
+                data-testid="outbox-receipts-section"
+              >
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <h3 style={styles.cardTitle}>
+                      📥 Outbox Materialization Receipts (
+                      <code>GET /internal/notifications/outbox-receipts</code>)
+                    </h3>
+                    <p style={styles.cardDesc}>
+                      Tracks outbox-to-notification materialization outcomes, including{' '}
+                      <code>QUARANTINED</code> and <code>FAILED</code> receipts that never became
+                      outbound delivery rows.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label htmlFor="outbox-receipt-status-filter" style={styles.label}>
+                      Receipt Status
+                    </label>
+                    <select
+                      id="outbox-receipt-status-filter"
+                      aria-label="Outbox receipt status"
+                      data-testid="outbox-receipt-status-select"
+                      style={{ ...styles.select, width: 190 }}
+                      value={outboxReceiptStatusFilter}
+                      onChange={(e) => {
+                        setOutboxReceiptPage(1);
+                        setOutboxReceiptStatusFilter(e.target.value);
+                      }}
+                    >
+                      <option value="">All receipt statuses</option>
+                      <option value="QUARANTINED">QUARANTINED</option>
+                      <option value="FAILED">FAILED</option>
+                      <option value="SUPPRESSED">SUPPRESSED</option>
+                      <option value="UNSUPPORTED">UNSUPPORTED</option>
+                      <option value="MATERIALIZED">MATERIALIZED</option>
+                    </select>
+                  </div>
+                </div>
+
+                {outboxReceiptBlockedMsg && (
+                  <div style={styles.blockedBanner} role="status" data-testid="outbox-receipts-blocked">
+                    <span style={styles.blockedBadge}>BLOCKED</span> {outboxReceiptBlockedMsg}
+                  </div>
+                )}
+
+                {outboxReceiptError && (
+                  <div style={styles.errorAlert} role="alert" data-testid="outbox-receipts-error">
+                    {outboxReceiptError}
+                  </div>
+                )}
+
+                {outboxReceiptLoading ? (
+                  <div style={styles.emptyBox}>Loading outbox materialization receipts…</div>
+                ) : (outboxReceiptPageData?.data ?? []).length === 0 ? (
+                  <div style={styles.emptyBox}>
+                    No notification outbox receipts matched the selected status filter.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={styles.table} data-testid="outbox-receipts-table">
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Outbox Event ID</th>
+                          <th style={styles.th}>Status</th>
+                          <th style={styles.th}>Reason</th>
+                          <th style={styles.th}>Attempts</th>
+                          <th style={styles.th}>Next Attempt</th>
+                          <th style={styles.th}>Updated At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(outboxReceiptPageData?.data ?? []).map((receipt) => (
+                          <tr
+                            key={receipt.outboxEventId}
+                            data-testid={`outbox-receipt-row-${receipt.outboxEventId}`}
+                          >
+                            <td style={styles.td}>
+                              <code>{receipt.outboxEventId}</code>
+                            </td>
+                            <td style={styles.td}>
+                              <span
+                                style={
+                                  receipt.status === 'MATERIALIZED'
+                                    ? styles.liveBadge
+                                    : receipt.status === 'QUARANTINED' ||
+                                        receipt.status === 'FAILED'
+                                      ? styles.securityChip
+                                      : styles.mutedBadge
+                                }
+                              >
+                                {receipt.status}
+                              </span>
+                            </td>
+                            <td style={styles.td}>
+                              <code>{receipt.reason || '—'}</code>
+                            </td>
+                            <td style={styles.td}>{receipt.attempts}</td>
+                            <td style={styles.td}>
+                              {receipt.nextAttemptAt
+                                ? new Date(receipt.nextAttemptAt).toLocaleString()
+                                : '—'}
+                            </td>
+                            <td style={styles.td}>
+                              {receipt.updatedAt
+                                ? new Date(receipt.updatedAt).toLocaleString()
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div style={styles.pagerRow} data-testid="outbox-receipts-pager">
+                  <button
+                    type="button"
+                    style={
+                      outboxReceiptPage <= 1 ? styles.disabledSmallBtn : styles.secondarySmallBtn
+                    }
+                    disabled={outboxReceiptPage <= 1 || outboxReceiptLoading}
+                    onClick={() => setOutboxReceiptPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ fontSize: 13, color: '#475569' }}>
+                    Page {outboxReceiptPageData?.page ?? outboxReceiptPage} of{' '}
+                    {Math.max(1, outboxReceiptPageData?.totalPages ?? 1)} · Total{' '}
+                    {outboxReceiptPageData?.total ?? 0}
+                  </span>
+                  <button
+                    type="button"
+                    style={
+                      !outboxReceiptPageData?.hasNextPage
+                        ? styles.disabledSmallBtn
+                        : styles.secondarySmallBtn
+                    }
+                    disabled={!outboxReceiptPageData?.hasNextPage || outboxReceiptLoading}
+                    onClick={() => setOutboxReceiptPage((p) => p + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </section>
             </>
           )}
         </div>
       )}
 
-      {/* TAB 8: CONTROLLED TEST-SEND (Capability 11) */}
+      {/* TAB 8: CONTROLLED TEST-SEND (Capability 11 — Fixed Connectivity Probe Contract) */}
       {activeTab === 'testSend' && (
         <div style={styles.sectionStack} data-testid="notif-panel-test-send">
           {!permissions.canTestSend && (
@@ -2390,17 +2955,19 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               data-testid="test-send-scope-restricted-banner"
             >
               <strong>Permission Required:</strong> Controlled test-send requires the{' '}
-              <code>notification.test_send</code> authorization function and dual-control governance.
+              <code>notification.test_send</code> authorization function and MFA session assurance.
               Submission controls are disabled for the current principal.
             </div>
           )}
 
           <section style={styles.card} aria-label="Controlled test notification form">
-            <h3 style={styles.cardTitle}>🧪 Controlled Test-Send Interface (Dual Control)</h3>
-            <p style={styles.cardDesc}>
-              Validates live provider configuration using the active template version rendered with
-              safe sample variables. Destinations are restricted strictly to verified workforce-owned
-              phone numbers or email addresses — never customer contact details.
+            <h3 style={styles.cardTitle}>🧪 Controlled Connectivity Probe Test-Send</h3>
+            <p style={styles.cardDesc} data-testid="test-send-contract-notice">
+              Dispatches a fixed non-financial connectivity probe via{' '}
+              <code>POST /internal/notifications/test-send</code> accepting{' '}
+              <code>{'{ channel, destination }'}</code> only. Event-specific template rendering is
+              verified separately in Tabs 3 & 4 via non-sending Server Preview. Destinations are
+              restricted strictly to verified workforce-owned phone numbers or email addresses.
             </p>
 
             <form onSubmit={handleTestSendSubmit} noValidate>
@@ -2426,29 +2993,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 </div>
 
                 <div>
-                  <label htmlFor="test-send-event" style={styles.label}>
-                    Active Event Template <span style={{ color: '#DC2626' }}>*</span>
-                  </label>
-                  <select
-                    id="test-send-event"
-                    aria-label="Test send event"
-                    data-testid="test-send-event-select"
-                    style={styles.select}
-                    value={testEventType}
-                    onChange={(e) => setTestEventType(e.target.value)}
-                    disabled={!permissions.canTestSend || isSendingTest}
-                  >
-                    {events
-                      .filter((item) => item.templateEditable)
-                      .map((item) => (
-                        <option key={item.eventType} value={item.eventType}>
-                          {item.eventType}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div>
                   <label htmlFor="test-send-destination" style={styles.label}>
                     Workforce-Owned Destination ({testChannel === 'SMS' ? 'E.164 / NG Phone' : 'Email'}){' '}
                     <span style={{ color: '#DC2626' }}>*</span>
@@ -2469,40 +3013,6 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     disabled={!permissions.canTestSend || isSendingTest}
                   />
                 </div>
-
-                <div>
-                  <label htmlFor="test-send-approval-id" style={styles.label}>
-                    Dual-Control Approval ID (Optional UUID)
-                  </label>
-                  <input
-                    id="test-send-approval-id"
-                    aria-label="Test send approval ID"
-                    data-testid="test-send-approval-id-input"
-                    type="text"
-                    style={styles.input}
-                    placeholder="Provide pre-approved UUID or omit to initiate approval…"
-                    value={testApprovalId}
-                    onChange={(e) => setTestApprovalId(e.target.value)}
-                    disabled={!permissions.canTestSend || isSendingTest}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <label htmlFor="test-send-reason" style={styles.label}>
-                  Operational Verification Reason <span style={{ color: '#DC2626' }}>*</span>
-                </label>
-                <input
-                  id="test-send-reason"
-                  aria-label="Test send reason"
-                  data-testid="test-send-reason-input"
-                  type="text"
-                  style={styles.input}
-                  placeholder="Describe provider verification purpose (10..300 chars)…"
-                  value={testReason}
-                  onChange={(e) => setTestReason(e.target.value)}
-                  disabled={!permissions.canTestSend || isSendingTest}
-                />
               </div>
 
               <div style={{ marginTop: 12, marginBottom: 14 }}>
