@@ -1,0 +1,13 @@
+MISSION 20 — AW-01 TRANSPORT PROOF (no ADMIN_WEB_API_BASE_URL in the environment)
+
+Vite dev server was started with:  env -u ADMIN_WEB_API_BASE_URL npm run dev -- --host 0.0.0.0
+so the variable is genuinely absent, not set to a value.
+
+Login through the dev-server proxy (same-origin /api/v1 -> 127.0.0.1:3000):
+  POST http://127.0.0.1:5173/api/v1/internal/a2/workforce/local-admin-sessions
+  -> HTTP 201, accessToken present, principal.roles=[FINANCE_AUDITOR], readOnlyPrincipal=true
+
+All 15 E2E steps and all 188 N-01 checks ran through that same proxy with no env var set.
+
+Production build stays fail-closed (see admin-web-summary.txt):
+  '/api/v1' in dist/assets/*.js: 0    'localhost' in dist/assets/*.js: 0

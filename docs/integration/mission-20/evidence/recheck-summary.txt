@@ -1,0 +1,12 @@
+MISSION 20 — RECHECK OF PREVIOUSLY CLOSED CORRECTIONS (own execution, live)
+
+D-01  agent.view 401/403 contract        : PASS  a22-admin-foundation (PG) PASS, mission-16a-agent-read-authorization (PG) PASS
+D-02  outlet/terminal PATCH accepts save : PASS  E2E-07 PATCH /internal/outlets/:id -> 200; E2E-08 PATCH /internal/terminals/:id -> 200
+D-03  revocation count + nested worker   : PASS  E2E-09 revoke -> 200 with true count; E2E-10 expiry-status -> 200 worker{configuredEnabled:false,...}
+D-04  approved Agent activation          : PASS  E2E-05 review -> approve -> activate completed in the browser
+AW-01 local start without the env var    : PASS  see aw-01-transport.txt (login 201 through the Vite proxy, bundle still fail-closed)
+K-01  read-only logout                   : PASS  see k01-matrix.txt (6/6, incl. stored-status and cross-session denial)
+N-01  sidebar/logout overlap             : PASS  see n01-matrix.txt (188/188 pointer clicks, negative control)
+
+Ordinary Agent V1 browser E2E: 15/15 (see e2e-results.json)
+API + authorization matrix  : 68/68 (see api-results.json)

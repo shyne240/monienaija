@@ -1,0 +1,78 @@
+MISSION 20 — N-01 REAL-BROWSER POINTER VERIFICATION
+harness: harness/m20-n01.cjs | browser: Chromium 153.0.8010.0 | Vite dev server with NO ADMIN_WEB_API_BASE_URL
+backend: NestJS on :3000 against disposable monienaija_e2e; all 11 roles log in with their own
+original local-dev credentials from scripts/local-dev-seed-11-roles.js.
+
+Method: every authorized nav item is opened by a PLAIN MOUSE CLICK. No force:true, no keyboard
+activation, no synthetic events, no per-item scrollIntoView, no retry-on-failure. Playwright's
+hit-target check ('element intercepts pointer events') is therefore a real failure signal:
+an item covered by the logout panel fails the click instead of silently passing.
+
+TOTAL checks: 188 | passed: 188 | failed: 0
+
+desktop-1500x1000  ->  46/46 checks passed; 98 pointer clicks opened real screens across 11 role walks; blocked walks: none
+     Mission 17 regression target: PASS  productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true
+     Mission 17 regression target: PASS  limitAssignments: click=ok renders=true
+smaller-1280x720  ->  46/46 checks passed; 98 pointer clicks opened real screens across 11 role walks; blocked walks: none
+     Mission 17 regression target: PASS  productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true
+     Mission 17 regression target: PASS  limitAssignments: click=ok renders=true
+shortest-rail-1024x620  ->  46/46 checks passed; 98 pointer clicks opened real screens across 11 role walks; blocked walks: none
+     Mission 17 regression target: PASS  productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true
+     Mission 17 regression target: PASS  limitAssignments: click=ok renders=true
+compact-drawer-480x860  ->  46/46 checks passed; 98 pointer clicks opened real screens across 11 role walks; blocked walks: none
+     Mission 17 regression target: PASS  productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true
+     Mission 17 regression target: PASS  limitAssignments: click=ok renders=true
+
+pointer clicks in total (11 roles x 4 viewports): 392
+PASS  N01-desktop-1500x1000-js-errors :: 0 JS errors
+PASS  N01-smaller-1280x720-js-errors :: 0 JS errors
+PASS  N01-shortest-rail-1024x620-js-errors :: 0 JS errors
+PASS  N01-compact-drawer-480x860-js-errors :: 0 JS errors
+
+Per-role walk detail, desktop 1500x1000:
+  PASS  SUPER_ADMIN-navset      25 items, mode=rail
+  PASS  SUPER_ADMIN-click-all   25/25 clicked and rendered
+  PASS  SUPER_ADMIN-logout      clicked, loginForm=true
+  PASS  FINANCE_PREPARER-navset  8 items, mode=rail
+  PASS  FINANCE_PREPARER-click-all  8/8 clicked and rendered
+  PASS  FINANCE_PREPARER-logout  clicked, loginForm=true
+  PASS  FINANCE_CONTROLLER-navset  11 items, mode=rail
+  PASS  FINANCE_CONTROLLER-click-all  11/11 clicked and rendered; entitlementNotices=[agents] (N-03 by design)
+  PASS  FINANCE_CONTROLLER-logout  clicked, loginForm=true
+  PASS  FINANCE_AUDITOR-navset  20 items, mode=rail
+  PASS  FINANCE_AUDITOR-click-all  20/20 clicked and rendered
+  PASS  FINANCE_AUDITOR-logout  clicked, loginForm=true
+  PASS  ADMINISTRATOR-navset    8 items, mode=rail
+  PASS  ADMINISTRATOR-click-all  8/8 clicked and rendered
+  PASS  ADMINISTRATOR-logout    clicked, loginForm=true
+  PASS  OPERATIONS-navset       10 items, mode=rail
+  PASS  OPERATIONS-click-all    10/10 clicked and rendered
+  PASS  OPERATIONS-logout       clicked, loginForm=true
+  PASS  AGENT_NETWORK_MANAGER-navset  5 items, mode=rail
+  PASS  AGENT_NETWORK_MANAGER-click-all  5/5 clicked and rendered
+  PASS  AGENT_NETWORK_MANAGER-logout  clicked, loginForm=true
+  PASS  COMPLIANCE-navset       4 items, mode=rail
+  PASS  COMPLIANCE-click-all    4/4 clicked and rendered
+  PASS  COMPLIANCE-logout       clicked, loginForm=true
+  PASS  RISK_FRAUD-navset       2 items, mode=rail
+  PASS  RISK_FRAUD-click-all    2/2 clicked and rendered
+  PASS  RISK_FRAUD-logout       clicked, loginForm=true
+  PASS  CUSTOMER_SERVICE-navset  3 items, mode=rail
+  PASS  CUSTOMER_SERVICE-click-all  3/3 clicked and rendered
+  PASS  CUSTOMER_SERVICE-logout  clicked, loginForm=true
+  PASS  TREASURY-navset         2 items, mode=rail
+  PASS  TREASURY-click-all      2/2 clicked and rendered
+  PASS  TREASURY-logout         clicked, loginForm=true
+
+NEGATIVE CONTROL — identical script, identical clicks, only the stylesheet differs:
+  with the baseline (Mission 17) admin-shell.css:
+    BLOCKED  SUPER_ADMIN -> productCatalogue
+    BLOCKED  SUPER_ADMIN -> limitCatalogue
+    BLOCKED  FINANCE_AUDITOR -> limitAssignments
+  with the Mission 19B admin-shell.css:
+    OK  SUPER_ADMIN -> productCatalogue
+    OK  SUPER_ADMIN -> limitCatalogue
+    OK  FINANCE_AUDITOR -> limitAssignments
+
+This control is what makes the 188/188 meaningful: the harness demonstrably goes red on the
+pre-correction stylesheet and green on the corrected one.

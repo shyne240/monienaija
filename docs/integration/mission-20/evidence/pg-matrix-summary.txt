@@ -1,0 +1,56 @@
+MISSION 20 — COMPLETE POSTGRESQL INTEGRATION MATRIX (own execution)
+date: 2026-10-31 | branch: integration/mission-20-ordinary-agent-v1-final
+command: PG_TEST_CONCURRENCY=1 NODE_ENV=test npm run test:pg  (9 sequential batches, own jest process each)
+postgres: embedded PostgreSQL 18.4, disposable mn_it_* databases
+
+=== PG integration batch 1/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       635 passed, 635 total
+=== PG integration batch 1/9 finished (exit 0) ===
+=== PG integration batch 2/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       290 passed, 290 total
+=== PG integration batch 2/9 finished (exit 0) ===
+=== PG integration batch 3/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       324 passed, 324 total
+=== PG integration batch 3/9 finished (exit 0) ===
+=== PG integration batch 4/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       293 passed, 293 total
+=== PG integration batch 4/9 finished (exit 0) ===
+=== PG integration batch 5/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       267 passed, 267 total
+=== PG integration batch 5/9 finished (exit 0) ===
+=== PG integration batch 6/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       170 passed, 170 total
+=== PG integration batch 6/9 finished (exit 0) ===
+=== PG integration batch 7/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       236 passed, 236 total
+=== PG integration batch 7/9 finished (exit 0) ===
+=== PG integration batch 8/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       156 passed, 156 total
+=== PG integration batch 8/9 finished (exit 0) ===
+=== PG integration batch 9/9 (11 files) starting ===
+Test Suites: 11 passed, 11 total
+Tests:       56 passed, 56 total
+=== PG integration batch 9/9 finished (exit 0) ===
+PG_MATRIX_EXIT=0
+
+TOTAL SUITES: 131 passed / 131  (15+15+15+15+15+15+15+15+11)
+TOTAL TESTS:  2427 passed / 2427
+EXIT CODE:   0
+
+Suite-count delta vs Mission 17 (130 suites / 2419 tests): +1 suite / +8 tests,
+i.e. test/mission-19a-workforce-logout.integration.spec.ts (8 tests).
+
+Relevant suites in this run:
+PASS test/mission-15a-management.integration.spec.ts
+PASS test/a22-admin-foundation.integration.spec.ts
+PASS test/mission-19a-workforce-logout.integration.spec.ts
+PASS test/mission-15a-agent-sessions.integration.spec.ts
+PASS test/mission-16a-agent-read-authorization.integration.spec.ts
