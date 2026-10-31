@@ -1,0 +1,12 @@
+role | principalType | DELETE /sessions/:id | same token usable after logout | message
+SUPER_ADMIN | PRIVILEGED | 200 | 401 | -
+FINANCE_PREPARER | OPERATOR | 200 | 401 | -
+FINANCE_CONTROLLER | OPERATOR | 200 | 401 | -
+FINANCE_AUDITOR | OPERATOR | 403 | 200 | Read-only principal may not perform this operation
+ADMINISTRATOR | OPERATOR | 200 | 401 | -
+OPERATIONS | OPERATOR | 200 | 401 | -
+AGENT_NETWORK_MANAGER | OPERATOR | 200 | 401 | -
+COMPLIANCE | OPERATOR | 200 | 401 | -
+RISK_FRAUD | OPERATOR | 200 | 401 | -
+CUSTOMER_SERVICE | OPERATOR | 200 | 401 | -
+TREASURY | OPERATOR | 200 | 401 | -

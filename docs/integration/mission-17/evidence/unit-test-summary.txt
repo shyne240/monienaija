@@ -1,0 +1,9 @@
+MISSION 17 — BACKEND UNIT SUITE (own execution)
+command: NODE_ENV=test LOG_LEVEL=silent ./node_modules/.bin/jest --runInBand
+
+Test Suites: 224 passed, 224 total
+Tests:       2609 passed, 2609 total
+Time:        82.764 s
+EXIT CODE: 0
+
+Mission 17 delta vs Mission 16 baseline (224 suites / 2603 tests): +6 tests in test/runtime-access.guard.spec.ts

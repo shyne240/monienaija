@@ -1,0 +1,50 @@
+MISSION 17 — COMPLETE POSTGRESQL INTEGRATION MATRIX (own execution)
+date: 2026-10-31
+command: PG_TEST_CONCURRENCY=1 NODE_ENV=test npm run test:pg   (9 sequential batches, each its own jest process)
+postgres: embedded PostgreSQL 18.4 on 127.0.0.1:5432, disposable mn_it_* databases
+
+=== PG integration batch 1/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       635 passed, 635 total
+=== PG integration batch 1/9 finished (exit 0) ===
+=== PG integration batch 2/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       290 passed, 290 total
+=== PG integration batch 2/9 finished (exit 0) ===
+=== PG integration batch 3/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       324 passed, 324 total
+=== PG integration batch 3/9 finished (exit 0) ===
+=== PG integration batch 4/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       293 passed, 293 total
+=== PG integration batch 4/9 finished (exit 0) ===
+=== PG integration batch 5/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       267 passed, 267 total
+=== PG integration batch 5/9 finished (exit 0) ===
+=== PG integration batch 6/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       170 passed, 170 total
+=== PG integration batch 6/9 finished (exit 0) ===
+=== PG integration batch 7/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       236 passed, 236 total
+=== PG integration batch 7/9 finished (exit 0) ===
+=== PG integration batch 8/9 (15 files) starting ===
+Test Suites: 15 passed, 15 total
+Tests:       154 passed, 154 total
+=== PG integration batch 8/9 finished (exit 0) ===
+=== PG integration batch 9/9 (10 files) starting ===
+Test Suites: 10 passed, 10 total
+Tests:       50 passed, 50 total
+=== PG integration batch 9/9 finished (exit 0) ===
+PG_MATRIX_EXIT=0
+
+TOTAL SUITES: 130 passed / 130 (batch sums: 15+15+15+15+15+15+15+15+10)
+TOTAL TESTS: 2419 passed / 2419
+EXIT CODE: 0
+
+Previously failing suite (Mission 16 D-01), now passing:
+PASS test/a22-admin-foundation.integration.spec.ts
+PASS test/mission-16a-agent-read-authorization.integration.spec.ts (7.238 s)
