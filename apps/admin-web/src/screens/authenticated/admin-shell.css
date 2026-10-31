@@ -59,13 +59,13 @@
   background: var(--mn-nav-surface);
   color: var(--mn-nav-text);
   font-family: var(--mn-font-sans);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .mn-shell__brand {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 10px;
   padding: 0 6px 2px;
 }
@@ -102,6 +102,7 @@
 .mn-identity {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 10px;
   box-sizing: border-box;
   padding: 10px;
@@ -157,20 +158,25 @@
 .mn-nav {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 2px;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-family: var(--mn-font-sans);
 }
 
 .mn-nav__group {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 .mn-nav__group-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   gap: var(--mn-space-2);
   width: 100%;
   box-sizing: border-box;
@@ -234,6 +240,7 @@
 
 .mn-nav__item {
   display: block;
+  flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
@@ -279,8 +286,11 @@
 }
 
 .mn-shell__logout {
+  flex-shrink: 0;
   margin-top: auto;
-  padding-top: var(--mn-space-4);
+  padding-top: var(--mn-space-3);
+  border-top: 1px solid var(--mn-nav-border);
+  background: var(--mn-nav-surface);
 }
 
 .mn-shell__logout .mn-btn {
@@ -420,14 +430,14 @@
   background: var(--mn-nav-surface);
   color: var(--mn-nav-text);
   box-shadow: var(--mn-shadow-2);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   animation: mn-drawer-in var(--mn-motion-base) var(--mn-ease);
 }
 
 .mn-drawer__header {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: var(--mn-space-2);
   padding: 0 2px;
 }
@@ -477,8 +487,11 @@
 }
 
 .mn-drawer__logout {
+  flex-shrink: 0;
   margin-top: auto;
-  padding-top: var(--mn-space-4);
+  padding-top: var(--mn-space-3);
+  border-top: 1px solid var(--mn-nav-border);
+  background: var(--mn-nav-surface);
 }
 
 .mn-drawer__logout .mn-btn {
@@ -543,6 +556,21 @@
 @media (min-width: 1440px) {
   .mn-shell {
     grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+
+/* Ultra-short viewport / high-zoom fallback: scroll the rail as a unit without
+ * letting flex-shrink compress .mn-nav behind the logout control. */
+@media (max-height: 420px) {
+  .mn-shell__sidebar,
+  .mn-drawer {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .mn-nav {
+    flex: 0 0 auto;
+    overflow-y: visible;
   }
 }
 
