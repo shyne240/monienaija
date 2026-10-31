@@ -4,6 +4,7 @@ import type { AuthorizationService } from '../src/authorization/authorization.se
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import type { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
+import type { AgentAuthenticationSessionService } from '../src/agent-authentication/agent-authentication-session.service';
 import type { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import type { SupportAuthenticationService } from '../src/support-authentication/support-authentication.service';
@@ -205,7 +206,7 @@ describe('RoutePolicyRegistry', () => {
 describe('RuntimeAccessGuard', () => {
   function fixture() {
     const sessionService = { validate: jest.fn() };
-    const authorizationService = { authorize: jest.fn() };
+    const authorizationService = { authorize: jest.fn(), evaluate: jest.fn() };
     const workforceSessions = { validate: jest.fn() };
     const agentSessionService = { validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }) };
     const supportAuthenticationService = {
@@ -221,7 +222,7 @@ describe('RuntimeAccessGuard', () => {
       new RoutePolicyRegistry(),
       workforceSessions as unknown as A2WorkforceSessionService,
       workforceConfig,
-      agentSessionService as unknown as import('../src/agent-authentication/agent-authentication-session.service').AgentAuthenticationSessionService,
+      agentSessionService as unknown as AgentAuthenticationSessionService,
       supportAuthenticationService as unknown as SupportAuthenticationService,
     );
     return {
@@ -278,6 +279,73 @@ describe('RuntimeAccessGuard', () => {
     await expect(testFixture.guard.canActivate(context(request) as never)).resolves.toBe(true);
     expect(testFixture.sessionService.validate).not.toHaveBeenCalled();
     expect(request.authorizationPrincipal).toMatchObject({ type: 'PRIVILEGED' });
+  });
+
+  it.each(['AGENT', 'CUSTOMER', 'AGGREGATOR'])(
+    'preserves 401 for synthetic %s workforce results on Agent directory reads even with forged agent.view',
+    async (type) => {
+      const testFixture = fixture();
+      testFixture.workforceSessions.validate.mockResolvedValue({
+        type,
+        principalId: 'synthetic-test-principal',
+        customerId: type === 'CUSTOMER' ? CUSTOMER_ID : undefined,
+        agentId: type === 'AGENT' ? CUSTOMER_ID : undefined,
+        aggregatorId: type === 'AGGREGATOR' ? CUSTOMER_ID : undefined,
+        roles: [],
+        scopes: ['agent.view'],
+        customerAccess: 'NONE',
+      });
+      for (const method of ['GET', 'HEAD']) {
+        for (const url of [
+          '/api/v1/internal/agents',
+          `/api/v1/internal/agents/${CUSTOMER_ID}`,
+          `/api/v1/internal/agents/${CUSTOMER_ID}/financial-position`,
+        ]) {
+          await expect(
+            testFixture.guard.canActivate(context({
+              method, url, headers: { authorization: 'Bearer synthetic-token' },
+            }) as never),
+          ).rejects.toMatchObject({ status: 401, message: 'Privileged access required' });
+        }
+      }
+      expect(testFixture.authorizationService.evaluate).not.toHaveBeenCalled();
+      expect(testFixture.authorizationService.authorize).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still applies and audits the agent.view gate for a workforce principal without the function', async () => {
+    const testFixture = fixture();
+    testFixture.workforceSessions.validate.mockResolvedValue({
+      type: 'OPERATOR', principalId: 'workforce-no-agent-view', roles: [], scopes: [], customerAccess: 'NONE',
+    });
+    testFixture.authorizationService.evaluate.mockReturnValue({ allowed: false, reason: 'FUNCTION_MISSING' });
+    testFixture.authorizationService.authorize.mockResolvedValue({ allowed: false, reason: 'FUNCTION_MISSING' });
+    await expect(
+      testFixture.guard.canActivate(context({
+        method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer workforce-token' },
+      }) as never),
+    ).rejects.toMatchObject({ status: 403, message: 'Authorization denied: FUNCTION_MISSING' });
+    expect(testFixture.authorizationService.evaluate).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ requiredFunctions: ['agent.view'] }), expect.anything(),
+    );
+    expect(testFixture.authorizationService.authorize).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps real non-workforce session fallback at 403 instead of applying the synthetic-principal 401', async () => {
+    for (const principalType of ['agent', 'customer']) {
+      const testFixture = fixture();
+      testFixture.workforceSessions.validate.mockRejectedValue(new UnauthorizedException('Invalid workforce session'));
+      if (principalType === 'agent') {
+        testFixture.agentSessionService.validate.mockResolvedValue({ valid: true, principal: {} });
+      } else {
+        testFixture.sessionService.validate.mockResolvedValue({ valid: true, principal: {} });
+      }
+      await expect(
+        testFixture.guard.canActivate(context({
+          method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer real-session-token' },
+        }) as never),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    }
   });
 
   it('rejects missing and malformed bearer credentials', async () => {

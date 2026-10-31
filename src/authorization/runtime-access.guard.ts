@@ -117,6 +117,17 @@ export class RuntimeAccessGuard implements CanActivate {
       request.authorizationPrincipal = principal;
       this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
 
+      // Mission 16A: AdminAgentController historically rejects these non-workforce principal
+      // types with 401 before checking agent.view. Keep that ordering only on its read routes,
+      // without skipping the catalogue gate or changing the real Agent/Customer token fallback
+      // above (which deliberately returns 403 for a valid non-workforce session).
+      if (
+        route.rejectNonWorkforcePrincipalWith401 &&
+        ['AGENT', 'CUSTOMER', 'AGGREGATOR'].includes(principal.type)
+      ) {
+        throw new UnauthorizedException('Privileged access required');
+      }
+
       // V1-HARDEN-01 Part D: the route-policy-registry declares an explicit
       // `policy.allowedPrincipalTypes` for most WORKFORCE_SESSION routes (several internal
       // routes restrict access to OPERATOR/SERVICE/PRIVILEGED and deliberately exclude
