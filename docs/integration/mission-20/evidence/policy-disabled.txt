@@ -1,0 +1,20 @@
+MISSION 20 — POLICY-DISABLED FUNCTIONALITY (verified live, unchanged)
+
+1. Cash-to-Cash expiry worker stays OFF (opt-in, env-gated, default false):
+   GET /api/v1/internal/admin/cash-to-cash/expiry-status -> 200
+   worker = {"configuredEnabled":false,"schedulerRunning":false,"tickInProgress":false,"pollIntervalMs":60000,"batchSize":100}
+   No financial disposition: no refund, no release, no journal. Nothing was activated.
+
+2. No workforce PIN reset/unlock route (unresolved product policy, unchanged):
+   POST /api/v1/internal/admin/agents/:id/pin/reset  -> 404
+   POST /api/v1/internal/agents/:id/pin/unlock      -> 404
+   POST /api/v1/internal/admin/cash-to-cash/expire-now -> 404
+
+3. Security notifications cannot use editable templates (control still firing):
+   GET /internal/notifications/templates?eventType=customer.registration.phone_verification&channel=SMS
+   -> 400 "Security notifications cannot use editable templates"
+
+4. GOV-01 — stale CASH_TO_CASH_EXPIRY capability metadata kept as-is (non-blocking):
+   capability.seed.ts: apiStatus = NOT_EXPOSED, adminUiStatus = NOT_EXPOSED
+   git diff vs Mission 17 baseline for that file: EMPTY (untouched by this mission)
+   Not used for authorization: the route requires transaction.view at both registry and controller.

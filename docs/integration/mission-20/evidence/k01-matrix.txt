@@ -1,0 +1,45 @@
+MISSION 20 — K-01 REAL-HTTP REGRESSION EVIDENCE
+harness: harness/m20-k01.cjs | backend: NestJS on :3000 | database: monienaija_e2e (disposable)
+no mocks: genuine local-admin password logins, real bearer tokens over TCP, direct read-only
+PostgreSQL inspection of a2_workforce_sessions to prove stored state, not just HTTP status.
+
+checks: 6 | passed: 6 | failed: 0
+
+PASS  K01-1  FINANCE_AUDITOR can revoke its OWN current session
+      readBefore=200 readOnlyPrincipal=true logout=200 message=-
+PASS  K01-2  the revoked bearer immediately returns 401
+      readAfter=401 dbStatus=REVOKED revokedAt=true
+PASS  K01-3  cross-session revocation stays denied (sibling / other principal / unknown) and those sessions survive
+      sibling=403 siblingSurvives=200/ACTIVE otherPrincipal=403 otherSurvives=200/ACTIVE unknown=403
+PASS  K01-4  unrelated unsafe methods stay denied for the read-only principal (403 on every reachable route)
+      4/7 routes reachable & discriminator-valid :: POST /internal/agents/:id/suspend admin=404 (route not reachable — excluded)  POST /internal/agents/classes admin=201 auditor=403  POST /internal/agents/:id/outlets admin=404 (route not reachable — excluded)  PATCH /internal/outlets/:id admin=400 auditor=403  DELETE /internal/a2/workforce/sessions/:id admin=200 auditor=403  POST /internal/a2/workforce/approvals/:id/approve admin=400 auditor=403  POST /internal/notifications/templates admin=404 (route not reachable — excluded)
+PASS  K01-5  a validation race cannot resurrect a revoked session (stored status + replay)
+      12 trials: fetch-store=200 all=true storedStatus={"REVOKED":12} postRevokeReadsAll401=true
+PASS  K01-6  the other ten workforce roles keep their logout behaviour (own-session 200, token dead)
+      SUPER_ADMIN:200/200/401/REVOKED FINANCE_PREPARER:200/200/401/REVOKED FINANCE_CONTROLLER:200/200/401/REVOKED ADMINISTRATOR:200/200/401/REVOKED OPERATIONS:200/200/401/REVOKED AGENT_NETWORK_MANAGER:200/200/401/REVOKED COMPLIANCE:200/200/401/REVOKED RISK_FRAUD:200/200/401/REVOKED CUSTOMER_SERVICE:200/200/401/REVOKED TREASURY:200/200/401/REVOKED
+
+race trials (K01-5):
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+   logout=200 storedStatus=REVOKED postRevokeReadsAll401=true
+
+other ten roles (K01-6) [readBefore/logout/readAfter/dbStatus]:
+   SUPER_ADMIN           200/200/401/REVOKED
+   FINANCE_PREPARER      200/200/401/REVOKED
+   FINANCE_CONTROLLER    200/200/401/REVOKED
+   ADMINISTRATOR         200/200/401/REVOKED
+   OPERATIONS            200/200/401/REVOKED
+   AGENT_NETWORK_MANAGER 200/200/401/REVOKED
+   COMPLIANCE            200/200/401/REVOKED
+   RISK_FRAUD            200/200/401/REVOKED
+   CUSTOMER_SERVICE      200/200/401/REVOKED
+   TREASURY              200/200/401/REVOKED

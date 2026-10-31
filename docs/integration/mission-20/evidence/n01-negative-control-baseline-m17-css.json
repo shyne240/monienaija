@@ -1,0 +1,20 @@
+[
+  {
+    "role": "SUPER_ADMIN",
+    "key": "productCatalogue",
+    "clickable": false,
+    "error": "locator.click: Timeout 6000ms exceeded."
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "key": "limitCatalogue",
+    "clickable": false,
+    "error": "locator.click: Timeout 6000ms exceeded."
+  },
+  {
+    "role": "FINANCE_AUDITOR",
+    "key": "limitAssignments",
+    "clickable": false,
+    "error": "locator.click: Timeout 6000ms exceeded."
+  }
+]
