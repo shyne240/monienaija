@@ -1,0 +1,20 @@
+MISSION 23 — PACKAGE-LOCK DELTA (a392653a -> integrated HEAD)
+=============================================================
+Parsed both lockfiles and compared every npm path. Result: exactly 5 paths
+changed, all of them fast-uri. No other package was added, removed or re-versioned.
+
+  PATH                                                      BEFORE   AFTER
+  --------------------------------------------------------  ------   -----
+  node_modules/@angular-devkit/core/node_modules/fast-uri    3.1.6   (removed)
+  node_modules/@fastify/ajv-compiler/node_modules/fast-uri    3.1.6   (removed)
+  node_modules/@nestjs/schematics/node_modules/fast-uri       3.1.6   (removed)
+  node_modules/ajv/node_modules/fast-uri                      3.1.6   (removed)
+  node_modules/fast-uri                                         —      3.1.9  (added, hoisted)
+  node_modules/fast-json-stringify/node_modules/fast-uri       4.1.3   4.2.3
+
+Net: the four nested 3.1.6 copies collapse into a single hoisted 3.1.9, and the
+fast-json-stringify copy moves 4.1.3 -> 4.2.3.
+
+package.json functional delta: the two override values only
+  "fast-uri@3": "3.1.6" -> "3.1.9"
+  "fast-uri@4": "4.1.3" -> "4.2.3"

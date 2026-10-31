@@ -1,0 +1,106 @@
+MISSION 23 — RE-CHECK SUMMARY (K-01, N-01, D-01..D-04, AW-01)
+==============================================================
+Branch : integration/mission-23-fast-uri-security
+Base   : a392653a176e414477d97213a0fadeb15560b09a (Mission 20 accepted candidate)
+Merge  : 42b0baf  merge: Arena 1 Mission 22A fast-uri remediation (b3ced30)
+Environment: node v22.22.3 / npm 10.9.8 / Chromium 153.0.8010.0
+Backend under test: COMPILED build (`node dist/main.js`), port 3000, disposable DB monienaija_e2e
+Admin Web under test: Vite dev server port 5173 started with `env -u ADMIN_WEB_API_BASE_URL`
+
+--------------------------------------------------------------
+K-01 — read-only principal cannot be blocked from its own logout
+--------------------------------------------------------------
+Harness: harness/m23-k01.cjs  (real HTTP against the compiled build)
+Result : 6/6 PASS, 0 failed
+         K01-1  FINANCE_AUDITOR can revoke its OWN current session
+         K01-2  the revoked bearer immediately returns 401
+         K01-3  cross-session revocation stays denied (sibling / other principal / unknown)
+                and those sessions survive
+         K01-4  unrelated unsafe methods stay denied for the read-only principal
+                (403 on every reachable route)
+         K01-5  a validation race cannot resurrect a revoked session
+                (stored status + replay)
+         K01-6  the other ten workforce roles keep their logout behaviour
+                (own-session 200, token dead)
+Raw    : k01-results.json
+Status : STILL RESOLVED on the integrated build.
+
+--------------------------------------------------------------
+N-01 — sidebar scroll / logout-panel pointer interception
+--------------------------------------------------------------
+Harness: harness/m23-n01.cjs  (real Chromium, pointer input only; no force, no keyboard fallback)
+Result : 188/188 PASS, 0 failed
+Coverage: 11 roles x 4 viewports (1500x1000, 1280x720, 1024x620 rail, 480x860 compact drawer)
+Roles  : SUPER_ADMIN, FINANCE_PREPARER, FINANCE_CONTROLLER, FINANCE_AUDITOR, ADMINISTRATOR,
+         OPERATIONS, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD, CUSTOMER_SERVICE, TREASURY
+Raw    : n01-results.json   Screenshots: screenshots/ (N-01 viewport captures)
+Status : STILL RESOLVED on the integrated build.
+
+N-01 NEGATIVE CONTROL (harness can go red)
+------------------------------------------
+Harness: harness/m23-n01-negative-control.cjs — identical script, browser and credentials;
+only apps/admin-web/src/screens/authenticated/admin-shell.css differs.
+
+  Stylesheet served                     Product Catalogue  Limit Catalogue  Limit Assignments
+  ------------------------------------------------------------------------------------------
+  Baseline (Mission 17, d7a8af4)            BLOCKED           BLOCKED          BLOCKED
+  Mission 19B corrected (branch HEAD)          OK                OK               OK
+
+Baseline failures were exactly `locator.click: Timeout 6000ms exceeded.` (logout panel
+intercepting the pointer) — i.e. the harness reproduces the original defect.
+Raw: n01-m23-negative-control-baseline-m17-css.json / -fixed-19b-css.json
+Working tree restored to the corrected stylesheet afterwards (`git status` clean).
+
+--------------------------------------------------------------
+D-01 — agent read 401/403 contract (no information disclosure)
+--------------------------------------------------------------
+Full PostgreSQL matrix, integrated build:
+  PASS test/a22-admin-foundation.integration.spec.ts
+  PASS test/mission-16a-agent-read-authorization.integration.spec.ts
+Status : NOT REGRESSED.
+
+--------------------------------------------------------------
+D-02 — outlet / terminal metadata save
+--------------------------------------------------------------
+E2E-07  PATCH /api/v1/internal/outlets/691bcbba-…  -> 200   PASS
+E2E-08  PATCH /api/v1/internal/terminals/c5dc9cbd-… -> 200   PASS
+Status : NOT REGRESSED.
+
+--------------------------------------------------------------
+D-03 — revocation count + nested worker shape
+--------------------------------------------------------------
+E2E-09  POST /api/v1/internal/admin/agents/a9a8b6b5-…/sessions/revoke -> 200; true count rendered  PASS
+E2E-10  GET  /api/v1/internal/admin/cash-to-cash/expiry-status -> 200; worker state shown
+        (nested contract fix intact)                                                             PASS
+Status : NOT REGRESSED.
+
+--------------------------------------------------------------
+D-04 — approved-Agent activation
+--------------------------------------------------------------
+E2E-05   review=true approve=true activate=true rowStatus=APPROVED banner=true errors=false  PASS
+E2E-05b  agentRef=AGT-SEED-800581 rowFound=true status=ACTIVE                               PASS
+Status : NOT REGRESSED.
+
+--------------------------------------------------------------
+AW-01 — Admin Web local start without the env var
+--------------------------------------------------------------
+Vite started with `env -u ADMIN_WEB_API_BASE_URL`.
+  POST http://127.0.0.1:5173/api/v1/internal/a2/workforce/local-admin-sessions  ->  HTTP 201
+  principal.roles = [SUPER_ADMIN]  scopes = 66  accessToken = present
+All 15 E2E steps and all 188 N-01 checks ran through that same Vite proxy path.
+Production bundle (apps/admin-web/dist/assets/*.js) is still fail-closed:
+  occurrences of "api/v1"     : 0
+  occurrences of "localhost"  : 0
+  only the *name* ADMIN_WEB_API_BASE_URL appears (1x) — no absolute base is baked in.
+Status : NOT REGRESSED.
+
+--------------------------------------------------------------
+Authentication / authorization / session revocation / 11-role system
+--------------------------------------------------------------
+- 11 original roles authenticate: 11/11 logins OK using the original fixture
+  (/home/user/monienaija-local-dev-11-roles-credentials.json, unmodified credentials).
+- SUPER_ADMIN dashboard renders EXECUTIVE_GOVERNANCE (role-specific template).
+- Session revocation exercised over real HTTP (K-01 case 1/2/6) and in the browser (E2E-09).
+- Authorization denial verified for a restricted role: E2E-12 (CUSTOMER_SERVICE) produced
+  navVisible=false, agentReads=0, 403=0, 200=0 — no forbidden fetch is even attempted.
+- No false success messaging: E2E-13 observed a non-2xx and rendered no success banner.

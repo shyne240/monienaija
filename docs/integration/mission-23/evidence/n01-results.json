@@ -1,0 +1,1134 @@
+{
+  "results": [
+    {
+      "id": "N01-desktop-1500x1000/SUPER_ADMIN-dashboard",
+      "title": "desktop-1500x1000/SUPER_ADMIN: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=EXECUTIVE_GOVERNANCE rendered=Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary "
+    },
+    {
+      "id": "N01-desktop-1500x1000/SUPER_ADMIN-navset",
+      "title": "desktop-1500x1000/SUPER_ADMIN: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "25 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/SUPER_ADMIN-click-all",
+      "title": "desktop-1500x1000/SUPER_ADMIN: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "25/25 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/SUPER_ADMIN-mission17-targets",
+      "title": "desktop-1500x1000/SUPER_ADMIN: Mission 17 pointer-blocked item(s) productCatalogue, limitCatalogue now clickable",
+      "ok": true,
+      "detail": "productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/SUPER_ADMIN-logout",
+      "title": "desktop-1500x1000/SUPER_ADMIN: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_PREPARER-dashboard",
+      "title": "desktop-1500x1000/FINANCE_PREPARER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCE_PREPARATION rendered=Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | L"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_PREPARER-navset",
+      "title": "desktop-1500x1000/FINANCE_PREPARER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_PREPARER-click-all",
+      "title": "desktop-1500x1000/FINANCE_PREPARER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_PREPARER-logout",
+      "title": "desktop-1500x1000/FINANCE_PREPARER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_CONTROLLER-dashboard",
+      "title": "desktop-1500x1000/FINANCE_CONTROLLER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_CONTROL_APPROVALS rendered=Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction S"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_CONTROLLER-navset",
+      "title": "desktop-1500x1000/FINANCE_CONTROLLER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "11 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_CONTROLLER-click-all",
+      "title": "desktop-1500x1000/FINANCE_CONTROLLER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "11/11 clicked and rendered; entitlementNotices=[agents] (N-03 by design)"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_CONTROLLER-logout",
+      "title": "desktop-1500x1000/FINANCE_CONTROLLER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_AUDITOR-dashboard",
+      "title": "desktop-1500x1000/FINANCE_AUDITOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_AUDIT_ASSURANCE rendered=Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Sum"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_AUDITOR-navset",
+      "title": "desktop-1500x1000/FINANCE_AUDITOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "20 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_AUDITOR-click-all",
+      "title": "desktop-1500x1000/FINANCE_AUDITOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "20/20 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_AUDITOR-mission17-targets",
+      "title": "desktop-1500x1000/FINANCE_AUDITOR: Mission 17 pointer-blocked item(s) limitAssignments now clickable",
+      "ok": true,
+      "detail": "limitAssignments: click=ok renders=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/FINANCE_AUDITOR-logout",
+      "title": "desktop-1500x1000/FINANCE_AUDITOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/ADMINISTRATOR-dashboard",
+      "title": "desktop-1500x1000/ADMINISTRATOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=WORKFORCE_ADMINISTRATION rendered=Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview"
+    },
+    {
+      "id": "N01-desktop-1500x1000/ADMINISTRATOR-navset",
+      "title": "desktop-1500x1000/ADMINISTRATOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/ADMINISTRATOR-click-all",
+      "title": "desktop-1500x1000/ADMINISTRATOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/ADMINISTRATOR-logout",
+      "title": "desktop-1500x1000/ADMINISTRATOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/OPERATIONS-dashboard",
+      "title": "desktop-1500x1000/OPERATIONS: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=TRANSACTION_OPERATIONS rendered=Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary "
+    },
+    {
+      "id": "N01-desktop-1500x1000/OPERATIONS-navset",
+      "title": "desktop-1500x1000/OPERATIONS: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "10 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/OPERATIONS-click-all",
+      "title": "desktop-1500x1000/OPERATIONS: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "10/10 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/OPERATIONS-logout",
+      "title": "desktop-1500x1000/OPERATIONS: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/AGENT_NETWORK_MANAGER-dashboard",
+      "title": "desktop-1500x1000/AGENT_NETWORK_MANAGER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=AGENT_NETWORK_MANAGEMENT rendered=Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summ"
+    },
+    {
+      "id": "N01-desktop-1500x1000/AGENT_NETWORK_MANAGER-navset",
+      "title": "desktop-1500x1000/AGENT_NETWORK_MANAGER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "5 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/AGENT_NETWORK_MANAGER-click-all",
+      "title": "desktop-1500x1000/AGENT_NETWORK_MANAGER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "5/5 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/AGENT_NETWORK_MANAGER-logout",
+      "title": "desktop-1500x1000/AGENT_NETWORK_MANAGER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/COMPLIANCE-dashboard",
+      "title": "desktop-1500x1000/COMPLIANCE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=COMPLIANCE_KYC rendered=Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Cas"
+    },
+    {
+      "id": "N01-desktop-1500x1000/COMPLIANCE-navset",
+      "title": "desktop-1500x1000/COMPLIANCE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "4 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/COMPLIANCE-click-all",
+      "title": "desktop-1500x1000/COMPLIANCE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "4/4 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/COMPLIANCE-logout",
+      "title": "desktop-1500x1000/COMPLIANCE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/RISK_FRAUD-dashboard",
+      "title": "desktop-1500x1000/RISK_FRAUD: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FRAUD_CASE_MONITORING rendered=Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary"
+    },
+    {
+      "id": "N01-desktop-1500x1000/RISK_FRAUD-navset",
+      "title": "desktop-1500x1000/RISK_FRAUD: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/RISK_FRAUD-click-all",
+      "title": "desktop-1500x1000/RISK_FRAUD: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/RISK_FRAUD-logout",
+      "title": "desktop-1500x1000/RISK_FRAUD: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/CUSTOMER_SERVICE-dashboard",
+      "title": "desktop-1500x1000/CUSTOMER_SERVICE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=CUSTOMER_SERVICING rendered=Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | C"
+    },
+    {
+      "id": "N01-desktop-1500x1000/CUSTOMER_SERVICE-navset",
+      "title": "desktop-1500x1000/CUSTOMER_SERVICE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "3 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/CUSTOMER_SERVICE-click-all",
+      "title": "desktop-1500x1000/CUSTOMER_SERVICE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "3/3 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/CUSTOMER_SERVICE-logout",
+      "title": "desktop-1500x1000/CUSTOMER_SERVICE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000/TREASURY-dashboard",
+      "title": "desktop-1500x1000/TREASURY: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=RECONCILIATION_VISIBILITY rendered=Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation St"
+    },
+    {
+      "id": "N01-desktop-1500x1000/TREASURY-navset",
+      "title": "desktop-1500x1000/TREASURY: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-desktop-1500x1000/TREASURY-click-all",
+      "title": "desktop-1500x1000/TREASURY: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-desktop-1500x1000/TREASURY-logout",
+      "title": "desktop-1500x1000/TREASURY: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-desktop-1500x1000-js-errors",
+      "title": "desktop-1500x1000: no uncaught JavaScript errors across all 11 roles",
+      "ok": true,
+      "detail": "0 JS errors"
+    },
+    {
+      "id": "N01-smaller-1280x720/SUPER_ADMIN-dashboard",
+      "title": "smaller-1280x720/SUPER_ADMIN: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=EXECUTIVE_GOVERNANCE rendered=Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary "
+    },
+    {
+      "id": "N01-smaller-1280x720/SUPER_ADMIN-navset",
+      "title": "smaller-1280x720/SUPER_ADMIN: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "25 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/SUPER_ADMIN-click-all",
+      "title": "smaller-1280x720/SUPER_ADMIN: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "25/25 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/SUPER_ADMIN-mission17-targets",
+      "title": "smaller-1280x720/SUPER_ADMIN: Mission 17 pointer-blocked item(s) productCatalogue, limitCatalogue now clickable",
+      "ok": true,
+      "detail": "productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/SUPER_ADMIN-logout",
+      "title": "smaller-1280x720/SUPER_ADMIN: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_PREPARER-dashboard",
+      "title": "smaller-1280x720/FINANCE_PREPARER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCE_PREPARATION rendered=Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | L"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_PREPARER-navset",
+      "title": "smaller-1280x720/FINANCE_PREPARER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_PREPARER-click-all",
+      "title": "smaller-1280x720/FINANCE_PREPARER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_PREPARER-logout",
+      "title": "smaller-1280x720/FINANCE_PREPARER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_CONTROLLER-dashboard",
+      "title": "smaller-1280x720/FINANCE_CONTROLLER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_CONTROL_APPROVALS rendered=Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction S"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_CONTROLLER-navset",
+      "title": "smaller-1280x720/FINANCE_CONTROLLER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "11 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_CONTROLLER-click-all",
+      "title": "smaller-1280x720/FINANCE_CONTROLLER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "11/11 clicked and rendered; entitlementNotices=[agents] (N-03 by design)"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_CONTROLLER-logout",
+      "title": "smaller-1280x720/FINANCE_CONTROLLER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_AUDITOR-dashboard",
+      "title": "smaller-1280x720/FINANCE_AUDITOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_AUDIT_ASSURANCE rendered=Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Sum"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_AUDITOR-navset",
+      "title": "smaller-1280x720/FINANCE_AUDITOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "20 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_AUDITOR-click-all",
+      "title": "smaller-1280x720/FINANCE_AUDITOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "20/20 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_AUDITOR-mission17-targets",
+      "title": "smaller-1280x720/FINANCE_AUDITOR: Mission 17 pointer-blocked item(s) limitAssignments now clickable",
+      "ok": true,
+      "detail": "limitAssignments: click=ok renders=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/FINANCE_AUDITOR-logout",
+      "title": "smaller-1280x720/FINANCE_AUDITOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/ADMINISTRATOR-dashboard",
+      "title": "smaller-1280x720/ADMINISTRATOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=WORKFORCE_ADMINISTRATION rendered=Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview"
+    },
+    {
+      "id": "N01-smaller-1280x720/ADMINISTRATOR-navset",
+      "title": "smaller-1280x720/ADMINISTRATOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/ADMINISTRATOR-click-all",
+      "title": "smaller-1280x720/ADMINISTRATOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/ADMINISTRATOR-logout",
+      "title": "smaller-1280x720/ADMINISTRATOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/OPERATIONS-dashboard",
+      "title": "smaller-1280x720/OPERATIONS: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=TRANSACTION_OPERATIONS rendered=Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary "
+    },
+    {
+      "id": "N01-smaller-1280x720/OPERATIONS-navset",
+      "title": "smaller-1280x720/OPERATIONS: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "10 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/OPERATIONS-click-all",
+      "title": "smaller-1280x720/OPERATIONS: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "10/10 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/OPERATIONS-logout",
+      "title": "smaller-1280x720/OPERATIONS: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/AGENT_NETWORK_MANAGER-dashboard",
+      "title": "smaller-1280x720/AGENT_NETWORK_MANAGER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=AGENT_NETWORK_MANAGEMENT rendered=Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summ"
+    },
+    {
+      "id": "N01-smaller-1280x720/AGENT_NETWORK_MANAGER-navset",
+      "title": "smaller-1280x720/AGENT_NETWORK_MANAGER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "5 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/AGENT_NETWORK_MANAGER-click-all",
+      "title": "smaller-1280x720/AGENT_NETWORK_MANAGER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "5/5 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/AGENT_NETWORK_MANAGER-logout",
+      "title": "smaller-1280x720/AGENT_NETWORK_MANAGER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/COMPLIANCE-dashboard",
+      "title": "smaller-1280x720/COMPLIANCE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=COMPLIANCE_KYC rendered=Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Cas"
+    },
+    {
+      "id": "N01-smaller-1280x720/COMPLIANCE-navset",
+      "title": "smaller-1280x720/COMPLIANCE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "4 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/COMPLIANCE-click-all",
+      "title": "smaller-1280x720/COMPLIANCE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "4/4 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/COMPLIANCE-logout",
+      "title": "smaller-1280x720/COMPLIANCE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/RISK_FRAUD-dashboard",
+      "title": "smaller-1280x720/RISK_FRAUD: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FRAUD_CASE_MONITORING rendered=Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary"
+    },
+    {
+      "id": "N01-smaller-1280x720/RISK_FRAUD-navset",
+      "title": "smaller-1280x720/RISK_FRAUD: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/RISK_FRAUD-click-all",
+      "title": "smaller-1280x720/RISK_FRAUD: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/RISK_FRAUD-logout",
+      "title": "smaller-1280x720/RISK_FRAUD: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/CUSTOMER_SERVICE-dashboard",
+      "title": "smaller-1280x720/CUSTOMER_SERVICE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=CUSTOMER_SERVICING rendered=Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | C"
+    },
+    {
+      "id": "N01-smaller-1280x720/CUSTOMER_SERVICE-navset",
+      "title": "smaller-1280x720/CUSTOMER_SERVICE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "3 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/CUSTOMER_SERVICE-click-all",
+      "title": "smaller-1280x720/CUSTOMER_SERVICE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "3/3 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/CUSTOMER_SERVICE-logout",
+      "title": "smaller-1280x720/CUSTOMER_SERVICE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720/TREASURY-dashboard",
+      "title": "smaller-1280x720/TREASURY: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=RECONCILIATION_VISIBILITY rendered=Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation St"
+    },
+    {
+      "id": "N01-smaller-1280x720/TREASURY-navset",
+      "title": "smaller-1280x720/TREASURY: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-smaller-1280x720/TREASURY-click-all",
+      "title": "smaller-1280x720/TREASURY: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-smaller-1280x720/TREASURY-logout",
+      "title": "smaller-1280x720/TREASURY: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-smaller-1280x720-js-errors",
+      "title": "smaller-1280x720: no uncaught JavaScript errors across all 11 roles",
+      "ok": true,
+      "detail": "0 JS errors"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/SUPER_ADMIN-dashboard",
+      "title": "shortest-rail-1024x620/SUPER_ADMIN: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=EXECUTIVE_GOVERNANCE rendered=Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary "
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/SUPER_ADMIN-navset",
+      "title": "shortest-rail-1024x620/SUPER_ADMIN: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "25 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/SUPER_ADMIN-click-all",
+      "title": "shortest-rail-1024x620/SUPER_ADMIN: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "25/25 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/SUPER_ADMIN-mission17-targets",
+      "title": "shortest-rail-1024x620/SUPER_ADMIN: Mission 17 pointer-blocked item(s) productCatalogue, limitCatalogue now clickable",
+      "ok": true,
+      "detail": "productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/SUPER_ADMIN-logout",
+      "title": "shortest-rail-1024x620/SUPER_ADMIN: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_PREPARER-dashboard",
+      "title": "shortest-rail-1024x620/FINANCE_PREPARER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCE_PREPARATION rendered=Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | L"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_PREPARER-navset",
+      "title": "shortest-rail-1024x620/FINANCE_PREPARER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_PREPARER-click-all",
+      "title": "shortest-rail-1024x620/FINANCE_PREPARER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_PREPARER-logout",
+      "title": "shortest-rail-1024x620/FINANCE_PREPARER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_CONTROLLER-dashboard",
+      "title": "shortest-rail-1024x620/FINANCE_CONTROLLER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_CONTROL_APPROVALS rendered=Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction S"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_CONTROLLER-navset",
+      "title": "shortest-rail-1024x620/FINANCE_CONTROLLER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "11 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_CONTROLLER-click-all",
+      "title": "shortest-rail-1024x620/FINANCE_CONTROLLER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "11/11 clicked and rendered; entitlementNotices=[agents] (N-03 by design)"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_CONTROLLER-logout",
+      "title": "shortest-rail-1024x620/FINANCE_CONTROLLER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_AUDITOR-dashboard",
+      "title": "shortest-rail-1024x620/FINANCE_AUDITOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_AUDIT_ASSURANCE rendered=Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Sum"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_AUDITOR-navset",
+      "title": "shortest-rail-1024x620/FINANCE_AUDITOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "20 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_AUDITOR-click-all",
+      "title": "shortest-rail-1024x620/FINANCE_AUDITOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "20/20 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_AUDITOR-mission17-targets",
+      "title": "shortest-rail-1024x620/FINANCE_AUDITOR: Mission 17 pointer-blocked item(s) limitAssignments now clickable",
+      "ok": true,
+      "detail": "limitAssignments: click=ok renders=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/FINANCE_AUDITOR-logout",
+      "title": "shortest-rail-1024x620/FINANCE_AUDITOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/ADMINISTRATOR-dashboard",
+      "title": "shortest-rail-1024x620/ADMINISTRATOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=WORKFORCE_ADMINISTRATION rendered=Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/ADMINISTRATOR-navset",
+      "title": "shortest-rail-1024x620/ADMINISTRATOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/ADMINISTRATOR-click-all",
+      "title": "shortest-rail-1024x620/ADMINISTRATOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/ADMINISTRATOR-logout",
+      "title": "shortest-rail-1024x620/ADMINISTRATOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/OPERATIONS-dashboard",
+      "title": "shortest-rail-1024x620/OPERATIONS: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=TRANSACTION_OPERATIONS rendered=Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary "
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/OPERATIONS-navset",
+      "title": "shortest-rail-1024x620/OPERATIONS: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "10 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/OPERATIONS-click-all",
+      "title": "shortest-rail-1024x620/OPERATIONS: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "10/10 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/OPERATIONS-logout",
+      "title": "shortest-rail-1024x620/OPERATIONS: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/AGENT_NETWORK_MANAGER-dashboard",
+      "title": "shortest-rail-1024x620/AGENT_NETWORK_MANAGER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=AGENT_NETWORK_MANAGEMENT rendered=Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summ"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/AGENT_NETWORK_MANAGER-navset",
+      "title": "shortest-rail-1024x620/AGENT_NETWORK_MANAGER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "5 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/AGENT_NETWORK_MANAGER-click-all",
+      "title": "shortest-rail-1024x620/AGENT_NETWORK_MANAGER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "5/5 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/AGENT_NETWORK_MANAGER-logout",
+      "title": "shortest-rail-1024x620/AGENT_NETWORK_MANAGER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/COMPLIANCE-dashboard",
+      "title": "shortest-rail-1024x620/COMPLIANCE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=COMPLIANCE_KYC rendered=Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Cas"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/COMPLIANCE-navset",
+      "title": "shortest-rail-1024x620/COMPLIANCE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "4 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/COMPLIANCE-click-all",
+      "title": "shortest-rail-1024x620/COMPLIANCE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "4/4 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/COMPLIANCE-logout",
+      "title": "shortest-rail-1024x620/COMPLIANCE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/RISK_FRAUD-dashboard",
+      "title": "shortest-rail-1024x620/RISK_FRAUD: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FRAUD_CASE_MONITORING rendered=Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/RISK_FRAUD-navset",
+      "title": "shortest-rail-1024x620/RISK_FRAUD: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/RISK_FRAUD-click-all",
+      "title": "shortest-rail-1024x620/RISK_FRAUD: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/RISK_FRAUD-logout",
+      "title": "shortest-rail-1024x620/RISK_FRAUD: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/CUSTOMER_SERVICE-dashboard",
+      "title": "shortest-rail-1024x620/CUSTOMER_SERVICE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=CUSTOMER_SERVICING rendered=Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | C"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/CUSTOMER_SERVICE-navset",
+      "title": "shortest-rail-1024x620/CUSTOMER_SERVICE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "3 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/CUSTOMER_SERVICE-click-all",
+      "title": "shortest-rail-1024x620/CUSTOMER_SERVICE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "3/3 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/CUSTOMER_SERVICE-logout",
+      "title": "shortest-rail-1024x620/CUSTOMER_SERVICE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/TREASURY-dashboard",
+      "title": "shortest-rail-1024x620/TREASURY: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=RECONCILIATION_VISIBILITY rendered=Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation St"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/TREASURY-navset",
+      "title": "shortest-rail-1024x620/TREASURY: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=rail"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/TREASURY-click-all",
+      "title": "shortest-rail-1024x620/TREASURY: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620/TREASURY-logout",
+      "title": "shortest-rail-1024x620/TREASURY: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-shortest-rail-1024x620-js-errors",
+      "title": "shortest-rail-1024x620: no uncaught JavaScript errors across all 11 roles",
+      "ok": true,
+      "detail": "0 JS errors"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/SUPER_ADMIN-dashboard",
+      "title": "compact-drawer-480x860/SUPER_ADMIN: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=EXECUTIVE_GOVERNANCE rendered=Identity & Session | Entitlements & Scopes | Executive & Governance | Transaction Summary "
+    },
+    {
+      "id": "N01-compact-drawer-480x860/SUPER_ADMIN-navset",
+      "title": "compact-drawer-480x860/SUPER_ADMIN: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "25 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/SUPER_ADMIN-click-all",
+      "title": "compact-drawer-480x860/SUPER_ADMIN: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "25/25 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/SUPER_ADMIN-mission17-targets",
+      "title": "compact-drawer-480x860/SUPER_ADMIN: Mission 17 pointer-blocked item(s) productCatalogue, limitCatalogue now clickable",
+      "ok": true,
+      "detail": "productCatalogue: click=ok renders=true | limitCatalogue: click=ok renders=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/SUPER_ADMIN-logout",
+      "title": "compact-drawer-480x860/SUPER_ADMIN: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_PREPARER-dashboard",
+      "title": "compact-drawer-480x860/FINANCE_PREPARER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCE_PREPARATION rendered=Identity & Session | Entitlements & Scopes | Finance Preparation | Transaction Summary | L"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_PREPARER-navset",
+      "title": "compact-drawer-480x860/FINANCE_PREPARER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_PREPARER-click-all",
+      "title": "compact-drawer-480x860/FINANCE_PREPARER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_PREPARER-logout",
+      "title": "compact-drawer-480x860/FINANCE_PREPARER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_CONTROLLER-dashboard",
+      "title": "compact-drawer-480x860/FINANCE_CONTROLLER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_CONTROL_APPROVALS rendered=Identity & Session | Entitlements & Scopes | Financial Control & Approvals | Transaction S"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_CONTROLLER-navset",
+      "title": "compact-drawer-480x860/FINANCE_CONTROLLER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "11 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_CONTROLLER-click-all",
+      "title": "compact-drawer-480x860/FINANCE_CONTROLLER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "11/11 clicked and rendered; entitlementNotices=[agents] (N-03 by design)"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_CONTROLLER-logout",
+      "title": "compact-drawer-480x860/FINANCE_CONTROLLER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_AUDITOR-dashboard",
+      "title": "compact-drawer-480x860/FINANCE_AUDITOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FINANCIAL_AUDIT_ASSURANCE rendered=Identity & Session | Entitlements & Scopes | Financial Audit & Assurance | Transaction Sum"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_AUDITOR-navset",
+      "title": "compact-drawer-480x860/FINANCE_AUDITOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "20 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_AUDITOR-click-all",
+      "title": "compact-drawer-480x860/FINANCE_AUDITOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "20/20 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_AUDITOR-mission17-targets",
+      "title": "compact-drawer-480x860/FINANCE_AUDITOR: Mission 17 pointer-blocked item(s) limitAssignments now clickable",
+      "ok": true,
+      "detail": "limitAssignments: click=ok renders=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/FINANCE_AUDITOR-logout",
+      "title": "compact-drawer-480x860/FINANCE_AUDITOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/ADMINISTRATOR-dashboard",
+      "title": "compact-drawer-480x860/ADMINISTRATOR: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=WORKFORCE_ADMINISTRATION rendered=Identity & Session | Entitlements & Scopes | Workforce Administration | Workforce Overview"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/ADMINISTRATOR-navset",
+      "title": "compact-drawer-480x860/ADMINISTRATOR: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "8 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/ADMINISTRATOR-click-all",
+      "title": "compact-drawer-480x860/ADMINISTRATOR: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "8/8 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/ADMINISTRATOR-logout",
+      "title": "compact-drawer-480x860/ADMINISTRATOR: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/OPERATIONS-dashboard",
+      "title": "compact-drawer-480x860/OPERATIONS: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=TRANSACTION_OPERATIONS rendered=Identity & Session | Entitlements & Scopes | Transaction Operations | Transaction Summary "
+    },
+    {
+      "id": "N01-compact-drawer-480x860/OPERATIONS-navset",
+      "title": "compact-drawer-480x860/OPERATIONS: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "10 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/OPERATIONS-click-all",
+      "title": "compact-drawer-480x860/OPERATIONS: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "10/10 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/OPERATIONS-logout",
+      "title": "compact-drawer-480x860/OPERATIONS: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/AGENT_NETWORK_MANAGER-dashboard",
+      "title": "compact-drawer-480x860/AGENT_NETWORK_MANAGER: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=AGENT_NETWORK_MANAGEMENT rendered=Identity & Session | Entitlements & Scopes | Agent Network Management | Agent Network Summ"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/AGENT_NETWORK_MANAGER-navset",
+      "title": "compact-drawer-480x860/AGENT_NETWORK_MANAGER: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "5 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/AGENT_NETWORK_MANAGER-click-all",
+      "title": "compact-drawer-480x860/AGENT_NETWORK_MANAGER: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "5/5 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/AGENT_NETWORK_MANAGER-logout",
+      "title": "compact-drawer-480x860/AGENT_NETWORK_MANAGER: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/COMPLIANCE-dashboard",
+      "title": "compact-drawer-480x860/COMPLIANCE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=COMPLIANCE_KYC rendered=Identity & Session | Entitlements & Scopes | Compliance & KYC | KYC Queue | Compliance Cas"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/COMPLIANCE-navset",
+      "title": "compact-drawer-480x860/COMPLIANCE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "4 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/COMPLIANCE-click-all",
+      "title": "compact-drawer-480x860/COMPLIANCE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "4/4 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/COMPLIANCE-logout",
+      "title": "compact-drawer-480x860/COMPLIANCE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/RISK_FRAUD-dashboard",
+      "title": "compact-drawer-480x860/RISK_FRAUD: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=FRAUD_CASE_MONITORING rendered=Identity & Session | Entitlements & Scopes | Fraud Case Monitoring | Fraud Case Summary"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/RISK_FRAUD-navset",
+      "title": "compact-drawer-480x860/RISK_FRAUD: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/RISK_FRAUD-click-all",
+      "title": "compact-drawer-480x860/RISK_FRAUD: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/RISK_FRAUD-logout",
+      "title": "compact-drawer-480x860/RISK_FRAUD: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/CUSTOMER_SERVICE-dashboard",
+      "title": "compact-drawer-480x860/CUSTOMER_SERVICE: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=CUSTOMER_SERVICING rendered=Identity & Session | Entitlements & Scopes | Customer Servicing | Support Ticket Queue | C"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/CUSTOMER_SERVICE-navset",
+      "title": "compact-drawer-480x860/CUSTOMER_SERVICE: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "3 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/CUSTOMER_SERVICE-click-all",
+      "title": "compact-drawer-480x860/CUSTOMER_SERVICE: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "3/3 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/CUSTOMER_SERVICE-logout",
+      "title": "compact-drawer-480x860/CUSTOMER_SERVICE: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/TREASURY-dashboard",
+      "title": "compact-drawer-480x860/TREASURY: login + role-specific dashboard",
+      "ok": true,
+      "detail": "template=RECONCILIATION_VISIBILITY rendered=Identity & Session | Entitlements & Scopes | Reconciliation Visibility | Reconciliation St"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/TREASURY-navset",
+      "title": "compact-drawer-480x860/TREASURY: nav set equals least-privilege matrix",
+      "ok": true,
+      "detail": "2 items, mode=drawer"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/TREASURY-click-all",
+      "title": "compact-drawer-480x860/TREASURY: every authorized item opens by POINTER click (no force, no keyboard)",
+      "ok": true,
+      "detail": "2/2 clicked and rendered"
+    },
+    {
+      "id": "N01-compact-drawer-480x860/TREASURY-logout",
+      "title": "compact-drawer-480x860/TREASURY: logout control is pointer-reachable and returns to login",
+      "ok": true,
+      "detail": "clicked, loginForm=true"
+    },
+    {
+      "id": "N01-compact-drawer-480x860-js-errors",
+      "title": "compact-drawer-480x860: no uncaught JavaScript errors across all 11 roles",
+      "ok": true,
+      "detail": "0 JS errors"
+    }
+  ],
+  "passed": 188,
+  "failed": 0
+}

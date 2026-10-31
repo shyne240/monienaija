@@ -1,0 +1,61 @@
+MISSION 23 — REMAINING PRODUCTION AUDIT FINDINGS AND RISK ASSESSMENT (own execution)
+
+All three remaining findings are MODERATE and all three are the same single dependency chain.
+
+== Dependency path (production tree) ==
+   monienaija@0.1.0 /home/user/m23
+   `-- typeorm@0.3.31
+     `-- glob@10.5.0
+       `-- minimatch@9.0.9
+   
+
+   installed: typeorm@0.3.31 -> glob@10.5.0 -> minimatch@9.0.9
+
+== Advisories ==
+   package : glob  (moderate)
+   range   : 3.0.0 - 14.0.1
+   advisory: GHSA-3g3m-2fjr-6pw4  Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal
+   direct  : pulled in via minimatch
+   fix     : {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+
+   package : minimatch  (moderate)
+   range   : <11.0.1
+   advisory: GHSA-g3hv-75wg-m249  minimatch has potential denial of service via globparts amplification
+   fix     : {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+
+   package : typeorm  (moderate)
+   range   : 0.3.18-dev.022d2b5 - 0.3.31
+   direct  : pulled in via glob
+   fix     : {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+
+== Do any of the three have a non-major fix? ==
+   glob -> {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+   minimatch -> {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+   typeorm -> {"name":"typeorm","version":"1.1.2","isSemVerMajor":true}
+   => every available remediation is the SAME semver-major typeorm upgrade (0.3.31 -> 1.1.2).
+
+== Reachability / production exposure ==
+   1. No application or test source imports the glob or minimatch packages:
+        grep -rnE "from '(glob|minimatch)'|require\('(glob|minimatch)'\)" src/ test/ --include=*.ts
+        -> 0 matches (re-run and confirmed)
+      A loose grep for the substring "glob" does match 22 lines, but every one of them is the
+      word "global"/"globally" inside a comment or an unrelated identifier (e.g. "global
+      checker inbox"). None of them imports or calls the package.
+   2. The only production consumer is TypeORM's entity/migration file discovery.
+      Configured patterns are compile-time constants that cannot carry request data:
+        43:    entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
+        44:    migrations: [`${__dirname}/../migrations/*{.ts,.js}`],
+   3. glob/minimatch therefore only process paths derived from the deployed file layout.
+      GHSA-3g3m-2fjr-6pw4 (glob/AbortSignal traversal) and GHSA-g3hv-75wg-m249
+      (minimatch globparts amplification) both require an attacker-influenced pattern
+      and, for the former, an abort signal on a caller-controlled traversal.
+      Neither is reachable from an HTTP request in this application.
+   4. Residual risk: LOW in this deployment. No request path reaches the vulnerable code
+      with attacker-controlled input.
+
+== Why it was not fixed in this mission ==
+   The only fix npm offers is typeorm 0.3.31 -> 1.1.2, a semver-major ORM upgrade.
+   Mission 23 boundaries: "Do not expand this mission into unrelated dependency upgrades"
+   and "no product-policy changes". An ORM major upgrade would touch migrations, entity
+   mapping and the financial read/write paths and is not a security-remediation step for
+   this advisory chain. Recorded as a follow-up for a dedicated dependency-upgrade mission.

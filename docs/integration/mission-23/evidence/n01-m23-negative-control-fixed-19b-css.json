@@ -1,0 +1,20 @@
+[
+  {
+    "role": "SUPER_ADMIN",
+    "key": "productCatalogue",
+    "clickable": true,
+    "error": ""
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "key": "limitCatalogue",
+    "clickable": true,
+    "error": ""
+  },
+  {
+    "role": "FINANCE_AUDITOR",
+    "key": "limitAssignments",
+    "clickable": true,
+    "error": ""
+  }
+]

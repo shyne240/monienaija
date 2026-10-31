@@ -1,0 +1,11 @@
+MISSION 23 — BACKEND UNIT SUITE (integrated build)
+==================================================
+Command : npx jest --runInBand   (root backend, node v22.22.3)
+Result  : Test Suites: 226 passed, 226 total
+          Tests:       2650 passed, 2650 total
+          Exit code:   0
+Delta vs Mission 20 (225 suites / 2,632 tests): +1 suite, +18 tests —
+  exactly test/mission-22a-fastify-dependency.spec.ts (the new remediation guard).
+Every Mission 20 suite still passes; no test was skipped, removed or edited.
+Re-ran the new spec in isolation: 18/18 pass.
+Raw log: /home/user/m23-unit.log

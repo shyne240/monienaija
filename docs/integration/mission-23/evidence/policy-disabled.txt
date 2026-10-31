@@ -1,0 +1,18 @@
+MISSION 23 — POLICY-DISABLED FUNCTIONALITY REMAINS DISABLED
+===========================================================
+Verified on the COMPILED integrated build (no product-policy change made).
+
+1. Cash-to-Cash expiry worker
+   GET /api/v1/internal/admin/cash-to-cash/expiry-status -> 200
+   worker: { configuredEnabled: false, schedulerRunning: false }
+   => switch remains OFF and no scheduler was started.
+
+2. Policy-gated write endpoints (not wired while policy is disabled)
+   three POST probes -> 404 (route not exposed), not 200/500.
+
+3. Security notification template guard
+   POST with a security notification type -> 400
+   "Security notifications cannot use editable templates"
+   => the non-editable security-template rule still holds.
+
+No provider was activated, no credential changed, no policy flag flipped.
