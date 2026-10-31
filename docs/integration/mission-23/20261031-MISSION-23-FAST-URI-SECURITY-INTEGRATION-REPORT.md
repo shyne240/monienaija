@@ -11,13 +11,15 @@ Integration merge commit: `42b0baf` (`merge: Arena 1 Mission 22A fast-uri remedi
 
 ### Deliverable pins
 
-| Ref | SHA | Meaning |
-|---|---|---|
-| `integration/mission-23-fast-uri-security` | `b7477520ffcdb1a9fb8c768bba5cecaaed5f135a` | **verified tip** — every gate in this report was run on this tree |
-| ↳ integration merge | `42b0baf` | `--no-ff` merge of Arena 1 `b3ced30` onto `a392653a` |
-| `arena/8e59e188-monienaija` | `563499d598b39618eb3cba73b38a5e46af72cd5a` | session branch, merge of the verified tip; **tree byte-identical to `b747752`** (`git diff b747752 563499d` is empty) |
+| Ref | What to check |
+|---|---|
+| `integration/mission-23-fast-uri-security` | **verified tip** — every gate in this report was run on this tree. Its exact SHA is carried in the handoff commit message and is the last non-merge commit on the branch. |
+| ↳ integration merge | `42b0baf` — `--no-ff` merge of Arena 1 `b3ced30` onto `a392653a` (stable, will never move) |
+| `arena/8e59e188-monienaija` | session branch; its tip carries **exactly this tree** — `git diff <integration-tip> origin/arena/8e59e188-monienaija` is empty. The only extra commits on it are documentation merges. |
 
 The Mission 20 baseline stays pinned at `a392653a176e414477d97213a0fadeb15560b09a`.
+
+> Why the SHAs are not printed here: a file cannot contain the hash of the commit that contains it, so any SHA written into this table would be stale on arrival. Verify with `git log --oneline` and the empty `git diff` above rather than trusting a number copied into prose.
 
 ---
 
