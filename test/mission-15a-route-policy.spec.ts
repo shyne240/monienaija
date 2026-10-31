@@ -40,6 +40,29 @@ describe('Mission 15A declared Agent route policies', () => {
     expect(resolution.policy?.action).toBe(`${method}:${url}`);
   });
 
+  it('limits legacy non-workforce 401 precedence to Agent directory/detail/financial-position reads', () => {
+    for (const method of ['GET', 'HEAD']) {
+      for (const url of [
+        '/api/v1/internal/agents',
+        `/api/v1/internal/agents/${id}`,
+        `/api/v1/internal/agents/${id}/financial-position`,
+      ]) {
+        const resolution = registry.resolve({ method, url });
+        expect(resolution.rejectNonWorkforcePrincipalWith401).toBe(true);
+        expect(resolution.policy?.requiredFunctions).toEqual(['agent.view']);
+      }
+    }
+    for (const [method, url] of [
+      ['GET', `/api/v1/internal/agents/${id}/transactions`],
+      ['GET', `/api/v1/internal/agents/${id}/outlets`],
+      ['GET', '/api/v1/internal/agents/applications'],
+      ['GET', '/api/v1/internal/customers'],
+      ['POST', `/api/v1/internal/agents/${id}/suspend`],
+    ] as Array<[string, string]>) {
+      expect(registry.resolve({ method, url }).rejectNonWorkforcePrincipalWith401).toBeUndefined();
+    }
+  });
+
   it('does not replace the applicant capability or open internal reads through the public locator', () => {
     expect(registry.resolve({ method: 'GET', url: `/api/v1/agents/applications/${id}` }).authenticationMode).toBe('APPLICATION_ACCESS');
     expect(registry.resolve({ method: 'GET', url: '/api/v1/public/agents/cash-to-cash-outlets' }).public).toBe(true);

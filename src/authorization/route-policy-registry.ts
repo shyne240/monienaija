@@ -29,6 +29,8 @@ export interface RoutePolicyResolution {
   aggregatorId?: string;
   /** Preserve the controller's denied-function audit when this route is stopped by the guard. */
   auditDeniedWorkforceFunction?: boolean;
+  /** Preserve this controller's 401 for non-workforce principals before evaluating catalogue gates. */
+  rejectNonWorkforcePrincipalWith401?: boolean;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -1196,6 +1198,7 @@ export class RoutePolicyRegistry {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
         auditDeniedWorkforceFunction: true,
+        rejectNonWorkforcePrincipalWith401: true,
         resourceType: 'internal-agents',
         policy: {
           resourceType: 'internal-agents',
