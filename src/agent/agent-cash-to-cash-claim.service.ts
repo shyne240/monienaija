@@ -1028,8 +1028,15 @@ export class AgentCashToCashClaimService {
     if (!principal.sessionId || !UUID_PATTERN.test(principal.sessionId)) {
       throw new UnauthorizedException('A current Agent session is required for this claim');
     }
-    // Same evidence as AgentAuthenticationSessionService.validateSession. Lock both
-    // rows so logout, credential reissue and account locking serialize with posting.
+    // Lock the Agent first, matching session issuance and lifecycle revocation. This
+    // also rejects a deleted/non-ACTIVE Agent if status changes after the HTTP guard.
+    const agents = await manager.query(
+      `SELECT id FROM agents WHERE id=$1 AND status='ACTIVE' AND deleted_at IS NULL FOR SHARE`,
+      [principal.agentId],
+    );
+    if (agents.length !== 1) throw new UnauthorizedException('Agent session expired or revoked during claim');
+    // Lock credential and session evidence until commit so logout, credential reissue,
+    // account locking and lifecycle revocation serialize with posting.
     const rows = await manager.query(
       `SELECT s.id,
               (s.status='ACTIVE' AND s.revoked_at IS NULL AND s.audience='agent-api'

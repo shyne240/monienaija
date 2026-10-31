@@ -1,0 +1,25 @@
+Production-only disposable install: npm ci --omit=dev --no-audit --no-fund (lifecycle scripts enabled), exit 0.
+
+npm ls fast-uri --omit=dev --all, exit 0:
+
+monienaija@0.1.0 (temporary production-only install)
+`-- fastify@5.12.7 overridden
+  +-- @fastify/ajv-compiler@4.0.5
+  | +-- ajv@8.20.0
+  | | `-- fast-uri@3.1.9 deduped
+  | `-- fast-uri@3.1.9 overridden
+  `-- fast-json-stringify@7.0.1
+    `-- fast-uri@4.2.3 overridden
+
+
+Compiled dist/main.js: NODE_ENV=test, freshly migrated disposable local PostgreSQL database, outbound fetch disabled, workers disabled.
+PASS GET health: 200
+PASS GET ready: 200
+PASS unauthenticated internal read: 401
+PASS malformed bearer internal read: 401
+PASS unauthenticated Agent profile: 401
+PASS invalid Agent session DTO: 400
+PASS malformed JSON: 400
+PASS compiled Nest/Fastify startup and seven real-TCP checks
+Compiled startup smoke exit: 0
+Application process, temporary install, and disposable database cleaned up.

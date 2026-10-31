@@ -212,7 +212,12 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
 
   async function tryTransfer(sourceId: string, destId: string, amount: string, idempotencyKey: string): Promise<{ success: boolean; error?: any; view?: any }> {
     try {
-      const view = await transferService.createTransfer({ sourceWalletId: sourceId, destinationWalletId: destId, amountMinor: amount, currency: 'NGN', idempotencyKey });
+      const view = await transferService.createTransfer({
+// INTEGRATION (integration/main-backend-frontend-20261030): main's required
+                                                        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+                                                        // directly with no HTTP principal, so an INTERNAL binding is used — which
+                                                        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+      ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' }, sourceWalletId: sourceId, destinationWalletId: destId, amountMinor: amount, currency: 'NGN', idempotencyKey });
       return { success: true, view };
     } catch (e: any) {
       return { success: false, error: e };

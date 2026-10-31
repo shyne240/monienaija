@@ -1,0 +1,57 @@
+# Proposed M1 — exact scope and acceptance
+
+**Not authorized to implement.** M1 is a proposed, isolated Admin Web presentation pilot: light design tokens and small local primitives, a responsive accessible shell/navigation, and the **read-only presentation of the existing Customer Directory**. “Read-only presentation” does **not** remove, disable or alter the existing `New Customer` or Customer 360° actions, their permission checks, handlers or destination behavior. Those downstream workflows are preserved, not redesigned. The separate design workspace and approvals in [D1/D8](02-owner-decisions.md) are prerequisites.
+
+## Proposed file allowlist
+
+Paths are exact proposals, not present implementation. A new file is allowed only if it stays within the responsibility below; any additional or renamed file requires a revised owner-approved scope **before editing**. No manifest, lockfile or new application dependency is included.
+
+| Path | Existing/new | Permitted responsibility |
+|---|---|---|
+| `apps/admin-web/src/screens/authenticated/Layout.tsx` | Existing | Shell/nav markup, scoped style imports and accessibility/focus state only. Preserve section/item definitions, guards, route switch, aliases, customer context, logout and destination handlers. If a focus requirement seems to require changing guard/handler semantics, stop and seek approval rather than widening scope. |
+| `apps/admin-web/src/screens/authenticated/CustomerDirectoryScreen.tsx` | Existing | Directory-only markup, presentation-state distinction and scoped style/primitives; keep request/query/handler/permission/selection logic and embedded workflows intact. Do not change contracts or introduce writes. |
+| `apps/admin-web/src/design-system/tokens.css` | New | Light semantic CSS custom properties, exposed through explicit pilot/shell scopes; no `html`, `body`, universal reset or global element selectors. |
+| `apps/admin-web/src/design-system/primitives.tsx` | New | Small semantic **web** Button, field wrapper, status/feedback and scroll-region primitives needed by shell/directory only; no domain logic, data fetching, auth or shared financial handling. |
+| `apps/admin-web/src/design-system/primitives.css` | New | Explicitly classed styles for those primitives only; no descendant-wide overrides affecting embedded workflows. |
+| `apps/admin-web/src/screens/authenticated/admin-shell.css` | New | Styles for the shell's explicitly classed structural elements and navigation; no generic descendant styling of rendered screens. |
+| `apps/admin-web/src/screens/authenticated/customer-directory-pilot.css` | New | Styles on explicitly directory-owned elements only. Avoid inherited font/color or generic descendant selectors that alter the nested registration wizard or Customer 360°. |
+| `apps/admin-web/__tests__/m1-shell.test.tsx` | New | Shell accessibility/focus, breakpoints where testable, route/guard/alias/context and role/scope parity regressions. |
+| `apps/admin-web/__tests__/m1-customer-directory.test.tsx` | New | Existing directory requests, privacy/permission/action parity, presentation states, keyboard and local scroll semantics with synthetic fixtures. |
+| `apps/admin-web/__tests__/m1-style-isolation.test.tsx` | New | Testable class/structure and isolation regressions around the embedded wizard and Customer 360°; rendered computed-style/browser checks supplement jsdom. |
+
+The existing [`customer-management.css`](../../../apps/admin-web/src/screens/authenticated/customer-management.css) is shared with the registration wizard and Customer 360°, so it is **not** on the allowlist. Continue to preserve its use for those workflows. CSS variables inherited from a wrapper must not silently alter excluded components; consume pilot tokens only on explicitly scoped shell/directory nodes. Avoid a global button/input reset or selectors such as `.pilot *`. Shell layout necessarily surrounds other screens, so test representative excluded views for no new clipping, blocked interaction or style leakage; do not claim they are redesigned.
+
+## Invariants that may not change
+
+1. **Navigation and authorization:** leave [`navigation-access.ts`](../../../apps/admin-web/src/screens/authenticated/navigation-access.ts) untouched. Keep all 28 canonical in-memory Admin views, seven groups, nine legacy aliases, scope/role/context decisions, `handleNav` guard, context clearing, Customer 360° contextual navigation and `renderContent` guard/switch. Frontend visibility never substitutes for backend authorization. Preserve section expansion behavior and action ordering unless explicitly authorized otherwise; presentation may wrap labels rather than discard them.
+2. **Directory contract:** retain `GET /internal/customers` and `/internal/customers/:id`, response handling, existing search, 250ms debounce, page size 20, status/type/KYC filters and their query keys, pagination, selection and retry. Preserve `customer.create` gating, masked reference/contact behavior, restricted-vs-not-recorded semantics and server-returned verification status. Never treat a KYC document or contact label as stronger identity verification than the source provides.
+3. **Existing customer actions:** retain guarded `New Customer`, registration toggle/wizard callbacks, customer-created refresh/open behavior, Customer 360° selection, update and contextual return. Do not alter the wizard, its writes, Customer 360° panels or their handlers. No new create/edit/export/bulk action and no removal of existing actions.
+4. **Financial/security:** do not change `CUSTOMER_WALLET`, `AGENT_CASH`, settlement, fees, journals, idempotency, secret handling, authorization policy, MFA, maker-checker, provider behavior, migrations, audit, consent or notification semantics. M1 does not correct the transfer screen's existing overflow; it must not block existing horizontal access or make excluded views worse.
+5. **Truth and state:** present loading, successful empty, restricted and failed responses distinctly; on failure do not label an unknown total as zero. If previously loaded data remains visible, identify it as previously loaded/unconfirmed rather than asserting freshness. These are presentation distinctions over existing local state, not new API semantics or a data-fetch rewrite.
+
+## Explicit exclusions
+
+No changes to Agent/Customer Mobile, backend, schema, database, infrastructure, CI, `package.json`/lockfiles or deployment. No changes to `navigation-access.ts`, `customer-management.css`, `Customer360Workspace.tsx`, `CustomerRegistrationWizard.tsx`, other customer/KYC panels, `customer-masking.ts`, API client/store/auth, or any financial, ledger, transfer, reconciliation, approval, security, role, notification, provider, funding, product-catalogue or compliance module. Do not touch Arena 2's F-01/F-05 files, Arena 3's authorization catalogue/funding/product modules or its producer work, or Arena 4's independent security acceptance. An excluded item that appears necessary is a **stop-and-replan**, not implied permission.
+
+## Acceptance criteria
+
+All are future acceptance criteria; none asserts that M1 exists now.
+
+### A. Functional and privacy parity
+
+- Existing Admin `npm run ts:check`, `npm run build`, full `npm test -- --runInBand`, and the new allowlisted tests pass without deleting or weakening existing assertions. Compare results with the baseline (previously 27 suites / 187 tests); document any pre-existing warning separately. No test connects to a real provider or submits a real financial instruction.
+- Existing [11-role menu/route tests](../../../apps/admin-web/__tests__/menu-visibility-11-roles.test.tsx) pass on desktop and narrow navigation; add negative and mixed-scope/role cases, nine alias mappings, contextual customer-history vs global transaction access, denied navigation, context clearing and return behavior. Security/authorization owner verifies the matrix against the current integrated catalogue, without modifying it. No unauthorized destination/data/action is exposed and no previously authorized one is removed.
+- Directory synthetic-fixture tests assert all existing query parameters/debounce/pagination, loading/empty/401/403/network-error/retry, stale/previously loaded data, masked reference, contact restrictions and verification labeling, per-row accessible names, and Customer 360° opening/return. Assert `New Customer` appears only with `customer.create`, and that the existing wizard opens, closes, completes callbacks and retains its pre-existing actions/permissions. No new API call, changed payload or write path is introduced by the pilot.
+- Use role/permission and request-spy checks for representative untouched screens, including a restricted user, customer-context navigation and the transfer view. Keep all existing test IDs used by regression tests or provide an explicitly reviewed compatibility plan. Compare wizard and Customer 360° presentation/interaction before and after to catch CSS inheritance and cascade leakage.
+
+### B. Responsive and accessibility
+
+- Test 320, 360, 390, 768, 769, 1,024, 1,280 and 1,440 CSS px, plus 200% and 400% browser zoom/reflow. Filters and shell controls remain visible, correctly ordered and operable; no page-level horizontal overflow for ordinary shell/filter content. The two-dimensional directory table may scroll **locally**, with a visible cue, accessible name, focusable keyboard-scroll region and all columns/actions reachable. Preserve row/column context and full accessible values.
+- With keyboard only, verify open, close, Escape, backdrop, focus entry/containment/return, successful route focus, breakpoint transitions, skip target, visible focus and no focus behind a modal. Preserve `aria-current`, section `aria-expanded` and all labels; toggle exposes `aria-expanded`/`aria-controls`. Avoid nested/duplicate main landmarks on the directory pilot; ensure other views do not regress.
+- Check each rendered text, control boundary and focus state against WCAG 2.2 AA contrast/visibility targets; test color-independent status, reduced motion, and zoom. Run a scoped automated accessibility scan and manually test NVDA with a supported Windows browser and VoiceOver with Safari when available, recording versions and findings. A Chromium accessibility tree or axe result is not a substitute for those runs or a formal certification.
+- No unresolved critical/high **scoped accessibility** defect without a documented exception approved by Product and Accessibility with owner/date. Authorization, privacy or financial-safety regressions are not waivable by design sign-off; stop and remediate or escalate. Lack of required manual assistive-technology evidence means M1 is **not accepted**.
+
+### C. Review and handoff
+
+- Reviewer checks `git diff --name-only` against the approved allowlist, verifies no manifest/lockfile change or unrelated selector side effect, and reviews navigation/guard logic and request spies. Capture labeled synthetic before/after evidence at the specified sizes and all directory states; no real customer, credential or transfer data in screenshots.
+- Product/Design approve visual fidelity; Accessibility approves manual results; the authorization owner signs off parity. Record exceptions, unresolved issues and the exact base/commit. Arena 4's independent security acceptance remains its own process; M1 does not close or overwrite it. No merge or deployment follows automatically.

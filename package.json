@@ -28,6 +28,9 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts",
     "migration:show": "typeorm-ts-node-commonjs migration:show -d src/config/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/data-source.ts",
+    "migration:run:compiled": "typeorm migration:run -d dist/config/data-source.js",
+    "migration:show:compiled": "typeorm migration:show -d dist/config/data-source.js",
+    "migration:revert:compiled": "typeorm migration:revert -d dist/config/data-source.js",
     "test:e2e:batch-2a": "node scripts/batch-2a-customer-registration-e2e.cjs"
   },
   "devDependencies": {
@@ -84,6 +87,11 @@
     "zod": "^4.1.12"
   },
   "overrides": {
-    "fastify": "$fastify"
+    "fast-uri@3": "3.1.9",
+    "fast-uri@4": "4.2.3",
+    "fastify": "$fastify",
+    "js-yaml@3": "3.15.2",
+    "js-yaml@4": "4.3.2",
+    "qs": "6.16.0"
   }
 }

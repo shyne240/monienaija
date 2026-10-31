@@ -204,6 +204,11 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
 
     const idempotencyKey = `tr-${randomUUID()}`;
     const command = {
+      // INTEGRATION (integration/main-backend-frontend-20261030): main's required `ownership`
+      // binding. This suite drives TransferService directly with no HTTP principal, so an INTERNAL
+      // binding is used — `assertWalletOwnership` deliberately does not restrict it — leaving every
+      // assertion in this file unchanged.
+      ownership: { kind: 'INTERNAL' as const, principalId: 'integration-spec', principalType: 'SERVICE' as const },
       sourceWalletId: source.walletAccountId,
       destinationWalletId: destination.walletAccountId,
       amountMinor: '12000',
@@ -331,6 +336,11 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     await ds.query(`UPDATE wallet_accounts SET status = 'SUSPENDED' WHERE id = $1`, [destination.walletAccountId]);
 
     const failure = await transfers.createTransfer({
+// INTEGRATION (integration/main-backend-frontend-20261030): main's required
+                                                   // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+                                                   // directly with no HTTP principal, so an INTERNAL binding is used — which
+                                                   // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+      ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
       sourceWalletId: source.walletAccountId,
       destinationWalletId: destination.walletAccountId,
       amountMinor: '12000',
@@ -432,6 +442,7 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     try {
       await expect(
         transfers.createTransfer({
+          ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
           sourceWalletId: source.walletAccountId,
           destinationWalletId: destination.walletAccountId,
           amountMinor: '12000',

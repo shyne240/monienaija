@@ -100,16 +100,20 @@ export class A2WorkforceSessionService {
       s = await r.findOne({ where: { tokenHash: hash(token) } });
     if (!s || s.status !== 'ACTIVE' || s.expiresAt <= now || s.audience !== audience) {
       if (s && s.status === 'ACTIVE' && s.expiresAt <= now) {
-        s.status = 'EXPIRED';
-        await r.save(s);
+        // Never overwrite a revocation which won the race after this row was read.
+        await r.update({ id: s.id, status: 'ACTIVE' }, { status: 'EXPIRED' });
       }
       throw new UnauthorizedException('Invalid workforce session');
     }
     const resolved = await this.resolve(s.principalId, now);
-    s.roles = resolved.roles;
-    s.scopes = resolved.scopes;
-    s.lastSeenAt = now;
-    await r.save(s);
+    // A full save of the stale entity can restore status=ACTIVE after a concurrent logout.
+    // Update only the validation fields while the session is still active, and fail closed if
+    // revocation (or expiry) has already changed its status.
+    const refreshed = await r.update(
+      { id: s.id, status: 'ACTIVE' },
+      { roles: resolved.roles, scopes: resolved.scopes, lastSeenAt: now },
+    );
+    if (refreshed.affected !== 1) throw new UnauthorizedException('Invalid workforce session');
     return this.principal(s, resolved);
   }
   async revoke(
@@ -174,28 +178,17 @@ export class A2WorkforceSessionService {
    * can both be evaluated off the same flat array.
    */
   private async resolve(principalId: string, now: Date): Promise<ResolvedPrincipalRoles> {
-    // V1-RELEASE-01: narrowed from `NODE_ENV !== 'production'` to an explicit
-    // development/test allowlist for the same reason documented in
-    // A2WorkforceOidcService.validate() — `staging` must never grant this. This must stay
-    // in lockstep with the gate in workforce-oidc.service.ts (the only caller that can ever
-    // produce a `mock-sandbox-subject` principalId).
-    const sandboxBypassAllowed =
-      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    if (sandboxBypassAllowed && principalId.includes('mock-sandbox-subject')) {
-      const defs = this.config.roles.filter((r) => r.enabled);
-      const roleKeys = defs.map((r) => r.roleKey);
-      const legacyScopes = defs.flatMap((r) => r.scopes);
-      const legacyAdministrative = defs.some((r) => r.administrativeCapability);
-      const catalogue = await this.catalogue.resolveForRoleKeys(roleKeys);
-      return {
-        roles: [...new Set(roleKeys)].sort(),
-        scopes: [...new Set([...legacyScopes, ...catalogue.functionCodes])].sort(),
-        administrativeCapability: legacyAdministrative || catalogue.hasAdministrativeCapability,
-        readOnlyPrincipal:
-          catalogue.recognizedRoleKeys.length > 0 && catalogue.allRecognizedRolesReadOnly,
-      };
-    }
-
+    // INTEGRATION (integration/main-backend-frontend-20261030): the `mock-sandbox-subject`
+    // blanket grant that used to sit here is removed, adopting main's retirement of the
+    // development mock assertion path (main deleted the matching `mock-sandbox-token-*` string
+    // bypass in A2WorkforceOidcService.validate() and pins the retirement with
+    // test/a2-workforce-oidc.service.spec.ts and the regression test 'never escalates a principal
+    // resembling the removed development mock subject' in test/a2-workforce-session.integration.spec.ts).
+    // Every principal — including one whose subject resembles the retired mock subject — now
+    // resolves its roles exclusively from real ACTIVE a2_finance_role_assignments joined with the
+    // authorization catalogue below. Local development administrator login is unaffected: it goes
+    // through LocalAdminAuthenticationService, which builds its own identity-specific evidence and
+    // never relied on this grant (see its V1-ADMIN-UAT-IDENTITY-01 note).
     const rows = await this.dataSource
       .getRepository(A2FinanceRoleAssignment)
       .find({ where: { principalId, status: 'ACTIVE' } });

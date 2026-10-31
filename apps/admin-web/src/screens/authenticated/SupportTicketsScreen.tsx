@@ -36,15 +36,27 @@ const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
   CLOSED: [],
 };
 
-export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string; initialAgentId?: string }> = ({
+export const SupportTicketsScreen: React.FC<{
+  initialCustomerId?: string;
+  initialAgentId?: string;
+  onBackToAgent?: () => void;
+}> = ({
   initialCustomerId,
   initialAgentId,
+  onBackToAgent,
 }) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('customer.manage_support_case') ?? false;
   const customerFilter = initialCustomerId || '';
   const [agentIdDraft, setAgentIdDraft] = useState(initialAgentId || '');
   const [appliedAgentFilter, setAppliedAgentFilter] = useState(initialAgentId || '');
+
+  useEffect(() => {
+    const nextAgentId = initialAgentId || '';
+    setAgentIdDraft(nextAgentId);
+    setAppliedAgentFilter(nextAgentId);
+    setPage(1);
+  }, [initialAgentId]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -196,7 +208,18 @@ export const SupportTicketsScreen: React.FC<{ initialCustomerId?: string; initia
       {initialCustomerId && <div style={contextNote}>🔗 Customer context: <code>{initialCustomerId}</code> — results are filtered by the backend <code>customerId</code> query.</div>}
       {appliedAgentFilter && (
         <div style={contextNote} data-testid="support-agent-filter-banner">
-          🏪 Agent filter active: <code>{appliedAgentFilter}</code> — results are filtered by backend <code>agentId</code>.
+          <span>
+            🏪 Agent filter active: <code>{appliedAgentFilter}</code> — results are filtered by backend{' '}
+            <code>agentId</code>.
+          </span>
+          {onBackToAgent && (
+            <>
+              {' '}
+              <button type="button" onClick={onBackToAgent} style={smallBtn}>
+                Back to Agent Network
+              </button>
+            </>
+          )}
         </div>
       )}
       <div style={filters}>

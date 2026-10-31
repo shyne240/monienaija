@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, Repository } from 'typeorm';
 
+import { Agent } from '../agent/agent.entity';
+import { AgentStatus } from '../agent/agent.enums';
 import { AuditService } from '../operations/audit.service';
 import { AgentAuthenticationCredential } from './agent-authentication-credential.entity';
 import { AgentAuthenticationSession } from './agent-authentication-session.entity';
@@ -115,6 +117,16 @@ export class AgentAuthenticationSessionService {
     const tokenHash = this.hashToken(accessToken);
 
     const session = await this.dataSource.transaction(async (manager) => {
+      // Lifecycle changes and administrative revocation take this same lock first. An
+      // authentication result obtained before suspension must not create a session afterward.
+      const agent = await manager.getRepository(Agent).findOne({
+        where: { id: command.authentication.agentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!agent || agent.deletedAt !== null || agent.status !== AgentStatus.ACTIVE) {
+        // Keep the public login failure non-enumerating, including the post-authentication race.
+        throw new UnauthorizedException('Invalid credentials');
+      }
       const credential = await manager.getRepository(AgentAuthenticationCredential).findOne({
         where: {
           id: this.requiredCredentialId(command.authentication),
@@ -200,6 +212,15 @@ export class AgentAuthenticationSessionService {
       return { valid: false, reason: 'EXPIRED' };
     }
 
+    // Fail closed even for an out-of-band status change or soft deletion. Lifecycle
+    // operations additionally revoke existing sessions atomically with the transition.
+    const agent = await this.dataSource.getRepository(Agent).findOne({
+      where: { id: session.agentId },
+    });
+    if (!agent || agent.deletedAt !== null || agent.status !== AgentStatus.ACTIVE) {
+      return { valid: false, reason: 'REVOKED' };
+    }
+
     const credential = await this.dataSource
       .getRepository(AgentAuthenticationCredential)
       .findOne({ where: { id: session.credentialId, agentId: session.agentId } });
@@ -245,14 +266,16 @@ export class AgentAuthenticationSessionService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      session.status = AgentAuthenticationSessionStatus.REVOKED;
-      session.revokedAt = now;
-      session.revokeReason = reason;
-      const saved = await manager.getRepository(AgentAuthenticationSession).save(session);
-      await this.audit(manager, saved, 'SESSION_REVOKED', actor, {
-        agentId: saved.agentId,
-        audience: saved.audience,
-        revokeReason: saved.revokeReason,
+      // Do not overwrite a concurrent lifecycle/admin revocation with a stale snapshot.
+      const updated = await manager.getRepository(AgentAuthenticationSession).update(
+        { id: session.id, status: AgentAuthenticationSessionStatus.ACTIVE },
+        { status: AgentAuthenticationSessionStatus.REVOKED, revokedAt: now, revokeReason: reason },
+      );
+      if (!updated.affected) return;
+      await this.audit(manager, session, 'SESSION_REVOKED', actor, {
+        agentId: session.agentId,
+        audience: session.audience,
+        revokeReason: reason,
       });
     });
     return { valid: false, reason: 'REVOKED', principal: validation.principal };
@@ -295,6 +318,66 @@ export class AgentAuthenticationSessionService {
     return sessions.length;
   }
 
+  /**
+   * Revoke current sessions without changing credentials. Soft-deleted Agents are included:
+   * operators must still be able to invalidate any legacy sessions left on such an account.
+   * The Agent lock serializes this operation with session issuance and lifecycle transitions.
+   */
+  async revokeAllForAgent(agentId: string, actor: string): Promise<number> {
+    if (!UUID_PATTERN.test(agentId)) throw new BadRequestException('agentId must be a UUID');
+    const normalizedActor = this.normalizeActor(actor);
+    return this.dataSource.transaction(async (manager) => {
+      const agent = await manager.getRepository(Agent).findOne({
+        where: { id: agentId },
+        withDeleted: true,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!agent) throw new NotFoundException('Agent not found');
+      const revokedSessionCount = await this.revokeAllForAgentInManager(
+        manager, agent.id, normalizedActor, 'ADMINISTRATIVE',
+      );
+      // Record the command even when there were no active sessions, in the same transaction.
+      await this.auditService.record(manager, {
+        entityType: 'AGENT',
+        entityId: agent.id,
+        action: 'AGENT_SESSIONS_REVOKED',
+        actor: normalizedActor,
+        newValues: { revokedSessionCount },
+      });
+      return revokedSessionCount;
+    });
+  }
+
+  /** Caller MUST hold the Agent row's write lock in this transaction, before touching sessions. */
+  async revokeAllForAgentInManager(
+    manager: EntityManager,
+    agentId: string,
+    actor: string,
+    cause: 'SUSPENDED' | 'TERMINATED' | 'ADMINISTRATIVE',
+  ): Promise<number> {
+    const reason = cause === 'ADMINISTRATIVE' ? 'Administrative session revocation' : `Agent ${cause}`;
+    const rows: Array<{ id: string; credential_id: string; audience: string }> = await manager.query(
+      `WITH revoked AS (
+         UPDATE agent_authentication_sessions
+            SET status = 'REVOKED', revoked_at = clock_timestamp(), revoke_reason = $2,
+                version = version + 1, updated_at = clock_timestamp()
+          WHERE agent_id = $1 AND status = 'ACTIVE'
+          RETURNING id, credential_id, audience
+       ) SELECT id, credential_id, audience FROM revoked`,
+      [agentId, reason],
+    );
+    for (const row of rows) {
+      await this.auditService.record(manager, {
+        entityType: 'AGENT_AUTHENTICATION_SESSION',
+        entityId: row.id,
+        action: 'SESSION_REVOKED',
+        actor,
+        newValues: { agentId, credentialId: row.credential_id, audience: row.audience, revokeReason: reason, cause },
+      });
+    }
+    return rows.length;
+  }
+
   async getSession(sessionId: string): Promise<AgentAuthenticationSessionView | null> {
     if (!UUID_PATTERN.test(sessionId)) {
       throw new BadRequestException('sessionId must be a UUID');
@@ -304,11 +387,13 @@ export class AgentAuthenticationSessionService {
   }
 
   private async expire(session: AgentAuthenticationSession, now: Date): Promise<void> {
-    session.status = AgentAuthenticationSessionStatus.EXPIRED;
-    session.revokedAt = now;
-    session.revokeReason = 'Session expired';
-    await this.sessionRepository.save(session);
     await this.dataSource.transaction(async (manager) => {
+      // A stale validation must never replace an already-committed revocation.
+      const updated = await manager.getRepository(AgentAuthenticationSession).update(
+        { id: session.id, status: AgentAuthenticationSessionStatus.ACTIVE },
+        { status: AgentAuthenticationSessionStatus.EXPIRED, revokedAt: now, revokeReason: 'Session expired' },
+      );
+      if (!updated.affected) return;
       await this.audit(manager, session, 'SESSION_EXPIRED', 'system', {
         agentId: session.agentId,
         audience: session.audience,

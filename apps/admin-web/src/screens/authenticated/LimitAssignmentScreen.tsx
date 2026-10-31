@@ -34,6 +34,13 @@ interface DiagnosticsResult {
   staleThresholdMinutes?: number;
 }
 
+interface AgentClassSummaryOption {
+  id: string;
+  code: string;
+  name: string;
+  isActive?: boolean;
+}
+
 const PAGE_SIZE = 20;
 const USAGE_COLUMNS: StructuredColumn[] = [
   { key: 'principalType', label: 'Principal' },
@@ -81,11 +88,16 @@ function buildQuery(filters: object, page: number): string {
 export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
+  const canReadAssignments = hasFn('limit.view');
   const canAssignAgent = hasFn('agent.assign_limit');
-  const canView = canAssignAgent || hasFn('limit.view');
-  const canViewDiagnostics = hasFn('limit.view');
+  const canModifyLimits = hasFn('limit.modify');
+  const canViewAgentClasses = hasFn('agent.view');
+  const canAccessScreen = canReadAssignments || canAssignAgent || canModifyLimits;
+  const canViewDiagnostics = canReadAssignments;
+  const canMutateAnyRow = canAssignAgent || canModifyLimits;
+
   const [assignments, setAssignments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canReadAssignments);
   const [error, setError] = useState('');
   const [assignmentFilters, setAssignmentFilters] = useState({
     subjectType: '',
@@ -95,6 +107,12 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   });
   const [agentId, setAgentId] = useState('');
   const [profileCode, setProfileCode] = useState('');
+  const [agentClassId, setAgentClassId] = useState('');
+  const [classProfileCode, setClassProfileCode] = useState('');
+  const [classOptions, setClassOptions] = useState<AgentClassSummaryOption[]>([]);
+  const [classOptionsLoading, setClassOptionsLoading] = useState(false);
+  const [classResult, setClassResult] = useState('');
+  const [classResultErr, setClassResultErr] = useState('');
   const [toggleBusyId, setToggleBusyId] = useState<string | null>(null);
   const [result, setResult] = useState('');
   const [resultErr, setResultErr] = useState('');
@@ -108,6 +126,10 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   const [reservationError, setReservationError] = useState('');
 
   const fetchAssignments = async (overrideFilters?: typeof assignmentFilters) => {
+    if (!canReadAssignments) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -133,9 +155,9 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   };
 
   useEffect(() => {
-    if (canView) void fetchAssignments();
+    if (canReadAssignments) void fetchAssignments();
     else setLoading(false);
-  }, [canView, initialCustomerId]);
+  }, [canReadAssignments, initialCustomerId]);
 
   const loadUsages = async (page = 1) => {
     if (!canViewDiagnostics) return;
@@ -169,6 +191,21 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
     }
   };
 
+  const loadAgentClassesCatalog = async () => {
+    if (!canViewAgentClasses || classOptionsLoading) return;
+    setClassOptionsLoading(true);
+    setClassResultErr('');
+    try {
+      const res: any = await ApiClient.get('/internal/agents/classes');
+      const rows = Array.isArray(res) ? res : res?.data || [];
+      setClassOptions(rows);
+    } catch (err: any) {
+      setClassResultErr(err?.message || 'Failed to load Agent classes');
+    } finally {
+      setClassOptionsLoading(false);
+    }
+  };
+
   const handleAssign = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canAssignAgent) return;
@@ -178,156 +215,388 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       setResultErr('Agent ID and profile code required');
       return;
     }
+    const normalizedCode = profileCode.trim().toUpperCase();
     try {
       await ApiClient.post('/internal/limit-assignments', {
-        limitProfileCode: profileCode.trim().toUpperCase(),
+        limitProfileCode: normalizedCode,
         subjectType: 'AGENT',
         subjectId: agentId.trim(),
       });
-      setResult(`Assigned profile ${profileCode.trim().toUpperCase()} to agent ${agentId.trim()}`);
-      void fetchAssignments();
+      setResult(
+        canReadAssignments
+          ? `Assigned profile ${normalizedCode} to agent ${agentId.trim()}`
+          : `Assigned profile ${normalizedCode} to agent ${agentId.trim()}. Listing assignments requires limit.view.`,
+      );
+      if (canReadAssignments) {
+        void fetchAssignments();
+      }
     } catch (err: any) {
       setResultErr(err?.message || 'Assign failed — requires agent.assign_limit (AGENT_NETWORK_MANAGER)');
     }
   };
 
-  const handleToggleAgentAssignment = async (assignment: any) => {
-    if (!canAssignAgent || assignment.subjectType !== 'AGENT' || toggleBusyId) return;
+  const handleAssignAgentClass = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canModifyLimits) return;
+    setClassResult('');
+    setClassResultErr('');
+    if (!agentClassId.trim() || !classProfileCode.trim()) {
+      setClassResultErr('Agent Class UUID and limit profile code are required');
+      return;
+    }
+    const normalizedCode = classProfileCode.trim().toUpperCase();
+    if (!/^[A-Z0-9_]{3,80}$/.test(normalizedCode)) {
+      setClassResultErr('Profile code must be 3–80 uppercase letters, digits, or underscores.');
+      return;
+    }
+    try {
+      await ApiClient.post('/internal/limit-assignments', {
+        limitProfileCode: normalizedCode,
+        subjectType: 'AGENT_CLASS',
+        subjectId: agentClassId.trim(),
+      });
+      setClassResult(
+        canReadAssignments
+          ? `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}`
+          : `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}. Listing assignments requires limit.view.`,
+      );
+      setClassProfileCode('');
+      if (canReadAssignments) {
+        void fetchAssignments();
+      }
+    } catch (err: any) {
+      setClassResultErr(err?.message || 'Agent Class limit assignment failed — requires limit.modify');
+    }
+  };
+
+  const handleToggleSubjectAssignment = async (assignment: any) => {
+    if (toggleBusyId) return;
+    const isAgent = assignment.subjectType === 'AGENT' && canAssignAgent;
+    const isAgentClass = assignment.subjectType === 'AGENT_CLASS' && canModifyLimits;
+    if (!isAgent && !isAgentClass) return;
+
     setResult('');
     setResultErr('');
+    setClassResult('');
+    setClassResultErr('');
     setToggleBusyId(assignment.id);
     try {
       await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
-        subjectType: 'AGENT',
+        subjectType: assignment.subjectType,
         isActive: !assignment.isActive,
         version: assignment.version ?? 1,
       });
-      setResult(
-        `Agent limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`,
-      );
-      void fetchAssignments();
+      const label = assignment.subjectType === 'AGENT_CLASS' ? 'Agent Class' : 'Agent';
+      const msg = `${label} limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`;
+      if (assignment.subjectType === 'AGENT_CLASS') setClassResult(msg);
+      else setResult(msg);
+      if (canReadAssignments) {
+        void fetchAssignments();
+      }
     } catch (err: any) {
-      setResultErr(err?.message || 'Failed to update Agent limit assignment');
+      const errText = err?.message || 'Failed to update limit assignment';
+      if (assignment.subjectType === 'AGENT_CLASS') setClassResultErr(errText);
+      else setResultErr(errText);
     } finally {
       setToggleBusyId(null);
     }
   };
 
-  if (!canView) return <div style={wrap} role="alert"><div style={denied}>Viewing limit assignments requires <code>limit.view</code> or <code>agent.assign_limit</code>.</div></div>;
+  if (!canAccessScreen) {
+    return (
+      <div style={wrap} role="alert">
+        <div style={denied}>
+          Limit assignment access requires <code>limit.view</code>, <code>limit.modify</code>, or{' '}
+          <code>agent.assign_limit</code>.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={wrap}>
       <h2 style={h2}>📏 Limit Assignments</h2>
-      <p style={sub}>View existing assignments. Creating an agent assignment is available only with <code>agent.assign_limit</code>; catalogue definitions are managed separately.</p>
-      {initialCustomerId && <div style={note}>Showing assignments for customer <code>{initialCustomerId}</code>.{onBackToCustomer && <> <button type="button" onClick={onBackToCustomer} style={smallLink}>Back to Customer 360°</button></>}</div>}
-      {!initialCustomerId && (
-        <form
-          aria-label="Assignment filters"
-          onSubmit={(event) => { event.preventDefault(); void fetchAssignments(); }}
-          style={filterGrid}
-        >
-          <label style={fieldLabel}>Assignment subject type
-            <select
-              aria-label="Assignment subject type"
-              value={assignmentFilters.subjectType}
-              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, subjectType: event.target.value }))}
-              style={input}
-            >
-              <option value="">All subjects</option>
-              <option value="AGENT">AGENT</option>
-              <option value="AGENT_CLASS">AGENT_CLASS</option>
-              <option value="CUSTOMER">CUSTOMER</option>
-              <option value="SEGMENT">SEGMENT</option>
-            </select>
-          </label>
-          <label style={fieldLabel}>Assignment subject UUID
-            <input
-              aria-label="Assignment subject UUID"
-              value={assignmentFilters.subjectId}
-              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, subjectId: event.target.value }))}
-              placeholder="Agent or customer UUID"
-              style={input}
-            />
-          </label>
-          <label style={fieldLabel}>Assignment profile code
-            <input
-              aria-label="Assignment profile code"
-              value={assignmentFilters.limitProfileCode}
-              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, limitProfileCode: event.target.value }))}
-              placeholder="e.g. AGENT_STANDARD"
-              style={input}
-            />
-          </label>
-          <label style={fieldLabel}>Assignment active state
-            <select
-              aria-label="Assignment active state"
-              value={assignmentFilters.isActive}
-              onChange={(event) => setAssignmentFilters((cur) => ({ ...cur, isActive: event.target.value }))}
-              style={input}
-            >
-              <option value="">All states</option>
-              <option value="true">Active only</option>
-              <option value="false">Inactive only</option>
-            </select>
-          </label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="submit" style={btn} disabled={loading}>Filter assignments</button>
-            <button
-              type="button"
-              style={btn}
-              disabled={loading}
-              onClick={() => {
-                const cleared = { subjectType: '', subjectId: '', limitProfileCode: '', isActive: '' };
-                setAssignmentFilters(cleared);
-                void fetchAssignments(cleared);
-              }}
-            >
-              Reset
-            </button>
-          </div>
-        </form>
+      <p style={sub}>
+        View existing assignments with <code>limit.view</code>, assign per-Agent profiles with{' '}
+        <code>agent.assign_limit</code>, and manage <code>AGENT_CLASS</code> assignments with{' '}
+        <code>limit.modify</code>. Catalogue definitions are managed separately.
+      </p>
+      {initialCustomerId && (
+        <div style={note}>
+          Showing assignments for customer <code>{initialCustomerId}</code>.
+          {onBackToCustomer && (
+            <>
+              {' '}
+              <button type="button" onClick={onBackToCustomer} style={smallLink}>
+                Back to Customer 360°
+              </button>
+            </>
+          )}
+        </div>
       )}
-      {error && <div style={errBox} role="alert">{error}</div>}
-      {loading ? <div style={loadingBox}>Loading assignments…</div> : assignments.length === 0 ? (
-        <div style={empty}>No matching limit assignments.</div>
+
+      {!canReadAssignments ? (
+        <div style={diagnosticNotice} role="note" data-testid="limit-view-required-notice">
+          Listing existing limit assignments and usage/reservation diagnostics requires{' '}
+          <code>limit.view</code> (enforced server-side on <code>GET /internal/limit-assignments</code>).
+          Your session does not hold <code>limit.view</code>, so read queries are not issued; you can
+          still submit authorized assignment actions below.
+        </div>
       ) : (
-        <table style={table}>
-          <thead><tr><th>Subject</th><th>Profile</th><th>Active</th><th>Version</th><th>Effective</th>{canAssignAgent && <th>Action</th>}</tr></thead>
-          <tbody>{assignments.map((assignment: any) => (
-            <tr key={assignment.id}>
-              <td style={mono}>{assignment.subjectType}: {assignment.subjectId || assignment.segmentCode || '-'}</td>
-              <td>{assignment.limitProfileCode || '-'}</td>
-              <td><span style={badge(assignment.isActive ? 'ACTIVE' : 'INACTIVE')}>{assignment.isActive ? 'ACTIVE' : 'INACTIVE'}</span></td>
-              <td>{assignment.version ?? 1}</td>
-              <td>{assignment.effectiveFrom ? new Date(assignment.effectiveFrom).toLocaleString() : '-'}</td>
-              {canAssignAgent && (
-                <td>
-                  {assignment.subjectType === 'AGENT' ? (
-                    <button
-                      type="button"
-                      style={smallLink}
-                      disabled={toggleBusyId === assignment.id}
-                      onClick={() => void handleToggleAgentAssignment(assignment)}
-                    >
-                      {assignment.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  ) : '—'}
-                </td>
-              )}
-            </tr>
-          ))}</tbody>
-        </table>
+        <>
+          {!initialCustomerId && (
+            <form
+              aria-label="Assignment filters"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void fetchAssignments();
+              }}
+              style={filterGrid}
+            >
+              <label style={fieldLabel}>
+                Assignment subject type
+                <select
+                  aria-label="Assignment subject type"
+                  value={assignmentFilters.subjectType}
+                  onChange={(event) =>
+                    setAssignmentFilters((cur) => ({ ...cur, subjectType: event.target.value }))
+                  }
+                  style={input}
+                >
+                  <option value="">All subjects</option>
+                  <option value="AGENT">AGENT</option>
+                  <option value="AGENT_CLASS">AGENT_CLASS</option>
+                  <option value="CUSTOMER">CUSTOMER</option>
+                  <option value="SEGMENT">SEGMENT</option>
+                </select>
+              </label>
+              <label style={fieldLabel}>
+                Assignment subject UUID
+                <input
+                  aria-label="Assignment subject UUID"
+                  value={assignmentFilters.subjectId}
+                  onChange={(event) =>
+                    setAssignmentFilters((cur) => ({ ...cur, subjectId: event.target.value }))
+                  }
+                  placeholder="Agent, class, or customer UUID"
+                  style={input}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Assignment profile code
+                <input
+                  aria-label="Assignment profile code"
+                  value={assignmentFilters.limitProfileCode}
+                  onChange={(event) =>
+                    setAssignmentFilters((cur) => ({ ...cur, limitProfileCode: event.target.value }))
+                  }
+                  placeholder="e.g. AGENT_STANDARD"
+                  style={input}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Assignment active state
+                <select
+                  aria-label="Assignment active state"
+                  value={assignmentFilters.isActive}
+                  onChange={(event) =>
+                    setAssignmentFilters((cur) => ({ ...cur, isActive: event.target.value }))
+                  }
+                  style={input}
+                >
+                  <option value="">All states</option>
+                  <option value="true">Active only</option>
+                  <option value="false">Inactive only</option>
+                </select>
+              </label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="submit" style={btn} disabled={loading}>
+                  Filter assignments
+                </button>
+                <button
+                  type="button"
+                  style={btn}
+                  disabled={loading}
+                  onClick={() => {
+                    const cleared = {
+                      subjectType: '',
+                      subjectId: '',
+                      limitProfileCode: '',
+                      isActive: '',
+                    };
+                    setAssignmentFilters(cleared);
+                    void fetchAssignments(cleared);
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+            </form>
+          )}
+          {error && (
+            <div style={errBox} role="alert">
+              {error}
+            </div>
+          )}
+          {loading ? (
+            <div style={loadingBox}>Loading assignments…</div>
+          ) : assignments.length === 0 ? (
+            <div style={empty}>No matching limit assignments.</div>
+          ) : (
+            <table style={table}>
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Profile</th>
+                  <th>Active</th>
+                  <th>Version</th>
+                  <th>Effective</th>
+                  {canMutateAnyRow && <th>Action</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {assignments.map((assignment: any) => {
+                  const canToggleRow =
+                    (assignment.subjectType === 'AGENT' && canAssignAgent) ||
+                    (assignment.subjectType === 'AGENT_CLASS' && canModifyLimits);
+                  return (
+                    <tr key={assignment.id}>
+                      <td style={mono}>
+                        {assignment.subjectType}: {assignment.subjectId || assignment.segmentCode || '-'}
+                      </td>
+                      <td>{assignment.limitProfileCode || '-'}</td>
+                      <td>
+                        <span style={badge(assignment.isActive ? 'ACTIVE' : 'INACTIVE')}>
+                          {assignment.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </td>
+                      <td>{assignment.version ?? 1}</td>
+                      <td>
+                        {assignment.effectiveFrom
+                          ? new Date(assignment.effectiveFrom).toLocaleString()
+                          : '-'}
+                      </td>
+                      {canMutateAnyRow && (
+                        <td>
+                          {canToggleRow ? (
+                            <button
+                              type="button"
+                              style={smallLink}
+                              disabled={toggleBusyId === assignment.id}
+                              onClick={() => void handleToggleSubjectAssignment(assignment)}
+                            >
+                              {assignment.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
-      {!initialCustomerId && canAssignAgent && <div style={formCard}>
-        <h4 style={h4}>Assign Limit Profile to Agent</h4>
-        <form onSubmit={handleAssign} style={form}>
-          <input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Agent UUID" style={input} />
-          <input value={profileCode} onChange={(event) => setProfileCode(event.target.value)} placeholder="Profile code (e.g. AGENT_STANDARD)" style={input} />
-          <button type="submit" style={btn}>Assign</button>
-        </form>
-        {result && <div style={successBox} role="status">{result}</div>}
-        {resultErr && <div style={errBox} role="alert">{resultErr}</div>}
-      </div>}
+
+      {!initialCustomerId && canAssignAgent && (
+        <div style={formCard}>
+          <h4 style={h4}>Assign Limit Profile to Agent</h4>
+          <form onSubmit={handleAssign} style={form}>
+            <input
+              aria-label="Agent UUID"
+              value={agentId}
+              onChange={(event) => setAgentId(event.target.value)}
+              placeholder="Agent UUID"
+              style={inlineFormInput}
+            />
+            <input
+              aria-label="Agent limit profile code"
+              value={profileCode}
+              onChange={(event) => setProfileCode(event.target.value)}
+              placeholder="Profile code (e.g. AGENT_STANDARD)"
+              style={inlineFormInput}
+            />
+            <button type="submit" style={btn}>
+              Assign
+            </button>
+          </form>
+          {result && (
+            <div style={{ ...successBox, marginTop: 8 }} role="status">
+              {result}
+            </div>
+          )}
+          {resultErr && (
+            <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
+              {resultErr}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!initialCustomerId && canModifyLimits && (
+        <div style={formCard} aria-label="Assign Limit Profile to Agent Class">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <h4 style={{ margin: 0 }}>Assign Limit Profile to Agent Class (<code>AGENT_CLASS</code>)</h4>
+            {canViewAgentClasses && (
+              <button
+                type="button"
+                style={smallLink}
+                disabled={classOptionsLoading}
+                onClick={() => void loadAgentClassesCatalog()}
+              >
+                {classOptionsLoading ? 'Loading classes…' : 'Load Agent classes'}
+              </button>
+            )}
+          </div>
+          <form onSubmit={handleAssignAgentClass} style={form}>
+            {classOptions.length > 0 && (
+              <select
+                aria-label="Select Agent class"
+                value={agentClassId}
+                onChange={(event) => setAgentClassId(event.target.value)}
+                style={inlineFormInput}
+              >
+                <option value="">Select Agent class…</option>
+                {classOptions.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name} ({cls.code})
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              aria-label="Agent class UUID"
+              value={agentClassId}
+              onChange={(event) => setAgentClassId(event.target.value)}
+              placeholder="Agent Class UUID"
+              style={inlineFormInput}
+            />
+            <input
+              aria-label="Agent class limit profile code"
+              value={classProfileCode}
+              onChange={(event) => setClassProfileCode(event.target.value)}
+              placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)"
+              style={inlineFormInput}
+            />
+            <button type="submit" style={btn}>
+              Assign to class
+            </button>
+          </form>
+          {classResult && (
+            <div style={{ ...successBox, marginTop: 8 }} role="status">
+              {classResult}
+            </div>
+          )}
+          {classResultErr && (
+            <div style={{ ...errBox, marginTop: 8, marginBottom: 0 }} role="alert">
+              {classResultErr}
+            </div>
+          )}
+        </div>
+      )}
 
       {canViewDiagnostics ? (
         <>
@@ -435,6 +704,7 @@ const h4: React.CSSProperties = { margin: '0 0 8px' };
 const form: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' };
 const filterGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, alignItems: 'end', marginBottom: 12 };
 const input: React.CSSProperties = { boxSizing: 'border-box', width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0', minWidth: 0, background: '#fff' };
+const inlineFormInput: React.CSSProperties = { boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0', minWidth: 210, flex: '1 1 210px', background: '#fff' };
 const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' };
 const smallLink: React.CSSProperties = { padding: '4px 7px', borderRadius: 5, border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#334155', cursor: 'pointer', fontSize: 11 };
 const note: React.CSSProperties = { marginTop: 12, fontSize: 12, color: '#64748B', background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' };

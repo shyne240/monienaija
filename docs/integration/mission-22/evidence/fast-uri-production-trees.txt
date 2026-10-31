@@ -1,0 +1,20 @@
+=== Baseline npm ls fast-uri --omit=dev --all (exit 0) ===
+monienaija@0.1.0 /home/user/monienaija
+`-- fastify@5.12.7 overridden
+  +-- @fastify/ajv-compiler@4.0.5
+  | +-- ajv@8.20.0
+  | | `-- fast-uri@3.1.6 overridden
+  | `-- fast-uri@3.1.6 overridden
+  `-- fast-json-stringify@7.0.1
+    `-- fast-uri@4.1.3 overridden
+
+
+=== Remediated npm ls fast-uri --omit=dev --all (exit 0) ===
+monienaija@0.1.0 /home/user/monienaija
+`-- fastify@5.12.7 overridden
+  +-- @fastify/ajv-compiler@4.0.5
+  | +-- ajv@8.20.0
+  | | `-- fast-uri@3.1.9 deduped
+  | `-- fast-uri@3.1.9 overridden
+  `-- fast-json-stringify@7.0.1
+    `-- fast-uri@4.2.3 overridden

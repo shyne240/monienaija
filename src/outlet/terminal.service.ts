@@ -19,6 +19,13 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function containsControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+}
+
 const ALLOWED_TERMINAL_TRANSITIONS: Record<TerminalStatus, TerminalStatus[]> = {
   [TerminalStatus.ACTIVE]: [TerminalStatus.SUSPENDED, TerminalStatus.TERMINATED],
   [TerminalStatus.SUSPENDED]: [TerminalStatus.ACTIVE, TerminalStatus.TERMINATED],
@@ -143,6 +150,40 @@ export class TerminalService {
     return this.dataSource.getRepository(AgentTerminal).find({ where: { outletId } as any, order: { createdAt: 'ASC' } as any });
   }
 
+  async updateMetadata(id: string, input: {
+    expectedVersion: number;
+    label?: string | null;
+    serialNumber?: string | null;
+    actor: string;
+  }): Promise<AgentTerminal> {
+    this.assertUuid(id, 'id');
+    const actor = this.normalizeActor(input.actor);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+      throw new BadRequestException('expectedVersion must be a positive integer');
+    }
+    if (input.label === undefined && input.serialNumber === undefined) {
+      throw new BadRequestException('At least one metadata field is required');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentTerminal);
+      const terminal = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!terminal || terminal.deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
+      if (terminal.version !== input.expectedVersion) throw new ConflictException('Terminal version is stale');
+      const previous = this.toValues(terminal);
+      if (input.label !== undefined) terminal.label = this.normalizeMetadata(input.label, 'label', 160);
+      if (input.serialNumber !== undefined) terminal.serialNumber = this.normalizeMetadata(input.serialNumber, 'serialNumber', 100);
+      terminal.updatedBy = actor;
+      // Consume the version even for identical accepted metadata (see OutletService).
+      terminal.version += 1;
+      const saved = await repo.save(terminal);
+      await this.auditService.record(manager, {
+        entityType: 'AGENT_TERMINAL', entityId: saved.id, action: 'AGENT_TERMINAL_UPDATED', actor,
+        previousValues: previous, newValues: this.toValues(saved),
+      });
+      return saved;
+    });
+  }
+
   async suspend(id: string, actor: string): Promise<AgentTerminal> {
     return this.transition(id, TerminalStatus.SUSPENDED, actor, 'AGENT_TERMINAL_SUSPENDED');
   }
@@ -167,8 +208,8 @@ export class TerminalService {
     if (!Object.values(TerminalStatus).includes(target)) throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentTerminal);
-      const terminal = await repo.findOne({ where: { id } as any });
-      if (!terminal || (terminal as any).deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
+      const terminal = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!terminal || terminal.deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
       const allowed = ALLOWED_TERMINAL_TRANSITIONS[terminal.status as TerminalStatus] ?? [];
       if (!allowed.includes(target)) throw new ConflictException(`Transition ${terminal.status} → ${target} is not allowed`);
       if (terminal.status === TerminalStatus.TERMINATED) throw new ConflictException('TERMINATED terminals cannot be transitioned');
@@ -227,6 +268,14 @@ export class TerminalService {
       createdBy: t.createdBy,
       updatedBy: t.updatedBy,
     };
+  }
+
+  private normalizeMetadata(value: string | null, field: string, max: number): string | null {
+    if (value === null) return null;
+    if (typeof value !== 'string' || value.length > max || containsControlCharacters(value)) {
+      throw new BadRequestException(`${field} must be at most ${max} characters without control characters`);
+    }
+    return value.trim() || null;
   }
 
   private normalizeReference(v: string, field: string): string {

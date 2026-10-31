@@ -1,0 +1,146 @@
+/*
+ * MonieNaija Admin — M1 semantic design tokens (light only).
+ *
+ * Scope contract (M1 allowlist):
+ *   - Tokens are declared only on explicitly classed pilot/shell nodes.
+ *   - No `html`, `body`, `:root`, universal (`*`) or global element selectors.
+ *   - Declaring custom properties is inert: nothing changes visually unless a
+ *     pilot-owned class consumes a token, so excluded screens are untouched.
+ *   - Dark mode is deliberately not implemented in M1.
+ *
+ * Contrast values below are computed from relative luminance for the exact
+ * opaque pairs listed, using the discovery method:
+ *   linearize c/12.92 (c<=0.04045) or ((c+0.055)/1.055)^2.4,
+ *   L = .2126R + .7152G + .0722B, ratio = (L1+.05)/(L2+.05).
+ * Ratios are rounded down for display; 4.5:1 minimum for normal text and
+ * 3:1 for meaningful non-text boundaries / focus indicators.
+ */
+
+.mn-shell,
+.mn-dir-header,
+.mn-dir-panel {
+  /* Surfaces --------------------------------------------------------------- */
+  --mn-surface-canvas: #f5f8f6;
+  --mn-surface-raised: #ffffff;
+  --mn-surface-sunken: #eef3f0;
+  --mn-surface-mint: #e4f4ec;
+  --mn-surface-mint-strong: #d3ebe0;
+  --mn-surface-row-hover: #f6faf8;
+
+  /* Text ------------------------------------------------------------------- */
+  --mn-text-primary: #132b25; /* 15.00:1 on raised, 14.03:1 on canvas */
+  --mn-text-secondary: #52655f; /* 6.20:1 on raised, 5.80:1 on canvas */
+  --mn-text-muted: #5b6b66; /* 5.25:1 on canvas */
+  --mn-text-on-action: #ffffff; /* 7.34:1 on action.primary */
+
+  /* Borders ---------------------------------------------------------------- */
+  --mn-border-subtle: #dde7e2; /* decorative hairlines only */
+  --mn-border-strong: #b9cac3;
+  --mn-border-control: #6d817a; /* 4.14:1 on raised, 3.87:1 on canvas */
+
+  /* Actions ---------------------------------------------------------------- */
+  --mn-action-primary: #0b624a;
+  --mn-action-primary-hover: #0a5540;
+  --mn-action-primary-active: #08422f;
+  --mn-action-primary-soft: #e7f2ec;
+  --mn-action-danger: #b3261e;
+  --mn-action-danger-hover: #97211a;
+  --mn-action-danger-soft: #fdebe9;
+
+  /* Focus ------------------------------------------------------------------ */
+  --mn-focus-ring: #0b624a; /* 7.34:1 on raised, 6.87:1 on canvas */
+  --mn-focus-ring-dark: #e9bd63; /* 6.93:1 on nav surface, 4.51:1 on nav selected */
+  --mn-focus-offset: #ffffff;
+
+  /* Navigation (treasury green) -------------------------------------------- */
+  --mn-nav-surface: #0b3d2e;
+  --mn-nav-surface-deep: #082f23;
+  --mn-nav-text: #e8f1ec; /* 10.59:1 */
+  --mn-nav-label: #d3e4da; /* 9.23:1 */
+  --mn-nav-muted: #a9c3b7; /* 6.49:1 */
+  --mn-nav-selected-bg: #125c46;
+  --mn-nav-selected-text: #ffffff; /* 7.94:1 on selected */
+  --mn-nav-hover-bg: #14493a;
+  --mn-nav-border: #2f6355; /* decorative divider */
+  --mn-nav-control-border: #7fa89b; /* >=3:1 meaningful control boundary */
+  --mn-nav-backdrop: rgba(6, 26, 20, 0.55);
+
+  /* Status (text / soft background pairings) ------------------------------- */
+  --mn-status-success: #146348; /* 6.35:1 on success-bg */
+  --mn-status-success-bg: #e4f4ec;
+  --mn-status-warning: #8c5600; /* 5.54:1 on warning-bg */
+  --mn-status-warning-bg: #fff3d9;
+  --mn-status-danger: #b3261e; /* 5.68:1 on danger-bg */
+  --mn-status-danger-bg: #fdebe9;
+  --mn-status-info: #2057a4; /* 6.24:1 on info-bg */
+  --mn-status-info-bg: #eaf1fc;
+  --mn-status-neutral: #52655f; /* 5.49:1 on neutral-bg */
+  --mn-status-neutral-bg: #eef2f0;
+
+  /* Brand accent — decorative unless paired with tested ink ----------------- */
+  --mn-accent-gold: #e9bd63;
+  --mn-accent-gold-ink: #8c5600;
+
+  /* Spacing (4px scale) ---------------------------------------------------- */
+  --mn-space-1: 4px;
+  --mn-space-2: 8px;
+  --mn-space-3: 12px;
+  --mn-space-4: 16px;
+  --mn-space-6: 24px;
+  --mn-space-8: 32px;
+  --mn-space-10: 40px;
+  --mn-space-12: 48px;
+  --mn-space-16: 64px;
+
+  /* Radii ------------------------------------------------------------------ */
+  --mn-radius-xs: 4px;
+  --mn-radius-sm: 8px;
+  --mn-radius-md: 12px;
+  --mn-radius-lg: 16px;
+  --mn-radius-pill: 999px;
+
+  /* Typography ------------------------------------------------------------- */
+  --mn-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mn-font-size-2xs: 11px;
+  --mn-font-size-xs: 12px;
+  --mn-font-size-sm: 13px;
+  --mn-font-size-base: 14px;
+  --mn-font-size-md: 16px;
+  --mn-font-size-lg: 20px;
+  --mn-font-size-xl: 24px;
+  --mn-font-size-2xl: 28px;
+  --mn-font-size-3xl: 32px;
+  --mn-line-tight: 1.25;
+  --mn-line-snug: 1.4;
+  --mn-line-normal: 1.55;
+
+  /* Elevation (restrained) ------------------------------------------------- */
+  --mn-shadow-1: 0 1px 3px rgba(19, 43, 37, 0.1);
+  --mn-shadow-2: 0 8px 24px rgba(19, 43, 37, 0.16);
+
+  /* Motion ----------------------------------------------------------------- */
+  --mn-motion-fast: 120ms;
+  --mn-motion-base: 160ms;
+  --mn-ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* Reduced motion is a preference, not a token switch: every pilot transition
+ * is suppressed for users who ask for it. Scope is limited to pilot-owned
+ * subtrees so excluded screens keep their own motion behaviour untouched. */
+@media (prefers-reduced-motion: reduce) {
+  .mn-shell__sidebar,
+  .mn-shell__sidebar *,
+  .mn-shell__topbar,
+  .mn-shell__topbar *,
+  .mn-drawer,
+  .mn-drawer *,
+  .mn-dir-header,
+  .mn-dir-header *,
+  .mn-dir-panel,
+  .mn-dir-panel * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

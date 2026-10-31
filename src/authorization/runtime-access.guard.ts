@@ -27,8 +27,8 @@ interface RuntimeRequest extends AuthorizationRequest {
 /**
  * V1-ADMIN-AUTHORIZATION-RUNTIME-01: HTTP methods a read-only principal (`principal.readOnlyPrincipal
  * === true`, set only by A2WorkforceSessionService when every catalogue role the principal holds is
- * `read_only = true`) may still use. Everything else (POST/PUT/PATCH/DELETE/...) is rejected with 403
- * regardless of what any individual controller/route-policy does or does not itself check.
+ * `read_only = true`) may still use. Other methods are rejected with 403, except for the exact
+ * authenticated A2 workforce current-session revocation described in the WORKFORCE_SESSION branch.
  *
  * This generalizes, and closes, the gap documented in
  * docs/V1/V1-ADMIN-ROLE-ARCHITECTURE-AUDIT-01.md §2.2-2.3: nearly the entire /internal/** surface
@@ -71,6 +71,7 @@ export class RuntimeAccessGuard implements CanActivate {
     if (route.authenticationMode === 'WORKFORCE_SESSION') {
       const token = this.bearerToken(request.headers.authorization);
       let principal: AuthorizationPrincipal | undefined;
+      let validatedA2Session = false;
       try {
         if (!this.workforceConfig.enabled)
           throw new UnauthorizedException('Workforce authentication disabled');
@@ -78,6 +79,7 @@ export class RuntimeAccessGuard implements CanActivate {
           token,
           this.workforceConfig.internalAudience,
         );
+        validatedA2Session = true;
       } catch (e) {
         // V1-OPS-01: fall back to SUPPORT workforce sessions. A2 workforce identities
         // (OPERATOR/SERVICE/PRIVILEGED) and SUPPORT identities are issued by separate
@@ -115,7 +117,32 @@ export class RuntimeAccessGuard implements CanActivate {
       }
 
       request.authorizationPrincipal = principal;
-      this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
+      // Mission 19A: logout is the sole unsafe-method exception for a read-only A2 session.
+      // Both Fastify's decoded parameter and the exact raw path must identify the session
+      // established by this bearer; a SUPPORT fallback or a sibling session is not sufficient.
+      // This skips only the read-only method check, not route policy, controller validation or
+      // the session service's ownership check.
+      const currentSessionId = principal.sessionId;
+      const selfRevocation =
+        validatedA2Session &&
+        principal.readOnlyPrincipal === true &&
+        request.method.toUpperCase() === 'DELETE' &&
+        typeof currentSessionId === 'string' && currentSessionId.length > 0 &&
+        request.params?.id === currentSessionId &&
+        request.url.split('?', 1)[0] ===
+          `/api/v1/internal/a2/workforce/sessions/${currentSessionId}`;
+      if (!selfRevocation) this.denyUnsafeMethodForReadOnlyPrincipal(principal, request.method);
+
+      // Mission 16A: AdminAgentController historically rejects these non-workforce principal
+      // types with 401 before checking agent.view. Keep that ordering only on its read routes,
+      // without skipping the catalogue gate or changing the real Agent/Customer token fallback
+      // above (which deliberately returns 403 for a valid non-workforce session).
+      if (
+        route.rejectNonWorkforcePrincipalWith401 &&
+        ['AGENT', 'CUSTOMER', 'AGGREGATOR'].includes(principal.type)
+      ) {
+        throw new UnauthorizedException('Privileged access required');
+      }
 
       // V1-HARDEN-01 Part D: the route-policy-registry declares an explicit
       // `policy.allowedPrincipalTypes` for most WORKFORCE_SESSION routes (several internal
@@ -195,6 +222,15 @@ export class RuntimeAccessGuard implements CanActivate {
             ...(declaredPolicy.requiredFunctions
               ? { requiredFunctions: declaredPolicy.requiredFunctions }
               : {}),
+            // REPORT-34 H-01-R2: carry the narrow, per-route function-gate exemption (today only
+            // SUPPORT on GET/HEAD /internal/audit) into the evaluated policy. Omitting it would
+            // silently turn the approved SUPPORT exception into a denial.
+            ...(declaredPolicy.requiredFunctionsExemptPrincipalTypes
+              ? {
+                  requiredFunctionsExemptPrincipalTypes:
+                    declaredPolicy.requiredFunctionsExemptPrincipalTypes,
+                }
+              : {}),
             customerAccess: 'NONE',
             agentAccess: 'NONE',
             aggregatorAccess: 'NONE',
@@ -202,6 +238,23 @@ export class RuntimeAccessGuard implements CanActivate {
           { type: route.resourceType, id: route.resourceId },
         );
         if (!gateDecision.allowed) {
+          // A newly declared Agent gate would otherwise stop the request before its existing
+          // controller-level requireFunction() can record a denial. Audit only these explicitly
+          // marked single-function routes, and only on denial, so allowed requests still get
+          // exactly one controller decision and unrelated Arena 3 policies retain their behavior.
+          if (route.auditDeniedWorkforceFunction && declaredPolicy.requiredFunctions?.length === 1) {
+            const functionCode = declaredPolicy.requiredFunctions[0]!;
+            await this.authorizationService.authorize(
+              principal,
+              {
+                resourceType: route.resourceType,
+                action: functionCode,
+                requiredFunctions: [functionCode],
+                customerAccess: 'NONE',
+              },
+              { type: route.resourceType },
+            );
+          }
           throw new ForbiddenException(`Authorization denied: ${gateDecision.reason}`);
         }
       }

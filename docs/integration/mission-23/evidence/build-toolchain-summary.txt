@@ -1,0 +1,31 @@
+MISSION 23 — TYPE CHECKS, BUILDS AND COMPILED STARTUP
+=====================================================
+Toolchain: node v22.22.3, npm 10.9.8, TypeScript (repo-pinned).
+
+BACKEND
+  npx tsc --noEmit ................................ exit 0
+  npm run build (nest build) ...................... exit 0, dist/main.js produced
+  COMPILED STARTUP VERIFICATION (task 7):
+    node dist/main.js  -> listening on 0.0.0.0:3000
+    GET /api/v1/health        -> 200 {"status":"ok"}
+    GET /api/v1/health/ready  -> 200
+    POST /api/v1/internal/a2/workforce/local-admin-sessions (SUPER_ADMIN) -> 201
+         roles=[SUPER_ADMIN] scopes=66
+    GET  /api/v1/internal/admin/dashboard/my-dashboard -> 200, template EXECUTIVE_GOVERNANCE
+    runtime dependency graph inside the booted process:
+         fastify@5.12.7 -> @fastify/ajv-compiler@4.0.5 -> ajv@8.20.0 -> fast-uri@3.1.9 (deduped)
+         @fastify/ajv-compiler@4.0.5 -> fast-uri@3.1.9
+         fast-json-stringify@7.0.1   -> fast-uri@4.2.3
+    NOTE: bare GET /health is 404 by design — health is mounted under /api/v1.
+    NOTE: fastify logs a LegacyRouteConverter warning for "/api/v1/*" at boot
+          (auto-converted to "/api/v1/{*path}"); benign, pre-existing, unrelated.
+    Raw log: /home/user/m23-build.log
+
+ADMIN WEB (apps/admin-web)
+  npx tsc --noEmit ................................ exit 0
+  npm test ........................................ 37 suites / 276 tests passed, 0 failed, exit 0
+  npm run build (vite) ............................ exit 0, 380 modules transformed
+  production bundle audit:
+         occurrences of "api/v1"    : 0
+         occurrences of "localhost" : 0
+         ADMIN_WEB_API_BASE_URL     : 1 (the variable *name* only — fail-closed)

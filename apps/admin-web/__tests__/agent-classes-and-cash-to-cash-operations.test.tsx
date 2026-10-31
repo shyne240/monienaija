@@ -137,10 +137,10 @@ describe('Agent classes and Cash-to-Cash Admin Web integrations', () => {
     const view = render(<AgentClassesScreen />);
     fireEvent.click(await view.findByRole('button', { name: 'Create class' }));
     fireEvent.change(view.getByLabelText('Class name'), { target: { value: 'Invalid JSON Class' } });
-    fireEvent.change(view.getByLabelText('Applicable services JSON'), { target: { value: '[' } });
+    fireEvent.change(view.getByLabelText('Required information JSON'), { target: { value: '[' } });
     fireEvent.click(view.getByRole('button', { name: 'Create inactive class' }));
 
-    expect((await view.findByRole('alert')).textContent).toMatch(/Applicable services must contain valid JSON/i);
+    expect((await view.findByRole('alert')).textContent).toMatch(/Required information must contain valid JSON/i);
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
 

@@ -352,7 +352,12 @@ export const WorkforceOverviewWidget: React.FC = () => {
 };
 
 /** Generic count-by-status renderer shared by agent-lifecycle-summary / kyc-queue-summary / compliance-case-summary / fraud-case-summary. */
-export const StatusCountWidget: React.FC<{ widgetKey: string; title: string; description: string }> = ({ widgetKey, title, description }) => {
+export const StatusCountWidget: React.FC<{
+  widgetKey: string;
+  title: string;
+  description: string;
+  actions?: React.ReactNode;
+}> = ({ widgetKey, title, description, actions }) => {
   const { data, loading, error } = useWidgetData<any>(() => ApiClient.get(`${DASH}/widgets/${widgetKey}`), [widgetKey]);
 
   const rows: Array<{ label: string; count: number }> = [];
@@ -370,7 +375,14 @@ export const StatusCountWidget: React.FC<{ widgetKey: string; title: string; des
   }
 
   return (
-    <WidgetCard title={title} description={description} loading={loading} error={error} empty={!!data && rows.length === 0 && pendingApplicationCount === undefined}>
+    <WidgetCard
+      title={title}
+      description={description}
+      loading={loading}
+      error={error}
+      empty={!!data && rows.length === 0 && pendingApplicationCount === undefined}
+      actions={actions}
+    >
       {data && (
         <>
           {pendingApplicationCount !== undefined && (
@@ -400,7 +412,12 @@ export const StatusCountWidget: React.FC<{ widgetKey: string; title: string; des
  * few primitive columns; flat-ish object → KPI tiles) rather than hardcoding each endpoint's
  * exact contract, since these endpoints are owned by other, independently-evolving modules.
  */
-export const GenericDirectWidget: React.FC<{ title: string; description: string; endpoint: string }> = ({ title, description, endpoint }) => {
+export const GenericDirectWidget: React.FC<{
+  title: string;
+  description: string;
+  endpoint: string;
+  actions?: React.ReactNode;
+}> = ({ title, description, endpoint, actions }) => {
   const { data, loading, error } = useWidgetData<any>(() => ApiClient.get(endpoint), [endpoint]);
 
   let body: React.ReactNode = null;
@@ -460,7 +477,7 @@ export const GenericDirectWidget: React.FC<{ title: string; description: string;
   }
 
   return (
-    <WidgetCard title={title} description={description} loading={loading} error={error} empty={isEmpty}>
+    <WidgetCard title={title} description={description} loading={loading} error={error} empty={isEmpty} actions={actions}>
       {body}
     </WidgetCard>
   );
@@ -484,7 +501,11 @@ export const DirectoryLinkWidget: React.FC<{ title: string; description: string;
  * fetch being attempted — this mirrors the backend's own defense-in-depth re-check per widget and
  * ensures a tampered/stale client-side widget list can never even attempt an unauthorized call.
  */
-export const WidgetRenderer: React.FC<{ widget: ResolvedWidget; onNavigateToCustomers?: () => void }> = ({ widget, onNavigateToCustomers }) => {
+export const WidgetRenderer: React.FC<{
+  widget: ResolvedWidget;
+  onNavigateToCustomers?: () => void;
+  onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
+}> = ({ widget, onNavigateToCustomers, onNavigateToAgents }) => {
   if (!widget.authorized) {
     return <WidgetCard title={widget.title || widget.displayName} description={widget.description} restricted />;
   }
@@ -503,15 +524,59 @@ export const WidgetRenderer: React.FC<{ widget: ResolvedWidget; onNavigateToCust
     case 'workforce-overview':
       return <WorkforceOverviewWidget />;
     case 'agent-lifecycle-summary':
+      return (
+        <StatusCountWidget
+          widgetKey={widget.widgetKey}
+          title={widget.title || widget.displayName}
+          description={widget.description}
+          actions={
+            onNavigateToAgents ? (
+              <button
+                type="button"
+                style={styles.linkButton}
+                onClick={() => onNavigateToAgents()}
+              >
+                Open Agent Network →
+              </button>
+            ) : undefined
+          }
+        />
+      );
     case 'kyc-queue-summary':
     case 'compliance-case-summary':
     case 'fraud-case-summary':
       return <StatusCountWidget widgetKey={widget.widgetKey} title={widget.title || widget.displayName} description={widget.description} />;
     case 'customer-directory-shortcut':
       return <DirectoryLinkWidget title={widget.title || widget.displayName} description={widget.description} onNavigate={onNavigateToCustomers} />;
+    case 'agent-network-shortcut':
+      return (
+        <DirectoryLinkWidget
+          title={widget.title || widget.displayName}
+          description={widget.description}
+          onNavigate={onNavigateToAgents ? () => onNavigateToAgents() : undefined}
+        />
+      );
     default:
       if (widget.fetchMode === 'direct' && widget.endpoint) {
-        return <GenericDirectWidget title={widget.title || widget.displayName} description={widget.description} endpoint={widget.endpoint} />;
+        const isAgentApplicationsQueue = widget.widgetKey === 'agent-applications-queue';
+        return (
+          <GenericDirectWidget
+            title={widget.title || widget.displayName}
+            description={widget.description}
+            endpoint={widget.endpoint}
+            actions={
+              isAgentApplicationsQueue && onNavigateToAgents ? (
+                <button
+                  type="button"
+                  style={styles.linkButton}
+                  onClick={() => onNavigateToAgents({ openApplications: true })}
+                >
+                  Open Onboarding Queue →
+                </button>
+              ) : undefined
+            }
+          />
+        );
       }
       return <WidgetCard title={widget.title || widget.displayName} description={widget.description} error="This widget is not yet supported in Admin Web." />;
   }

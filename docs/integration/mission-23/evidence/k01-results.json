@@ -1,0 +1,186 @@
+{
+  "results": [
+    {
+      "id": "K01-1",
+      "title": "FINANCE_AUDITOR can revoke its OWN current session",
+      "ok": true,
+      "detail": "readBefore=200 readOnlyPrincipal=true logout=200 message=-"
+    },
+    {
+      "id": "K01-2",
+      "title": "the revoked bearer immediately returns 401",
+      "ok": true,
+      "detail": "readAfter=401 dbStatus=REVOKED revokedAt=true"
+    },
+    {
+      "id": "K01-3",
+      "title": "cross-session revocation stays denied (sibling / other principal / unknown) and those sessions survive",
+      "ok": true,
+      "detail": "sibling=403 siblingSurvives=200/ACTIVE otherPrincipal=403 otherSurvives=200/ACTIVE unknown=403"
+    },
+    {
+      "id": "K01-4",
+      "title": "unrelated unsafe methods stay denied for the read-only principal (403 on every reachable route)",
+      "ok": true,
+      "detail": "4/7 routes reachable & discriminator-valid :: POST /internal/agents/:id/suspend admin=404 (route not reachable — excluded)  POST /internal/agents/classes admin=201 auditor=403  POST /internal/agents/:id/outlets admin=404 (route not reachable — excluded)  PATCH /internal/outlets/:id admin=400 auditor=403  DELETE /internal/a2/workforce/sessions/:id admin=200 auditor=403  POST /internal/a2/workforce/approvals/:id/approve admin=400 auditor=403  POST /internal/notifications/templates admin=404 (route not reachable — excluded)"
+    },
+    {
+      "id": "K01-5",
+      "title": "a validation race cannot resurrect a revoked session (stored status + replay)",
+      "ok": true,
+      "detail": "12 trials: fetch-store=200 all=true storedStatus={\"REVOKED\":12} postRevokeReadsAll401=true"
+    },
+    {
+      "id": "K01-6",
+      "title": "the other ten workforce roles keep their logout behaviour (own-session 200, token dead)",
+      "ok": true,
+      "detail": "SUPER_ADMIN:200/200/401/REVOKED FINANCE_PREPARER:200/200/401/REVOKED FINANCE_CONTROLLER:200/200/401/REVOKED ADMINISTRATOR:200/200/401/REVOKED OPERATIONS:200/200/401/REVOKED AGENT_NETWORK_MANAGER:200/200/401/REVOKED COMPLIANCE:200/200/401/REVOKED RISK_FRAUD:200/200/401/REVOKED CUSTOMER_SERVICE:200/200/401/REVOKED TREASURY:200/200/401/REVOKED"
+    }
+  ],
+  "trials": [
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    },
+    {
+      "revokeStatus": 200,
+      "dbStatus": "REVOKED",
+      "lateAll401": true
+    }
+  ],
+  "rows": [
+    {
+      "role": "SUPER_ADMIN",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "FINANCE_PREPARER",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "OPERATIONS",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "AGENT_NETWORK_MANAGER",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "COMPLIANCE",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "RISK_FRAUD",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    },
+    {
+      "role": "TREASURY",
+      "readOnly": false,
+      "before": 200,
+      "logout": 200,
+      "after": 401,
+      "db": "REVOKED"
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}

@@ -87,6 +87,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     const sessionRepo = {
       findOne: jest.fn().mockResolvedValue(opts.sessionRow),
       save: jest.fn().mockImplementation((row: unknown) => Promise.resolve(row)),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const assignmentRepo = {
       find: jest.fn().mockResolvedValue(opts.assignments),

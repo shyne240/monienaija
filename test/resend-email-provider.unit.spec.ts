@@ -393,7 +393,10 @@ describe('EMAIL environment configuration validation (validateEnvironment)', () 
   });
 
   it('1f. production rejects the console email adapter but allows dark (none)', () => {
-    const productionBase = { ...baseEnv, NODE_ENV: 'production', NOTIFICATION_SMS_PROVIDER: 'robase', ROBASE_API_KEY: 'robe_' + 'b'.repeat(64) };
+    // INTEGRATION NOTE (integration/main-backend-frontend-20261030): baseEnv's DB_PASSWORD is the 'postgres' placeholder, which the
+    // integrated production profile rejects (main's phase 16-20 secret hardening), so this
+    // production fixture supplies a conforming password. The assertion below is unchanged.
+    const productionBase = { ...baseEnv, NODE_ENV: 'production', DB_PASSWORD: 'resend-spec-production-fixture-pw', NOTIFICATION_SMS_PROVIDER: 'robase', ROBASE_API_KEY: 'robe_' + 'b'.repeat(64) };
     expect(() =>
       validateEnvironment({ ...productionBase, NOTIFICATION_EMAIL_PROVIDER: 'console' }),
     ).toThrow(/restricted to development\/test/);

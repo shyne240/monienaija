@@ -1,0 +1,24 @@
+MISSION 23 — PRODUCTION DEPENDENCY AUDIT: BEFORE / AFTER (own execution)
+date: 2026-10-31
+command (both runs): npm audit --omit=dev --json   [production dependency tree only]
+npm 10.9.8 / node v22.22.3, lockfile installed with npm ci in each state.
+
+BEFORE = accepted Mission 20 candidate a392653 (fast-uri overrides 3.1.6 / 4.1.3)
+AFTER  = this branch (fast-uri overrides 3.1.9 / 4.2.3)
+
+BEFORE  | total 4 | critical 0 | high 1 | moderate 3 | low 0
+AFTER   | total 3 | critical 0 | high 0 | moderate 3 | low 0
+
+BEFORE advisories:
+   fast-uri      high     range 3.0.0 - 3.1.8 || 4.0.0 - 4.2.2
+   glob          moderate range 3.0.0 - 14.0.1
+   minimatch     moderate range <11.0.1
+   typeorm       moderate range 0.3.18-dev.022d2b5 - 0.3.31
+
+AFTER advisories:
+   glob          moderate range 3.0.0 - 14.0.1
+   minimatch     moderate range <11.0.1
+   typeorm       moderate range 0.3.18-dev.022d2b5 - 0.3.31
+
+REMOVED by the correction: fast-uri
+NEWLY INTRODUCED        : none

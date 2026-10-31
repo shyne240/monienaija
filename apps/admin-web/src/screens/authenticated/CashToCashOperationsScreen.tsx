@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
+import {
+  fetchCashToCashExpiryStatus,
+  type CashToCashExpiryStatusView,
+} from '../../services/ordinary-agent-admin-api';
 import { useAuthStore } from '../../store/auth-store';
 
 interface CashToCashOperation {
@@ -58,7 +62,7 @@ function formatMinor(value: string, currency: string): string {
   }
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
@@ -99,6 +103,37 @@ export const CashToCashOperationsScreen: React.FC = () => {
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalError, setJournalError] = useState('');
 
+  // Read-only Cash-to-Cash expiry worker & backlog status (Arena 1 integration boundary)
+  const [expiryStatus, setExpiryStatus] = useState<CashToCashExpiryStatusView | null>(null);
+  const [expiryBoundaryMsg, setExpiryBoundaryMsg] = useState('');
+  const [expiryError, setExpiryError] = useState('');
+  const [expiryLoading, setExpiryLoading] = useState(false);
+
+  const loadExpiryStatus = async () => {
+    if (!canView || expiryLoading) return;
+    setExpiryLoading(true);
+    setExpiryError('');
+    setExpiryBoundaryMsg('');
+    try {
+      const outcome = await fetchCashToCashExpiryStatus();
+      if (outcome.status === 'BLOCKED') {
+        setExpiryStatus(null);
+        setExpiryBoundaryMsg(outcome.message);
+      } else if (outcome.data.recognized) {
+        setExpiryStatus(outcome.data);
+      } else {
+        setExpiryStatus(null);
+      }
+    } catch (err) {
+      setExpiryStatus(null);
+      setExpiryError(
+        err instanceof Error ? err.message : 'Unable to load Cash-to-Cash expiry status.',
+      );
+    } finally {
+      setExpiryLoading(false);
+    }
+  };
+
   const load = async (targetPage: number, selectedFilters: Filters) => {
     if (!canView) return;
     setLoading(true);
@@ -127,6 +162,10 @@ export const CashToCashOperationsScreen: React.FC = () => {
   }, [canView, page, searchRevision]);
 
   useEffect(() => {
+    if (canView) void loadExpiryStatus();
+  }, [canView]);
+
+  useEffect(() => {
     setInspectedJournal(null);
     setInspectedJournalLabel('');
     setJournalError('');
@@ -138,7 +177,9 @@ export const CashToCashOperationsScreen: React.FC = () => {
     setJournalError('');
     setInspectedJournalLabel(label);
     try {
-      const journal = await ApiClient.get<LedgerJournalView>(`/ledger/journals/${encodeURIComponent(journalId)}`);
+      const journal = await ApiClient.get<LedgerJournalView>(
+        `/ledger/journals/${encodeURIComponent(journalId)}`,
+      );
       setInspectedJournal(journal);
     } catch (err) {
       setInspectedJournal(null);
@@ -172,7 +213,13 @@ export const CashToCashOperationsScreen: React.FC = () => {
   });
 
   if (!canView) {
-    return <div style={styles.wrap} role="alert"><div style={styles.error}>Cash-to-Cash operations require <code>transaction.view</code>.</div></div>;
+    return (
+      <div style={styles.wrap} role="alert">
+        <div style={styles.error}>
+          Cash-to-Cash operations require <code>transaction.view</code>.
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -180,82 +227,299 @@ export const CashToCashOperationsScreen: React.FC = () => {
       <header style={styles.header}>
         <div>
           <h2 style={styles.title}>Cash-to-Cash Operations</h2>
-          <p style={styles.subtitle}>Paginated, read-only investigation and receipt references for Agent V1 transfers.</p>
+          <p style={styles.subtitle}>
+            Paginated, read-only investigation and receipt references for Agent V1 transfers.
+          </p>
         </div>
-        <button type="button" style={styles.button} onClick={() => void load(page, appliedFilters)} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            style={styles.button}
+            onClick={() => void loadExpiryStatus()}
+            disabled={expiryLoading}
+          >
+            {expiryLoading ? 'Checking expiry…' : 'Refresh expiry status'}
+          </button>
+          <button
+            type="button"
+            style={styles.button}
+            onClick={() => void load(page, appliedFilters)}
+            disabled={loading}
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </header>
       <div style={styles.notice} role="note">
         This surface does not reveal transfer codes or internal idempotency/fingerprint data and cannot claim, refund, release, or manually expire a transfer. Cash handover and unresolved KYC/expiry policies remain separate operational decisions.
       </div>
 
+      {(expiryStatus || expiryBoundaryMsg || expiryError) && (
+        <section style={styles.expiryPanel} aria-label="Cash-to-Cash expiry status">
+          <div style={styles.detailHeader}>
+            <strong style={{ fontSize: 13, color: '#032B14' }}>
+              Expiry Worker &amp; Unclaimed Backlog Status (Read-Only)
+            </strong>
+          </div>
+          {expiryBoundaryMsg && (
+            <div
+              style={styles.boundaryNote}
+              role="note"
+              data-testid="c2c-expiry-arena1-boundary"
+            >
+              <strong>Cross-Arena Integration Boundary:</strong> {expiryBoundaryMsg}
+            </div>
+          )}
+          {expiryError && (
+            <div style={{ ...styles.error, marginTop: 8, marginBottom: 0 }} role="alert">
+              {expiryError}
+            </div>
+          )}
+          {expiryStatus && (
+            <div style={styles.expiryMetrics} data-testid="c2c-expiry-live-status">
+              {expiryStatus.workerEnabled !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Expiry worker</span>
+                  <span
+                    style={
+                      expiryStatus.workerEnabled
+                        ? { ...styles.status, ...styles.claimed }
+                        : { ...styles.status, ...styles.unclaimed }
+                    }
+                  >
+                    {expiryStatus.workerEnabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+              )}
+              {expiryStatus.dueUnclaimedCount !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Overdue unclaimed backlog</span>
+                  <strong style={styles.metricValue}>{expiryStatus.dueUnclaimedCount}</strong>
+                </div>
+              )}
+              {expiryStatus.totalUnclaimedCount !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Total unclaimed</span>
+                  <strong style={styles.metricValue}>{expiryStatus.totalUnclaimedCount}</strong>
+                </div>
+              )}
+              {expiryStatus.expiredTotalCount !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Total expired</span>
+                  <strong style={styles.metricValue}>{expiryStatus.expiredTotalCount}</strong>
+                </div>
+              )}
+              {expiryStatus.oldestDueExpiresAt !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Oldest due deadline</span>
+                  <strong style={styles.metricValue}>
+                    {formatDate(expiryStatus.oldestDueExpiresAt)}
+                  </strong>
+                </div>
+              )}
+              {expiryStatus.lastSweepAt !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Last worker sweep</span>
+                  <strong style={styles.metricValue}>{formatDate(expiryStatus.lastSweepAt)}</strong>
+                </div>
+              )}
+              {expiryStatus.batchSize !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Batch size</span>
+                  <strong style={styles.metricValue}>{expiryStatus.batchSize}</strong>
+                </div>
+              )}
+              {expiryStatus.pollIntervalMs !== undefined && (
+                <div style={styles.metricTile}>
+                  <span style={styles.metricLabel}>Poll interval</span>
+                  <strong style={styles.metricValue}>{expiryStatus.pollIntervalMs} ms</strong>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       <form onSubmit={search} style={styles.filters} aria-label="Cash-to-Cash filters">
-        <label style={styles.label}>Status
-          <select aria-label="Status" style={styles.input} value={filters.status} onChange={(event) => changeFilter('status', event.target.value)}>
+        <label style={styles.label}>
+          Status
+          <select
+            aria-label="Status"
+            style={styles.input}
+            value={filters.status}
+            onChange={(event) => changeFilter('status', event.target.value)}
+          >
             <option value="">All statuses</option>
             <option value="UNCLAIMED">UNCLAIMED</option>
             <option value="CLAIMED">CLAIMED</option>
             <option value="EXPIRED">EXPIRED</option>
           </select>
         </label>
-        <label style={styles.label}>Agent UUID
-          <input aria-label="Agent UUID" style={styles.input} value={filters.agentId} onChange={(event) => changeFilter('agentId', event.target.value)} placeholder="Filter by Agent" />
+        <label style={styles.label}>
+          Agent UUID
+          <input
+            aria-label="Agent UUID"
+            style={styles.input}
+            value={filters.agentId}
+            onChange={(event) => changeFilter('agentId', event.target.value)}
+            placeholder="Filter by Agent"
+          />
         </label>
-        <label style={styles.label}>Transfer UUID
-          <input aria-label="Transfer UUID" style={styles.input} value={filters.transferId} onChange={(event) => changeFilter('transferId', event.target.value)} placeholder="Exact transfer ID" />
+        <label style={styles.label}>
+          Transfer UUID
+          <input
+            aria-label="Transfer UUID"
+            style={styles.input}
+            value={filters.transferId}
+            onChange={(event) => changeFilter('transferId', event.target.value)}
+            placeholder="Exact transfer ID"
+          />
         </label>
-        <label style={styles.label}>Reference
-          <input aria-label="Reference" style={styles.input} value={filters.reference} onChange={(event) => changeFilter('reference', event.target.value)} placeholder="Exact reference" />
+        <label style={styles.label}>
+          Reference
+          <input
+            aria-label="Reference"
+            style={styles.input}
+            value={filters.reference}
+            onChange={(event) => changeFilter('reference', event.target.value)}
+            placeholder="Exact reference"
+          />
         </label>
-        <button type="submit" style={styles.primaryButton} disabled={loading}>Search</button>
-        <button type="button" style={styles.button} disabled={loading} onClick={resetFilters}>Reset</button>
+        <button type="submit" style={styles.primaryButton} disabled={loading}>
+          Search
+        </button>
+        <button type="button" style={styles.button} disabled={loading} onClick={resetFilters}>
+          Reset
+        </button>
       </form>
 
-      {error && <div style={styles.error} role="alert">{error}</div>}
-      {loading && !result ? <div style={styles.empty}>Loading transfers…</div> : result?.data.length ? (
+      {error && (
+        <div style={styles.error} role="alert">
+          {error}
+        </div>
+      )}
+      {loading && !result ? (
+        <div style={styles.empty}>Loading transfers…</div>
+      ) : result?.data.length ? (
         <div style={styles.tableWrap}>
           <table style={styles.table}>
-            <thead><tr><th>Created</th><th>Transfer / Agent</th><th>Beneficiary</th><th>Status</th><th>Principal</th><th>Redemption</th><th>Expires / claimed</th><th>Receipt</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Transfer / Agent</th>
+                <th>Beneficiary</th>
+                <th>Status</th>
+                <th>Principal</th>
+                <th>Redemption</th>
+                <th>Expires / claimed</th>
+                <th>Receipt</th>
+              </tr>
+            </thead>
             <tbody>
               {result.data.map((item) => (
                 <tr key={item.id}>
                   <td>{formatDate(item.createdAt)}</td>
-                  <td><code>{item.id}</code><br /><span>{item.agentReference || item.agentId}</span></td>
+                  <td>
+                    <code>{item.id}</code>
+                    <br />
+                    <span>{item.agentReference || item.agentId}</span>
+                  </td>
                   <td>{item.beneficiaryPhoneMasked}</td>
-                  <td><span style={statusStyle(item.status)}>{item.status}</span></td>
+                  <td>
+                    <span style={statusStyle(item.status)}>{item.status}</span>
+                  </td>
                   <td>{formatMinor(item.principalMinor, item.currency)}</td>
                   <td>{item.redemptionMethod ?? '—'}</td>
-                  <td>{formatDate(item.expiresAt)}<br />{formatDate(item.claimedAt)}</td>
-                  <td><button type="button" style={styles.smallButton} onClick={() => setSelected(item)}>Inspect receipt</button></td>
+                  <td>
+                    {formatDate(item.expiresAt)}
+                    <br />
+                    {formatDate(item.claimedAt)}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      style={styles.smallButton}
+                      onClick={() => setSelected(item)}
+                    >
+                      Inspect receipt
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <div style={styles.empty}>{loading ? 'Loading transfers…' : 'No Cash-to-Cash transfers match these filters.'}</div>
+        <div style={styles.empty}>
+          {loading ? 'Loading transfers…' : 'No Cash-to-Cash transfers match these filters.'}
+        </div>
       )}
 
       <footer style={styles.pager}>
-        <span>{result?.total ?? 0} transfer{result?.total === 1 ? '' : 's'} · Page {result?.page ?? page}{result?.totalPages ? ` of ${result.totalPages}` : ''}</span>
-        <button type="button" style={styles.button} disabled={loading || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
-        <button type="button" style={styles.button} disabled={loading || !result || page >= result.totalPages} onClick={() => setPage((current) => current + 1)}>Next</button>
+        <span>
+          {result?.total ?? 0} transfer{result?.total === 1 ? '' : 's'} · Page {result?.page ?? page}
+          {result?.totalPages ? ` of ${result.totalPages}` : ''}
+        </span>
+        <button
+          type="button"
+          style={styles.button}
+          disabled={loading || page <= 1}
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          style={styles.button}
+          disabled={loading || !result || page >= result.totalPages}
+          onClick={() => setPage((current) => current + 1)}
+        >
+          Next
+        </button>
       </footer>
 
       {selected && (
         <section style={styles.detail} aria-label="Cash-to-Cash receipt details">
           <div style={styles.detailHeader}>
             <h3 style={styles.detailTitle}>Transfer receipt and ledger references</h3>
-            <button type="button" style={styles.button} onClick={() => setSelected(null)}>Close</button>
+            <button type="button" style={styles.button} onClick={() => setSelected(null)}>
+              Close
+            </button>
           </div>
           <dl style={styles.details}>
-            <div><dt>Transfer ID</dt><dd><code>{selected.id}</code></dd></div>
-            <div><dt>State</dt><dd>{selected.status}</dd></div>
-            <div><dt>Agent</dt><dd>{selected.agentReference || selected.agentId} · <code>{selected.agentId}</code></dd></div>
-            <div><dt>Beneficiary</dt><dd>{selected.beneficiaryPhoneMasked} (masked)</dd></div>
-            <div><dt>Principal / fee / VAT / total</dt><dd>{formatMinor(selected.principalMinor, selected.currency)} / {formatMinor(selected.feeMinor, selected.currency)} / {formatMinor(selected.vatMinor, selected.currency)} / {formatMinor(selected.totalMinor, selected.currency)}</dd></div>
-            <div><dt>Redemption method</dt><dd>{selected.redemptionMethod ?? 'Not recorded / legacy'}</dd></div>
+            <div>
+              <dt>Transfer ID</dt>
+              <dd>
+                <code>{selected.id}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>State</dt>
+              <dd>{selected.status}</dd>
+            </div>
+            <div>
+              <dt>Agent</dt>
+              <dd>
+                {selected.agentReference || selected.agentId} · <code>{selected.agentId}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Beneficiary</dt>
+              <dd>{selected.beneficiaryPhoneMasked} (masked)</dd>
+            </div>
+            <div>
+              <dt>Principal / fee / VAT / total</dt>
+              <dd>
+                {formatMinor(selected.principalMinor, selected.currency)} /{' '}
+                {formatMinor(selected.feeMinor, selected.currency)} /{' '}
+                {formatMinor(selected.vatMinor, selected.currency)} /{' '}
+                {formatMinor(selected.totalMinor, selected.currency)}
+              </dd>
+            </div>
+            <div>
+              <dt>Redemption method</dt>
+              <dd>{selected.redemptionMethod ?? 'Not recorded / legacy'}</dd>
+            </div>
             <div>
               <dt>Initiation journal</dt>
               <dd>
@@ -288,65 +552,117 @@ export const CashToCashOperationsScreen: React.FC = () => {
                           type="button"
                           style={styles.smallButton}
                           disabled={journalLoading}
-                          onClick={() => void inspectJournal(selected.claimJournalId!, 'Claim journal')}
+                          onClick={() =>
+                            void inspectJournal(selected.claimJournalId!, 'Claim journal')
+                          }
                         >
                           Inspect claim journal
                         </button>
                       </>
                     )}
                   </>
-                ) : '—'}
+                ) : (
+                  '—'
+                )}
               </dd>
             </div>
-            <div><dt>Claimant customer</dt><dd>{selected.claimantCustomerId ? <code>{selected.claimantCustomerId}</code> : '—'}</dd></div>
-            <div><dt>Reference / claim reference</dt><dd>{selected.reference || '—'} / {selected.claimReference || '—'}</dd></div>
-            <div><dt>Created / claimed / expired</dt><dd>{formatDate(selected.createdAt)} / {formatDate(selected.claimedAt)} / {formatDate(selected.expiredAt)}</dd></div>
-            <div><dt>Expiry deadline</dt><dd>{formatDate(selected.expiresAt)}</dd></div>
+            <div>
+              <dt>Claimant customer</dt>
+              <dd>{selected.claimantCustomerId ? <code>{selected.claimantCustomerId}</code> : '—'}</dd>
+            </div>
+            <div>
+              <dt>Reference / claim reference</dt>
+              <dd>
+                {selected.reference || '—'} / {selected.claimReference || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt>Created / claimed / expired</dt>
+              <dd>
+                {formatDate(selected.createdAt)} / {formatDate(selected.claimedAt)} /{' '}
+                {formatDate(selected.expiredAt)}
+              </dd>
+            </div>
+            <div>
+              <dt>Expiry deadline</dt>
+              <dd>{formatDate(selected.expiresAt)}</dd>
+            </div>
           </dl>
           {canViewLedger && (journalLoading || journalError || inspectedJournal) && (
-            <div style={{ marginTop: 14, padding: 12, border: '1px solid #E2E8F0', borderRadius: 6, background: '#F8FAFC' }} data-testid="c2c-inspected-journal">
+            <div
+              style={{
+                marginTop: 14,
+                padding: 12,
+                border: '1px solid #E2E8F0',
+                borderRadius: 6,
+                background: '#F8FAFC',
+              }}
+              data-testid="c2c-inspected-journal"
+            >
               {journalLoading && <div>Loading ledger journal…</div>}
-              {journalError && <div style={styles.error} role="alert">{journalError}</div>}
-              {inspectedJournal && (() => {
-                const totalDebits = inspectedJournal.lines
-                  .filter((l) => l.direction === 'DEBIT')
-                  .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
-                const totalCredits = inspectedJournal.lines
-                  .filter((l) => l.direction === 'CREDIT')
-                  .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
-                const balanced = totalDebits === totalCredits;
-                return (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8, fontSize: 12 }}>
-                      <strong>{inspectedJournalLabel}: <code>{inspectedJournal.id}</code></strong>
-                      <span>
-                        Status: <strong>{inspectedJournal.status}</strong> ·{' '}
-                        <span style={balanced ? styles.claimed : styles.expired}>
-                          {balanced ? 'BALANCED' : 'UNBALANCED'}
+              {journalError && (
+                <div style={styles.error} role="alert">
+                  {journalError}
+                </div>
+              )}
+              {inspectedJournal &&
+                (() => {
+                  const totalDebits = inspectedJournal.lines
+                    .filter((l) => l.direction === 'DEBIT')
+                    .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
+                  const totalCredits = inspectedJournal.lines
+                    .filter((l) => l.direction === 'CREDIT')
+                    .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
+                  const balanced = totalDebits === totalCredits;
+                  return (
+                    <div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 8,
+                          marginBottom: 8,
+                          fontSize: 12,
+                        }}
+                      >
+                        <strong>
+                          {inspectedJournalLabel}: <code>{inspectedJournal.id}</code>
+                        </strong>
+                        <span>
+                          Status: <strong>{inspectedJournal.status}</strong> ·{' '}
+                          <span style={balanced ? styles.claimed : styles.expired}>
+                            {balanced ? 'BALANCED' : 'UNBALANCED'}
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left' }}>Direction</th>
-                          <th style={{ textAlign: 'left' }}>Ledger Account</th>
-                          <th style={{ textAlign: 'right' }}>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {inspectedJournal.lines.map((line) => (
-                          <tr key={line.id}>
-                            <td><strong>{line.direction}</strong></td>
-                            <td><code>{line.accountId}</code></td>
-                            <td style={{ textAlign: 'right' }}>{formatMinor(line.amountMinor, inspectedJournal.currency)}</td>
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left' }}>Direction</th>
+                            <th style={{ textAlign: 'left' }}>Ledger Account</th>
+                            <th style={{ textAlign: 'right' }}>Amount</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
+                        </thead>
+                        <tbody>
+                          {inspectedJournal.lines.map((line) => (
+                            <tr key={line.id}>
+                              <td>
+                                <strong>{line.direction}</strong>
+                              </td>
+                              <td>
+                                <code>{line.accountId}</code>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {formatMinor(line.amountMinor, inspectedJournal.currency)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
             </div>
           )}
         </section>
@@ -361,6 +677,12 @@ const styles: Record<string, React.CSSProperties> = {
   title: { margin: '0 0 6px', color: '#032B14', fontSize: 22 },
   subtitle: { margin: 0, color: '#64748B', fontSize: 13 },
   notice: { margin: '18px 0', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#475569', fontSize: 13, lineHeight: 1.5 },
+  expiryPanel: { padding: 14, marginBottom: 14, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  boundaryNote: { marginTop: 8, padding: 10, border: '1px solid #FCD34D', borderRadius: 6, background: '#FFFBEB', color: '#78350F', fontSize: 12 },
+  expiryMetrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginTop: 10 },
+  metricTile: { padding: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 },
+  metricLabel: { fontSize: 11, color: '#64748B' },
+  metricValue: { fontSize: 14, color: '#0F172A' },
   filters: { display: 'flex', alignItems: 'end', gap: 10, flexWrap: 'wrap', padding: 14, marginBottom: 14, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
   label: { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 160, color: '#334155', fontSize: 12, fontWeight: 600 },
   input: { padding: '8px 9px', border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400 },

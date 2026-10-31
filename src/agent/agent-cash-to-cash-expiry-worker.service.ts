@@ -45,6 +45,17 @@ export class AgentCashToCashExpiryWorker implements OnModuleInit, OnModuleDestro
     this.logger.log({ event: 'c2c_expiry_worker_stopped' });
   }
 
+  /** Process-local configuration/state only; not a fleet-wide health or completion signal. */
+  getStatus() {
+    return {
+      configuredEnabled: this.config.get<boolean>('CASH_TO_CASH_EXPIRY_WORKER_ENABLED') === true,
+      schedulerRunning: this.timer !== null && !this.stopping,
+      tickInProgress: this.active !== null,
+      pollIntervalMs: this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS') ?? 60_000,
+      batchSize: this.config.get<number>('CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE') ?? 100,
+    };
+  }
+
   tick(): Promise<ExpiryTickResult> {
     if (this.stopping || this.config.get<boolean>('CASH_TO_CASH_EXPIRY_WORKER_ENABLED') !== true) {
       return Promise.resolve({ status: 'DISABLED', expiredCount: 0 });

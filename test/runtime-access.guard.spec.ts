@@ -4,6 +4,7 @@ import type { AuthorizationService } from '../src/authorization/authorization.se
 import { RoutePolicyRegistry } from '../src/authorization/route-policy-registry';
 import { RuntimeAccessGuard } from '../src/authorization/runtime-access.guard';
 import type { AuthenticationSessionService } from '../src/customer-authentication/authentication-session.service';
+import type { AgentAuthenticationSessionService } from '../src/agent-authentication/agent-authentication-session.service';
 import type { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import type { SupportAuthenticationService } from '../src/support-authentication/support-authentication.service';
@@ -20,13 +21,25 @@ function context(request: Record<string, unknown>) {
 }
 
 describe('RoutePolicyRegistry', () => {
-  it('allows only the explicit health/version public route allowlist', () => {
+  it('allows only the explicit health, OTP-registration and credential-exchange public routes', () => {
     const registry = new RoutePolicyRegistry();
     expect(registry.isPublic('GET', '/api/v1/health')).toBe(true);
     expect(registry.isPublic('GET', '/api/v1/health/ready')).toBe(true);
-    expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(true);
-    expect(registry.isPublic('GET', '/api/v1/customers/1')).toBe(false);
+    // Selected V1 API contract: the anonymous customer front door is the OTP registration
+    // lifecycle, never the workforce customer-creation command.
+    expect(registry.isPublic('POST', '/api/v1/customers/registration/otp')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers/registration/otp/verify')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers/registration')).toBe(true);
+    expect(registry.isPublic('POST', '/api/v1/customers')).toBe(false);
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(true);
+
+    // Operational routes are never public, including the API version metadata
+    // (REPORT-32 M-01: `/internal/version` used to sit in PUBLIC_ROUTES).
+    expect(registry.isPublic('GET', '/api/v1/internal/version')).toBe(false);
     expect(registry.isPublic('GET', '/api/v1/internal/diagnostics')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/internal/readiness')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/customers/1')).toBe(false);
+    expect(registry.isPublic('GET', '/api/v1/customers')).toBe(false);
     expect(registry.isPublic('POST', '/api/v1/internal/partner-callbacks/nibss-nip')).toBe(false);
     expect(
       registry.resolve({
@@ -35,12 +48,165 @@ describe('RoutePolicyRegistry', () => {
       }).authenticationMode,
     ).toBe('PROVIDER_CALLBACK');
   });
+
+  it('does not broaden the public credential exchange to other customer routes', () => {
+    const registry = new RoutePolicyRegistry();
+    expect(registry.isPublic('GET', `/api/v1/customers/${CUSTOMER_ID}/authenticate`)).toBe(false);
+    expect(registry.isPublic('POST', '/api/v1/customers/1/authenticate')).toBe(false);
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/sessions/rotate`)).toBe(
+      false,
+    );
+    expect(registry.isPublic('POST', `/api/v1/customers/${CUSTOMER_ID}/mfa-enrollments`)).toBe(
+      false,
+    );
+  });
+
+  it('requires explicit catalogue capabilities on every internal operational route', () => {
+    const registry = new RoutePolicyRegistry();
+    // REPORT-32 H-01 / M-01: a principal type is not an authorization decision. Each of these
+    // routes must declare the catalogue function(s) that actually govern it, and must not admit
+    // SUPPORT (whose approved V1 scope is read + funding-maker + support-queue only).
+    const expectations: Array<[string, string[]]> = [
+      ['/api/v1/internal/readiness', ['diagnostics.view', 'reconciliation.view']],
+      ['/api/v1/internal/deployment', ['diagnostics.view', 'reconciliation.view']],
+      ['/api/v1/internal/configuration', ['diagnostics.view']],
+      ['/api/v1/internal/version', ['diagnostics.view']],
+      ['/api/v1/internal/diagnostics', ['diagnostics.view']],
+      ['/api/v1/internal/metrics', ['metrics.view']],
+      ['/api/v1/internal/outbox', ['outbox.view']],
+    ];
+    for (const [path, requiredFunctions] of expectations) {
+      const resolution = registry.resolve({ method: 'GET', url: path });
+      expect(resolution.public).toBe(false);
+      expect(resolution.authenticationMode).toBe('WORKFORCE_SESSION');
+      expect(resolution.policy?.requiredFunctions).toEqual(requiredFunctions);
+      expect(resolution.policy?.requiredScopes).toBeUndefined();
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('SUPPORT');
+      expect(resolution.policy?.customerAccess).toBe('NONE');
+    }
+
+    // The generic audit listing keeps SUPPORT reach by explicit, documented product decision
+    // (SUPPORT is a proven consumer and is not catalogue-governed). It is declared explicitly
+    // rather than inherited from the un-gated catch-all, and it still denies non-workforce
+    // principals.
+    // REPORT-34 H-01-R2: the audit read keeps the approved SUPPORT exception but requires
+    // audit.view from every catalogue-governed workforce principal (OPERATIONS is denied).
+    const audit = registry.resolve({ method: 'GET', url: '/api/v1/internal/audit' });
+    expect(audit.public).toBe(false);
+    expect(audit.authenticationMode).toBe('WORKFORCE_SESSION');
+    expect(audit.resourceType).toBe('internal-audit-read');
+    expect(audit.policy?.allowedPrincipalTypes).toEqual([
+      'SUPPORT',
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
+    expect(audit.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+    expect(audit.policy?.allowedPrincipalTypes).not.toContain('AGENT');
+    expect(audit.policy?.requiredFunctions).toEqual(['audit.view']);
+    expect(audit.policy?.requiredFunctionsExemptPrincipalTypes).toEqual(['SUPPORT']);
+  });
+
+  it('resolves HEAD through the GET policy for every GET-backed route (REPORT-34 H-01-R1)', () => {
+    const registry = new RoutePolicyRegistry();
+    // Fastify serves HEAD for GET handlers, so a HEAD request must never be able to reach a
+    // policy broader than its GET counterpart. This holds globally, not only for /internal.
+    const paths = [
+      '/api/v1/internal/readiness',
+      '/api/v1/internal/deployment',
+      '/api/v1/internal/configuration',
+      '/api/v1/internal/version',
+      '/api/v1/internal/metrics',
+      '/api/v1/internal/diagnostics',
+      '/api/v1/internal/outbox',
+      '/api/v1/internal/audit',
+      '/api/v1/internal/agents',
+      '/api/v1/internal/customers',
+      '/api/v1/internal/aggregators',
+      '/api/v1/customers/me',
+      '/api/v1/customers/me/wallets',
+      '/api/v1/wallets',
+      '/api/v1/wallets/' + CUSTOMER_ID + '/balance',
+      '/api/v1/deposits',
+      '/api/v1/withdrawals',
+      '/api/v1/ledger/accounts',
+      `/api/v1/agents/me`,
+      '/api/v1/health',
+    ];
+    for (const path of paths) {
+      const get = registry.resolve({ method: 'GET', url: path });
+      const head = registry.resolve({ method: 'HEAD', url: path });
+      expect({ ...head, policy: head.policy && { ...head.policy, action: 'x' } }).toEqual({
+        ...get,
+        policy: get.policy && { ...get.policy, action: 'x' },
+      });
+      // The real request method is still recorded for audit purposes.
+      expect(head.policy?.action ?? `HEAD:${path}`).toBe(get.policy ? `HEAD:${path}` : `HEAD:${path}`);
+    }
+  });
+
+  it('keeps customers on the selected self-service contract and off the generic financial commands', () => {
+    const registry = new RoutePolicyRegistry();
+
+    // Selected V1 contract: customers transact through /customers/me/*, which is CUSTOMER SELF.
+    for (const [method, url] of [
+      ['GET', '/api/v1/customers/me'],
+      ['GET', '/api/v1/customers/me/wallets'],
+      ['POST', '/api/v1/customers/me/transfers'],
+    ] as Array<[string, string]>) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).toContain('CUSTOMER');
+      expect(resolution.policy?.customerAccess).toBe('SELF');
+    }
+
+    // Generic financial commands and collections remain workforce-only: the integrated
+    // controllers disable the generic customer command endpoints outright, so no registry entry
+    // may widen reach to customer principals (that is what made main's design unsafe without
+    // main's controllers).
+    for (const [method, url] of [
+      ['POST', '/api/v1/deposits'],
+      ['GET', '/api/v1/deposits'],
+      ['GET', `/api/v1/deposits/${CUSTOMER_ID}`],
+      ['POST', '/api/v1/withdrawals'],
+      ['GET', '/api/v1/withdrawals'],
+      ['POST', '/api/v1/transfers'],
+      ['GET', `/api/v1/transfers/${CUSTOMER_ID}`],
+      ['GET', '/api/v1/wallets'],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}`],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}/balance`],
+      ['GET', `/api/v1/wallets/${CUSTOMER_ID}/transactions`],
+    ] as Array<[string, string]>) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).toContain('OPERATOR');
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+    }
+
+    // Settlement and state-transition routes stay internal-only.
+    for (const [method, url] of [
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/complete`],
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/fail`],
+      ['POST', `/api/v1/deposits/${CUSTOMER_ID}/cancel`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/process`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/complete`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/fail`],
+      ['POST', `/api/v1/withdrawals/${CUSTOMER_ID}/cancel`],
+      ['POST', '/api/v1/wallets'],
+      ['GET', '/api/v1/ledger/accounts'],
+    ] as Array<[string, string]>) {
+      const resolution = registry.resolve({ method, url });
+      expect(resolution.public).toBe(false);
+      expect(resolution.policy?.allowedPrincipalTypes).not.toContain('CUSTOMER');
+    }
+  });
 });
 
 describe('RuntimeAccessGuard', () => {
   function fixture() {
     const sessionService = { validate: jest.fn() };
-    const authorizationService = { authorize: jest.fn() };
+    const authorizationService = { authorize: jest.fn(), evaluate: jest.fn() };
     const workforceSessions = { validate: jest.fn() };
     const agentSessionService = { validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }) };
     const supportAuthenticationService = {
@@ -56,7 +222,7 @@ describe('RuntimeAccessGuard', () => {
       new RoutePolicyRegistry(),
       workforceSessions as unknown as A2WorkforceSessionService,
       workforceConfig,
-      agentSessionService as unknown as import('../src/agent-authentication/agent-authentication-session.service').AgentAuthenticationSessionService,
+      agentSessionService as unknown as AgentAuthenticationSessionService,
       supportAuthenticationService as unknown as SupportAuthenticationService,
     );
     return {
@@ -113,6 +279,73 @@ describe('RuntimeAccessGuard', () => {
     await expect(testFixture.guard.canActivate(context(request) as never)).resolves.toBe(true);
     expect(testFixture.sessionService.validate).not.toHaveBeenCalled();
     expect(request.authorizationPrincipal).toMatchObject({ type: 'PRIVILEGED' });
+  });
+
+  it.each(['AGENT', 'CUSTOMER', 'AGGREGATOR'])(
+    'preserves 401 for synthetic %s workforce results on Agent directory reads even with forged agent.view',
+    async (type) => {
+      const testFixture = fixture();
+      testFixture.workforceSessions.validate.mockResolvedValue({
+        type,
+        principalId: 'synthetic-test-principal',
+        customerId: type === 'CUSTOMER' ? CUSTOMER_ID : undefined,
+        agentId: type === 'AGENT' ? CUSTOMER_ID : undefined,
+        aggregatorId: type === 'AGGREGATOR' ? CUSTOMER_ID : undefined,
+        roles: [],
+        scopes: ['agent.view'],
+        customerAccess: 'NONE',
+      });
+      for (const method of ['GET', 'HEAD']) {
+        for (const url of [
+          '/api/v1/internal/agents',
+          `/api/v1/internal/agents/${CUSTOMER_ID}`,
+          `/api/v1/internal/agents/${CUSTOMER_ID}/financial-position`,
+        ]) {
+          await expect(
+            testFixture.guard.canActivate(context({
+              method, url, headers: { authorization: 'Bearer synthetic-token' },
+            }) as never),
+          ).rejects.toMatchObject({ status: 401, message: 'Privileged access required' });
+        }
+      }
+      expect(testFixture.authorizationService.evaluate).not.toHaveBeenCalled();
+      expect(testFixture.authorizationService.authorize).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still applies and audits the agent.view gate for a workforce principal without the function', async () => {
+    const testFixture = fixture();
+    testFixture.workforceSessions.validate.mockResolvedValue({
+      type: 'OPERATOR', principalId: 'workforce-no-agent-view', roles: [], scopes: [], customerAccess: 'NONE',
+    });
+    testFixture.authorizationService.evaluate.mockReturnValue({ allowed: false, reason: 'FUNCTION_MISSING' });
+    testFixture.authorizationService.authorize.mockResolvedValue({ allowed: false, reason: 'FUNCTION_MISSING' });
+    await expect(
+      testFixture.guard.canActivate(context({
+        method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer workforce-token' },
+      }) as never),
+    ).rejects.toMatchObject({ status: 403, message: 'Authorization denied: FUNCTION_MISSING' });
+    expect(testFixture.authorizationService.evaluate).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ requiredFunctions: ['agent.view'] }), expect.anything(),
+    );
+    expect(testFixture.authorizationService.authorize).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps real non-workforce session fallback at 403 instead of applying the synthetic-principal 401', async () => {
+    for (const principalType of ['agent', 'customer']) {
+      const testFixture = fixture();
+      testFixture.workforceSessions.validate.mockRejectedValue(new UnauthorizedException('Invalid workforce session'));
+      if (principalType === 'agent') {
+        testFixture.agentSessionService.validate.mockResolvedValue({ valid: true, principal: {} });
+      } else {
+        testFixture.sessionService.validate.mockResolvedValue({ valid: true, principal: {} });
+      }
+      await expect(
+        testFixture.guard.canActivate(context({
+          method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer real-session-token' },
+        }) as never),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    }
   });
 
   it('rejects missing and malformed bearer credentials', async () => {

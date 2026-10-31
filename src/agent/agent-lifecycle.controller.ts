@@ -12,7 +12,7 @@ interface AuthenticatedRequest {
 /**
  * V1-ADMIN-AUTHORIZATION-HARDENING-01: legacy route alias for AdminAgentLifecycleController.
  * Authorization is now function-based via the `authorization_functions` catalogue
- * (agent.suspend/.terminate/.reactivate/.activate/.review_application), AND-combined with the
+ * (agent.suspend/.terminate/.reactivate/.activate), AND-combined with the
  * pre-existing OPERATOR/SERVICE/PRIVILEGED principal-type restriction (SUPPORT/CUSTOMER/AGENT/
  * AGGREGATOR remain denied) — see AuthorizationService.requireFunction and the identical change
  * in AdminAgentLifecycleController.
@@ -28,15 +28,7 @@ export class AgentLifecycleController {
   @HttpCode(200)
   async activate(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const actor = await this.requireFunction(req, 'agent.activate');
-    // If id is an applicationId, try activateFromApplication; else direct agent activate
-    // We support both: if the id looks like an application and application exists, use application activation
-    try {
-      const app = await this.lifecycleService.activateFromApplication(id, actor);
-      return app;
-    } catch {
-      // fallback to direct agent activation
-      return this.lifecycleService.activate(id, actor);
-    }
+    return this.lifecycleService.activateCompatibleTarget(id, actor);
   }
 
   @Post(':id/suspend')
@@ -47,7 +39,7 @@ export class AgentLifecycleController {
     @Req() req: AuthenticatedRequest,
   ) {
     const actor = await this.requireFunction(req, 'agent.suspend');
-    return this.lifecycleService.suspend(id, actor, body.reason);
+    return this.lifecycleService.suspend(id, actor, body?.reason);
   }
 
   @Post(':id/reactivate')
@@ -65,7 +57,7 @@ export class AgentLifecycleController {
     @Req() req: AuthenticatedRequest,
   ) {
     const actor = await this.requireFunction(req, 'agent.terminate');
-    return this.lifecycleService.terminate(id, actor, body.reason);
+    return this.lifecycleService.terminate(id, actor, body?.reason);
   }
 
   @Post('applications/:applicationId/activate')
@@ -74,7 +66,7 @@ export class AgentLifecycleController {
     @Param('applicationId') applicationId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const actor = await this.requireFunction(req, 'agent.review_application');
+    const actor = await this.requireFunction(req, 'agent.activate');
     return this.lifecycleService.activateFromApplication(applicationId, actor);
   }
 

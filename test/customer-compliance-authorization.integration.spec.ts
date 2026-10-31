@@ -682,7 +682,10 @@ describe('Customer compliance authorization (real PostgreSQL + real HTTP)', () =
           ),
       ).toHaveLength(1);
     }
-    for (const user of [ops, auditor]) {
+    // REPORT-34 H-01-R2 (strict audit gate): OPERATIONS no longer holds audit access. Denial is
+    // asserted separately below, so the compliance-record filtering is proven for the role that
+    // is actually entitled to read the generic audit listing (FINANCE_AUDITOR holds audit.view).
+    for (const user of [auditor]) {
       const direct = await request(app.getHttpServer())
         .get(
           `/api/v1/internal/audit?entityType=CUSTOMER_COMPLIANCE_CASE&entityId=${created.id}&includeComplianceCaseRecords=true`,
@@ -712,6 +715,25 @@ describe('Customer compliance authorization (real PostgreSQL + real HTTP)', () =
         .set(auth(user.token))
         .expect(200);
       expect(policyById.body).toEqual([]);
+    }
+
+    // A catalogue principal without audit.view (OPERATIONS) is denied the whole route — on GET and
+    // on the HEAD alias — and therefore cannot observe any compliance or policy audit record.
+    for (const denied of [ops]) {
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/audit?limit=1000')
+        .set(auth(denied.token))
+        .expect(403);
+      await request(app.getHttpServer())
+        .get(
+          `/api/v1/internal/audit?entityType=CUSTOMER_COMPLIANCE_CASE&entityId=${created.id}&includeComplianceCaseRecords=true`,
+        )
+        .set(auth(denied.token))
+        .expect(403);
+      await request(app.getHttpServer())
+        .head('/api/v1/internal/audit')
+        .set(auth(denied.token))
+        .expect(403);
     }
     const widget = await request(app.getHttpServer())
       .get('/api/v1/internal/a2/workforce/dashboard/widgets/audit-trail?limit=50')

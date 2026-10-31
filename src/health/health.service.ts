@@ -1,13 +1,19 @@
 import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import type { DiagnosticsReport } from '../operations/operations.types';
 import { DiagnosticsService } from '../operations/diagnostics.service';
 
+/**
+ * Public health payload.
+ *
+ * The public endpoints report state only. Operational detail (migration head, reconciliation
+ * status, outbox backlog, diagnostics) stays behind `internal:access` at
+ * `GET /api/v1/internal/readiness`, `/diagnostics`, `/deployment` and `/metrics`, so an anonymous
+ * caller can never enumerate the deployment's internals.
+ */
 export interface HealthStatus {
   status: 'ok';
   timestamp: string;
-  diagnostics?: DiagnosticsReport;
 }
 
 @Injectable()
@@ -24,18 +30,17 @@ export class HealthService {
   async ready(): Promise<HealthStatus> {
     try {
       await this.dataSource.query('SELECT 1');
-      if (!this.diagnosticsService) {
-        return this.live();
+      if (this.diagnosticsService) {
+        // Diagnostics decide readiness; they are not part of the public response body.
+        const diagnostics = await this.diagnosticsService.getDiagnostics();
+        if (diagnostics.status === 'degraded') {
+          throw new ServiceUnavailableException({
+            status: 'error',
+            message: 'Service dependencies are degraded',
+          });
+        }
       }
-      const diagnostics = await this.diagnosticsService.getDiagnostics();
-      if (diagnostics.status === 'degraded') {
-        throw new ServiceUnavailableException({
-          status: 'error',
-          message: 'Service dependencies are degraded',
-          diagnostics,
-        });
-      }
-      return { ...this.live(), diagnostics };
+      return this.live();
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
         throw error;

@@ -6,6 +6,7 @@ import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
 import { validateEnvironment } from './config/environment';
+import { applyHttpSecurity, fastifyAdapterOptions } from './production/http-security';
 import { GlobalExceptionFilter } from './http-exception.filter';
 import { ProductionReadinessService } from './production/production-readiness.service';
 import { registerRequestContextHooks } from './production/request-hooks';
@@ -14,9 +15,13 @@ import { GovernanceService } from './maturity/governance.service';
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
-    bufferLogs: true,
-  });
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(fastifyAdapterOptions(environment)),
+    {
+      bufferLogs: true,
+    },
+  );
   const logger = app.get(Logger);
   if (environment.POA_UPLOADS_ENABLED) {
     await app.register(multipart, {
@@ -46,6 +51,14 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new GlobalExceptionFilter(logger));
   app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
+
+  // INTEGRATION: main's HTTP surface hardening (security headers on every response plus an
+  // explicit-origin CORS allowlist when configured) is new since the merge base and Lineage A has
+  // no equivalent, so it is preserved. Lineage A's extracted hook registration replaces main's
+  // inline copy of the same hooks (Report 25 moved them verbatim into src/production/request-hooks.ts
+  // so the production hook code is exercised end-to-end from tests); keeping both would register
+  // the request-context hooks twice.
+  applyHttpSecurity(app, environment);
 
   // Report 25: extracted verbatim to src/production/request-hooks.ts so the
   // production hook code is exercised end-to-end from tests; behavior is

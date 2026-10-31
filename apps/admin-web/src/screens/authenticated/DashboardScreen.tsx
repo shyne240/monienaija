@@ -9,6 +9,7 @@ const DASH = '/internal/a2/workforce/dashboard';
 
 interface DashboardScreenProps {
   onNavigateToCustomers?: () => void;
+  onNavigateToAgents?: (options?: { openApplications?: boolean }) => void;
 }
 
 /**
@@ -29,7 +30,10 @@ interface DashboardScreenProps {
  * own data") and are deliberately excluded from the generic widget list below to avoid showing the
  * same information twice.
  */
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToCustomers }) => {
+export const DashboardScreen: React.FC<DashboardScreenProps> = ({
+  onNavigateToCustomers,
+  onNavigateToAgents,
+}) => {
   const { principal } = useAuthStore();
 
   const { data: dashboard, loading, error } = useWidgetData<ResolvedDashboard>(
@@ -40,6 +44,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToCu
   if (!principal) return null;
 
   const customerDirectoryNavigation = principal.scopes.includes('customer.view') ? onNavigateToCustomers : undefined;
+  const agentNetworkNavigation = principal.scopes.includes('agent.view') ? onNavigateToAgents : undefined;
   const renderableWidgets = (dashboard?.widgets ?? [])
     .filter((w) => w.widgetKey !== 'identity-session' && w.widgetKey !== 'entitlements-scopes')
     .slice()
@@ -115,7 +120,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToCu
       {!loading && !error && renderableWidgets.length > 0 && (
         <div style={styles.widgetGrid}>
           {renderableWidgets.map((widget) => (
-            <WidgetRenderer key={widget.widgetKey} widget={widget} onNavigateToCustomers={customerDirectoryNavigation} />
+            <WidgetRenderer
+              key={widget.widgetKey}
+              widget={widget}
+              onNavigateToCustomers={customerDirectoryNavigation}
+              onNavigateToAgents={agentNetworkNavigation}
+            />
           ))}
         </div>
       )}

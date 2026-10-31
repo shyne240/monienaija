@@ -138,6 +138,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
         'agent.activate',
         'agent.manage_outlets_terminals',
         'agent.assign_limit',
+        'limit.view',
       ],
     );
 
@@ -284,7 +285,7 @@ describe('Ordinary Agent V1 Admin Network, Onboarding, Outlets/Terminals, and Li
   });
 
   test('LimitAssignmentScreen filters by AGENT subject and toggles active status with optimistic version', async () => {
-    setPrincipal(['AGENT_NETWORK_MANAGER'], ['agent.assign_limit']);
+    setPrincipal(['AGENT_NETWORK_MANAGER'], ['limit.view', 'agent.assign_limit']);
     (ApiClient.get as jest.Mock).mockResolvedValue({
       items: [
         {

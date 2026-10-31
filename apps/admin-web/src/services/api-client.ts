@@ -95,11 +95,30 @@ function asNetworkError(error: unknown): NetworkError | ApiError {
   return new NetworkError(error instanceof Error ? error.message : 'Network request failed');
 }
 
+/**
+ * INTEGRATION (integration/main-backend-frontend-20261030): main's fail-closed API base URL guard
+ * (39a9e504, phase 16-20 production readiness), carried over with its scope preserved exactly. It is
+ * called ONLY from `request()` — the scope main ships. `postForm` and `requestBlob` are deliberately
+ * left untouched so the three real document upload/download call sites
+ * (`CustomerProofOfAddressPanel.tsx`) keep working; the Admin Web lead verified that a wider guard
+ * broke four of them. See
+ * docs/design-discovery-20261029/m1/acceptance/integration-prep.md §1 row 2.
+ */
+function assertApiBaseUrlConfigured(): void {
+  if (!API_BASE_URL) {
+    throw new NetworkError(
+      'Admin API base URL is not configured. Set ADMIN_WEB_API_BASE_URL for this build.',
+    );
+  }
+}
+
 export async function request<T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> {
+  assertApiBaseUrlConfigured();
+
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
   const config: RequestInit = {
     method: options.method || 'GET',
-    headers: requestHeaders('application/json'),
+    headers: requestHeaders(options.body !== undefined ? 'application/json' : undefined),
     signal: options.signal,
   };
 

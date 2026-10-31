@@ -1,0 +1,7 @@
+Command: npx jest --runInBand
+
+Exit code: 0
+
+Test Suites: 226 passed, 226 total
+Tests:       2650 passed, 2650 total
+Time:        99.208 s

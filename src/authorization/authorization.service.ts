@@ -114,6 +114,13 @@ export class AuthorizationService {
   ): AuthorizationDecision {
     const evaluatedAt = new Date();
     const requiredScopes = policy?.requiredScopes ?? [];
+    // Customer principals never hold internal scopes, so `internalScopes` only applies to the
+    // workforce/service principals that were able to reach the route before it became
+    // customer-reachable. This keeps internal access unchanged (no broadening, no regression).
+    const enforcementScopes =
+      principal && principal.type !== 'CUSTOMER'
+        ? [...requiredScopes, ...(policy?.internalScopes ?? [])]
+        : requiredScopes;
     const requiredRoles = policy?.requiredRoles ?? [];
     const requiredFunctions = policy?.requiredFunctions ?? [];
     const base = {
@@ -122,7 +129,7 @@ export class AuthorizationService {
       customerId: resource.customerId,
       action: policy?.action ?? 'UNKNOWN',
       evaluatedAt,
-      requiredScopes,
+      requiredScopes: enforcementScopes,
       requiredRoles,
       requiredFunctions,
     };
@@ -172,7 +179,7 @@ export class AuthorizationService {
         principalId: principal.principalId,
       };
     }
-    if (!requiredScopes.every((scope) => principal.scopes.includes(scope))) {
+    if (!enforcementScopes.every((scope) => principal.scopes.includes(scope))) {
       return {
         ...base,
         allowed: false,
@@ -190,7 +197,14 @@ export class AuthorizationService {
         principalId: principal.principalId,
       };
     }
-    if (!requiredFunctions.every((fn) => principal.scopes.includes(fn))) {
+    // REPORT-34 H-01-R2: `requiredFunctionsExemptPrincipalTypes` is a narrow, per-route exception
+    // for principal types that are not catalogue-governed but hold an expressly approved
+    // capability on that route (today: SUPPORT on GET /internal/audit). It relaxes only this
+    // function check — the principal still had to pass allowedPrincipalTypes, scope, role,
+    // audience, assurance and customer/agent/aggregator scoping above.
+    const functionGateExempt =
+      policy.requiredFunctionsExemptPrincipalTypes?.includes(principal.type) === true;
+    if (!functionGateExempt && !requiredFunctions.every((fn) => principal.scopes.includes(fn))) {
       return {
         ...base,
         allowed: false,

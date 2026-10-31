@@ -730,6 +730,17 @@ export class CustomerAppController {
     // Do not perform direct ledger mutation; delegate to TransferService (preserves SERIALIZABLE/wallet-locking/double-entry)
     return this.transferService.createTransfer({
       sourceWalletId: String((dto as any).sourceWalletId).trim(),
+      // INTEGRATION (integration/main-backend-frontend-20261030): main's wallet-ownership binding
+      // (39a9e504, `src/wallet/wallet-ownership.ts`) is now required by `CreateTransferCommand` and
+      // is asserted inside `TransferService.createTransfer` — including on the idempotency-replay
+      // shortcut. This is the authenticated customer's own transfer endpoint
+      // (`POST /customers/me/transfers`), so the binding is CUSTOMER_SELF derived from the session
+      // principal, never from request input. Effect: the caller-supplied `sourceWalletId` can no
+      // longer debit a wallet belonging to another customer (reported as "Wallet was not found" so
+      // wallets cannot be enumerated). No financial rule changes: amount, currency, fee/commission
+      // treatment, limits, ledger posting and the unrestricted DESTINATION wallet rule above are
+      // all untouched; `assertWalletOwnership` binds only the source wallet.
+      ownership: { kind: 'CUSTOMER_SELF', customerId: principal.customerId! },
       destinationWalletId: resolvedDestinationWalletId,
       amountMinor: dto.amountMinor,
       currency: dto.currency,

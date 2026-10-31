@@ -1,11 +1,12 @@
 import { useAuthStore } from '../src/store/auth-store';
-import { ApiClient } from '../src/services/api-client';
+import { ApiClient, ApiError } from '../src/services/api-client';
 import { SecureStorage } from '../src/services/secure-storage';
 
 jest.mock('../src/services/api-client', () => ({
   ApiClient: {
     post: jest.fn(),
     get: jest.fn(),
+    delete: jest.fn(),
   },
   ApiError: class extends Error {
     status: number;
@@ -154,5 +155,119 @@ describe('Auth Store (Zustand) tests', () => {
 
     expect(SecureStorage.remove).toHaveBeenCalledWith('auth_session_token');
     expect(SecureStorage.remove).toHaveBeenCalledWith('auth_customer_id');
+  });
+});
+
+describe('Auth Store real-authentication guarantees', () => {
+  const failingStatuses = [401, 403, 404, 405, 500, 503];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      session: null,
+      customerId: null,
+      error: null,
+    });
+  });
+
+  test.each(failingStatuses)(
+    'never fabricates a session when the backend answers %s',
+    async (status) => {
+      (ApiClient.post as jest.Mock).mockRejectedValue(new ApiError('backend failure', status));
+
+      await expect(
+        useAuthStore.getState().login('cust-id-999', 'secure-pin-123'),
+      ).rejects.toBeInstanceOf(ApiError);
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.session).toBeNull();
+      expect(state.customerId).toBeNull();
+      expect(SecureStorage.set).not.toHaveBeenCalled();
+    },
+  );
+
+  test('never fabricates a session on a network failure', async () => {
+    (ApiClient.post as jest.Mock).mockRejectedValue(new Error('Network request failed'));
+
+    await expect(
+      useAuthStore.getState().login('cust-id-999', 'secure-pin-123'),
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(SecureStorage.set).not.toHaveBeenCalled();
+  });
+
+  test('never fabricates a session when the backend refuses the credentials', async () => {
+    // INTEGRATION (integration/main-backend-frontend-20261030): this case was written against
+    // main's `{ authenticated, session }` response shape. The integrated app keeps the backend
+    // lineage's real V1 contract — `POST /customers/sessions` returning
+    // `{ accessToken, customerId, sessionId, expiresAt, rotationRequired? }` (implemented by
+    // src/customer-app/customer-app.controller.ts) — so the mock uses that shape. The assertion
+    // set is unchanged in what it guarantees: no session is ever fabricated locally.
+    (ApiClient.post as jest.Mock).mockResolvedValue({ customerId: 'cust-id-999' });
+
+    // INTEGRATION: the integrated store rejects a response that carries no session material with
+    // the message its real contract produces ("Authentication response was missing required session
+    // data"); the guarantee under test — the caller sees a rejection and no session is fabricated —
+    // is unchanged. The other rejection path in this file still asserts 'Invalid credentials'.
+    await expect(
+      useAuthStore.getState().login('cust-id-999', 'wrong-pin'),
+    ).rejects.toThrow('Authentication response was missing required session data');
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(SecureStorage.set).not.toHaveBeenCalled();
+  });
+
+  test('never stores the submitted credential material', async () => {
+    // INTEGRATION (integration/main-backend-frontend-20261030): this case was written against
+    // main's `{ authenticated, session }` response shape. The integrated app keeps the backend
+    // lineage's real V1 contract — `POST /customers/sessions` returning
+    // `{ accessToken, customerId, sessionId, expiresAt, rotationRequired? }` (implemented by
+    // src/customer-app/customer-app.controller.ts) — so the mock uses that shape. The assertion
+    // set is unchanged in what it guarantees: no session is ever fabricated locally.
+    (ApiClient.post as jest.Mock).mockResolvedValue({
+      customerId: 'cust-id-999',
+      accessToken: 'issued-token',
+      tokenType: 'Bearer',
+      sessionId: 'session-1',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+
+    await useAuthStore.getState().login('cust-id-999', 'secure-pin-123');
+
+    for (const [key, value] of (SecureStorage.set as jest.Mock).mock.calls as Array<
+      [string, string]
+    >) {
+      expect(key).not.toMatch(/password|pin/i);
+      expect(String(value)).not.toContain('secure-pin-123');
+    }
+  });
+
+  test('revokes the backend session on logout', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      session: {
+        accessToken: 'saved-token',
+        sessionId: 'session-777',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+        customerId: 'cust-id-888',
+        audience: 'customer-api',
+      },
+      customerId: 'cust-id-888',
+    });
+
+    await useAuthStore.getState().logout();
+
+    // INTEGRATION: the integrated app revokes through the backend lineage's real logout route
+    // (`POST /customers/sessions/logout`, implemented by customer-app.controller.ts), which revokes
+    // the caller's own session from the bearer token. `main`'s alternative
+    // (`DELETE /customers/:id/sessions/current`) also exists server-side, but the store can only
+    // call one; the lineage's is the contract this app's login/rotation flow already uses. The
+    // guarantee asserted here is unchanged: logout really revokes server-side and clears locally.
+    expect(ApiClient.post).toHaveBeenCalledWith('/customers/sessions/logout');
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 });

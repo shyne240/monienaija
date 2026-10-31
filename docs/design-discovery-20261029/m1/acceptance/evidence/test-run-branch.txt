@@ -1,0 +1,51 @@
+# M1 acceptance — assigned-branch gates
+# branch: arena/d4ef0b81-monienaija @ 53d87f9f523145fb4494c6a10df43d76df4e0270
+# captured: 2026-10-30T10:22:24Z
+
+## npx tsc
+exit=0
+
+## npx vite build
+dist/assets/index-CLdFSrfL.css     45.68 kB │ gzip:   9.01 kB
+dist/assets/index-CcdvqLl9.js   1,059.80 kB │ gzip: 284.88 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 3.61s
+
+## npx jest --watchAll=false --runInBand
+PASS __tests__/m1-customer-directory.test.tsx
+PASS __tests__/menu-visibility-11-roles.test.tsx
+PASS __tests__/customer-registration-wizard.test.tsx
+PASS __tests__/sprint3-admin-web-integration.test.tsx
+PASS __tests__/notification-management.test.tsx
+PASS __tests__/customer-personal-information.test.tsx
+PASS __tests__/customer-servicing.test.tsx
+PASS __tests__/sprint2-ordinary-agent-operations.test.tsx
+PASS __tests__/customer-proof-of-address.test.tsx
+PASS __tests__/agent-network-ordinary-v1.test.tsx
+PASS __tests__/batch-01-customer-servicing.test.tsx
+PASS __tests__/m1-shell.test.tsx
+PASS __tests__/admin-shared-panels.test.tsx
+PASS __tests__/agent-classes-and-cash-to-cash-operations.test.tsx
+PASS __tests__/customer-360-workspace.test.tsx
+PASS __tests__/agent-funding-panel.test.tsx
+PASS __tests__/customer-360.test.tsx
+PASS __tests__/ledger-operations.test.tsx
+PASS __tests__/provider-configuration.test.tsx
+PASS __tests__/dashboard.test.tsx
+PASS __tests__/m1-style-isolation.test.tsx
+PASS __tests__/admin-operational-role-assignment.test.tsx
+PASS __tests__/country-select.test.tsx
+PASS __tests__/admin-batch-03-limit-diagnostics.test.tsx
+PASS __tests__/admin-batch-02-support-approvals.test.tsx
+PASS __tests__/app.test.tsx
+PASS __tests__/transaction-observability.test.tsx
+PASS __tests__/reconciliation-observability.test.tsx
+PASS __tests__/auth-store.test.ts
+PASS __tests__/api-client.test.ts
+Test Suites: 30 passed, 30 total
+Tests:       229 passed, 229 total
+Time:        23.751 s

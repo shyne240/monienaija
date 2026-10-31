@@ -5,5 +5,26 @@ coverage/
 .env.*
 !.env.example
 *.log
+ HEAD
+
+# Local key material
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local database dumps and artifacts
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+
+# Generated test reports and incremental build state
+test-report.xml
+junit.xml
+*.tsbuildinfo
+
 data/private-poa/
 data/

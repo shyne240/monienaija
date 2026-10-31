@@ -16,7 +16,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'FundWallet'
 
 interface Wallet {
   id: string;
-  type: string;
+  status: string;
   currency: string;
   balanceMinor: number;
 }
@@ -44,7 +44,8 @@ export const FundWalletScreen: React.FC = () => {
     const fetchWallets = async () => {
       if (!customerId) return;
       try {
-        const walletList = await ApiClient.get<Wallet[]>(`/customers/${customerId}/wallets`);
+        // Customer-scoped wallet listing: the backend only ever returns the caller's own wallets.
+        const walletList = await ApiClient.get<Wallet[]>('/wallets');
         setWallets(walletList);
       } catch (err: any) {
         setError('Failed to load your wallet information.');
@@ -53,7 +54,7 @@ export const FundWalletScreen: React.FC = () => {
     fetchWallets();
   }, [customerId]);
 
-  const primaryWallet = wallets.find((w) => w.type === 'PRIMARY') || wallets[0];
+  const primaryWallet = wallets.find((w) => w.status === 'ACTIVE') || wallets[0];
 
   const handleFundWallet = async () => {
     if (!primaryWallet) {
@@ -80,10 +81,10 @@ export const FundWalletScreen: React.FC = () => {
         idempotencyKey,
       });
 
-      // Step 2: Since we are in sandbox/mock mode and do not wait for payment provider rails,
-      // simulate/execute the sandbox payment completion immediately: POST /deposits/:id/complete
-      if (depositResult && depositResult.id) {
-        await ApiClient.post(`/deposits/${depositResult.id}/complete`);
+      // No client-side completion step exists: a deposit is credited only when the payment
+      // provider confirms settlement to the backend. Customers can never complete a deposit.
+      if (!depositResult || !depositResult.id) {
+        throw new Error('The deposit could not be created.');
       }
 
       setSuccess(true);
@@ -99,10 +100,11 @@ export const FundWalletScreen: React.FC = () => {
       <View style={styles.successContainer}>
         <View style={styles.successContent}>
           <Text style={styles.successIcon}>💰</Text>
-          <Text style={styles.successTitle}>Wallet Funded Successfully!</Text>
+          <Text style={styles.successTitle}>Deposit Initiated</Text>
           <Text style={styles.successDescription}>
-            Your primary wallet has been credited with ₦
-            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })}.
+            ₦
+            {parseFloat(amountStr || '0').toLocaleString('en-NG', { minimumFractionDigits: 2 })} will
+            be credited to your wallet once the payment is confirmed.
           </Text>
         </View>
         <Button label="Back to Home" style={styles.button} onPress={() => navigation.navigate('Home')} />
@@ -122,9 +124,9 @@ export const FundWalletScreen: React.FC = () => {
         </View>
 
         <Card variant="flat" style={styles.sandboxCard}>
-          <Text style={styles.sandboxTitle}>⚙️ Sandbox Simulated Transfer</Text>
+          <Text style={styles.sandboxTitle}>ℹ️ Payment confirmation required</Text>
           <Text style={styles.sandboxText}>
-            No physical card or bank integration is connected. Creating a deposit instantly simulates payment fulfillment inside our sandbox ledger.
+            Your wallet is credited only after the payment provider confirms settlement to MoneyNaija. Until then the deposit stays pending and can be cancelled by support.
           </Text>
         </Card>
 

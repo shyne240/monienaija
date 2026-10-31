@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
+import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
 import { Agent } from './agent.entity';
 import { AgentStatus } from './agent.enums';
 import { AgentApplication } from './agent-application.entity';
@@ -30,8 +31,8 @@ export class AgentLifecycleService {
     private readonly applicationRepository: Repository<AgentApplication>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
-    // Optional via @Inject to avoid circular if service not yet ready; but we will provide it
     private readonly receivingNumberService: AgentReceivingNumberService,
+    private readonly sessions: AgentAuthenticationSessionService,
   ) {}
 
   async getAgent(id: string): Promise<Agent> {
@@ -55,6 +56,16 @@ export class AgentLifecycleService {
 
   async terminate(agentId: string, actor: string, reason?: string): Promise<Agent> {
     return this.transition(agentId, AgentStatus.TERMINATED, actor, 'TERMINATED', reason);
+  }
+
+  /** Legacy :id/activate accepts either an application ID or an Agent ID.
+   * Do not fall back to direct Agent activation when an application exists but is
+   * unapproved, deleted, or otherwise fails: that would mask its approval boundary.
+   */
+  async activateCompatibleTarget(id: string, actor: string): Promise<Agent> {
+    this.assertUuid(id, 'id');
+    const application = await this.applicationRepository.findOne({ where: { id }, withDeleted: true });
+    return application ? this.activateFromApplication(id, actor) : this.activate(id, actor);
   }
 
   /**
@@ -134,7 +145,8 @@ export class AgentLifecycleService {
     const normalizedActor = this.normalizeActor(actor);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(Agent);
-      const agent = await repo.findOne({ where: { id: agentId } });
+      // This lock is also taken before issuing or administratively revoking sessions.
+      const agent = await repo.findOne({ where: { id: agentId }, lock: { mode: 'pessimistic_write' } });
       if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
       const allowed = ALLOWED_TRANSITIONS[agent.status as AgentStatus] ?? [];
       if (!allowed.includes(target)) {
@@ -150,6 +162,10 @@ export class AgentLifecycleService {
       agent.status = target;
       // Reason is audit-only, not stored on Agent (no column) but captured in audit
       const saved = await repo.save(agent);
+      if (target === AgentStatus.SUSPENDED || target === AgentStatus.TERMINATED) {
+        // Session rows and their audit evidence commit (or roll back) with the transition.
+        await this.sessions.revokeAllForAgentInManager(manager, saved.id, normalizedActor, target);
+      }
       // A9 lifecycle hooks: ACTIVE allocation, SUSPENDED retains, TERMINATED revokes
       if (target === AgentStatus.ACTIVE) {
         await this.receivingNumberService.ensureForAgentInManager(manager, saved.id, normalizedActor);

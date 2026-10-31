@@ -1,0 +1,467 @@
+/*
+ * MonieNaija Admin — M1 primitives (light only).
+ *
+ * Every rule is class-scoped to a pilot-owned `mn-` class. No element selectors,
+ * no universal selectors and no descendant-wide overrides, so embedded
+ * workflows (registration wizard, Customer 360°) cannot be restyled here.
+ */
+
+/* ------------------------------------------------------------------ Button */
+
+.mn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mn-space-2);
+  box-sizing: border-box;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--mn-radius-sm);
+  background: transparent;
+  font-family: var(--mn-font-sans);
+  font-size: var(--mn-font-size-sm);
+  font-weight: 600;
+  line-height: var(--mn-line-tight);
+  letter-spacing: 0.01em;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color var(--mn-motion-fast) var(--mn-ease),
+    border-color var(--mn-motion-fast) var(--mn-ease),
+    color var(--mn-motion-fast) var(--mn-ease),
+    box-shadow var(--mn-motion-fast) var(--mn-ease);
+}
+
+.mn-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.mn-btn--md {
+  min-height: 40px;
+  padding: 9px 16px;
+  font-size: var(--mn-font-size-base);
+}
+
+.mn-btn--sm {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: var(--mn-font-size-xs);
+}
+
+.mn-btn--block {
+  width: 100%;
+}
+
+.mn-btn:focus-visible {
+  outline: 2px solid var(--mn-focus-ring);
+  outline-offset: 2px;
+}
+
+.mn-btn--primary {
+  border-color: var(--mn-action-primary);
+  background: var(--mn-action-primary);
+  color: var(--mn-text-on-action);
+  box-shadow: var(--mn-shadow-1);
+}
+
+.mn-btn--primary:hover:not(:disabled) {
+  background: var(--mn-action-primary-hover);
+  border-color: var(--mn-action-primary-hover);
+}
+
+.mn-btn--primary:active:not(:disabled) {
+  background: var(--mn-action-primary-active);
+  border-color: var(--mn-action-primary-active);
+}
+
+.mn-btn--secondary {
+  border-color: var(--mn-border-control);
+  background: var(--mn-surface-raised);
+  color: var(--mn-action-primary);
+}
+
+.mn-btn--secondary:hover:not(:disabled) {
+  background: var(--mn-action-primary-soft);
+  border-color: var(--mn-action-primary);
+}
+
+.mn-btn--secondary:active:not(:disabled) {
+  background: var(--mn-surface-mint-strong);
+}
+
+.mn-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--mn-action-primary);
+}
+
+.mn-btn--quiet:hover:not(:disabled) {
+  background: var(--mn-action-primary-soft);
+}
+
+.mn-btn--danger {
+  border-color: var(--mn-action-danger);
+  background: var(--mn-action-danger);
+  color: #ffffff; /* 6.54:1 on #B3261E */
+}
+
+.mn-btn--danger:hover:not(:disabled) {
+  background: var(--mn-action-danger-hover);
+  border-color: var(--mn-action-danger-hover);
+}
+
+.mn-btn:disabled {
+  cursor: not-allowed;
+  /* Never rely on opacity alone: the label stays legible at 5.25:1 and the
+   * "unavailable" state is announced by the disabled attribute itself. */
+  background: var(--mn-surface-sunken);
+  border-color: var(--mn-border-strong);
+  color: var(--mn-text-muted);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------- Field */
+
+.mn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--mn-font-sans);
+}
+
+.mn-field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--mn-space-3);
+}
+
+.mn-field__label {
+  font-size: var(--mn-font-size-xs);
+  font-weight: 600;
+  line-height: var(--mn-line-tight);
+  letter-spacing: 0.02em;
+  color: var(--mn-text-secondary);
+}
+
+.mn-field__control {
+  display: flex;
+  min-width: 0;
+}
+
+.mn-field__hint {
+  margin: 0;
+  font-size: var(--mn-font-size-xs);
+  line-height: var(--mn-line-snug);
+  color: var(--mn-text-muted);
+}
+
+.mn-input,
+.mn-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--mn-border-control);
+  border-radius: var(--mn-radius-sm);
+  background: var(--mn-surface-raised);
+  font-family: var(--mn-font-sans);
+  font-size: var(--mn-font-size-base);
+  line-height: var(--mn-line-snug);
+  color: var(--mn-text-primary);
+  transition:
+    border-color var(--mn-motion-fast) var(--mn-ease),
+    box-shadow var(--mn-motion-fast) var(--mn-ease);
+}
+
+.mn-input::placeholder {
+  color: var(--mn-text-secondary);
+  opacity: 1;
+}
+
+.mn-input:hover,
+.mn-select:hover {
+  border-color: var(--mn-action-primary);
+}
+
+.mn-input:focus,
+.mn-select:focus {
+  outline: 2px solid var(--mn-focus-ring);
+  outline-offset: 1px;
+  border-color: var(--mn-focus-ring);
+}
+
+.mn-select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mn-text-secondary) 50%),
+    linear-gradient(135deg, var(--mn-text-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) calc(50% + 1px),
+    calc(100% - 12px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.mn-input--search {
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2352655F' stroke-width='1.7' stroke-linecap='round'%3E%3Ccircle cx='6.6' cy='6.6' r='4.4'/%3E%3Cpath d='M10.2 10.2 14 14'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 12px center;
+  background-size: 16px 16px;
+}
+
+.mn-input--search::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------- Badge */
+
+.mn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border-radius: var(--mn-radius-pill);
+  font-family: var(--mn-font-sans);
+  font-size: var(--mn-font-size-2xs);
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.mn-badge__marker {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}
+
+.mn-badge__marker--dot {
+  border-radius: 50%;
+}
+
+.mn-badge__marker--square {
+  border-radius: 1px;
+}
+
+.mn-badge__marker--hollow {
+  border-radius: 50%;
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+
+.mn-badge--success {
+  background: var(--mn-status-success-bg);
+  color: var(--mn-status-success);
+}
+
+.mn-badge--warning {
+  background: var(--mn-status-warning-bg);
+  color: var(--mn-status-warning);
+}
+
+.mn-badge--danger {
+  background: var(--mn-status-danger-bg);
+  color: var(--mn-status-danger);
+}
+
+.mn-badge--info {
+  background: var(--mn-status-info-bg);
+  color: var(--mn-status-info);
+}
+
+.mn-badge--neutral {
+  background: var(--mn-status-neutral-bg);
+  color: var(--mn-status-neutral);
+}
+
+/* ------------------------------------------------------------------- Alert */
+
+.mn-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mn-space-3);
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--mn-border-subtle);
+  border-left-width: 4px;
+  border-radius: var(--mn-radius-sm);
+  font-family: var(--mn-font-sans);
+  font-size: var(--mn-font-size-base);
+  line-height: var(--mn-line-snug);
+}
+
+.mn-alert__mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mn-alert__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mn-alert__title {
+  margin: 0 0 2px;
+  font-size: var(--mn-font-size-base);
+  font-weight: 700;
+}
+
+.mn-alert__text {
+  margin: 0;
+}
+
+.mn-alert__action {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.mn-alert--danger {
+  border-color: var(--mn-status-danger);
+  background: var(--mn-status-danger-bg);
+  color: var(--mn-status-danger);
+}
+
+.mn-alert--warning {
+  border-color: var(--mn-status-warning);
+  background: var(--mn-status-warning-bg);
+  color: var(--mn-status-warning);
+}
+
+.mn-alert--info {
+  border-color: var(--mn-status-info);
+  background: var(--mn-status-info-bg);
+  color: var(--mn-status-info);
+}
+
+.mn-alert--success {
+  border-color: var(--mn-status-success);
+  background: var(--mn-status-success-bg);
+  color: var(--mn-status-success);
+}
+
+/* ------------------------------------------------------------- ScrollRegion */
+
+.mn-scroll-region {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mn-scroll-region__viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  border-radius: var(--mn-radius-sm);
+  /* Keyboard users need a visible, non-obscured focus indicator on the region. */
+  scrollbar-width: thin;
+}
+
+.mn-scroll-region__viewport:focus-visible {
+  outline: 2px solid var(--mn-focus-ring);
+  outline-offset: 2px;
+}
+
+.mn-scroll-region__hint {
+  display: none;
+  margin: 0;
+  font-family: var(--mn-font-sans);
+  font-size: var(--mn-font-size-xs);
+  line-height: var(--mn-line-snug);
+  color: var(--mn-text-muted);
+}
+
+.mn-scroll-region__hint-glyph {
+  margin-right: 4px;
+  color: var(--mn-action-primary);
+}
+
+/* ----------------------------------------------------------------- PageTitle */
+
+.mn-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--mn-space-4);
+  font-family: var(--mn-font-sans);
+}
+
+.mn-page-header__text {
+  min-width: 0;
+}
+
+.mn-page-header__eyebrow {
+  margin: 0 0 6px;
+  font-size: var(--mn-font-size-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mn-text-secondary);
+}
+
+.mn-page-header__title {
+  margin: 0;
+  font-size: var(--mn-font-size-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--mn-text-primary);
+}
+
+.mn-page-header__title:focus-visible {
+  outline: 2px solid var(--mn-focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--mn-radius-xs);
+}
+
+.mn-page-header__description {
+  margin: 6px 0 0;
+  max-width: 68ch;
+  font-size: var(--mn-font-size-base);
+  line-height: var(--mn-line-normal);
+  color: var(--mn-text-secondary);
+}
+
+.mn-page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mn-space-2);
+}
+
+@media (min-width: 900px) {
+  .mn-page-header__title {
+    font-size: var(--mn-font-size-3xl);
+  }
+}
+
+/* ------------------------------------------------------------------ Utility */
+
+/* Visually hidden but available to assistive technology. Pilot-owned utility;
+ * no pre-existing class is redefined. */
+.mn-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

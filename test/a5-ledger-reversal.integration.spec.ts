@@ -36,6 +36,14 @@ import {
   truncateAllTables,
 } from './support/pg-harness';
 
+import type { WalletOwnershipBinding } from '../src/wallet/wallet-ownership';
+
+const TEST_OWNERSHIP: WalletOwnershipBinding = {
+  kind: 'INTERNAL',
+  principalId: 'integration-test-principal',
+  principalType: 'SERVICE',
+};
+
 describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let ledger: LedgerService;
@@ -648,6 +656,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Test cancelDeposit
       const dep1 = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '2000',
         currency: 'NGN',
@@ -661,6 +670,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Test failDeposit
       const dep2 = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '3000',
         currency: 'NGN',
@@ -685,6 +695,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
       const wallet = await seedWallet('dep-term-idempotent');
 
       const dep = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -698,6 +709,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Now create another deposit to test failDeposit idempotency
       const dep2 = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -714,6 +726,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
       const wallet = await seedWallet('dep-term-invalid');
 
       const dep = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -736,6 +749,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
     it('rolls back deposit transition changes atomically if process fails', async () => {
       const wallet = await seedWallet('dep-term-rollback');
       const dep = await deposits.createDeposit({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -766,6 +780,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Test cancelWithdrawal
       const wd1 = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '2000',
         currency: 'NGN',
@@ -779,6 +794,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Test failWithdrawal
       const wd2 = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '3000',
         currency: 'NGN',
@@ -803,6 +819,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
       const wallet = await seedWallet('wd-term-idempotent');
 
       const wd = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -816,6 +833,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
 
       // Now create another withdrawal to test failWithdrawal idempotency
       const wd2 = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -850,6 +868,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
       });
 
       const wd = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',
@@ -873,6 +892,7 @@ describe('A5 Ledger Reversal and Terminal Transitions (real PostgreSQL)', () => 
     it('rolls back withdrawal transition changes atomically if process fails', async () => {
       const wallet = await seedWallet('wd-term-rollback');
       const wd = await withdrawals.createWithdrawal({
+        ownership: TEST_OWNERSHIP,
         walletId: wallet.walletId,
         amountMinor: '1000',
         currency: 'NGN',

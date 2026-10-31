@@ -27,6 +27,10 @@ export interface RoutePolicyResolution {
   customerId?: string;
   agentId?: string;
   aggregatorId?: string;
+  /** Preserve the controller's denied-function audit when this route is stopped by the guard. */
+  auditDeniedWorkforceFunction?: boolean;
+  /** Preserve this controller's 401 for non-workforce principals before evaluating catalogue gates. */
+  rejectNonWorkforcePrincipalWith401?: boolean;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -34,7 +38,13 @@ const PUBLIC_ROUTES = new Set([
   'GET /api/v1/public/agents/cash-to-cash-outlets',
   'GET /api/v1/health',
   'GET /api/v1/health/ready',
-  'GET /api/v1/internal/version',
+  // REPORT-32 M-01 (remediated on integration/main-backend-frontend-20261030): the API version
+  // metadata moved OFF this list. It used to be public even though the generic internal contract
+  // (and this file's own generic-branch comment) declares `/internal/**` non-public, so an
+  // anonymous caller could read current/supported API version headers from an internal path.
+  // It is now an explicit catalogue-gated workforce read (see
+  // INTERNAL_OPERATIONAL_ROUTE_POLICIES below). Public liveness/probe needs remain covered by
+  // `GET /api/v1/health` and `GET /api/v1/health/ready`.
   // V1-CUSTOMER-ONBOARDING-01 — customer registration front door (decided hybrid model,
   // docs/V1-CUSTOMER-ONBOARDING-DECISION-01.md). Unauthenticated by design: no session-
   // bearing auth mode exists pre-registration. Abuse is bounded inside the registration
@@ -45,16 +55,172 @@ const PUBLIC_ROUTES = new Set([
   'POST /api/v1/customers/registration',
 ]);
 
+/**
+ * REPORT-32 H-01 / M-01 — explicit least-privilege policies for the internal operational read
+ * surface.
+ *
+ * Before this table existed, every one of these paths fell through to the registry's generic
+ * `/api/v1/internal/` catch-all, whose policy listed the four workforce principal *types* and
+ * declared no function, role or scope gate. `RuntimeAccessGuard` only enforces gates a policy
+ * explicitly declares, so a valid SUPPORT session (or any OPERATOR/SERVICE/PRIVILEGED session,
+ * whatever catalogue role it actually held) could read deployment readiness, migration metadata,
+ * reconciliation status, pending-outbox counts, safe configuration and API version metadata.
+ * `OperationsController` already re-checked metrics/diagnostics/outbox at the controller with
+ * `requireFunction`, but `ProductionController` performed no capability check at all.
+ *
+ * A principal type is authentication evidence, not an authorization decision. Each route below
+ * therefore requires an explicit, existing catalogue function from
+ * `src/authorization-catalogue/authorization-catalogue.seed.ts` — no function identifier is
+ * invented here, and none of these grants is broader than the function's documented meaning:
+ *
+ *   - `diagnostics.view`  — "View operational diagnostics endpoints" (SUPER_ADMIN,
+ *                           FINANCE_AUDITOR, OPERATIONS).
+ *   - `reconciliation.view` — "View reconciliation run status/exceptions" (SUPER_ADMIN,
+ *                           FINANCE_AUDITOR, TREASURY).
+ *   - `metrics.view`      — "View operational metrics" (SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS).
+ *   - `outbox.view`       — "View the transactional outbox/event delivery queue"
+ *                           (SUPER_ADMIN, FINANCE_AUDITOR, OPERATIONS).
+ *
+ * `GET /internal/readiness` and `GET /internal/deployment` return the SAME payload
+ * (`ProductionReadinessService.getReadiness()`), which embeds reconciliation PASS/WARNING/ERROR
+ * alongside data-source, migration and pending-outbox state. They therefore require BOTH
+ * `diagnostics.view` (schema/deployment diagnostics) and `reconciliation.view` (financial
+ * reconciliation state) — an all-of gate, so they are reachable only by roles holding both, i.e.
+ * SUPER_ADMIN and FINANCE_AUDITOR. OPERATIONS keeps metrics/diagnostics/outbox/configuration and
+ * the public `/health/ready` probe; TREASURY (whose V1 grant is exactly `reconciliation.view`)
+ * does not gain deployment or migration visibility from that single function.
+ *
+ * SUPPORT is deliberately absent from `allowedPrincipalTypes` for every route in this table: the
+ * approved V1 SUPPORT scope is "read + funding-maker + support-queue only" (UAT-SEC-005 /
+ * UAT-ADMIN-011) and a SUPPORT principal holds none of these function codes. Denial is therefore
+ * doubly enforced — principal type, then function.
+ *
+ * This is a guard-level policy (defense in depth) layered on top of, never instead of, the
+ * controller-level `requireFunction` checks in `OperationsController`. No controller check is
+ * removed by this table, and no route is granted a capability it did not already declare.
+ */
+const INTERNAL_OPERATIONAL_ROUTE_POLICIES: Record<
+  string,
+  { resourceType: string; requiredFunctions: readonly string[] }
+> = {
+  'GET /api/v1/internal/readiness': {
+    resourceType: 'internal-readiness',
+    requiredFunctions: ['diagnostics.view', 'reconciliation.view'],
+  },
+  'GET /api/v1/internal/deployment': {
+    resourceType: 'internal-deployment',
+    requiredFunctions: ['diagnostics.view', 'reconciliation.view'],
+  },
+  'GET /api/v1/internal/configuration': {
+    resourceType: 'internal-configuration',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/version': {
+    resourceType: 'internal-version',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/metrics': {
+    resourceType: 'internal-metrics',
+    requiredFunctions: ['metrics.view'],
+  },
+  'GET /api/v1/internal/diagnostics': {
+    resourceType: 'internal-diagnostics',
+    requiredFunctions: ['diagnostics.view'],
+  },
+  'GET /api/v1/internal/outbox': {
+    resourceType: 'internal-outbox',
+    requiredFunctions: ['outbox.view'],
+  },
+};
+
+/**
+ * REPORT-32 H-01 — the one internal read that keeps SUPPORT reach by explicit product decision.
+ *
+ * `GET /api/v1/internal/audit` is the generic audit listing. `OperationsController` intentionally
+ * does not gate it behind `audit.view`, because a genuine SUPPORT workforce session is a proven,
+ * pre-existing consumer (a22-admin-foundation "Audit reads via workforce and no sensitive fields"),
+ * SUPPORT is not a catalogue-governed principal type, and withdrawing that capability would be an
+ * unapproved reduction of SUPPORT's approved scope. The remediation decision (recorded in the
+ * Report 32 remediation report) is to keep the capability but make it an explicit, documented
+ * policy rather than an accident of the generic catch-all, so the reachable principal set for
+ * audit is stated in one auditable place and cannot silently widen.
+ *
+ * The narrower `notification.provider.view` restriction on provider-configuration audit rows is
+ * still enforced inside the controller, unchanged.
+ */
+const INTERNAL_AUDIT_READ = {
+  resourceType: 'internal-audit-read',
+  // REPORT-34 H-01-R2 — the approved SUPPORT exception is SUPPORT-only. It never implied that
+  // every other workforce principal may read the audit trail: the catalogue assigns `audit.view`
+  // to SUPER_ADMIN and FINANCE_AUDITOR, and deliberately not to OPERATIONS. So the route now
+  // requires `audit.view` from every catalogue-governed workforce principal (OPERATOR, SERVICE,
+  // PRIVILEGED) and exempts only the non-catalogue SUPPORT principal, whose read capability is
+  // the expressly approved exception (UAT-SEC-005/UAT-ADMIN-011 scope plus a proven, pre-existing
+  // consumer in a22-admin-foundation). Denial for CUSTOMER/AGENT/AGGREGATOR is unchanged.
+  allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'] as const,
+  requiredFunctions: ['audit.view'] as const,
+  requiredFunctionsExemptPrincipalTypes: ['SUPPORT'] as const,
+};
+
+
+  // INTEGRATION (integration/main-backend-frontend-20261030) — constructs carried over from
+  // main (39a9e504, phase 16-20 production readiness). Two of main's four registry additions are
+  // deliberately NOT carried over; see docs/integration/20261030 for the recorded rationale.
+
+/**
+ * Customer credential exchange. Matched with an exact route shape so that no other
+ * `/customers/:id/*` route is affected. The handler is responsible for credential verification,
+ * generic failure responses and account lockout.
+ */
+const CUSTOMER_AUTHENTICATION_ROUTE =
+  /^\/api\/v1\/customers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/authenticate$/i;
+
+// INTEGRATION NOTE (integration/main-backend-frontend-20261030) — main's
+// `CUSTOMER_SELF_SERVICE_ROUTES` / `CUSTOMER_REACHABLE_PRINCIPALS` / `INTERNAL_ACCESS_SCOPE`
+// constructs are deliberately NOT carried into this registry. They made GET/POST
+// /deposits, /withdrawals, /transfers and /wallets customer-reachable with
+// `customerAccess: 'SELF'`, but on collection routes there is no resource customer id for the
+// guard's SELF check to compare against, so customer scoping depends entirely on the controller
+// calling main's `customerSelfId()` + `*ForCustomer()` service methods. The integrated V1
+// financial controllers (Lineage A) do the opposite: they disable the generic command endpoints
+// outright and gate reads behind catalogue function codes for workforce principals. Carrying
+// main's registry entries without main's controllers would therefore have exposed unscoped
+// collection reads to customer principals — a cross-customer disclosure gap, not a protection.
+// Both halves of main's design are left dormant together and the choice is escalated: see
+// docs/integration/20261030-CONTROLLED-INTEGRATION-REPORT.md (open item OI-01).
+
 @Injectable()
 export class RoutePolicyRegistry {
   resolve(input: RoutePolicyInput): RoutePolicyResolution {
     const method = input.method.toUpperCase();
+    // REPORT-34 H-01-R1 — HTTP method normalization for policy resolution.
+    //
+    // The runtime adapter is Fastify, which (by default `exposeHeadRoutes: true`) answers a `HEAD`
+    // request with the matching GET handler. Route policies, however, are keyed by an exact
+    // `"<METHOD> <path>"` string, and only GET entries exist. Before this normalization a
+    // `HEAD /api/v1/internal/readiness` (and every other GET-backed internal operational route)
+    // matched no policy at all and fell through to the generic `/api/v1/internal/*` branch — which
+    // admits SUPPORT and declares no function/role/scope gate. The handler still ran (Fastify
+    // suppresses only the body, not the side effects), so SUPPORT could invoke readiness/
+    // deployment/configuration/version handlers through HEAD while the GET path denied it. The
+    // same alias gap applied to any other GET-backed route in the application.
+    //
+    // Resolving HEAD through the GET policy closes the alias globally, in one place, for every
+    // current and future route: HEAD can never reach a policy broader than the one its GET
+    // counterpart is given. This is a pure restriction — no route gains reach — and `action`
+    // keeps the real request method so audit records stay accurate. Fastify never serves HEAD for
+    // a POST/PUT/PATCH/DELETE-only handler, so this normalization has no effect there. Every
+    // matching condition below (including the read-versus-write discrimination inside the
+    // agents/classes, outlets/terminals and aggregator branches) uses `lookedUpMethod`, so a HEAD
+    // request can only ever receive the policy its GET counterpart receives — never a write
+    // policy, never a broader one.
+    const lookedUpMethod = method === 'HEAD' ? 'GET' : method;
     const path = input.url.split('?', 1)[0] ?? input.url;
-    if (PUBLIC_ROUTES.has(`${method} ${path}`)) {
+    if (PUBLIC_ROUTES.has(`${lookedUpMethod} ${path}`)) {
       return { public: true, resourceType: 'public-route' };
     }
 
-    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/a2/workforce/sessions') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_ASSERTION',
@@ -66,7 +232,7 @@ export class RoutePolicyRegistry {
     // (unauthenticated at the HTTP layer, hard-gated on A2_WORKFORCE_ENABLED=true by
     // RuntimeAccessGuard); LocalAdminAuthenticationService then independently refuses outside
     // NODE_ENV=development/test regardless of this route ever being reachable.
-    if (method === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_ASSERTION',
@@ -81,7 +247,7 @@ export class RoutePolicyRegistry {
       };
     }
 
-    if (method === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/partner-callbacks/nibss-nip') {
       return {
         public: false,
         authenticationMode: 'PROVIDER_CALLBACK',
@@ -97,7 +263,7 @@ export class RoutePolicyRegistry {
 
     // Customer App — login is unauthenticated (CUSTOMER_LOGIN)
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       (path === '/api/v1/customers/sessions' || path === '/api/v1/customers/login')
     ) {
       return {
@@ -110,7 +276,7 @@ export class RoutePolicyRegistry {
     // Customer initial-credential rotation (V1-CUSTOMER-CREDENTIALS-01) — unauthenticated
     // like login: the customer proves the temporary password and receives its first session
     // only AFTER rotation completes inside this handler. No bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/customers/credentials/rotate') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/customers/credentials/rotate') {
       return {
         public: false,
         authenticationMode: 'CUSTOMER_LOGIN',
@@ -143,7 +309,7 @@ export class RoutePolicyRegistry {
     // OPERATOR/SERVICE/PRIVILEGED only, mirroring the agent-lifecycle branch's
     // SUPPORT-exclusion recorded below (V1-003 decision).
     // Self-service remains available under /customers/me/* (checked above).
-    if (method === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
+    if (lookedUpMethod === 'PATCH' && /^\/api\/v1\/customers\/(?!me(?:\/|$))[^/]+$/.test(path)) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -240,6 +406,16 @@ export class RoutePolicyRegistry {
       };
     }
 
+    // INTEGRATION: main's phase 16-20 customer credential exchange. Marked public because the
+    // caller has no session yet; the handler (CustomerSessionController.authenticate) performs
+    // the credential verification, generic failure responses, account lockout and the bounded
+    // per-client-address / per-account rate limiting. Without this entry the route falls to the
+    // generic `/customers/:id` branch below, whose customerAccess:'SELF' policy demands a bearer
+    // token and makes the login route unreachable.
+    if (lookedUpMethod === 'POST' && CUSTOMER_AUTHENTICATION_ROUTE.test(path)) {
+      return { public: true, resourceType: 'customer-authentication' };
+    }
+
     const customerId = input.params?.id;
     if (path.startsWith('/api/v1/customers/')) {
       return {
@@ -258,14 +434,14 @@ export class RoutePolicyRegistry {
 
     // Agent authentication HTTP surface (A7) — Agent-owned routes
     // Login is unauthenticated (AGENT_LOGIN) and must not require a bearer token.
-    if (method === 'POST' && path === '/api/v1/agents/sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/sessions') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
         resourceType: 'agent-session',
       };
     }
-    if (method === 'POST' && path === '/api/v1/agents/login') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/login') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -276,7 +452,7 @@ export class RoutePolicyRegistry {
     // Agent initial-credential rotation (V1-AGENT-CREDENTIALS-01) — unauthenticated like
     // login: the Agent proves the temporary password and receives its first session only
     // AFTER rotation completes inside this handler. No bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/agents/credentials/rotate') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/credentials/rotate') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -309,7 +485,7 @@ export class RoutePolicyRegistry {
 
     // A8 application creation remains public. Subsequent applicant access uses the one-time
     // capability returned at creation; workforce review uses its own catalogue function.
-    if (method === 'POST' && path === '/api/v1/agents/applications') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/agents/applications') {
       return {
         public: false,
         authenticationMode: 'AGENT_LOGIN',
@@ -327,9 +503,9 @@ export class RoutePolicyRegistry {
     // Outlets & Terminals via Aggregator — internal privileged (A20)
     // Must be checked before generic aggregator block; Aggregator context is via A18 relationship
     if (
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/outlets$/.test(path)) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/terminals$/.test(path))
     ) {
       return {
@@ -360,10 +536,10 @@ export class RoutePolicyRegistry {
           resourceType: 'aggregator',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['aggregator.manage'] }),
+          ...(lookedUpMethod === 'GET' ? {} : { requiredFunctions: ['aggregator.manage'] }),
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -380,7 +556,7 @@ export class RoutePolicyRegistry {
     // SUPPORT is excluded (it holds no agent-domain functions by policy). Declared here for
     // defense in depth; the controller enforces the identical gate via requireFunction.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/transactions$/.test(path)
     ) {
       return {
@@ -409,7 +585,7 @@ export class RoutePolicyRegistry {
     // support-authentication.service.ts principalFor) and the read is bound to the
     // agent.view catalogue function, matching the classes GET gate below.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/receiving-number$/.test(path)
     ) {
       return {
@@ -431,7 +607,7 @@ export class RoutePolicyRegistry {
     if (
       /^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)
     ) {
-      const functionCode = method === 'GET' ? 'agent.view' : 'agent.manage_classes';
+      const functionCode = lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_classes';
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -452,8 +628,8 @@ export class RoutePolicyRegistry {
     // AGENT_NETWORK_MANAGER/FINANCE_CONTROLLER governance is checked again by the controller
     // and the funding service before any journal can post.
     if (
-      (method === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(path)) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(path)) ||
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
     ) {
       const functionCode = path.endsWith('/defund') || path.endsWith('/defund-request')
@@ -483,7 +659,7 @@ export class RoutePolicyRegistry {
     // other Agent Network function; the maker's own requests are excluded server-side so
     // maker-checker independence is preserved.
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       path === '/api/v1/internal/agents/funding-requests'
     ) {
       return {
@@ -504,7 +680,7 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       /^\/api\/v1\/internal\/agents\/[^/]+\/funding-requests$/.test(path)
     ) {
       return {
@@ -523,7 +699,7 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/agents\/funding-requests\/[^/]+\/(execute|reject)$/.test(path)
     ) {
       return {
@@ -551,15 +727,16 @@ export class RoutePolicyRegistry {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
         policy: {
           resourceType: path.includes('/terminals') ? 'agent-terminal' : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -573,21 +750,22 @@ export class RoutePolicyRegistry {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType:
-          path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+          path.includes('/terminals') || path.startsWith('/api/v1/internal/terminals/')
             ? 'agent-terminal'
             : 'agent-outlet',
         policy: {
           resourceType:
-            path.includes('/terminals/') || path.startsWith('/api/v1/internal/terminals/')
+            path.includes('/terminals') || path.startsWith('/api/v1/internal/terminals/')
               ? 'agent-terminal'
               : 'agent-outlet',
           action: `${method}:${path}`,
           allowedPrincipalTypes:
-            method === 'GET'
+            lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          ...(method === 'GET' ? {} : { requiredFunctions: ['agent.manage_outlets_terminals'] }),
+          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -600,21 +778,23 @@ export class RoutePolicyRegistry {
     // New consolidated routes /internal/admin/agents/:id/{...} are authoritative admin surface
     // Both require OPERATOR/SERVICE/PRIVILEGED (SUPPORT denied) — documented V1-003 decision
     if (
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
           path,
         )) ||
-      (method === 'POST' &&
+      (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/activate$/.test(path))
     ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'agent-lifecycle',
         policy: {
           resourceType: 'agent-lifecycle',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [`agent.${path.split('/').pop()}`],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -628,7 +808,7 @@ export class RoutePolicyRegistry {
     // privileged workforce surface mirroring the agent credential issuance vocabulary
     // (controller enforces OPERATOR/SERVICE/PRIVILEGED; SUPPORT denied there as well).
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/admin\/customers\/[^/]+\/credentials(\/reissue)?$/.test(path)
     ) {
       return {
@@ -647,17 +827,19 @@ export class RoutePolicyRegistry {
     }
 
     if (
-      method === 'POST' &&
-      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/credentials(\/reissue)?$/.test(path)
+      lookedUpMethod === 'POST' &&
+      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(?:credentials(?:\/reissue)?|sessions\/revoke)$/.test(path)
     ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'agent-credential-issuance',
         policy: {
           resourceType: 'agent-credential-issuance',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.manage_credentials'],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -670,7 +852,7 @@ export class RoutePolicyRegistry {
     // itself or another SUPPORT identity, so it is explicitly excluded here (defense in
     // depth alongside AdminSupportCredentialsController's own check).
     if (
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(path)
     ) {
       return {
@@ -691,7 +873,7 @@ export class RoutePolicyRegistry {
     // SUPPORT workforce login (V1-OPS-01) — unauthenticated, like /agents/sessions and
     // /customers/sessions. The Support user proves its own credential inside the handler;
     // no bearer token exists yet.
-    if (method === 'POST' && path === '/api/v1/internal/support/workforce-sessions') {
+    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/support/workforce-sessions') {
       return {
         public: false,
         authenticationMode: 'SUPPORT_LOGIN',
@@ -701,24 +883,22 @@ export class RoutePolicyRegistry {
 
     if (
       path.startsWith('/api/v1/internal/admin/agents/') &&
-      method === 'POST' &&
+      lookedUpMethod === 'POST' &&
       (/^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(suspend|terminate|reactivate|activate)$/.test(
         path,
       ) ||
-        /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path) ||
-        path.endsWith('/suspend') ||
-        path.endsWith('/terminate') ||
-        path.endsWith('/reactivate') ||
-        path.endsWith('/activate'))
+        /^\/api\/v1\/internal\/admin\/agents\/applications\/[^/]+\/activate$/.test(path))
     ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
         resourceType: 'admin-agent-lifecycle',
         policy: {
           resourceType: 'admin-agent-lifecycle',
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [`agent.${path.split('/').pop()}`],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -759,7 +939,7 @@ export class RoutePolicyRegistry {
     // its separate stricter PRIVILEGED-only controller gate (reservation release is NOT conflated
     // with diagnostics reads).
     if (
-      method === 'GET' &&
+      lookedUpMethod === 'GET' &&
       (path === '/api/v1/internal/limit-usages' || path === '/api/v1/internal/limit-reservations')
     ) {
       return {
@@ -938,6 +1118,114 @@ export class RoutePolicyRegistry {
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // REPORT-32 H-01 / M-01 — explicit capability gates for the internal operational read
+    // surface. Must precede the generic `/api/v1/internal/` branch below, which declares no
+    // function/role/scope gate and therefore only authenticated a caller. See
+    // INTERNAL_OPERATIONAL_ROUTE_POLICIES and INTERNAL_AUDIT_READ at the top of this file.
+    const operationalPolicy = INTERNAL_OPERATIONAL_ROUTE_POLICIES[`${lookedUpMethod} ${path}`];
+    if (operationalPolicy) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: operationalPolicy.resourceType,
+        policy: {
+          resourceType: operationalPolicy.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: [...operationalPolicy.requiredFunctions],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // REPORT-32 H-01 — generic audit listing keeps SUPPORT reach by explicit product decision;
+    // stated here so the reachable principal set is deliberate and auditable. See
+    // INTERNAL_AUDIT_READ.
+    if (lookedUpMethod === 'GET' && path === '/api/v1/internal/audit') {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        resourceType: INTERNAL_AUDIT_READ.resourceType,
+        policy: {
+          resourceType: INTERNAL_AUDIT_READ.resourceType,
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: [...INTERNAL_AUDIT_READ.allowedPrincipalTypes],
+          requiredFunctions: [...INTERNAL_AUDIT_READ.requiredFunctions],
+          requiredFunctionsExemptPrincipalTypes: [
+            ...INTERNAL_AUDIT_READ.requiredFunctionsExemptPrincipalTypes,
+          ],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Application review is distinct from activation. Public applicant capability routes
+    // remain in APPLICATION_ACCESS above; these are the workforce-only review routes.
+    if (
+      (lookedUpMethod === 'GET' && /^\/api\/v1\/internal\/agents\/applications(?:\/[^/]+)?$/.test(path)) ||
+      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/(review|approve|reject)$/.test(path))
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'agent-application',
+        policy: {
+          resourceType: 'agent-application',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredFunctions: ['agent.review_application'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    // Directory, detail and financial-position reads mirror AdminAgentController. More
+    // specific classes, funding, receiving-number and history branches are matched above.
+    if (
+      lookedUpMethod === 'GET' &&
+      /^\/api\/v1\/internal\/agents(?:\/[^/]+(?:\/financial-position)?)?$/.test(path)
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        rejectNonWorkforcePrincipalWith401: true,
+        resourceType: 'internal-agents',
+        policy: {
+          resourceType: 'internal-agents',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['agent.view'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
+    if (
+      lookedUpMethod === 'GET' &&
+      (path === '/api/v1/internal/admin/cash-to-cash/transfers' ||
+        path === '/api/v1/internal/admin/cash-to-cash/expiry-status')
+    ) {
+      return {
+        public: false,
+        authenticationMode: 'WORKFORCE_SESSION',
+        auditDeniedWorkforceFunction: true,
+        resourceType: 'agent-cash-to-cash-operations',
+        policy: {
+          resourceType: 'agent-cash-to-cash-operations',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+          requiredFunctions: ['transaction.view'],
+          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
         },
       };
     }

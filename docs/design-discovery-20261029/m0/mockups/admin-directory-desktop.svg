@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">Grounded Clarity concept: Admin Customer Directory, desktop</title>
+  <desc id="desc">A nonfunctional proposal with a dark green seven-section sidebar and a light Customer Directory containing filters and three entirely synthetic example records. The New Customer action remains conditional. All actions, records, and status values are illustrative.</desc>
+  <rect width="1440" height="960" fill="#F5F8F6"/>
+  <rect width="1440" height="52" fill="#FFF3D9"/>
+  <text x="28" y="32" font-family="system-ui,sans-serif" font-size="14" font-weight="700" fill="#8C5600">NONFUNCTIONAL CONCEPT  ·  SYNTHETIC DATA  ·  NOT AN IMPLEMENTED OR APPROVED SCREEN</text>
+  <rect x="0" y="52" width="270" height="908" fill="#132B25"/>
+  <rect x="24" y="82" width="36" height="36" rx="10" fill="#E9BD63"/>
+  <path d="M33 107V93l8 8 8-8v14" fill="none" stroke="#132B25" stroke-width="3" stroke-linejoin="round"/>
+  <text x="73" y="106" font-family="system-ui,sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">MonieNaija</text>
+  <text x="26" y="153" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#B1C8BD">SYNTHETIC WORKFORCE SESSION</text>
+  <rect x="18" y="176" width="234" height="46" rx="8" fill="#213F34"/>
+  <text x="30" y="204" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">1. Home &amp; My Work</text><text x="226" y="204" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <text x="30" y="244" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">2. Customer &amp; Agent</text><text x="30" y="261" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">Servicing</text><text x="226" y="254" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">⌄</text>
+  <rect x="20" y="269" width="232" height="44" rx="8" fill="#0B624A"/>
+  <rect x="20" y="277" width="3" height="24" rx="1.5" fill="#E9BD63"/>
+  <text x="32" y="294" font-family="system-ui,sans-serif" font-size="12.5" font-weight="700" fill="#FFFFFF">Customer &amp; KYC Servicing</text>
+  <text x="32" y="343" font-family="system-ui,sans-serif" font-size="12.5" fill="#EAF4EE">Agent Network Management</text>
+  <text x="32" y="385" font-family="system-ui,sans-serif" font-size="12.5" fill="#EAF4EE">Agent Classes &amp; Capabilities</text>
+  <text x="32" y="427" font-family="system-ui,sans-serif" font-size="12.5" fill="#EAF4EE">Support Inbox</text>
+  <line x1="24" y1="446" x2="246" y2="446" stroke="#52655F"/>
+  <text x="30" y="478" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">3. Money Movement</text><text x="226" y="478" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <text x="30" y="525" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">4. Finance &amp; Ledger</text><text x="226" y="525" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <text x="30" y="564" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">5. Commercial &amp; Risk</text><text x="30" y="581" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">Controls</text><text x="226" y="572" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <text x="30" y="619" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">6. Compliance &amp; Risk</text><text x="226" y="619" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <text x="30" y="658" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">7. Platform</text><text x="30" y="675" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">Administration</text><text x="226" y="666" font-family="system-ui,sans-serif" font-size="16" fill="#FFFFFF">›</text>
+  <rect x="24" y="881" width="222" height="44" rx="8" fill="none" stroke="#B1C8BD"/>
+  <text x="135" y="908" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#FFFFFF">Log Out Session</text>
+  <rect x="270" y="52" width="1170" height="60" fill="#FFFFFF"/>
+  <line x1="270" y1="112" x2="1440" y2="112" stroke="#D6E1DB"/>
+  <text x="310" y="89" font-family="system-ui,sans-serif" font-size="13" fill="#52655F">Customer &amp; Agent Servicing</text>
+  <text x="1406" y="89" text-anchor="end" font-family="system-ui,sans-serif" font-size="13" fill="#52655F">Illustrative role / scope context</text>
+  <text x="310" y="159" font-family="system-ui,sans-serif" font-size="12" font-weight="700" letter-spacing="1.2" fill="#0B624A">CUSTOMER SERVICING</text>
+  <text x="310" y="202" font-family="system-ui,sans-serif" font-size="32" font-weight="700" fill="#132B25">Customer directory</text>
+  <text x="310" y="231" font-family="system-ui,sans-serif" font-size="14" fill="#52655F">Search authorized records and open a read-first Customer 360° workspace.</text>
+  <rect x="1264" y="172" width="144" height="46" rx="8" fill="#0B624A"/>
+  <text x="1336" y="201" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">New Customer</text>
+  <text x="1408" y="237" text-anchor="end" font-family="system-ui,sans-serif" font-size="11" fill="#52655F">Only with customer.create</text>
+  <rect x="310" y="268" width="1098" height="568" rx="12" fill="#FFFFFF" stroke="#D6E1DB"/>
+  <text x="334" y="304" font-family="system-ui,sans-serif" font-size="17" font-weight="700" fill="#132B25">Search and results</text>
+  <text x="334" y="340" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#132B25">Search</text>
+  <text x="624" y="340" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#132B25">Status</text>
+  <text x="803" y="340" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#132B25">Type</text>
+  <text x="982" y="340" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#132B25">KYC level</text>
+  <text x="1161" y="340" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="#132B25">KYC status</text>
+  <rect x="334" y="350" width="274" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/>
+  <rect x="624" y="350" width="163" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/>
+  <rect x="803" y="350" width="163" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/>
+  <rect x="982" y="350" width="163" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/>
+  <rect x="1161" y="350" width="220" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/>
+  <text x="347" y="377" font-family="system-ui,sans-serif" font-size="12.5" fill="#52655F">Name, reference or contact</text>
+  <text x="637" y="377" font-family="system-ui,sans-serif" font-size="12.5" fill="#132B25">All statuses  ⌄</text>
+  <text x="816" y="377" font-family="system-ui,sans-serif" font-size="12.5" fill="#132B25">All types  ⌄</text>
+  <text x="995" y="377" font-family="system-ui,sans-serif" font-size="12.5" fill="#132B25">All levels  ⌄</text>
+  <text x="1174" y="377" font-family="system-ui,sans-serif" font-size="12.5" fill="#132B25">All KYC statuses  ⌄</text>
+  <text x="334" y="438" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#132B25">3 customers</text>
+  <text x="1381" y="438" text-anchor="end" font-family="system-ui,sans-serif" font-size="13" fill="#52655F">Page 1 of 1</text>
+  <rect x="334" y="456" width="1047" height="44" fill="#F5F8F6"/>
+  <g font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#52655F">
+    <text x="346" y="483">Customer</text><text x="515" y="483">Reference</text><text x="640" y="483">Type</text><text x="737" y="483">Status</text><text x="835" y="483">KYC</text><text x="928" y="483">Primary contact</text><text x="1054" y="483">Registered</text><text x="1192" y="483">Customer actions</text>
+  </g>
+  <g font-family="system-ui,sans-serif" fill="#132B25">
+    <text x="346" y="540" font-size="13" font-weight="700">Synthetic Customer A</text><text x="515" y="540" font-size="12">mn-••••0001</text><text x="640" y="540" font-size="12">INDIVIDUAL</text>
+    <rect x="733" y="518" width="70" height="31" rx="6" fill="#E4F4EC"/><text x="744" y="538" font-size="12" font-weight="700" fill="#146348">ACTIVE</text>
+    <text x="835" y="531" font-size="12">NONE</text><text x="835" y="548" font-size="12" fill="#52655F">NOT_STARTED</text><text x="928" y="540" font-size="12">Restricted</text><text x="1054" y="540" font-size="12">Not recorded</text>
+    <rect x="1192" y="512" width="170" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/><text x="1277" y="539" text-anchor="middle" font-size="12" font-weight="700">Open Customer 360°</text>
+    <line x1="334" y1="572" x2="1381" y2="572" stroke="#D6E1DB"/>
+    <text x="346" y="611" font-size="13" font-weight="700">Synthetic Customer B</text><text x="515" y="611" font-size="12">mn-••••0002</text><text x="640" y="611" font-size="12">BUSINESS</text>
+    <rect x="733" y="589" width="70" height="31" rx="6" fill="#EAF1FC"/><text x="744" y="609" font-size="12" font-weight="700" fill="#2057A4">DRAFT</text>
+    <text x="835" y="602" font-size="12">NONE</text><text x="835" y="619" font-size="12" fill="#52655F">NOT_STARTED</text><text x="928" y="611" font-size="12">Restricted</text><text x="1054" y="611" font-size="12">Not recorded</text>
+    <rect x="1192" y="583" width="170" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/><text x="1277" y="610" text-anchor="middle" font-size="12" font-weight="700">Open Customer 360°</text>
+    <line x1="334" y1="643" x2="1381" y2="643" stroke="#D6E1DB"/>
+    <text x="346" y="682" font-size="13" font-weight="700">Synthetic Customer C</text><text x="515" y="682" font-size="12">mn-••••0003</text><text x="640" y="682" font-size="12">INDIVIDUAL</text>
+    <rect x="733" y="660" width="89" height="31" rx="6" fill="#FFF3D9"/><text x="742" y="680" font-size="12" font-weight="700" fill="#8C5600">SUSPENDED</text>
+    <text x="835" y="673" font-size="12">NONE</text><text x="835" y="690" font-size="12" fill="#52655F">NOT_STARTED</text><text x="928" y="682" font-size="12">Restricted</text><text x="1054" y="682" font-size="12">Not recorded</text>
+    <rect x="1192" y="654" width="170" height="44" rx="8" fill="#FFFFFF" stroke="#6D817A"/><text x="1277" y="681" text-anchor="middle" font-size="12" font-weight="700">Open Customer 360°</text>
+    <line x1="334" y1="714" x2="1381" y2="714" stroke="#D6E1DB"/>
+  </g>
+  <rect x="334" y="746" width="102" height="44" rx="8" fill="#F5F8F6" stroke="#6D817A"/><text x="385" y="772" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#52655F">Previous</text>
+  <text x="858" y="772" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#52655F">Showing page 1 of 1</text>
+  <rect x="1279" y="746" width="102" height="44" rx="8" fill="#F5F8F6" stroke="#6D817A"/><text x="1330" y="772" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#52655F">Next</text>
+  <text x="310" y="874" font-family="system-ui,sans-serif" font-size="13" fill="#52655F">Illustration only: states, permissions and interactions require implementation and testing.</text>
+</svg>

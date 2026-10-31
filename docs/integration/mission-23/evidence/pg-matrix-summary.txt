@@ -1,0 +1,28 @@
+MISSION 23 — POSTGRESQL INTEGRATION MATRIX (integrated build)
+=============================================================
+Command : PG_TEST_CONCURRENCY=1 NODE_ENV=test npm run test:pg
+Engine  : embedded PostgreSQL 18.4 on 127.0.0.1:5432 (disposable local instance)
+Run id  : r8e39a6feb306  (9 batches x 15 files, run serially)
+
+  Batch  Suites  Tests  Exit
+  -----  ------  -----  ----
+    1/9    15/15    635    0
+    2/9    15/15    290    0
+    3/9    15/15    324    0
+    4/9    15/15    293    0
+    5/9    15/15    267    0
+    6/9    15/15    170    0
+    7/9    15/15    236    0
+    8/9    15/15    156    0
+    9/9    11/11     56    0
+  -----  ------  -----  ----
+  TOTAL  131/131  2427    0
+
+FAIL lines in the whole run: 0
+PG_MATRIX_EXIT=0
+
+Identical to the Mission 20 baseline (131 suites / 2,427 tests) — the dependency
+remediation added no integration test and changed no integration behaviour.
+Includes the D-01 guards (a22-admin-foundation, mission-16a-agent-read-authorization),
+mission-15a-management and mission-19a-workforce-logout.
+Raw log: /home/user/m23-pg.log

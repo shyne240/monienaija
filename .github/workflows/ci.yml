@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, format, build, unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run build
+      - run: npm test
+
+  # Real PostgreSQL integration gate. The service container is a genuine PostgreSQL 16 server
+  # (the major version verified against 16.14); the suites under jest.integration.config.js run
+  # against it directly, so serializable retries, row locking, migration chains and the ledger
+  # balance triggers are all exercised on the database engine rather than on a test double.
+  # This job must never be removed, made optional, or allowed to fail without failing the run.
+  backend-postgres:
+    name: Backend (real PostgreSQL integration)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: monienaija
+          POSTGRES_PASSWORD: monienaija-ci-password
+          POSTGRES_DB: monienaija_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monienaija -d monienaija_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: monienaija_ci
+      DB_USER: monienaija
+      DB_PASSWORD: monienaija-ci-password
+      DB_ADMIN_NAME: postgres
+      DB_SSL: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Apply migrations to the CI database
+        run: |
+          npm run migration:run:compiled
+          npm run migration:show:compiled
+      - name: Run the real-PostgreSQL integration suites
+        run: npm run test:pg
+
+  admin-web:
+    name: Admin Web (types, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/admin-web/package-lock.json
+      - run: npm ci
+      - run: npm run ts:check
+      - run: npm test
+      - run: npm run build
+
+  customer-mobile:
+    name: Customer Mobile (types, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/customer-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/customer-mobile/package-lock.json
+      - run: npm ci
+      - run: npm run ts:check
+      - run: npm test

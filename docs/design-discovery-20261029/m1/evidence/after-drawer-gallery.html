@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M1 — Modal navigation drawer</title>
+<style>
+  body { margin: 0; padding: 24px; background: #eef1ef; font-family: system-ui, -apple-system, sans-serif; color: #132b25; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .note { max-width: 78ch; margin: 0 0 20px; font-size: 13px; line-height: 1.5; color: #52655f; }
+  .banner { display: inline-block; margin: 0 0 14px; padding: 4px 10px; border-radius: 999px; background: #fff3d9; color: #8c5600; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .frame { margin: 0 0 28px; }
+  figcaption { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #52655f; margin-bottom: 8px; }
+  iframe { display: block; height: 900px; border: 1px solid #b9cac3; border-radius: 10px; background: #fff; resize: both; overflow: auto; }
+  .fallback { font-size: 12px; color: #52655f; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<h1>M1 — Modal navigation drawer</h1>
+<span class="banner">Synthetic data · static DOM/CSS render · not a browser screenshot</span>
+<p class="note">The compact drawer is a labelled modal dialog: focus is contained while open, Escape and the backdrop dismiss it, and focus returns to the toggle. Background scrolling is locked while it is open.</p>
+  <figure class="frame">
+    <figcaption>Drawer open — 390 CSS px</figcaption>
+    <iframe title="Drawer open" src="./after-shell-drawer-open.html" style="width:390px"></iframe>
+  </figure>
+  <figure class="frame">
+    <figcaption>Drawer open (tablet) — 768 CSS px</figcaption>
+    <iframe title="Drawer open (tablet)" src="./after-shell-drawer-open.html" style="width:768px"></iframe>
+  </figure>
+<p class="fallback">If a frame appears empty, the browser is blocking local iframes — open the referenced HTML file directly.</p>
+</body>
+</html>

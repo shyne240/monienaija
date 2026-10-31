@@ -115,7 +115,10 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       dataSource.getRepository(LedgerLine),
       dataSource,
     );
-    idempotency = new IdempotencyService(dataSource.getRepository(IdempotencyRecord), mockConfigService);
+    idempotency = new IdempotencyService(
+      dataSource.getRepository(IdempotencyRecord),
+      mockConfigService,
+    );
     audit = new AuditService(dataSource.getRepository(AuditEvent));
     outbox = new OutboxService(dataSource.getRepository(OutboxEvent));
     metrics = new MetricsService(dataSource);
@@ -180,18 +183,19 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
           cooldownSeconds: 0,
           reasonCode: null,
         }),
-      a2AuthorizationContextLookup: (): Promise<A7ProductLifecycleA2AuthorizationContextView | null> =>
-        Promise.resolve({
-          principalType: 'SERVICE' as const,
-          principalId: 'a7-product-lifecycle',
-          customerId: null,
-          customerAccess: 'ANY' as const,
-          evaluatedAt: new Date().toISOString(),
-          allowed: true,
-          action: 'a7-product-lifecycle',
-          resourceType: 'A7_PRODUCT_LIFECYCLE',
-          resourceId: null,
-        }),
+      a2AuthorizationContextLookup:
+        (): Promise<A7ProductLifecycleA2AuthorizationContextView | null> =>
+          Promise.resolve({
+            principalType: 'SERVICE' as const,
+            principalId: 'a7-product-lifecycle',
+            customerId: null,
+            customerAccess: 'ANY' as const,
+            evaluatedAt: new Date().toISOString(),
+            allowed: true,
+            action: 'a7-product-lifecycle',
+            resourceType: 'A7_PRODUCT_LIFECYCLE',
+            resourceId: null,
+          }),
       a3BindingRecheck: (): Promise<A7ProductLifecycleA3BindingView | null> =>
         Promise.resolve({
           bindingId: seededBindingId,
@@ -203,19 +207,20 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
           currency: 'NGN',
           accountingUnit: 'CUSTOMER_FUNDS',
         }),
-      a4ProductPolicyDecisionLookup: (): Promise<A7ProductLifecycleA4ProductPolicyDecisionView | null> =>
-        Promise.resolve({
-          decisionReference: 'a4-policy-ref',
-          productKey: 'VIRTUAL_ACCOUNT',
-          capability: 'virtual-account.inbound-funding',
-          action: 'lifecycle',
-          profileReference: 'policy-profile-ref',
-          policyVersion: '1',
-          decision: 'ALLOW_WITH_LIMITS' as const,
-          expiresAt: null,
-          reasonCodes: [],
-          maxAmountMinor: null,
-        }),
+      a4ProductPolicyDecisionLookup:
+        (): Promise<A7ProductLifecycleA4ProductPolicyDecisionView | null> =>
+          Promise.resolve({
+            decisionReference: 'a4-policy-ref',
+            productKey: 'VIRTUAL_ACCOUNT',
+            capability: 'virtual-account.inbound-funding',
+            action: 'lifecycle',
+            profileReference: 'policy-profile-ref',
+            policyVersion: '1',
+            decision: 'ALLOW_WITH_LIMITS' as const,
+            expiresAt: null,
+            reasonCodes: [],
+            maxAmountMinor: null,
+          }),
       a7T05ProductCommandLookup: (): Promise<A7ProductLifecycleA7T05ProductCommandView | null> =>
         Promise.resolve({
           productCommandReference: A7T05_COMMAND_REFERENCE,
@@ -256,13 +261,14 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
           a4ProductPolicyDecisionReference: 'a4-product-policy-decision',
           a2AuthorizationContextReference: 'a2-authorization-context',
         }),
-      a7T06NotificationDeliveryLookup: (): Promise<A7ProductLifecycleA7T06NotificationDeliveryView | null> =>
-        Promise.resolve({
-          notificationDispatchReference: 'notification-dispatch-ref',
-          deliveryState: 'DISPATCHED',
-          notificationChannel: 'email',
-          customerPreferenceReference: 'customer-preference-reference',
-        }),
+      a7T06NotificationDeliveryLookup:
+        (): Promise<A7ProductLifecycleA7T06NotificationDeliveryView | null> =>
+          Promise.resolve({
+            notificationDispatchReference: 'notification-dispatch-ref',
+            deliveryState: 'DISPATCHED',
+            notificationChannel: 'email',
+            customerPreferenceReference: 'customer-preference-reference',
+          }),
       operationsIdempotencyReserve: (manager, cmd) => idempotency.reserve(manager, cmd),
       operationsIdempotencyComplete: (manager, recordId, cmd) =>
         idempotency.complete(manager, recordId, cmd),
@@ -273,10 +279,12 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
         }),
       operationsAudit: (manager, record) => audit.record(manager, record).then(() => {}),
       operationsOutboxEnqueue: (manager, cmd) =>
-        outbox.enqueueOnce(manager, {
-          ...cmd,
-          causationId: cmd.causationId ?? undefined,
-        }).then(() => {}),
+        outbox
+          .enqueueOnce(manager, {
+            ...cmd,
+            causationId: cmd.causationId ?? undefined,
+          })
+          .then(() => {}),
       operationsMetricsIncrement: (manager, metricName, amount) =>
         metrics.increment(manager, metricName, amount ?? 1),
       operationsDiagnosticsReport: () => Promise.resolve(),
@@ -361,8 +369,16 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: settlementAssetLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '100000' },
-        { accountId: customerLedgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '100000' },
+        {
+          accountId: settlementAssetLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '100000',
+        },
+        {
+          accountId: customerLedgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '100000',
+        },
       ],
     });
   }, 60000);
@@ -379,7 +395,14 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
     lifecycleState = 'PENDING_VERIFICATION',
     customOpId?: string,
     customRefValue?: string,
-  ): Promise<{ opId: string; refValue: string; providerIdempotencyKey: string; customerId: string; walletId: string; bindingId: string }> {
+  ): Promise<{
+    opId: string;
+    refValue: string;
+    providerIdempotencyKey: string;
+    customerId: string;
+    walletId: string;
+    bindingId: string;
+  }> {
     const opId = customOpId || externalOperationId;
     const refValue = customRefValue || A6_EXTERNAL_OPERATION_REFERENCE;
     const providerIdempotencyKey = `provider-key-a7-${opId.slice(0, 8)}`;
@@ -404,7 +427,11 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: settlementAssetLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '100000' },
+        {
+          accountId: settlementAssetLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '100000',
+        },
         { accountId: customerAccId, direction: LedgerEntryDirection.CREDIT, amountMinor: '100000' },
       ],
     });
@@ -471,7 +498,14 @@ describe('A7 Product Lifecycle (real PostgreSQL)', () => {
       [randomUUID(), opId, refValue],
     );
 
-    return { opId, refValue, providerIdempotencyKey, customerId: seededCustomerId, walletId: seededCustomerWalletId, bindingId: seededBindingId };
+    return {
+      opId,
+      refValue,
+      providerIdempotencyKey,
+      customerId: seededCustomerId,
+      walletId: seededCustomerWalletId,
+      bindingId: seededBindingId,
+    };
   }
 
   function sha256(value: string): string {

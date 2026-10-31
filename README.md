@@ -38,6 +38,12 @@ Supporting capabilities:
 - **Operations:** reconciliation, trial balance, diagnostics, health/readiness with migration-pin
   verification, capability registry
 
+`GET /api/v1/health` (liveness) and `GET /api/v1/health/ready` (readiness: PostgreSQL can be
+queried) are the only public endpoints and report state only. Operational detail — migration head,
+reconciliation status, outbox backlog, diagnostics, metrics — is never returned by them; it is
+available only to an authenticated workforce session holding `internal:access` at
+`GET /api/v1/internal/readiness`, `/diagnostics`, `/deployment`, `/configuration` and `/metrics`.
+
 ## Architecture at a glance
 
 - **Double-entry ledger is the only balance truth** — wallet balances are derived from posted
@@ -49,7 +55,8 @@ Supporting capabilities:
   agents (password/session + transaction PIN), workforce (OIDC + MFA → internal session), and
   internal service audience; a bearer token validates in exactly one plane.
 - Modular monolith, `/api/v1` global prefix; schema changes only via TypeORM migrations
-  (synchronization permanently disabled; 80-migration chain, head `1785753600079`).
+  (synchronization permanently disabled; schema changes only through the ordered chain in
+  `src/migrations/` — query the authoritative head with `npm run migration:show`).
 - Decisions are recorded in [`docs/decisions/ADR/`](docs/decisions/ADR/) (73 ADRs).
 
 ## Develop & run

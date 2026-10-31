@@ -21,6 +21,7 @@ import { OutboxService } from '../operations/outbox.service';
 import { LedgerJournal } from '../ledger/ledger-journal.entity';
 import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
+import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletStatus } from '../wallet/wallet.enums';
 import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
@@ -207,6 +208,49 @@ export class TransferService {
     return this.toView(transfer, journal?.reference ?? null);
   }
 
+  /**
+   * Customer-scoped read: a transfer is visible to a customer who owns either side of it. Internal
+   * principals keep using `getTransfer`.
+   */
+  async getTransferForCustomer(transferId: string, customerId: string): Promise<TransferView> {
+    this.assertUuid(transferId, 'transferId');
+    const transfer = await this.transferRepository.findOne({ where: { id: transferId } });
+    if (!transfer) {
+      throw new NotFoundException(`Transfer ${transferId} was not found`);
+    }
+    const owned = await this.walletRepository.findOne({
+      where: [
+        { id: transfer.sourceWalletId, customerId },
+        { id: transfer.destinationWalletId, customerId },
+      ],
+    });
+    if (!owned) {
+      throw new NotFoundException(`Transfer ${transferId} was not found`);
+    }
+    const journal = transfer.journalId
+      ? await this.journalRepository.findOne({ where: { id: transfer.journalId } })
+      : null;
+    return this.toView(transfer, journal?.reference ?? null);
+  }
+
+  /**
+   * Customer-scoped transaction history: the wallet must belong to the authenticated customer, so
+   * one customer can never read another customer's transaction records.
+   */
+  async getWalletTransactionsForCustomer(
+    walletId: string,
+    customerId: string,
+    page?: number,
+    limit?: number,
+  ): Promise<WalletTransactionHistoryView> {
+    this.assertUuid(walletId, 'walletId');
+    const wallet = await this.walletRepository.findOne({ where: { id: walletId, customerId } });
+    if (!wallet) {
+      throw new NotFoundException(`Wallet ${walletId} was not found`);
+    }
+    return this.getWalletTransactions(walletId, page, limit);
+  }
+
   async getWalletTransactions(
     walletId: string,
     page = DEFAULT_HISTORY_PAGE,
@@ -254,7 +298,12 @@ export class TransferService {
       if (existing.requestHash !== command.requestHash) {
         throw new ConflictException('The idempotency key was already used for another transfer');
       }
-
+      // The ownership check must also guard the idempotency shortcut: replaying another customer's
+      // key must never return (or reveal) a transfer that debits that customer's wallet.
+      const ownedWallet = await manager
+        .getRepository(WalletAccount)
+        .findOne({ where: { id: existing.sourceWalletId } });
+      assertWalletOwnership(command.ownership, ownedWallet?.customerId);
       await this.metricsService?.increment(manager, 'idempotency.hits');
       return { transferId: existing.id };
     }
@@ -274,6 +323,8 @@ export class TransferService {
         },
       };
     }
+
+    assertWalletOwnership(command.ownership, sourceWallet.customerId);
 
     const destinationWallet = walletsById.get(command.destinationWalletId);
     if (!destinationWallet) {
@@ -821,6 +872,7 @@ export class TransferService {
 
     return {
       sourceWalletId,
+      ownership: command.ownership,
       destinationWalletId,
       amountMinor,
       currency,

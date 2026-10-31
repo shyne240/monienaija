@@ -1,0 +1,41 @@
+MISSION 23 — fast-uri RESOLUTION PATHS AND ADVISORY CLOSURE (own execution)
+
+== 1. Production tree (npm ls --omit=dev) ==
+   monienaija@0.1.0 /home/user/m23
+   `-- fastify@5.12.7 overridden
+     +-- @fastify/ajv-compiler@4.0.5
+     | +-- ajv@8.20.0
+     | | `-- fast-uri@3.1.9 deduped
+     | `-- fast-uri@3.1.9 overridden
+     `-- fast-json-stringify@7.0.1
+       `-- fast-uri@4.2.3 overridden
+   
+
+== 2. Every fast-uri install on disk (filesystem scan, production node_modules) ==
+   3.1.9   node_modules/fast-uri
+   4.2.3   node_modules/fast-json-stringify/node_modules/fast-uri
+
+== 3. Locked resolution paths (package-lock.json) ==
+   3.1.9   node_modules/fast-uri
+   4.2.3   node_modules/fast-json-stringify/node_modules/fast-uri
+   paths still on a known-vulnerable version: NONE
+
+== 4. Versions resolved by consumers inside the compiled app (dist/main.js graph) ==
+   @fastify/ajv-compiler -> fast-uri 3.1.9
+   fast-json-stringify   -> fast-uri 4.2.3
+   ajv                   -> fast-uri 3.1.9
+
+== 5. Target advisory closure ==
+   GHSA-qw65-cvwx-89v3  before: 2 occurrence(s)  |  after: 0 occurrence(s)
+   GHSA-58mr-gqgx-xq4g  before: 2 occurrence(s)  |  after: 0 occurrence(s)
+
+   All advisories that the before-run attached to fast-uri (8 distinct):
+     GHSA-qw65-cvwx-89v3
+     GHSA-58mr-gqgx-xq4g
+     GHSA-hrr3-gc8f-f4qj
+     GHSA-jvvf-x445-j334
+     GHSA-w74x-v6f9-j3xg
+     GHSA-xhq7-xmqj-769h
+     GHSA-wjr9-j795-jxcr
+     GHSA-333x-w4r6-6crp
+   all resolved: the fast-uri entry is absent from the after audit entirely

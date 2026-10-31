@@ -20,9 +20,11 @@ import type { PaymentReferenceService } from '../src/payment/payment-reference.s
 import type { SettlementAccountService } from '../src/payment/settlement-account.service';
 import { WalletAccount } from '../src/wallet/wallet-account.entity';
 import { WalletStatus } from '../src/wallet/wallet.enums';
+import type { WalletOwnershipBinding } from '../src/wallet/wallet-ownership';
 import { Withdrawal } from '../src/withdrawal/withdrawal.entity';
 import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
 import { WithdrawalStatus } from '../src/withdrawal/withdrawal.enums';
+import { NotFoundException } from '@nestjs/common';
 import type { CreateWithdrawalCommand } from '../src/withdrawal/withdrawal.types';
 
 const WALLET_ID = '00000000-0000-4000-8000-000000000001';
@@ -132,6 +134,10 @@ class MemoryDataSource {
 
   constructor(private readonly manager: MemoryManager) {}
 
+  getRepository<T extends ObjectLiteral>(target: EntityTarget<T>): Repository<T> {
+    return this.manager.getRepository(target);
+  }
+
   transaction<T>(
     isolationLevel: string,
     callback: (manager: EntityManager) => Promise<T>,
@@ -218,9 +224,16 @@ function makeFixture(): Fixture {
   return { depositService, withdrawalService, deposits, withdrawals, ledger, dataSource };
 }
 
+const TEST_OWNERSHIP: WalletOwnershipBinding = {
+  kind: 'INTERNAL',
+  principalId: 'payment-test-principal',
+  principalType: 'SERVICE',
+};
+
 function depositCommand(overrides: Partial<CreateDepositCommand> = {}): CreateDepositCommand {
   return {
     walletId: WALLET_ID,
+    ownership: TEST_OWNERSHIP,
     amountMinor: '100000',
     currency: 'NGN',
     idempotencyKey: 'deposit-payment-test-1',
@@ -234,6 +247,7 @@ function withdrawalCommand(
 ): CreateWithdrawalCommand {
   return {
     walletId: WALLET_ID,
+    ownership: TEST_OWNERSHIP,
     amountMinor: '40000',
     currency: 'NGN',
     idempotencyKey: 'withdrawal-payment-test-1',
@@ -307,5 +321,113 @@ describe('controlled payment services', () => {
       status: WithdrawalStatus.FAILED,
       journalId: null,
     });
+  });
+});
+
+describe('customer wallet ownership enforcement', () => {
+  const OWNER = 'payment-test-customer';
+
+  it('rejects a deposit into a wallet owned by another customer without creating a deposit', async () => {
+    const fixture = makeFixture();
+    await expect(
+      fixture.depositService.createDeposit(
+        depositCommand({ ownership: { kind: 'CUSTOMER_SELF', customerId: 'other-customer' } }),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(fixture.deposits.records.size).toBe(0);
+    expect(fixture.ledger.calls).toHaveLength(0);
+  });
+
+  it('allows the authenticated owner to create their own deposit and withdrawal', async () => {
+    const fixture = makeFixture();
+    const deposit = await fixture.depositService.createDeposit(
+      depositCommand({ ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER } }),
+    );
+    const withdrawal = await fixture.withdrawalService.createWithdrawal(
+      withdrawalCommand({
+        ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER },
+        idempotencyKey: 'owned-withdrawal-1',
+      }),
+    );
+
+    expect(deposit.status).toBe(DepositStatus.PENDING);
+    expect(deposit.walletId).toBe(WALLET_ID);
+    expect(withdrawal.status).toBe(WithdrawalStatus.PENDING);
+    expect(fixture.deposits.records.size).toBe(1);
+    expect(fixture.withdrawals.records.size).toBe(1);
+  });
+
+  it("never reveals another customer's deposit through an idempotency-key replay", async () => {
+    const fixture = makeFixture();
+    const command = depositCommand({
+      ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER },
+    });
+    const created = await fixture.depositService.createDeposit(command);
+
+    await expect(
+      fixture.depositService.createDeposit({
+        ...command,
+        ownership: { kind: 'CUSTOMER_SELF', customerId: 'other-customer' },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(fixture.deposits.records.size).toBe(1);
+    expect(fixture.deposits.records.get(created.id)?.id).toBe(created.id);
+  });
+
+  it("never reveals another customer's withdrawal through an idempotency-key replay", async () => {
+    const fixture = makeFixture();
+    const command = withdrawalCommand({
+      ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER },
+      idempotencyKey: 'replay-withdrawal-1',
+    });
+    await fixture.withdrawalService.createWithdrawal(command);
+
+    await expect(
+      fixture.withdrawalService.createWithdrawal({
+        ...command,
+        ownership: { kind: 'CUSTOMER_SELF', customerId: 'other-customer' },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(fixture.withdrawals.records.size).toBe(1);
+  });
+
+  it('hides foreign deposits from customer-scoped reads', async () => {
+    const fixture = makeFixture();
+    const command = depositCommand({
+      ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER },
+    });
+    const created = await fixture.depositService.createDeposit(command);
+
+    await expect(
+      fixture.depositService.getDepositForCustomer(created.id, 'other-customer'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const owned = await fixture.depositService.getDepositForCustomer(created.id, OWNER);
+    expect(owned.id).toBe(created.id);
+  });
+
+  it('hides foreign withdrawals from customer-scoped reads', async () => {
+    const fixture = makeFixture();
+    const command = withdrawalCommand({
+      ownership: { kind: 'CUSTOMER_SELF', customerId: OWNER },
+      idempotencyKey: 'scoped-withdrawal-1',
+    });
+    const created = await fixture.withdrawalService.createWithdrawal(command);
+
+    await expect(
+      fixture.withdrawalService.getWithdrawalForCustomer(created.id, 'other-customer'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const owned = await fixture.withdrawalService.getWithdrawalForCustomer(created.id, OWNER);
+    expect(owned.id).toBe(created.id);
+  });
+
+  it('keeps internal principals on the existing wallet-trust path', async () => {
+    const fixture = makeFixture();
+    const deposit = await fixture.depositService.createDeposit(depositCommand());
+    expect(deposit.status).toBe(DepositStatus.PENDING);
   });
 });

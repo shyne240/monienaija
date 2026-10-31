@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { ApiClient } from '../services/api-client';
+import { ApiClient, onCustomerSessionExpired } from '../services/api-client';
 import { SecureStorage } from '../services/secure-storage';
 
 export interface UserSession {
@@ -179,3 +179,15 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+if (typeof onCustomerSessionExpired === 'function') {
+  onCustomerSessionExpired(() => {
+    useAuthStore.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      session: null,
+      customerId: null,
+      error: 'Your session has expired. Please log in again.',
+    });
+  });
+}

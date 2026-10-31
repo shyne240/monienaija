@@ -157,6 +157,40 @@ export class WalletService {
     };
   }
 
+  /**
+   * Customer-scoped wallet read. The customer id comes from the authenticated session, so a wallet
+   * id belonging to another customer resolves to "not found" (no enumeration, no cross-customer
+   * balance disclosure).
+   */
+  async getWalletForCustomer(walletId: string, customerId: string): Promise<WalletView> {
+    this.assertUuid(walletId, 'walletId');
+    const wallet = await this.walletRepository.findOne({ where: { id: walletId, customerId } });
+    if (!wallet) {
+      throw new NotFoundException(`Wallet ${walletId} was not found`);
+    }
+
+    const balance = await this.ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    return this.toView(wallet, balance.balanceMinor);
+  }
+
+  async getWalletBalanceForCustomer(
+    walletId: string,
+    customerId: string,
+  ): Promise<WalletBalanceView> {
+    this.assertUuid(walletId, 'walletId');
+    const wallet = await this.walletRepository.findOne({ where: { id: walletId, customerId } });
+    if (!wallet) {
+      throw new NotFoundException(`Wallet ${walletId} was not found`);
+    }
+
+    const balance = await this.ledgerService.getAccountBalance(wallet.ledgerAccountId);
+    return {
+      walletId: wallet.id,
+      currency: wallet.currency,
+      balanceMinor: balance.balanceMinor,
+    };
+  }
+
   async listWallets(customerId?: string): Promise<WalletView[]> {
     const normalizedCustomerId = customerId?.trim();
     if (

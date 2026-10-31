@@ -143,6 +143,11 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
 
     await expect(
       transferService.createTransfer({
+        // INTEGRATION: main's `CreateTransferCommand.ownership` is now required. This spec drives
+        // TransferService directly (no HTTP principal) to test the suspended-customer boundary, so it
+        // passes an INTERNAL binding — which `assertWalletOwnership` deliberately does not restrict —
+        // keeping every assertion in this file exactly as before the integration.
+        ownership: { kind: 'INTERNAL', principalId: 'v1-system-01-spec', principalType: 'SERVICE' },
         sourceWalletId: sender.walletId,
         destinationWalletId: recipient.walletId,
         amountMinor: '25000',
@@ -163,6 +168,8 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
 
     await expect(
       transferService.createTransfer({
+        // INTEGRATION: see the ownership note above — INTERNAL binding, behaviour unchanged.
+        ownership: { kind: 'INTERNAL', principalId: 'v1-system-01-spec', principalType: 'SERVICE' },
         sourceWalletId: sender.walletId,
         destinationWalletId: recipient.walletId,
         amountMinor: '25000',
@@ -178,6 +185,8 @@ describe('V1-SYSTEM-01 suspended-customer financial boundary (real PostgreSQL)',
     await fundWallet(sender.ledgerAccountId, '100000');
 
     const view = await transferService.createTransfer({
+      // INTEGRATION: see the ownership note above — INTERNAL binding, behaviour unchanged.
+      ownership: { kind: 'INTERNAL', principalId: 'v1-system-01-spec', principalType: 'SERVICE' },
       sourceWalletId: sender.walletId,
       destinationWalletId: recipient.walletId,
       amountMinor: '25000',

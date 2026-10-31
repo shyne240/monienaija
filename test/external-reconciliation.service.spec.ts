@@ -297,6 +297,14 @@ function makeOutboxFact(
   };
 }
 
+/**
+ * Idempotency hints are compared with the wall clock (`expires_at <= Date.now()` means EXPIRED), so
+ * the fixtures stay future-relative instead of using a fixed date that silently expires and turns
+ * an unrelated assertion into a failure. The expiry rule itself is covered explicitly by
+ * 'flags an expired idempotency hint' below.
+ */
+const futureExpiry = () => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
 function makeIdempotencyHint(
   overrides: Partial<ExternalReconciliationIdempotencyHint> = {},
 ): ExternalReconciliationIdempotencyHint {
@@ -306,7 +314,7 @@ function makeIdempotencyHint(
     status: 'COMPLETED',
     requestHash: SETTLEMENT_REQUEST_HASH,
     resourceId: SETTLEMENT_ID,
-    expiresAt: new Date('2026-09-01T00:00:00.000Z'),
+    expiresAt: futureExpiry(),
     match: 'MATCH',
     ...overrides,
   };
@@ -1053,20 +1061,46 @@ function makeIdempotencyRow(overrides: Record<string, unknown> = {}): Record<str
     status: 'COMPLETED',
     request_hash: SETTLEMENT_REQUEST_HASH,
     resource_id: SETTLEMENT_ID,
-    // V1-CUSTOMER-02: was a fixed past-relative-to-now date ('2026-09-01'),
-    // which made the idempotency hint evaluate as EXPIRED once real wall-clock
-    // time passed that date (service compares against Date.now() — see
-    // ExternalReconciliationService's idempotency hint resolution), turning a
-    // PASS fixture into a false ERROR with no change to production code. Not
-    // a real regression; fixed by deriving the expiry from "now" so the
-    // fixture always represents a currently-valid, non-expired record
-    // regardless of when the suite runs.
-    expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    // V1-CUSTOMER-02 (both sides of this merge independently fixed the same rot): the fixture
+    // used a fixed date ('2026-09-01'), which made the idempotency hint evaluate as EXPIRED once
+    // real wall-clock time passed it (the service compares against Date.now()), turning a PASS
+    // fixture into a false ERROR with no change to production code. The expiry is therefore
+    // derived from "now" so the record is always currently valid; main expresses the same fix
+    // through the shared futureExpiry() helper, which is kept here for consistency.
+    expires_at: futureExpiry(),
     ...overrides,
   };
 }
 
 describe('ExternalReconciliationService', () => {
+  it('flags an expired idempotency hint as a reconciliation error', async () => {
+    const dataSource = new ReadOnlyReconciliationDataSource();
+    const settlementService = new FakeExternalSettlementService();
+    settlementService.setSettlement(makeSettlementView());
+    const service = new ExternalReconciliationService(
+      dataSource as unknown as DataSource,
+      new FakeExternalOperationService() as never,
+      settlementService as never,
+    );
+    dataSource.setOperation([makeOperationRow()]);
+    dataSource.setReferences([makeReferenceRow()]);
+    dataSource.setCallbacks([makeCallbackRow()]);
+    dataSource.setJournals([makeJournalRow()]);
+    dataSource.setJournalLines(makeJournalLineRows());
+    dataSource.setAudit([makeAuditRow()]);
+    dataSource.setOutbox([makeOutboxRow()]);
+    dataSource.setIdempotency([
+      makeIdempotencyRow({ expires_at: new Date('2020-01-01T00:00:00.000Z') }),
+    ]);
+
+    const report = await service.reconcileOperation(EXTERNAL_OPERATION_ID);
+
+    expect(report.status).toBe(VerificationStatus.ERROR);
+    expect(report.discrepancies.map((discrepancy) => discrepancy.code)).toContain(
+      ExternalReconciliationDiscrepancyCode.IDEMPOTENCY_HASH_MISMATCH,
+    );
+  });
+
   it('uses a repeatable-read read-only transaction and never exposes a write path', async () => {
     const dataSource = new ReadOnlyReconciliationDataSource();
     const settlementService = new FakeExternalSettlementService();
