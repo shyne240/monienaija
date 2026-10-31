@@ -152,6 +152,52 @@ export class OutletService {
     return this.dataSource.getRepository(AgentOutlet).find({ where: { agentId } as any, order: { createdAt: 'ASC' } as any });
   }
 
+  async updateMetadata(id: string, input: {
+    expectedVersion: number;
+    name?: string;
+    displayName?: string | null;
+    addressLine?: string | null;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    actor: string;
+  }): Promise<AgentOutlet> {
+    this.assertUuid(id, 'id');
+    const actor = this.normalizeActor(input.actor);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
+      throw new BadRequestException('expectedVersion must be a positive integer');
+    }
+    if ([input.name, input.displayName, input.addressLine, input.city, input.state, input.country].every((value) => value === undefined)) {
+      throw new BadRequestException('At least one metadata field is required');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentOutlet);
+      const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
+      if (outlet.version !== input.expectedVersion) throw new ConflictException('Outlet version is stale');
+      const previous = this.toValues(outlet);
+      if (input.name !== undefined) {
+        if (typeof input.name !== 'string' || containsControlCharacters(input.name)) throw new BadRequestException('name is invalid');
+        outlet.name = this.normalizeName(input.name, 'name');
+      }
+      if (input.displayName !== undefined) outlet.displayName = this.normalizeMetadata(input.displayName, 'displayName', 160);
+      if (input.addressLine !== undefined) outlet.addressLine = this.normalizeMetadata(input.addressLine, 'addressLine', 500);
+      if (input.city !== undefined) outlet.city = this.normalizeMetadata(input.city, 'city', 100);
+      if (input.state !== undefined) outlet.state = this.normalizeMetadata(input.state, 'state', 100);
+      if (input.country !== undefined) outlet.country = this.normalizeMetadata(input.country, 'country', 100);
+      outlet.updatedBy = actor;
+      // Even an identical accepted PATCH consumes the version. Otherwise TypeORM may
+      // skip UPDATE for a no-op and two callers holding the same version could both win.
+      outlet.version += 1;
+      const saved = await repo.save(outlet);
+      await this.auditService.record(manager, {
+        entityType: 'AGENT_OUTLET', entityId: saved.id, action: 'AGENT_OUTLET_UPDATED', actor,
+        previousValues: previous, newValues: this.toValues(saved),
+      });
+      return saved;
+    });
+  }
+
   async suspend(id: string, actor: string): Promise<AgentOutlet> {
     return this.transition(id, OutletStatus.SUSPENDED, actor, 'AGENT_OUTLET_SUSPENDED');
   }
@@ -173,8 +219,8 @@ export class OutletService {
     if (!Object.values(OutletStatus).includes(target)) throw new BadRequestException(`Invalid status ${target}`);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentOutlet);
-      const outlet = await repo.findOne({ where: { id } as any });
-      if (!outlet || (outlet as any).deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
+      const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
       const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status as OutletStatus] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${outlet.status} → ${target} is not allowed`);
@@ -357,6 +403,14 @@ export class OutletService {
       createdBy: o.createdBy,
       updatedBy: o.updatedBy,
     };
+  }
+
+  private normalizeMetadata(value: string | null, field: string, max: number): string | null {
+    if (value === null) return null;
+    if (typeof value !== 'string' || value.length > max || containsControlCharacters(value)) {
+      throw new BadRequestException(`${field} must be at most ${max} characters without control characters`);
+    }
+    return value.trim() || null;
   }
 
   private normalizeReference(v: string, field: string): string {

@@ -1,9 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
 
 import { OutletService } from './outlet.service';
 import { TerminalService } from './terminal.service';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { CreateTerminalDto } from './dto/create-terminal.dto';
+import { UpdateOutletMetadataDto } from './dto/update-outlet-metadata.dto';
+import { UpdateTerminalMetadataDto } from './dto/update-terminal-metadata.dto';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -37,7 +39,7 @@ export class OutletController {
       state: dto.state,
       country: dto.country,
       actor,
-      principal: principal as any,
+      principal,
     });
   }
 
@@ -63,20 +65,39 @@ export class OutletController {
       state: dto.state,
       country: dto.country,
       actor,
-      principal: principal as any,
+      principal,
     });
   }
 
   @Get('agents/:agentId/outlets')
   async listOutlets(@Param('agentId') agentId: string, @Req() req: AuthenticatedRequest) {
-    this.requirePrivileged(req);
+    await this.requireView(req);
     return this.outletService.listByAgent(agentId);
   }
 
   @Get('outlets/:outletId')
   async getOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
-    this.requirePrivileged(req);
+    await this.requireView(req);
     return this.outletService.getById(outletId);
+  }
+
+  @Patch('outlets/:outletId')
+  async updateOutlet(
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletMetadataDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireManage(req);
+    return this.outletService.updateMetadata(outletId, {
+      expectedVersion: dto.expectedVersion,
+      name: dto.name,
+      displayName: dto.displayName,
+      addressLine: dto.addressLine,
+      city: dto.city,
+      state: dto.state,
+      country: dto.country,
+      actor,
+    });
   }
 
   @Post('outlets/:outletId/suspend')
@@ -126,7 +147,7 @@ export class OutletController {
       label: dto.label,
       serialNumber: dto.serialNumber,
       actor,
-      principal: principal as any,
+      principal,
     });
   }
 
@@ -147,7 +168,7 @@ export class OutletController {
       label: dto.label,
       serialNumber: dto.serialNumber,
       actor,
-      principal: principal as any,
+      principal,
     });
   }
 
@@ -170,26 +191,41 @@ export class OutletController {
       serialNumber: dto.serialNumber,
       actor,
       aggregatorId,
-      principal: principal as any,
+      principal,
     });
   }
 
   @Get('outlets/:outletId/terminals')
   async listTerminalsByOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
-    this.requirePrivileged(req);
+    await this.requireView(req);
     return this.terminalService.listByOutlet(outletId);
   }
 
   @Get('agents/:agentId/terminals')
   async listTerminalsByAgent(@Param('agentId') agentId: string, @Req() req: AuthenticatedRequest) {
-    this.requirePrivileged(req);
+    await this.requireView(req);
     return this.terminalService.listByAgent(agentId);
   }
 
   @Get('terminals/:terminalId')
   async getTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
-    this.requirePrivileged(req);
+    await this.requireView(req);
     return this.terminalService.getById(terminalId);
+  }
+
+  @Patch('terminals/:terminalId')
+  async updateTerminal(
+    @Param('terminalId') terminalId: string,
+    @Body() dto: UpdateTerminalMetadataDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const actor = await this.requireManage(req);
+    return this.terminalService.updateMetadata(terminalId, {
+      expectedVersion: dto.expectedVersion,
+      label: dto.label,
+      serialNumber: dto.serialNumber,
+      actor,
+    });
   }
 
   @Post('terminals/:terminalId/suspend')
@@ -224,14 +260,12 @@ export class OutletController {
     );
   }
 
-  private requirePrivileged(req: AuthenticatedRequest): string {
-    const principal = req.authorizationPrincipal;
-    if (!principal) throw new UnauthorizedException('Authentication required');
-    const type = (principal.type ?? '').toUpperCase();
-    if (type === 'AGENT' || type === 'CUSTOMER' || type === 'AGGREGATOR') {
-      throw new UnauthorizedException('Privileged access required');
-    }
-    // Allow SUPPORT, OPERATOR, SERVICE, PRIVILEGED, WORKFORCE etc.
-    return principal.principalId;
+  private requireView(req: AuthenticatedRequest): Promise<string> {
+    return this.authorizationService.requireFunction(
+      req.authorizationPrincipal,
+      'agent.view',
+      'agent-outlets-terminals',
+      ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

@@ -211,6 +211,23 @@ export class RuntimeAccessGuard implements CanActivate {
           { type: route.resourceType, id: route.resourceId },
         );
         if (!gateDecision.allowed) {
+          // A newly declared Agent gate would otherwise stop the request before its existing
+          // controller-level requireFunction() can record a denial. Audit only these explicitly
+          // marked single-function routes, and only on denial, so allowed requests still get
+          // exactly one controller decision and unrelated Arena 3 policies retain their behavior.
+          if (route.auditDeniedWorkforceFunction && declaredPolicy.requiredFunctions?.length === 1) {
+            const functionCode = declaredPolicy.requiredFunctions[0]!;
+            await this.authorizationService.authorize(
+              principal,
+              {
+                resourceType: route.resourceType,
+                action: functionCode,
+                requiredFunctions: [functionCode],
+                customerAccess: 'NONE',
+              },
+              { type: route.resourceType },
+            );
+          }
           throw new ForbiddenException(`Authorization denied: ${gateDecision.reason}`);
         }
       }

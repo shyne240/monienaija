@@ -6,8 +6,8 @@
  * Proves the read-only unified history GET /api/v1/agents/me/transactions against real flows:
  * every item type (CASH_IN / CASH_OUT / CASH_TO_CASH lifecycle / AGENT_FUNDING / AGENT_DEFUNDING),
  * unified chronological ordering, pagination, timestamp-tie ordering, cross-agent isolation at the
- * query boundary, authenticated-context identity, suspended-agent read convention, read-only
- * (zero mutation) and safe projection. No fake financial transactions — all flows are real.
+ * query boundary, authenticated-context identity, suspended-session revocation with workforce
+ * oversight, read-only (zero mutation) and safe projection. All financial flows use the real services.
  */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -114,7 +114,7 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
         principalId: `workforce-${type.toLowerCase()}-1`,
         audience,
         roles: [],
-        scopes: [],
+        scopes: type === 'OPERATOR' ? ['agent.view'] : [],
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
@@ -714,12 +714,18 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     void a;
   });
 
-  it('13. suspended agent keeps read access (existing read conventions; no invented lifecycle policy)', async () => {
+  it('13. suspension revokes Agent history access while authorized workforce oversight remains available', async () => {
     const a = await agentBundle({ floatMinor: '5000' });
     await lifecycleService.suspend(a.agent.id, 'test-actor');
-    const res = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
       .set('Authorization', `Bearer ${a.token}`)
+      .expect(401);
+    const sessions = await dataSource.query(`SELECT status FROM agent_authentication_sessions WHERE agent_id=$1`, [a.agent.id]);
+    expect(sessions.map((row: { status: string }) => row.status)).toEqual(['REVOKED']);
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/internal/agents/${a.agent.id}/transactions`)
+      .set('Authorization', 'Bearer workforce-operator')
       .expect(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].type).toBe('AGENT_FUNDING');

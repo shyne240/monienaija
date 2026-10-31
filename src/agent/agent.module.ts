@@ -37,6 +37,7 @@ import { AgentCashToCashController } from './agent-cash-to-cash.controller';
 import { AgentCashToCashClaimService } from './agent-cash-to-cash-claim.service';
 import { AgentCashToCashClaimController } from './agent-cash-to-cash-claim.controller';
 import { AgentCashToCashOperationsController } from './agent-cash-to-cash-operations.controller';
+import { AgentCashToCashExpiryStatusController } from './agent-cash-to-cash-expiry-status.controller';
 import { AgentCashToCashExpiryService } from './agent-cash-to-cash-expiry.service';
 import { AgentCashToCashExpiryWorker } from './agent-cash-to-cash-expiry-worker.service';
 import { CashToCashTransfer } from './cash-to-cash.entity';
@@ -92,6 +93,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
     AgentCashToCashController,
     AgentCashToCashClaimController,
     AgentCashToCashOperationsController,
+    AgentCashToCashExpiryStatusController,
     AgentFundingController,
     AgentDeskOtpController, // V1-AGENT-MFA-API-01 — issue-only desk OTP challenge surface
   ],
