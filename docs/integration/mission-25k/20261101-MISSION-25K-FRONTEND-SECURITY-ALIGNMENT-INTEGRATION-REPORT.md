@@ -41,8 +41,8 @@ provider, ledger or role behaviour changed (§D).
 | **Integration merge commit** | **`587c3763944368b9260c9299d18bce1189ca5919`** |
 | Merge parents | `5d03416` (25H baseline) + `1049280` (25J) |
 | **Code candidate SHA (composed tree)** | **`587c3763944368b9260c9299d18bce1189ca5919`** |
-| Evidence/report commits | one or more **docs-only** commits after `587c376` |
-| Branch tip at hand-off | `1818f0ad17bbe0c85a31a2930931db4e0afee25b` — remote verified equal via `git ls-remote` |
+| Evidence/report commits | **docs-only** commits after `587c376` |
+| Branch tip | read it fresh with `git ls-remote origin refs/heads/integration/mission-25k-frontend-security-alignment`; it is deliberately not frozen in this file because each documentation commit advances it |
 | Merge conflicts | none (0) |
 | Integration-only corrections | none (0) |
 
@@ -421,7 +421,7 @@ secrets.
 ## Arena 4 — explicit readiness statement
 
 > **The pinned candidate `587c3763944368b9260c9299d18bce1189ca5919` (code composition; branch
-> `integration/mission-25k-frontend-security-alignment`, tip `1818f0a…` adding evidence only) is
+> `integration/mission-25k-frontend-security-alignment`, tip adding evidence only) is
 > READY FOR ARENA 4 INDEPENDENT REASSESSMENT.**
 >
 > It is the exact composition of the Mission 25H backend security integration candidate
