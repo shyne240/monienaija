@@ -1,0 +1,38 @@
+MISSION 25H — REVIEW OF THE MISSION 25E AUXILIARY BROWSER RECHECK FAILURE
+
+Reported state inherited from Mission 25E: 11/12 in
+docs/integration/mission-25e/evidence/browser-recheck-results.json
+Failing case: UI-RECEIPTS-FILTER-QUARANTINED
+Recorded detail: 'QUARANTINED filter shows quarantined=true shows materialized=true'
+
+INDEPENDENT REPRODUCTION AT THE MISSION 25H CANDIDATE
+Chromium 153.0.8010.0, real Admin Web, real backend, real PostgreSQL.
+
+  Step 1 — open the notification console, Deliveries & Retries tab.
+  Step 2 — the receipt status filter offers these option labels:
+             All receipt statuses, QUARANTINED, FAILED, SUPPRESSED, UNSUPPORTED, MATERIALIZED
+  Step 3 — select the QUARANTINED filter.
+  Step 4 — read the section's whole innerText (the 25E assertion method):
+             contains 'MATERIALIZED' -> TRUE
+  Step 5 — read only the data rows of outbox-receipts-table:
+             row count = 1
+             row text  = 'f5a26cf2-... QUARANTINED EVENT_TYPE_UNSUPPORTED 0'
+             rows containing MATERIALIZED = 0
+             every returned row QUARANTINED = TRUE
+
+CLASSIFICATION: HARNESS DEFECT — NOT A PRODUCT DEFECT.
+  The string 'MATERIALIZED' is present in the section's textContent at all times because it is
+  a static <option> label of the status filter, not because a MATERIALIZED receipt row was
+  returned. The 25E assertion therefore fires on every render regardless of data. Verified
+  here with a deliberately seeded MATERIALIZED receipt alongside a QUARANTINED one: the filter
+  correctly returned ONLY the quarantined row and excluded the MATERIALIZED row.
+
+  The correct assertion method is per-row (data-testid=outbox-receipt-row-<id> or the table
+  body rows), which is what this mission's browser harness uses throughout.
+
+  The 25E artifact is therefore not a clean rerun and must not be presented as one; its single
+  failure carries no product signal. It is superseded by this row-level verification.
+
+Evidence: evidence/aux-browser-recheck-analysis.json,
+          evidence/screenshots/receipts-quarantined-filter.png,
+          evidence/harness/recheck.cjs

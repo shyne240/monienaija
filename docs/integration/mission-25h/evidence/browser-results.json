@@ -1,0 +1,765 @@
+{
+  "pass": 41,
+  "fail": 0,
+  "total": 41,
+  "failures": [],
+  "totalPreference403": 20,
+  "incompatibilities": [
+    {
+      "id": "F-25H-01",
+      "owner": "Arena 2",
+      "severity": "medium",
+      "summary": "Customer 360 preference panel still issues GET /customers/:id/preferences and /history for every OPERATOR/PRIVILEGED role holding customer.view. The corrected backend denies all workforce access, so each such visit now produces 4 x HTTP 403 (refused, no data).",
+      "rolesStillRequesting": [
+        "SUPER_ADMIN",
+        "FINANCE_AUDITOR",
+        "ADMINISTRATOR",
+        "OPERATIONS",
+        "COMPLIANCE"
+      ],
+      "observed403Count": 20,
+      "uiState": "DENIED-403 (renders the documented 403 message; no preference values shown)",
+      "suggestedDirection": "Gate the panel on the approved policy (no workforce preference read today) so no request is emitted, or keep the request but replace it with a static \"not available to workforce\" state."
+    },
+    {
+      "id": "F-25H-02",
+      "owner": "Arena 2",
+      "severity": "low",
+      "summary": "Stale copy: the restricted state reads \"Preference visibility is restricted to authorized operational and privileged workforce roles with customer.view\", and the panel/notification-management-api comments still describe the superseded OPERATOR/PRIVILEGED-with-customer.view visibility model. No workforce role can read preferences under the corrected policy.",
+      "evidence": [
+        {
+          "role": "CUSTOMER_SERVICE",
+          "text": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Preference visibility is restricted to authorized operational and privileged workforce roles with customer.view."
+        }
+      ]
+    }
+  ],
+  "exposedRoles": [
+    "SUPER_ADMIN",
+    "FINANCE_CONTROLLER",
+    "FINANCE_AUDITOR",
+    "OPERATIONS"
+  ],
+  "rolesShowingValues": [],
+  "rolesInDenied403State": [
+    "SUPER_ADMIN",
+    "FINANCE_AUDITOR",
+    "ADMINISTRATOR",
+    "OPERATIONS",
+    "COMPLIANCE"
+  ],
+  "rolesInRestrictedCopyState": [
+    "CUSTOMER_SERVICE"
+  ],
+  "rolesThatStillRequestPreferences": [
+    "SUPER_ADMIN",
+    "FINANCE_AUDITOR",
+    "ADMINISTRATOR",
+    "OPERATIONS",
+    "COMPLIANCE"
+  ],
+  "roleReports": [
+    {
+      "role": "SUPER_ADMIN",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "prefPanel": "DENIED-403",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Customer preferences are not permitted for your current workforce session (403).",
+      "prefRequests": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "http4xx5xx": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "jsErrors": []
+    },
+    {
+      "role": "FINANCE_PREPARER",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "NO-CUSTOMERS-VIEW",
+      "prefValuesShown": false,
+      "prefPanelText": "",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "prefPanel": "NO-CUSTOMERS-VIEW",
+      "prefValuesShown": false,
+      "prefPanelText": "",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    },
+    {
+      "role": "FINANCE_AUDITOR",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "prefPanel": "DENIED-403",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Customer preferences are not permitted for your current workforce session (403).",
+      "prefRequests": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "http4xx5xx": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "jsErrors": []
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "DENIED-403",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Customer preferences are not permitted for your current workforce session (403).",
+      "prefRequests": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "http4xx5xx": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "jsErrors": []
+    },
+    {
+      "role": "OPERATIONS",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "prefPanel": "DENIED-403",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Customer preferences are not permitted for your current workforce session (403).",
+      "prefRequests": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "http4xx5xx": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "jsErrors": []
+    },
+    {
+      "role": "AGENT_NETWORK_MANAGER",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "NO-CUSTOMERS-VIEW",
+      "prefValuesShown": false,
+      "prefPanelText": "",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    },
+    {
+      "role": "COMPLIANCE",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "DENIED-403",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Customer preferences are not permitted for your current workforce session (403).",
+      "prefRequests": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "http4xx5xx": [
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences",
+          "status": 403,
+          "method": "GET"
+        },
+        {
+          "url": "/api/v1/customers/bd0bf61a-ca6f-4eca-965e-28d5a93525b1/preferences/history",
+          "status": 403,
+          "method": "GET"
+        }
+      ],
+      "jsErrors": []
+    },
+    {
+      "role": "RISK_FRAUD",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "NO-CUSTOMERS-VIEW",
+      "prefValuesShown": false,
+      "prefPanelText": "",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "RESTRICTED-COPY",
+      "prefValuesShown": false,
+      "prefPanelText": "Communication & account preferences (read-only) Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy. Read-only Preference visibility is restricted to authorized operational and privileged workforce roles with customer.view.",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    },
+    {
+      "role": "TREASURY",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "prefPanel": "NO-CUSTOMERS-VIEW",
+      "prefValuesShown": false,
+      "prefPanelText": "",
+      "prefRequests": [],
+      "http4xx5xx": [],
+      "jsErrors": []
+    }
+  ],
+  "results": [
+    {
+      "group": "browser-preference-boundary",
+      "name": "SUPER_ADMIN: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "SUPER_ADMIN: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "SUPER_ADMIN: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "SUPER_ADMIN: the UI reflects the backend refusal (denied state, not empty/values)",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403",
+        "statuses": [
+          403,
+          403,
+          403,
+          403
+        ]
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "FINANCE_PREPARER: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "NO-CUSTOMERS-VIEW"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_PREPARER: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_PREPARER: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "FINANCE_CONTROLLER: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "NO-CUSTOMERS-VIEW"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_CONTROLLER: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_CONTROLLER: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "FINANCE_AUDITOR: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_AUDITOR: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_AUDITOR: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "FINANCE_AUDITOR: the UI reflects the backend refusal (denied state, not empty/values)",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403",
+        "statuses": [
+          403,
+          403,
+          403,
+          403
+        ]
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "ADMINISTRATOR: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "ADMINISTRATOR: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "ADMINISTRATOR: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "ADMINISTRATOR: the UI reflects the backend refusal (denied state, not empty/values)",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403",
+        "statuses": [
+          403,
+          403,
+          403,
+          403
+        ]
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "OPERATIONS: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "OPERATIONS: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "OPERATIONS: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "OPERATIONS: the UI reflects the backend refusal (denied state, not empty/values)",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403",
+        "statuses": [
+          403,
+          403,
+          403,
+          403
+        ]
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "AGENT_NETWORK_MANAGER: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "NO-CUSTOMERS-VIEW"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "AGENT_NETWORK_MANAGER: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "AGENT_NETWORK_MANAGER: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "COMPLIANCE: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "COMPLIANCE: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "COMPLIANCE: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "COMPLIANCE: the UI reflects the backend refusal (denied state, not empty/values)",
+      "ok": true,
+      "detail": {
+        "prefPanel": "DENIED-403",
+        "statuses": [
+          403,
+          403,
+          403,
+          403
+        ]
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "RISK_FRAUD: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "NO-CUSTOMERS-VIEW"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "RISK_FRAUD: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "RISK_FRAUD: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "CUSTOMER_SERVICE: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "RESTRICTED-COPY"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "CUSTOMER_SERVICE: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "CUSTOMER_SERVICE: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-preference-boundary",
+      "name": "TREASURY: preference values are never rendered for a workforce session",
+      "ok": true,
+      "detail": {
+        "prefPanel": "NO-CUSTOMERS-VIEW"
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "TREASURY: no uncaught JS errors on the pages visited",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "TREASURY: no background HTTP 500 from the integrated surfaces",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "group": "browser-summary",
+      "name": "notification console reachable for at least one role (RBAC not collapsed)",
+      "ok": true,
+      "detail": {
+        "rolesWithConsole": [
+          "SUPER_ADMIN",
+          "FINANCE_CONTROLLER",
+          "FINANCE_AUDITOR",
+          "OPERATIONS"
+        ]
+      }
+    },
+    {
+      "group": "browser-summary",
+      "name": "no role renders preference values",
+      "ok": true,
+      "detail": {
+        "valuesShown": []
+      }
+    },
+    {
+      "group": "browser-summary",
+      "name": "every preference request the UI makes is refused (403/404) after the correction",
+      "ok": true,
+      "detail": {
+        "rolesThatAsk": [
+          "SUPER_ADMIN",
+          "FINANCE_AUDITOR",
+          "ADMINISTRATOR",
+          "OPERATIONS",
+          "COMPLIANCE"
+        ]
+      }
+    }
+  ]
+}

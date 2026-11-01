@@ -1,0 +1,2027 @@
+{
+  "schema": "mission25g-test-evidence-v1",
+  "baselineCommit": "e0d604fad255629a1362c4ff62abd60eb7f85b6f",
+  "assessmentSha256": "86f3e0bc17fc226ee2d669f6942ab529a25feac322bf1b257c6ed38980992ed1",
+  "baselineRedTests": [
+    {
+      "name": "real CUSTOMER_SERVICE preference GET",
+      "expected": 403,
+      "observed": 200,
+      "status": "expected failure on unchanged 25E code",
+      "rawResultSha256": "99c657ec77f20d2822fa3e03b756f08211db3057e11db53e43df214060887e3a"
+    },
+    {
+      "name": "caller-supplied preference actor",
+      "expected": "validated customer identity",
+      "observed": "caller-supplied actor",
+      "status": "expected failure on unchanged 25E code",
+      "rawResultSha256": "9b77ed20ed66b7a0556a941c92b9b773d4e0969b6e184e1739d822a4c376d402"
+    },
+    {
+      "name": "real SUPPORT generic audit projection",
+      "expected": "no preference records",
+      "observed": "preference records and security values returned",
+      "status": "expected failure before projection fix",
+      "rawResultSha256": "69e014c69b9153943356a7e9c1fd747c5ecc24a3188e5651858a55cec1010737"
+    },
+    {
+      "name": "real SUPER_ADMIN generic audit projection",
+      "expected": "no preference records",
+      "observed": "preference records and security values returned",
+      "status": "expected failure before projection fix",
+      "rawResultSha256": "114bbbe5f0e5ad130287bb22013b2af9f998b34c3a58de169f308b9a07be517e"
+    }
+  ],
+  "unitEnvironmentCorrection": {
+    "initial": {
+      "suites": {
+        "total": 229,
+        "passed": 226,
+        "failed": 3,
+        "pending": 0
+      },
+      "tests": {
+        "total": 2713,
+        "passed": 2710,
+        "failed": 3,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    "cause": "Injecting all .env.example entries into unit processes overrode unrelated ConfigService defaults with empty or string values; no application change was made to force these tests to pass.",
+    "subsequentlyRerunWithoutExampleInjection": true,
+    "initialFailingFiles": [
+      "test/agent-cash-to-cash-expiry-worker.spec.ts",
+      "test/mission-15a-expiry-status.spec.ts",
+      "test/partner-connection.service.spec.ts"
+    ],
+    "rawInitialResultSha256": "cac547f773b262595be17ac812e17356863282074e190f4b550e49d394b86982",
+    "isolatedRecheck": {
+      "suites": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 17,
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "rawResultSha256": "e3f6d5f71feb5e609ef7b384fdb495ce88a508c2bfca7609e735384de896ab3c"
+    }
+  },
+  "fullUnit": {
+    "command": "npm test -- --silent --json --outputFile=/home/user/m25g-unit-final3.json",
+    "configuration": "no example-env preload; Node loopback-only egress guard; LOG_LEVEL=silent",
+    "suites": {
+      "total": 229,
+      "passed": 229,
+      "failed": 0,
+      "pending": 0
+    },
+    "tests": {
+      "total": 2713,
+      "passed": 2713,
+      "failed": 0,
+      "pending": 0,
+      "todo": 0
+    },
+    "success": true,
+    "rawResultSha256": "d4bb5da73b4e75e9ec19afd9b3dc336706d19415b0402d844a148ca707bd932d",
+    "files": [
+      {
+        "path": "src/admin/admin-notification.controller.spec.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "src/agent/agent-cash-to-cash-notification.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "src/agent/agent-cash-to-cash-operations.controller.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "src/notification/cash-to-cash-notification.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "src/notification/notification-worker-phone-recipient.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "src/outlet/public-agent-locator.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/a2-workforce-authentication.contract.spec.ts",
+        "status": "passed",
+        "tests": 11
+      },
+      {
+        "path": "test/a2-workforce-configuration.spec.ts",
+        "status": "passed",
+        "tests": 30
+      },
+      {
+        "path": "test/a2-workforce-oidc.service.spec.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "test/a5-ar-control-account-provisioning.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/a5-ar-control-account-provisioning.service.spec.ts",
+        "status": "passed",
+        "tests": 16
+      },
+      {
+        "path": "test/a7-product-command.constants.spec.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "test/a7-product-command.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-command.service.spec.ts",
+        "status": "passed",
+        "tests": 27
+      },
+      {
+        "path": "test/a7-product-command.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/a7-product-customer-binding.constants.spec.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "test/a7-product-customer-binding.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-customer-binding.repository.spec.ts",
+        "status": "passed",
+        "tests": 21
+      },
+      {
+        "path": "test/a7-product-customer-binding.service.spec.ts",
+        "status": "passed",
+        "tests": 31
+      },
+      {
+        "path": "test/a7-product-customer-binding.types.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/a7-product-data-minimization.constants.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/a7-product-data-minimization.module.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/a7-product-data-minimization.service.spec.ts",
+        "status": "passed",
+        "tests": 23
+      },
+      {
+        "path": "test/a7-product-data-minimization.types.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/a7-product-financial-effect.constants.spec.ts",
+        "status": "passed",
+        "tests": 22
+      },
+      {
+        "path": "test/a7-product-financial-effect.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-financial-effect.service.spec.ts",
+        "status": "passed",
+        "tests": 59
+      },
+      {
+        "path": "test/a7-product-financial-effect.types.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/a7-product-lifecycle.constants.spec.ts",
+        "status": "passed",
+        "tests": 21
+      },
+      {
+        "path": "test/a7-product-lifecycle.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-lifecycle.service.spec.ts",
+        "status": "passed",
+        "tests": 60
+      },
+      {
+        "path": "test/a7-product-lifecycle.types.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/a7-product-notification-delivery.constants.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/a7-product-notification-delivery.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-notification-delivery.service.spec.ts",
+        "status": "passed",
+        "tests": 31
+      },
+      {
+        "path": "test/a7-product-notification-delivery.types.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/a7-product-policy.audit.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/a7-product-policy.persistence.spec.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "test/a7-product-policy.profiles.spec.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "test/a7-product-policy.replay.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/a7-product-policy.service.spec.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "test/a7-product-reconciliation.constants.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/a7-product-reconciliation.module.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/a7-product-reconciliation.service.spec.ts",
+        "status": "passed",
+        "tests": 29
+      },
+      {
+        "path": "test/a7-product-reconciliation.types.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/agent-cash-to-cash-expiry-worker.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/authentication-execution.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/authentication-session.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/authorization-http-matrix.spec.ts",
+        "status": "passed",
+        "tests": 160
+      },
+      {
+        "path": "test/authorization.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/b1-billing-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-billing-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "test/b1-billing-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/b1-billing-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/b1-campaign-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-campaign-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "test/b1-campaign-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/b1-campaign-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 19
+      },
+      {
+        "path": "test/b1-commercial-analytics-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-commercial-analytics-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "test/b1-commercial-analytics-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/b1-commercial-analytics-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 25
+      },
+      {
+        "path": "test/b1-commercial-catalog.constants.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/b1-commercial-catalog.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-commercial-catalog.repository.spec.ts",
+        "status": "passed",
+        "tests": 23
+      },
+      {
+        "path": "test/b1-commercial-catalog.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b1-commercial-catalog.types.spec.ts",
+        "status": "passed",
+        "tests": 17
+      },
+      {
+        "path": "test/b1-commercial-governance-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-commercial-governance-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 33
+      },
+      {
+        "path": "test/b1-commercial-governance-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/b1-commercial-governance-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 31
+      },
+      {
+        "path": "test/b1-fee-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-fee-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 28
+      },
+      {
+        "path": "test/b1-fee-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/b1-fee-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/b1-payment-term.contract.spec.ts",
+        "status": "passed",
+        "tests": 27
+      },
+      {
+        "path": "test/b1-payment-term.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/b1-referral-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-referral-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "test/b1-referral-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/b1-referral-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 22
+      },
+      {
+        "path": "test/b1-revenue-recognition-engine.module.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b1-revenue-recognition-engine.repository.spec.ts",
+        "status": "passed",
+        "tests": 26
+      },
+      {
+        "path": "test/b1-revenue-recognition-engine.service.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/b1-revenue-recognition-engine.types.spec.ts",
+        "status": "passed",
+        "tests": 24
+      },
+      {
+        "path": "test/b2-activation-workflow.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-activation-workflow.repository.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2-activation-workflow.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/b2-activation-workflow.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-api-consumer.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-api-consumer.repository.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/b2-api-consumer.service.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b2-api-consumer.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-consent.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-consent.repository.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2-consent.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/b2-consent.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-customer-activation-readiness.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-customer-activation-readiness.repository.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2-customer-activation-readiness.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/b2-customer-activation-readiness.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-merchant-agent-activation-readiness.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-merchant-agent-activation-readiness.repository.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2-merchant-agent-activation-readiness.service.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/b2-merchant-agent-activation-readiness.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-openapi.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2-public-api-authentication.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-public-api-authentication.repository.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/b2-public-api-authentication.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/b2-public-api-authentication.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-webhook.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2-webhook.repository.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/b2-webhook.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/b2-webhook.types.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2f-account-mapping.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2f-account-mapping.service.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/b2f-accounting-treatment.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2f-accounting-treatment.service.spec.ts",
+        "status": "passed",
+        "tests": 16
+      },
+      {
+        "path": "test/b2f-finance-control.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2f-finance-control.service.spec.ts",
+        "status": "passed",
+        "tests": 16
+      },
+      {
+        "path": "test/b2f-fiscal-period.module.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/b2f-fiscal-period.repository.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/b2f-fiscal-period.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/b2f-journal-governance.module.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/b2f-journal-governance.service.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/capability-policy-evidence.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/capability-policy-explanation.service.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/capability-policy-persistence.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/capability-policy-recovery.service.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/capability-policy.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/cash-to-cash-locator-contract.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/commercial-rule-governance.service.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/customer-app.login.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/customer-authentication-rate-limit.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/customer-authentication-runtime.service.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/customer-authentication.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/customer-beneficiary.service.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/customer-compliance-route-policy.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/customer-compliance.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/customer-eligibility.service.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/customer-financial-account-binding-repair.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/customer-financial-account-binding.persistence.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/customer-financial-account-binding.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/customer-financial-account-read.service.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/customer-financial-account-reconciliation.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/customer-funding-instrument.service.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/customer-onboarding.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/customer-preference.service.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/customer-proof-of-address.model.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/customer-proof-of-address.service.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/customer-registration.service.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/customer-risk-profile.service.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/customer-validation.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/customer-wallet.service.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/customer.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/environment.spec.ts",
+        "status": "passed",
+        "tests": 13
+      },
+      {
+        "path": "test/external-data-minimization.service.spec.ts",
+        "status": "passed",
+        "tests": 70
+      },
+      {
+        "path": "test/external-funding-target.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/external-operation-lifecycle.service.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/external-operation.service.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/external-reconciliation.service.spec.ts",
+        "status": "passed",
+        "tests": 30
+      },
+      {
+        "path": "test/external-settlement.service.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/f01-historical-provider-ref-security.unit.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/financial-invariants.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/governed-action.registry.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/health.e2e.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/http-exception-filter.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/http-security.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/internal-transfer-gate.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/ledger-reversal-governance.service.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/m6.expanded-products.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/m7.operational-resilience.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/m9.production-maturity.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/mfa-execution.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/mission-15a-expiry-status.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/mission-15a-route-policy.spec.ts",
+        "status": "passed",
+        "tests": 30
+      },
+      {
+        "path": "test/mission-19a-workforce-logout.guard.spec.ts",
+        "status": "passed",
+        "tests": 23
+      },
+      {
+        "path": "test/mission-22a-fastify-dependency.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/mission-25c-notification-diagnostics.spec.ts",
+        "status": "passed",
+        "tests": 23
+      },
+      {
+        "path": "test/mission-25c-provider-routing.spec.ts",
+        "status": "passed",
+        "tests": 28
+      },
+      {
+        "path": "test/mission-25g-customer-preference-policy.spec.ts",
+        "status": "passed",
+        "tests": 12
+      },
+      {
+        "path": "test/module-di-wiring.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/money.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/notification-direct-security-logging.unit.spec.ts",
+        "status": "passed",
+        "tests": 6
+      },
+      {
+        "path": "test/notification-email-template.unit.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/notification-provider-config.unit.spec.ts",
+        "status": "passed",
+        "tests": 17
+      },
+      {
+        "path": "test/notification-reliability.unit.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/notification-template-engine.spec.ts",
+        "status": "passed",
+        "tests": 5
+      },
+      {
+        "path": "test/outbox.service.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/partner-callback-ingestion.service.spec.ts",
+        "status": "passed",
+        "tests": 11
+      },
+      {
+        "path": "test/partner-connection.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/payment.lifecycle.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/payment.service.spec.ts",
+        "status": "passed",
+        "tests": 11
+      },
+      {
+        "path": "test/pg-run-namespace.spec.ts",
+        "status": "passed",
+        "tests": 28
+      },
+      {
+        "path": "test/pilot-control.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/privileged-action-approval.service.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/product-governance.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/production-config.spec.ts",
+        "status": "passed",
+        "tests": 16
+      },
+      {
+        "path": "test/production-readiness.spec.ts",
+        "status": "passed",
+        "tests": 7
+      },
+      {
+        "path": "test/proof-of-address-authorization.spec.ts",
+        "status": "passed",
+        "tests": 3
+      },
+      {
+        "path": "test/proof-of-address-dto.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/proof-of-address-encryption.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/proof-of-address-file-validation.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/proof-of-address-migration.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/proof-of-address-s3-storage.spec.ts",
+        "status": "passed",
+        "tests": 1
+      },
+      {
+        "path": "test/proof-of-address-scanner.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/proof-of-address-storage.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/reconciliation.service.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/report16-redaction-hardening.spec.ts",
+        "status": "passed",
+        "tests": 29
+      },
+      {
+        "path": "test/report19-final-error-boundary.spec.ts",
+        "status": "passed",
+        "tests": 22
+      },
+      {
+        "path": "test/report21-basic-scheme-and-proxy-safety.spec.ts",
+        "status": "passed",
+        "tests": 20
+      },
+      {
+        "path": "test/report23-scheme-and-revoked-proxy.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/report25-cross-boundary-e2e.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/report25-scheme-case-gaps.spec.ts",
+        "status": "passed",
+        "tests": 15
+      },
+      {
+        "path": "test/report26-business-correlation-ids.spec.ts",
+        "status": "passed",
+        "tests": 17
+      },
+      {
+        "path": "test/report26-notfound-query-reflection.spec.ts",
+        "status": "passed",
+        "tests": 10
+      },
+      {
+        "path": "test/resend-email-provider.unit.spec.ts",
+        "status": "passed",
+        "tests": 20
+      },
+      {
+        "path": "test/robase-notification-provider.unit.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/runtime-access.guard.spec.ts",
+        "status": "passed",
+        "tests": 16
+      },
+      {
+        "path": "test/sensitive-data-protection.spec.ts",
+        "status": "passed",
+        "tests": 4
+      },
+      {
+        "path": "test/sensitive-data-redaction-adversarial.spec.ts",
+        "status": "passed",
+        "tests": 35
+      },
+      {
+        "path": "test/transfer-lifecycle.service.spec.ts",
+        "status": "passed",
+        "tests": 20
+      },
+      {
+        "path": "test/transfer-reconciliation.service.spec.ts",
+        "status": "passed",
+        "tests": 9
+      },
+      {
+        "path": "test/transfer.service.spec.ts",
+        "status": "passed",
+        "tests": 18
+      },
+      {
+        "path": "test/v1-admin-local-login-01.spec.ts",
+        "status": "passed",
+        "tests": 14
+      },
+      {
+        "path": "test/v1-sprint3-cross-surface-payloads.spec.ts",
+        "status": "passed",
+        "tests": 8
+      },
+      {
+        "path": "test/v1-test-01-agent-cash-to-cash-retry-exhaustion.spec.ts",
+        "status": "passed",
+        "tests": 2
+      },
+      {
+        "path": "test/workforce-administration-validation.spec.ts",
+        "status": "passed",
+        "tests": 60
+      },
+      {
+        "path": "test/workforce-session-principal-type.spec.ts",
+        "status": "passed",
+        "tests": 4
+      }
+    ]
+  },
+  "focusedPreferencePg": {
+    "command": "jest --config jest.integration.config.js --runInBand --runTestsByPath test/mission-25g-customer-preference-authorization.integration.spec.ts --silent",
+    "configuration": "disposable PostgreSQL 18.4, real guard/customer/A2/AGENT/SUPPORT sessions, synthetic transport, Node loopback-only egress guard",
+    "suites": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "pending": 0
+    },
+    "tests": [
+      {
+        "title": "preserves customer self-service and attributes spoofed and omitted actors to the real session",
+        "status": "passed"
+      },
+      {
+        "title": "preserves legacy history and audit rows without rewriting their historical actor",
+        "status": "passed"
+      },
+      {
+        "title": "denies cross-customer and anonymous reads/history and writes without changing preference data",
+        "status": "passed"
+      },
+      {
+        "title": "denies real SUPER_ADMIN workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real FINANCE_PREPARER workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real FINANCE_CONTROLLER workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real FINANCE_AUDITOR workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real OPERATIONS workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real AGENT_NETWORK_MANAGER workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real COMPLIANCE workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real RISK_FRAUD workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real CUSTOMER_SERVICE workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real TREASURY workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real ADMINISTRATOR workforce reads, history, HEAD, POST and PATCH without business mutations",
+        "status": "passed"
+      },
+      {
+        "title": "denies real AGENT and SUPPORT sessions on the full preference surface",
+        "status": "passed"
+      },
+      {
+        "title": "applies the preference boundary to encoded routes, descendants and the unimplemented me alias",
+        "status": "passed"
+      },
+      {
+        "title": "keeps preference audit/history out of workforce audit projections while preserving the records and unrelated audit",
+        "status": "passed"
+      },
+      {
+        "title": "keeps approved workforce customer profile access distinct from preferences",
+        "status": "passed"
+      },
+      {
+        "title": "honors an API opt-out at materialization and pre-send, and sends only via a fake provider after opt-in",
+        "status": "passed"
+      }
+    ],
+    "success": true,
+    "rawResultSha256": "1f59975de224435994298c04fa12f11680ee1f63b7da6b6cd481cc1c90040e40"
+  },
+  "focusedPreferenceUnit": {
+    "files": [
+      "test/customer-preference.service.spec.ts",
+      "test/mission-25g-customer-preference-policy.spec.ts"
+    ],
+    "suites": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    "tests": {
+      "total": 16,
+      "passed": 16,
+      "failed": 0,
+      "pending": 0,
+      "todo": 0
+    },
+    "rawResultSha256": "f04515fc6e6c8583e6de688215158027a317f3beed3dc17e0836efd86b66314f"
+  },
+  "minimalPgSmoke": {
+    "files": [
+      "test/mission-19a-workforce-logout.integration.spec.ts",
+      "test/mission-25g-customer-preference-authorization.integration.spec.ts"
+    ],
+    "suites": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pending": 0
+    },
+    "tests": {
+      "total": 27,
+      "passed": 27,
+      "failed": 0,
+      "pending": 0,
+      "todo": 0
+    },
+    "success": true,
+    "rawResultSha256": "dd233a192503450d69e61f64272fc75ea4f5c07b9d17fcaf97a6b4719d02f6e0"
+  },
+  "fullPg": {
+    "command": "npm run test:pg",
+    "runId": "m25gfull1",
+    "concurrency": 1,
+    "batchSize": 15,
+    "configuration": "minimal synthetic process environment, disposable loopback PostgreSQL 18.4, Node loopback-only egress guard",
+    "summaryLine": "=== PG integration suite: 9 batch(es), 132 files, concurrency=1 — all passed ===",
+    "suites": {
+      "total": 132,
+      "passed": 132,
+      "failed": 0
+    },
+    "tests": {
+      "total": 2452,
+      "passed": 2452,
+      "failed": 0,
+      "skipped": 0
+    },
+    "rawLogSha256": "126e9560e50bca50005516b2170e563ab2723b8cce599a3906a80e02b55c0c61",
+    "batches": [
+      {
+        "index": 1,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/a16-agent-cash-to-cash-claim.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-notification-provider-configuration-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commission-runtime-wiring.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-accounting-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a14-agent-cash-out.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-05-flow-matrix.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/hardening-04-customer-transaction-history.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-scenario-matrix-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a13-agent-cash-in.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-007-support-ticket.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-email-notification-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a5-payment-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a24-customer-transaction-pin-hardening.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a17-agent-cash-to-cash-expiry.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-005-notification-delivery.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       646 passed, 646 total",
+        "exit": 0
+      },
+      {
+        "index": 2,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/v1-hardening-06-admin-customer-investigation.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-fee-runtime-wiring.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/p0-p1-security-remediation.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a7-product-financial-effect.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-hardening-01-customer-beneficiary.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/notification-reliability.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-006-customer-notification-inbox.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a25-customer-history-hardening.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-reward-01-reward-engine.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-001-customer-funding.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-history-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commission-settlement-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commission-01-commission-engine.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       276 passed, 276 total",
+        "exit": 0
+      },
+      {
+        "index": 3,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/a15-agent-cash-to-cash.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/customer-compliance-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-01-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-04-limit-runtime.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/phase1-agent-security.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-03-limit-usage.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-authorization-hardening-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a20-outlets-terminals.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-01-limit-catalogue.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       333 passed, 333 total",
+        "exit": 0
+      },
+      {
+        "index": 4,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/a12-agent-financial-execution.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-003-admin-operational-writes.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a23-customer-app.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-onboarding-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-authorization-customer-read-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a5-ledger-reversal.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a7-product-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-mfa-api-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a14-otp-hardening.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a26-customer-profile-hardening.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-sprint3-agent-history-workforce.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/sms-v1-01.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       293 passed, 293 total",
+        "exit": 0
+      },
+      {
+        "index": 5,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/v1-commercial-02-product-catalogue.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/notification-registry.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-03-fee-rule-schema.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a19-agent-funding.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-capability-registry.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-authorization-kyc-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-security-super-admin-recovery-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a18-aggregator-foundation.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/mission-15a-management.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-05-diagnostics.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-commercial-04-fee-rule-resolver.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a8-agent-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a11-agent-transaction-authorization.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       267 passed, 267 total",
+        "exit": 0
+      },
+      {
+        "index": 6,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/transfer-notification-producer-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-05-transaction-pin-security.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-credentials-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/batch-01-customer-servicing.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a22-admin-foundation.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-onboarding-02.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-05-transaction-pin-security.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-credentials-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/report26-correlation-persistence.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-ops-01-support-workforce-operational.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-harden-01-support-adversarial.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a6-settlement-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/batch-2a-customer-registration.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a7-agent-authentication-http.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       170 passed, 170 total",
+        "exit": 0
+      },
+      {
+        "index": 7,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/v1-commercial-rule-governance.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-authorization-read-surface-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-workforce-bootstrap-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/b2f-finance-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-08-limits-view.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a2-workforce-session.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a21-agent-app.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a5-transfer-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-limit-05-recovery.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a10-agent-service-capability.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-p1-authorization-hardening.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-ledger-reversal-governance.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       236 passed, 236 total",
+        "exit": 0
+      },
+      {
+        "index": 8,
+        "totalBatches": 9,
+        "listedFiles": 15,
+        "files": [
+          {
+            "path": "test/a9-agent-receiving-number.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-funding-approvals-inbox.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-receiving-number-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/a5t11-b2f03-convergence.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-w2w-recovery-audit-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-authorization-foundation-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-local-login-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/notification-migration-upgrade-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/final-integration-gates-focus.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/mission-15a-agent-sessions.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-mobile-idempotency-recovery-01.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-09-support-workforce-boundary.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 15 passed, 15 total",
+        "testsSummary": "Tests:       154 passed, 154 total",
+        "exit": 0
+      },
+      {
+        "index": 9,
+        "totalBatches": 9,
+        "listedFiles": 12,
+        "files": [
+          {
+            "path": "test/mission-16a-agent-read-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/migration-chain.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/transaction-boundary.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-customer-self-service-lifecycle.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-agent-cash-to-cash-operations.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/agent-application-access-migration-upgrade.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/v1-harden-01-support-provision-race.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/mission-25g-customer-preference-authorization.integration.spec.ts",
+            "status": "pass"
+          },
+          {
+            "path": "test/mission-19a-workforce-logout.integration.spec.ts",
+            "status": "pass"
+          }
+        ],
+        "suitesSummary": "Test Suites: 12 passed, 12 total",
+        "testsSummary": "Tests:       77 passed, 77 total",
+        "exit": 0
+      }
+    ],
+    "overallExitCode": 0,
+    "leftoverIntegrationDatabases": 0,
+    "disposablePostgresStopped": true
+  },
+  "staticChecks": [
+    "npx tsc --noEmit: passed",
+    "npm run build: passed",
+    "eslint on changed source/tests: passed",
+    "git diff --check: passed"
+  ],
+  "exclusions": [
+    "no Admin Web files changed; no new browser or vendor-delivery evidence",
+    "H-07 design only; no migration, H-06 lock or H-04 mapping changes",
+    "no production environment or live credentials"
+  ]
+}

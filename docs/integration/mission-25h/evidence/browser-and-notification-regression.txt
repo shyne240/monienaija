@@ -1,0 +1,51 @@
+MISSION 25H — REAL-BROWSER AND NOTIFICATION REGRESSION RESULTS
+
+BROWSER (Chromium 153.0.8010.0, headless, real Admin Web :5173 -> real backend :3000)
+  Checks: 41 passed / 0 failed / 41 total
+  Notification console reachable for: SUPER_ADMIN, FINANCE_CONTROLLER, FINANCE_AUDITOR, OPERATIONS
+  Notification console NOT exposed for the other 7 roles (RBAC intact)
+  Roles that render preference VALUES: NONE
+  Roles whose preference request is refused and shown the denied state: SUPER_ADMIN, FINANCE_AUDITOR, ADMINISTRATOR, OPERATIONS, COMPLIANCE
+  Roles shown the static restricted copy: CUSTOMER_SERVICE
+  Roles whose UI still emits preference requests: SUPER_ADMIN, FINANCE_AUDITOR, ADMINISTRATOR, OPERATIONS, COMPLIANCE
+  Total preference HTTP 403 observed across all roles: 20
+  Uncaught JS errors across all 11 role sessions: 0
+  Background HTTP 500 across all 11 role sessions: 0
+
+  Per-role table (role | console | preference panel state | preference request statuses | JS errors)
+  SUPER_ADMIN            | CONSOLE | DENIED-403        | 403,403,403,403 | 0
+  FINANCE_PREPARER       | no-nav  | NO-CUSTOMERS-VIEW | -               | 0
+  FINANCE_CONTROLLER     | CONSOLE | NO-CUSTOMERS-VIEW | -               | 0
+  FINANCE_AUDITOR        | CONSOLE | DENIED-403        | 403,403,403,403 | 0
+  ADMINISTRATOR          | no-nav  | DENIED-403        | 403,403,403,403 | 0
+  OPERATIONS             | CONSOLE | DENIED-403        | 403,403,403,403 | 0
+  AGENT_NETWORK_MANAGER  | no-nav  | NO-CUSTOMERS-VIEW | -               | 0
+  COMPLIANCE             | no-nav  | DENIED-403        | 403,403,403,403 | 0
+  RISK_FRAUD             | no-nav  | NO-CUSTOMERS-VIEW | -               | 0
+  CUSTOMER_SERVICE       | no-nav  | RESTRICTED-COPY   | -               | 0
+  TREASURY               | no-nav  | NO-CUSTOMERS-VIEW | -               | 0
+
+  Documented frontend incompatibilities (assigned to Arena 2, NOT fixed in Mission 25H):
+   F-25H-01 [Arena 2] severity=medium
+     Customer 360 preference panel still issues GET /customers/:id/preferences and /history for every OPERATOR/PRIVILEGED role holding customer.view. The corrected backend denies all workforce access, so each such visit now produces 4 x HTTP 403 (refused, no data).
+     roles: SUPER_ADMIN, FINANCE_AUDITOR, ADMINISTRATOR, OPERATIONS, COMPLIANCE
+   F-25H-02 [Arena 2] severity=low
+     Stale copy: the restricted state reads "Preference visibility is restricted to authorized operational and privileged workforce roles with customer.view", and the panel/notification-management-api comments still describe the superseded OPERATOR/PRIVILEGED-with-customer.view visibility model. No workforce role can read preferences under the corrected policy.
+
+NOTIFICATION REGRESSION (real HTTP)
+  Checks: 15 passed / 0 failed / 15 total
+  [PASS] N1-fail-closed — provider-status reports NOT enabled / NOT_CONFIGURED with no live provider
+  [PASS] N1-fail-closed — SMS resolves to the console adapter only — no external vendor provider is configured or used
+  [PASS] N1-fail-closed — EMAIL test-send is refused (no provider configured), not delivered
+  [PASS] N2-governance — notification event catalogue is readable by an authorized role
+  [PASS] N3-h04-quarantine — H-04 financial events remain absent from the notification catalogue (no invented mapping)
+  [PASS] N3-h04-quarantine — ordinary funded-outcome event is catalogued (contrast with H-04)
+  [PASS] N3-h04-quarantine — a configuration proposal for deposit.completed is refused
+  [PASS] N4-maker-checker — a governed change proposal is created by the maker
+  [PASS] N4-maker-checker — the maker cannot approve its own proposal (403)
+  [PASS] N4-maker-checker — execution before approval is refused (4xx), so the change cannot take effect
+  [PASS] N5-read-surfaces — delivery monitoring remains readable for an authorized role
+  [PASS] N5-read-surfaces — outbox receipt monitoring remains readable
+  [PASS] N6-masking — a refused test-send echoes no full destination number
+  [PASS] N7-h06 — H-06 discrepancy is unchanged by this integration (ordinary events still unlocked server-side)
+  [PASS] N7-h06 — the probe left customer.funding.requested EMAIL configuration unchanged (no executed change)

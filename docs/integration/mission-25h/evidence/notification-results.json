@@ -1,0 +1,186 @@
+{
+  "pass": 15,
+  "fail": 0,
+  "total": 15,
+  "results": [
+    {
+      "group": "N1-fail-closed",
+      "name": "provider-status reports NOT enabled / NOT_CONFIGURED with no live provider",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": "{\"channels\":[\"SMS\",\"PUSH\",\"EMAIL\"],\"projectionScope\":\"FULL\",\"sms\":{\"provider\":\"console\",\"source\":\"ENVIRONMENT\",\"enabled\":true,\"baseUrl\":null,\"configured\":false,\"verified\":false,\"deliveryTested\":false,\"productionReady\":false,\"lifecycleState\":\"CONSOLE_ONLY\",\"gates\":{\"configured\":false,\"verified\":false"
+      }
+    },
+    {
+      "group": "N1-fail-closed",
+      "name": "SMS resolves to the console adapter only — no external vendor provider is configured or used",
+      "ok": true,
+      "detail": {
+        "status": 201,
+        "provider": "console",
+        "body": "{\"status\":\"SENT\",\"channel\":\"SMS\",\"correlationId\":\"6d8d8fc4-231f-43cb-820c-4422dea883b4\",\"destination\":\"+**********001\",\"provider\":\"console\",\"providerRef\":\"conso"
+      }
+    },
+    {
+      "group": "N1-fail-closed",
+      "name": "EMAIL test-send is refused (no provider configured), not delivered",
+      "ok": true,
+      "detail": {
+        "status": 400,
+        "body": "{\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"PROVIDER_NOT_CONFIGURED\",\"error\":\"BAD_REQUEST\",\"timestamp\":\"2026-11-01T14:07:53.864Z\",\"path\":\"/api/v1/internal/notifications/test-send\",\"requestId\":\"r"
+      }
+    },
+    {
+      "group": "N2-governance",
+      "name": "notification event catalogue is readable by an authorized role",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "count": 23
+      }
+    },
+    {
+      "group": "N3-h04-quarantine",
+      "name": "H-04 financial events remain absent from the notification catalogue (no invented mapping)",
+      "ok": true,
+      "detail": {
+        "presentH04": []
+      }
+    },
+    {
+      "group": "N3-h04-quarantine",
+      "name": "ordinary funded-outcome event is catalogued (contrast with H-04)",
+      "ok": true,
+      "detail": {
+        "sample": [
+          "customer.funding.approved",
+          "customer.funding.rejected",
+          "customer.funding.requested",
+          "transfer.completed",
+          "transfer.failed",
+          "support.ticket.created",
+          "support.ticket.assigned",
+          "support.ticket.status_changed"
+        ]
+      }
+    },
+    {
+      "group": "N3-h04-quarantine",
+      "name": "a configuration proposal for deposit.completed is refused",
+      "ok": true,
+      "detail": {
+        "status": 400,
+        "body": "{\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"Unknown notification event\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-01T14:07:53.890Z\",\"path\":\"/api/v1/internal/notifications/changes\",\"requestId\":\""
+      }
+    },
+    {
+      "group": "N4-maker-checker",
+      "name": "a governed change proposal is created by the maker",
+      "ok": true,
+      "detail": {
+        "status": 201,
+        "approvalId": "d68677fd-096b-48a9-8b75-12752f5d69c6",
+        "body": "{\"approvalId\":\"d68677fd-096b-48a9-8b75-12752f5d69c6\",\"status\":\"REQUESTED\",\"actionType\":\"NOTIFICATION_EVENT_CONFIGURATION_CHANGE\",\"actionFingerprint\":\"8b95ad54f79950c8b79110be732ec6e438d9edd56a7c6f902d"
+      }
+    },
+    {
+      "group": "N4-maker-checker",
+      "name": "the maker cannot approve its own proposal (403)",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Approval authorization denied: ROLE_MISSING\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T14:07:53.934Z\",\"pat"
+      }
+    },
+    {
+      "group": "N4-maker-checker",
+      "name": "execution before approval is refused (4xx), so the change cannot take effect",
+      "ok": true,
+      "detail": {
+        "status": 409,
+        "body": "{\"statusCode\":409,\"code\":\"CONFLICT\",\"message\":\"Approval is not consumable: REQUESTED\",\"error\":\"Conflict\",\"timestamp\":\"2026-11-01T14:07:53.952Z\",\"path\":\"/api/v1/internal/notifications/changes/d68677fd-"
+      }
+    },
+    {
+      "group": "N5-read-surfaces",
+      "name": "delivery monitoring remains readable for an authorized role",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "rows": null
+      }
+    },
+    {
+      "group": "N5-read-surfaces",
+      "name": "outbox receipt monitoring remains readable",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "N6-masking",
+      "name": "a refused test-send echoes no full destination number",
+      "ok": true,
+      "detail": {
+        "status": 429,
+        "body": "{\"statusCode\":429,\"code\":\"REQUEST_ERROR\",\"message\":\"NOTIFICATION_TEST_RATE_LIMITED\",\"error\":\"REQUEST_ERROR\",\"timestamp\":\"2026-11-01T14:07:53.997Z\",\"path\":\"/api/v1/internal/notifications/test-send\",\"re"
+      }
+    },
+    {
+      "group": "N7-h06",
+      "name": "H-06 discrepancy is unchanged by this integration (ordinary events still unlocked server-side)",
+      "ok": true,
+      "detail": {
+        "rows": [
+          {
+            "event_type": "customer.funding.approved",
+            "channel": "EMAIL",
+            "is_locked": false
+          },
+          {
+            "event_type": "customer.funding.approved",
+            "channel": "SMS",
+            "is_locked": false
+          },
+          {
+            "event_type": "customer.funding.rejected",
+            "channel": "EMAIL",
+            "is_locked": false
+          },
+          {
+            "event_type": "customer.funding.rejected",
+            "channel": "SMS",
+            "is_locked": false
+          },
+          {
+            "event_type": "transfer.completed",
+            "channel": "EMAIL",
+            "is_locked": false
+          },
+          {
+            "event_type": "transfer.completed",
+            "channel": "SMS",
+            "is_locked": false
+          }
+        ]
+      }
+    },
+    {
+      "group": "N7-h06",
+      "name": "the probe left customer.funding.requested EMAIL configuration unchanged (no executed change)",
+      "ok": true,
+      "detail": {
+        "rows": [
+          {
+            "event_type": "customer.funding.requested",
+            "channel": "EMAIL",
+            "is_enabled": false,
+            "version": 1
+          }
+        ]
+      }
+    }
+  ]
+}

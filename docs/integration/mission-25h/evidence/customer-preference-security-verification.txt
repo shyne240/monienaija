@@ -1,0 +1,39 @@
+MISSION 25H — INDEPENDENT CUSTOMER-PREFERENCE AUTHORIZATION VERIFICATION
+
+Method: real HTTP against the running backend, real authentication/authorization guards, real PostgreSQL.
+No mocks. Every principal authenticated through the application public login endpoints:
+  - 11 seeded single-role workforce identities via POST /internal/a2/workforce/local-admin-sessions
+  - 3 real customers via POST /customers/:id/authenticate (PBKDF2 credentials in disposable DB)
+  - 1 real SUPPORT user provisioned via SupportAuthenticationService.provision(), logged in via
+    POST /internal/support/workforce-sessions
+  - 1 real AGENT created via scripts/local-dev-create-agent.js, mandatory first-login credential
+    rotation performed, then POST /agents/sessions
+
+TOTAL: 105 passed / 0 failed / 105 checks
+
+BY GROUP
+  sessions                       pass=1 fail=0
+  A-customer-self-service        pass=6 fail=0
+  A2-virgin-lifecycle            pass=5 fail=0
+  B-cross-customer               pass=5 fail=0
+  C-workforce-denied             pass=44 fail=0
+  D-agent-support-denied         pass=8 fail=0
+  E-anonymous                    pass=4 fail=0
+  F-bypass-workforce             pass=14 fail=0
+  F-bypass-customer              pass=7 fail=0
+  G-audit-attribution            pass=3 fail=0
+  H-audit-projection             pass=8 fail=0
+
+KEY OBSERVATIONS (verbatim from the run)
+  [PASS] virgin customer creates own preferences (POST 201) with a spoofed actor supplied
+  [PASS] customer reads own preferences (GET) → 200 with own values
+  [PASS] customer reads own preference history → 200 with entries
+  [PASS] customer B GET /customers/<C1>/preferences → 403, no payload
+  [PASS] cross-customer denial is identical for a non-existent customer id
+  [PASS] request-supplied actor cannot spoof preference history (stored actor is the customer id)
+  [PASS] SUPER_ADMIN generic audit read exposes no preference rows, decisions or values
+  [PASS] underlying preference audit rows still exist in PostgreSQL (filtered, not deleted)
+  [PASS] an explicit entityType=CUSTOMER_PREFERENCE audit query returns no rows
+  [PASS] SUPPORT audit exception does not expose preference rows either
+
+All 105 checks passed; zero failures.

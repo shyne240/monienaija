@@ -1,0 +1,40 @@
+MISSION 25H — FULL POSTGRESQL INTEGRATION MATRIX
+
+Command : PG_TEST_RUN_ID=m25hfull2 PG_TEST_CONCURRENCY=1 PG_TEST_BATCH_SIZE=15 \
+          node scripts/run-pg-integration-tests.js
+Server  : embedded PostgreSQL 18.4, loopback only, disposable per-suite databases
+Guard   : test/support/mission-25c-network-guard.cjs blocks non-loopback egress
+
+RESULT  : 132 suites / 2,452 tests — 0 failed, 0 skipped
+OVERALL : PG_MATRIX_EXIT=0
+SUMMARY : "=== PG integration suite: 9 batch(es), 132 files, concurrency=1 — all passed ==="
+
+BATCH DETAIL (every batch exit 0)
+  batch 1/9  15 files
+  batch 2/9  15 files
+  batch 3/9  15 files
+  batch 4/9  15 files
+  batch 5/9  15 files
+  batch 6/9  15 files
+  batch 7/9  15 files
+  batch 8/9  15 files
+  batch 9/9  12 files
+
+SUITE LINES : 132 PASS, 0 FAIL
+The Mission 25G real-guard suite ran and passed:
+  PASS test/mission-25g-customer-preference-authorization.integration.spec.ts (21.294 s)
+
+BASELINE COMPARISON
+  Mission 25E : 131 suites / 2,433 tests
+  Mission 25H : 132 suites / 2,452 tests   (+1 suite, +19 tests = the new 25G real-guard suite)
+  This matches Mission 25G's own reported PostgreSQL result exactly.
+
+CONCURRENCY NOTE
+  The first attempt used PG_TEST_CONCURRENCY=2 on this 2-vCPU / 3.8 GB sandbox. Available memory
+  fell to ~200 MB and v1-commission-runtime-wiring.integration.spec.ts timed out at 120 s.
+  That run was aborted and its leftover databases dropped. At concurrency=1 the same suite passed
+  in 49.8 s. The reported matrix above is the concurrency=1 run; the timeout was a resource
+  contention artifact of my own configuration choice, not a product regression.
+
+CLEANUP
+  Zero mn_it_* integration databases remained; the disposable server was stopped afterwards.

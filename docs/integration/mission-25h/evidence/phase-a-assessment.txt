@@ -1,0 +1,93 @@
+MISSION 25H — PHASE A COMPATIBILITY AND SECURITY ASSESSMENT
+Generated: 2026-11-01 14:10:37 UTC
+Performed read-only against fetched refs before any integration branch existed.
+
+1. PINNED COMMITS — OBJECT AND TIP VERIFICATION
+  Mission 25E baseline
+    branch : origin/integration/mission-25e-notification-integration
+    tip    : e0d604fad255629a1362c4ff62abd60eb7f85b6f
+    pinned : e0d604fad255629a1362c4ff62abd60eb7f85b6f
+    match  : YES
+  Mission 25G correction
+    branch : origin/arena/92fd33dd-monienaija
+    tip    : 0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b
+    pinned : 0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b
+    match  : YES
+  Accepted Ordinary Agent V1 baseline
+    branch : origin/integration/mission-23-fast-uri-security
+    tip    : 019de996950b07e9312af455ce0d9b840e6e14f1
+    pinned : 019de996950b07e9312af455ce0d9b840e6e14f1
+    match  : YES
+
+2. ANCESTRY (all verified with git merge-base --is-ancestor)
+  V1 baseline 019de99 is an ancestor of 25E e0d604f : YES
+  25E e0d604f is an ancestor of 25G 0d6d567 : YES
+  25G commit parents: 0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b e0d604fad255629a1362c4ff62abd60eb7f85b6f
+  Distance 25E..25G: 1 commit(s) — direct child, as declared
+
+3. MISSION 25G CHANGE SCOPE
+  Changed files: 15
+ .../20261101-MISSION-25G-AUTHORIZATION-MATRIX.md   |   31 +
+ .../mission-25g/20261101-MISSION-25G-H07-DESIGN.md |   42 +
+ .../mission-25g/20261101-MISSION-25G-HANDOVER.md   |   82 +
+ .../20261101-MISSION-25G-TEST-EVIDENCE.md          |   79 +
+ .../evidence/mission-25f-independent-assessment.md |  116 ++
+ .../evidence/test-summary-snapshot.json            |  273 +++
+ .../mission-25g/evidence/test-summary.json         | 2027 ++++++++++++++++++++
+ src/authorization/route-policy-registry.ts         |   46 +
+ .../customer-preference.controller.ts              |   56 +-
+ .../dto/create-customer-preference.dto.ts          |    7 +-
+ .../dto/update-customer-preference.dto.ts          |    5 +-
+ src/maturity/maturity.service.ts                   |    9 +-
+ src/operations/audit.service.ts                    |   32 +-
+ ...er-preference-authorization.integration.spec.ts |  446 +++++
+ .../mission-25g-customer-preference-policy.spec.ts |  138 ++
+ 15 files changed, 3375 insertions(+), 14 deletions(-)
+
+  Scope guard checks (all must be zero):
+    package.json / lockfiles : 0
+    migrations               : 0
+    Admin Web files          : 0
+    authorization catalogue  : 0
+    notification sources     : 0
+    financial/ledger sources : 0
+    env/config templates     : 0
+
+4. ARCHIVED MISSION 25F ASSESSMENT INTEGRITY
+  claimed SHA-256 : 86f3e0bc17fc226ee2d669f6942ab529a25feac322bf1b257c6ed38980992ed1
+  actual  SHA-256 : 86f3e0bc17fc226ee2d669f6942ab529a25feac322bf1b257c6ed38980992ed1
+
+5. AUTHORIZATION SEMANTICS CHECKED IN SOURCE (not assumed)
+  - Empty allowedPrincipalTypes is TRUTHY: evaluate() gates on
+    'policy.allowedPrincipalTypes && !includes(principal.type)' so '[]' denies every type.
+    (src/authorization/authorization.service.ts, evaluate())
+  - Policy resolution strips the query string: path = url.split('?')[0]
+    (src/authorization/route-policy-registry.ts, resolve())
+  - The preference branch is placed BEFORE the customer and '/customers/me' branches and
+    after the public-route and customer-login checks, so it cannot be shadowed.
+  - Controller defense-in-depth requires CUSTOMER + SELF + sessionId + route id match +
+    principalId === customerId, throwing 401 (no principal) / 403 otherwise.
+  - Audit actor is taken from principal.principalId, never the body.
+
+6. COMPATIBILITY FINDINGS
+  Material incompatibilities requiring integration-only correction: NONE.
+  Backend compatibility: no package/manifest/migration change; builds and type-checks clean.
+  Notification compatibility: the only shared file touched is src/operations/audit.service.ts,
+    whose new default-on preference filter is additive; the notification provider audit filter
+    and the notification-oversight opt-in are unchanged.
+  Audit consumer review (all call sites):
+    - operations.controller.ts (HTTP) -> default filtering applies to ALL roles  [intended]
+    - dashboard-widget-data.service.ts  -> default filtering applies             [intended]
+    - policy/a7-product-reconciliation.repository.ts -> entityType-scoped queries
+      (A7 reconciliation facts); preference entity types never match, so no functional
+      change is expected — verified by the PostgreSQL reconciliation suites.
+    - maturity.service.ts -> explicitly opts in with includePreferenceRecords to preserve
+      the prior limit-1 audit-presence indicator; in-process only, not selectable over HTTP.
+  Frontend incompatibility: PRESENT but non-blocking. The Admin Web still requests customer
+    preferences for OPERATOR/PRIVILEGED roles holding customer.view, which the corrected
+    backend now refuses with 403. Recorded as finding F-25H-01 assigned to Arena 2.
+    Stale copy claiming workforce visibility is recorded as F-25H-02 (Arena 2).
+
+7. PHASE A CONCLUSION
+  Pins, ancestry and scope verified. Declared scope matches actual scope. No material
+  incompatibility. Proceeded to controlled integration.

@@ -14,6 +14,14 @@ import type { AuditEventCommand, AuditQuery, AuditView } from './operations.type
 
 const ALLOW_NOTIFICATION_PROVIDER_AUDIT = Symbol('ALLOW_NOTIFICATION_PROVIDER_AUDIT');
 
+// Older authorization decisions used the generic `customer` resource type and stored the raw
+// request path. Fastify accepts percent-encoded static segments, so match either spelling when
+// hiding those legacy preference decisions; an encoded slash is not a router path separator.
+const encodedSegmentPattern = (segment: string): string =>
+  [...segment].map((character) => `(?:${character}|%${character.charCodeAt(0).toString(16)})`).join('');
+const PREFERENCE_AUDIT_ACTION_PATTERN =
+  `/${encodedSegmentPattern('customers')}/[^/]+/${encodedSegmentPattern('preferences')}(?:/|$)`;
+
 @Injectable()
 export class AuditService {
   constructor(
@@ -49,10 +57,32 @@ export class AuditService {
 
   async list(
     query: AuditQuery = {},
-    options: { includeComplianceCaseRecords?: boolean } = {},
+    options: { includeComplianceCaseRecords?: boolean; includePreferenceRecords?: boolean } = {},
   ): Promise<AuditView[]> {
     const take = Math.min(Math.max(query.limit ?? 100, 1), 1000);
     const builder = this.repository.createQueryBuilder('audit');
+    // Mission 25G: generic audit access (including SUPPORT and `audit.view`) is not an approved
+    // grant to customer preference values or history. Hide preference business/history events
+    // and both current and legacy route decisions from generic projections, including dashboard
+    // widgets and filtered queries. The original audit and preference-history rows remain intact
+    // in PostgreSQL; a future oversight path needs its own explicit policy decision. As with the
+    // compliance option below, this opt-in is for trusted internal aggregation only, never HTTP.
+    if (!options.includePreferenceRecords) {
+      builder.andWhere('audit.entity_type NOT IN (:...preferenceAuditTypes)', {
+        preferenceAuditTypes: ['CUSTOMER_PREFERENCE', 'PREFERENCE_HISTORY'],
+      });
+      builder.andWhere(
+        `NOT (audit.entity_type = :preferenceDecisionType AND (
+          COALESCE(audit.new_values->>'resourceType', '') = :preferenceResource OR
+          COALESCE(audit.new_values->>'action', '') ~* :preferenceActionPattern
+        ))`,
+        {
+          preferenceDecisionType: 'AUTHORIZATION_DECISION',
+          preferenceResource: 'customer-preference',
+          preferenceActionPattern: PREFERENCE_AUDIT_ACTION_PATTERN,
+        },
+      );
+    }
     if (!options.includeComplianceCaseRecords) {
       // Generic audit views are not category- or subject-scoped. Hide case events and both
       // current and legacy case-route authorization decisions by default until a dedicated,
