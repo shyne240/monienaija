@@ -83,6 +83,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const subjectInputRef = useRef<HTMLInputElement | null>(null);
   const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasUserEditedRef = useRef<boolean>(false);
+  const lastEventChannelRef = useRef<string>('');
 
   const selectedEvent = useMemo(
     () => events.find((item) => item.eventType === selectedEventType) ?? null,
@@ -102,23 +104,32 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     [matchingVersions],
   );
 
-  // Sync editor content whenever the operator switches event or channel.
+  // Sync editor content whenever the operator switches event or channel, or when live template
+  // history finishes loading before the operator begins editing.
   useEffect(() => {
-    setValidationErrors([]);
-    setSubmitError('');
-    setSubmitBlockedMessage('');
-    setSubmitSuccessMessage('');
-    setServerPreview(null);
-    setPreviewBlockedMessage('');
-    setPreviewError('');
-    setComparedVersion(null);
-    setActivationFeedback(null);
-    setSampleOverrides({});
+    const eventChannelKey = `${channel}::${selectedEventType}`;
+    const switchedEventOrChannel = lastEventChannelRef.current !== eventChannelKey;
+    if (switchedEventOrChannel) {
+      lastEventChannelRef.current = eventChannelKey;
+      hasUserEditedRef.current = false;
+      setValidationErrors([]);
+      setSubmitError('');
+      setSubmitBlockedMessage('');
+      setSubmitSuccessMessage('');
+      setServerPreview(null);
+      setPreviewBlockedMessage('');
+      setPreviewError('');
+      setComparedVersion(null);
+      setActivationFeedback(null);
+      setSampleOverrides({});
+    } else if (hasUserEditedRef.current) {
+      return;
+    }
 
     if (activeVersion) {
       setSubject(channel === 'EMAIL' ? activeVersion.subject ?? '' : '');
       setBody(activeVersion.body);
-      setChangeSummary('');
+      if (switchedEventOrChannel) setChangeSummary('');
     } else if (selectedEvent && selectedEvent.templateEditable) {
       if (channel === 'EMAIL') {
         const defaultSubject = `MonieNaija Notification — ${selectedEvent.eventType}`;
@@ -133,11 +144,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         setSubject('');
         setBody('');
       }
-      setChangeSummary('');
+      if (switchedEventOrChannel) setChangeSummary('');
     } else {
       setSubject('');
       setBody('');
-      setChangeSummary('');
+      if (switchedEventOrChannel) setChangeSummary('');
     }
   }, [selectedEventType, channel, activeVersion?.id]);
 
@@ -171,11 +182,21 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     );
   }, [selectedEvent, channel, subject, body, sampleOverrides]);
 
+  const hasCustomSampleOverrides = useMemo(() => {
+    if (!selectedEvent) return false;
+    return selectedEvent.approvedVariables.some(
+      (variable) =>
+        sampleOverrides[variable.name] !== undefined &&
+        sampleOverrides[variable.name] !== variable.sampleValue,
+    );
+  }, [selectedEvent, sampleOverrides]);
+
   const insertTokenIntoField = (
     target: 'subject' | 'body',
     variable: ApprovedTemplateVariable,
   ) => {
     if (!canEditFields) return;
+    hasUserEditedRef.current = true;
     const token = `{{${variable.name}}}`;
     setServerPreview(null);
 
@@ -463,7 +484,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
               Beneficiary SMS templates may reference ONLY{' '}
               <code>{'{{sender_name}}'}</code>, <code>{'{{amount}}'}</code>, and{' '}
-              <code>{'{{agent_locator_url}}'}</code>. Including the 6-digit{' '}
+              <code>{'{{locator_clause}}'}</code>. Including the 6-digit{' '}
               <code>transferNumber</code>, <code>senderPhone</code>, or secret{' '}
               <code>transferCode</code> is strictly rejected; the sender shares redemption details
               out-of-band.
@@ -506,6 +527,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   placeholder="e.g. MonieNaija Funding Approved — Ref {{reference}}"
                   value={subject}
                   onChange={(e) => {
+                    hasUserEditedRef.current = true;
                     setSubject(e.target.value);
                     setServerPreview(null);
                   }}
@@ -545,6 +567,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 }
                 value={body}
                 onChange={(e) => {
+                  hasUserEditedRef.current = true;
                   setBody(e.target.value);
                   setServerPreview(null);
                 }}
@@ -741,33 +764,43 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               writes to <code>outbox_events</code> or <code>notification_deliveries</code>.
             </p>
 
-            {/* Editable Whitelisted Sample Overrides */}
+            {/* Editable Whitelisted Sample Overrides (Client-Side Only) */}
             {selectedEvent && selectedEvent.approvedVariables.length > 0 && (
-              <div style={styles.sampleGrid}>
-                {selectedEvent.approvedVariables.map((variable) => (
-                  <div key={variable.name}>
-                    <label
-                      htmlFor={`sample-${channel}-${variable.name}`}
-                      style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#475569' }}
-                    >
-                      Sample <code>{`{{${variable.name}}}`}</code>
-                    </label>
-                    <input
-                      id={`sample-${channel}-${variable.name}`}
-                      aria-label={`Sample value for ${variable.name}`}
-                      type="text"
-                      style={styles.smallInput}
-                      value={sampleOverrides[variable.name] ?? variable.sampleValue}
-                      onChange={(e) => {
-                        setSampleOverrides((prev) => ({
-                          ...prev,
-                          [variable.name]: e.target.value,
-                        }));
-                        setServerPreview(null);
-                      }}
-                    />
-                  </div>
-                ))}
+              <div>
+                <div
+                  style={{ fontSize: 11, color: '#475569', marginBottom: 6 }}
+                  data-testid="sample-override-scope-hint"
+                >
+                  <strong>Local Sample Overrides (Client-Side):</strong> Custom values below update
+                  the local whitelist preview. Authoritative Server Preview (
+                  <code>POST /internal/notifications/templates/preview</code>) renders fixed
+                  server-side registry samples only.
+                </div>
+                <div style={styles.sampleGrid}>
+                  {selectedEvent.approvedVariables.map((variable) => (
+                    <div key={variable.name}>
+                      <label
+                        htmlFor={`sample-${channel}-${variable.name}`}
+                        style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#475569' }}
+                      >
+                        Sample <code>{`{{${variable.name}}}`}</code>
+                      </label>
+                      <input
+                        id={`sample-${channel}-${variable.name}`}
+                        aria-label={`Sample value for ${variable.name}`}
+                        type="text"
+                        style={styles.smallInput}
+                        value={sampleOverrides[variable.name] ?? variable.sampleValue}
+                        onChange={(e) => {
+                          setSampleOverrides((prev) => ({
+                            ...prev,
+                            [variable.name]: e.target.value,
+                          }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -788,13 +821,83 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               </div>
             )}
 
+            {serverPreview && !isSecurityLocked && (
+              <div
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  background: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  fontSize: 12,
+                  color: '#1E3A8A',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 8,
+                }}
+                data-testid="server-preview-fixed-samples-notice"
+              >
+                <span>
+                  <strong>Authoritative Server Preview Active:</strong> Rendered by the backend with
+                  fixed registry sample bindings (custom sample overrides are not sent over the wire).
+                </span>
+                <button
+                  type="button"
+                  data-testid="clear-server-preview-btn"
+                  style={styles.secondarySmallBtn}
+                  onClick={() => setServerPreview(null)}
+                >
+                  Show Local Preview Only
+                </button>
+              </div>
+            )}
+
+            {serverPreview && hasCustomSampleOverrides && localSafePreview && !isSecurityLocked && (
+              <div
+                style={{
+                  ...styles.previewFrame,
+                  marginBottom: 10,
+                  borderColor: '#CBD5E1',
+                  background: '#F8FAFC',
+                }}
+                data-testid="local-custom-override-preview"
+              >
+                <div style={styles.previewBadgeRow}>
+                  <span style={styles.previewSourceBadge}>
+                    Local Safe Preview (Your Custom Sample Overrides Preserved)
+                  </span>
+                  <span style={{ fontSize: 11, color: '#475569' }}>
+                    {localSafePreview.characterCount} chars
+                  </span>
+                </div>
+                {channel === 'EMAIL' && (
+                  <div style={styles.previewSubjectBox}>
+                    <strong>Custom-Sample Subject:</strong>{' '}
+                    <span data-testid="local-custom-override-preview-subject">
+                      {localSafePreview.renderedSubject || '(empty subject)'}
+                    </span>
+                  </div>
+                )}
+                <div
+                  style={styles.previewBodyBox}
+                  data-testid="local-custom-override-preview-body"
+                >
+                  {localSafePreview.renderedBody || '(empty message body)'}
+                </div>
+              </div>
+            )}
+
             {displayedPreview && !isSecurityLocked && (
               <div style={styles.previewFrame} data-testid="rendered-preview-output">
                 <div style={styles.previewBadgeRow}>
                   <span style={styles.previewSourceBadge}>
                     {serverPreview
-                      ? 'Authoritative Server-Rendered Preview'
-                      : 'Local Safe Whitelist Preview'}
+                      ? 'Authoritative Server-Rendered Preview (Fixed Registry Samples)'
+                      : hasCustomSampleOverrides
+                        ? 'Local Safe Whitelist Preview (Custom Sample Overrides)'
+                        : 'Local Safe Whitelist Preview'}
                   </span>
                   <span style={{ fontSize: 11, color: '#475569' }}>
                     {displayedPreview.characterCount} chars
@@ -803,17 +906,104 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       : ''}
                   </span>
                 </div>
-                {channel === 'EMAIL' && (
-                  <div style={styles.previewSubjectBox}>
-                    <strong>Subject:</strong>{' '}
-                    <span data-testid="rendered-preview-subject">
-                      {displayedPreview.renderedSubject || '(empty subject)'}
-                    </span>
+                {channel === 'EMAIL' ? (
+                  <div
+                    data-testid="safe-email-layout-preview"
+                    style={{
+                      background: '#F4F6F8',
+                      padding: 12,
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#334155',
+                        marginBottom: 8,
+                        padding: '6px 10px',
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: 4,
+                      }}
+                    >
+                      <strong>Envelope Subject:</strong>{' '}
+                      <span data-testid="rendered-preview-subject">
+                        {displayedPreview.renderedSubject || '(empty subject)'}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        maxWidth: 600,
+                        margin: '0 auto',
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: 8,
+                        overflow: 'hidden',
+                        fontFamily:
+                          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: '#0F172A',
+                          color: '#FFFFFF',
+                          padding: '12px 18px',
+                          fontSize: 15,
+                          fontWeight: 700,
+                          letterSpacing: '0.2px',
+                        }}
+                      >
+                        MonieNaija
+                      </div>
+                      <div style={{ padding: '16px 18px', color: '#1E293B' }}>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 600,
+                            color: '#0F172A',
+                            marginBottom: 10,
+                          }}
+                        >
+                          {displayedPreview.renderedSubject || '(empty subject)'}
+                        </div>
+                        <div
+                          data-testid="rendered-preview-body"
+                          style={{ fontSize: 13, lineHeight: 1.55, color: '#1E293B' }}
+                        >
+                          {(displayedPreview.renderedBody || '(empty message body)')
+                            .split(/\n{2,}/)
+                            .map((paragraph, pIdx) => (
+                              <p
+                                key={pIdx}
+                                style={{ margin: '0 0 10px 0', whiteSpace: 'pre-wrap' }}
+                              >
+                                {paragraph}
+                              </p>
+                            ))}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          padding: '10px 18px',
+                          background: '#F8FAFC',
+                          borderTop: '1px solid #E2E8F0',
+                          fontSize: 11,
+                          lineHeight: 1.45,
+                          color: '#64748B',
+                        }}
+                      >
+                        This is an automated service notification from MonieNaija. MonieNaija will
+                        never ask for your PIN, password, one-time verification code, or
+                        Cash-to-Cash secret code by email or phone.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={styles.previewBodyBox} data-testid="rendered-preview-body">
+                    {displayedPreview.renderedBody || '(empty message body)'}
                   </div>
                 )}
-                <div style={styles.previewBodyBox} data-testid="rendered-preview-body">
-                  {displayedPreview.renderedBody || '(empty message body)'}
-                </div>
                 {displayedPreview.warnings.length > 0 && (
                   <div style={styles.warningList} data-testid="preview-warnings">
                     {displayedPreview.warnings.map((warn, idx) => (

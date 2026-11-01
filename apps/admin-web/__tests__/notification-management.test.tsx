@@ -4,7 +4,10 @@ import { ApiClient, ApiError } from '../src/services/api-client';
 import { useAuthStore, WorkforcePrincipal } from '../src/store/auth-store';
 import { NotificationManagementScreen } from '../src/screens/authenticated/NotificationManagementScreen';
 import { SystemHealthScreen } from '../src/screens/authenticated/SystemHealthScreen';
-import { sanitizeProviderStatusForDisplay } from '../src/services/notification-domain';
+import {
+  BASELINE_CODE_EVENT_CATALOGUE,
+  sanitizeProviderStatusForDisplay,
+} from '../src/services/notification-domain';
 
 jest.mock('../src/services/api-client', () => {
   class MockApiError extends Error {
@@ -1059,14 +1062,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(valErrors.textContent).toMatch(/authorized workforce operator/i);
     expect(ApiClient.post).not.toHaveBeenCalled();
 
-    // Valid Nigerian number (normalized to +2348030000100) + attestation + reason ->
-    // the REAL endpoint accepts ONLY { channel, destination } with fixed safe content;
-    // eventType/reason/attestation remain console-side governance context.
+    // Valid Nigerian number (normalized to +2348030000100) + attestation ->
+    // the REAL endpoint accepts ONLY { channel, destination } with fixed safe probe content.
+    expect(view.queryByTestId('test-send-event-select')).toBeNull();
+    expect(view.queryByTestId('test-send-reason-input')).toBeNull();
+    expect(view.queryByTestId('test-send-approval-id-input')).toBeNull();
+
     fireEvent.change(view.getByTestId('test-send-destination-input'), {
       target: { value: '08030000100' },
-    });
-    fireEvent.change(view.getByTestId('test-send-reason-input'), {
-      target: { value: 'Verify Robase production credential connectivity' },
     });
     fireEvent.click(view.getByTestId('test-send-workforce-attestation'));
     fireEvent.click(view.getByTestId('submit-test-send-btn'));
@@ -1084,10 +1087,6 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(outcomeText).not.toContain('+2348030000100');
 
     // Simulate 429 Too Many Requests -> surfaces rate-limit error and does NOT retry
-    // (the success path clears the reason field, so re-enter it before the second attempt)
-    fireEvent.change(view.getByTestId('test-send-reason-input'), {
-      target: { value: 'Second connectivity check after quota exhaustion' },
-    });
     const postCallsBefore429 = (ApiClient.post as jest.Mock).mock.calls.length;
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(
       new ApiError('Rate limit exceeded: max 5 test sends per hour', 429),
@@ -1209,5 +1208,486 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       ).toBe(true),
     );
     expect((ApiClient.get as jest.Mock).mock.calls.length).toBe(1);
+  });
+
+  describe('Mission 25D — Notification Admin Web Completeness Remediation (F-01 .. F-13)', () => {
+    test('N-02 / F-05: skips template registry HTTP requests on Overview, loads single channel lazily, and NEVER queries non-editable SECURITY events', async () => {
+      mockIntegratedRegistryBackend();
+      seedPrincipal({
+        principalId: 'issuer:super-admin-25d',
+        roles: ['SUPER_ADMIN'],
+        scopes: [
+          'notification.view_deliveries',
+          'notification.view_events',
+          'notification.manage_templates',
+          'notification.provider.view',
+          'diagnostics.view',
+          'outbox.view',
+          'audit.view',
+        ],
+        assuranceLevel: 'MFA',
+      });
+
+      const view = render(<NotificationManagementScreen initialTab="overview" />);
+      await waitFor(() => expect(view.getByTestId('notif-panel-overview')).toBeTruthy());
+
+      // Zero /internal/notifications/templates calls when mounted on Overview
+      const overviewCalls = (ApiClient.get as jest.Mock).mock.calls.map(([p]: [string]) => p);
+      expect(overviewCalls.some((p) => p.startsWith('/internal/notifications/templates'))).toBe(
+        false,
+      );
+
+      // Switch to SMS Templates -> queries ONLY channel=SMS and ONLY editable events (never SECURITY)
+      fireEvent.click(view.getByTestId('notif-tab-smsTemplates'));
+      await waitFor(() => expect(view.getByTestId('template-workspace-sms')).toBeTruthy());
+      await waitFor(() => {
+        const tplCalls = (ApiClient.get as jest.Mock).mock.calls
+          .map(([p]: [string]) => p)
+          .filter((p) => p.startsWith('/internal/notifications/templates?'));
+        expect(tplCalls.length).toBeGreaterThan(0);
+        for (const callPath of tplCalls) {
+          expect(callPath).toContain('channel=SMS');
+          expect(callPath).not.toContain('channel=EMAIL');
+          expect(callPath).not.toContain('customer.registration.phone_verification');
+          expect(callPath).not.toContain('agent.portal_credential.temporary_password_issued');
+          expect(callPath).not.toContain('agent.portal_credential.password_reset_otp');
+        }
+      });
+    });
+
+    test('N-04 / F-03 & F-12: FINANCE_CONTROLLER with notification.provider.view never calls /internal/configuration (zero 403s) and renders REDACTED worker posture on MINIMAL projection', async () => {
+      const calledGetPaths: string[] = [];
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        calledGetPaths.push(path);
+        if (path === '/internal/notifications/events') {
+          return Promise.resolve([
+            {
+              eventType: 'customer.funding.approved',
+              deliveryClass: 'TRANSACTIONAL',
+              recipientTarget: 'CUSTOMER',
+              description: 'Funding approved',
+              editable: true,
+              sms: { enabled: true, toggleable: false, activeTemplateVersion: 1 },
+              email: { enabled: false, toggleable: true, activeTemplateVersion: 1 },
+              approvedVariables: [{ name: 'amount_clause', description: 'Amount', example: 'NGN 100' }],
+            },
+          ]);
+        }
+        if (path === '/internal/notifications/provider-status') {
+          return Promise.resolve({
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            projectionScope: 'MINIMAL',
+            sms: { available: true },
+            push: { available: false },
+            email: { available: false },
+          });
+        }
+        if (path.startsWith('/internal/notifications/changes')) {
+          return Promise.resolve([]);
+        }
+        if (path.startsWith('/internal/notifications/provider-configs')) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve({});
+      });
+
+      seedPrincipal({
+        principalId: 'issuer:fc-25d',
+        type: 'OPERATOR',
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: [
+          'privileged:approve',
+          'notification.provider.view',
+          'notification.provider.configure',
+        ],
+        assuranceLevel: 'MFA',
+      });
+
+      const view = render(<NotificationManagementScreen initialTab="providers" />);
+      await waitFor(() =>
+        expect(view.getByTestId('provider-worker-redacted-badge')).toBeTruthy(),
+      );
+
+      expect(calledGetPaths).not.toContain('/internal/configuration');
+      expect(calledGetPaths).not.toContain('/internal/diagnostics');
+      expect(calledGetPaths).not.toContain('/internal/outbox');
+      expect(view.getByTestId('provider-worker-redacted-value').textContent).toContain('REDACTED');
+      expect(view.getByTestId('provider-worker-redacted-value').textContent).not.toContain(
+        'NOTIFICATION_WORKER_ENABLED=false',
+      );
+    });
+
+    test('F-01: authorized checker executes notification proposals already in APPROVED state, enforces Maker != Checker & idempotency, and refreshes queue after direct workforce approval', async () => {
+      const approvedProposalId = '660e8400-e29b-41d4-a716-446655440111';
+      const selfApprovedId = '660e8400-e29b-41d4-a716-446655440222';
+      let executed = false;
+
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        if (path === '/internal/notifications/events') return Promise.resolve([]);
+        if (path.startsWith('/internal/notifications/changes')) {
+          if (path.includes(approvedProposalId)) {
+            return Promise.resolve({
+              approvalId: approvedProposalId,
+              type: 'TEMPLATE',
+              status: executed ? 'CONSUMED' : 'APPROVED',
+              createdBy: 'issuer:super-admin-maker',
+              reason: 'Approved externally via Workforce Approvals screen',
+              change: { eventType: 'customer.funding.approved', channel: 'SMS' },
+              createdAt: '2026-10-31T08:00:00.000Z',
+            });
+          }
+          if (path.includes(selfApprovedId)) {
+            return Promise.resolve({
+              approvalId: selfApprovedId,
+              type: 'EVENT_CONFIGURATION',
+              status: 'APPROVED',
+              createdBy: 'issuer:checker-fc',
+              reason: 'Self-authored proposal must remain blocked from self-execution',
+              change: { eventType: 'customer.funding.approved', channel: 'EMAIL' },
+              createdAt: '2026-10-31T08:05:00.000Z',
+            });
+          }
+          return Promise.resolve([
+            {
+              approvalId: approvedProposalId,
+              type: 'TEMPLATE',
+              eventType: 'customer.funding.approved',
+              channel: 'SMS',
+              status: executed ? 'CONSUMED' : 'APPROVED',
+              createdBy: 'issuer:super-admin-maker',
+              approvedBy: 'issuer:checker-fc',
+              createdAt: '2026-10-31T08:00:00.000Z',
+            },
+            {
+              approvalId: selfApprovedId,
+              type: 'EVENT_CONFIGURATION',
+              eventType: 'customer.funding.approved',
+              channel: 'EMAIL',
+              status: 'APPROVED',
+              createdBy: 'issuer:checker-fc',
+              approvedBy: 'issuer:other-checker',
+              createdAt: '2026-10-31T08:05:00.000Z',
+            },
+          ]);
+        }
+        return Promise.resolve({});
+      });
+      (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
+        if (path === `/internal/notifications/changes/${approvedProposalId}/execute`) {
+          executed = true;
+          return Promise.resolve({
+            id: 'chg-approved-1',
+            approvalId: approvedProposalId,
+            status: 'APPLIED',
+          });
+        }
+        if (path.endsWith('/approve')) {
+          return Promise.resolve({ id: approvedProposalId, status: 'APPROVED' });
+        }
+        return Promise.resolve({});
+      });
+
+      seedPrincipal({
+        principalId: 'issuer:checker-fc',
+        type: 'OPERATOR',
+        roles: ['FINANCE_CONTROLLER'],
+        scopes: ['privileged:approve'],
+        assuranceLevel: 'MFA',
+      });
+
+      const view = render(<NotificationManagementScreen initialTab="approvals" />);
+      const execBtn = (await view.findByTestId(
+        `execute-change-${approvedProposalId}`,
+      )) as HTMLButtonElement;
+      const selfExecBtn = view.getByTestId(
+        `execute-change-${selfApprovedId}`,
+      ) as HTMLButtonElement;
+
+      expect(execBtn.disabled).toBe(false);
+      expect(selfExecBtn.disabled).toBe(true);
+      expect(selfExecBtn.textContent).toContain('Maker ≠ Checker');
+
+      fireEvent.click(execBtn);
+      await waitFor(() =>
+        expect(ApiClient.post).toHaveBeenCalledWith(
+          `/internal/notifications/changes/${approvedProposalId}/execute`,
+          {},
+          expect.objectContaining({ idempotencyKey: `notif-change-execute:${approvedProposalId}` }),
+        ),
+      );
+      expect((await view.findByTestId('checker-feedback-success')).textContent).toMatch(
+        /executed.*applied/i,
+      );
+      await waitFor(() =>
+        expect(view.getByTestId(`change-request-row-${approvedProposalId}`).textContent).toContain(
+          'APPLIED',
+        ),
+      );
+    });
+
+    test('F-02: governance audit queries all 4 non-provider notification entity types, normalizes actor, and never queries NOTIFICATION_PROVIDER_CONFIG in general audit', async () => {
+      const auditUrls: string[] = [];
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        if (path.startsWith('/internal/audit?')) {
+          auditUrls.push(path);
+          const url = new URL(`http://localhost${path}`);
+          const entityType = url.searchParams.get('entityType') ?? 'UNKNOWN';
+          return Promise.resolve([
+            {
+              id: `aud-${entityType}`,
+              entityType,
+              entityId: `id-${entityType}`,
+              action: `${entityType}_ACTION`,
+              actor: `issuer:actor-for-${entityType}`,
+              createdAt: '2026-10-31T09:00:00.000Z',
+            },
+          ]);
+        }
+        if (path === '/internal/notifications/events') return Promise.resolve([]);
+        if (path.startsWith('/internal/notifications/changes')) return Promise.resolve([]);
+        if (path.startsWith('/internal/notifications/deliveries')) {
+          return Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+        }
+        if (path === '/internal/notifications/provider-status') {
+          return Promise.resolve({
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            sms: { available: true, provider: 'console' },
+            push: { available: false },
+            email: { available: false, provider: 'none' },
+            worker: { enabled: false, retryMaxAttempts: 5, retryBaseDelaySeconds: 15 },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      seedPrincipal({
+        principalId: 'issuer:auditor-25d',
+        roles: ['FINANCE_AUDITOR'],
+        scopes: ['notification.view_deliveries', 'audit.view'],
+        assuranceLevel: 'MFA',
+      });
+
+      const view = render(<NotificationManagementScreen initialTab="approvals" />);
+      const auditTable = await view.findByTestId('notification-governance-audit-table');
+
+      expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_TEMPLATE'))).toBe(true);
+      expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_CHANGE'))).toBe(true);
+      expect(
+        auditUrls.some((u) => u.includes('entityType=NOTIFICATION_EVENT_CONFIGURATION')),
+      ).toBe(true);
+      expect(auditUrls.some((u) => u.includes('entityType=NOTIFICATION_TEST_SEND'))).toBe(true);
+      expect(auditUrls.some((u) => u.includes('NOTIFICATION_PROVIDER_CONFIG'))).toBe(false);
+
+      expect(auditTable.textContent).toContain('issuer:actor-for-NOTIFICATION_CHANGE');
+      expect(auditTable.textContent).toContain('issuer:actor-for-NOTIFICATION_TEST_SEND');
+    });
+
+    test('F-04: supports DEAD/UNKNOWN delivery statuses, PHONE recipient filtering, honest page-vs-total summaries, and QUARANTINED/FAILED outbox-receipts inspection', async () => {
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        if (path === '/internal/notifications/events') return Promise.resolve([]);
+        if (path.startsWith('/internal/notifications/deliveries?')) {
+          return Promise.resolve({
+            data: [
+              {
+                id: 'deliv-dead-1',
+                eventType: 'customer.funding.approved',
+                eventKey: 'funding:dead:1',
+                channel: 'SMS',
+                recipientType: 'PHONE',
+                recipientId: '00000000-0000-0000-0000-000000000000',
+                status: 'DEAD',
+                attempts: 5,
+                errorCode: 'RETRY_EXHAUSTED',
+                createdAt: '2026-10-31T09:10:00.000Z',
+              },
+              {
+                id: 'deliv-unknown-1',
+                eventType: 'customer.transfer.sent',
+                eventKey: 'transfer:unknown:1',
+                channel: 'SMS',
+                recipientType: 'CUSTOMER',
+                recipientId: '11111111-1111-1111-1111-111111111111',
+                status: 'UNKNOWN',
+                attempts: 1,
+                errorCode: 'PROVIDER_TIMEOUT',
+                createdAt: '2026-10-31T09:12:00.000Z',
+              },
+            ],
+            total: 145,
+            page: 1,
+            limit: 20,
+            totalPages: 8,
+            hasNextPage: true,
+          });
+        }
+        if (path.startsWith('/internal/notifications/outbox-receipts?')) {
+          return Promise.resolve({
+            data: [
+              {
+                outboxEventId: 'outbox-quarantined-1',
+                status: 'QUARANTINED',
+                reason: 'MALFORMED_EVENT_PAYLOAD',
+                attempts: 4,
+                nextAttemptAt: null,
+                createdAt: '2026-10-31T09:00:00.000Z',
+                updatedAt: '2026-10-31T09:05:00.000Z',
+              },
+            ],
+            total: 1,
+            page: 1,
+            limit: 20,
+            totalPages: 1,
+            hasNextPage: false,
+          });
+        }
+        if (path === '/internal/notifications/provider-status') {
+          return Promise.resolve({
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            sms: { available: true, provider: 'console' },
+            push: { available: false },
+            email: { available: false, provider: 'none' },
+            worker: { enabled: false, retryMaxAttempts: 5, retryBaseDelaySeconds: 15 },
+          });
+        }
+        return Promise.resolve([]);
+      });
+
+      seedPrincipal({
+        roles: ['OPERATIONS'],
+        scopes: ['notification.view_deliveries'],
+        assuranceLevel: 'MFA',
+      });
+
+      const view = render(<NotificationManagementScreen initialTab="deliveries" />);
+      expect(await view.findByTestId('delivery-row-deliv-dead-1')).toBeTruthy();
+      expect(view.getByTestId('delivery-row-deliv-unknown-1')).toBeTruthy();
+      expect(view.getByTestId('delivery-total-matching-count').textContent).toBe('145');
+      expect(view.getByTestId('delivery-summary-scope-note').textContent).toContain(
+        '2 of 145 matching records',
+      );
+
+      // Outbox receipts table surfaces QUARANTINED receipt
+      expect(await view.findByTestId('outbox-receipt-row-outbox-quarantined-1')).toBeTruthy();
+      expect(view.getByTestId('outbox-receipts-table').textContent).toContain(
+        'MALFORMED_EVENT_PAYLOAD',
+      );
+
+      // Filter by status=DEAD and recipientType=PHONE
+      fireEvent.change(view.getByLabelText('Delivery status'), { target: { value: 'DEAD' } });
+      fireEvent.change(view.getByLabelText('Recipient type'), { target: { value: 'PHONE' } });
+      fireEvent.click(view.getByTestId('apply-delivery-filters-btn'));
+      await waitFor(() =>
+        expect(ApiClient.get).toHaveBeenCalledWith(
+          expect.stringContaining('status=DEAD&recipientType=PHONE'),
+        ),
+      );
+
+      // Filter outbox receipts by status=QUARANTINED
+      fireEvent.change(view.getByTestId('outbox-receipt-status-select'), {
+        target: { value: 'QUARANTINED' },
+      });
+      await waitFor(() =>
+        expect(ApiClient.get).toHaveBeenCalledWith(
+          '/internal/notifications/outbox-receipts?page=1&limit=20&status=QUARANTINED',
+        ),
+      );
+    });
+
+    test('F-06, F-07, F-08, F-11 & F-13: preserves custom sample overrides alongside server preview, renders XSS-safe Email layout, uses {{locator_clause}}, reconciles 23 V1 events, and distinguishes disabled vs restricted Email status', async () => {
+      // 1. Baseline catalogue parity (F-07 & F-08)
+      expect(BASELINE_CODE_EVENT_CATALOGUE).toHaveLength(23);
+      expect(
+        BASELINE_CODE_EVENT_CATALOGUE.some((e) => e.eventType === 'agent.onboarding.approved'),
+      ).toBe(false);
+      const c2cEvent = BASELINE_CODE_EVENT_CATALOGUE.find(
+        (e) => e.eventType === 'cash_to_cash.created',
+      );
+      expect(c2cEvent?.approvedVariables.map((v) => v.name)).toEqual([
+        'sender_name',
+        'amount',
+        'locator_clause',
+      ]);
+
+      // 2. Email layout XSS safety + custom sample override preservation during Server Preview (F-06)
+      mockIntegratedRegistryBackend();
+      seedPrincipal({
+        principalId: 'issuer:super-admin-preview',
+        roles: ['SUPER_ADMIN'],
+        scopes: [
+          'notification.view_deliveries',
+          'notification.view_events',
+          'notification.manage_templates',
+          'notification.provider.view',
+        ],
+        assuranceLevel: 'MFA',
+      });
+
+      const emailView = render(<NotificationManagementScreen initialTab="emailTemplates" />);
+      await waitFor(() => expect(emailView.getByTestId('safe-email-layout-preview')).toBeTruthy());
+
+      // Inject hostile markup into body & custom sample override -> rendered as inert text (zero <script> elements)
+      fireEvent.change(emailView.getByTestId('template-body-textarea'), {
+        target: {
+          value: 'Alert {{amount_clause}}\n\n<img src=x onerror=alert(1)>',
+        },
+      });
+      fireEvent.change(emailView.getByLabelText('Sample value for amount_clause'), {
+        target: { value: ' of NGN 999,999.00 (CUSTOM-OVERRIDE)' },
+      });
+      expect(emailView.getByTestId('rendered-preview-body').textContent).toContain(
+        'CUSTOM-OVERRIDE',
+      );
+      expect(
+        emailView.getByTestId('safe-email-layout-preview').querySelector('img'),
+      ).toBeNull();
+
+      // Trigger authoritative Server Preview -> server preview displays fixed samples AND local custom override preview remains preserved!
+      fireEvent.click(emailView.getByTestId('run-server-preview-btn'));
+      expect(await emailView.findByTestId('server-preview-fixed-samples-notice')).toBeTruthy();
+      expect(emailView.getByTestId('local-custom-override-preview-body').textContent).toContain(
+        'CUSTOM-OVERRIDE',
+      );
+      emailView.unmount();
+
+      // 3. Cash-to-Cash banner references {{locator_clause}} and never {{agent_locator_url}} (F-07)
+      const smsView = render(<NotificationManagementScreen initialTab="smsTemplates" />);
+      await waitFor(() => expect(smsView.getByTestId('template-workspace-sms')).toBeTruthy());
+      fireEvent.change(smsView.getByTestId('template-event-select'), {
+        target: { value: 'cash_to_cash.created' },
+      });
+      const c2cBanner = smsView.getByTestId('template-c2c-nondisclosure-banner');
+      expect(c2cBanner.textContent).toContain('{{locator_clause}}');
+      expect(c2cBanner.textContent).not.toContain('{{agent_locator_url}}');
+      smsView.unmount();
+
+      // 4. Overview live contract reference & confirmed-dark Email badge (F-11 & F-13)
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        if (path === '/internal/notifications/events') return Promise.resolve([]);
+        if (path === '/internal/notifications/provider-status') {
+          return Promise.resolve({
+            channels: ['SMS', 'PUSH', 'EMAIL'],
+            sms: { available: true, provider: 'console' },
+            push: { available: false },
+            email: { available: false, provider: 'none' },
+            worker: { enabled: false, retryMaxAttempts: 5, retryBaseDelaySeconds: 15 },
+          });
+        }
+        if (path.startsWith('/internal/notifications/deliveries')) {
+          return Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+        }
+        if (path.startsWith('/internal/notifications/outbox-receipts')) {
+          return Promise.resolve({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+        }
+        if (path.startsWith('/internal/notifications/changes')) return Promise.resolve([]);
+        return Promise.resolve({});
+      });
+
+      const overview = render(<NotificationManagementScreen initialTab="overview" />);
+      expect(await overview.findByTestId('overview-email-disabled-badge')).toBeTruthy();
+      const matrixText = overview.getByTestId('backend-readiness-matrix').textContent ?? '';
+      expect(matrixText).toContain('GET /internal/notifications/outbox-receipts');
+      expect(matrixText).toContain('POST /internal/notifications/changes/:approvalId/execute');
+      expect(matrixText).not.toContain('/internal/notifications/change-requests');
+    });
   });
 });

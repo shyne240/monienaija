@@ -6,6 +6,7 @@ import { DataRecord, extractRecords, StructuredColumn, StructuredKeyValueList, S
 interface DeliveryFilters {
   status: string;
   channel: string;
+  recipientType: string;
   eventType: string;
 }
 
@@ -15,6 +16,15 @@ const DELIVERY_COLUMNS: StructuredColumn[] = [
   { key: 'status', label: 'Status' }, { key: 'attempts', label: 'Attempts' },
   { key: 'providerRef', label: 'Provider reference' }, { key: 'createdAt', label: 'Created' },
   { key: 'sentAt', label: 'Sent' }, { key: 'errorCode', label: 'Error code' },
+];
+
+const OUTBOX_RECEIPT_COLUMNS: StructuredColumn[] = [
+  { key: 'outboxEventId', label: 'Outbox Event ID' },
+  { key: 'status', label: 'Status' },
+  { key: 'reason', label: 'Reason' },
+  { key: 'attempts', label: 'Attempts' },
+  { key: 'nextAttemptAt', label: 'Next Attempt' },
+  { key: 'updatedAt', label: 'Updated At' },
 ];
 
 const OUTBOX_COLUMNS: StructuredColumn[] = [
@@ -42,8 +52,33 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryStatus, setDeliveryStatus] = useState('');
   const [deliveryChannel, setDeliveryChannel] = useState('');
+  const [deliveryRecipientType, setDeliveryRecipientType] = useState('');
   const [deliveryEventInput, setDeliveryEventInput] = useState('');
-  const [appliedDeliveryFilters, setAppliedDeliveryFilters] = useState<DeliveryFilters>({ status: '', channel: '', eventType: '' });
+  const [appliedDeliveryFilters, setAppliedDeliveryFilters] = useState<DeliveryFilters>({
+    status: '',
+    channel: '',
+    recipientType: '',
+    eventType: '',
+  });
+  const [outboxReceipts, setOutboxReceipts] = useState<any>(null);
+  const [outboxReceiptsLoading, setOutboxReceiptsLoading] = useState(false);
+  const [outboxReceiptsError, setOutboxReceiptsError] = useState('');
+
+  const fetchOutboxReceiptsOnDemand = useCallback(async (statusFilter = '') => {
+    if (!canViewDeliveries) return;
+    setOutboxReceiptsLoading(true);
+    setOutboxReceiptsError('');
+    try {
+      const q = new URLSearchParams({ page: '1', limit: '20' });
+      if (statusFilter) q.set('status', statusFilter);
+      const res = await ApiClient.get(`/internal/notifications/outbox-receipts?${q.toString()}`);
+      setOutboxReceipts(res);
+    } catch (err: any) {
+      setOutboxReceiptsError(err?.message || 'Notification outbox receipts unavailable');
+    } finally {
+      setOutboxReceiptsLoading(false);
+    }
+  }, [canViewDeliveries]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -69,6 +104,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
       const query = new URLSearchParams({ page: String(deliveryPage), limit: '20' });
       if (appliedDeliveryFilters.status) query.set('status', appliedDeliveryFilters.status);
       if (appliedDeliveryFilters.channel) query.set('channel', appliedDeliveryFilters.channel);
+      if (appliedDeliveryFilters.recipientType) query.set('recipientType', appliedDeliveryFilters.recipientType);
       if (appliedDeliveryFilters.eventType) query.set('eventType', appliedDeliveryFilters.eventType);
       requests.push(ApiClient.get(`/internal/notifications/deliveries?${query.toString()}`).then(setDeliveries).catch((err: any) => {
         setLoadErrors((prev) => ({ ...prev, deliveries: err?.message || 'Notification deliveries unavailable' }));
@@ -100,6 +136,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
     setAppliedDeliveryFilters({
       status: deliveryStatus,
       channel: deliveryChannel,
+      recipientType: deliveryRecipientType,
       eventType: deliveryEventInput.trim(),
     });
   };
@@ -176,17 +213,26 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
                   </button>
                 )}
               </div>
-              <p style={muted}>Read-only delivery diagnostics. Filters are applied by the existing paginated API.</p>
+              <p style={muted}>
+                Read-only delivery diagnostics. Showing loaded page ({deliveryRows.length} rows on Page {deliveryCurrentPage}) out of {deliveryTotal} matching delivery records.
+              </p>
               <form onSubmit={applyDeliveryFilters} style={filterRow}>
                 <label style={filterLabel}>Status
                   <select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)} style={select}>
                     <option value="">All</option><option value="PENDING">PENDING</option>
-                    <option value="SENT">SENT</option><option value="FAILED">FAILED</option><option value="SKIPPED">SKIPPED</option>
+                    <option value="SENT">SENT</option><option value="FAILED">FAILED</option>
+                    <option value="DEAD">DEAD</option><option value="UNKNOWN">UNKNOWN</option>
+                    <option value="SKIPPED">SKIPPED</option>
                   </select>
                 </label>
                 <label style={filterLabel}>Channel
                   <select value={deliveryChannel} onChange={(event) => setDeliveryChannel(event.target.value)} style={select}>
                     <option value="">All</option><option value="SMS">SMS</option><option value="EMAIL">EMAIL</option><option value="PUSH">PUSH</option>
+                  </select>
+                </label>
+                <label style={filterLabel}>Recipient type
+                  <select value={deliveryRecipientType} onChange={(event) => setDeliveryRecipientType(event.target.value)} style={select}>
+                    <option value="">All</option><option value="CUSTOMER">CUSTOMER</option><option value="AGENT">AGENT</option><option value="PHONE">PHONE</option><option value="WORKFORCE">WORKFORCE</option>
                   </select>
                 </label>
                 <label style={filterLabel}>Event type
@@ -202,11 +248,33 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
                     emptyMessage="No notification deliveries were returned for these filters."
                   />
                   <div style={pager}>
-                    <span>{deliveryTotal} deliveries · Page {deliveryCurrentPage}</span>
+                    <span>Showing {deliveryRows.length} of {deliveryTotal} matching deliveries · Page {deliveryCurrentPage}</span>
                     <button type="button" style={smallBtn} disabled={deliveryPage <= 1 || loading} onClick={() => setDeliveryPage((page) => Math.max(1, page - 1))}>Previous</button>
                     <button type="button" style={smallBtn} disabled={!deliveryHasNextPage || loading} onClick={() => setDeliveryPage((page) => page + 1)}>Next</button>
+                    <button
+                      type="button"
+                      style={smallBtn}
+                      data-testid="system-health-load-outbox-receipts-btn"
+                      disabled={outboxReceiptsLoading}
+                      onClick={() => void fetchOutboxReceiptsOnDemand()}
+                    >
+                      {outboxReceiptsLoading ? 'Loading receipts…' : 'Inspect Outbox Receipts'}
+                    </button>
                   </div>
                 </>
+              )}
+              {outboxReceiptsError && <div style={{ ...errBox, marginTop: 10 }}>{outboxReceiptsError}</div>}
+              {outboxReceipts && (
+                <div style={{ marginTop: 12 }} data-testid="system-health-outbox-receipts-panel">
+                  <h4 style={{ margin: '0 0 6px', fontSize: 13, color: '#334155' }}>
+                    Notification Outbox Receipts (<code>GET /internal/notifications/outbox-receipts</code>)
+                  </h4>
+                  <StructuredRecordTable
+                    rows={extractRecords(outboxReceipts)}
+                    columns={OUTBOX_RECEIPT_COLUMNS}
+                    emptyMessage="No notification outbox receipts returned."
+                  />
+                </div>
               )}
             </section>
           )}
