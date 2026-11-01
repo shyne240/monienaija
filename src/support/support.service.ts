@@ -861,10 +861,11 @@ export class SupportService {
       if (!isInternal) {
         await this.outboxService.enqueue(manager, {
           eventType: 'support.ticket.message_added',
+          eventKey: `support.ticket.message_added:${id}`,
           aggregateType: 'SUPPORT_TICKET',
           aggregateId: ticketId,
           correlationId: `support-ticket:${ticketId}`,
-          payload: { ticketId, messageId: id, authorType, authorId },
+          payload: { ticketId, messageId: id, authorType, authorId, isInternal: false },
         });
       }
 
