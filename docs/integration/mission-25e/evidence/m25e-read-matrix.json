@@ -1,0 +1,101 @@
+{
+  "SUPER_ADMIN": {
+    "events": 200,
+    "templates": 200,
+    "changes": 200,
+    "provider-status": 200,
+    "provider-config": 200,
+    "deliveries": 200,
+    "outbox-receipts": 200
+  },
+  "FINANCE_PREPARER": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "FINANCE_CONTROLLER": {
+    "events": 200,
+    "templates": 200,
+    "changes": 200,
+    "provider-status": 200,
+    "provider-config": 200,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "FINANCE_AUDITOR": {
+    "events": 200,
+    "templates": 200,
+    "changes": 200,
+    "provider-status": 200,
+    "provider-config": 200,
+    "deliveries": 200,
+    "outbox-receipts": 200
+  },
+  "ADMINISTRATOR": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "OPERATIONS": {
+    "events": 200,
+    "templates": 200,
+    "changes": 200,
+    "provider-status": 200,
+    "provider-config": 200,
+    "deliveries": 200,
+    "outbox-receipts": 200
+  },
+  "AGENT_NETWORK_MANAGER": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "COMPLIANCE": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "RISK_FRAUD": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "CUSTOMER_SERVICE": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  },
+  "TREASURY": {
+    "events": 403,
+    "templates": 403,
+    "changes": 403,
+    "provider-status": 403,
+    "provider-config": 403,
+    "deliveries": 403,
+    "outbox-receipts": 403
+  }
+}

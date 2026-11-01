@@ -1,0 +1,11 @@
+{
+  "status": 201,
+  "body": {
+    "approvalId": "fb444fa9-ce02-4c18-8425-db81b6804ea2",
+    "status": "REQUESTED",
+    "actionType": "NOTIFICATION_EVENT_CONFIGURATION_CHANGE",
+    "actionFingerprint": "4274cd151d1d94352bfd07877c35b27faac41923fccfc6b31f65d43c790e73eb",
+    "requestedAt": "2026-11-01T10:23:01.992Z",
+    "expiresAt": "2026-11-01T10:38:01.992Z"
+  }
+}

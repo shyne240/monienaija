@@ -1,0 +1,40 @@
+MISSION 25E — POSTGRESQL INTEGRATION MATRIX (integrated candidate)
+==================================================================
+Command : PG_TEST_CONCURRENCY=1 NODE_ENV=test npm run test:pg
+Engine  : embedded PostgreSQL 18.4 on 127.0.0.1:5432 (disposable local instance)
+Shape   : 9 batches, each its own process, strictly serial (--runInBand)
+
+  Batch  Suites  Tests  Exit
+  -----  ------  -----  ----
+    1/9    15/15    646    0
+    2/9    15/15    276    0
+    3/9    15/15    333    0
+    4/9    15/15    293    0
+    5/9    15/15    267    0
+    6/9    15/15    170    0
+    7/9    15/15    236    0
+    8/9    15/15    156    0
+    9/9    11/11     56    0
+  -----  ------  -----  ----
+  TOTAL  131/131  2433    0
+
+FAIL lines: 0.   Skipped: 0.   PG_MATRIX_EXIT=0
+
+Baseline (Mission 23 @ 019de99): 131 suites / 2,427 tests.
+Delta: same 131 suites, +6 tests — the Arena 1 modifications to five integration
+specs. No suite was removed, skipped or disabled.
+
+Notification and boundary suites confirmed present and passing:
+  test/notification-reliability.integration.spec.ts
+  test/v1-005-notification-delivery.integration.spec.ts
+  test/v1-006-customer-notification-inbox.integration.spec.ts
+  test/v1-email-notification-01.integration.spec.ts
+  test/v1-customer-credentials-01.integration.spec.ts
+  test/v1-notification-provider-configuration-01.integration.spec.ts
+  test/a22-admin-foundation.integration.spec.ts                 (D-01 agent read contract)
+  test/mission-16a-agent-read-authorization.integration.spec.ts (D-01 agent read contract)
+  test/mission-15a-management.integration.spec.ts               (management / maker-checker)
+  test/mission-15a-agent-sessions.integration.spec.ts
+  test/mission-19a-workforce-logout.integration.spec.ts         (K-01 regression)
+
+Raw log: /home/user/m25e-pg.log

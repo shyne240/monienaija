@@ -1,0 +1,46 @@
+{
+  "results": [
+    {
+      "id": "PREFS-SUPER_ADMIN-CARD",
+      "ok": true,
+      "detail": "card=1 readOnlyBadge=true section=1 restricted=0 denied=0"
+    },
+    {
+      "id": "PREFS-SUPER_ADMIN-READ-ONLY",
+      "ok": true,
+      "detail": "read-only badge=true writeAffordance=false"
+    },
+    {
+      "id": "PREFS-SUPER_ADMIN-ONLY-GET-REQUESTS",
+      "ok": true,
+      "detail": "preference requests: [{\"m\":\"GET\",\"u\":\"/api/v1/customers/b920d762-76f6-4514-b429-c282ba095853/preferences\",\"s\":200},{\"m\":\"GET\",\"u\":\"/api/v1/customers/b920d762-76f6-4514-b429-c282ba095853/preferences/history\",\"s\":200},{\"m\":\"GET\",\"u\":\"/api/v1/customers/b920d762-76f6-4514-b429-c282ba095853/preferences\",\"s\":200},{\"m\":\"GET\",\"u\":\"/api/v1/customers/b920d762-76f6-4514-b429-c282ba095853/preferences/history\""
+    },
+    {
+      "id": "PREFS-SUPER_ADMIN-VALUES-RENDERED",
+      "ok": true,
+      "detail": "Communication & account preferences (read-only)Customer-controlled notification, security alert, language, and theme settings. Mandatory security OTPs bypass channel opt-outs by policy.Read-onlyEmail notificationsEnabled"
+    },
+    {
+      "id": "PREFS-CUSTOMER_SERVICE-CARD",
+      "ok": true,
+      "detail": "card=1 readOnlyBadge=true section=0 restricted=1 denied=0"
+    },
+    {
+      "id": "PREFS-CUSTOMER_SERVICE-RESTRICTED-NO-FETCH",
+      "ok": true,
+      "detail": "restricted notice=1 requests=0 (UI hides what the API would allow — divergence recorded)"
+    },
+    {
+      "id": "PREFS-CUSTOMER_SERVICE-READ-ONLY",
+      "ok": true,
+      "detail": "read-only badge=true writeAffordance=false"
+    },
+    {
+      "id": "PREFS-CUSTOMER_SERVICE-ONLY-GET-REQUESTS",
+      "ok": true,
+      "detail": "preference requests: []"
+    }
+  ],
+  "passed": 8,
+  "failed": 0
+}

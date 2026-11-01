@@ -1,0 +1,13 @@
+MISSION 25E — BACKEND UNIT / REGRESSION SUITE (integrated candidate)
+====================================================================
+Command : npx jest --runInBand
+Result  : Test Suites: 228 passed, 228 total
+          Tests:       2701 passed, 2701 total
+          Exit code:   0
+
+Baseline (integration/mission-23-fast-uri-security @ 019de99): 226 suites / 2,650 tests.
+Delta   : +2 suites / +51 tests — exactly the two suites Mission 25C adds:
+          test/mission-25c-notification-diagnostics.spec.ts
+          test/mission-25c-provider-routing.spec.ts
+No test was skipped, deleted, weakened or edited by the integration.
+Raw log : /home/user/m25e-unit.log

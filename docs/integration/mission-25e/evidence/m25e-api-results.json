@@ -1,0 +1,311 @@
+{
+  "results": [
+    {
+      "id": "AUTH-SUPER_ADMIN",
+      "ok": true,
+      "detail": "roles=SUPER_ADMIN scopes=66"
+    },
+    {
+      "id": "AUTH-FINANCE_PREPARER",
+      "ok": true,
+      "detail": "roles=FINANCE_PREPARER scopes=20"
+    },
+    {
+      "id": "AUTH-FINANCE_CONTROLLER",
+      "ok": true,
+      "detail": "roles=FINANCE_CONTROLLER scopes=28"
+    },
+    {
+      "id": "AUTH-FINANCE_AUDITOR",
+      "ok": true,
+      "detail": "roles=FINANCE_AUDITOR scopes=25"
+    },
+    {
+      "id": "AUTH-ADMINISTRATOR",
+      "ok": true,
+      "detail": "roles=ADMINISTRATOR scopes=12"
+    },
+    {
+      "id": "AUTH-OPERATIONS",
+      "ok": true,
+      "detail": "roles=OPERATIONS scopes=27"
+    },
+    {
+      "id": "AUTH-AGENT_NETWORK_MANAGER",
+      "ok": true,
+      "detail": "roles=AGENT_NETWORK_MANAGER scopes=13"
+    },
+    {
+      "id": "AUTH-COMPLIANCE",
+      "ok": true,
+      "detail": "roles=COMPLIANCE scopes=13"
+    },
+    {
+      "id": "AUTH-RISK_FRAUD",
+      "ok": true,
+      "detail": "roles=RISK_FRAUD scopes=1"
+    },
+    {
+      "id": "AUTH-CUSTOMER_SERVICE",
+      "ok": true,
+      "detail": "roles=CUSTOMER_SERVICE scopes=6"
+    },
+    {
+      "id": "AUTH-TREASURY",
+      "ok": true,
+      "detail": "roles=TREASURY scopes=1"
+    },
+    {
+      "id": "AUTH-11-ROLES",
+      "ok": true,
+      "detail": "11/11 roles authenticated"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-events",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-templates",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-changes",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-provider-status",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-provider-config",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-deliveries",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-SUPER_ADMIN-outbox-receipts",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "id": "READ-NO-5XX-ANY-ROLE",
+      "ok": true,
+      "detail": "no 5xx across 11 roles x 7 surfaces"
+    },
+    {
+      "id": "EVENTS-ENVELOPE",
+      "ok": true,
+      "detail": "items=23 keys=items"
+    },
+    {
+      "id": "EVENTS-CHANNEL-SHAPE",
+      "ok": true,
+      "detail": "SMS={\"enabled\":true,\"locked\":false,\"configurationVersion\":1,\"activeTemplateVersion\":1}"
+    },
+    {
+      "id": "H-06-BACKEND-LOCKS-RECORDED",
+      "ok": true,
+      "detail": "customer.funding.approved:locked=false,v=1 | customer.funding.rejected:locked=false,v=1 | transfer.completed:locked=false,v=1"
+    },
+    {
+      "id": "SECURITY-EVENTS-LOCKED",
+      "ok": true,
+      "detail": "[{\"eventType\":\"customer.registration.phone_verification\",\"locked\":true,\"editable\":false},{\"eventType\":\"customer.credentials.temporary_credential\",\"locked\":true,\"editable\":false},{\"eventType\":\"agent.desk.customer_otp\",\"locked\":true,\"editable\":false}]"
+    },
+    {
+      "id": "SECURITY-TEMPLATE-READ-REFUSED",
+      "ok": true,
+      "detail": "status=400 body={\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"Security notifications cannot use editable templates\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-01T10:23:01.7"
+    },
+    {
+      "id": "SECURITY-TEMPLATE-PREVIEW-REFUSED",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "id": "SECURITY-CONFIG-CHANGE-REFUSED",
+      "ok": true,
+      "detail": "status=400 body={\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"Security notifications cannot use editable templates\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-01T10:23:01.7"
+    },
+    {
+      "id": "H-07-NO-SECRET-IN-PROVIDER-RESPONSES",
+      "ok": true,
+      "detail": "status=200/200 leaks=0 keys=sms,email,encryption,worker,contracts"
+    },
+    {
+      "id": "H-07-SCOPE-DECLARED",
+      "ok": true,
+      "detail": "projectionScope=FULL"
+    },
+    {
+      "id": "PROVIDER-CONFIG-PERMISSION-BOUNDARY",
+      "ok": true,
+      "detail": "{\"SUPER_ADMIN\":200,\"FINANCE_AUDITOR\":200,\"ADMINISTRATOR\":403,\"CUSTOMER_SERVICE\":403,\"OPERATIONS\":200}"
+    },
+    {
+      "id": "PROVIDER-STATUS-PROJECTION-SCOPE",
+      "ok": true,
+      "detail": "FINANCE_AUDITOR status=200 scope=FULL"
+    },
+    {
+      "id": "GOV-PROPOSAL-CREATED",
+      "ok": true,
+      "detail": "status=201 approvalId=9aeee4ae-3947-45da-a4c2-0e0847a9bca2 actionFingerprint=c69045cebc4e6e81e6b238aee38065ab64a039875a53318730c636ce633635db"
+    },
+    {
+      "id": "GOV-MAKER-CANNOT-SELF-APPROVE",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "id": "GOV-EXECUTE-BEFORE-APPROVAL-REFUSED",
+      "ok": true,
+      "detail": "status=403"
+    },
+    {
+      "id": "GOV-CHECKER-APPROVES",
+      "ok": true,
+      "detail": "status=201 body={\"approved\":true,\"approval\":{\"id\":\"9aeee4ae-3947-45da-a4c2-0e0847a9bca2\",\"actionType\":\"NOTIFICATION_EVENT_CONFIGURATION_CHANGE\",\"resourceType\":\"NOTIFICATION_EVE"
+    },
+    {
+      "id": "GOV-CHECKER-EXECUTES",
+      "ok": true,
+      "detail": "status=200 body={\"approvalId\":\"9aeee4ae-3947-45da-a4c2-0e0847a9bca2\",\"type\":\"CONFIGURATION\",\"eventType\":\"transfer.failed\",\"channel\":\"SMS\",\"enabled\":false,\"version\":4}"
+    },
+    {
+      "id": "GOV-APPLIED-STATE-VISIBLE",
+      "ok": true,
+      "detail": "transfer.failed SMS enabled true -> false (version 4)"
+    },
+    {
+      "id": "GOV-REPLAY-REFUSED",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "id": "GOV-RESTORED-BASELINE",
+      "ok": true,
+      "detail": "restore exec=200 transfer.failed SMS enabled back to true"
+    },
+    {
+      "id": "H-06-DIVERGENCE-DOCUMENTED",
+      "ok": true,
+      "detail": "backend accepted CONFIGURATION proposal to disable customer.funding.approved: status=201 approvalId=fb444fa9-ce02-4c18-8425-db81b6804ea2 (proposal left UNAPPROVED and UNEXECUTED — no state changed)"
+    },
+    {
+      "id": "H-04-NO-DEPOSIT-WITHDRAWAL-CATALOGUE",
+      "ok": true,
+      "detail": "absent from catalogue: deposit.completed, deposit.failed, withdrawal.completed, withdrawal.failed (present=none)"
+    },
+    {
+      "id": "H-04-CHANGE-REFUSED",
+      "ok": true,
+      "detail": "status=400 body={\"statusCode\":400,\"code\":\"BAD_REQUEST\",\"message\":\"Unknown notification event\",\"error\":\"Bad Request\",\"timestamp\":\"2026-11-01T10:23:02.005Z\",\""
+    },
+    {
+      "id": "DELIVERIES-ENVELOPE",
+      "ok": true,
+      "detail": "status=200 keys=data,hasNextPage,limit,page,total,totalPages total=2"
+    },
+    {
+      "id": "RECEIPTS-ENVELOPE",
+      "ok": true,
+      "detail": "status=200 keys=data,hasNextPage,limit,page,total,totalPages total=5"
+    },
+    {
+      "id": "RECEIPTS-FILTER-QUARANTINED",
+      "ok": true,
+      "detail": "status=200 total=3"
+    },
+    {
+      "id": "RECEIPTS-FILTER-UNSUPPORTED",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "RECEIPTS-FILTER-SUPPRESSED",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "RECEIPTS-FILTER-FAILED",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "RECEIPTS-FILTER-MATERIALIZED",
+      "ok": true,
+      "detail": "status=200 total=2"
+    },
+    {
+      "id": "DELIVERIES-FILTER-PENDING",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "DELIVERIES-FILTER-SENT",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "DELIVERIES-FILTER-FAILED",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "DELIVERIES-FILTER-SKIPPED",
+      "ok": true,
+      "detail": "status=200 total=2"
+    },
+    {
+      "id": "DELIVERIES-FILTER-UNKNOWN",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "DELIVERIES-FILTER-DEAD",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "DELIVERIES-FILTER-EMAIL",
+      "ok": true,
+      "detail": "status=200 total=0"
+    },
+    {
+      "id": "CUSTOMER-PREFS-SURFACE",
+      "ok": true,
+      "detail": "status=404 (404/400 acceptable for unknown customer, 5xx is not)"
+    },
+    {
+      "id": "CUSTOMER-PREFS-HISTORY-SURFACE",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "id": "TEST-SEND-IS-CONSOLE-SIMULATION-ONLY",
+      "ok": true,
+      "detail": "status=201 provider=console (a non-console provider here would be external activation)"
+    },
+    {
+      "id": "TEST-SEND-MASKS-DESTINATION",
+      "ok": true,
+      "detail": "destination echoed in clear: false masked=+**********000"
+    },
+    {
+      "id": "TEST-SEND-NEVER-PROMOTES-READINESS",
+      "ok": true,
+      "detail": "sms lifecycle=CONSOLE_ONLY gates={\"configured\":false,\"verified\":false,\"enabled\":false,\"deliveryTested\":false,\"productionReady\":false}"
+    }
+  ],
+  "passed": 61,
+  "failed": 0
+}

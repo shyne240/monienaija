@@ -1,0 +1,66 @@
+{
+  "results": [
+    {
+      "id": "UI-DELIVERIES-TABLE-RENDERS-WITH-ROWS",
+      "ok": true,
+      "detail": "deliveries table present=true"
+    },
+    {
+      "id": "UI-DELIVERIES-STATUS-VISIBLE",
+      "ok": true,
+      "detail": "statuses on screen: SENT,FAILED,DEAD,UNKNOWN,PENDING,PENDING,SENT,FAILED,DEAD,UNKNOWN,SKIPPED,SKIPPED,SKIPPED,FAILED,FAILED,UNKNOWN"
+    },
+    {
+      "id": "UI-DELIVERIES-SKIPPED-NOT-PRESENTED-AS-SENT",
+      "ok": true,
+      "detail": "success wording present=false"
+    },
+    {
+      "id": "UI-DELIVERIES-NO-RAW-DESTINATION",
+      "ok": true,
+      "detail": "raw phone-shaped string in deliveries panel=false"
+    },
+    {
+      "id": "UI-DELIVERIES-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "UI-RECEIPTS-SECTION-PRESENT",
+      "ok": true,
+      "detail": "outbox-receipts section present=true"
+    },
+    {
+      "id": "UI-RECEIPTS-QUARANTINE-VISIBLE",
+      "ok": true,
+      "detail": "receipt statuses on screen: QUARANTINED,FAILED,QUARANTINED,FAILED,SUPPRESSED,UNSUPPORTED,MATERIALIZED,MATERIALIZED,MATERIALIZED,QUARANTINED,QUARANTINED,UNSUPPORTED,QUARANTINED,UNSUPPORTED"
+    },
+    {
+      "id": "UI-RECEIPTS-REASON-VISIBLE",
+      "ok": true,
+      "detail": "quarantine reasons visible=true"
+    },
+    {
+      "id": "UI-RECEIPTS-STATUS-FILTER",
+      "ok": true,
+      "detail": "status filter present=true"
+    },
+    {
+      "id": "UI-RECEIPTS-FILTER-QUARANTINED",
+      "ok": false,
+      "detail": "QUARANTINED filter shows quarantined=true shows materialized=true"
+    },
+    {
+      "id": "UI-READONLY-CONFIG-CONTROL-DISABLED",
+      "ok": true,
+      "detail": "button present=true disabled=true title=\"Requires notification.manage_configuration\""
+    },
+    {
+      "id": "UI-READONLY-NO-FALSE-SUCCESS",
+      "ok": true,
+      "detail": "false-success wording present=false"
+    }
+  ],
+  "passed": 11,
+  "failed": 1
+}

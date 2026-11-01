@@ -1,0 +1,53 @@
+MISSION 25E — TRIGGER-LOCK DISAGREEMENT (H-06) AND OTHER UI/BACKEND DIVERGENCES
+===============================================================================
+All figures observed on the integrated build (real HTTP + real browser), not quoted.
+
+H-06 — funding/transfer trigger locks
+
+  EVENT                     BACKEND (notification_event_configurations)   ADMIN WEB (static catalogue)
+  customer.funding.approved  SMS locked=false, editable=true, v1           toggleLocked=true
+  customer.funding.rejected  SMS locked=false, editable=true, v1           toggleLocked=true
+  transfer.completed         SMS locked=false, editable=true, v1           toggleLocked=true
+
+  - The backend seed inserts every ordinary event with is_locked=false. Only the three
+    SECURITY events are seeded is_locked=true, and those ARE server-enforced (see below).
+  - The Admin Web computes its lock as: registryLocked (authoritative, from the API) OR the
+    static baseline toggleLocked. The three funding/transfer events are locked ONLY by the
+    static half — i.e. only in the browser.
+
+  PROVEN CONSEQUENCE (probe executed, then left unapproved and unexecuted):
+    POST /internal/notifications/changes
+      {type:CONFIGURATION, eventType:"customer.funding.approved", channel:SMS,
+       enabled:false, expectedVersion:1, reason:"H-06 divergence probe (NOT executed)"}
+    -> 201 CREATED, approvalId issued.
+
+    So a principal with the maker permission can open a governed proposal to DISABLE a
+    notification the console presents as policy-locked. The UI lock is not an enforcement
+    boundary; it is presentation. The proposal was deliberately NOT approved or executed and
+    no configuration was changed by this probe.
+
+  SECURITY CLASS — the contrast that matters:
+    GET /internal/notifications/events -> the three SECURITY events report
+      locked=true, editable=false, and every template read/preview/change is refused with
+      400 "Security notifications cannot use editable templates".
+    These locks ARE server-enforced. Only the D-N8 funding/transfer claim is UI-only.
+
+  Security consequence, stated plainly: if product/governance policy (D-N8) requires those
+  three transactional outcome notifications to be non-disableable, the backend does not
+  currently enforce that. An authorised maker + independent checker can disable them through
+  the API while the console says "Locked". This is a governance gap, not a privilege
+  escalation, and it is NOT fixed here — the authoritative policy is a product decision.
+
+OTHER DIVERGENCES OBSERVED (same family — UI stricter than server, recorded not changed)
+
+  D2. Customer notification preferences: the Admin Web deliberately shows an explicit
+      "Preference visibility is restricted" notice to CUSTOMER_SERVICE and issues NO request,
+      while GET /customers/:id/preferences returns 200 for that same role over HTTP.
+      The UI is the stricter of the two; the endpoint would serve the data if called directly.
+
+  D3. Console read authorization (HTTP matrix): full access SUPER_ADMIN / FINANCE_AUDITOR /
+      OPERATIONS; approvals-only FINANCE_CONTROLLER (deliveries+receipts 403); no access
+      FINANCE_PREPARER, ADMINISTRATOR, AGENT_NETWORK_MANAGER, COMPLIANCE, RISK_FRAUD,
+      CUSTOMER_SERVICE, TREASURY. The console hides itself for the last group, so an operator
+      is never shown a surface that will 403 — and no background 400/403 was produced for any
+      of the 11 roles.

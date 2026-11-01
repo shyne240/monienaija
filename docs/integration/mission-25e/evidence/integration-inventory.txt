@@ -1,0 +1,60 @@
+MISSION 25E — INTEGRATION INVENTORY AND ANCESTRY
+=================================================
+
+Baseline        : 019de996950b07e9312af455ce0d9b840e6e14f1
+Arena 1 (25C)   : 9fc00b104d3ca5cdd1141048d76e7d799cafd9aa
+Arena 2 (25D)   : e99f5f83a0ca8bc09cbfb4787923106e12f158cc
+Integration branch: integration/mission-25e-notification-integration
+Merge commits   : 2 no-ff merges, 0 conflicts
+
+MERGES (newest first):
+762629e Merge commit 'e99f5f83a0ca8bc09cbfb4787923106e12f158cc' into integration/mission-25e-notification-integration Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+d2ff64f Merge commit '9fc00b104d3ca5cdd1141048d76e7d799cafd9aa' into integration/mission-25e-notification-integration Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+9fc00b1 chore: checkpoint Mission 25C backend remediation
+e99f5f8 fix(admin-web): remediate notification console completeness findings F-01..F-13 (Mission 25D)
+c6ff1f5 docs: audit notification backend completeness
+
+INTEGRATED FILE INVENTORY (git diff --name-status 019de996950b07e9312af455ce0d9b840e6e14f1..HEAD)
+M	apps/admin-web/__tests__/customer-personal-information.test.tsx
+M	apps/admin-web/__tests__/menu-visibility-11-roles.test.tsx
+M	apps/admin-web/__tests__/notification-management.test.tsx
+M	apps/admin-web/__tests__/provider-configuration.test.tsx
+M	apps/admin-web/src/components/NotificationTemplateWorkspace.tsx
+M	apps/admin-web/src/components/ProviderConfigurationWorkspace.tsx
+M	apps/admin-web/src/screens/authenticated/ApprovalsScreen.tsx
+M	apps/admin-web/src/screens/authenticated/CustomerPersonalInformationPanel.tsx
+M	apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx
+M	apps/admin-web/src/screens/authenticated/SystemHealthScreen.tsx
+M	apps/admin-web/src/services/notification-domain.ts
+M	apps/admin-web/src/services/notification-management-api.ts
+A	docs/integration/mission-25/20261031-MISSION-25A-NOTIFICATION-BACKEND-AUDIT.md
+A	docs/integration/mission-25/20261031-MISSION-25A-TEST-EVIDENCE.md
+A	docs/integration/mission-25/20261031-MISSION-25C-ARENA2-CONTRACT.md
+A	docs/integration/mission-25/20261031-MISSION-25C-BACKEND-REMEDIATION.md
+A	docs/integration/mission-25/20261031-MISSION-25C-TEST-EVIDENCE.md
+M	src/admin/admin-customer-credentials.controller.ts
+M	src/admin/admin-notification-provider.controller.ts
+M	src/admin/admin-notification.controller.ts
+M	src/common/sensitive-data-redaction.ts
+M	src/notification/brevo-email-provider.ts
+M	src/notification/notification-dispatcher.service.ts
+M	src/notification/notification-event-map.ts
+M	src/notification/notification-provider-config.service.ts
+M	src/notification/notification-template.service.ts
+M	src/notification/notification.types.ts
+M	src/operations/outbox.service.ts
+M	src/support/support.service.ts
+A	test/mission-25c-notification-diagnostics.spec.ts
+A	test/mission-25c-provider-routing.spec.ts
+M	test/notification-reliability.integration.spec.ts
+A	test/support/mission-25c-network-guard.cjs
+M	test/v1-005-notification-delivery.integration.spec.ts
+M	test/v1-006-customer-notification-inbox.integration.spec.ts
+M	test/v1-customer-credentials-01.integration.spec.ts
+M	test/v1-email-notification-01.integration.spec.ts
+
+COUNT: 37 files = A1 25 + A2 12 (union, no extras)
+
+DIFFSTAT:
+ test/v1-email-notification-01.integration.spec.ts  | 133 +++
+ 37 files changed, 4144 insertions(+), 979 deletions(-)
