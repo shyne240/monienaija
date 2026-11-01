@@ -165,6 +165,7 @@ export class AdminCustomerCredentialsController {
     delivered: boolean;
     destination: string | null;
     provider: string;
+    simulated?: boolean;
   }> {
     const contact = await this.contactRepository.findOne({
       where: {
@@ -179,6 +180,7 @@ export class AdminCustomerCredentialsController {
       await this.recordDeliveryAudit(params, 'TEMPORARY_CREDENTIAL_DELIVERY_FAILED', {
         provider: this.provider.name,
         reason: 'no_verified_primary_phone',
+        deliveryStatus: 'NOT_CONFIRMED',
       });
       return { channel: 'SMS', delivered: false, destination: null, provider: this.provider.name };
     }
@@ -188,6 +190,7 @@ export class AdminCustomerCredentialsController {
       `It expires in ${hours} hours and must be changed at your first login. ` +
       `If you did not expect this message, contact support.`;
     let success = false;
+    let simulated = false;
     try {
       const result = await this.provider.send({
         channel: 'SMS',
@@ -200,6 +203,7 @@ export class AdminCustomerCredentialsController {
         recipientId: params.customerId,
       });
       success = result.success === true;
+      simulated = result.simulated === true || ['console', 'test'].includes(this.provider.name);
       if (!result.success) {
         this.logger.warn({ event: 'customer.temporary_credential_delivery_failed' });
       }
@@ -211,13 +215,20 @@ export class AdminCustomerCredentialsController {
     await this.recordDeliveryAudit(
       params,
       success ? 'TEMPORARY_CREDENTIAL_DELIVERED' : 'TEMPORARY_CREDENTIAL_DELIVERY_FAILED',
-      { provider: this.provider.name, destination: masked },
+      {
+        provider: this.provider.name,
+        destination: masked,
+        // Keep the legacy action name for audit consumers, but record the actual
+        // result so provider acceptance or simulation is not mistaken for receipt.
+        deliveryStatus: !success ? 'NOT_CONFIRMED' : simulated ? 'SIMULATED' : 'PROVIDER_ACCEPTED',
+      },
     );
     return {
       channel: 'SMS',
       delivered: success,
       destination: masked,
       provider: this.provider.name,
+      simulated,
     };
   }
 
@@ -251,18 +262,41 @@ export class AdminCustomerCredentialsController {
     customerId: string,
     credentialId: string,
     passwordExpiresAt: Date | null,
-    delivery: { channel: 'SMS'; delivered: boolean; destination: string | null; provider: string },
+    delivery: {
+      channel: 'SMS';
+      delivered: boolean;
+      destination: string | null;
+      provider: string;
+      simulated?: boolean;
+    },
     reissued: boolean,
   ) {
+    // The historical `delivered` boolean records provider acceptance, not handset receipt.
+    // Keep it for existing clients, and expose an explicit, truthful outcome alongside it.
+    const deliveryStatus = !delivery.delivered
+      ? 'NOT_CONFIRMED'
+      : delivery.simulated || ['console', 'test'].includes(delivery.provider)
+        ? 'SIMULATED'
+        : 'PROVIDER_ACCEPTED';
+    const deliveryNotice = deliveryStatus === 'NOT_CONFIRMED'
+      ? 'SMS delivery was not confirmed. Do not assume the customer received the credential; follow the authorized recovery or reissue process.'
+      : deliveryStatus === 'SIMULATED'
+        ? 'SMS delivery was simulated; no customer receipt is established.'
+        : 'The SMS provider accepted the request; receipt by the customer is not confirmed.';
     return {
       customerId,
       credentialId,
       rotationRequired: true,
       passwordExpiresAt: passwordExpiresAt?.toISOString() ?? null,
       reissued,
-      delivery,
-      deliveryNotice:
-        'Temporary credential delivered to the customer verified phone via SMS; it expires and must be rotated at first login. The plaintext credential is never returned in this response, persisted, or audited.',
+      delivery: {
+        channel: delivery.channel,
+        delivered: delivery.delivered,
+        destination: delivery.destination,
+        provider: delivery.provider,
+      },
+      deliveryStatus,
+      deliveryNotice,
     };
   }
 

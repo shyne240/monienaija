@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
+
 import {
   NotificationProvider,
   NotificationSendRequest,
@@ -13,6 +15,7 @@ import {
   deriveSafeVendorProviderRef,
   formatSafeHttpStatus,
   isPinnedProviderEndpointUrl,
+  redactDeliveryRecipientId,
 } from './provider-security';
 import { sanitizeHeader } from './resend-email-provider';
 
@@ -386,9 +389,9 @@ export class BrevoEmailProvider implements NotificationProvider {
     if (!isPinnedProviderEndpointUrl('brevo', endpointUrl)) {
       this.logger.warn({
         msg: 'brevo_email_egress_blocked',
-        eventType: request.eventType,
-        eventKey: request.eventKey,
-        correlationId: request.correlationId,
+        eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+        eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+        correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
         reason: 'unpinned_origin',
       });
       return { success: false, error: 'BREVO_EGRESS_BLOCKED' };
@@ -413,9 +416,9 @@ export class BrevoEmailProvider implements NotificationProvider {
       if (response.status >= 300 && response.status < 400) {
         this.logger.warn({
           msg: 'brevo_email_egress_blocked',
-          eventType: request.eventType,
-          eventKey: request.eventKey,
-          correlationId: request.correlationId,
+          eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+          eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+          correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
           status: formatSafeHttpStatus(response.status),
           reason: 'redirect_rejected',
         });
@@ -459,9 +462,9 @@ export class BrevoEmailProvider implements NotificationProvider {
         if (!providerRef) {
           this.logger.warn({
             msg: 'brevo_email_missing_message_id',
-            eventType: request.eventType,
-            eventKey: request.eventKey,
-            correlationId: request.correlationId,
+            eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+            eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+            correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
             status: formatSafeHttpStatus(response.status),
           });
           return { success: false, error: 'BREVO_INVALID_RESPONSE' };
@@ -469,12 +472,12 @@ export class BrevoEmailProvider implements NotificationProvider {
 
         this.logger.log({
           msg: 'brevo_email_submitted',
-          eventType: request.eventType,
-          eventKey: request.eventKey,
+          eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+          eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
           recipientType: request.recipientType,
-          recipientId: request.recipientType === 'PHONE' ? '[PHONE]' : request.recipientId,
+          recipientId: redactDeliveryRecipientId(request.recipientType, request.recipientId),
           providerRef,
-          correlationId: request.correlationId,
+          correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
         });
         return { success: true, providerRef };
       }
@@ -487,9 +490,9 @@ export class BrevoEmailProvider implements NotificationProvider {
 
       this.logger.warn({
         msg: 'brevo_email_rejected',
-        eventType: request.eventType,
-        eventKey: request.eventKey,
-        correlationId: request.correlationId,
+        eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+        eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+        correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
         status: safeStatus,
         errorCode: errorCode ?? 'unclassified',
       });
@@ -501,9 +504,9 @@ export class BrevoEmailProvider implements NotificationProvider {
       ) {
         this.logger.warn({
           msg: 'brevo_email_egress_blocked',
-          eventType: request.eventType,
-          eventKey: request.eventKey,
-          correlationId: request.correlationId,
+          eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+          eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+          correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
           reason: 'dns_or_ip_blocked',
         });
         return { success: false, error: 'BREVO_EGRESS_BLOCKED' };
@@ -515,9 +518,9 @@ export class BrevoEmailProvider implements NotificationProvider {
 
       this.logger.warn({
         msg: 'brevo_email_transport_error',
-        eventType: request.eventType,
-        eventKey: request.eventKey,
-        correlationId: request.correlationId,
+        eventType: sanitizeDiagnosticIdentifier(request.eventType) ?? '[REDACTED]',
+        eventKey: sanitizeDiagnosticIdentifier(request.eventKey) ?? '[REDACTED]',
+        correlationId: sanitizeDiagnosticIdentifier(request.correlationId) ?? null,
         aborted,
         errorName: errName,
       });

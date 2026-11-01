@@ -31,6 +31,8 @@ export interface NotificationSendRequest {
 
 export interface NotificationSendResult {
   success: boolean;
+  /** True only for a local simulation, never evidence of vendor acceptance. */
+  simulated?: boolean;
   providerRef?: string | null;
   error?: string | null;
   /** Explicit provider knowledge; absence is treated conservatively as an ambiguous outcome. */

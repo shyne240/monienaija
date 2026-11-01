@@ -26,7 +26,7 @@ export function mapEventToIntents(
   // and provider log derived from it — can only carry a bounded, redacted
   // value. Deterministic: legitimate ids pass through byte-for-byte.
   const correlationId = sanitizeDiagnosticIdentifier(outbox.correlationId) ?? null;
-  const causationId = outbox.causationId;
+  const causationId = sanitizeDiagnosticIdentifier(outbox.causationId) ?? null;
 
   // Customer funding approved / rejected — single CUSTOMER SMS
   if (eventType === 'customer.funding.approved' || eventType === 'customer.funding.rejected') {
@@ -114,11 +114,10 @@ export function mapEventToIntents(
     'support.ticket.message_added': true,
   };
   if (supportMap[eventType]) {
-    // payload contains ticketId/reference/customerId/agentId
-    // Do NOT leak internal notes: message_added with isInternal true is filtered elsewhere
-    const isInternal = (payload.isInternal as boolean | undefined) ?? false;
-    if (eventType === 'support.ticket.message_added' && isInternal === true) {
-      return []; // internal notes never sent
+    // Unknown visibility is never evidence of a public message. The dispatcher also
+    // verifies the committed message and ticket binding before using these intents.
+    if (eventType === 'support.ticket.message_added' && payload.isInternal !== false) {
+      return [];
     }
 
     const customerId = payload.customerId as string | undefined | null;
@@ -385,12 +384,12 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
   },
   {
     eventType: 'support.ticket.message_added',
-    recipient: 'CUSTOMER/AGENT (customerId/agentId), isInternal filtered',
+    recipient: 'CUSTOMER/AGENT bound to the verified public ticket',
     channel: 'SMS',
     templateKey: 'support.ticket.message_added',
     required: true,
     possible: true,
-    fallback: 'If isInternal true → NO notification (isolation)',
+    fallback: 'Internal notes produce no event; unverifiable or unsafe events are quarantined',
   },
   // CASH-TO-CASH
   {

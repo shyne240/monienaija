@@ -384,7 +384,11 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000015');
     const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'External', category: 'OTHER', description: 'Help external valid', priority: 'MEDIUM' }).expect(201);
     const ticketId = ticketRes.body.id as string;
-    const payload = { ticketId, customerId, message: 'public update', isInternal: false };
+    const messageRes = await request(app.getHttpServer())
+      .post(`/api/v1/customers/me/support/tickets/${ticketId}/messages`)
+      .set('Authorization', `Bearer ${token}`).send({ body: 'public update' }).expect(201);
+    const payload = { ticketId, messageId: messageRes.body.id, customerId, authorType: 'CUSTOMER',
+      authorId: messageRes.body.authorId, isInternal: false };
     const result = await dispatcher.dispatch({ eventType: 'support.ticket.message_added', eventKey: `support.ticket.message_added:${ticketId}:public:${Date.now()}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload, correlationId: randomUUID() });
     expect(result.dispatched).toBe(1);
     const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
