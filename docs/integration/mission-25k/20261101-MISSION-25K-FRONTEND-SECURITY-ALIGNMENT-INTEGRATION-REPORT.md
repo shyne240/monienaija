@@ -55,7 +55,7 @@ The merge commit is annotated with the full rationale, including that it introdu
 integration-only corrections.
 
 **Two SHAs, one candidate — read this before reassessing.** Arena 4's *code* candidate is
-`587c376…`: the merge of `5d03416…` with `1049280…`. The branch tip `3666fce…` adds **only** this
+`587c376…`: the merge of `5d03416…` with `1049280…`. The commits after `587c376…` add **only** this
 report and its evidence files. `git diff --name-only 587c376 <tip> -- src apps test` = **0 files**,
 so the composited application tree under review is byte-identical to `587c376…`; reviewing either
 SHA yields the same code. This mirrors the 25H hand-off, where the evidence commit followed the
