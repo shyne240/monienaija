@@ -125,38 +125,6 @@ export interface NotificationOutboxReceiptPage {
   hasNextPage: boolean;
 }
 
-export interface CustomerCommunicationPreferences {
-  id: string;
-  customerId: string;
-  language: string;
-  theme: string;
-  notifications: {
-    email: boolean;
-    sms: boolean;
-    push: boolean;
-    inApp: boolean;
-  };
-  security: {
-    loginAlerts: boolean;
-    transactionAlerts: boolean;
-    deviceRegistrationAlerts: boolean;
-    biometricAllowed: boolean;
-  };
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CustomerPreferenceHistoryRecord {
-  id: string;
-  preferenceId: string;
-  action: string;
-  previousValues: Record<string, unknown> | null;
-  newValues: Record<string, unknown> | null;
-  actor: string;
-  createdAt: string;
-}
-
 export interface NotificationProviderStatus {
   checkedAt: string;
   environment: string | null;

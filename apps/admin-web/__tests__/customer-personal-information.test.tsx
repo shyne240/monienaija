@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import { CustomerPersonalInformationPanel } from '../src/screens/authenticated/CustomerPersonalInformationPanel';
 import { ApiClient } from '../src/services/api-client';
+import { NotificationManagementApi } from '../src/services/notification-management-api';
 import { useAuthStore } from '../src/store/auth-store';
 
 jest.mock('../src/services/api-client', () => ({
@@ -572,114 +573,177 @@ describe('CustomerPersonalInformationPanel', () => {
     expect(view.queryByText('synthetic-one-time-verification-token')).toBeNull();
   });
 
-  test('F-09: renders read-only communication and account preferences + preference history for authorized OPERATOR/PRIVILEGED roles with customer.view', async () => {
-    useAuthStore.setState({
-      isAuthenticated: true,
-      isLoading: false,
-      token: 'synthetic-ops-token',
-      sessionId: 'synthetic-ops-session',
-      principal: {
-        type: 'OPERATOR',
-        principalId: 'issuer:operations-1',
-        sessionId: 'synthetic-ops-session',
-        audience: 'workforce-admin',
-        roles: ['OPERATIONS'],
-        scopes: ['customer.view', 'customer.view_contact_methods'],
-        customerAccess: 'NONE',
-        assuranceLevel: 'MFA',
+  test('F-25H-01 & F-25H-02: across all 11 workforce roles, never requests or mutates customer preferences, never displays preference values, and renders enforced self-service restriction policy', async () => {
+    const workforceRoleMatrix: Array<{
+      role: string;
+      type: 'PRIVILEGED' | 'OPERATOR';
+      scopes: string[];
+      expectsProfileRead: boolean;
+    }> = [
+      {
+        role: 'SUPER_ADMIN',
+        type: 'PRIVILEGED',
+        scopes: [
+          'customer.view',
+          'customer.create',
+          'customer.view_address',
+          'customer.view_contact_methods',
+          'customer.view_identity_documents',
+          'kyc.review',
+        ],
+        expectsProfileRead: true,
       },
-    });
+      {
+        role: 'FINANCE_PREPARER',
+        type: 'OPERATOR',
+        scopes: ['ledger.view'],
+        expectsProfileRead: false,
+      },
+      {
+        role: 'FINANCE_CONTROLLER',
+        type: 'PRIVILEGED',
+        scopes: ['ledger.view', 'privileged:approve'],
+        expectsProfileRead: false,
+      },
+      {
+        role: 'FINANCE_AUDITOR',
+        type: 'PRIVILEGED',
+        scopes: ['customer.view', 'audit.view', 'ledger.view'],
+        expectsProfileRead: true,
+      },
+      {
+        role: 'ADMINISTRATOR',
+        type: 'PRIVILEGED',
+        scopes: ['customer.view', 'workforce.role.assign'],
+        expectsProfileRead: true,
+      },
+      {
+        role: 'OPERATIONS',
+        type: 'OPERATOR',
+        scopes: [
+          'customer.view',
+          'customer.create',
+          'customer.view_address',
+          'customer.view_contact_methods',
+        ],
+        expectsProfileRead: true,
+      },
+      {
+        role: 'AGENT_NETWORK_MANAGER',
+        type: 'OPERATOR',
+        scopes: ['agent.view'],
+        expectsProfileRead: false,
+      },
+      {
+        role: 'COMPLIANCE',
+        type: 'OPERATOR',
+        scopes: [
+          'customer.view',
+          'customer.view_address',
+          'customer.view_contact_methods',
+          'customer.view_identity_documents',
+          'kyc.review',
+        ],
+        expectsProfileRead: true,
+      },
+      {
+        role: 'RISK_FRAUD',
+        type: 'OPERATOR',
+        scopes: ['compliance.manage_risk_profile'],
+        expectsProfileRead: false,
+      },
+      {
+        role: 'CUSTOMER_SERVICE',
+        type: 'OPERATOR',
+        scopes: ['customer.view', 'customer.view_contact_methods', 'customer.manage_support_case'],
+        expectsProfileRead: true,
+      },
+      {
+        role: 'TREASURY',
+        type: 'OPERATOR',
+        scopes: ['ledger.view'],
+        expectsProfileRead: false,
+      },
+    ];
 
-    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
-      if (path.endsWith('/contact-methods')) return Promise.resolve([]);
-      if (path.endsWith('/preferences')) {
-        return Promise.resolve({
-          notifications: { email: true, sms: false, push: true, inApp: true },
-          security: {
-            loginAlerts: true,
-            transactionAlerts: true,
-            deviceRegistrationAlerts: true,
-            biometricAllowed: false,
-          },
-          language: 'en-NG',
-          theme: 'SYSTEM',
-          version: 3,
-          updatedAt: '2026-10-31T10:15:00.000Z',
+    for (const entry of workforceRoleMatrix) {
+      jest.clearAllMocks();
+      useAuthStore.setState({
+        isAuthenticated: true,
+        isLoading: false,
+        token: `synthetic-${entry.role.toLowerCase()}-token`,
+        sessionId: `synthetic-${entry.role.toLowerCase()}-session`,
+        principal: {
+          type: entry.type,
+          principalId: `issuer:${entry.role.toLowerCase()}-1`,
+          sessionId: `synthetic-${entry.role.toLowerCase()}-session`,
+          audience: 'workforce-admin',
+          roles: [entry.role],
+          scopes: entry.scopes,
+          customerAccess: 'NONE',
+          assuranceLevel: 'MFA',
+        },
+      });
+
+      (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+        if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
+        if (path.endsWith('/addresses')) return Promise.resolve([]);
+        if (path.endsWith('/contact-methods')) return Promise.resolve([]);
+        if (path.endsWith('/identity-documents')) return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+
+      const view = render(
+        <CustomerPersonalInformationPanel
+          customerId="cust-99"
+          onProfileUpdated={jest.fn()}
+        />,
+      );
+
+      const restrictedNode = await view.findByTestId('customer-preferences-restricted');
+      expect(restrictedNode.textContent).toBe(
+        'Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized.',
+      );
+
+      const prefCard = view.getByTestId('customer-preferences-card');
+      expect(prefCard.textContent).not.toMatch(/customer\.view/i);
+      expect(prefCard.textContent).not.toMatch(/operational and privileged/i);
+      expect(prefCard.textContent).not.toMatch(/read-only/i);
+      expect(view.queryByTestId('customer-preferences-section')).toBeNull();
+      expect(view.queryByTestId('customer-preference-history-list')).toBeNull();
+      expect(view.queryByTestId('customer-preferences-denied')).toBeNull();
+      expect(view.queryByTestId('customer-preferences-empty')).toBeNull();
+      expect(within(prefCard).queryAllByRole('button')).toHaveLength(0);
+      expect(within(prefCard).queryAllByRole('checkbox')).toHaveLength(0);
+
+      // Zero preference reads or mutations for any workforce role
+      expect(ApiClient.get).not.toHaveBeenCalledWith(expect.stringContaining('/preferences'));
+      expect(ApiClient.post).not.toHaveBeenCalledWith(
+        expect.stringContaining('/preferences'),
+        expect.anything(),
+      );
+      expect(ApiClient.patch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/preferences'),
+        expect.anything(),
+      );
+      expect(ApiClient.delete).not.toHaveBeenCalledWith(expect.stringContaining('/preferences'));
+
+      // Non-preference Customer 360 sections continue functioning per established RBAC
+      if (entry.expectsProfileRead) {
+        await waitFor(() => {
+          expect(ApiClient.get).toHaveBeenCalledWith('/customers/cust-99/profile');
         });
+        expect(await view.findByText('Synthetic Customer')).toBeTruthy();
+      } else {
+        expect(ApiClient.get).not.toHaveBeenCalledWith('/customers/cust-99/profile');
       }
-      if (path.endsWith('/preferences/history')) {
-        return Promise.resolve([
-          {
-            id: 'pref-hist-1',
-            action: 'NOTIFICATION_PREFERENCES_UPDATED',
-            previousValues: { sms: true },
-            newValues: { sms: false },
-            actor: 'customer:cust-99',
-            createdAt: '2026-10-31T10:15:00.000Z',
-          },
-        ]);
-      }
-      return Promise.resolve([]);
-    });
 
-    const view = render(
-      <CustomerPersonalInformationPanel
-        customerId="cust-99"
-        onProfileUpdated={jest.fn()}
-      />,
-    );
-
-    expect(await view.findByTestId('customer-preferences-section')).toBeTruthy();
-    expect(view.getByTestId('customer-pref-email').textContent).toBe('Enabled');
-    expect(view.getByTestId('customer-pref-sms').textContent).toBe('Disabled');
-    expect(view.getByTestId('customer-pref-meta').textContent).toContain('en-NG · SYSTEM · v3');
-    expect(view.getByTestId('customer-preference-history-list').textContent).toContain(
-      'NOTIFICATION_PREFERENCES_UPDATED',
-    );
-    expect(view.getByTestId('customer-preference-history-list').textContent).toContain(
-      'customer:cust-99',
-    );
-    // Strictly read-only — no toggle switches or mutation controls inside preferences card
-    const prefCard = view.getByTestId('customer-preferences-card');
-    expect(within(prefCard).queryAllByRole('button')).toHaveLength(0);
-    expect(within(prefCard).queryAllByRole('checkbox')).toHaveLength(0);
+      view.unmount();
+    }
   });
 
-  test('F-09: CUSTOMER_SERVICE never queries customer preference endpoints and receives no additional preference visibility', async () => {
-    useAuthStore.setState({
-      isAuthenticated: true,
-      isLoading: false,
-      token: 'synthetic-cs-token',
-      sessionId: 'synthetic-cs-session',
-      principal: {
-        type: 'OPERATOR',
-        principalId: 'issuer:cs-1',
-        sessionId: 'synthetic-cs-session',
-        audience: 'workforce-admin',
-        roles: ['CUSTOMER_SERVICE'],
-        scopes: ['customer.view', 'customer.view_contact_methods', 'customer.manage_support_case'],
-        customerAccess: 'NONE',
-        assuranceLevel: 'MFA',
-      },
-    });
-
-    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
-      if (path.endsWith('/contact-methods')) return Promise.resolve([]);
-      return Promise.resolve([]);
-    });
-
-    const view = render(
-      <CustomerPersonalInformationPanel
-        customerId="cust-99"
-        onProfileUpdated={jest.fn()}
-      />,
-    );
-
-    expect(await view.findByTestId('customer-preferences-restricted')).toBeTruthy();
-    expect(ApiClient.get).not.toHaveBeenCalledWith(
-      expect.stringContaining('/preferences'),
-    );
+  test('F-25H-02: NotificationManagementApi retires dead workforce customer-preference client helpers', () => {
+    expect('getCustomerPreferences' in NotificationManagementApi).toBe(false);
+    expect('listCustomerPreferenceHistory' in NotificationManagementApi).toBe(false);
   });
 });
