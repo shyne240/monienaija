@@ -1,0 +1,114 @@
+{
+  "mission": "25M",
+  "generatedAt": "2026-11-01T21:30:50.222Z",
+  "targetSuite": "test/v1-sprint3-agent-history-workforce.integration.spec.ts",
+  "testCount": 13,
+  "experiments": {
+    "isolated": {
+      "runs": [
+        {
+          "run": 1,
+          "exit": 0,
+          "tests": "13 passed, 13 total",
+          "suiteTime": "8.802 s",
+          "assertionSumMs": 908,
+          "maxTestMs": 195
+        },
+        {
+          "run": 2,
+          "exit": 0,
+          "tests": "13 passed, 13 total",
+          "suiteTime": "7.75 s, estimated 9 s",
+          "assertionSumMs": 921,
+          "maxTestMs": 196
+        },
+        {
+          "run": 3,
+          "exit": 0,
+          "tests": "13 passed, 13 total",
+          "suiteTime": "8.405 s",
+          "assertionSumMs": 918,
+          "maxTestMs": 198
+        }
+      ]
+    },
+    "concurrency3": {
+      "instances": [
+        {
+          "instance": 1,
+          "exit": 0,
+          "suiteTime": "13.809 s"
+        },
+        {
+          "instance": 2,
+          "exit": 0,
+          "suiteTime": "13.948 s"
+        },
+        {
+          "instance": 3,
+          "exit": 0,
+          "suiteTime": "14.553 s"
+        }
+      ],
+      "allPassed": true
+    },
+    "memoryPressure": {
+      "suite": "test/v1-sprint3-agent-history-workforce.integration.spec.ts",
+      "residentHogMB": 2600,
+      "success": true,
+      "testsPassed": "13/13",
+      "suiteWallMs": 432880,
+      "beforeAllMs": 431508,
+      "assertionsSumMs": 870,
+      "maxTestMs": 200,
+      "note": "no hook or test timeout fired; the run still passed"
+    },
+    "controlTrivialSuiteUnderSamePressure": {
+      "suite": "test/v1-harden-01-support-provision-race.integration.spec.ts",
+      "testCount": 1,
+      "success": true,
+      "suiteWallMs": 748791,
+      "beforeAllMs": 747313,
+      "assertionsSumMs": 925
+    },
+    "orchestratedConcurrency2": {
+      "command": "PG_TEST_CONCURRENCY=2 PG_TEST_BATCH_SIZE=2 node scripts/run-pg-integration-tests.js <6 files incl. sprint-3>",
+      "exit": 0,
+      "batches": [
+        {
+          "batch": 2,
+          "of": 3,
+          "exit": 0
+        },
+        {
+          "batch": 3,
+          "of": 3,
+          "exit": 0
+        },
+        {
+          "batch": 1,
+          "of": 3,
+          "exit": 0
+        }
+      ],
+      "timeouts": 0
+    },
+    "templateBuildUpperBound": {
+      "method": "typeorm-ts-node-commonjs migration:run against a fresh database (upper bound incl. TS compilation)",
+      "migrations": 102,
+      "elapsedMs": 39094
+    },
+    "fixedPerProcessCostDecomposition": {
+      "method": "two small integration suites run alone and together; marginal costs isolate the per-process fixed cost",
+      "aAloneMs": 15153,
+      "bAloneMs": 18178,
+      "abTogetherMs": 19688,
+      "derivedFixedCostMs": 13600,
+      "note": "fixed cost = jest start + ts-jest compile + migration-template build, paid once per batch process"
+    }
+  },
+  "matrixPlacement": {
+    "suitePassedInFullMatrix": true,
+    "batch": "9/9"
+  }
+}

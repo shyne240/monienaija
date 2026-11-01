@@ -1,0 +1,79 @@
+{
+  "mission": "25M",
+  "candidate": {
+    "codeCandidate": "587c3763944368b9260c9299d18bce1189ca5919",
+    "branchTip": "21b1827fee1139e8ed49f237fd5b230f7712546f",
+    "codeIdentical": true
+  },
+  "gates": [
+    {
+      "id": "B1",
+      "name": "Full PostgreSQL integration matrix",
+      "command": "PG_TEST_CONCURRENCY=1 node scripts/run-pg-integration-tests.js",
+      "suitesDiscovered": 132,
+      "suitesExecuted": 132,
+      "suitesPassed": 132,
+      "suitesFailed": 0,
+      "testsPassed": 2452,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "batches": 9,
+      "batchExitCodes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "durationSeconds": 2615,
+      "exitCode": 0
+    },
+    {
+      "id": "C1",
+      "name": "Phase C focused integration",
+      "command": "node scripts/run-pg-integration-tests.js <15 focused files>",
+      "suitesPassed": 15,
+      "testsPassed": 257,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "durationSeconds": 254,
+      "exitCode": 0
+    },
+    {
+      "id": "C2",
+      "name": "Phase C focused unit",
+      "command": "npx jest --config jest.config.js <4 files>",
+      "suitesPassed": 4,
+      "testsPassed": 38,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "C3",
+      "name": "Phase C verbose re-run (25G authz + sprint-3)",
+      "command": "npx jest --config jest.integration.config.js --runInBand --verbose",
+      "suitesPassed": 2,
+      "testsPassed": 32,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "exitCode": 0
+    }
+  ],
+  "sprint3Investigation": {
+    "suite": "test/v1-sprint3-agent-history-workforce.integration.spec.ts",
+    "testCount": 13,
+    "reproduced": false,
+    "classification": "test-harness resource sensitivity (not a product defect)",
+    "isolatedRuns": 3,
+    "isolatedAllPassed": true,
+    "passedInFullMatrix": true
+  },
+  "notRun": {
+    "t": "back-end unit suite (229/2713) and Admin Web jest were verified by Mission 25K and not re-executed in 25M; no non-docs file differs between 25K candidate and this head"
+  }
+}

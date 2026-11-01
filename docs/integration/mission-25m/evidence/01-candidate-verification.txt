@@ -1,0 +1,33 @@
+# Mission 25M — candidate & ancestry verification
+
+Requested candidate branch : integration/mission-25k-frontend-security-alignment
+Pinned code candidate      : 587c3763944368b9260c9299d18bce1189ca5919
+Evidence-only branch tip   : 21b1827fee1139e8ed49f237fd5b230f7712546f
+  (task text quoted 21b1827fee113e8ed49f237fd5b230f7712546f — 39 chars, one digit short;
+   the remote resolves unambiguously to the 40-char commit above. Minor transcription slip
+   in the assignment, not a branch discrepancy.)
+
+## Code identity between the two commits (must be 0)
+git diff --name-status 587c376 21b1827 -- src apps test scripts
+  changed files: 0
+
+## Tree identity
+  587c376 tree: 31af77010292edcd386c08820ec34581ba5a6e31
+  21b1827 tree: 91691015076b79f5e166af348b2562e51cf61c43
+  The trees differ ONLY because 21b1827 adds committed documentation/evidence under
+  docs/integration/mission-25k/. The application code paths are identical (0 files differ
+  across src, apps, test, scripts), which is the property this mission must verify.
+
+## Commits between the two (docs only)
+  21b1827 docs(integration): Mission 25K — remove last frozen branch-tip reference
+  bfa9b38 docs(integration): Mission 25K — avoid freezing a self-referential branch tip
+  5f5bfac docs(integration): correct Mission 25K hand-off tip reference (docs-only)
+  1818f0a docs(integration): Mission 25K — distinguish code candidate SHA from evidence commit
+  3666fce docs(integration): Mission 25K frontend security alignment integration report and evidence
+
+## Merge ancestry of the pinned candidate
+  587c3763944368b9260c9299d18bce1189ca5919 5d034163b366a92e45397e261762df77ea56ea09 1049280e0615abe82ebafdde224e7a283ce553b1
+
+## Worktree used for this mission
+  /home/user/m25m, checked out at 21b1827 (detached), then branched as
+  evidence/mission-25m-postgresql-regression for evidence commits only.

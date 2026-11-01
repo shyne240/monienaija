@@ -1,0 +1,58 @@
+# Mission 25M — full PostgreSQL matrix summary (PG_TEST_CONCURRENCY=1)
+
+start (UTC) : 2026-11-01T20:38:54Z
+end   (UTC) : 2026-11-01T21:22:29Z
+duration    : 43m 35s
+overall exit: 0 (PG_MATRIX_EXIT=0)
+
+## Per-batch results
+  === PG integration batch 1/9 (15 files) starting ===
+  === PG integration batch 1/9 finished (exit 0) ===
+  === PG integration batch 2/9 (15 files) starting ===
+  === PG integration batch 2/9 finished (exit 0) ===
+  === PG integration batch 3/9 (15 files) starting ===
+  === PG integration batch 3/9 finished (exit 0) ===
+  === PG integration batch 4/9 (15 files) starting ===
+  === PG integration batch 4/9 finished (exit 0) ===
+  === PG integration batch 5/9 (15 files) starting ===
+  === PG integration batch 5/9 finished (exit 0) ===
+  === PG integration batch 6/9 (15 files) starting ===
+  === PG integration batch 6/9 finished (exit 0) ===
+  === PG integration batch 7/9 (15 files) starting ===
+  === PG integration batch 7/9 finished (exit 0) ===
+  === PG integration batch 8/9 (15 files) starting ===
+  === PG integration batch 8/9 finished (exit 0) ===
+  === PG integration batch 9/9 (12 files) starting ===
+  === PG integration batch 9/9 finished (exit 0) ===
+
+## Per-batch suite/test totals as reported by Jest
+  batch 1	Test Suites: 15 passed, 15 total  |  Tests:       646 passed, 646 total
+  batch 2	Test Suites: 15 passed, 15 total  |  Tests:       282 passed, 282 total
+  batch 3	Test Suites: 15 passed, 15 total  |  Tests:       314 passed, 314 total
+  batch 4	Test Suites: 15 passed, 15 total  |  Tests:       279 passed, 279 total
+  batch 5	Test Suites: 15 passed, 15 total  |  Tests:       267 passed, 267 total
+  batch 6	Test Suites: 15 passed, 15 total  |  Tests:       178 passed, 178 total
+  batch 7	Test Suites: 15 passed, 15 total  |  Tests:       225 passed, 225 total
+  batch 8	Test Suites: 15 passed, 15 total  |  Tests:       149 passed, 149 total
+  batch 9	Test Suites: 12 passed, 12 total  |  Tests:       112 passed, 112 total
+
+## Totals
+  suites discovered : 132 (npx jest --config jest.integration.config.js --listTests | wc -l)
+  suites executed   : 132
+  suites passed     : 132
+  suites failed     : 0
+  tests passed      : 2452
+  tests failed      : 0
+  tests skipped     : 0
+  retries           : none
+  isolated reruns   : none required (no failure occurred during the matrix)
+  resource interruptions: none (no 'Exceeded timeout', no heap OOM, no interrupted run)
+
+## Sprint-3 suite inside the matrix
+  PASS test/v1-sprint3-agent-history-workforce.integration.spec.ts
+
+## Integrity checks on the matrix log
+  'FAIL' lines           : 0
+  'Exceeded timeout'     : 0
+  heap OOM               : 0
+  'wasInterrupted'       : 0

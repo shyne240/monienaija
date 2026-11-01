@@ -1,0 +1,77 @@
+# Mission 25M — Phase C focused security & regression checks
+
+All commands run against the pinned candidate; disposable database; no policy or code change.
+
+## C1. Focused integration batch (15 suites, one orchestrated run)
+
+  PG_TEST_RUN_ID=phasec node scripts/run-pg-integration-tests.js <15 files>
+  result: Test Suites 15 passed / 15 total | Tests 257 passed / 257 total | exit 0
+  wall  : 254 s
+
+  files:
+    test/mission-25g-customer-preference-authorization.integration.spec.ts
+    test/v1-sprint3-agent-history-workforce.integration.spec.ts
+    test/v1-agent-history-01.integration.spec.ts
+    test/mission-15a-agent-sessions.integration.spec.ts
+    test/mission-16a-agent-read-authorization.integration.spec.ts
+    test/phase1-agent-security.integration.spec.ts
+    test/a5-ledger-reversal.integration.spec.ts
+    test/a6-settlement-lifecycle.integration.spec.ts
+    test/v1-ledger-reversal-governance.integration.spec.ts
+    test/v1-007-support-ticket.integration.spec.ts
+    test/v1-customer-09-support-workforce-boundary.integration.spec.ts
+    test/v1-harden-01-support-adversarial.integration.spec.ts
+    test/v1-005-notification-delivery.integration.spec.ts
+    test/notification-reliability.integration.spec.ts
+    test/notification-registry.integration.spec.ts
+
+## C2. Requirement → covering assertion (all passing)
+
+  Customer-preference authorization
+    mission-25g-customer-preference-authorization.integration.spec.ts (19 assertions)
+    mission-25g-customer-preference-policy.spec.ts (unit, 12 assertions)
+    customer-preference.service.spec.ts (unit)
+  Cross-customer access denial
+    ✓ denies cross-customer and anonymous reads/history and writes without changing preference data
+  All 11 workforce roles (each named explicitly)
+    ✓ denies real SUPER_ADMIN / FINANCE_PREPARER / FINANCE_CONTROLLER / FINANCE_AUDITOR /
+      ADMINISTRATOR / OPERATIONS / AGENT_NETWORK_MANAGER / COMPLIANCE / RISK_FRAUD /
+      CUSTOMER_SERVICE / TREASURY workforce reads, history, HEAD, POST and PATCH
+  Audit-actor spoofing
+    ✓ preserves customer self-service and attributes spoofed and omitted actors to the real session
+    ✓ preserves legacy history and audit rows without rewriting their historical actor
+  Generic audit disclosure restrictions
+    ✓ keeps preference audit/history out of workforce audit projections while preserving the records and unrelated audit
+    ✓ keeps approved workforce customer profile access distinct from preferences
+  Non-customer principals
+    ✓ denies real AGENT and SUPPORT sessions on the full preference surface
+    ✓ applies the preference boundary to encoded routes, descendants and the unimplemented me alias
+  Sprint-3 history/workforce
+    test/v1-sprint3-agent-history-workforce.integration.spec.ts — 13/13 pass (also 13/13 in batch 9 of the matrix)
+  Agent authentication and authorization
+    mission-15a-agent-sessions, mission-16a-agent-read-authorization, phase1-agent-security,
+    v1-agent-history-01 — all pass
+  Financial ledger and settlement controls
+    a5-ledger-reversal, a6-settlement-lifecycle, v1-ledger-reversal-governance — all pass
+  Notification fail-closed behaviour
+    notification-provider-config.unit.spec.ts, notification-reliability.unit.spec.ts,
+    notification-reliability.integration.spec.ts, notification-registry.integration.spec.ts,
+    v1-005-notification-delivery.integration.spec.ts — all pass
+    (fake/console transport only; no external provider activated, no live SMS/email)
+  Support-message recipient binding
+    v1-007-support-ticket, v1-customer-09-support-workforce-boundary,
+    v1-harden-01-support-adversarial — all pass
+
+## C3. Focused unit batch
+  npx jest --config jest.config.js <4 files>
+  result: Test Suites 4 passed / 4 total | Tests 38 passed / 38 total | exit 0
+
+## C4. Verbose re-run of the two load-bearing suites
+  npx jest --config jest.integration.config.js --runInBand --verbose <25G authz + sprint-3>
+  result: Test Suites 2 passed / 2 total | Tests 32 passed / 32 total | exit 0
+  (19 customer-preference assertions + 13 sprint-3 assertions)
+  full assertion list: evidence/08-phase-c-verbose-assertions.txt
+
+## C5. Log references
+  evidence/07b-phase-c-integration.log.gz   (15-suite focused run, gzipped)
+  evidence/07c-phase-c-unit.log.gz          (4-suite unit run, gzipped)
