@@ -1,0 +1,19 @@
+{
+  "sectionPresent": true,
+  "selectOptions": [
+    "All receipt statuses",
+    "QUARANTINED",
+    "FAILED",
+    "SUPPRESSED",
+    "UNSUPPORTED",
+    "MATERIALIZED"
+  ],
+  "sectionTextContentHasMaterialized": true,
+  "receiptRowCount": 1,
+  "rowTexts": [
+    "f5a26cf2-fa43-4f39-bf74-a9f1e0c3604b QUARANTINED EVENT_TYPE_UNSUPPORTED 0 — 11/1/2026, 2:11:34 PM"
+  ],
+  "rowsContainingMaterialized": 0,
+  "allRowsAreQuarantined": true,
+  "materializedOptionPresent": true
+}

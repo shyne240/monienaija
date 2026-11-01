@@ -1,0 +1,133 @@
+{
+  "generatedAt": "2026-11-01T14:51:05.657Z",
+  "candidate": "34f05fee6cacacf5dce61885ef3978b6f115a5d3",
+  "branch": "integration/mission-25h-customer-preference-security",
+  "baseline": "e0d604fad255629a1362c4ff62abd60eb7f85b6f",
+  "integrated": "0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b",
+  "gates": [
+    {
+      "gate": "backend unit/regression",
+      "suites": 229,
+      "suitesTotal": 229,
+      "tests": 2713,
+      "testsTotal": 2713,
+      "skipped": 0,
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "backend PostgreSQL matrix",
+      "suites": 132,
+      "suitesTotal": 132,
+      "tests": 2452,
+      "testsTotal": 2452,
+      "skipped": 0,
+      "exit": 0,
+      "result": "pass",
+      "batches": 9,
+      "allBatchesExit0": true
+    },
+    {
+      "gate": "admin-web jest",
+      "suites": 37,
+      "suitesTotal": 37,
+      "tests": 284,
+      "testsTotal": 284,
+      "skipped": 0,
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "backend tsc --noEmit",
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "admin-web tsc",
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "backend nest build",
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "admin-web vite build",
+      "exit": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "customer-preference authorization matrix (real HTTP)",
+      "checks": 105,
+      "passed": 105,
+      "failed": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "notification regression (real HTTP)",
+      "checks": 15,
+      "passed": 15,
+      "failed": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "support-message recipient binding (real HTTP)",
+      "checks": 5,
+      "passed": 5,
+      "failed": 0,
+      "result": "pass"
+    },
+    {
+      "gate": "real-browser role/console/panel matrix",
+      "checks": 41,
+      "passed": 41,
+      "failed": 0,
+      "result": "pass"
+    }
+  ],
+  "browserDetail": {
+    "rolesExercised": 11,
+    "consoleReachable": [
+      "SUPER_ADMIN",
+      "FINANCE_CONTROLLER",
+      "FINANCE_AUDITOR",
+      "OPERATIONS"
+    ],
+    "rolesRenderingPreferenceValues": [],
+    "rolesReceiving403": [
+      "SUPER_ADMIN",
+      "FINANCE_AUDITOR",
+      "ADMINISTRATOR",
+      "OPERATIONS",
+      "COMPLIANCE"
+    ],
+    "rolesWithStaleCopy": [
+      "CUSTOMER_SERVICE"
+    ],
+    "totalPreference403": 20,
+    "jsErrors": 0,
+    "http500": 0
+  },
+  "frontendIncompatibilities": [
+    {
+      "id": "F-25H-01",
+      "owner": "Arena 2",
+      "severity": "medium",
+      "summary": "Customer 360 preference panel still issues GET /customers/:id/preferences and /history for every OPERATOR/PRIVILEGED role holding customer.view. The corrected backend denies all workforce access, so each such visit now produces 4 x HTTP 403 (refused, no data)."
+    },
+    {
+      "id": "F-25H-02",
+      "owner": "Arena 2",
+      "severity": "low",
+      "summary": "Stale copy: the restricted state reads \"Preference visibility is restricted to authorized operational and privileged workforce roles with customer.view\", and the panel/notification-management-api comments still describe the superseded OPERATOR/PRIVILEGED-with-customer.view visibility model. No workforce role can read preferences under the corrected policy."
+    }
+  ],
+  "unresolved": [
+    "H-04",
+    "H-06",
+    "H-07",
+    "G.1 workforce preference policy"
+  ],
+  "verdict": "CONDITIONAL PASS — WITH EXPLICIT LIMITATIONS"
+}

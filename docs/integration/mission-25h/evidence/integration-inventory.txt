@@ -1,0 +1,70 @@
+MISSION 25H — INTEGRATION INVENTORY
+Generated: 2026-11-01 14:10:42 UTC
+
+1. BRANCHES AND COMMITS
+  Integration branch : integration/mission-25h-customer-preference-security
+  Integration merge  : 34f05fee6cacacf5dce61885ef3978b6f115a5d3
+  Parent 1 (25E)     : e0d604fad255629a1362c4ff62abd60eb7f85b6f
+  Parent 2 (25G)     : 0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b
+  Commit subject     : merge: Mission 25H — integrate pinned Mission 25G customer-preference authorization correction
+
+  Graph:
+*   34f05fe merge: Mission 25H — integrate pinned Mission 25G customer-preference authorization correction
+|\  
+| * 0d6d567 fix: enforce customer preference self-service authorization
+|/  
+* e0d604f test(integration): Mission 25E notification integration and independent verification
+*   762629e Merge commit 'e99f5f83a0ca8bc09cbfb4787923106e12f158cc' into integration/mission-25e-notification-integration Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+|\  
+| * e99f5f8 fix(admin-web): remediate notification console completeness findings F-01..F-13 (Mission 25D)
+
+2. TREE EQUIVALENCE — the merge introduced no content change of its own
+  25G tree    : f9bac70575132e28966240454f752fd31724aa5e
+  merge tree  : f9bac70575132e28966240454f752fd31724aa5e
+  diff 25G..HEAD files: 0 (0 = merge is content-identical to the pinned correction)
+
+3. CHANGED-FILE INVENTORY vs THE MISSION 25E BASELINE (e0d604f)
+ .../20261101-MISSION-25G-AUTHORIZATION-MATRIX.md   |   31 +
+ .../mission-25g/20261101-MISSION-25G-H07-DESIGN.md |   42 +
+ .../mission-25g/20261101-MISSION-25G-HANDOVER.md   |   82 +
+ .../20261101-MISSION-25G-TEST-EVIDENCE.md          |   79 +
+ .../evidence/mission-25f-independent-assessment.md |  116 ++
+ .../evidence/test-summary-snapshot.json            |  273 +++
+ .../mission-25g/evidence/test-summary.json         | 2027 ++++++++++++++++++++
+ src/authorization/route-policy-registry.ts         |   46 +
+ .../customer-preference.controller.ts              |   56 +-
+ .../dto/create-customer-preference.dto.ts          |    7 +-
+ .../dto/update-customer-preference.dto.ts          |    5 +-
+ src/maturity/maturity.service.ts                   |    9 +-
+ src/operations/audit.service.ts                    |   32 +-
+ ...er-preference-authorization.integration.spec.ts |  446 +++++
+ .../mission-25g-customer-preference-policy.spec.ts |  138 ++
+ 15 files changed, 3375 insertions(+), 14 deletions(-)
+
+  Full list:
+A	docs/integration/mission-25g/20261101-MISSION-25G-AUTHORIZATION-MATRIX.md
+A	docs/integration/mission-25g/20261101-MISSION-25G-H07-DESIGN.md
+A	docs/integration/mission-25g/20261101-MISSION-25G-HANDOVER.md
+A	docs/integration/mission-25g/20261101-MISSION-25G-TEST-EVIDENCE.md
+A	docs/integration/mission-25g/evidence/mission-25f-independent-assessment.md
+A	docs/integration/mission-25g/evidence/test-summary-snapshot.json
+A	docs/integration/mission-25g/evidence/test-summary.json
+M	src/authorization/route-policy-registry.ts
+M	src/customer-preference/customer-preference.controller.ts
+M	src/customer-preference/dto/create-customer-preference.dto.ts
+M	src/customer-preference/dto/update-customer-preference.dto.ts
+M	src/maturity/maturity.service.ts
+M	src/operations/audit.service.ts
+A	test/mission-25g-customer-preference-authorization.integration.spec.ts
+A	test/mission-25g-customer-preference-policy.spec.ts
+
+4. PRESERVATION OF ACCEPTED HISTORY
+  25E branch untouched        : origin/integration/mission-25e-notification-integration = e0d604fad255629a1362c4ff62abd60eb7f85b6f
+  V1 baseline untouched       : origin/integration/mission-23-fast-uri-security = 019de996950b07e9312af455ce0d9b840e6e14f1
+  25G branch untouched        : origin/arena/92fd33dd-monienaija = 0d6d567c8b6aba861f4350fcb07e0bbc96e3fc2b
+  main untouched              : origin/main = 39a9e504e3881911c94438321e7c60f771469d21
+  No force-push, no rebase, no history rewrite performed.
+
+5. INTEGRATION-ONLY CORRECTIONS
+  None. Phase A found no material incompatibility, so the merge carries the pinned 25G
+  commit content unmodified (plus this documentation directory).
