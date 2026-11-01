@@ -39,9 +39,12 @@ export class UpdateCustomerPreferenceDto {
   @IsOptional()
   version?: number;
 
+  // Legacy clients may still send this field. The controller always replaces it with the
+  // authenticated customer identity before the service writes history/audit records.
+  @IsOptional()
   @IsString()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @MinLength(1)
   @MaxLength(160)
-  actor!: string;
+  actor?: string;
 }

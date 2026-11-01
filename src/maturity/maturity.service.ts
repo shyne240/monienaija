@@ -38,9 +38,12 @@ export class MaturityService {
         this.diagnosticsService.getDiagnostics(),
         this.metricsService.getMetrics(),
         this.governanceService.latest(),
-        // Internal health emits only an event count, not audit payloads; retain the original
-        // complete count even though generic audit views exclude restricted case records.
-        this.auditService.list({ limit: 1 }, { includeComplianceCaseRecords: true }),
+        // Internal health exposes only audit.length from a limit-1 query (a 0/1 presence
+        // indicator), not audit payloads. Preserve it while generic views hide restricted records.
+        this.auditService.list(
+          { limit: 1 },
+          { includeComplianceCaseRecords: true, includePreferenceRecords: true },
+        ),
         this.outboxService.list({ limit: 1000 }),
         this.reports.reconciliationSummary(),
       ]);

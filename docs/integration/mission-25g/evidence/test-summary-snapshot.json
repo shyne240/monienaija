@@ -1,0 +1,273 @@
+{
+  "schema": "mission25g-test-snapshot-v1",
+  "capturedAtUtc": "2026-11-01T13:09:46.000Z",
+  "baselineCommit": "e0d604fad255629a1362c4ff62abd60eb7f85b6f",
+  "assessmentSha256": "86f3e0bc17fc226ee2d669f6942ab529a25feac322bf1b257c6ed38980992ed1",
+  "git": {
+    "implementationCommit": null,
+    "verifiedRemoteImplementation": false,
+    "verdict": "NOT READY FOR ARENA 3 INTEGRATION"
+  },
+  "runs": {
+    "fullUnitFinal": {
+      "success": true,
+      "suites": {
+        "total": 229,
+        "passed": 229,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 2713,
+        "passed": 2713,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "d4bb5da73b4e75e9ec19afd9b3dc336706d19415b0402d844a148ca707bd932d"
+    },
+    "fullUnitExampleEnvironmentContamination": {
+      "success": false,
+      "suites": {
+        "total": 229,
+        "passed": 226,
+        "failed": 3,
+        "pending": 0
+      },
+      "tests": {
+        "total": 2713,
+        "passed": 2710,
+        "failed": 3,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "cac547f773b262595be17ac812e17356863282074e190f4b550e49d394b86982"
+    },
+    "isolatedAffectedUnitRerun": {
+      "success": true,
+      "suites": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 17,
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "e3f6d5f71feb5e609ef7b384fdb495ce88a508c2bfca7609e735384de896ab3c"
+    },
+    "focusedUnit": {
+      "success": true,
+      "suites": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 16,
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "f04515fc6e6c8583e6de688215158027a317f3beed3dc17e0836efd86b66314f"
+    },
+    "focusedRealGuardPostgres": {
+      "success": true,
+      "suites": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 19,
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "1f59975de224435994298c04fa12f11680ee1f63b7da6b6cd481cc1c90040e40"
+    },
+    "minimalPostgresSmoke": {
+      "success": true,
+      "suites": {
+        "total": 2,
+        "passed": 2,
+        "failed": 0,
+        "pending": 0
+      },
+      "tests": {
+        "total": 27,
+        "passed": 27,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      },
+      "sha256": "dd233a192503450d69e61f64272fc75ea4f5c07b9d17fcaf97a6b4719d02f6e0"
+    },
+    "baselineCustomerServiceExpectedRed": {
+      "success": false,
+      "suites": {
+        "total": 1,
+        "passed": 0,
+        "failed": 1,
+        "pending": 0
+      },
+      "tests": {
+        "total": 17,
+        "passed": 0,
+        "failed": 1,
+        "pending": 16,
+        "todo": 0
+      },
+      "sha256": "99c657ec77f20d2822fa3e03b756f08211db3057e11db53e43df214060887e3a"
+    },
+    "baselineActorExpectedRed": {
+      "success": false,
+      "suites": {
+        "total": 1,
+        "passed": 0,
+        "failed": 1,
+        "pending": 0
+      },
+      "tests": {
+        "total": 17,
+        "passed": 0,
+        "failed": 1,
+        "pending": 16,
+        "todo": 0
+      },
+      "sha256": "9b77ed20ed66b7a0556a941c92b9b773d4e0969b6e184e1739d822a4c376d402"
+    },
+    "superAdminAuditExpectedRed": {
+      "success": false,
+      "suites": {
+        "total": 1,
+        "passed": 0,
+        "failed": 1,
+        "pending": 0
+      },
+      "tests": {
+        "total": 19,
+        "passed": 0,
+        "failed": 1,
+        "pending": 18,
+        "todo": 0
+      },
+      "sha256": "114bbbe5f0e5ad130287bb22013b2af9f998b34c3a58de169f308b9a07be517e"
+    },
+    "supportAuditExpectedRed": {
+      "success": false,
+      "suites": {
+        "total": 1,
+        "passed": 0,
+        "failed": 1,
+        "pending": 0
+      },
+      "tests": {
+        "total": 19,
+        "passed": 0,
+        "failed": 1,
+        "pending": 18,
+        "todo": 0
+      },
+      "sha256": "69e014c69b9153943356a7e9c1fd747c5ecc24a3188e5651858a55cec1010737"
+    }
+  },
+  "fullPostgres": {
+    "runId": "m25gfull1",
+    "processAliveAtSnapshot": true,
+    "finalSummary": null,
+    "finalExitCodeKnown": false,
+    "completedBatches": 7,
+    "batches": [
+      {
+        "number": 1,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       646 passed, 646 total",
+        "exitCode": 0
+      },
+      {
+        "number": 2,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       276 passed, 276 total",
+        "exitCode": 0
+      },
+      {
+        "number": 3,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       333 passed, 333 total",
+        "exitCode": 0
+      },
+      {
+        "number": 4,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       293 passed, 293 total",
+        "exitCode": 0
+      },
+      {
+        "number": 5,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       267 passed, 267 total",
+        "exitCode": 0
+      },
+      {
+        "number": 6,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       170 passed, 170 total",
+        "exitCode": 0
+      },
+      {
+        "number": 7,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": "Test Suites: 15 passed, 15 total",
+        "testSummary": "Tests:       236 passed, 236 total",
+        "exitCode": 0
+      },
+      {
+        "number": 8,
+        "totalBatches": 9,
+        "files": 15,
+        "suiteSummary": null,
+        "testSummary": null,
+        "exitCode": null
+      }
+    ],
+    "passedSuiteLines": 107,
+    "failedSuiteLines": 0,
+    "rawLogPath": "/home/user/m25g-pg-final1.log",
+    "note": "Partial live log only; do not interpret as a complete-suite pass without final process exit and all batch results."
+  },
+  "staticChecks": {
+    "typescript": "passed exit 0",
+    "build": "passed exit 0",
+    "changedFileEslint": "passed exit 0",
+    "gitDiffCheck": "passed exit 0"
+  },
+  "limitations": [
+    "No 25G implementation commit or push",
+    "Full PostgreSQL suite incomplete unless independently verified later",
+    "No new 25G browser suite",
+    "H-07 design only, not implemented",
+    "No production or vendor operations"
+  ]
+}
