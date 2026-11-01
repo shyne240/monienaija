@@ -3,8 +3,6 @@ import {
   estimateSmsSegments,
   extractTemplateVariables,
   BASELINE_CODE_EVENT_CATALOGUE,
-  CustomerCommunicationPreferences,
-  CustomerPreferenceHistoryRecord,
   ManagedNotificationChannel,
   NotificationChangeRequestRecord,
   NotificationDeliveryPage,
@@ -1430,55 +1428,8 @@ export const NotificationManagementApi = {
     return merged.slice(0, limitPerCategory * 2);
   },
 
-  /**
-   * LIVE TODAY — Read-only customer communication & account preferences (`CustomerPreferenceController`, `F-09`).
-   * Authorized only for workforce sessions permitted by `/customers/:id/preferences` (`OPERATOR`/`PRIVILEGED` with `customer.view`,
-   * excluding `CUSTOMER_SERVICE` / `SUPPORT`). Returns `null` when the customer has not yet initialized a preference profile (404).
-   */
-  async getCustomerPreferences(
-    customerId: string,
-  ): Promise<CustomerCommunicationPreferences | null> {
-    const cleanId = customerId.trim();
-    try {
-      const raw = await ApiClient.get<unknown>(
-        `/customers/${encodeURIComponent(cleanId)}/preferences`,
-      );
-      if (
-        !raw ||
-        typeof raw !== 'object' ||
-        Array.isArray(raw) ||
-        !('notifications' in (raw as Record<string, unknown>))
-      ) {
-        return null;
-      }
-      return raw as CustomerCommunicationPreferences;
-    } catch (error) {
-      if (getHttpStatus(error) === 404) {
-        return null;
-      }
-      throw error;
-    }
-  },
-
-  /**
-   * LIVE TODAY — Read-only customer preference change history (`GET /customers/:id/preferences/history`, `F-09`).
-   */
-  async listCustomerPreferenceHistory(
-    customerId: string,
-  ): Promise<CustomerPreferenceHistoryRecord[]> {
-    const cleanId = customerId.trim();
-    try {
-      const raw = await ApiClient.get<unknown>(
-        `/customers/${encodeURIComponent(cleanId)}/preferences/history`,
-      );
-      return extractArray<CustomerPreferenceHistoryRecord>(raw);
-    } catch (error) {
-      if (getHttpStatus(error) === 404) {
-        return [];
-      }
-      throw error;
-    }
-  },
+  // Customer preference endpoints (`/customers/:id/preferences*`) are restricted to authenticated
+  // customers accessing their own records; workforce preference reads/mutations are not authorized.
 
   /**
    * Governed Provider Configuration — read non-secret SMS & Email provider configuration,
