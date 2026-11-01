@@ -1,0 +1,291 @@
+{
+  "results": [
+    {
+      "id": "BROWSER-SUPER_ADMIN-CONSOLE-OPEN",
+      "ok": true,
+      "detail": "navVisible=true console=true requests=63"
+    },
+    {
+      "id": "BROWSER-SUPER_ADMIN-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-SUPER_ADMIN-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-FINANCE_PREPARER-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-FINANCE_PREPARER-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-FINANCE_PREPARER-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-FINANCE_CONTROLLER-CONSOLE-OPEN",
+      "ok": true,
+      "detail": "navVisible=true console=true"
+    },
+    {
+      "id": "BROWSER-FINANCE_CONTROLLER-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx (deliveries scoped out)"
+    },
+    {
+      "id": "BROWSER-FINANCE_CONTROLLER-DELIVERY-SCOPE-HANDLED",
+      "ok": true,
+      "detail": "delivery/receipt responses=[]"
+    },
+    {
+      "id": "BROWSER-FINANCE_CONTROLLER-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-FINANCE_AUDITOR-CONSOLE-OPEN",
+      "ok": true,
+      "detail": "navVisible=true console=true requests=57"
+    },
+    {
+      "id": "BROWSER-FINANCE_AUDITOR-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-FINANCE_AUDITOR-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-ADMINISTRATOR-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-ADMINISTRATOR-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-ADMINISTRATOR-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-OPERATIONS-CONSOLE-OPEN",
+      "ok": true,
+      "detail": "navVisible=true console=true requests=49"
+    },
+    {
+      "id": "BROWSER-OPERATIONS-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-OPERATIONS-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-AGENT_NETWORK_MANAGER-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-AGENT_NETWORK_MANAGER-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-AGENT_NETWORK_MANAGER-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-COMPLIANCE-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-COMPLIANCE-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-COMPLIANCE-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-RISK_FRAUD-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-RISK_FRAUD-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-RISK_FRAUD-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-CUSTOMER_SERVICE-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-CUSTOMER_SERVICE-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-CUSTOMER_SERVICE-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "BROWSER-TREASURY-NO-CONSOLE-ACCESS",
+      "ok": true,
+      "detail": "navVisible=false console=false accessDeniedPanel=false"
+    },
+    {
+      "id": "BROWSER-TREASURY-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "BROWSER-TREASURY-NO-JS-ERROR",
+      "ok": true,
+      "detail": "no uncaught page errors"
+    },
+    {
+      "id": "UI-EVENTS-RENDERED",
+      "ok": true,
+      "detail": "event rows=23"
+    },
+    {
+      "id": "UI-SECURITY-EVENT-LOCKED-CHIP",
+      "ok": true,
+      "detail": "security row text has lock affordance only: customer.registration.phone_verificationCustomer onboarding registration phone verification OTP (direct provider path; bypasses outbox).SECURITYCUSTOMERDIRECT_P"
+    },
+    {
+      "id": "UI-H-06-FUNDING-SHOWN-LOCKED",
+      "ok": true,
+      "detail": "customer.funding.approved UI shows locked=true (backend seeds it unlocked — divergence recorded)"
+    },
+    {
+      "id": "UI-PROVIDER-SECRET-FREE-BANNER",
+      "ok": true,
+      "detail": "secret-free banner present"
+    },
+    {
+      "id": "UI-PROVIDER-NO-SECRET-IN-DOM",
+      "ok": true,
+      "detail": "secret-shaped strings in provider panel: false"
+    },
+    {
+      "id": "UI-PROVIDER-CONSOLE-ONLY-TRUTHFUL",
+      "ok": true,
+      "detail": "lifecycle rendered: CONSOLE_ONLY,NOT_CONFIGURED"
+    },
+    {
+      "id": "UI-PROVIDER-NOT-PRODUCTION-READY",
+      "ok": true,
+      "detail": "production-ready token present=false"
+    },
+    {
+      "id": "UI-PROVIDER-CONFIG-NO-SECRET",
+      "ok": true,
+      "detail": "secret-shaped strings in provider-config panel: false"
+    },
+    {
+      "id": "UI-DELIVERIES-SURFACE",
+      "ok": true,
+      "detail": "deliveries table=true explicit empty state=false"
+    },
+    {
+      "id": "UI-DELIVERIES-UNKNOWN-DEAD-STATES",
+      "ok": true,
+      "detail": "UNKNOWN token=true DEAD token=true (M-05 remediation)"
+    },
+    {
+      "id": "UI-RECEIPTS-SECTION-PRESENT",
+      "ok": true,
+      "detail": "outbox-receipts section present=true"
+    },
+    {
+      "id": "UI-RECEIPTS-QUARANTINE-VISIBLE",
+      "ok": true,
+      "detail": "receipt rows=5 sample=[\"4780f87e-d885-4c7b-a722-7c2aba1aa818MATERIALIZED—1—11/1/2026, 10:21:43 AM\",\"a194f081-9d7f-4cf9-a2c3-8cfbd65c8537MATERIALIZED—1—11/1/2026, 10:21:43 AM\",\"c99fe8ba-1fd0-4353-ae9b-e132a45e3077QUARANTINEDSUPPORT_VISIBILITY_UNKNOWN1—11/1/2026, 10:21:25 AM\"]"
+    },
+    {
+      "id": "UI-SUPER-ADMIN-NO-BACKGROUND-4XX-DEEP",
+      "ok": true,
+      "detail": "0 background 4xx/5xx across all tabs"
+    },
+    {
+      "id": "UI-APPROVALS-QUEUE-PRESENT",
+      "ok": true,
+      "detail": "change-requests table present"
+    },
+    {
+      "id": "UI-GOVERNANCE-AUDIT-SECTION",
+      "ok": true,
+      "detail": "governance audit table present"
+    },
+    {
+      "id": "UI-CHECKER-APPROVE",
+      "ok": true,
+      "detail": "approve path responded; panel mentions approved=true"
+    },
+    {
+      "id": "UI-CHECKER-EXECUTE",
+      "ok": true,
+      "detail": "panel mentions applied/executed=true"
+    },
+    {
+      "id": "UI-FINANCE-CONTROLLER-NO-BACKGROUND-4XX-DEEP",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    },
+    {
+      "id": "UI-READONLY-CONFIG-CONTROL-DISABLED",
+      "ok": true,
+      "detail": "control present=true disabled=true title=\"Requires notification.manage_configuration\""
+    },
+    {
+      "id": "UI-READONLY-NO-FALSE-SUCCESS",
+      "ok": true,
+      "detail": "false-success wording present=false"
+    },
+    {
+      "id": "UI-READONLY-CONSOLE-OPENS",
+      "ok": true,
+      "detail": "console opened for FINANCE_AUDITOR=true"
+    },
+    {
+      "id": "UI-CUSTOMER-SURFACE-LOADS",
+      "ok": true,
+      "detail": "customer surface opened=true chars=630"
+    },
+    {
+      "id": "UI-CUSTOMER-SURFACE-NO-BACKGROUND-4XX",
+      "ok": true,
+      "detail": "0 background 4xx/5xx"
+    }
+  ],
+  "passed": 57,
+  "failed": 0
+}

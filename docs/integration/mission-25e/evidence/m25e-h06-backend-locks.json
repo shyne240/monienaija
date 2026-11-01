@@ -1,0 +1,20 @@
+[
+  {
+    "eventType": "customer.funding.approved",
+    "smsLocked": false,
+    "editable": true,
+    "version": 1
+  },
+  {
+    "eventType": "customer.funding.rejected",
+    "smsLocked": false,
+    "editable": true,
+    "version": 1
+  },
+  {
+    "eventType": "transfer.completed",
+    "smsLocked": false,
+    "editable": true,
+    "version": 1
+  }
+]

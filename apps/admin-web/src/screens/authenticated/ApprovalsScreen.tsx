@@ -97,6 +97,9 @@ export const ApprovalsScreen: React.FC = () => {
       <div style={styles.fundingNote}>
         Agent funding requests use their dedicated rejection workflow so approval and request state change atomically. This generic rejection action intentionally rejects funding approval IDs; it does not replace that workflow.
       </div>
+      <div style={styles.fundingNote} data-testid="notification-two-step-approval-note">
+        <strong>Two-Step Notification Governance Note:</strong> Approving a governed notification template, trigger, or provider-configuration proposal ID here transitions its workforce approval to <code>APPROVED</code> (Step 1). Complete Step 2 execution in <strong>Notifications → Approvals &amp; Governance</strong> (<code>POST /internal/notifications/changes/:approvalId/execute</code>) or <strong>Provider Configuration</strong> so the approved proposal is applied.
+      </div>
 
       {canReviewFunding && (
         <div style={{ marginBottom: 24 }}>

@@ -1,0 +1,21 @@
+MISSION 25E — TYPE CHECKS AND PRODUCTION BUILDS
+===============================================
+Toolchain: node v22.22.3, npm 10.9.8, Chromium 153.0.8010.0 (npm-sourced, see report §D).
+
+BACKEND
+  npx tsc --noEmit ................. exit 0
+  npm run build (nest build) ....... exit 0 -> dist/main.js present
+  compiled startup ................. boots on :3000 (see api-matrix + browser evidence)
+  notification worker .............. "Notification worker disabled" at boot by default
+
+ADMIN WEB (apps/admin-web)
+  npm ci ........................... 497 packages
+  npx tsc --noEmit ................. exit 0
+  npx jest ......................... Test Suites: 37 passed, 37 total
+                                     Tests:       284 passed, 284 total
+                                     Exit code:   0
+  npm run build (vite) ............. exit 0, 380 modules transformed
+
+Baseline Admin Web: 37 suites / 276 tests. Delta: +8 tests, same suite count
+(Mission 25D extends four existing suites; it adds no new test file).
+Raw logs: /home/user/m25e-build.log, /home/user/m25e-webuild.log, /home/user/m25e-adminweb.log

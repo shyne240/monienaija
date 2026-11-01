@@ -31,7 +31,7 @@ jest.mock('../src/services/api-client', () => ({
 const ROLE_PRINCIPALS = {
   SUPER_ADMIN: {
     type: 'PRIVILEGED', roles: ['SUPER_ADMIN'],
-    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
+    scopes: ['agent.activate','agent.assign_limit','agent.manage_credentials','agent.manage_outlets_terminals','agent.reactivate','agent.review_application','agent.suspend','agent.terminate','agent.view','aggregator.manage','aggregator.view','audit.search','audit.view','commission_rule.view','compliance.manage_case','compliance.manage_risk_profile','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','diagnostics.view','fee_rule.view','kyc.approve','kyc.reject','kyc.review','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.configure','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.dashboard.assign','workforce.dashboard.view','workforce.role.assign','workforce.role.assign_operational','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.revoke_operational','workforce.role.view','workforce.user.create','workforce.user.suspend','workforce.user.view','privileged:execute'],
   },
   FINANCE_PREPARER: {
     type: 'OPERATOR', roles: ['FINANCE_PREPARER'],
@@ -39,11 +39,11 @@ const ROLE_PRINCIPALS = {
   },
   FINANCE_CONTROLLER: {
     type: 'OPERATOR', roles: ['FINANCE_CONTROLLER'],
-    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.view','limit.modify','limit.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
+    scopes: ['agent.defund','agent.fund','commission_rule.create','commission_rule.modify','commission_rule.view','fee_rule.create','fee_rule.modify','fee_rule.view','finance.control_policy.activate','ledger.view','limit.modify','limit.view','notification.provider.configure','notification.provider.view','product.governance','product.modify','product.view','reporting.transaction_summary.view','reward_rule.create','reward_rule.modify','reward_rule.view','workforce.role.assign','workforce.role.create','workforce.role.modify','workforce.role.revoke','workforce.role.view','privileged:approve','privileged:execute'],
   },
   FINANCE_AUDITOR: {
     type: 'OPERATOR', roles: ['FINANCE_AUDITOR'],
-    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','kyc.view','ledger.view','limit.view','metrics.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
+    scopes: ['agent.view','aggregator.view','audit.search','audit.view','commission_rule.view','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','diagnostics.view','fee_rule.view','kyc.view','ledger.view','limit.view','metrics.view','notification.provider.view','notification.view_deliveries','outbox.view','product.view','reconciliation.view','reporting.transaction_summary.view','reward_rule.view','transaction.view','workforce.role.view','finance:audit'],
   },
   ADMINISTRATOR: {
     type: 'OPERATOR', roles: ['ADMINISTRATOR'],
@@ -51,7 +51,7 @@ const ROLE_PRINCIPALS = {
   },
   OPERATIONS: {
     type: 'OPERATOR', roles: ['OPERATIONS'],
-    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','metrics.view','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
+    scopes: ['aggregator.manage','aggregator.view','customer.activate','customer.close','customer.create','customer.create_wallet','customer.manage_support_case','customer.suspend','customer.view','customer.view_address','customer.view_contact_methods','customer.view_transactions','customer.view_wallets','diagnostics.view','metrics.view','notification.provider.view','notification.test_send','notification.view_deliveries','outbox.view','reporting.transaction_summary.view','transaction.view','workforce.user.create','workforce.user.suspend','workforce.user.view'],
   },
   AGENT_NETWORK_MANAGER: {
     type: 'OPERATOR', roles: ['AGENT_NETWORK_MANAGER'],
@@ -249,7 +249,7 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     expect(canAccessAdminView('agents', [], ['FINANCE_CONTROLLER'])).toBe(false);
   });
 
-  test('notification management navigation is unlocked only by notification.* authorization scopes', () => {
+  test('notification management navigation is unlocked only by notification.* or checker authorization scopes across all 11 catalogue roles', () => {
     expect(canAccessAdminView('notifications', [], ['OPERATIONS'])).toBe(false);
     expect(canAccessAdminView('notifications', ['metrics.view', 'outbox.view'], ['OPERATIONS'])).toBe(false);
     expect(canAccessAdminView('notifications', ['notification.view_deliveries'], ['FINANCE_AUDITOR'])).toBe(true);
@@ -257,6 +257,23 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     expect(canAccessAdminView('notifications', ['notification.approve_templates'], ['FINANCE_CONTROLLER'])).toBe(true);
     expect(canAccessAdminView('notifications', ['notification.manage_configuration'], ['OPERATIONS'])).toBe(true);
     expect(canAccessAdminView('notifications', ['notification.test_send'], ['OPERATIONS'])).toBe(true);
+
+    const activeRoles: RoleKey[] = ['SUPER_ADMIN', 'FINANCE_CONTROLLER', 'FINANCE_AUDITOR', 'OPERATIONS'];
+    const deniedRoles: RoleKey[] = [
+      'FINANCE_PREPARER',
+      'ADMINISTRATOR',
+      'AGENT_NETWORK_MANAGER',
+      'COMPLIANCE',
+      'RISK_FRAUD',
+      'CUSTOMER_SERVICE',
+      'TREASURY',
+    ];
+    for (const roleKey of activeRoles) {
+      expect(canAccessAdminView('notifications', ROLE_PRINCIPALS[roleKey].scopes, ROLE_PRINCIPALS[roleKey].roles)).toBe(true);
+    }
+    for (const roleKey of deniedRoles) {
+      expect(canAccessAdminView('notifications', ROLE_PRINCIPALS[roleKey].scopes, ROLE_PRINCIPALS[roleKey].roles)).toBe(false);
+    }
   });
 
   test('agent list and lifecycle affordances use exact function scopes, not role-name fallbacks', async () => {

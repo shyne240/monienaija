@@ -426,9 +426,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     try {
       const outcome = await NotificationManagementApi.submitTestSend({
         channel,
-        eventType: 'notification.test_send',
         destination,
-        reason: `Authorized ${channel} provider readiness verification`,
         workforceDestinationConfirmed: true,
       });
       if (outcome.status === 'BLOCKED') {

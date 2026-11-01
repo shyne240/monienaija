@@ -14,6 +14,8 @@ import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { SupportService } from '../src/support/support.service';
+import { SupportTicketCategory } from '../src/support/support.enums';
+import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 import { TransferLifecycleService } from '../src/transfer/transfer-lifecycle.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -302,8 +304,13 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
   it('4. support ticket created notifies customer and agent, 5 events mapping', async () => {
     const custId = await createCustomerWithPhone('8055555555');
     const agentId = await createAgentDirect(AgentStatus.ACTIVE);
+    // Use the real support authority for the public-message binding below.
+    const customerPrincipal: AuthorizationPrincipal = { type: 'CUSTOMER', principalId: custId, customerId: custId,
+      roles: [], scopes: [], customerAccess: 'SELF' };
+    const ticket = await supportService.createTicket({ subject: 'Support test', category: SupportTicketCategory.OTHER,
+      description: 'A real support ticket for notification mapping', principal: customerPrincipal });
     // support.ticket.created for customer
-    const payloadCreated = { ticketId: randomUUID(), reference: `SUP-${randomUUID().slice(0,6)}`, customerId: custId, agentId: null, category: 'OTHER', priority: 'MEDIUM' };
+    const payloadCreated = { ticketId: ticket.id, reference: ticket.reference, customerId: custId, agentId: null, category: 'OTHER', priority: 'MEDIUM' };
     const keyCreated = `support.ticket.created:${payloadCreated.ticketId}`;
     const resCreated = await dispatcher.dispatch({ eventType: 'support.ticket.created', eventKey: keyCreated, aggregateType: 'SUPPORT_TICKET', aggregateId: payloadCreated.ticketId, payload: payloadCreated, correlationId: `support:${payloadCreated.ticketId}` });
     expect(resCreated.dispatched).toBe(1);
@@ -328,7 +335,9 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(testProvider.sent[0]!.message.toLowerCase()).toContain('resolved');
     testProvider.clear();
     // support.ticket.message_added - non-internal
-    const payloadMsg = { ticketId: payloadCreated.ticketId, reference: payloadCreated.reference, customerId: custId, body: 'Hello', isInternal: false };
+    const publicMessage = await supportService.addMessage({ ticketId: ticket.id, body: 'Hello', principal: customerPrincipal });
+    const payloadMsg = { ticketId: ticket.id, messageId: publicMessage.id, authorType: 'CUSTOMER',
+      authorId: custId, customerId: custId, isInternal: false };
     const keyMsg = `support.ticket.message_added:${randomUUID()}`;
     const resMsg = await dispatcher.dispatch({ eventType: 'support.ticket.message_added', eventKey: keyMsg, aggregateType: 'SUPPORT_TICKET', aggregateId: payloadCreated.ticketId, payload: payloadMsg });
     expect(resMsg.dispatched).toBe(1);

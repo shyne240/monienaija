@@ -578,6 +578,8 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     const outcome = await NotificationManagementApi.getProviderStatus();
     expect(outcome.status).toBe('LIVE');
     if (outcome.status === 'LIVE') {
+      expect(outcome.data.projectionScope).toBe('MINIMAL');
+      expect(outcome.data.environment).toBeNull();
       expect(outcome.data.sms.provider).toBe('redacted');
       expect(outcome.data.sms.operationalStatus).toBe('READY');
       expect(outcome.data.sms.apiKeyConfigured).toBe(false);
@@ -593,7 +595,10 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
       expect(outcome.data.email.fromName).toBeNull();
       expect(outcome.data.email.lifecycleState).toBeUndefined();
       expect(outcome.data.email.lastTest).toBeUndefined();
-      expect(outcome.data.worker.enabled).toBe(false);
+      expect(outcome.data.worker.enabled).toBeNull();
+      expect(outcome.data.worker.redacted).toBe(true);
+      expect(outcome.data.worker.smsRetryMaxAttempts).toBeNull();
+      expect(outcome.data.worker.smsRetryBaseDelaySeconds).toBeNull();
     }
   });
 

@@ -1,0 +1,43 @@
+MISSION 25E — PROVIDER FAIL-CLOSED, EXECUTED ON THE INTEGRATED BUILD
+====================================================================
+The point of Mission 25C's provider work: environment credentials are NOT activation.
+Only an enabled, governed database row may authorise an external send.
+
+SETUP — a second instance of the SAME integrated build, started with full, valid-shaped
+external credentials in the environment and NO governed provider row in the database
+(disposable database, no production data, no real vendor account):
+
+  NOTIFICATION_SMS_PROVIDER=robase   ROBASE_API_KEY=robe_<dummy>   ROBASE_API_BASE_URL=https://api.robase.com
+  NOTIFICATION_EMAIL_PROVIDER=brevo  BREVO_API_KEY=xkeysib-<dummy> NOTIFICATION_EMAIL_FROM=no-reply@monienaija.example
+  PORT=3100
+
+OBSERVED
+
+  GET /internal/notifications/provider-status  (SUPER_ADMIN)
+    sms.provider          = "robase"
+    sms.source            = "ENVIRONMENT"        <- credentials are visible as a source ...
+    sms.enabled           = false                 <- ... but they do not enable anything
+    sms.configured        = false
+    sms.lifecycleState    = "NOT_CONFIGURED"
+    sms.gates             = {configured:false, verified:false, enabled:false, deliveryTested:false, productionReady:false}
+    email.lifecycleState  = "NOT_CONFIGURED", all gates false
+
+  POST /internal/notifications/test-send {channel:SMS}   -> 400 PROVIDER_NOT_CONFIGURED
+  POST /internal/notifications/test-send {channel:EMAIL} -> 400 PROVIDER_NOT_CONFIGURED
+
+  No outbound connection to api.robase.com or api.brevo.com was attempted. The request is
+  refused during preflight, before quota consumption and before any adapter is constructed.
+
+ADDITIONAL STARTUP VALIDATION (same build)
+  Starting with NOTIFICATION_SMS_PROVIDER=robase but a missing/malformed key fails at boot:
+    "ROBASE_API_KEY must be a Robase live key (robe_ prefix ...)"
+    "NOTIFICATION_EMAIL_FROM ... is required when NOTIFICATION_EMAIL_PROVIDER=brevo"
+  So an external provider cannot even be selected without well-formed configuration.
+
+DEVELOPMENT CONSOLE PATH (the one documented exception)
+  On the default dev instance (NOTIFICATION_SMS_PROVIDER=console, no governed row):
+    POST test-send -> 201 {status:"SENT", provider:"console", destination:"+**********000"}
+    provider-status: source=ENVIRONMENT, lifecycleState=CONSOLE_ONLY, gates all false,
+                     lastTest.status=null (no governed row to record against)
+  This is a LOCAL SIMULATION. It does not promote verified/deliveryTested/productionReady,
+  it does not persist a live test result, and the destination is masked in the response.

@@ -11,6 +11,7 @@ import {
   NotFoundException,
   OnModuleInit,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
@@ -19,6 +20,7 @@ import { AuditService } from '../operations/audit.service';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import type { Environment } from '../config/environment';
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import {
   BrevoEmailProvider,
   type BrevoFetchFn,
@@ -45,6 +47,7 @@ import {
   isExternalNotificationVendor,
   isPinnedProviderBaseUrl,
   normalizeProviderErrorCode,
+  redactDeliveryRecipientId,
   sanitizeProviderRefForBoundary,
   validatePinnedProviderBaseUrl,
 } from './provider-security';
@@ -307,6 +310,18 @@ const VERIFY_HOURLY_CAP = 10;
 const ROBASE_SENDER_ID_NOTE =
   'Robase /v1/sms/send binds sender identity at the Robase workspace level; Sender ID is stored here for MonieNaija operational governance and is not sent as an unverified wire field.';
 
+/** Re-mask even historical or incorrectly supplied test destinations at every boundary. */
+function safeTestDestination(channel: ManagedNotificationChannel, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128) return '[REDACTED]';
+  if (channel === 'SMS') {
+    return /^[+*0-9 ()-]+$/.test(value) ? redactDeliveryRecipientId('PHONE', value) : '[REDACTED]';
+  }
+  const match = /^([^@\s]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,63})$/.exec(value);
+  if (!match || sanitizeDiagnosticIdentifier(match[2]) !== match[2]) return '[REDACTED]';
+  return redactDeliveryRecipientId('EMAIL', value);
+}
+
 function toIsoOrNull(val: Date | string | null | undefined): string | null {
   if (!val) return null;
   const d = val instanceof Date ? val : new Date(val);
@@ -317,6 +332,13 @@ function defaultPinnedBaseUrl(provider: 'robase' | 'brevo' | 'resend'): string {
   if (provider === 'robase') return 'https://api.robase.dev';
   if (provider === 'brevo') return 'https://api.brevo.com';
   return 'https://api.resend.com';
+}
+
+function isValidStoredEmail(value: string | null): value is string {
+  // Proposal-time validation stores a normalized address, not a display-name
+  // header. Reject corrupt values rather than sanitizing them into an outbound
+  // sender or reply-to address.
+  return value !== null && normalizeEmailDestination(value) === value.toLowerCase();
 }
 
 function validateApiKeyForProvider(provider: string, rawKey: string): string {
@@ -404,8 +426,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
     @Inject(NOTIFICATION_PROVIDER_HTTP_FETCH_TOKEN)
     private readonly fetchImpl?: ProviderHttpFetchFn,
   ) {
-    this.cachedSmsProviderName = this.resolveEnvSmsProviderName();
-    this.cachedEmailProviderName = this.resolveEnvEmailProviderName();
+    // No synchronous reader may advertise a legacy provider before governance is read.
+    this.cachedSmsProviderName = 'none';
+    this.cachedEmailProviderName = 'none';
   }
 
   getActiveSmsProviderNameSync(): string {
@@ -418,7 +441,12 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.normalizeHistoricalProviderRefs();
-    await this.refreshRuntimeCache();
+    try {
+      await this.refreshRuntimeCache();
+    } catch {
+      // Keep the rest of the application available, but all provider routes remain dark.
+      // Dispatchers will retry the read before consuming any new outbox event.
+    }
   }
 
   /**
@@ -470,36 +498,17 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }
 
   async refreshRuntimeCache(): Promise<void> {
-    if (!this.dataSource || !this.dataSource.isInitialized) {
-      this.cachedSmsProviderName = this.resolveEnvSmsProviderName();
-      this.cachedEmailProviderName = this.resolveEnvEmailProviderName();
-      return;
-    }
-
-    try {
-      const rows = await this.loadAllDbRows();
-      const smsRow = rows.get('SMS');
-      const emailRow = rows.get('EMAIL');
-
-      this.cachedSmsProviderName = smsRow
-        ? smsRow.provider
-        : this.resolveEnvSmsProviderName();
-
-      if (emailRow) {
-        // When EMAIL is set to 'none' or explicitly disabled, advertise 'none' to the
-        // business outbox dispatcher so customer events do not enqueue dark EMAIL intents,
-        // while direct `sendEmail()` calls still fail closed with EMAIL_PROVIDER_DISABLED.
-        this.cachedEmailProviderName =
-          emailRow.provider === 'none' || !emailRow.enabled
-            ? 'none'
-            : emailRow.provider;
-      } else {
-        this.cachedEmailProviderName = this.resolveEnvEmailProviderName();
-      }
-    } catch {
-      this.cachedSmsProviderName = this.resolveEnvSmsProviderName();
-      this.cachedEmailProviderName = this.resolveEnvEmailProviderName();
-    }
+    // loadAllDbRows throws a sanitized 503 on an unreadable or corrupt table. Do not
+    // consume outbox events with a guessed EMAIL provider while governance is unknown.
+    const rows = await this.loadAllDbRows();
+    const smsRow = rows.get('SMS');
+    const emailRow = rows.get('EMAIL');
+    this.cachedSmsProviderName = smsRow
+      ? (smsRow.enabled ? smsRow.provider : 'none')
+      : this.resolveEnvSmsProviderName();
+    this.cachedEmailProviderName = emailRow
+      ? (emailRow.enabled && emailRow.provider !== 'none' ? emailRow.provider : 'none')
+      : this.resolveEnvEmailProviderName();
   }
 
   // ---------------------------------------------------------------------------
@@ -508,36 +517,23 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
   async sendSms(request: NotificationSendRequest): Promise<NotificationSendResult> {
     const nodeEnv = this.configService.get('NODE_ENV', { infer: true });
-    const row = await this.loadDbRow('SMS');
+    let row: DbProviderConfigRow | null;
+    try {
+      row = await this.loadDbRow('SMS');
+    } catch {
+      return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
+    }
 
     if (!row) {
-      const envProvider = this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true });
-      if (envProvider === 'managed') {
-        return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
-      }
-      if (envProvider === 'console') {
+      // A missing row cannot prove that a prior governed activation was never removed.
+      // Only the non-production console simulation remains available without a row.
+      if (this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true }) === 'console') {
         if (nodeEnv === 'production') {
           return { success: false, error: 'CONSOLE_FORBIDDEN_IN_PRODUCTION' };
         }
-        return this.consoleSms.send(request);
+        return { ...(await this.consoleSms.send(request)), simulated: true };
       }
-      const apiKey = this.configService.get('ROBASE_API_KEY', { infer: true });
-      if (!apiKey || !apiKey.startsWith('robe_')) {
-        return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
-      }
-      const baseUrl =
-        this.configService.get('ROBASE_API_BASE_URL', { infer: true }) ??
-        'https://api.robase.dev';
-      if (!isPinnedProviderBaseUrl('robase', baseUrl)) {
-        return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
-      }
-      const requestTimeoutMs =
-        this.configService.get('ROBASE_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
-      const adapter = new RobaseNotificationProvider(
-        { baseUrl: validatePinnedProviderBaseUrl('robase', baseUrl), apiKey, requestTimeoutMs },
-        this.fetchImpl as ConstructorParameters<typeof RobaseNotificationProvider>[1],
-      );
-      return sanitizeVendorSendResult('robase', await adapter.send(request), apiKey);
+      return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
     }
 
     if (row.provider === 'console') {
@@ -547,7 +543,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
       if (!row.enabled) {
         return { success: false, error: 'SMS_PROVIDER_DISABLED' };
       }
-      return this.consoleSms.send(request);
+      return { ...(await this.consoleSms.send(request)), simulated: true };
     }
 
     if (!row.enabled) {
@@ -555,7 +551,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
     }
 
     if (row.provider === 'robase') {
-      const candidateUrl = row.base_url ?? 'https://api.robase.dev';
+      if (!row.base_url) return { success: false, error: 'PROVIDER_NOT_CONFIGURED' };
+      const candidateUrl = row.base_url;
       if (!isPinnedProviderBaseUrl('robase', candidateUrl)) {
         return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
       }
@@ -583,77 +580,22 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
   async sendEmail(request: NotificationSendRequest): Promise<NotificationSendResult> {
     const nodeEnv = this.configService.get('NODE_ENV', { infer: true });
-    const row = await this.loadDbRow('EMAIL');
+    let row: DbProviderConfigRow | null;
+    try {
+      row = await this.loadDbRow('EMAIL');
+    } catch {
+      return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
+    }
 
     if (!row) {
-      const envProvider = this.configService.get('NOTIFICATION_EMAIL_PROVIDER', { infer: true });
-      if (envProvider === 'none' || envProvider === 'managed') {
-        return this.noneEmail.send();
-      }
-      if (envProvider === 'console') {
+      if (this.configService.get('NOTIFICATION_EMAIL_PROVIDER', { infer: true }) === 'console') {
         if (nodeEnv === 'production') {
           return { success: false, error: 'CONSOLE_FORBIDDEN_IN_PRODUCTION' };
         }
         return this.consoleEmail.send(request);
       }
-      const from = this.configService.get('NOTIFICATION_EMAIL_FROM', { infer: true });
-      const fromName = this.configService.get('NOTIFICATION_EMAIL_FROM_NAME', { infer: true });
-      const replyTo =
-        this.configService.get('NOTIFICATION_EMAIL_REPLY_TO', { infer: true }) ?? null;
-
-      if (envProvider === 'brevo') {
-        const apiKey = this.configService.get('BREVO_API_KEY', { infer: true });
-        if (!apiKey || !from) {
-          return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
-        }
-        const baseUrl =
-          this.configService.get('BREVO_API_BASE_URL', { infer: true }) ??
-          'https://api.brevo.com';
-        if (!isPinnedProviderBaseUrl('brevo', baseUrl)) {
-          return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
-        }
-        const requestTimeoutMs =
-          this.configService.get('BREVO_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
-        const adapter = new BrevoEmailProvider(
-          {
-            baseUrl: validatePinnedProviderBaseUrl('brevo', baseUrl),
-            apiKey,
-            fromEmail: from,
-            fromName: fromName ?? null,
-            replyTo,
-            requestTimeoutMs,
-          },
-          this.fetchImpl as BrevoFetchFn | undefined,
-        );
-        return sanitizeVendorSendResult('brevo', await adapter.send(request), apiKey);
-      }
-
-      if (envProvider === 'resend') {
-        const apiKey = this.configService.get('RESEND_API_KEY', { infer: true });
-        if (!apiKey || !from) {
-          return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
-        }
-        const baseUrl =
-          this.configService.get('RESEND_API_BASE_URL', { infer: true }) ??
-          'https://api.resend.com';
-        if (!isPinnedProviderBaseUrl('resend', baseUrl)) {
-          return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
-        }
-        const requestTimeoutMs =
-          this.configService.get('RESEND_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
-        const adapter = new ResendEmailProvider(
-          {
-            baseUrl: validatePinnedProviderBaseUrl('resend', baseUrl),
-            apiKey,
-            from,
-            replyTo,
-            requestTimeoutMs,
-          },
-          this.fetchImpl as ConstructorParameters<typeof ResendEmailProvider>[1],
-        );
-        return sanitizeVendorSendResult('resend', await adapter.send(request), apiKey);
-      }
-
+      // ENV_SECRET is still supported when an enabled governed row explicitly selects it;
+      // legacy environment credentials alone do not authorize external delivery.
       return this.noneEmail.send();
     }
 
@@ -675,12 +617,16 @@ export class NotificationProviderConfigService implements OnModuleInit {
       return { success: false, error: 'EMAIL_PROVIDER_DISABLED' };
     }
 
-    if (!row.from_email) {
+    if (!isValidStoredEmail(row.from_email)) {
       return { success: false, error: 'EMAIL_SENDER_NOT_CONFIGURED' };
     }
+    if (row.reply_to_email !== null && !isValidStoredEmail(row.reply_to_email)) {
+      return { success: false, error: 'PROVIDER_FAILURE' };
+    }
+    if (!row.base_url) return { success: false, error: 'PROVIDER_NOT_CONFIGURED' };
 
     if (row.provider === 'brevo') {
-      const candidateUrl = row.base_url ?? 'https://api.brevo.com';
+      const candidateUrl = row.base_url;
       if (!isPinnedProviderBaseUrl('brevo', candidateUrl)) {
         return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
       }
@@ -707,7 +653,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
     }
 
     if (row.provider === 'resend') {
-      const candidateUrl = row.base_url ?? 'https://api.resend.com';
+      const candidateUrl = row.base_url;
       if (!isPinnedProviderBaseUrl('resend', candidateUrl)) {
         return { success: false, error: 'PROVIDER_BASE_URL_UNTRUSTED' };
       }
@@ -1722,7 +1668,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
     }
 
     if (isExternalNotificationVendor(row.provider)) {
-      const candidateUrl = row.base_url ?? defaultPinnedBaseUrl(row.provider);
+      if (!row.base_url) {
+        throw new BadRequestException('PROVIDER_NOT_CONFIGURED');
+      }
+      const candidateUrl = row.base_url;
       if (!isPinnedProviderBaseUrl(row.provider, candidateUrl)) {
         await this.safeDbOperation('verifyChannelConfiguration.recordUntrustedUrl', () =>
           ds.query(
@@ -1736,6 +1685,14 @@ export class NotificationProviderConfigService implements OnModuleInit {
         );
         throw new BadRequestException('PROVIDER_BASE_URL_UNTRUSTED');
       }
+    }
+
+    if (
+      channel === 'EMAIL' &&
+      (!isValidStoredEmail(row.from_email) ||
+        (row.reply_to_email !== null && !isValidStoredEmail(row.reply_to_email)))
+    ) {
+      throw new BadRequestException('EMAIL_SENDER_NOT_CONFIGURED');
     }
 
     await this.safeTransaction('verifyChannelConfiguration.reserveQuota', ds, async (manager) => {
@@ -1952,7 +1909,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
           WHERE channel = $7`,
         [
           lastTestStatus,
-          params.maskedDestination.slice(0, 128),
+          safeTestDestination(params.channel, params.maskedDestination) ?? '[REDACTED]',
           safeProviderRef,
           safeErrorCode ? safeErrorCode.slice(0, 128) : null,
           promoteLiveReadiness,
@@ -1976,7 +1933,6 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
     if (!row) {
       const envProvider = this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true });
-      const envKey = this.configService.get('ROBASE_API_KEY', { infer: true });
       const baseUrl =
         this.configService.get('ROBASE_API_BASE_URL', { infer: true }) ??
         'https://api.robase.dev';
@@ -2048,7 +2004,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
             deliveryTested: false,
             productionReady: false,
           },
-          baseUrl,
+          baseUrl: isPinnedProviderBaseUrl('robase', baseUrl) ? baseUrl : null,
           requestTimeoutMs: timeoutMs,
           senderId: null,
           senderIdNote: ROBASE_SENDER_ID_NOTE,
@@ -2084,30 +2040,29 @@ export class NotificationProviderConfigService implements OnModuleInit {
         };
       }
 
-      const validEnvKey = Boolean(envKey && envKey.startsWith('robe_') && envKey.length >= 20);
       return {
         channel: 'SMS',
         source: 'ENVIRONMENT',
         provider: 'robase',
-        enabled: validEnvKey,
-        lifecycleState: validEnvKey ? 'ENABLED' : 'NOT_CONFIGURED',
+        enabled: false,
+        lifecycleState: 'NOT_CONFIGURED',
         gates: {
-          configured: validEnvKey,
+          configured: false,
           verified: false,
-          enabled: validEnvKey,
+          enabled: false,
           deliveryTested: false,
           productionReady: false,
         },
-        baseUrl,
+        baseUrl: isPinnedProviderBaseUrl('robase', baseUrl) ? baseUrl : null,
         requestTimeoutMs: timeoutMs,
         senderId: null,
         senderIdNote: ROBASE_SENDER_ID_NOTE,
         fromEmail: null,
         fromName: null,
         replyToEmail: null,
-        credentialSource: validEnvKey ? 'ENV_SECRET' : 'NONE',
-        hasStoredCredential: validEnvKey,
-        keyFingerprint: validEnvKey && envKey ? computeKeyFingerprint(envKey) : null,
+        credentialSource: 'NONE',
+        hasStoredCredential: false,
+        keyFingerprint: null,
         encryptionKeyVersion: null,
         encryptionKeyAvailable: encryption.available,
         misconfigurationCode: null,
@@ -2264,10 +2219,6 @@ export class NotificationProviderConfigService implements OnModuleInit {
         };
       }
 
-      const envKey =
-        envProvider === 'brevo'
-          ? this.configService.get('BREVO_API_KEY', { infer: true })
-          : this.configService.get('RESEND_API_KEY', { infer: true });
       const baseUrl =
         envProvider === 'brevo'
           ? (this.configService.get('BREVO_API_BASE_URL', { infer: true }) ??
@@ -2278,32 +2229,31 @@ export class NotificationProviderConfigService implements OnModuleInit {
         envProvider === 'brevo'
           ? (this.configService.get('BREVO_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000)
           : (this.configService.get('RESEND_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000);
-      const validEnv = Boolean(envKey && from);
       const parsedFrom = from ? parseSenderIdentity(from, fromName) : null;
 
       return {
         channel: 'EMAIL',
         source: 'ENVIRONMENT',
         provider: envProvider,
-        enabled: validEnv,
-        lifecycleState: validEnv ? 'ENABLED' : 'NOT_CONFIGURED',
+        enabled: false,
+        lifecycleState: 'NOT_CONFIGURED',
         gates: {
-          configured: validEnv,
+          configured: false,
           verified: false,
-          enabled: validEnv,
+          enabled: false,
           deliveryTested: false,
           productionReady: false,
         },
-        baseUrl,
+        baseUrl: isExternalNotificationVendor(envProvider) && isPinnedProviderBaseUrl(envProvider, baseUrl) ? baseUrl : null,
         requestTimeoutMs: timeoutMs,
         senderId: null,
         senderIdNote: null,
         fromEmail: parsedFrom?.email ?? from,
         fromName: parsedFrom?.name ?? fromName,
         replyToEmail: replyTo,
-        credentialSource: validEnv ? 'ENV_SECRET' : 'NONE',
-        hasStoredCredential: validEnv,
-        keyFingerprint: validEnv && envKey ? computeKeyFingerprint(envKey) : null,
+        credentialSource: 'NONE',
+        hasStoredCredential: false,
+        keyFingerprint: null,
         encryptionKeyVersion: null,
         encryptionKeyAvailable: encryption.available,
         misconfigurationCode: null,
@@ -2391,7 +2341,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
         },
         lastTest: {
           status: row.last_test_status,
-          destinationMasked: row.last_test_destination_masked,
+          destinationMasked: safeTestDestination(row.channel, row.last_test_destination_masked),
           providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
           errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
@@ -2399,8 +2349,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
           deliveryTestedBy: null,
         },
         version: row.version,
-        updatedBy: row.updated_by,
-        approvedBy: row.approved_by,
+        updatedBy: sanitizeDiagnosticIdentifier(row.updated_by) ?? null,
+        approvedBy: sanitizeDiagnosticIdentifier(row.approved_by) ?? null,
         updatedAt: toIsoOrNull(row.updated_at),
       };
     }
@@ -2442,7 +2392,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
         },
         lastTest: {
           status: row.last_test_status,
-          destinationMasked: row.last_test_destination_masked,
+          destinationMasked: safeTestDestination(row.channel, row.last_test_destination_masked),
           providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
           errorCode: normalizeProviderErrorCode(row.last_test_error_code),
           testedAt: toIsoOrNull(row.last_test_at),
@@ -2450,34 +2400,34 @@ export class NotificationProviderConfigService implements OnModuleInit {
           deliveryTestedBy: null,
         },
         version: row.version,
-        updatedBy: row.updated_by,
-        approvedBy: row.approved_by,
+        updatedBy: sanitizeDiagnosticIdentifier(row.updated_by) ?? null,
+        approvedBy: sanitizeDiagnosticIdentifier(row.approved_by) ?? null,
         updatedAt: toIsoOrNull(row.updated_at),
       };
     }
 
     const secretResolution = this.resolveRowSecret(row);
-    const senderValid = row.channel === 'SMS' ? true : Boolean(row.from_email);
-    const baseUrlTrusted = isExternalNotificationVendor(row.provider)
-      ? isPinnedProviderBaseUrl(
-          row.provider,
-          row.base_url ?? defaultPinnedBaseUrl(row.provider),
-        )
-      : true;
+    const senderValid = row.channel === 'SMS' || isValidStoredEmail(row.from_email);
+    const replyToValid = row.channel === 'SMS' || row.reply_to_email === null ||
+      isValidStoredEmail(row.reply_to_email);
+    const baseUrlTrusted = isExternalNotificationVendor(row.provider) && row.base_url !== null &&
+      isPinnedProviderBaseUrl(row.provider, row.base_url);
     const hasCred = row.credential_source !== 'NONE';
 
     let misconfigurationCode: string | null = null;
     if (!baseUrlTrusted) {
-      misconfigurationCode = 'PROVIDER_BASE_URL_UNTRUSTED';
+      misconfigurationCode = row.base_url ? 'PROVIDER_BASE_URL_UNTRUSTED' : 'PROVIDER_NOT_CONFIGURED';
     } else if (hasCred && !secretResolution.ok) {
       misconfigurationCode =
         normalizeProviderErrorCode(secretResolution.errorCode) ?? 'PROVIDER_FAILURE';
     } else if (!senderValid) {
       misconfigurationCode = 'EMAIL_SENDER_NOT_CONFIGURED';
+    } else if (!replyToValid) {
+      misconfigurationCode = 'PROVIDER_FAILURE';
     }
 
     const configured =
-      secretResolution.ok && senderValid && Boolean(row.base_url) && baseUrlTrusted;
+      secretResolution.ok && senderValid && replyToValid && baseUrlTrusted;
     const verified = configured && Boolean(row.verified_at);
     const enabled = configured && row.enabled;
     const deliveryTested = configured && Boolean(row.delivery_tested_at);
@@ -2530,24 +2480,37 @@ export class NotificationProviderConfigService implements OnModuleInit {
       domainAuthentication: domainAuth,
       verification: {
         verifiedAt: toIsoOrNull(row.verified_at),
-        verifiedBy: row.verified_by,
+        verifiedBy: sanitizeDiagnosticIdentifier(row.verified_by) ?? null,
         verificationMethod: row.verification_method,
         lastVerificationError: normalizeProviderErrorCode(row.last_verification_error),
       },
       lastTest: {
         status: row.last_test_status,
-        destinationMasked: row.last_test_destination_masked,
+        destinationMasked: safeTestDestination(row.channel, row.last_test_destination_masked),
         providerRef: sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider),
         errorCode: normalizeProviderErrorCode(row.last_test_error_code),
         testedAt: toIsoOrNull(row.last_test_at),
         deliveryTestedAt: toIsoOrNull(row.delivery_tested_at),
-        deliveryTestedBy: row.delivery_tested_by,
+        deliveryTestedBy: sanitizeDiagnosticIdentifier(row.delivery_tested_by) ?? null,
       },
       version: row.version,
-      updatedBy: row.updated_by,
-      approvedBy: row.approved_by,
+      updatedBy: sanitizeDiagnosticIdentifier(row.updated_by) ?? null,
+      approvedBy: sanitizeDiagnosticIdentifier(row.approved_by) ?? null,
       updatedAt: toIsoOrNull(row.updated_at),
     };
+  }
+
+  /** Apply proposal-time provider format checks again after rotation or decryption. */
+  private validateResolvedSecret(
+    provider: string,
+    value: string,
+  ): { ok: true; apiKey: string } | { ok: false; errorCode: string } {
+    try {
+      return { ok: true, apiKey: validateApiKeyForProvider(provider, value) };
+    } catch {
+      // Validator exceptions and credential material must never cross a runtime boundary.
+      return { ok: false, errorCode: 'PROVIDER_FAILURE' };
+    }
   }
 
   private resolveRowSecret(
@@ -2561,7 +2524,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
       if (!secret) {
         return { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
       }
-      return { ok: true, apiKey: secret };
+      return this.validateResolvedSecret(row.provider, secret);
     }
     if (!row.encrypted_api_key) {
       return { ok: false, errorCode: 'PROVIDER_SECRET_ENVELOPE_INVALID' };
@@ -2572,7 +2535,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
         row.channel,
         row.encryption_key_version,
       );
-      return { ok: true, apiKey };
+      return this.validateResolvedSecret(row.provider, apiKey);
     } catch (err) {
       if (err instanceof NotificationSecretEncryptionError) {
         return { ok: false, errorCode: err.code };
@@ -2595,48 +2558,82 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }
 
   private resolveEnvSmsProviderName(): string {
-    const p = this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true }) ?? 'console';
-    return p === 'managed' ? 'robase' : p;
+    return this.configService.get('NODE_ENV', { infer: true }) !== 'production' &&
+      this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true }) === 'console'
+      ? 'console'
+      : 'none';
   }
 
   private resolveEnvEmailProviderName(): string {
-    const p = this.configService.get('NOTIFICATION_EMAIL_PROVIDER', { infer: true }) ?? 'none';
-    return p === 'managed' ? 'none' : p;
+    return this.configService.get('NODE_ENV', { infer: true }) !== 'production' &&
+      this.configService.get('NOTIFICATION_EMAIL_PROVIDER', { infer: true }) === 'console'
+      ? 'console'
+      : 'none';
   }
 
-  private async loadDbRow(
-    channel: ManagedNotificationChannel,
-  ): Promise<DbProviderConfigRow | null> {
-    if (!this.dataSource || !this.dataSource.isInitialized) {
-      return null;
+  private unavailableProviderConfiguration(): ServiceUnavailableException {
+    this.cachedSmsProviderName = 'none';
+    this.cachedEmailProviderName = 'none';
+    // Never include driver text, SQL, row contents, or secret material.
+    return new ServiceUnavailableException('Notification provider configuration is unavailable.');
+  }
+
+  private validDbRow(value: unknown, channel: ManagedNotificationChannel): value is DbProviderConfigRow {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const row = value as Partial<DbProviderConfigRow>;
+    const providers = channel === 'SMS' ? ['console', 'robase'] : ['none', 'console', 'brevo', 'resend'];
+    if (row.channel !== channel || typeof row.provider !== 'string' || !providers.includes(row.provider) ||
+        typeof row.enabled !== 'boolean' || !Number.isInteger(row.request_timeout_ms) ||
+        row.request_timeout_ms! < 1000 || row.request_timeout_ms! > 60000 ||
+        !Number.isInteger(row.version) || row.version! < 1 ||
+        (row.key_fingerprint !== null && (typeof row.key_fingerprint !== 'string' || !/^\*{4}[A-Za-z0-9_-]{4}$/.test(row.key_fingerprint))) ||
+        !['NONE', 'ENV_SECRET', 'ENCRYPTED_DB'].includes(String(row.credential_source))) return false;
+    for (const field of ['base_url', 'sender_id', 'from_email', 'from_name', 'reply_to_email'] as const) {
+      if (row[field] !== null && typeof row[field] !== 'string') return false;
     }
+    for (const field of ['spf_configured', 'dkim_configured', 'dmarc_configured'] as const) {
+      if (typeof row[field] !== 'boolean') return false;
+    }
+    if (row.credential_source === 'ENCRYPTED_DB') {
+      return typeof row.encrypted_api_key === 'string' && row.encrypted_api_key.length > 0 &&
+        typeof row.encryption_key_version === 'string' && row.encryption_key_version.length > 0 &&
+        typeof row.key_fingerprint === 'string' && row.key_fingerprint.length > 0;
+    }
+    return row.encrypted_api_key === null && row.encryption_key_version === null;
+  }
+
+  private async loadDbRow(channel: ManagedNotificationChannel): Promise<DbProviderConfigRow | null> {
+    if (!this.dataSource || !this.dataSource.isInitialized) throw this.unavailableProviderConfiguration();
     try {
-      const rows: DbProviderConfigRow[] = await this.dataSource.query(
-        `SELECT * FROM notification_provider_configurations WHERE channel = $1`,
-        [channel],
+      const rows: unknown = await this.dataSource.query(
+        `SELECT * FROM notification_provider_configurations WHERE channel = $1`, [channel],
       );
-      return rows[0] ?? null;
+      if (!Array.isArray(rows) || rows.length > 1 || (rows.length === 1 && !this.validDbRow(rows[0], channel))) {
+        throw this.unavailableProviderConfiguration();
+      }
+      return (rows[0] as DbProviderConfigRow | undefined) ?? null;
     } catch {
-      return null;
+      throw this.unavailableProviderConfiguration();
     }
   }
 
   private async loadAllDbRows(): Promise<Map<ManagedNotificationChannel, DbProviderConfigRow>> {
-    const map = new Map<ManagedNotificationChannel, DbProviderConfigRow>();
-    if (!this.dataSource || !this.dataSource.isInitialized) {
-      return map;
-    }
+    if (!this.dataSource || !this.dataSource.isInitialized) throw this.unavailableProviderConfiguration();
     try {
-      const rows: DbProviderConfigRow[] = await this.dataSource.query(
-        `SELECT * FROM notification_provider_configurations`,
-      );
+      const rows: unknown = await this.dataSource.query(`SELECT * FROM notification_provider_configurations`);
+      if (!Array.isArray(rows)) throw this.unavailableProviderConfiguration();
+      const map = new Map<ManagedNotificationChannel, DbProviderConfigRow>();
       for (const row of rows) {
-        map.set(row.channel, row);
+        const channel = (row as { channel?: unknown } | null)?.channel;
+        if ((channel !== 'SMS' && channel !== 'EMAIL') || !this.validDbRow(row, channel) || map.has(channel)) {
+          throw this.unavailableProviderConfiguration();
+        }
+        map.set(channel, row);
       }
+      return map;
     } catch {
-      // Table not yet created on unmigrated baseline
+      throw this.unavailableProviderConfiguration();
     }
-    return map;
   }
 
   private mapProposalView(r: DbProposalRow): ProviderConfigProposalView {

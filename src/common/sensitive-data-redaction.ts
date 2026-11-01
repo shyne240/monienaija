@@ -1128,5 +1128,21 @@ export function sanitizeDiagnosticIdentifier(value: unknown): string | undefined
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > 255) return undefined;
+  // Diagnostic identifiers are not a safe place for contacts, account numbers or OTPs.
+  // UUIDs remain intact (even their digit-only segments); inspect everything else for
+  // sensitive shapes, including one layer of URL encoding, before the general redactor.
+  let decoded = trimmed;
+  try { decoded = decodeURIComponent(trimmed); } catch { /* retain the original */ }
+  const withoutUuids = decoded.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    'UUID',
+  );
+  if (
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(withoutUuids) ||
+    /(?:^|[^0-9])[0-9]{10,15}(?:$|[^0-9])/.test(withoutUuids) ||
+    /(?:^|[^0-9])(?:\+?234[\s.()-]*|0)[789](?:[\s.()-]*[0-9]){9}(?:$|[^0-9])/.test(withoutUuids) ||
+    /\b(?:nin|bvn|account[ _-]?number)[\s:=_-]+(?:[0-9][\s.-]*){10,}/i.test(withoutUuids) ||
+    /\b(?:otp|pin|passcode|one[ _-]?time[ _-]?code|verification[ _-]?code|recovery[ _-]?code)[\s:=_-]+[0-9]{4,}/i.test(withoutUuids)
+  ) return REDACTED_VALUE;
   return redactSensitiveText(trimmed);
 }

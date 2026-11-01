@@ -94,7 +94,7 @@ export class NotificationTemplateService {
     }
     if (variables.includes('status')) {
       const statuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
-      for (const key of ['status', 'newStatus'] as const) {
+      for (const key of ['status', 'newStatus', 'to'] as const) {
         if (typeof payload[key] === 'string' && statuses.includes(payload[key])) safe[key] = payload[key];
       }
     }
@@ -322,7 +322,9 @@ export class NotificationTemplateService {
           ? payload.reference
           : typeof payload.fundingRequestId === 'string'
             ? payload.fundingRequestId.slice(0, 8)
-            : '';
+            : typeof payload.ticketId === 'string'
+              ? payload.ticketId.slice(0, 8)
+              : '';
     const candidate = referenceSource.length > 20 ? referenceSource.slice(0, 8) : referenceSource;
     let reference = 'your request';
     // Restrict public references to known display-reference shapes or a short UUID prefix.
@@ -346,7 +348,7 @@ export class NotificationTemplateService {
     const minor = payload.amountMinor ?? payload.principal_minor;
     const amount =
       typeof minor === 'string' || typeof minor === 'number' ? this.formatNgn(minor) : '';
-    const rawStatus = payload.status ?? payload.newStatus;
+    const rawStatus = payload.status ?? payload.newStatus ?? payload.to;
     const allowedStatuses = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
     const status =
       typeof rawStatus === 'string' && allowedStatuses.includes(rawStatus) ? rawStatus : 'updated';

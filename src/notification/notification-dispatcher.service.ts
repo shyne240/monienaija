@@ -134,26 +134,39 @@ export class NotificationDispatcherService {
     const eventType = command.eventType?.trim();
     if (!eventType) throw new Error('eventType is required');
     if (isSecurityCriticalNotificationEvent(eventType)) throw new Error('Security notifications cannot use the outbox dispatcher');
-    const eventKey = command.eventKey?.trim() ||
-      (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
-    if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
     const payload = command.payload ?? {};
+    // A support message has one identity even if a duplicate outbox fact supplies a
+    // different key. The committed message is verified below before any insertion.
+    const eventKey = eventType === 'support.ticket.message_added' &&
+      typeof payload.messageId === 'string' && UUID_PATTERN.test(payload.messageId)
+      ? `support.ticket.message_added:${payload.messageId}`
+      : command.eventKey?.trim() ||
+        (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
+    if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
     const safePayload = this.templateService.redactPayload(payload, eventType);
     // Report 26 (N-02): the caller/outbox-supplied correlation id is sanitized
     // ONCE here, before it reaches intent mapping and the delivery-row INSERT;
     // rows persisted by pre-remediation producers are covered by this same
     // normalization when their events are (re)dispatched.
     const correlationId = sanitizeDiagnosticIdentifier(command.correlationId) ?? null;
+    const causationId = sanitizeDiagnosticIdentifier(command.causationId) ?? null;
     const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     // A completed internal transfer needs both sides; a producer missing either side is
     // quarantined for the Arena 3 producer handoff rather than partially acknowledged.
     if (eventType === 'transfer.completed' && (!payload.sourceCustomerId || !payload.destinationCustomerId)) return result;
-    // A missing internal/public marker is not evidence that a support message is public.
-    if (eventType === 'support.ticket.message_added' && payload.isInternal !== false) return result;
-    let intents = mapEventToIntents(eventType, payload, {
+    // An event marker alone is not authority to publish a support message. Verify the
+    // committed message, its author and ticket binding, and derive recipients only from
+    // the ticket. This also protects the legacy direct-dispatch entry point.
+    let mappingPayload = payload;
+    if (eventType === 'support.ticket.message_added') {
+      const recipients = await this.publicSupportMessageRecipients(manager, command);
+      if (!recipients) return result;
+      mappingPayload = { ...payload, customerId: recipients.customer_id, agentId: recipients.agent_id };
+    }
+    let intents = mapEventToIntents(eventType, mappingPayload, {
       correlationId,
-      causationId: command.causationId ?? null,
+      causationId,
     });
     if (intents.length === 0 && eventType.startsWith('support.ticket.') && this.templateService.definition(eventType)) {
       const ticketId = typeof payload.ticketId === 'string' ? payload.ticketId : command.aggregateId;
@@ -203,7 +216,7 @@ export class NotificationDispatcherService {
           intent.recipientType, intent.recipientId, intent.channel, destination,
           JSON.stringify({ ...safePayload, _templateKey: intent.templateKey }), message,
           email?.subject ?? null, email?.html ?? null, status, resolved.reason ?? null,
-          correlationId, command.causationId ?? null],
+          correlationId, causationId],
       );
       let delivery: DispatchResult['deliveries'][number] & { inserted?: boolean };
       if (inserted[0]) {
@@ -225,6 +238,37 @@ export class NotificationDispatcherService {
       result.deliveries.push(delivery);
     }
     return result;
+  }
+
+  private async publicSupportMessageRecipients(
+    manager: EntityManager,
+    command: DispatchCommand,
+  ): Promise<{ customer_id: string | null; agent_id: string | null } | null> {
+    const payload = command.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+        payload.isInternal !== false || command.aggregateType !== 'SUPPORT_TICKET' ||
+        typeof command.aggregateId !== 'string' || !UUID_PATTERN.test(command.aggregateId) ||
+        typeof payload.ticketId !== 'string' || payload.ticketId !== command.aggregateId ||
+        typeof payload.messageId !== 'string' || !UUID_PATTERN.test(payload.messageId) ||
+        typeof payload.authorType !== 'string' || typeof payload.authorId !== 'string') return null;
+
+    // No message body is selected or persisted in a notification. Share locks keep the
+    // authoritative visibility and recipient binding stable through materialization.
+    const rows = await manager.query<Array<{
+      customer_id: string | null; agent_id: string | null; author_type: string; author_id: string;
+      is_internal: boolean;
+    }>>(
+      `SELECT t.customer_id, t.agent_id, m.author_type, m.author_id, m.is_internal
+         FROM support_tickets t JOIN support_ticket_messages m ON m.ticket_id=t.id
+        WHERE t.id=$1 AND m.id=$2 FOR SHARE OF t, m`,
+      [payload.ticketId, payload.messageId],
+    );
+    const row = rows[0];
+    if (rows.length !== 1 || !row || row.is_internal !== false ||
+        row.author_type !== payload.authorType || row.author_id !== payload.authorId ||
+        (payload.customerId !== undefined && payload.customerId !== row.customer_id) ||
+        (payload.agentId !== undefined && payload.agentId !== row.agent_id)) return null;
+    return { customer_id: row.customer_id, agent_id: row.agent_id };
   }
 
   /** Independent subscriber; no writes to shared outbox status, attempts, or other consumers. */
@@ -259,6 +303,12 @@ export class NotificationDispatcherService {
           } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal === true) {
             status = 'SUPPRESSED'; reason = 'INTERNAL_SUPPORT_MESSAGE';
           } else if (event.event_type === 'support.ticket.message_added' && event.payload?.isInternal !== false) {
+            status = 'QUARANTINED'; reason = 'SUPPORT_VISIBILITY_UNKNOWN';
+          } else if (event.event_type === 'support.ticket.message_added' &&
+            !(await this.publicSupportMessageRecipients(manager, {
+              eventType: event.event_type, eventKey: event.event_key, aggregateType: event.aggregate_type,
+              aggregateId: event.aggregate_id, payload: event.payload ?? {},
+            }))) {
             status = 'QUARANTINED'; reason = 'SUPPORT_VISIBILITY_UNKNOWN';
           } else {
             const result = await this.dispatch({ eventType: event.event_type, eventKey: event.event_key,
@@ -318,6 +368,10 @@ export class NotificationDispatcherService {
       const recipientId = typeof row['recipient_id'] === 'string' ? row['recipient_id'] : '';
       const sanitized: Record<string, unknown> = {
         ...row,
+        event_type: sanitizeDiagnosticIdentifier(row['event_type']) ?? '[REDACTED]',
+        event_key: sanitizeDiagnosticIdentifier(row['event_key']) ?? '[REDACTED]',
+        aggregate_type: sanitizeDiagnosticIdentifier(row['aggregate_type']) ?? null,
+        aggregate_id: sanitizeDiagnosticIdentifier(row['aggregate_id']) ?? null,
         recipient_id: recipientId
           ? redactDeliveryRecipientId(recipientType, recipientId)
           : row['recipient_id'],
@@ -326,6 +380,7 @@ export class NotificationDispatcherService {
         // Report 26 (row 15): read-boundary protection — delivery rows persisted
         // before write-side sanitization are masked when projected to consumers.
         correlation_id: sanitizeDiagnosticIdentifier(row['correlation_id']) ?? null,
+        causation_id: sanitizeDiagnosticIdentifier(row['causation_id']) ?? null,
       };
       delete sanitized['message'];
       delete sanitized['rendered_subject'];

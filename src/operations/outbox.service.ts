@@ -9,6 +9,32 @@ import { OutboxEvent } from './outbox-event.entity';
 import { OutboxEventStatus } from './operations.enums';
 import type { OutboxEventCommand, OutboxQuery, OutboxView } from './operations.types';
 
+// Historical outbox payloads can contain identifiers supplied before current
+// write-side rules. Re-mask identifier-shaped fields in the diagnostic projection,
+// never in the stored business fact used by other consumers.
+function diagnosticOutboxPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const safe = redactRecord(payload); // bounded depth/node traversal and secret-key redaction
+  const identifierField =
+    /(?:id|key|reference|phone|email|contact|destination|nin|bvn|accountnumber|actor|author)$/i;
+  const visit = (value: unknown, key = '', identifierContext = false): unknown => {
+    const isIdentifier = identifierContext || identifierField.test(key.replace(/[_-]/g, ''));
+    if (typeof value === 'string') {
+      return isIdentifier ? (sanitizeDiagnosticIdentifier(value) ?? '[REDACTED]') : value;
+    }
+    if (Array.isArray(value)) return value.map((item) => visit(item, '', isIdentifier));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([childKey, child]) => [
+          childKey,
+          visit(child, childKey, isIdentifier),
+        ]),
+      );
+    }
+    return value;
+  };
+  return visit(safe) as Record<string, unknown>;
+}
+
 @Injectable()
 export class OutboxService {
   constructor(
@@ -31,7 +57,7 @@ export class OutboxService {
       // redacted deterministically before persistence; legitimate ids are
       // preserved byte-for-byte.
       correlationId: sanitizeDiagnosticIdentifier(command.correlationId) ?? null,
-      causationId: command.causationId ?? null,
+      causationId: sanitizeDiagnosticIdentifier(command.causationId) ?? null,
       payload: redactRecord(command.payload),
       status: OutboxEventStatus.PENDING,
       attempts: 0,
@@ -58,6 +84,7 @@ export class OutboxService {
       ...command,
       eventKey,
       correlationId: sanitizeDiagnosticIdentifier(command.correlationId),
+      causationId: sanitizeDiagnosticIdentifier(command.causationId),
     };
     const repository = manager.getRepository(OutboxEvent);
     const existing = await repository.findOne({ where: { eventKey } });
@@ -119,7 +146,7 @@ export class OutboxService {
       throw new NotFoundException(`Outbox event ${eventId} was not found`);
     }
     event.status = OutboxEventStatus.FAILED;
-    event.lastError = errorMessage.slice(0, 255);
+    event.lastError = sanitizeDiagnosticIdentifier(errorMessage) ?? '[REDACTED]';
     event.availableAt = new Date(Date.now() + Math.max(retryDelaySeconds, 1) * 1000);
     await manager.getRepository(OutboxEvent).save(event);
   }
@@ -155,8 +182,8 @@ export class OutboxService {
       existing.retentionClass !== (command.retentionClass ?? 'OPERATIONS_DEFAULT') ||
       (command.occurredAt !== undefined &&
         existing.occurredAt.getTime() !== command.occurredAt.getTime()) ||
-      existing.correlationId !== (command.correlationId ?? null) ||
-      existing.causationId !== (command.causationId ?? null) ||
+      (sanitizeDiagnosticIdentifier(existing.correlationId) ?? null) !== (command.correlationId ?? null) ||
+      (sanitizeDiagnosticIdentifier(existing.causationId) ?? null) !== (command.causationId ?? null) ||
       this.canonicalJson(existing.payload) !== this.canonicalJson(redactRecord(command.payload))
     ) {
       throw new ConflictException('The outbox event key was reused for a different event');
@@ -180,10 +207,11 @@ export class OutboxService {
   private toView(event: OutboxEvent): OutboxView {
     return {
       id: event.id,
-      eventType: event.eventType,
-      aggregateType: event.aggregateType,
-      aggregateId: event.aggregateId,
-      eventKey: event.eventKey,
+      eventType: sanitizeDiagnosticIdentifier(event.eventType) ?? '[REDACTED]',
+      aggregateType: sanitizeDiagnosticIdentifier(event.aggregateType) ?? '[REDACTED]',
+      aggregateId: sanitizeDiagnosticIdentifier(event.aggregateId) ?? '[REDACTED]',
+      // Read-boundary masking does not alter the event key used for idempotency.
+      eventKey: sanitizeDiagnosticIdentifier(event.eventKey) ?? null,
       schemaVersion: event.schemaVersion,
       classification: event.classification,
       retentionClass: event.retentionClass,
@@ -191,12 +219,12 @@ export class OutboxService {
       // Report 26 (row 15): read-boundary protection for rows persisted before
       // the write-side sanitization existed.
       correlationId: sanitizeDiagnosticIdentifier(event.correlationId) ?? null,
-      causationId: event.causationId,
-      payload: event.payload,
+      causationId: sanitizeDiagnosticIdentifier(event.causationId) ?? null,
+      payload: diagnosticOutboxPayload(event.payload),
       status: event.status,
       attempts: event.attempts,
       availableAt: event.availableAt,
-      lastError: event.lastError,
+      lastError: sanitizeDiagnosticIdentifier(event.lastError) ?? null,
       publishedAt: event.publishedAt,
       createdAt: event.createdAt,
     };

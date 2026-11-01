@@ -1,0 +1,39 @@
+MISSION 25E — QUARANTINE, DELIVERY AND RECEIPT BEHAVIOUR ON THE INTEGRATED BUILD
+================================================================================
+METHOD
+  The "facts" were inserted as raw outbox rows (a test fixture — the exact rows a producer
+  would write). Every notification decision below was then made by the INTEGRATED PRODUCT
+  CONSUMER (the notification subscriber/worker, started on the same build with
+  NOTIFICATION_WORKER_ENABLED=true). The fixture decides nothing; it only supplies input.
+
+INPUT FACTS -> CONSUMER VERDICT (notification_outbox_receipts)
+
+  deposit.completed              -> QUARANTINED   EVENT_TYPE_UNSUPPORTED      (H-04)
+  withdrawal.failed              -> QUARANTINED   EVENT_TYPE_UNSUPPORTED      (H-04)
+  support.ticket.message_added   -> QUARANTINED   SUPPORT_VISIBILITY_UNKNOWN  (H-03, no explicit isInternal:false)
+  customer.funding.approved      -> MATERIALIZED  (null)
+  customer.funding.requested     -> MATERIALIZED  (null)
+
+  ** The three quarantined facts produced ZERO delivery rows. ** No message was created,
+  addressed or attempted for them — which is exactly the required behaviour for the
+  policy-blocked deposit/withdrawal events and for a support message whose visibility
+  cannot be proven.
+
+DELIVERIES (notification_deliveries) from the two MATERIALIZED facts
+
+  event                     channel  recipient  status   reason
+  customer.funding.requested  SMS    CUSTOMER   SKIPPED  SMS_PREFERENCE_UNAVAILABLE
+  customer.funding.approved   SMS    CUSTOMER   SKIPPED  SMS_PREFERENCE_UNAVAILABLE
+
+  Both are SKIPPED, not SENT: the fixture customer has no verified contact, so the
+  resolver suppressed delivery rather than sending. Nothing reached any adapter.
+
+UI (real browser, row-level inspection — not section text, which also contains the
+status <select> option labels)
+
+  deliveries table rows (2): "… SMS CUSTOMER 09faf86c… SKIPPED 0 — SMS_PREFERENCE_UNAVAILABLE …"
+  receipt rows (5): 2 MATERIALIZED + 3 QUARANTINED with reasons SUPPORT_VISIBILITY_UNKNOWN /
+  EVENT_TYPE_UNSUPPORTED. Selecting the QUARANTINED filter returns exactly the 3 quarantined
+  rows and no MATERIALIZED row.
+
+  Recipient identifiers appear truncated/masked (…), never a raw phone number.

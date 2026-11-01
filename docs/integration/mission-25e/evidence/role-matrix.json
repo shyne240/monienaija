@@ -1,0 +1,101 @@
+{
+  "SUPER_ADMIN": {
+    "navVisible": true,
+    "consolePresent": true,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 63
+  },
+  "FINANCE_PREPARER": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 7
+  },
+  "FINANCE_CONTROLLER": {
+    "navVisible": true,
+    "consolePresent": true,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 35
+  },
+  "FINANCE_AUDITOR": {
+    "navVisible": true,
+    "consolePresent": true,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 57
+  },
+  "ADMINISTRATOR": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 5
+  },
+  "OPERATIONS": {
+    "navVisible": true,
+    "consolePresent": true,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 49
+  },
+  "AGENT_NETWORK_MANAGER": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 7
+  },
+  "COMPLIANCE": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 7
+  },
+  "RISK_FRAUD": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 5
+  },
+  "CUSTOMER_SERVICE": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 5
+  },
+  "TREASURY": {
+    "navVisible": false,
+    "consolePresent": false,
+    "accessDeniedPanel": false,
+    "globalLoadErrors": false,
+    "background4xx": [],
+    "jsErrors": [],
+    "requests": 5
+  }
+}

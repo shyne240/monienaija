@@ -1,0 +1,60 @@
+MISSION 25E — PHASE A READ-ONLY COMPATIBILITY ASSESSMENT (executed before any integration)
+==========================================================================================
+Performed with no modification to any branch or worktree.
+
+1. PIN VERIFICATION (object identity, not branch names)
+   baseline  integration/mission-23-fast-uri-security  019de996950b07e9312af455ce0d9b840e6e14f1  commit  OK
+   Arena 1   arena/92fd33dd-monienaija                 9fc00b104d3ca5cdd1141048d76e7d799cafd9aa  commit  OK
+   Arena 2   arena/ea070127-monienaija                 e99f5f83a0ca8bc09cbfb4787923106e12f158cc  commit  OK
+   Each pin also equals its branch tip at the time of assessment (recorded, not substituted).
+
+2. ANCESTRY
+   merge-base(baseline, A1) = 019de99...  YES, baseline is an ancestor of A1
+   merge-base(baseline, A2) = 019de99...  YES, baseline is an ancestor of A2
+   A1 = 2 commits over baseline (c6ff1f5 docs/audit, 9fc00b1 implementation checkpoint)
+   A2 = 1 commit over baseline (e99f5f8 Mission 25D remediation F-01..F-13)
+
+3. FILE OVERLAP
+   A1 touched 25 files, A2 touched 12 files -> intersection = 0.
+   A1: only src/, test/, docs/ (12 src, 5 test, 5 docs, 2 new specs, 1 test guard).
+   A2: only apps/admin-web/ (8 src, 4 test).
+   => A1 changed no Admin Web file; A2 changed no backend file. Mutual non-interference confirmed.
+   => No file required manual reconciliation, and no merge conflict occurred.
+
+4. DEPENDENCY / MIGRATION SURFACE
+   A1 package.json, package-lock.json: UNCHANGED vs baseline.
+   A2 package.json, package-lock.json: unchanged; apps/admin-web package.json unchanged.
+   Migrations: A1 added none; A2 added none. No migration ordering dependency exists.
+   (Baseline already carries the Mission 23 fast-uri overrides 3.1.9 / 4.2.3 — correct baseline.)
+
+5. CONTRACT COMPARISON (Arena 1 handoff vs Arena 2 consumption)
+   Endpoints consumed by A2 (11): events, templates, templates/preview, changes,
+   changes/:id, changes/:id/execute, provider-status, provider-config,
+   provider-config/proposals(+approve|reject|activate), test-send, deliveries, outbox-receipts.
+   All 11 exist on the A1/baseline backend. No phantom endpoint.
+   Request bodies: A2's three /changes payloads match the server's strict `onlyKeys`
+   allowlists exactly (CONFIGURATION / TEMPLATE / TEMPLATE_ROLLBACK).
+   Response envelopes: {items:[...]} for events/changes/changes-list, {data,...} for
+   deliveries/receipts, {sms,email,encryption,worker,contracts} for provider-config — all match.
+   A2 additionally parses defensively (accepts {data} or {items}), so envelope drift is tolerant.
+   Empty-body POST /changes/:id/execute: the backend rejects an empty body that carries a
+   JSON content-type. A2's primary path sends NO body and NO content-type (accepted, 200);
+   its retry path sends {}. Both are correct; this was verified on the integrated build.
+
+6. SECURITY POSTURE OF THE INCOMING WORK
+   A1 tightens, never relaxes:
+     - support messages: isInternal must be explicitly false AND the committed message,
+       author, ticket binding and recipients are re-verified under share locks; anything
+       else is QUARANTINED (previous code silently defaulted a missing marker to false).
+     - environment-only external providers removed: env credentials no longer mark a channel
+       enabled; only an enabled governed row may authorise an external send.
+     - diagnostic identifiers sanitised at write, read, log and outbox-payload boundaries.
+     - credentials response adds a truthful deliveryStatus instead of implying delivery.
+   A2 adds no permission, no new role grant, no backend write path.
+   No new permission string, no role-function seed change, no authorization catalogue edit
+   appears on either side (verified by diff of src/).
+
+7. MATERIALITY CHECK
+   No material incompatibility, no unverified commit, no scope expansion beyond the two
+   authorised mission commits, and no security regression was found.
+   PHASE A VERDICT: PASS -> integration authorised.

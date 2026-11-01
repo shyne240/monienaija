@@ -252,6 +252,8 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
     expect(res.body.reissued).toBe(false);
     expect(res.body.delivery.channel).toBe('SMS');
     expect(res.body.delivery.delivered).toBe(true);
+    expect(res.body.deliveryStatus).toBe('SIMULATED');
+    expect(res.body.deliveryNotice).toMatch(/simulated/i);
     expect(res.body.passwordExpiresAt).not.toBeNull();
 
     const sms = extractSmsCredential(phone);
@@ -267,9 +269,12 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
     expect(String(row!.password_hash)).not.toContain(sms.plaintext);
 
     // Issuance + delivery audits carry safe metadata only.
-    const audits = (await auditRows(row!.id as string)).map((r) => r.action);
+    const auditRecords = await auditRows(row!.id as string);
+    const audits = auditRecords.map((r) => r.action);
     expect(audits).toContain('CREDENTIALS_ISSUED');
     expect(audits).toContain('TEMPORARY_CREDENTIAL_DELIVERED');
+    expect(auditRecords.find((r) => r.action === 'TEMPORARY_CREDENTIAL_DELIVERED').new_values.deliveryStatus)
+      .toBe('SIMULATED');
   });
 
   it('B: unactivated (DRAFT) and SUSPENDED customers cannot receive a production credential', async () => {
@@ -533,6 +538,9 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
     provider.shouldFail = true;
     const res = await issue(customerId).expect(200);
     expect(res.body.delivery.delivered).toBe(false);
+    expect(res.body.deliveryStatus).toBe('NOT_CONFIRMED');
+    expect(res.body.deliveryNotice).toMatch(/not confirmed/i);
+    expect(res.body.deliveryNotice).not.toMatch(/credential delivered/i);
     const row = await credentialRow(customerId);
     expect(row).toBeDefined();
     const audits = (await auditRows(row!.id as string)).map((r) => r.action);

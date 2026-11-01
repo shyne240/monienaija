@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
@@ -643,7 +644,135 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     expect(Number(audit[0]!.count)).toBe(0);
   });
 
+  async function seedSimulatedTestSend(channel: 'SMS' | 'EMAIL'): Promise<void> {
+    // Disposable PostgreSQL and fake providers only: this does not activate a real vendor.
+    await dataSource.query(
+      `INSERT INTO notification_provider_configurations
+         (channel, provider, enabled, credential_source, updated_by, approved_by)
+       VALUES ($1, 'console', true, 'NONE', 'isolated-test', 'isolated-test')`,
+      [channel],
+    );
+  }
+
+  it('test-send rejects environment-only external providers before quota or provider calls', async () => {
+    const config = app.get(ConfigService);
+    const realGet = config.get.bind(config);
+    const fakeEnvironment: Record<string, string> = {
+      NOTIFICATION_EMAIL_PROVIDER: 'resend',
+      RESEND_API_KEY: 're_synthetic_test_only_123456789',
+      NOTIFICATION_EMAIL_FROM: 'simulation@example.com',
+      NOTIFICATION_SMS_PROVIDER: 'robase',
+      ROBASE_API_KEY: 'robe_synthetic_test_only_123456789',
+    };
+    const getSpy = jest.spyOn(config, 'get').mockImplementation(
+      ((key: string, ...args: unknown[]) =>
+        fakeEnvironment[key] ?? (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get,
+    );
+    try {
+      for (const [channel, destination] of [
+        ['EMAIL', 'ops@example.com'],
+        ['SMS', '+2348012345678'],
+      ]) {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/internal/notifications/test-send')
+          .set('Authorization', `Bearer ${token('ops')}`)
+          .send({ channel, destination })
+          .expect(400);
+        expect(res.body.message).toBe('PROVIDER_NOT_CONFIGURED');
+      }
+      const status = await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/provider-status')
+        .set('Authorization', `Bearer ${token('deliveryonly')}`)
+        .expect(200);
+      expect(status.body.sms.available).toBe(false);
+      expect(status.body.email.available).toBe(false);
+      expect(smsProvider.sent).toHaveLength(0);
+      expect(emailProvider.sent).toHaveLength(0);
+      const audit: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text AS count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND_QUOTA'`,
+      );
+      expect(audit[0]!.count).toBe('0');
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
+  it('test-send rejects incomplete governed rows and unreadable governance without quota or sends', async () => {
+    await dataSource.query(
+      `INSERT INTO notification_provider_configurations
+        (channel, provider, enabled, base_url, from_email, credential_source, updated_by, approved_by)
+       VALUES ('EMAIL', 'resend', true, 'https://api.resend.com', 'simulation@example.com', 'NONE', 'isolated-test', 'isolated-test')`,
+    );
+    const incomplete = await request(app.getHttpServer())
+      .post('/api/v1/internal/notifications/test-send')
+      .set('Authorization', `Bearer ${token('ops')}`)
+      .send({ channel: 'EMAIL', destination: 'ops@example.com' })
+      .expect(400);
+    expect(incomplete.body.message).toBe('PROVIDER_NOT_CONFIGURED');
+
+    await dataSource.query('ALTER TABLE notification_provider_configurations RENAME TO m25c_provider_config_unavailable');
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/test-send')
+        .set('Authorization', `Bearer ${token('ops')}`)
+        .send({ channel: 'EMAIL', destination: 'ops@example.com' })
+        .expect(503);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/provider-status')
+        .set('Authorization', `Bearer ${token('viewer')}`)
+        .expect(503);
+      await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/test-send')
+        .send({ channel: 'EMAIL', destination: 'ops@example.com' })
+        .expect(401);
+    } finally {
+      await dataSource.query('ALTER TABLE m25c_provider_config_unavailable RENAME TO notification_provider_configurations');
+    }
+    expect(emailProvider.sent).toHaveLength(0);
+    const audit: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND_QUOTA'`,
+    );
+    expect(audit[0]!.count).toBe('0');
+  });
+
+  it('rejects a malformed rotated governed environment secret before test-send quota or fake transport', async () => {
+    const config = app.get(ConfigService);
+    const realGet = config.get.bind(config);
+    const invalidSecret = 'malformed-rotated-secret-SENTINEL';
+    const getSpy = jest.spyOn(config, 'get').mockImplementation(
+      ((key: string, ...args: unknown[]) => key === 'RESEND_API_KEY'
+        ? invalidSecret : (realGet as (...params: unknown[]) => unknown)(key, ...args)) as typeof config.get,
+    );
+    try {
+      await dataSource.query(
+        `INSERT INTO notification_provider_configurations
+          (channel, provider, enabled, base_url, from_email, credential_source, updated_by, approved_by)
+         VALUES ('EMAIL', 'resend', true, 'https://api.resend.com', 'simulation@example.com', 'ENV_SECRET', 'isolated-test', 'isolated-test')`,
+      );
+      const status = await request(app.getHttpServer())
+        .get('/api/v1/internal/notifications/provider-status')
+        .set('Authorization', `Bearer ${token('ops')}`)
+        .expect(200);
+      expect(status.body.email.misconfigurationCode).toBe('PROVIDER_FAILURE');
+      const attempt = await request(app.getHttpServer())
+        .post('/api/v1/internal/notifications/test-send')
+        .set('Authorization', `Bearer ${token('ops')}`)
+        .send({ channel: 'EMAIL', destination: 'ops@example.com' })
+        .expect(400);
+      expect(attempt.body.message).toBe('PROVIDER_FAILURE');
+      expect(JSON.stringify({ status: status.body, attempt: attempt.body })).not.toContain(invalidSecret);
+      expect(emailProvider.sent).toHaveLength(0);
+      const audit: Array<{ count: string }> = await dataSource.query(
+        `SELECT count(*)::text AS count FROM audit_events WHERE entity_type='NOTIFICATION_TEST_SEND_QUOTA'`,
+      );
+      expect(audit[0]!.count).toBe('0');
+    } finally {
+      getSpy.mockRestore();
+    }
+  });
+
   it('17. test-send EMAIL — SENT response, fixed safe content, masked-destination audit row', async () => {
+    await seedSimulatedTestSend('EMAIL');
     const destination = `ops.test-${randomUUID().slice(0, 8)}@example.com`;
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/notifications/test-send')
@@ -686,6 +815,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('18. test-send SMS — routes to the SMS provider; EMAIL never crosses providers', async () => {
+    await seedSimulatedTestSend('SMS');
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/notifications/test-send')
       .set('Authorization', `Bearer ${token('ops')}`)
@@ -701,6 +831,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('19. test-send — provider failure returns FAILED with bounded error code and audit trail', async () => {
+    await seedSimulatedTestSend('EMAIL');
     emailProvider.shouldFail = true;
     emailProvider.failMessage = 'RESEND_HTTP_429:rate_limited';
     const res = await request(app.getHttpServer())
@@ -721,6 +852,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('20. test-send — rate limited to 5 per hour per principal (durable audit-based counter)', async () => {
+    await seedSimulatedTestSend('EMAIL');
     for (let i = 0; i < 5; i++) {
       await request(app.getHttpServer())
         .post('/api/v1/internal/notifications/test-send')
@@ -744,6 +876,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
   });
 
   it('21. credential + PII hygiene — no key material in any response, log-facing error, or audit record', async () => {
+    await seedSimulatedTestSend('EMAIL');
     const destination = `hygiene-${randomUUID().slice(0, 8)}@example.com`;
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/notifications/test-send')

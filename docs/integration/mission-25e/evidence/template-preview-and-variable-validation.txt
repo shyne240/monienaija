@@ -1,0 +1,3 @@
+PREVIEW 200 {"eventType":"customer.funding.approved","channel":"SMS","locale":"en-NG","subject":null,"body":"Your funding of NGN 1250.00 has been approved. Ref SAMPLE-1.","variablesUsed":["amount_clause","reference"]}
+HOSTILE-VAR PREVIEW 400 {"statusCode":400,"code":"BAD_REQUEST","message":"Unsafe notification content","error":"Bad Request","timestamp":"2026-11-01T10:27:29.816Z","path":"/api/v1/internal/notifications/templates/preview","requestId":"req-165","correlationId":"req-165","traceId":"c7f4c435-0d64-4d8c-8076-457de5866e54"}
+EXTRA-KEY PREVIEW 400 {"statusCode":400,"code":"BAD_REQUEST","message":"Unexpected request field","error":"Bad Request","timestamp":"2026-11-01T10:27:29.839Z","path":"/api/v1/interna

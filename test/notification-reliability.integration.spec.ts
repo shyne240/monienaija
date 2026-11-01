@@ -11,6 +11,8 @@ import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { WalletService } from '../src/wallet/wallet.service';
+import { SupportService } from '../src/support/support.service';
+import { OutboxService } from '../src/operations/outbox.service';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import { NotificationChannelResolverService } from '../src/notification/notification-channel-resolver.service';
 import { NotificationDeliveryProcessor } from '../src/notification/notification-delivery-processor';
@@ -46,6 +48,8 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
   let resolver: NotificationChannelResolverService;
   let templates: NotificationTemplateService;
   let wallet: WalletService;
+  let support: SupportService;
+  let outbox: OutboxService;
   let config: ConfigService;
   let provider: RecordingProvider;
 
@@ -61,7 +65,7 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       const noScope = token.toUpperCase().endsWith('-NOSCOPE');
       const type = token.replace('workforce-', '').replace(/-NOSCOPE$/i, '').toUpperCase();
       return { type, principalId: `test-${type}`, audience, roles: [],
-        scopes: noScope ? [] : ['notification.view_deliveries'], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
+        scopes: noScope ? [] : ['notification.view_deliveries', 'outbox.view'], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
     },
   };
 
@@ -83,6 +87,8 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     resolver = module.get(NotificationChannelResolverService);
     templates = module.get(NotificationTemplateService);
     wallet = module.get(WalletService);
+    support = module.get(SupportService);
+    outbox = module.get(OutboxService);
     config = module.get(ConfigService);
   }, 180_000);
 
@@ -150,6 +156,138 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     return result.deliveries[0]!.id;
   }
 
+  it('M25C: real support producer reaches the subscriber once; internal, forged, unauthorized and malformed events stay quarantined', async () => {
+    const owner = await customer('8012345678');
+    const other = await customer('8023456789');
+    const ownerPrincipal = { type: 'CUSTOMER', principalId: owner, customerId: owner,
+      roles: [], scopes: [], customerAccess: 'SELF' } as any;
+    const otherPrincipal = { type: 'CUSTOMER', principalId: other, customerId: other,
+      roles: [], scopes: [], customerAccess: 'SELF' } as any;
+    const operator = { type: 'OPERATOR', principalId: 'm25c-operator', roles: [], scopes: [], customerAccess: 'ANY' } as any;
+    const ticket = await support.createTicket({ subject: 'Synthetic ticket', category: 'OTHER' as any,
+      description: 'Synthetic support request', principal: ownerPrincipal });
+    const publicMessage = await support.addMessage({ ticketId: ticket.id, body: 'PUBLIC_BODY_SENTINEL',
+      principal: ownerPrincipal, idempotencyKey: `m25c-${randomUUID()}` });
+    const internal = await support.addMessage({ ticketId: ticket.id, body: 'INTERNAL_NOTE_SENTINEL',
+      isInternal: true, principal: operator });
+    await expect(support.addMessage({ ticketId: ticket.id, body: 'Unauthorized', principal: otherPrincipal })).rejects.toThrow();
+    const produced = await ds.query(`SELECT id,payload FROM outbox_events
+      WHERE event_type='support.ticket.message_added' AND aggregate_id=$1`, [ticket.id]);
+    expect(produced).toHaveLength(1);
+    expect(produced[0].payload).toMatchObject({ ticketId: ticket.id, messageId: publicMessage.id,
+      authorType: 'CUSTOMER', authorId: owner, isInternal: false });
+    expect((await ds.query(`SELECT event_key FROM outbox_events WHERE id=$1`, [produced[0].id]))[0].event_key)
+      .toBe(`support.ticket.message_added:${publicMessage.id}`);
+    expect(JSON.stringify(produced)).not.toContain('PUBLIC_BODY_SENTINEL');
+    await dispatcher.processPendingOutboxEvents(20);
+    expect(await ds.query(`SELECT status,reason FROM notification_outbox_receipts WHERE outbox_event_id=$1`, [produced[0].id]))
+      .toEqual([{ status: 'MATERIALIZED', reason: null }]);
+    const deliveries = await ds.query(`SELECT id,event_key,recipient_id,message,payload,status FROM notification_deliveries
+      WHERE event_type='support.ticket.message_added' AND aggregate_id=$1`, [ticket.id]);
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({ recipient_id: owner, status: 'PENDING' });
+    expect(JSON.stringify(deliveries)).not.toContain('PUBLIC_BODY_SENTINEL');
+    expect(JSON.stringify(deliveries)).not.toContain('INTERNAL_NOTE_SENTINEL');
+    expect(await dispatcher.processPendingOutboxEvents(20)).toBe(0);
+    expect(await ds.query(`SELECT id FROM notification_deliveries WHERE event_type='support.ticket.message_added' AND aggregate_id=$1`, [ticket.id])).toHaveLength(1);
+
+    const base = { ticketId: ticket.id, messageId: publicMessage.id, authorType: 'CUSTOMER', authorId: owner, isInternal: false };
+    const variants: Array<{ payload: Record<string, unknown>; schema?: number; reason: string; status?: string }> = [
+      { payload: { ...base, messageId: internal.id, authorType: 'OPERATOR', authorId: operator.principalId }, reason: 'SUPPORT_VISIBILITY_UNKNOWN' },
+      { payload: { ...base, authorId: other }, reason: 'SUPPORT_VISIBILITY_UNKNOWN' },
+      { payload: { ...base, customerId: other }, reason: 'SUPPORT_VISIBILITY_UNKNOWN' },
+      { payload: { ticketId: ticket.id, messageId: publicMessage.id, authorType: 'CUSTOMER', authorId: owner }, reason: 'SUPPORT_VISIBILITY_UNKNOWN' },
+      { payload: { ...base, messageId: 'not-a-uuid' }, reason: 'SUPPORT_VISIBILITY_UNKNOWN' },
+      { payload: { ...base }, schema: 2, reason: 'UNSUPPORTED_SCHEMA_VERSION' },
+      { payload: { ...base, isInternal: true }, reason: 'INTERNAL_SUPPORT_MESSAGE', status: 'SUPPRESSED' },
+    ];
+    const ids: string[] = [];
+    for (const v of variants) {
+      const id = randomUUID(); ids.push(id);
+      await ds.query(`INSERT INTO outbox_events
+        (id,event_type,event_key,aggregate_type,aggregate_id,payload,status,schema_version,attempts,available_at)
+        VALUES ($1,'support.ticket.message_added',$2,'SUPPORT_TICKET',$3,$4::jsonb,'PENDING',$5,0,NOW())`,
+        [id, `m25c-forged:${id}`, ticket.id, JSON.stringify(v.payload), v.schema ?? 1]);
+    }
+    const direct = await ds.transaction((manager) => dispatcher.dispatch({ eventType: 'support.ticket.message_added',
+      eventKey: `m25c-direct:${randomUUID()}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticket.id,
+      payload: { ...base, customerId: other } }, manager));
+    expect(direct.generated).toBe(0);
+    // A duplicate fact with a different event key still targets the same message identity.
+    const duplicateId = randomUUID();
+    await ds.query(`INSERT INTO outbox_events
+      (id,event_type,event_key,aggregate_type,aggregate_id,payload,status,schema_version,attempts,available_at)
+      VALUES ($1,'support.ticket.message_added',$2,'SUPPORT_TICKET',$3,$4::jsonb,'PENDING',1,0,NOW())`,
+      [duplicateId, `m25c-duplicate:${duplicateId}`, ticket.id, JSON.stringify(base)]);
+    await dispatcher.processPendingOutboxEvents(20);
+    expect(await ds.query(`SELECT status FROM notification_outbox_receipts WHERE outbox_event_id=$1`, [duplicateId]))
+      .toEqual([{ status: 'MATERIALIZED' }]);
+    for (let i = 0; i < ids.length; i += 1) {
+      const receipt = await ds.query(`SELECT status,reason FROM notification_outbox_receipts WHERE outbox_event_id=$1`, [ids[i]]);
+      expect(receipt).toEqual([{ status: variants[i]!.status ?? 'QUARANTINED', reason: variants[i]!.reason }]);
+    }
+    expect(await ds.query(`SELECT id FROM notification_deliveries WHERE event_type='support.ticket.message_added' AND aggregate_id=$1`, [ticket.id])).toHaveLength(1);
+    await processor().processBatch(20);
+    expect(provider.sent.length).toBeGreaterThan(0);
+    expect(JSON.stringify(provider.sent)).not.toContain('PUBLIC_BODY_SENTINEL');
+    expect(JSON.stringify(provider.sent)).not.toContain('INTERNAL_NOTE_SENTINEL');
+  });
+
+  it('M25C: a genuinely unreadable provider table does not consume an event; recovery uses the same outbox fact', async () => {
+    const cid = await customer();
+    const ev = await event('customer.funding.approved', { customerId: cid, amountMinor: '10000' });
+    await ds.query('ALTER TABLE notification_provider_configurations RENAME TO m25c_provider_config_temporarily_unavailable');
+    try {
+      await expect(dispatcher.processPendingOutboxEvents(10)).rejects.toMatchObject({ status: 503 });
+      expect(await ds.query('SELECT outbox_event_id FROM notification_outbox_receipts WHERE outbox_event_id=$1', [ev.id])).toHaveLength(0);
+      expect(provider.sent).toHaveLength(0);
+    } finally {
+      await ds.query('ALTER TABLE m25c_provider_config_temporarily_unavailable RENAME TO notification_provider_configurations');
+    }
+    expect(await dispatcher.processPendingOutboxEvents(10)).toBe(1);
+    expect(await ds.query('SELECT status FROM notification_outbox_receipts WHERE outbox_event_id=$1', [ev.id])).toEqual([{ status: 'MATERIALIZED' }]);
+  });
+
+  it('M25C: symmetric correlation/causation redaction preserves real outbox idempotency and hides historical HTTP diagnostics', async () => {
+    const cid = await customer();
+    const aggregateId = randomUUID();
+    const command = { eventType: 'customer.funding.approved', eventKey: `m25c-idem:${randomUUID()}`,
+      aggregateType: 'TEST', aggregateId, payload: { customerId: cid },
+      correlationId: 'email:person@example.test', causationId: 'otp=123456' };
+    const first = await ds.transaction((manager) => outbox.enqueueOnce(manager, command));
+    const again = await ds.transaction((manager) => outbox.enqueueOnce(manager, command));
+    expect(again.id).toBe(first.id);
+    const stored = await ds.query(`SELECT correlation_id,causation_id FROM outbox_events WHERE id=$1`, [first.id]);
+    expect(stored).toEqual([{ correlation_id: '[REDACTED]', causation_id: '[REDACTED]' }]);
+    const deliveryId = await materialize(cid);
+    await ds.query(`UPDATE notification_deliveries SET correlation_id=$1,causation_id=$2,last_error=$3 WHERE id=$4`,
+      ['phone:+2348012345678', 'password=SECRET_SENTINEL_25C', 'otp=123456', deliveryId]);
+    const response = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries')
+      .set('Authorization', 'Bearer workforce-SUPPORT').expect(200);
+    const body = JSON.stringify(response.body);
+    for (const secret of ['+2348012345678', 'SECRET_SENTINEL_25C', '123456']) expect(body).not.toContain(secret);
+    expect(response.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: deliveryId,
+      correlationId: '[REDACTED]' })]));
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').expect(401);
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries')
+      .set('Authorization', 'Bearer workforce-SUPPORT-NOSCOPE').expect(403);
+
+    // Historical payloads can still carry identifying author/contact fields. Mask only
+    // the authorized diagnostic projection; the underlying business fact is unchanged.
+    const legacyPayload = { customerId: cid, amountMinor: '12345678901', authorId: 'operator@example.test',
+      nested: { phone: '+234 (801) 234-5678', causationId: 'otp=123456', password: 'PRIVATE_PASSWORD_25C' } };
+    const legacy = await event('customer.funding.approved', legacyPayload);
+    await request(app.getHttpServer()).get('/api/v1/internal/outbox').expect(401);
+    await request(app.getHttpServer()).get('/api/v1/internal/outbox')
+      .set('Authorization', 'Bearer workforce-OPERATOR-NOSCOPE').expect(403);
+    const outboxResponse = await request(app.getHttpServer()).get('/api/v1/internal/outbox')
+      .set('Authorization', 'Bearer workforce-OPERATOR').expect(200);
+    const projected = outboxResponse.body.find((row: any) => row.id === legacy.id);
+    expect(projected.payload).toMatchObject({ customerId: cid, amountMinor: '12345678901',
+      authorId: '[REDACTED]', nested: { phone: '[REDACTED]', causationId: '[REDACTED]', password: '[REDACTED]' } });
+    expect((await ds.query(`SELECT payload FROM outbox_events WHERE id=$1`, [legacy.id]))[0].payload).toEqual(legacyPayload);
+  });
+
   it('independently checkpoints shared PENDING/FAILED/PUBLISHED events without altering another consumer, and replay is idempotent', async () => {
     const cid = await customer();
     const a = await event('customer.funding.approved', { customerId: cid, reference: 'FUND-A' });
@@ -202,6 +340,9 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       await event('customer.funding.approved', { customerId: cid }, { schema: 2 }),
       await event('support.ticket.message_added', { customerId: cid }),
       await event('support.ticket.message_added', { customerId: cid, isInternal: true }),
+      // These producers exist, but recipient/channel/disclosure policy has not been approved.
+      ...await Promise.all(['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed']
+        .map((eventType) => event(eventType, { customerId: cid }))),
     ];
     await dispatcher.processPendingOutboxEvents(20);
     const receipts = await ds.query(`SELECT outbox_event_id,status,reason FROM notification_outbox_receipts WHERE consumer_name='notification.v1'`);
@@ -212,6 +353,9 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     expect(byId.get(cases[3]!.id)).toMatchObject({ status: 'QUARANTINED', reason: 'UNSUPPORTED_SCHEMA_VERSION' });
     expect(byId.get(cases[4]!.id)).toMatchObject({ status: 'QUARANTINED', reason: 'SUPPORT_VISIBILITY_UNKNOWN' });
     expect(byId.get(cases[5]!.id)).toMatchObject({ status: 'SUPPRESSED', reason: 'INTERNAL_SUPPORT_MESSAGE' });
+    for (const blockedFinancialEvent of cases.slice(6)) {
+      expect(byId.get(blockedFinancialEvent.id)).toMatchObject({ status: 'QUARANTINED', reason: 'EVENT_TYPE_UNSUPPORTED' });
+    }
     expect(await ds.query('SELECT id FROM notification_deliveries')).toHaveLength(0);
     expect(JSON.stringify(receipts)).not.toContain('SENTINEL');
     // Even a corrupt/legacy reason is not returned as raw text in authorized diagnostics.
@@ -221,7 +365,7 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       .set('Authorization', 'Bearer workforce-SUPPORT-NOSCOPE').expect(403);
     const diagnostics = await request(app.getHttpServer()).get('/api/v1/internal/notifications/outbox-receipts?status=QUARANTINED')
       .set('Authorization', 'Bearer workforce-SUPPORT').expect(200);
-    expect(diagnostics.body.data).toHaveLength(5);
+    expect(diagnostics.body.data).toHaveLength(cases.length - 1); // one internal event is SUPPRESSED
     expect(diagnostics.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ reason: 'UNCLASSIFIED' })]));
     expect(JSON.stringify(diagnostics.body)).not.toContain('SENTINEL');
   });

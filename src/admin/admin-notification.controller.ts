@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import {
   redactDeliveryRecipientId,
   sanitizeDeliveryErrorCode,
@@ -142,18 +143,18 @@ export class AdminNotificationController {
     // Safe projection — expose only operationally safe fields; hide destination/payload/credentials
     const data = rows.map((r) => ({
       id: r.id,
-      eventType: r.event_type,
-      eventKey: r.event_key,
-      aggregateType: r.aggregate_type,
-      aggregateId: r.aggregate_id,
+      eventType: sanitizeDiagnosticIdentifier(r.event_type) ?? '[REDACTED]',
+      eventKey: sanitizeDiagnosticIdentifier(r.event_key) ?? '[REDACTED]',
+      aggregateType: sanitizeDiagnosticIdentifier(r.aggregate_type) ?? null,
+      aggregateId: sanitizeDiagnosticIdentifier(r.aggregate_id) ?? null,
       recipientType: r.recipient_type,
       recipientId: redactDeliveryRecipientId(r.recipient_type, r.recipient_id),
       channel: r.channel,
       status: r.status,
       attempts: r.attempts,
       providerRef: sanitizeProviderRefForBoundary(r.provider_ref),
-      correlationId: r.correlation_id,
-      causationId: r.causation_id,
+      correlationId: sanitizeDiagnosticIdentifier(r.correlation_id) ?? null,
+      causationId: sanitizeDiagnosticIdentifier(r.causation_id) ?? null,
       errorCode: sanitizeDeliveryErrorCode(r.last_error),
       createdAt: r.created_at,
       updatedAt: r.updated_at,

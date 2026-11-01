@@ -3,11 +3,15 @@ import {
   estimateSmsSegments,
   extractTemplateVariables,
   BASELINE_CODE_EVENT_CATALOGUE,
+  CustomerCommunicationPreferences,
+  CustomerPreferenceHistoryRecord,
   ManagedNotificationChannel,
   NotificationChangeRequestRecord,
   NotificationDeliveryPage,
   NotificationDeliveryRecord,
   NotificationEventCatalogueItem,
+  NotificationOutboxReceiptPage,
+  NotificationOutboxReceiptRecord,
   NotificationProviderStatus,
   NotificationTemplateVersion,
   ManagedProviderChannel,
@@ -18,6 +22,7 @@ import {
   ProviderLifecycleState,
   ProviderReadinessGates,
   SafePreviewResult,
+  SECURITY_LOCKED_EVENT_TYPES,
   sanitizeProviderStatusForDisplay,
 } from './notification-domain';
 
@@ -74,11 +79,14 @@ export interface PreviewTemplatePayload {
 
 export interface ControlledTestSendPayload {
   channel: ManagedNotificationChannel;
-  eventType: string;
   destination: string;
-  reason: string;
   workforceDestinationConfirmed: true;
-  approvalId?: string;
+}
+
+export interface OutboxReceiptQueryFilters {
+  page?: number;
+  limit?: number;
+  status?: string;
 }
 
 export interface ControlledTestSendOutcome {
@@ -465,6 +473,9 @@ async function fetchTemplatePage(
   channel: ManagedNotificationChannel,
   limit = 50,
 ): Promise<RegistryTemplateRow[]> {
+  if (SECURITY_LOCKED_EVENT_TYPES.has(eventType)) {
+    return [];
+  }
   const query = new URLSearchParams({ eventType, channel, limit: String(limit) });
   const res = await ApiClient.get<unknown>(`/internal/notifications/templates?${query.toString()}`);
   return extractArray<RegistryTemplateRow>(res);
@@ -586,13 +597,15 @@ export const NotificationManagementApi = {
 
   /**
    * ARENA 1 registry — template version history read boundary.
-   * The server requires eventType+channel; when the console needs the full overview the
-   * client fans out over the live registry catalogue (recent versions per event/channel).
+   * Non-editable SECURITY events (`editable === false` / `SECURITY_LOCKED_EVENT_TYPES`)
+   * are strictly excluded before any HTTP request is issued so the console never triggers
+   * guaranteed HTTP 400 responses (`N-02`), and concurrency is bounded to reduce fan-out.
    */
   async listTemplates(params?: {
     eventType?: string;
     channel?: ManagedNotificationChannel;
     includeHistory?: boolean;
+    editableEventTypes?: string[];
   }): Promise<IntegrationResult<NotificationTemplateVersion[]>> {
     return callTypedBoundary({
       owner: 'ARENA_1',
@@ -602,19 +615,42 @@ export const NotificationManagementApi = {
         'BLOCKED on ARENA 1: DB-backed notification_templates registry endpoint (GET /internal/notifications/templates) is not yet integrated.',
       run: async () => {
         if (params?.eventType && params?.channel) {
+          if (SECURITY_LOCKED_EVENT_TYPES.has(params.eventType)) {
+            return [];
+          }
           const rows = await fetchTemplatePage(params.eventType, params.channel, 100);
           return rows.map(mapRegistryTemplate);
         }
-        const events = await fetchRegistryEvents();
+        const editableEventTypes = params?.editableEventTypes
+          ? params.editableEventTypes.filter((et) => !SECURITY_LOCKED_EVENT_TYPES.has(et))
+          : (await fetchRegistryEvents())
+              .filter(
+                (event) =>
+                  event.editable !== false &&
+                  event.deliveryClass !== 'SECURITY' &&
+                  !SECURITY_LOCKED_EVENT_TYPES.has(event.eventType),
+              )
+              .map((event) => event.eventType);
+
+        const channels: ManagedNotificationChannel[] = params?.channel
+          ? [params.channel]
+          : ['SMS', 'EMAIL'];
         const limit = params?.includeHistory === false ? 1 : 10;
-        const pages = await Promise.all(
-          events.flatMap((event) =>
-            (['SMS', 'EMAIL'] as ManagedNotificationChannel[]).map((channel) =>
-              fetchTemplatePage(event.eventType, channel, limit).catch(() => [] as RegistryTemplateRow[]),
-            ),
-          ),
+        const pairs = editableEventTypes.flatMap((eventType) =>
+          channels.map((channel) => ({ eventType, channel })),
         );
-        return pages.flat().map(mapRegistryTemplate);
+        const collected: RegistryTemplateRow[] = [];
+        const batchSize = 6;
+        for (let i = 0; i < pairs.length; i += batchSize) {
+          const slice = pairs.slice(i, i + batchSize);
+          const chunk = await Promise.all(
+            slice.map(({ eventType, channel }) => fetchTemplatePage(eventType, channel, limit)),
+          );
+          for (const rows of chunk) {
+            collected.push(...rows);
+          }
+        }
+        return collected.map(mapRegistryTemplate);
       },
     });
   },
@@ -833,13 +869,15 @@ export const NotificationManagementApi = {
           const emailAvail = raw.email?.available === true;
           const minimalMapped: NotificationProviderStatus = {
             checkedAt: new Date().toISOString(),
-            environment,
+            environment: null,
+            projectionScope: 'MINIMAL',
             worker: {
-              enabled: false,
-              batchSize: 0,
-              smsRetryMaxAttempts: 0,
-              smsRetryBaseDelaySeconds: 0,
-              pendingOutboxCount,
+              enabled: null,
+              redacted: true,
+              batchSize: null,
+              smsRetryMaxAttempts: null,
+              smsRetryBaseDelaySeconds: null,
+              pendingOutboxCount: null,
             },
             sms: {
               provider: 'redacted',
@@ -924,8 +962,10 @@ export const NotificationManagementApi = {
         const mapped: NotificationProviderStatus = {
           checkedAt: new Date().toISOString(),
           environment,
+          projectionScope: 'FULL',
           worker: {
             enabled: raw.worker?.enabled === true,
+            redacted: false,
             batchSize: Number(raw.worker?.batchSize ?? 0),
             smsRetryMaxAttempts: Number(raw.worker?.retryMaxAttempts ?? 0),
             smsRetryBaseDelaySeconds: Number(raw.worker?.retryBaseDelaySeconds ?? 0),
@@ -1068,7 +1108,7 @@ export const NotificationManagementApi = {
             channel: (row.channel ?? change?.channel ?? 'MULTI') as NotificationChangeRequestRecord['channel'],
             summary: detail?.reason ? `${summaryParts} — ${detail.reason}` : summaryParts,
             status: mapChangeStatus(row.status),
-            requestedBy: row.createdBy,
+            requestedBy: row.createdBy ?? (row as { requestedBy?: string }).requestedBy ?? 'unknown',
             requestedAt: row.createdAt,
             decidedBy: row.approvedBy,
             decidedAt: null,
@@ -1138,6 +1178,38 @@ export const NotificationManagementApi = {
             message: `Approval recorded, but execution failed: ${getErrorMessage(error, 'unknown error')}. The proposal remains APPROVED and execution can be retried from the queue.`,
           };
         }
+      },
+    });
+  },
+
+  /**
+   * Execute an already-APPROVED notification change proposal idempotently (`F-01`).
+   * Used when an approval was signed via Direct Workforce Approval, Privileged Approvals,
+   * or when a prior execution attempt encountered a transient network failure.
+   */
+  async executeApprovedNotificationChange(
+    approvalId: string,
+  ): Promise<IntegrationResult<NotificationMutationOutcome>> {
+    const cleanId = approvalId.trim();
+    return callTypedBoundary({
+      owner: 'ARENA_1',
+      method: 'POST',
+      endpoint: `/internal/notifications/changes/${cleanId}/execute`,
+      blockedExplanation:
+        'BLOCKED on ARENA 1: Notification change execution endpoint (POST /internal/notifications/changes/:approvalId/execute) is not yet integrated.',
+      run: async () => {
+        const executed = await ApiClient.post<{ approvalId: string; type: string }>(
+          `/internal/notifications/changes/${encodeURIComponent(cleanId)}/execute`,
+          {},
+          { idempotencyKey: `notif-change-execute:${cleanId}` },
+        );
+        return {
+          status: 'APPLIED',
+          approvalId: executed.approvalId ?? cleanId,
+          changeRequestId: executed.approvalId ?? cleanId,
+          updatedAt: new Date().toISOString(),
+          message: `Approved change ${executed.approvalId ?? cleanId}${executed.type ? ` (${executed.type})` : ''} executed — the frozen proposal is now applied.`,
+        };
       },
     });
   },
@@ -1267,13 +1339,145 @@ export const NotificationManagementApi = {
   },
 
   /**
+   * LIVE TODAY — Notification outbox consumer receipt checkpoints (`AdminNotificationController.listOutboxReceipts`).
+   * Surfaces QUARANTINED, FAILED, UNSUPPORTED, SUPPRESSED, and MATERIALIZED outbox receipts (`F-04`).
+   */
+  async listOutboxReceipts(
+    filters: OutboxReceiptQueryFilters = {},
+  ): Promise<IntegrationResult<NotificationOutboxReceiptPage>> {
+    const query = new URLSearchParams({
+      page: String(filters.page ?? 1),
+      limit: String(filters.limit ?? 15),
+    });
+    if (filters.status) {
+      query.set('status', filters.status);
+    }
+    const endpoint = `/internal/notifications/outbox-receipts?${query.toString()}`;
+    return callTypedBoundary({
+      owner: 'ARENA_3',
+      method: 'GET',
+      endpoint: '/internal/notifications/outbox-receipts',
+      blockedExplanation:
+        'BLOCKED on ARENA 3: Notification outbox receipts endpoint (GET /internal/notifications/outbox-receipts) is not yet integrated.',
+      run: async () => {
+        const response = await ApiClient.get<Partial<NotificationOutboxReceiptPage>>(endpoint);
+        const data = Array.isArray(response?.data)
+          ? (response.data as NotificationOutboxReceiptRecord[])
+          : extractArray<NotificationOutboxReceiptRecord>(response);
+        return {
+          data,
+          total: Number(response?.total ?? data.length),
+          page: Number(response?.page ?? filters.page ?? 1),
+          limit: Number(response?.limit ?? filters.limit ?? 15),
+          totalPages: Number(response?.totalPages ?? (data.length > 0 ? 1 : 0)),
+          hasNextPage: Boolean(response?.hasNextPage),
+        };
+      },
+    });
+  },
+
+  /**
    * LIVE TODAY — Audit trail lookup (`OperationsController.getAudit`).
+   * Normalizes backend `actor` (`AuditService.searchAuditLogs`) alongside any legacy `actorId`.
    */
   async listAuditEvents(entityType: string, limit = 15): Promise<Array<Record<string, unknown>>> {
     const res = await ApiClient.get<unknown>(
       `/internal/audit?entityType=${encodeURIComponent(entityType)}&limit=${limit}`,
     );
-    return extractArray<Record<string, unknown>>(res);
+    return extractArray<Record<string, unknown>>(res).map((row) => ({
+      ...row,
+      entityType: row.entityType ?? entityType,
+      actor: row.actor ?? row.actorId ?? null,
+    }));
+  },
+
+  /**
+   * LIVE TODAY — Notification governance & test-send audit lookup (`F-02`).
+   * Queries existing notification governance entity categories (`NOTIFICATION_TEMPLATE`,
+   * `NOTIFICATION_CHANGE`, `NOTIFICATION_EVENT_CONFIGURATION`, `NOTIFICATION_TEST_SEND`).
+   * Deliberately excludes `NOTIFICATION_PROVIDER_CONFIG`, which remains strictly restricted
+   * to `SUPER_ADMIN` and `FINANCE_AUDITOR` via `/internal/notifications/provider-configs/audit`.
+   */
+  async listNotificationGovernanceAudit(
+    limitPerCategory = 10,
+  ): Promise<Array<Record<string, unknown>>> {
+    const categories = [
+      'NOTIFICATION_TEMPLATE',
+      'NOTIFICATION_CHANGE',
+      'NOTIFICATION_EVENT_CONFIGURATION',
+      'NOTIFICATION_TEST_SEND',
+    ] as const;
+    const batches = await Promise.all(
+      categories.map((category) =>
+        NotificationManagementApi.listAuditEvents(category, limitPerCategory).catch(
+          () => [] as Array<Record<string, unknown>>,
+        ),
+      ),
+    );
+    const seen = new Set<string>();
+    const merged: Array<Record<string, unknown>> = [];
+    for (const row of batches.flat()) {
+      const key = String(row.id ?? `${row.entityType}-${row.entityId}-${row.action}-${row.createdAt ?? row.occurredAt}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+    merged.sort((a, b) => {
+      const ta = Date.parse(String(a.occurredAt ?? a.createdAt ?? '')) || 0;
+      const tb = Date.parse(String(b.occurredAt ?? b.createdAt ?? '')) || 0;
+      return tb - ta;
+    });
+    return merged.slice(0, limitPerCategory * 2);
+  },
+
+  /**
+   * LIVE TODAY — Read-only customer communication & account preferences (`CustomerPreferenceController`, `F-09`).
+   * Authorized only for workforce sessions permitted by `/customers/:id/preferences` (`OPERATOR`/`PRIVILEGED` with `customer.view`,
+   * excluding `CUSTOMER_SERVICE` / `SUPPORT`). Returns `null` when the customer has not yet initialized a preference profile (404).
+   */
+  async getCustomerPreferences(
+    customerId: string,
+  ): Promise<CustomerCommunicationPreferences | null> {
+    const cleanId = customerId.trim();
+    try {
+      const raw = await ApiClient.get<unknown>(
+        `/customers/${encodeURIComponent(cleanId)}/preferences`,
+      );
+      if (
+        !raw ||
+        typeof raw !== 'object' ||
+        Array.isArray(raw) ||
+        !('notifications' in (raw as Record<string, unknown>))
+      ) {
+        return null;
+      }
+      return raw as CustomerCommunicationPreferences;
+    } catch (error) {
+      if (getHttpStatus(error) === 404) {
+        return null;
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * LIVE TODAY — Read-only customer preference change history (`GET /customers/:id/preferences/history`, `F-09`).
+   */
+  async listCustomerPreferenceHistory(
+    customerId: string,
+  ): Promise<CustomerPreferenceHistoryRecord[]> {
+    const cleanId = customerId.trim();
+    try {
+      const raw = await ApiClient.get<unknown>(
+        `/customers/${encodeURIComponent(cleanId)}/preferences/history`,
+      );
+      return extractArray<CustomerPreferenceHistoryRecord>(raw);
+    } catch (error) {
+      if (getHttpStatus(error) === 404) {
+        return [];
+      }
+      throw error;
+    }
   },
 
   /**

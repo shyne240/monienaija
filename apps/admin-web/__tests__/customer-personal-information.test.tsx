@@ -571,4 +571,115 @@ describe('CustomerPersonalInformationPanel', () => {
     expect(await view.findByText(/Primary · Verified/)).toBeTruthy();
     expect(view.queryByText('synthetic-one-time-verification-token')).toBeNull();
   });
+
+  test('F-09: renders read-only communication and account preferences + preference history for authorized OPERATOR/PRIVILEGED roles with customer.view', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      isLoading: false,
+      token: 'synthetic-ops-token',
+      sessionId: 'synthetic-ops-session',
+      principal: {
+        type: 'OPERATOR',
+        principalId: 'issuer:operations-1',
+        sessionId: 'synthetic-ops-session',
+        audience: 'workforce-admin',
+        roles: ['OPERATIONS'],
+        scopes: ['customer.view', 'customer.view_contact_methods'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
+    });
+
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
+      if (path.endsWith('/contact-methods')) return Promise.resolve([]);
+      if (path.endsWith('/preferences')) {
+        return Promise.resolve({
+          notifications: { email: true, sms: false, push: true, inApp: true },
+          security: {
+            loginAlerts: true,
+            transactionAlerts: true,
+            deviceRegistrationAlerts: true,
+            biometricAllowed: false,
+          },
+          language: 'en-NG',
+          theme: 'SYSTEM',
+          version: 3,
+          updatedAt: '2026-10-31T10:15:00.000Z',
+        });
+      }
+      if (path.endsWith('/preferences/history')) {
+        return Promise.resolve([
+          {
+            id: 'pref-hist-1',
+            action: 'NOTIFICATION_PREFERENCES_UPDATED',
+            previousValues: { sms: true },
+            newValues: { sms: false },
+            actor: 'customer:cust-99',
+            createdAt: '2026-10-31T10:15:00.000Z',
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const view = render(
+      <CustomerPersonalInformationPanel
+        customerId="cust-99"
+        onProfileUpdated={jest.fn()}
+      />,
+    );
+
+    expect(await view.findByTestId('customer-preferences-section')).toBeTruthy();
+    expect(view.getByTestId('customer-pref-email').textContent).toBe('Enabled');
+    expect(view.getByTestId('customer-pref-sms').textContent).toBe('Disabled');
+    expect(view.getByTestId('customer-pref-meta').textContent).toContain('en-NG · SYSTEM · v3');
+    expect(view.getByTestId('customer-preference-history-list').textContent).toContain(
+      'NOTIFICATION_PREFERENCES_UPDATED',
+    );
+    expect(view.getByTestId('customer-preference-history-list').textContent).toContain(
+      'customer:cust-99',
+    );
+    // Strictly read-only — no toggle switches or mutation controls inside preferences card
+    const prefCard = view.getByTestId('customer-preferences-card');
+    expect(within(prefCard).queryAllByRole('button')).toHaveLength(0);
+    expect(within(prefCard).queryAllByRole('checkbox')).toHaveLength(0);
+  });
+
+  test('F-09: CUSTOMER_SERVICE never queries customer preference endpoints and receives no additional preference visibility', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      isLoading: false,
+      token: 'synthetic-cs-token',
+      sessionId: 'synthetic-cs-session',
+      principal: {
+        type: 'OPERATOR',
+        principalId: 'issuer:cs-1',
+        sessionId: 'synthetic-cs-session',
+        audience: 'workforce-admin',
+        roles: ['CUSTOMER_SERVICE'],
+        scopes: ['customer.view', 'customer.view_contact_methods', 'customer.manage_support_case'],
+        customerAccess: 'NONE',
+        assuranceLevel: 'MFA',
+      },
+    });
+
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/profile')) return Promise.resolve(profileInitial);
+      if (path.endsWith('/contact-methods')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const view = render(
+      <CustomerPersonalInformationPanel
+        customerId="cust-99"
+        onProfileUpdated={jest.fn()}
+      />,
+    );
+
+    expect(await view.findByTestId('customer-preferences-restricted')).toBeTruthy();
+    expect(ApiClient.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/preferences'),
+    );
+  });
 });
