@@ -41,8 +41,8 @@ provider, ledger or role behaviour changed (§D).
 | **Integration merge commit** | **`587c3763944368b9260c9299d18bce1189ca5919`** |
 | Merge parents | `5d03416` (25H baseline) + `1049280` (25J) |
 | **Code candidate SHA (composed tree)** | **`587c3763944368b9260c9299d18bce1189ca5919`** |
-| Evidence commit | `3666fce2daae249442a5c5ddd27e5557d9c53aa5` (docs only) |
-| Remote tip after push | `3666fce2daae249442a5c5ddd27e5557d9c53aa5` — verified equal via `git ls-remote` |
+| Evidence/report commits | one or more **docs-only** commits after `587c376` |
+| Branch tip at hand-off | `1818f0ad17bbe0c85a31a2930931db4e0afee25b` — remote verified equal via `git ls-remote` |
 | Merge conflicts | none (0) |
 | Integration-only corrections | none (0) |
 
@@ -56,7 +56,7 @@ integration-only corrections.
 
 **Two SHAs, one candidate — read this before reassessing.** Arena 4's *code* candidate is
 `587c376…`: the merge of `5d03416…` with `1049280…`. The branch tip `3666fce…` adds **only** this
-report and its evidence files. `git diff --name-only 587c376 3666fce -- src apps test` = **0 files**,
+report and its evidence files. `git diff --name-only 587c376 <tip> -- src apps test` = **0 files**,
 so the composited application tree under review is byte-identical to `587c376…`; reviewing either
 SHA yields the same code. This mirrors the 25H hand-off, where the evidence commit followed the
 integration merge on the same branch.
@@ -421,7 +421,7 @@ secrets.
 ## Arena 4 — explicit readiness statement
 
 > **The pinned candidate `587c3763944368b9260c9299d18bce1189ca5919` (code composition; branch
-> `integration/mission-25k-frontend-security-alignment`, tip `3666fce…` adding evidence only) is
+> `integration/mission-25k-frontend-security-alignment`, tip `1818f0a…` adding evidence only) is
 > READY FOR ARENA 4 INDEPENDENT REASSESSMENT.**
 >
 > It is the exact composition of the Mission 25H backend security integration candidate
