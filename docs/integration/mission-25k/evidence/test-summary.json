@@ -1,0 +1,184 @@
+{
+  "mission": "25K",
+  "generatedAt": "2026-11-01T16:55:11.377Z",
+  "candidate": "587c3763944368b9260c9299d18bce1189ca5919",
+  "environment": {
+    "node": "v22.22.3",
+    "postgres": "18.4 (embedded, disposable)",
+    "pgConcurrency": 1,
+    "chromium": "153.0.8010.0",
+    "nodeEnv": "development"
+  },
+  "gates": [
+    {
+      "id": "G1",
+      "name": "Backend TypeScript",
+      "command": "npx tsc --noEmit",
+      "suites": null,
+      "tests": null,
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G2",
+      "name": "Backend build",
+      "command": "npm run build",
+      "suites": null,
+      "tests": null,
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G3",
+      "name": "Backend unit",
+      "command": "npm test",
+      "suites": {
+        "passed": 229,
+        "total": 229
+      },
+      "tests": {
+        "passed": 2713,
+        "total": 2713
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G4",
+      "name": "PostgreSQL integration",
+      "command": "PG_TEST_CONCURRENCY=1 node scripts/run-pg-integration-tests.js",
+      "suites": {
+        "passed": 132,
+        "total": 132
+      },
+      "tests": {
+        "passed": 2452,
+        "total": 2452
+      },
+      "failures": 0,
+      "skips": 0,
+      "batches": {
+        "total": 9,
+        "exitCodes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "exitCode": 0
+    },
+    {
+      "id": "G5",
+      "name": "Admin Web TypeScript",
+      "command": "npm run ts:check",
+      "suites": null,
+      "tests": null,
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G6",
+      "name": "Admin Web build",
+      "command": "npm run build",
+      "suites": null,
+      "tests": null,
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G7",
+      "name": "Admin Web Jest",
+      "command": "npm test",
+      "suites": {
+        "passed": 37,
+        "total": 37
+      },
+      "tests": {
+        "passed": 284,
+        "total": 284
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G8",
+      "name": "Targeted 25J preference suite",
+      "command": "npx jest __tests__/customer-personal-information.test.tsx",
+      "suites": {
+        "passed": 1,
+        "total": 1
+      },
+      "tests": {
+        "passed": 10,
+        "total": 10
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G9",
+      "name": "Backend authorization regression",
+      "command": "node evidence/harness/authz.cjs",
+      "checks": {
+        "passed": 105,
+        "total": 105
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G10",
+      "name": "Notification regression",
+      "command": "node evidence/harness/notification.cjs",
+      "checks": {
+        "passed": 15,
+        "total": 15
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G11",
+      "name": "Support recipient binding",
+      "command": "node evidence/harness/support.cjs",
+      "checks": {
+        "passed": 5,
+        "total": 5
+      },
+      "failures": 0,
+      "skips": 0,
+      "exitCode": 0
+    },
+    {
+      "id": "G12",
+      "name": "11-role real browser",
+      "command": "node evidence/harness/browser-25k.cjs",
+      "checks": {
+        "passed": 75,
+        "total": 75
+      },
+      "failures": 0,
+      "skips": 0,
+      "preferenceRequests": 0,
+      "http403": 0,
+      "jsErrors": 0,
+      "rolesWithPanel": 6,
+      "exitCode": 0
+    }
+  ]
+}

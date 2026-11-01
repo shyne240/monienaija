@@ -1,0 +1,32 @@
+# Mission 25K — changed-file inventory (5d03416..587c376)
+
+## name-status
+M	apps/admin-web/__tests__/customer-personal-information.test.tsx
+M	apps/admin-web/src/screens/authenticated/CustomerPersonalInformationPanel.tsx
+M	apps/admin-web/src/services/notification-domain.ts
+M	apps/admin-web/src/services/notification-management-api.ts
+A	docs/integration/mission-25j/20261101-MISSION-25J-HANDOVER.md
+
+## diffstat
+ .../customer-personal-information.test.tsx         | 264 +++++++++++++--------
+ .../CustomerPersonalInformationPanel.tsx           | 192 ++-------------
+ apps/admin-web/src/services/notification-domain.ts |  32 ---
+ .../src/services/notification-management-api.ts    |  53 +----
+ .../mission-25j/20261101-MISSION-25J-HANDOVER.md   |  75 ++++++
+ 5 files changed, 261 insertions(+), 355 deletions(-)
+
+## scope guards (must all be 0)
+src                                      0
+test                                     0
+scripts                                  0
+src/migrations                           0
+docs/deployment                          0
+package.json                             0
+package-lock.json                        0
+.env.example                             0
+apps/admin-web/package.json              0
+apps/admin-web/package-lock.json         0
+
+## method
+git diff --name-status / --stat between the pinned 25H baseline and the integration head;
+per-path guard counts use the same range restricted to each guarded path.

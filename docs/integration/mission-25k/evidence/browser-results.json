@@ -1,0 +1,869 @@
+{
+  "pass": 75,
+  "fail": 0,
+  "total": 75,
+  "failures": [],
+  "expectedCopy": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized.",
+  "rolesDriven": 11,
+  "rolesWithCustomersNav": [
+    "SUPER_ADMIN",
+    "FINANCE_AUDITOR",
+    "ADMINISTRATOR",
+    "OPERATIONS",
+    "COMPLIANCE",
+    "CUSTOMER_SERVICE"
+  ],
+  "rolesWithPanel": [
+    "SUPER_ADMIN",
+    "FINANCE_AUDITOR",
+    "ADMINISTRATOR",
+    "OPERATIONS",
+    "COMPLIANCE",
+    "CUSTOMER_SERVICE"
+  ],
+  "rolesWithCorrectCopy": [
+    "SUPER_ADMIN",
+    "FINANCE_AUDITOR",
+    "ADMINISTRATOR",
+    "OPERATIONS",
+    "COMPLIANCE",
+    "CUSTOMER_SERVICE"
+  ],
+  "rolesWithoutPanel": [
+    "FINANCE_PREPARER",
+    "FINANCE_CONTROLLER",
+    "AGENT_NETWORK_MANAGER",
+    "RISK_FRAUD",
+    "TREASURY"
+  ],
+  "navNotificationsExposed": [
+    "SUPER_ADMIN",
+    "FINANCE_CONTROLLER",
+    "FINANCE_AUDITOR",
+    "OPERATIONS"
+  ],
+  "totalPreferenceRequests": 0,
+  "prefRequestsAll": [],
+  "forbiddenResponses": [],
+  "jsErrors": [],
+  "roleReports": [
+    {
+      "role": "SUPER_ADMIN",
+      "login": "OK",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "FINANCE_PREPARER",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "panelState": "NO-CUSTOMERS-NAV",
+      "cardText": ""
+    },
+    {
+      "role": "FINANCE_CONTROLLER",
+      "login": "OK",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "panelState": "NO-CUSTOMERS-NAV",
+      "cardText": ""
+    },
+    {
+      "role": "FINANCE_AUDITOR",
+      "login": "OK",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "ADMINISTRATOR",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "OPERATIONS",
+      "login": "OK",
+      "navNotificationsExposed": true,
+      "consoleState": "CONSOLE",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "AGENT_NETWORK_MANAGER",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "panelState": "NO-CUSTOMERS-NAV",
+      "cardText": ""
+    },
+    {
+      "role": "COMPLIANCE",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "RISK_FRAUD",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "panelState": "NO-CUSTOMERS-NAV",
+      "cardText": ""
+    },
+    {
+      "role": "CUSTOMER_SERVICE",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "retiredNodes": {
+        "customer-preferences-section": 0,
+        "customer-preferences-denied": 0,
+        "customer-preferences-empty": 0,
+        "customer-preference-history-list": 0
+      },
+      "valueNodes": 0,
+      "cardButtons": 0,
+      "cardCheckboxes": 0,
+      "panelState": "RESTRICTED-COPY",
+      "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+    },
+    {
+      "role": "TREASURY",
+      "login": "OK",
+      "navNotificationsExposed": false,
+      "consoleState": "NOT-EXPOSED",
+      "panelState": "NO-CUSTOMERS-NAV",
+      "cardText": ""
+    }
+  ],
+  "results": [
+    {
+      "group": "panel-structure",
+      "name": "SUPER_ADMIN: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "SUPER_ADMIN: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "SUPER_ADMIN: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "SUPER_ADMIN: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "SUPER_ADMIN: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "SUPER_ADMIN: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1906
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "SUPER_ADMIN: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "SUPER_ADMIN: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "SUPER_ADMIN: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_PREPARER: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_PREPARER: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_PREPARER: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_CONTROLLER: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_CONTROLLER: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_CONTROLLER: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "FINANCE_AUDITOR: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "FINANCE_AUDITOR: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "FINANCE_AUDITOR: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "FINANCE_AUDITOR: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "FINANCE_AUDITOR: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "FINANCE_AUDITOR: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1905
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_AUDITOR: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "FINANCE_AUDITOR: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "FINANCE_AUDITOR: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "ADMINISTRATOR: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "ADMINISTRATOR: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "ADMINISTRATOR: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "ADMINISTRATOR: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "ADMINISTRATOR: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "ADMINISTRATOR: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1474
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "ADMINISTRATOR: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "ADMINISTRATOR: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "ADMINISTRATOR: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "OPERATIONS: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "OPERATIONS: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "OPERATIONS: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "OPERATIONS: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "OPERATIONS: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "OPERATIONS: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1507
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "OPERATIONS: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "OPERATIONS: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "OPERATIONS: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "AGENT_NETWORK_MANAGER: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "AGENT_NETWORK_MANAGER: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "AGENT_NETWORK_MANAGER: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "COMPLIANCE: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "COMPLIANCE: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "COMPLIANCE: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "COMPLIANCE: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "COMPLIANCE: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "COMPLIANCE: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1359
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "COMPLIANCE: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "COMPLIANCE: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "COMPLIANCE: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "RISK_FRAUD: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "RISK_FRAUD: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "RISK_FRAUD: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "CUSTOMER_SERVICE: no retired preference value/history/denied/empty node is rendered",
+      "ok": true,
+      "detail": {
+        "retiredNodes": {
+          "customer-preferences-section": 0,
+          "customer-preferences-denied": 0,
+          "customer-preferences-empty": 0,
+          "customer-preference-history-list": 0
+        },
+        "valueNodes": 0
+      }
+    },
+    {
+      "group": "panel-structure",
+      "name": "CUSTOMER_SERVICE: restriction card exposes no mutation control (no button / checkbox)",
+      "ok": true,
+      "detail": {
+        "cardButtons": 0,
+        "cardCheckboxes": 0
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "CUSTOMER_SERVICE: renders the exact enforced self-service restriction policy copy",
+      "ok": true,
+      "detail": {
+        "restrictedText": "Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "CUSTOMER_SERVICE: card makes no stale customer.view / \"operational and privileged\" claim",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized."
+      }
+    },
+    {
+      "group": "panel-copy",
+      "name": "CUSTOMER_SERVICE: no preference values or history rendered",
+      "ok": true,
+      "detail": {
+        "cardText": "Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing "
+      }
+    },
+    {
+      "group": "customer-360",
+      "name": "CUSTOMER_SERVICE: Customer 360 non-preference content still renders",
+      "ok": true,
+      "detail": {
+        "length": 1328
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "CUSTOMER_SERVICE: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "CUSTOMER_SERVICE: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "CUSTOMER_SERVICE: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "TREASURY: issues ZERO customer-preference requests (no read, no history, no mutation)",
+      "ok": true,
+      "detail": {
+        "prefRequests": []
+      }
+    },
+    {
+      "group": "preference-boundary",
+      "name": "TREASURY: produces no unnecessary HTTP 403/400/500 on the surfaces visited",
+      "ok": true,
+      "detail": {
+        "http4xx5xx": []
+      }
+    },
+    {
+      "group": "browser-errors",
+      "name": "TREASURY: no uncaught JS error / console error",
+      "ok": true,
+      "detail": {
+        "jsErrors": []
+      }
+    },
+    {
+      "group": "summary",
+      "name": "all 11 workforce roles were driven",
+      "ok": true,
+      "detail": {
+        "roles": [
+          "SUPER_ADMIN",
+          "FINANCE_PREPARER",
+          "FINANCE_CONTROLLER",
+          "FINANCE_AUDITOR",
+          "ADMINISTRATOR",
+          "OPERATIONS",
+          "AGENT_NETWORK_MANAGER",
+          "COMPLIANCE",
+          "RISK_FRAUD",
+          "CUSTOMER_SERVICE",
+          "TREASURY"
+        ]
+      }
+    },
+    {
+      "group": "summary",
+      "name": "ZERO customer-preference requests across all 11 roles (F-25H-01 closed)",
+      "ok": true,
+      "detail": {
+        "prefRequestsAll": []
+      }
+    },
+    {
+      "group": "summary",
+      "name": "ZERO HTTP 400/403/500 across all 11 roles",
+      "ok": true,
+      "detail": {
+        "forbiddenAll": []
+      }
+    },
+    {
+      "group": "summary",
+      "name": "ZERO uncaught JS errors across all 11 roles",
+      "ok": true,
+      "detail": {
+        "jsErrorsAll": []
+      }
+    },
+    {
+      "group": "summary",
+      "name": "every role that reaches the Customer 360 panel shows the enforced restriction copy (F-25H-02 closed)",
+      "ok": true,
+      "detail": {
+        "rolesWithPanel": [
+          "SUPER_ADMIN",
+          "FINANCE_AUDITOR",
+          "ADMINISTRATOR",
+          "OPERATIONS",
+          "COMPLIANCE",
+          "CUSTOMER_SERVICE"
+        ],
+        "rolesWithCorrectCopy": [
+          "SUPER_ADMIN",
+          "FINANCE_AUDITOR",
+          "ADMINISTRATOR",
+          "OPERATIONS",
+          "COMPLIANCE",
+          "CUSTOMER_SERVICE"
+        ]
+      }
+    },
+    {
+      "group": "summary",
+      "name": "notification console RBAC is not collapsed (at least one role exposed, at least one withheld)",
+      "ok": true,
+      "detail": {
+        "navNotificationsExposed": [
+          "SUPER_ADMIN",
+          "FINANCE_CONTROLLER",
+          "FINANCE_AUDITOR",
+          "OPERATIONS"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "sectionPresent": true,
+  "selectOptions": [
+    "All receipt statuses",
+    "QUARANTINED",
+    "FAILED",
+    "SUPPRESSED",
+    "UNSUPPORTED",
+    "MATERIALIZED"
+  ],
+  "sectionTextContentHasMaterialized": true,
+  "receiptRowCount": 0,
+  "rowTexts": [],
+  "rowsContainingMaterialized": 0,
+  "allRowsAreQuarantined": false,
+  "materializedOptionPresent": true
+}

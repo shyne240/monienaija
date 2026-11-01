@@ -1,0 +1,21 @@
+# Mission 25K — ancestry and pin verification (independently re-derived)
+
+## Pinned inputs
+25H baseline : 5d034163b366a92e45397e261762df77ea56ea09
+25J commit   : 1049280e0615abe82ebafdde224e7a283ce553b1
+
+## 25J is a direct child of the 25H baseline
+rev-list --parents -n 1 <25J>:
+1049280e0615abe82ebafdde224e7a283ce553b1 5d034163b366a92e45397e261762df77ea56ea09
+
+merge-base --is-ancestor 5d03416 1049280: YES
+commits in 5d03416..1049280: 1
+merge-base of the two: 5d034163b366a92e45397e261762df77ea56ea09
+
+## Integrated merge commit
+merge SHA  : 587c3763944368b9260c9299d18bce1189ca5919
+parents    : 5d034163b366a92e45397e261762df77ea56ea09 1049280e0615abe82ebafdde224e7a283ce553b1
+25J tree   : 31af77010292edcd386c08820ec34581ba5a6e31
+merge tree : 31af77010292edcd386c08820ec34581ba5a6e31
+tree identical to pinned 25J: YES
+files different from 25J  : 0

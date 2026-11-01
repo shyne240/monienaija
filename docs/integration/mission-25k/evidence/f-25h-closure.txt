@@ -1,0 +1,47 @@
+# Mission 25K — F-25H-01 / F-25H-02 closure evidence
+
+## F-25H-01: the Admin Web no longer requests customer preferences
+
+Retired client helpers (deleted from notification-management-api.ts):
+  (no occurrences in source)
+
+Dangling-symbol scan over admin-web source (excluding __tests__):
+  getCustomerPreferences             src occurrences: 0
+  listCustomerPreferenceHistory      src occurrences: 0
+  customer-preferences-denied        src occurrences: 0
+  customer-preferences-empty         src occurrences: 0
+  customer-preferences-section       src occurrences: 0
+  customer-preference-history-list   src occurrences: 0
+  customer-pref-                     src occurrences: 0
+
+Remaining occurrences in the test file are intentional NEGATIVE assertions:
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:712:      expect(view.queryByTestId('customer-preferences-section')).toBeNull();
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:713:      expect(view.queryByTestId('customer-preference-history-list')).toBeNull();
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:714:      expect(view.queryByTestId('customer-preferences-denied')).toBeNull();
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:715:      expect(view.queryByTestId('customer-preferences-empty')).toBeNull();
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:746:    expect('getCustomerPreferences' in NotificationManagementApi).toBe(false);
+  HEAD:apps/admin-web/__tests__/customer-personal-information.test.tsx:747:    expect('listCustomerPreferenceHistory' in NotificationManagementApi).toBe(false);
+
+## F-25H-02: no stale customer.view / OPERATOR-PRIVILEGED visibility claim
+
+Preference card source (HEAD):
+        {/* Customer Communication & Account Preferences — customer self-service only; workforce access not authorized */}
+        <article className="cm-card" data-testid="customer-preferences-card">
+          <div className="cm-card-header">
+            <div>
+              <h4>Communication &amp; account preferences</h4>
+              <p className="cm-card-subtitle">
+                Customer-controlled notification, security alert, language, and theme settings.
+              </p>
+            </div>
+            <span className="cm-badge">Restricted</span>
+          </div>
+  
+          <p className="cm-muted-copy" data-testid="customer-preferences-restricted">
+            Customer preferences are restricted to authenticated customers accessing their own
+            records. Workforce preference access is not authorized.
+          </p>
+        </article>
+
+Rendered card text captured in a real browser (CUSTOMER_SERVICE, 25K run):
+  Communication & account preferences Customer-controlled notification, security alert, language, and theme settings. Restricted Customer preferences are restricted to authenticated customers accessing their own records. Workforce preference access is not authorized.

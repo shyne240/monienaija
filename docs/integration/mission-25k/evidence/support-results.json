@@ -1,0 +1,45 @@
+{
+  "pass": 5,
+  "fail": 0,
+  "total": 5,
+  "results": [
+    {
+      "n": "customer A can open its own support ticket",
+      "ok": true,
+      "d": {
+        "status": 201,
+        "body": "{\"id\":\"a7683a30-e4de-4980-83e6-cda34a301f22\",\"reference\":\"SUP-a7683a30-e4de-4980-83e6-cda34a301f22\",\"subject\":\"M25H binding probe\",\"category\":\"OTHER\","
+      }
+    },
+    {
+      "n": "customer B cannot READ customer A ticket",
+      "ok": true,
+      "d": {
+        "status": 404
+      }
+    },
+    {
+      "n": "customer B cannot POST a message into customer A ticket",
+      "ok": true,
+      "d": {
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Support ticket not found\",\"error\":\"Not Found\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "n": "customer A can read its own ticket",
+      "ok": true,
+      "d": {
+        "status": 200
+      }
+    },
+    {
+      "n": "ticket lists are scoped per customer (A ticket not in B list)",
+      "ok": true,
+      "d": {
+        "ownIds": 1,
+        "otherIds": 0
+      }
+    }
+  ]
+}

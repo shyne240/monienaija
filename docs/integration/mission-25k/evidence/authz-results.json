@@ -1,0 +1,1043 @@
+{
+  "pass": 105,
+  "fail": 0,
+  "failures": [],
+  "total": 105,
+  "results": [
+    {
+      "group": "sessions",
+      "name": "all 13 principals authenticated through real login endpoints",
+      "ok": true,
+      "detail": {
+        "workforce": 11,
+        "customer": 2,
+        "support": 1,
+        "agent": 1
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer creates own preferences (POST) → 2xx",
+      "ok": true,
+      "detail": {
+        "status": 201,
+        "body": "{\"id\":\"55c80584-5b75-4774-abea-712aa2000d60\",\"customerId\":\"d1393ae8-a597-48da-acda-cb8a33b0e5da\",\"language\":\"EN\",\"theme\":\"SYSTEM\",\"notifications\":{\"email\":true,"
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer reads own preferences (GET) → 200 with own values",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "email": true
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer updates own preferences (PATCH) → 200",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": "{\"id\":\"55c80584-5b75-4774-abea-712aa2000d60\",\"customerId\":\"d1393ae8-a597-48da-acda-cb8a33b0e5da\",\"language\":\"EN\",\"theme\":\"SYSTEM\",\"notifications\":{\"email\":true,"
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer reads own preference history → 200 with entries",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "entries": 2
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer self-service GET /customers/me still 200",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "A-customer-self-service",
+      "name": "customer self-service GET /customers/me/profile still 200",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "A2-virgin-lifecycle",
+      "name": "virgin customer has no preference profile yet (404 before create)",
+      "ok": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "group": "A2-virgin-lifecycle",
+      "name": "virgin customer creates own preferences (POST 201) with a spoofed actor supplied",
+      "ok": true,
+      "detail": {
+        "status": 201,
+        "body": "{\"id\":\"1d1418e4-198f-45d1-a40f-150c09632b4e\",\"customerId\":\"fc86a151-2fc6-48ac-8b3e-ab125b72a643\",\"language\":\"EN\",\"theme\""
+      }
+    },
+    {
+      "group": "A2-virgin-lifecycle",
+      "name": "virgin customer reads back own created profile (200)",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "A2-virgin-lifecycle",
+      "name": "virgin customer updates own profile (PATCH 200)",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": "{\"id\":\"1d1418e4-198f-45d1-a40f-150c09632b4e\",\"customerId\":\"fc86a151-2fc6-48ac-8b3e-ab125b72a643\",\"language\":\"YO\",\"theme\""
+      }
+    },
+    {
+      "group": "A2-virgin-lifecycle",
+      "name": "virgin customer sees CREATED + UPDATED history entries",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "actions": [
+          "UPDATED",
+          "CREATED"
+        ]
+      }
+    },
+    {
+      "group": "B-cross-customer",
+      "name": "customer B GET /customers/<C1>/preferences → 403, no payload",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "B-cross-customer",
+      "name": "customer B GET /customers/<C1>/preferences/history → 403, no payload",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "B-cross-customer",
+      "name": "customer B PATCH /customers/<C1>/preferences → 403, no payload",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "B-cross-customer",
+      "name": "customer B POST /customers/<C1>/preferences → 403, no payload",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "B-cross-customer",
+      "name": "cross-customer denial is identical for a non-existent customer id",
+      "ok": true,
+      "detail": {
+        "status": 403
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "SUPER_ADMIN GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "PRIVILEGED",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "SUPER_ADMIN GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "PRIVILEGED",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "SUPER_ADMIN POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "PRIVILEGED",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "SUPER_ADMIN PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "PRIVILEGED",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_PREPARER GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_PREPARER GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_PREPARER POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_PREPARER PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_CONTROLLER GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_CONTROLLER GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_CONTROLLER POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_CONTROLLER PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_AUDITOR GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_AUDITOR GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_AUDITOR POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Read-only principal may not perform this operati"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "FINANCE_AUDITOR PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Read-only principal may not perform this operati"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "ADMINISTRATOR GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "ADMINISTRATOR GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "ADMINISTRATOR POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "ADMINISTRATOR PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "OPERATIONS GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "OPERATIONS GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "OPERATIONS POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "OPERATIONS PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "AGENT_NETWORK_MANAGER GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "AGENT_NETWORK_MANAGER GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "AGENT_NETWORK_MANAGER POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "AGENT_NETWORK_MANAGER PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "COMPLIANCE GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "COMPLIANCE GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "COMPLIANCE POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "COMPLIANCE PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "RISK_FRAUD GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "RISK_FRAUD GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "RISK_FRAUD POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "RISK_FRAUD PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "CUSTOMER_SERVICE GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "CUSTOMER_SERVICE GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "CUSTOMER_SERVICE POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "CUSTOMER_SERVICE PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "TREASURY GET /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "TREASURY GET /customers/<id>/preferences/history → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "TREASURY POST /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "C-workforce-denied",
+      "name": "TREASURY PATCH /customers/<id>/preferences → 403 and no preference data",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "principalType": "OPERATOR",
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "AGENT GET /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "AGENT GET /customers/<id>/preferences/history → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "AGENT POST /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "AGENT PATCH /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "SUPPORT GET /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "SUPPORT GET /customers/<id>/preferences/history → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "SUPPORT POST /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "D-agent-support-denied",
+      "name": "SUPPORT PATCH /customers/<id>/preferences → 403",
+      "ok": true,
+      "detail": {
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"times"
+      }
+    },
+    {
+      "group": "E-anonymous",
+      "name": "anonymous GET → 401",
+      "ok": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "group": "E-anonymous",
+      "name": "anonymous GET → 401",
+      "ok": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "group": "E-anonymous",
+      "name": "anonymous POST → 401",
+      "ok": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "group": "E-anonymous",
+      "name": "anonymous PATCH → 401",
+      "ok": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN percent-encoded static segment (p) → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/%70references",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN percent-encoded static segment (c) → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/%63ustomers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN trailing slash → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences/",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot GET /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/prefer"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN percent-encoded slash in descendant → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences%2Fhistory",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot GET /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/prefer"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN extra descendant segment → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences/history/extra",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot GET /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/prefer"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN query string appended → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences?probe=1",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN unsupported /me alias → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/me/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN non-UUID id → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/not-a-uuid/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN alternate method PUT → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "PUT",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot PUT /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/prefer"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN alternate method DELETE → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "DELETE",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot DELETE /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/pre"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN alternate method OPTIONS → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "OPTIONS",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot OPTIONS /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/pr"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN POST to history child → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "POST",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences/history",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot POST /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/prefe"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN PATCH to history child → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "PATCH",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences/history",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot PATCH /api/v1/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/pref"
+      }
+    },
+    {
+      "group": "F-bypass-workforce",
+      "name": "SUPER_ADMIN HEAD alias of GET → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "HEAD",
+        "path": "/customers/d1393ae8-a597-48da-acda-cb8a33b0e5da/preferences",
+        "status": 403,
+        "body": ""
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A percent-encoded segment, other customer → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/%70references",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A other customer plain → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A other customer + query string → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/preferences?probe=1",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A other customer + encoded slash → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/preferences%2Fhistory",
+        "status": 404,
+        "body": "{\"statusCode\":404,\"code\":\"NOT_FOUND\",\"message\":\"Cannot GET /api/v1/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/prefer"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A own /me alias → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "GET",
+        "path": "/customers/me/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "customer A PATCH other customer encoded → not 2xx, no preference data",
+      "ok": true,
+      "detail": {
+        "method": "PATCH",
+        "path": "/customers/516db5f4-39a5-4bd7-a6c3-e66ec8bfda62/preferences",
+        "status": 403,
+        "body": "{\"statusCode\":403,\"code\":\"REQUEST_ERROR\",\"message\":\"Authorization denied\",\"error\":\"Forbidden\",\"timestamp\":\"2026-11-01T16"
+      }
+    },
+    {
+      "group": "F-bypass-customer",
+      "name": "owning customer GET with query string still 200",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "G-audit-attribution",
+      "name": "request-supplied actor cannot spoof preference history (stored actor is the customer id)",
+      "ok": true,
+      "detail": {
+        "spoofStatus": 200,
+        "actors": [
+          "d1393ae8-a597-48da-acda-cb8a33b0e5da",
+          "d1393ae8-a597-48da-acda-cb8a33b0e5da",
+          "d1393ae8-a597-48da-acda-cb8a33b0e5da"
+        ]
+      }
+    },
+    {
+      "group": "G-audit-attribution",
+      "name": "no preference audit row attributes the action to a spoofed actor",
+      "ok": true,
+      "detail": {
+        "actors": [
+          "d1393ae8-a597-48da-acda-cb8a33b0e5da",
+          "fc86a151-2fc6-48ac-8b3e-ab125b72a643"
+        ]
+      }
+    },
+    {
+      "group": "G-audit-attribution",
+      "name": "preference authorization decisions are attributed to the authenticated principal, not a body value",
+      "ok": true,
+      "detail": {
+        "actors": [
+          "fc86a151-2fc6-48ac-8b3e-ab125b72a643",
+          "d1393ae8-a597-48da-acda-cb8a33b0e5da",
+          "516db5f4-39a5-4bd7-a6c3-e66ec8bfda62",
+          "https://idp.example.com:local-admin-credential:b4729569b2fe18d5b01aa8c1a5035123",
+          "https://idp.example.com:local-admin-credential:cc12037b2b90869722d01e356f81e857"
+        ]
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "SUPER_ADMIN generic audit read exposes no preference rows, decisions or values",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "leaksPrefRows": false,
+        "leaksCustomerPrefResource": false,
+        "leaksPreferenceValues": false,
+        "bytes": 137694
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "underlying preference audit rows still exist in PostgreSQL (filtered, not deleted)",
+      "ok": true,
+      "detail": {
+        "rowsInDb": 10
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "unrelated audit records remain visible to an authorized audit reader",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "rows": 5,
+        "rowsInDbForType": 74
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "SUPPORT audit exception does not expose preference rows either",
+      "ok": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "an explicit entityType=CUSTOMER_PREFERENCE audit query returns no rows",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "rows": 0
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "COMPLIANCE audit read exposes no preference rows or values",
+      "ok": true,
+      "detail": {
+        "status": 403
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "preference-route authorization decisions exist in PostgreSQL but are hidden from generic audit HTTP",
+      "ok": true,
+      "detail": {
+        "decisionsInDb": 78
+      }
+    },
+    {
+      "group": "H-audit-projection",
+      "name": "operational audit summary contains no per-customer preference values",
+      "ok": true,
+      "detail": {
+        "status": 404,
+        "bytes": 285
+      }
+    }
+  ]
+}
