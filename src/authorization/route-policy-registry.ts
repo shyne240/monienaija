@@ -175,6 +175,26 @@ const INTERNAL_AUDIT_READ = {
 const CUSTOMER_AUTHENTICATION_ROUTE =
   /^\/api\/v1\/customers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/authenticate$/i;
 
+/**
+ * Fastify decodes percent-encoded static path segments before matching routes, but request.url
+ * retains their encoded spelling. Decode each segment separately so an encoded `preferences`
+ * (or `api`/`customers`) cannot fall through to a broader customer policy. Keep encoded slashes
+ * inside their original segment, matching the router rather than inventing new path separators.
+ */
+function preferencePathCustomerId(path: string): string | undefined {
+  const segments = path.split('/');
+  if (segments.length < 6 || segments[0] !== '') return undefined;
+  try {
+    const [api, version, customers, id, preferences] = segments.slice(1, 6).map(decodeURIComponent);
+    if (api === 'api' && version === 'v1' && customers === 'customers' && id && preferences === 'preferences') {
+      return id;
+    }
+  } catch {
+    // Malformed encodings cannot match a valid Fastify route; never manufacture an ID.
+  }
+  return undefined;
+}
+
 // INTEGRATION NOTE (integration/main-backend-frontend-20261030) — main's
 // `CUSTOMER_SELF_SERVICE_ROUTES` / `CUSTOMER_REACHABLE_PRINCIPALS` / `INTERNAL_ACCESS_SCOPE`
 // constructs are deliberately NOT carried into this registry. They made GET/POST
@@ -283,6 +303,32 @@ export class RoutePolicyRegistry {
         resourceType: 'customer-credential-rotation',
       };
     }
+    // Mission 25G: preferences include security/biometric settings and their history. No
+    // approved workforce preference capability exists: `customer.view` covers profile/KYC tier,
+    // not this data. Apply CUSTOMER SELF to every method and descendant, before even the `me`
+    // catch-all: `/customers/me/preferences` is not a supported self-service alias.
+    const preferenceCustomerId = preferencePathCustomerId(path);
+    if (preferenceCustomerId !== undefined) {
+      const customerId = input.params?.id;
+      // AuthorizationService's general SELF check deliberately skips absent resource IDs.
+      // Here, an absent or inconsistent router parameter must instead deny every principal.
+      const boundToPath = Boolean(customerId && customerId === preferenceCustomerId);
+      return {
+        public: false,
+        resourceType: 'customer-preference',
+        resourceId: customerId,
+        customerId,
+        policy: {
+          resourceType: 'customer-preference',
+          action: `${method}:${path}`,
+          allowedPrincipalTypes: boundToPath ? ['CUSTOMER'] : [],
+          customerAccess: 'SELF',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        },
+      };
+    }
+
     // Customer App — self routes are strictly CUSTOMER SELF (A23). Must be before generic customers check.
     if (path === '/api/v1/customers/me' || path.startsWith('/api/v1/customers/me/')) {
       return {
