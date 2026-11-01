@@ -36,7 +36,8 @@ carried by other suites (§7.4).
 | Mission 25K integration branch | `integration/mission-25k-frontend-security-alignment` |
 | **Pinned code candidate** | **`587c3763944368b9260c9299d18bce1189ca5919`** |
 | Evidence-only branch tip at mission start | `21b1827fee1139e8ed49f237fd5b230f7712546f` |
-| **Mission 25M evidence commit** | `21b1827…` + docs-only commits; read the tip with `git ls-remote origin refs/heads/evidence/mission-25m-postgresql-regression` |
+| **Mission 25M evidence commit** | the commit that ADDED this report — `git log --diff-filter=A --format=%H -- docs/integration/mission-25m/*REPORT.md`; earlier commits on the same path cannot change that answer |
+| Evidence branch tip | read fresh with `git ls-remote origin refs/heads/evidence/mission-25m-postgresql-regression` (each later docs commit advances it; every one is documentation-only) |
 
 **Code identity verified**: `git diff --name-only 587c376 21b1827 -- src apps test scripts` → **0
 files**. The trees differ only because `21b1827` carries committed documentation/evidence under
