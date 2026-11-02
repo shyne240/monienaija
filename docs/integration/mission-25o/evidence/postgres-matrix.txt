@@ -1,0 +1,256 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: PG_TEST_BATCH_SIZE=6 PG_TEST_CONCURRENCY=2 npm run test:pg
+Database: disposable PostgreSQL on loopback; network guard blocks non-loopback egress
+Discovered integration files: 134
+=== PG integration run id: m25overify (database namespace mn_it_*_m25overify_*) ===
+=== PG integration batch 1/23 (6 files) starting ===
+=== PG integration batch 2/23 (6 files) starting ===
+PASS test/a16-agent-cash-to-cash-claim.integration.spec.ts
+PASS test/hardening-04-customer-transaction-history.integration.spec.ts
+PASS test/v1-notification-provider-configuration-01.integration.spec.ts
+PASS test/v1-commercial-scenario-matrix-01.integration.spec.ts
+PASS test/a13-agent-cash-in.integration.spec.ts
+PASS test/v1-commission-runtime-wiring.integration.spec.ts
+PASS test/v1-007-support-ticket.integration.spec.ts
+PASS test/v1-commercial-accounting-01.integration.spec.ts
+PASS test/a14-agent-cash-out.integration.spec.ts
+PASS test/v1-email-notification-01.integration.spec.ts
+PASS test/v1-limit-05-flow-matrix.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       395 passed, 395 total
+Ran all test suites matching /home/user/monienaija/test/a16-agent-cash-to-cash-claim.integration.spec.ts|/home/user/monienaija/test/v1-notification-provider-configuration-01.integration.spec.ts|/home/user/monienaija/test/v1-commission-runtime-wiring.integration.spec.ts|/home/user/monienaija/test/v1-commercial-accounting-01.integration.spec.ts|/home/user/monienaija/test/a14-agent-cash-out.integration.spec.ts|/home/user/monienaija/test/v1-limit-05-flow-matrix.integration.spec.ts.
+=== PG integration batch 1/23 finished (exit 0) ===
+=== PG integration batch 3/23 (6 files) starting ===
+PASS test/a5-payment-lifecycle.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       179 passed, 179 total
+Ran all test suites matching /home/user/monienaija/test/hardening-04-customer-transaction-history.integration.spec.ts|/home/user/monienaija/test/v1-commercial-scenario-matrix-01.integration.spec.ts|/home/user/monienaija/test/a13-agent-cash-in.integration.spec.ts|/home/user/monienaija/test/v1-007-support-ticket.integration.spec.ts|/home/user/monienaija/test/v1-email-notification-01.integration.spec.ts|/home/user/monienaija/test/a5-payment-lifecycle.integration.spec.ts.
+=== PG integration batch 2/23 finished (exit 0) ===
+=== PG integration batch 4/23 (6 files) starting ===
+PASS test/a24-customer-transaction-pin-hardening.integration.spec.ts
+PASS test/p0-p1-security-remediation.integration.spec.ts
+PASS test/a17-agent-cash-to-cash-expiry.integration.spec.ts
+PASS test/a7-product-financial-effect.integration.spec.ts
+PASS test/v1-005-notification-delivery.integration.spec.ts
+PASS test/v1-hardening-06-admin-customer-investigation.integration.spec.ts
+PASS test/v1-hardening-01-customer-beneficiary.integration.spec.ts
+PASS test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts
+PASS test/notification-reliability.integration.spec.ts
+PASS test/v1-fee-runtime-wiring.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       114 passed, 114 total
+Ran all test suites matching /home/user/monienaija/test/a24-customer-transaction-pin-hardening.integration.spec.ts|/home/user/monienaija/test/a17-agent-cash-to-cash-expiry.integration.spec.ts|/home/user/monienaija/test/v1-005-notification-delivery.integration.spec.ts|/home/user/monienaija/test/v1-hardening-06-admin-customer-investigation.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-03c-cash-to-cash-snapshot.integration.spec.ts|/home/user/monienaija/test/v1-fee-runtime-wiring.integration.spec.ts.
+=== PG integration batch 3/23 finished (exit 0) ===
+=== PG integration batch 5/23 (6 files) starting ===
+PASS test/v1-006-customer-notification-inbox.integration.spec.ts
+PASS test/v1-limit-02-limit-assignment.integration.spec.ts
+PASS test/a25-customer-history-hardening.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       136 passed, 136 total
+Ran all test suites matching /home/user/monienaija/test/p0-p1-security-remediation.integration.spec.ts|/home/user/monienaija/test/a7-product-financial-effect.integration.spec.ts|/home/user/monienaija/test/v1-hardening-01-customer-beneficiary.integration.spec.ts|/home/user/monienaija/test/notification-reliability.integration.spec.ts|/home/user/monienaija/test/v1-006-customer-notification-inbox.integration.spec.ts|/home/user/monienaija/test/a25-customer-history-hardening.integration.spec.ts.
+=== PG integration batch 4/23 finished (exit 0) ===
+=== PG integration batch 6/23 (6 files) starting ===
+PASS test/v1-reward-01-reward-engine.integration.spec.ts
+PASS test/a15-agent-cash-to-cash.integration.spec.ts
+PASS test/v1-001-customer-funding.integration.spec.ts
+PASS test/v1-agent-history-01.integration.spec.ts
+PASS test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts
+PASS test/v1-commission-settlement-01.integration.spec.ts
+PASS test/v1-commission-01-commission-engine.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       98 passed, 98 total
+Ran all test suites matching /home/user/monienaija/test/v1-limit-02-limit-assignment.integration.spec.ts|/home/user/monienaija/test/v1-reward-01-reward-engine.integration.spec.ts|/home/user/monienaija/test/v1-001-customer-funding.integration.spec.ts|/home/user/monienaija/test/v1-agent-history-01.integration.spec.ts|/home/user/monienaija/test/v1-commission-settlement-01.integration.spec.ts|/home/user/monienaija/test/v1-commission-01-commission-engine.integration.spec.ts.
+=== PG integration batch 5/23 finished (exit 0) ===
+=== PG integration batch 7/23 (6 files) starting ===
+PASS test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts
+PASS test/v1-commercial-decision-01-snapshot.integration.spec.ts
+PASS test/customer-compliance-authorization.integration.spec.ts
+PASS test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts
+PASS test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       142 passed, 142 total
+Ran all test suites matching /home/user/monienaija/test/a15-agent-cash-to-cash.integration.spec.ts|/home/user/monienaija/test/v1-admin-role-definition-governance-implementation-01.integration.spec.ts|/home/user/monienaija/test/v1-admin-configurable-dashboard-platform-01.integration.spec.ts|/home/user/monienaija/test/customer-compliance-authorization.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-03b-wallet-to-cash-snapshot.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-03e-agent-funding-snapshot.integration.spec.ts.
+=== PG integration batch 6/23 finished (exit 0) ===
+=== PG integration batch 8/23 (6 files) starting ===
+PASS test/v1-limit-04-limit-runtime.integration.spec.ts
+PASS test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts
+PASS test/mission-25o-credential-binding.integration.spec.ts
+PASS test/phase1-agent-security.integration.spec.ts
+PASS test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts
+PASS test/a20-outlets-terminals.integration.spec.ts
+PASS test/v1-limit-03-limit-usage.integration.spec.ts
+PASS test/v1-limit-01-limit-catalogue.integration.spec.ts
+PASS test/a12-agent-financial-execution.integration.spec.ts
+PASS test/v1-admin-authorization-hardening-01.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       138 passed, 138 total
+Ran all test suites matching /home/user/monienaija/test/v1-commercial-decision-01-snapshot.integration.spec.ts|/home/user/monienaija/test/v1-limit-04-limit-runtime.integration.spec.ts|/home/user/monienaija/test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts|/home/user/monienaija/test/phase1-agent-security.integration.spec.ts|/home/user/monienaija/test/v1-limit-03-limit-usage.integration.spec.ts|/home/user/monienaija/test/v1-admin-authorization-hardening-01.integration.spec.ts.
+=== PG integration batch 7/23 finished (exit 0) ===
+=== PG integration batch 9/23 (6 files) starting ===
+PASS test/v1-003-admin-operational-writes.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       114 passed, 114 total
+Ran all test suites matching /home/user/monienaija/test/mission-25o-credential-binding.integration.spec.ts|/home/user/monienaija/test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts|/home/user/monienaija/test/a20-outlets-terminals.integration.spec.ts|/home/user/monienaija/test/v1-limit-01-limit-catalogue.integration.spec.ts|/home/user/monienaija/test/a12-agent-financial-execution.integration.spec.ts|/home/user/monienaija/test/v1-003-admin-operational-writes.integration.spec.ts.
+=== PG integration batch 8/23 finished (exit 0) ===
+=== PG integration batch 10/23 (6 files) starting ===
+PASS test/a23-customer-app.integration.spec.ts
+PASS test/v1-sprint1-notification-delivery-authorization.integration.spec.ts
+PASS test/v1-agent-mfa-api-01.integration.spec.ts
+PASS test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts
+PASS test/a14-otp-hardening.integration.spec.ts
+PASS test/v1-customer-onboarding-01.integration.spec.ts
+PASS test/a26-customer-profile-hardening.integration.spec.ts
+PASS test/v1-sprint3-agent-history-workforce.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       85 passed, 85 total
+Ran all test suites matching /home/user/monienaija/test/v1-sprint1-notification-delivery-authorization.integration.spec.ts|/home/user/monienaija/test/v1-agent-mfa-api-01.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-03a-cash-to-wallet-snapshot.integration.spec.ts|/home/user/monienaija/test/a14-otp-hardening.integration.spec.ts|/home/user/monienaija/test/a26-customer-profile-hardening.integration.spec.ts|/home/user/monienaija/test/v1-sprint3-agent-history-workforce.integration.spec.ts.
+=== PG integration batch 10/23 finished (exit 0) ===
+=== PG integration batch 11/23 (6 files) starting ===
+PASS test/sms-v1-01.integration.spec.ts
+PASS test/v1-admin-authorization-customer-read-01.integration.spec.ts
+PASS test/v1-commercial-02-product-catalogue.integration.spec.ts
+PASS test/notification-registry.integration.spec.ts
+PASS test/a5-ledger-reversal.integration.spec.ts
+PASS test/a19-agent-funding.integration.spec.ts
+PASS test/v1-commercial-03-fee-rule-schema.integration.spec.ts
+PASS test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       82 passed, 82 total
+Ran all test suites matching /home/user/monienaija/test/sms-v1-01.integration.spec.ts|/home/user/monienaija/test/v1-commercial-02-product-catalogue.integration.spec.ts|/home/user/monienaija/test/notification-registry.integration.spec.ts|/home/user/monienaija/test/a19-agent-funding.integration.spec.ts|/home/user/monienaija/test/v1-commercial-03-fee-rule-schema.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-02-pilot-snapshot.integration.spec.ts.
+=== PG integration batch 11/23 finished (exit 0) ===
+=== PG integration batch 12/23 (6 files) starting ===
+PASS test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts
+PASS test/a7-product-lifecycle.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       156 passed, 156 total
+Ran all test suites matching /home/user/monienaija/test/a23-customer-app.integration.spec.ts|/home/user/monienaija/test/v1-customer-onboarding-01.integration.spec.ts|/home/user/monienaija/test/v1-admin-authorization-customer-read-01.integration.spec.ts|/home/user/monienaija/test/a5-ledger-reversal.integration.spec.ts|/home/user/monienaija/test/v1-administrator-role-and-assignment-implementation-01.integration.spec.ts|/home/user/monienaija/test/a7-product-lifecycle.integration.spec.ts.
+=== PG integration batch 9/23 finished (exit 0) ===
+=== PG integration batch 13/23 (6 files) starting ===
+PASS test/v1-capability-registry.integration.spec.ts
+PASS test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts
+PASS test/v1-limit-05-diagnostics.integration.spec.ts
+PASS test/v1-commercial-04-fee-rule-resolver.integration.spec.ts
+PASS test/v1-admin-authorization-kyc-01.integration.spec.ts
+PASS test/v1-security-super-admin-recovery-01.integration.spec.ts
+PASS test/a8-agent-lifecycle.integration.spec.ts
+PASS test/a18-aggregator-foundation.integration.spec.ts
+PASS test/a11-agent-transaction-authorization.integration.spec.ts
+PASS test/transfer-notification-producer-01.integration.spec.ts
+PASS test/mission-15a-management.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       118 passed, 118 total
+Ran all test suites matching /home/user/monienaija/test/v1-capability-registry.integration.spec.ts|/home/user/monienaija/test/v1-commercial-decision-03d-customer-funding-snapshot.integration.spec.ts|/home/user/monienaija/test/v1-admin-authorization-kyc-01.integration.spec.ts|/home/user/monienaija/test/v1-security-super-admin-recovery-01.integration.spec.ts|/home/user/monienaija/test/a18-aggregator-foundation.integration.spec.ts|/home/user/monienaija/test/mission-15a-management.integration.spec.ts.
+=== PG integration batch 12/23 finished (exit 0) ===
+=== PG integration batch 14/23 (6 files) starting ===
+PASS test/mission-25g-customer-preference-authorization.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       102 passed, 102 total
+Ran all test suites matching /home/user/monienaija/test/v1-limit-05-diagnostics.integration.spec.ts|/home/user/monienaija/test/v1-commercial-04-fee-rule-resolver.integration.spec.ts|/home/user/monienaija/test/a8-agent-lifecycle.integration.spec.ts|/home/user/monienaija/test/a11-agent-transaction-authorization.integration.spec.ts|/home/user/monienaija/test/transfer-notification-producer-01.integration.spec.ts|/home/user/monienaija/test/mission-25g-customer-preference-authorization.integration.spec.ts.
+=== PG integration batch 13/23 finished (exit 0) ===
+=== PG integration batch 15/23 (6 files) starting ===
+PASS test/v1-agent-05-transaction-pin-security.integration.spec.ts
+PASS test/v1-customer-credentials-01.integration.spec.ts
+PASS test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts
+PASS test/v1-customer-05-transaction-pin-security.integration.spec.ts
+PASS test/batch-01-customer-servicing.integration.spec.ts
+PASS test/a22-admin-foundation.integration.spec.ts
+PASS test/v1-agent-credentials-01.integration.spec.ts
+PASS test/report26-correlation-persistence.integration.spec.ts
+PASS test/v1-customer-onboarding-02.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       61 passed, 61 total
+Ran all test suites matching /home/user/monienaija/test/v1-agent-05-transaction-pin-security.integration.spec.ts|/home/user/monienaija/test/v1-customer-credentials-01.integration.spec.ts|/home/user/monienaija/test/v1-agent-mobile-idempotency-persistence-01.integration.spec.ts|/home/user/monienaija/test/batch-01-customer-servicing.integration.spec.ts|/home/user/monienaija/test/a22-admin-foundation.integration.spec.ts|/home/user/monienaija/test/v1-customer-onboarding-02.integration.spec.ts.
+=== PG integration batch 14/23 finished (exit 0) ===
+=== PG integration batch 16/23 (6 files) starting ===
+PASS test/v1-ops-01-support-workforce-operational.integration.spec.ts
+PASS test/batch-2a-customer-registration.integration.spec.ts
+PASS test/v1-harden-01-support-adversarial.integration.spec.ts
+PASS test/a7-agent-authentication-http.integration.spec.ts
+PASS test/a6-settlement-lifecycle.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       83 passed, 83 total
+Ran all test suites matching /home/user/monienaija/test/v1-customer-05-transaction-pin-security.integration.spec.ts|/home/user/monienaija/test/v1-agent-credentials-01.integration.spec.ts|/home/user/monienaija/test/report26-correlation-persistence.integration.spec.ts|/home/user/monienaija/test/v1-ops-01-support-workforce-operational.integration.spec.ts|/home/user/monienaija/test/v1-harden-01-support-adversarial.integration.spec.ts|/home/user/monienaija/test/a6-settlement-lifecycle.integration.spec.ts.
+=== PG integration batch 15/23 finished (exit 0) ===
+=== PG integration batch 17/23 (6 files) starting ===
+PASS test/v1-commercial-rule-governance.integration.spec.ts
+PASS test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts
+PASS test/v1-admin-authorization-read-surface-01.integration.spec.ts
+PASS test/v1-workforce-bootstrap-01.integration.spec.ts
+PASS test/b2f-finance-lifecycle.integration.spec.ts
+PASS test/v1-customer-08-limits-view.integration.spec.ts
+PASS test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts
+PASS test/a2-workforce-session.integration.spec.ts
+PASS test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       105 passed, 105 total
+Ran all test suites matching /home/user/monienaija/test/batch-2a-customer-registration.integration.spec.ts|/home/user/monienaija/test/a7-agent-authentication-http.integration.spec.ts|/home/user/monienaija/test/v1-commercial-rule-governance.integration.spec.ts|/home/user/monienaija/test/v1-hardening-07-admin-agent-financial-position.integration.spec.ts|/home/user/monienaija/test/v1-admin-customer-pii-authorization-implementation-01.integration.spec.ts|/home/user/monienaija/test/s-fix-01-customer-lifecycle-authorization.integration.spec.ts.
+=== PG integration batch 16/23 finished (exit 0) ===
+=== PG integration batch 18/23 (6 files) starting ===
+PASS test/a21-agent-app.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       86 passed, 86 total
+Ran all test suites matching /home/user/monienaija/test/v1-admin-authorization-read-surface-01.integration.spec.ts|/home/user/monienaija/test/v1-workforce-bootstrap-01.integration.spec.ts|/home/user/monienaija/test/b2f-finance-lifecycle.integration.spec.ts|/home/user/monienaija/test/v1-customer-08-limits-view.integration.spec.ts|/home/user/monienaija/test/a2-workforce-session.integration.spec.ts|/home/user/monienaija/test/a21-agent-app.integration.spec.ts.
+=== PG integration batch 17/23 finished (exit 0) ===
+=== PG integration batch 19/23 (6 files) starting ===
+PASS test/a5-transfer-lifecycle.integration.spec.ts
+PASS test/v1-funding-approvals-inbox.integration.spec.ts
+PASS test/v1-limit-05-recovery.integration.spec.ts
+PASS test/a10-agent-service-capability.integration.spec.ts
+PASS test/v1-agent-receiving-number-authorization.integration.spec.ts
+PASS test/v1-admin-p1-authorization-hardening.integration.spec.ts
+PASS test/a5t11-b2f03-convergence.integration.spec.ts
+PASS test/v1-w2w-recovery-audit-01.integration.spec.ts
+PASS test/v1-ledger-reversal-governance.integration.spec.ts
+PASS test/v1-admin-authorization-foundation-01.integration.spec.ts
+PASS test/a9-agent-receiving-number.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       77 passed, 77 total
+Ran all test suites matching /home/user/monienaija/test/a5-transfer-lifecycle.integration.spec.ts|/home/user/monienaija/test/v1-limit-05-recovery.integration.spec.ts|/home/user/monienaija/test/a10-agent-service-capability.integration.spec.ts|/home/user/monienaija/test/v1-admin-p1-authorization-hardening.integration.spec.ts|/home/user/monienaija/test/v1-ledger-reversal-governance.integration.spec.ts|/home/user/monienaija/test/a9-agent-receiving-number.integration.spec.ts.
+=== PG integration batch 18/23 finished (exit 0) ===
+=== PG integration batch 20/23 (6 files) starting ===
+PASS test/mission-19a-workforce-logout.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       60 passed, 60 total
+Ran all test suites matching /home/user/monienaija/test/v1-funding-approvals-inbox.integration.spec.ts|/home/user/monienaija/test/v1-agent-receiving-number-authorization.integration.spec.ts|/home/user/monienaija/test/a5t11-b2f03-convergence.integration.spec.ts|/home/user/monienaija/test/v1-w2w-recovery-audit-01.integration.spec.ts|/home/user/monienaija/test/v1-admin-authorization-foundation-01.integration.spec.ts|/home/user/monienaija/test/mission-19a-workforce-logout.integration.spec.ts.
+=== PG integration batch 19/23 finished (exit 0) ===
+=== PG integration batch 21/23 (6 files) starting ===
+PASS test/v1-customer-09-support-workforce-boundary.integration.spec.ts
+PASS test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts
+PASS test/v1-admin-local-login-01.integration.spec.ts
+PASS test/notification-migration-upgrade-01.integration.spec.ts
+PASS test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts
+PASS test/mission-16a-agent-read-authorization.integration.spec.ts
+PASS test/final-integration-gates-focus.integration.spec.ts
+PASS test/migration-chain.integration.spec.ts
+PASS test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts
+PASS test/mission-15a-agent-sessions.integration.spec.ts
+PASS test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       71 passed, 71 total
+Ran all test suites matching /home/user/monienaija/test/v1-customer-09-support-workforce-boundary.integration.spec.ts|/home/user/monienaija/test/v1-system-01-suspended-customer-financial-boundary.integration.spec.ts|/home/user/monienaija/test/v1-harden-01-limit-catalog-check-constraint-boundary.integration.spec.ts|/home/user/monienaija/test/mission-16a-agent-read-authorization.integration.spec.ts|/home/user/monienaija/test/migration-chain.integration.spec.ts|/home/user/monienaija/test/v1-harden-01-runtime-access-guard-boundary.integration.spec.ts.
+=== PG integration batch 21/23 finished (exit 0) ===
+=== PG integration batch 22/23 (6 files) starting ===
+PASS test/v1-mobile-idempotency-recovery-01.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       45 passed, 45 total
+Ran all test suites matching /home/user/monienaija/test/v1-admin-local-login-01.integration.spec.ts|/home/user/monienaija/test/notification-migration-upgrade-01.integration.spec.ts|/home/user/monienaija/test/final-integration-gates-focus.integration.spec.ts|/home/user/monienaija/test/v1-admin-full-surface-audit-01-auth-propagation.integration.spec.ts|/home/user/monienaija/test/mission-15a-agent-sessions.integration.spec.ts|/home/user/monienaija/test/v1-mobile-idempotency-recovery-01.integration.spec.ts.
+=== PG integration batch 20/23 finished (exit 0) ===
+=== PG integration batch 23/23 (2 files) starting ===
+PASS test/transaction-boundary.integration.spec.ts
+PASS test/v1-release-01-production-readiness-migration-sync.integration.spec.ts
+PASS test/v1-customer-self-service-lifecycle.integration.spec.ts
+PASS test/v1-harden-01-support-provision-race.integration.spec.ts
+Test Suites: 2 passed, 2 total
+Tests:       4 passed, 4 total
+Ran all test suites matching /home/user/monienaija/test/v1-release-01-production-readiness-migration-sync.integration.spec.ts|/home/user/monienaija/test/v1-harden-01-support-provision-race.integration.spec.ts.
+=== PG integration batch 23/23 finished (exit 0) ===
+PASS test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts
+PASS test/v1-agent-cash-to-cash-operations.integration.spec.ts
+PASS test/agent-application-access-migration-upgrade.integration.spec.ts
+PASS test/mission-25o-credential-binding-upgrade.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       24 passed, 24 total
+Ran all test suites matching /home/user/monienaija/test/transaction-boundary.integration.spec.ts|/home/user/monienaija/test/v1-customer-self-service-lifecycle.integration.spec.ts|/home/user/monienaija/test/v1-harden-01-a2-rate-limit-serialization.integration.spec.ts|/home/user/monienaija/test/v1-agent-cash-to-cash-operations.integration.spec.ts|/home/user/monienaija/test/agent-application-access-migration-upgrade.integration.spec.ts|/home/user/monienaija/test/mission-25o-credential-binding-upgrade.integration.spec.ts.
+=== PG integration batch 22/23 finished (exit 0) ===
+=== PG integration suite: 23 batch(es), 134 files, concurrency=2 — all passed ===
+Process exit: 0

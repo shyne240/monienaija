@@ -1,0 +1,312 @@
+{
+  "label": "Changed TypeScript files: implementation versus 25K baseline",
+  "implementationCommit": "3a0f87eafe86b455e1906d7779f83ca3152b9d00",
+  "parentCommit": "587c3763944368b9260c9299d18bce1189ca5919",
+  "currentExitCode": 1,
+  "parentExitCode": 1,
+  "current": {
+    "files": 23,
+    "errors": 37,
+    "warnings": 3,
+    "results": [
+      {
+        "file": "src/admin/admin-notification-provider.controller.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/authorization/privileged-action-approval.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/common/sensitive-data-redaction.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/config/environment.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/migrations/1785753600102-AddNotificationCredentialBinding.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/notification-credential-binding.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/notification-provider-config.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/notification.types.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/provider-security.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/production/production-readiness.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/a19-agent-funding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2,
+        "ruleCounts": {
+          "warning:parser": 2
+        }
+      },
+      {
+        "file": "test/a8-agent-lifecycle.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/mission-25c-provider-routing.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/mission-25o-credential-binding.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/notification-provider-config.unit.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1,
+        "ruleCounts": {
+          "error:@typescript-eslint/ban-ts-comment": 1,
+          "error:@typescript-eslint/no-explicit-any": 6,
+          "error:@typescript-eslint/no-require-imports": 1,
+          "error:@typescript-eslint/no-unused-vars": 7,
+          "error:@typescript-eslint/require-await": 1,
+          "warning:parser": 1
+        }
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0,
+        "ruleCounts": {
+          "error:@typescript-eslint/no-require-imports": 1,
+          "error:@typescript-eslint/no-unsafe-call": 6,
+          "error:@typescript-eslint/no-unsafe-return": 1,
+          "error:@typescript-eslint/no-unused-vars": 4
+        }
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0,
+        "ruleCounts": {
+          "error:@typescript-eslint/ban-ts-comment": 2,
+          "error:@typescript-eslint/no-require-imports": 3,
+          "error:@typescript-eslint/no-unsafe-argument": 1,
+          "error:@typescript-eslint/no-unused-vars": 1,
+          "error:@typescript-eslint/require-await": 1,
+          "error:prefer-const": 1
+        }
+      },
+      {
+        "file": "test/v1-notification-provider-configuration-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      }
+    ]
+  },
+  "parentModifiedFiles": {
+    "files": 18,
+    "errors": 37,
+    "warnings": 3,
+    "results": [
+      {
+        "file": "src/admin/admin-notification-provider.controller.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/authorization/privileged-action-approval.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/common/sensitive-data-redaction.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/config/environment.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/notification-provider-config.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/notification.types.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/notification/provider-security.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "src/production/production-readiness.service.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/a19-agent-funding.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2,
+        "ruleCounts": {
+          "warning:parser": 2
+        }
+      },
+      {
+        "file": "test/a8-agent-lifecycle.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/mission-25c-provider-routing.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/notification-migration-upgrade-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/notification-provider-config.unit.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1,
+        "ruleCounts": {
+          "error:@typescript-eslint/ban-ts-comment": 1,
+          "error:@typescript-eslint/no-explicit-any": 6,
+          "error:@typescript-eslint/no-require-imports": 1,
+          "error:@typescript-eslint/no-unused-vars": 7,
+          "error:@typescript-eslint/require-await": 1,
+          "warning:parser": 1
+        }
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0,
+        "ruleCounts": {
+          "error:@typescript-eslint/no-require-imports": 1,
+          "error:@typescript-eslint/no-unsafe-call": 6,
+          "error:@typescript-eslint/no-unsafe-return": 1,
+          "error:@typescript-eslint/no-unused-vars": 4
+        }
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0,
+        "ruleCounts": {
+          "error:@typescript-eslint/ban-ts-comment": 2,
+          "error:@typescript-eslint/no-require-imports": 3,
+          "error:@typescript-eslint/no-unsafe-argument": 1,
+          "error:@typescript-eslint/no-unused-vars": 1,
+          "error:@typescript-eslint/require-await": 1,
+          "error:prefer-const": 1
+        }
+      },
+      {
+        "file": "test/v1-notification-provider-configuration-01.integration.spec.ts",
+        "errors": 0,
+        "warnings": 0,
+        "ruleCounts": {}
+      }
+    ]
+  },
+  "ruleCountProfilesMatchForModifiedFiles": true,
+  "newlyAddedFilesHaveNoDiagnostics": true,
+  "note": "Profiles compare counts by file, rule and severity, not diagnostic text or exact line identity. This is not repository-wide lint."
+}

@@ -1,0 +1,8 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+25K baseline commit: 587c3763944368b9260c9299d18bce1189ca5919
+Scope: changed TypeScript files; separately linted parent versions of modified files in an isolated export.
+Current: 23 files, 37 errors, 3 warnings; ESLint exit 1.
+Parent: 18 files, 37 errors, 3 warnings; ESLint exit 1.
+Modified-file rule/severity count profiles match parent: true.
+Added files have no diagnostics: true.
+Profiles compare counts by file, rule and severity, not diagnostic text or exact line identity. This is not repository-wide lint.

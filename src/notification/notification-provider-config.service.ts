@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +29,13 @@ import {
   verifyBrevoConnection,
 } from './brevo-email-provider';
 import { ConsoleEmailProvider, NoneEmailProvider } from './email-provider.interface';
+import {
+  CREDENTIAL_BINDING_SCHEME,
+  type BoundCredentialSource,
+  type CredentialBinding,
+  CredentialBindingError,
+  NotificationCredentialBindingService,
+} from './notification-credential-binding.service';
 import { ConsoleNotificationProvider } from './notification-provider.interface';
 import {
   computeKeyFingerprint,
@@ -239,6 +246,9 @@ interface DbProviderConfigRow {
   encrypted_api_key: string | null;
   encryption_key_version: string | null;
   key_fingerprint: string | null;
+  credential_binding_scheme: string | null;
+  credential_binding_key_version: string | null;
+  credential_binding_mac: string | null;
   spf_configured: boolean;
   dkim_configured: boolean;
   dmarc_configured: boolean;
@@ -277,6 +287,11 @@ interface DbProposalRow {
   proposed_encrypted_api_key: string | null;
   proposed_encryption_key_version: string | null;
   proposed_key_fingerprint: string | null;
+  action_fingerprint_version: number | null;
+  proposed_credential_source: CredentialSource | null;
+  credential_binding_scheme: string | null;
+  credential_binding_key_version: string | null;
+  credential_binding_mac: string | null;
   proposed_spf_configured: boolean;
   proposed_dkim_configured: boolean;
   proposed_dmarc_configured: boolean;
@@ -293,6 +308,81 @@ interface DbProposalRow {
   resulting_version: number | null;
   created_at: Date | string;
   updated_at: Date | string;
+}
+
+type ProposalFingerprintFields = Pick<DbProposalRow,
+  | 'id' | 'channel' | 'expected_version' | 'proposed_provider' | 'proposed_enabled'
+  | 'proposed_base_url' | 'proposed_request_timeout_ms' | 'proposed_sender_id'
+  | 'proposed_from_email' | 'proposed_from_name' | 'proposed_reply_to_email'
+  | 'credential_action' | 'proposed_encrypted_api_key' | 'proposed_encryption_key_version'
+  | 'proposed_key_fingerprint' | 'proposed_credential_source' | 'credential_binding_scheme'
+  | 'credential_binding_key_version' | 'credential_binding_mac' | 'proposed_spf_configured'
+  | 'proposed_dkim_configured' | 'proposed_dmarc_configured' | 'reason' | 'proposer_principal_id'
+>;
+
+/** Digest high-entropy encrypted envelope plus all governed fields and the keyed commitment. */
+function proposalActionFingerprint(proposal: ProposalFingerprintFields): string {
+  const envelopeHash = proposal.proposed_encrypted_api_key
+    ? createHash('sha256').update(proposal.proposed_encrypted_api_key, 'utf8').digest('hex')
+    : null;
+  return createHash('sha256').update(JSON.stringify({
+    domain: 'monienaija.notification.provider-configuration.action.v2',
+    proposalId: proposal.id,
+    channel: proposal.channel,
+    expectedVersion: proposal.expected_version,
+    provider: proposal.proposed_provider,
+    enabled: proposal.proposed_enabled,
+    baseUrl: proposal.proposed_base_url,
+    requestTimeoutMs: proposal.proposed_request_timeout_ms,
+    senderId: proposal.proposed_sender_id,
+    fromEmail: proposal.proposed_from_email,
+    fromName: proposal.proposed_from_name,
+    replyToEmail: proposal.proposed_reply_to_email,
+    credentialAction: proposal.credential_action,
+    credentialSource: proposal.proposed_credential_source,
+    envelopeHash,
+    encryptionKeyVersion: proposal.proposed_encryption_key_version,
+    keyFingerprint: proposal.proposed_key_fingerprint,
+    bindingScheme: proposal.credential_binding_scheme,
+    bindingKeyVersion: proposal.credential_binding_key_version,
+    bindingMac: proposal.credential_binding_mac,
+    spfConfigured: proposal.proposed_spf_configured,
+    dkimConfigured: proposal.proposed_dkim_configured,
+    dmarcConfigured: proposal.proposed_dmarc_configured,
+    reason: proposal.reason,
+    proposer: proposal.proposer_principal_id,
+  }), 'utf8').digest('hex');
+}
+
+function proposalFingerprintMatches(proposal: DbProposalRow): boolean {
+  if (proposal.action_fingerprint_version !== 2 || !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint)) {
+    return false;
+  }
+  const actual = Buffer.from(proposalActionFingerprint(proposal), 'hex');
+  const expected = Buffer.from(proposal.action_fingerprint, 'hex');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function bindingFromRow(row: {
+  credential_binding_scheme: string | null;
+  credential_binding_key_version: string | null;
+  credential_binding_mac: string | null;
+}): CredentialBinding | null {
+  if (row.credential_binding_scheme !== CREDENTIAL_BINDING_SCHEME ||
+      typeof row.credential_binding_key_version !== 'string' ||
+      typeof row.credential_binding_mac !== 'string') return null;
+  return {
+    scheme: CREDENTIAL_BINDING_SCHEME,
+    keyVersion: row.credential_binding_key_version,
+    mac: row.credential_binding_mac,
+  };
+}
+
+function sameBinding(left: CredentialBinding | null, right: CredentialBinding | null): boolean {
+  if (!left || !right) return left === null && right === null;
+  if (left.scheme !== right.scheme || left.keyVersion !== right.keyVersion ||
+      !/^[a-f0-9]{64}$/.test(left.mac) || !/^[a-f0-9]{64}$/.test(right.mac)) return false;
+  return timingSafeEqual(Buffer.from(left.mac, 'hex'), Buffer.from(right.mac, 'hex'));
 }
 
 const INITIATOR_ROLE = 'SUPER_ADMIN';
@@ -407,6 +497,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
   private readonly consoleSms = new ConsoleNotificationProvider();
   private readonly consoleEmail = new ConsoleEmailProvider();
   private readonly noneEmail = new NoneEmailProvider();
+  private readonly bindingService: NotificationCredentialBindingService;
 
   /**
    * Synchronous projection of the active provider names for `NotificationProvider.name`
@@ -426,6 +517,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
     @Inject(NOTIFICATION_PROVIDER_HTTP_FETCH_TOKEN)
     private readonly fetchImpl?: ProviderHttpFetchFn,
   ) {
+    this.bindingService = new NotificationCredentialBindingService(configService);
     // No synchronous reader may advertise a legacy provider before governance is read.
     this.cachedSmsProviderName = 'none';
     this.cachedEmailProviderName = 'none';
@@ -523,6 +615,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
     } catch {
       return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
     }
+    if (request.expectedProviderConfigVersion !== undefined &&
+        request.expectedProviderConfigVersion !== (row?.version ?? 0)) {
+      return { success: false, error: 'PROVIDER_CONFIGURATION_CHANGED', failureDisposition: 'RETRYABLE' };
+    }
 
     if (!row) {
       // A missing row cannot prove that a prior governed activation was never removed.
@@ -558,7 +654,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
       const secretResolution = this.resolveRowSecret(row);
       if (!secretResolution.ok) {
-        return { success: false, error: secretResolution.errorCode };
+        return secretResolution.errorCode === 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' ||
+          secretResolution.errorCode === 'PROVIDER_ENV_SECRET_MISSING'
+          ? { success: false, error: secretResolution.errorCode, failureDisposition: 'RETRYABLE' }
+          : { success: false, error: secretResolution.errorCode };
       }
       const adapter = new RobaseNotificationProvider(
         {
@@ -585,6 +684,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
       row = await this.loadDbRow('EMAIL');
     } catch {
       return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
+    }
+    if (request.expectedProviderConfigVersion !== undefined &&
+        request.expectedProviderConfigVersion !== (row?.version ?? 0)) {
+      return { success: false, error: 'PROVIDER_CONFIGURATION_CHANGED', failureDisposition: 'RETRYABLE' };
     }
 
     if (!row) {
@@ -632,7 +735,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
       const secretResolution = this.resolveRowSecret(row);
       if (!secretResolution.ok) {
-        return { success: false, error: secretResolution.errorCode };
+        return secretResolution.errorCode === 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' ||
+          secretResolution.errorCode === 'PROVIDER_ENV_SECRET_MISSING'
+          ? { success: false, error: secretResolution.errorCode, failureDisposition: 'RETRYABLE' }
+          : { success: false, error: secretResolution.errorCode };
       }
       const adapter = new BrevoEmailProvider(
         {
@@ -659,7 +765,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
       const secretResolution = this.resolveRowSecret(row);
       if (!secretResolution.ok) {
-        return { success: false, error: secretResolution.errorCode };
+        return secretResolution.errorCode === 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' ||
+          secretResolution.errorCode === 'PROVIDER_ENV_SECRET_MISSING'
+          ? { success: false, error: secretResolution.errorCode, failureDisposition: 'RETRYABLE' }
+          : { success: false, error: secretResolution.errorCode };
       }
       const combinedFrom = row.from_name
         ? `${sanitizeHeader(row.from_name)} <${row.from_email}>`
@@ -1013,7 +1122,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
     let encryptedEnvelope: string | null = null;
     let encryptionKeyVersion: string | null = null;
     let keyFingerprint: string | null = null;
-    let envelopeHash: string | null = null;
+    let proposedSource: CredentialSource = 'NONE';
+    let binding: CredentialBinding | null = null;
+    let resolvedCredential: string | null = null;
 
     if (credentialAction === 'SET_ENCRYPTED') {
       if (!isExternalProvider) {
@@ -1022,13 +1133,18 @@ export class NotificationProviderConfigService implements OnModuleInit {
         );
       }
       const validatedKey = validateApiKeyForProvider(provider, input.apiKey ?? '');
+      resolvedCredential = validatedKey;
       try {
+        binding = this.bindingService.create(channel, provider, 'ENCRYPTED_DB', validatedKey);
         const encrypted = this.encryptionService.encrypt(validatedKey, channel);
         encryptedEnvelope = encrypted.envelope;
         encryptionKeyVersion = encrypted.keyVersion;
         keyFingerprint = encrypted.fingerprint;
-        envelopeHash = encrypted.envelopeHash;
+        proposedSource = 'ENCRYPTED_DB';
       } catch (err) {
+        if (err instanceof CredentialBindingError) {
+          throw new BadRequestException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+        }
         if (err instanceof NotificationSecretEncryptionError) {
           throw new BadRequestException(`${err.code}: ${err.message}`);
         }
@@ -1036,17 +1152,24 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
     } else if (credentialAction === 'KEEP_EXISTING') {
       if (isExternalProvider) {
-        const hasExistingCred =
-          existing &&
-          (existing.credential_source === 'ENCRYPTED_DB' ||
-            existing.credential_source === 'ENV_SECRET');
-        if (!hasExistingCred) {
+        if (!existing || existing.provider !== provider ||
+            (existing.credential_source !== 'ENCRYPTED_DB' && existing.credential_source !== 'ENV_SECRET')) {
           throw new BadRequestException(
-            `No existing stored credential is present for ${channel}; choose SET_ENCRYPTED or USE_ENV_SECRET.`,
+            `No matching bound credential is present for ${channel}; choose SET_ENCRYPTED or USE_ENV_SECRET.`,
           );
         }
-        keyFingerprint = existing?.key_fingerprint ?? null;
+        // Never let KEEP_EXISTING silently bind a legacy credential or change its provider.
+        const existingSecret = this.resolveRowSecret(existing);
+        if (!existingSecret.ok) {
+          throw new BadRequestException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+        }
+        resolvedCredential = existingSecret.apiKey;
+        binding = bindingFromRow(existing);
+        if (!binding) throw new BadRequestException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+        proposedSource = existing.credential_source;
+        keyFingerprint = existing.key_fingerprint;
       }
+      // Moving to a non-external provider does not carry an external secret forward.
     } else if (credentialAction === 'USE_ENV_SECRET') {
       if (!isExternalProvider) {
         throw new BadRequestException(
@@ -1059,41 +1182,55 @@ export class NotificationProviderConfigService implements OnModuleInit {
           `Environment variable credential for "${provider}" is not configured on this server.`,
         );
       }
-      validateApiKeyForProvider(provider, envSecret);
-      keyFingerprint = computeKeyFingerprint(envSecret);
+      const validatedKey = validateApiKeyForProvider(provider, envSecret);
+      resolvedCredential = validatedKey;
+      try {
+        binding = this.bindingService.create(channel, provider, 'ENV_SECRET', validatedKey);
+      } catch {
+        throw new BadRequestException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+      }
+      proposedSource = 'ENV_SECRET';
+      keyFingerprint = computeKeyFingerprint(validatedKey);
     } else if (credentialAction === 'CLEAR') {
       if (isExternalProvider && enabled) {
-        throw new BadRequestException(
-          `Cannot clear credentials while ${provider} is enabled.`,
-        );
+        throw new BadRequestException(`Cannot clear credentials while ${provider} is enabled.`);
       }
     }
 
+    // Never create an accidental plaintext copy in a reason or sender field. The secret
+    // belongs only in the approved existing encrypted envelope or the environment.
+    if (resolvedCredential && [reason, senderId, fromEmail, fromName, replyToEmail]
+      .some((value) => typeof value === 'string' && value.includes(resolvedCredential))) {
+      throw new BadRequestException('Provider credential must not appear in non-secret fields.');
+    }
+
     const proposalId = randomUUID();
-    const actionFingerprint = createHash('sha256')
-      .update(
-        JSON.stringify({
-          proposalId,
-          channel,
-          expectedVersion: input.expectedVersion,
-          provider,
-          enabled,
-          baseUrl,
-          requestTimeoutMs,
-          senderId,
-          fromEmail,
-          fromName,
-          replyToEmail,
-          credentialAction,
-          envelopeHash,
-          keyFingerprint,
-          spfConfigured,
-          dkimConfigured,
-          dmarcConfigured,
-        }),
-        'utf8',
-      )
-      .digest('hex');
+    const actionFingerprint = proposalActionFingerprint({
+      id: proposalId,
+      channel,
+      expected_version: input.expectedVersion,
+      proposed_provider: provider,
+      proposed_enabled: enabled,
+      proposed_base_url: baseUrl,
+      proposed_request_timeout_ms: requestTimeoutMs,
+      proposed_sender_id: senderId,
+      proposed_from_email: fromEmail,
+      proposed_from_name: fromName,
+      proposed_reply_to_email: replyToEmail,
+      credential_action: credentialAction,
+      proposed_encrypted_api_key: encryptedEnvelope,
+      proposed_encryption_key_version: encryptionKeyVersion,
+      proposed_key_fingerprint: keyFingerprint,
+      proposed_credential_source: proposedSource,
+      credential_binding_scheme: binding?.scheme ?? null,
+      credential_binding_key_version: binding?.keyVersion ?? null,
+      credential_binding_mac: binding?.mac ?? null,
+      proposed_spf_configured: spfConfigured,
+      proposed_dkim_configured: dkimConfigured,
+      proposed_dmarc_configured: dmarcConfigured,
+      reason,
+      proposer_principal_id: principal.principalId,
+    });
 
     const decision = await this.safeDbOperation('proposeChange.requestApproval', () =>
       approvals.request({
@@ -1130,9 +1267,11 @@ export class NotificationProviderConfigService implements OnModuleInit {
               credential_action, proposed_encrypted_api_key, proposed_encryption_key_version,
               proposed_key_fingerprint, proposed_spf_configured, proposed_dkim_configured,
               proposed_dmarc_configured, reason, status, proposer_principal_id,
-              approval_id, action_fingerprint)
+              approval_id, action_fingerprint, action_fingerprint_version,
+              proposed_credential_source, credential_binding_scheme,
+              credential_binding_key_version, credential_binding_mac)
            VALUES
-             ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'REQUESTED',$20,$21,$22)`,
+             ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'REQUESTED',$20,$21,$22,2,$23,$24,$25,$26)`,
           [
             proposalId,
             channel,
@@ -1156,6 +1295,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
             principal.principalId,
             decision.approval!.id,
             actionFingerprint,
+            proposedSource,
+            binding?.scheme ?? null,
+            binding?.keyVersion ?? null,
+            binding?.mac ?? null,
           ],
         );
 
@@ -1243,111 +1386,96 @@ export class NotificationProviderConfigService implements OnModuleInit {
       );
     }
 
-    const rows: Array<
-      Pick<
-        DbProposalRow,
-        | 'id'
-        | 'channel'
-        | 'status'
-        | 'proposer_principal_id'
-        | 'approval_id'
-        | 'proposed_provider'
-        | 'proposed_enabled'
-        | 'proposed_key_fingerprint'
-      >
-    > = await this.safeDbOperation(
-      'decideProposal.load',
-      () =>
-        ds.query(
-          `SELECT id, channel, status, proposer_principal_id, approval_id,
-                  proposed_provider, proposed_enabled, proposed_key_fingerprint
-             FROM notification_provider_config_proposals
-            WHERE id = $1`,
+    let deniedReason: string | null = null;
+    try {
+      await this.safeTransaction('decideProposal.persist', ds, async (manager) => {
+        const rows: DbProposalRow[] = await manager.query(
+          `SELECT * FROM notification_provider_config_proposals WHERE id = $1 FOR UPDATE`,
           [proposalId],
-        ),
-      'Notification provider configuration proposal could not be loaded.',
-    );
-    const proposal = rows[0];
-    if (!proposal) {
-      throw new NotFoundException('Notification provider configuration proposal not found.');
-    }
-    if (proposal.status !== 'REQUESTED') {
-      throw new ConflictException(
-        `Proposal is already in status ${proposal.status} and cannot be decided again.`,
-      );
-    }
-    if (proposal.proposer_principal_id === principal.principalId) {
-      await this.recordDeniedGovernanceAudit(
-        proposalId,
-        principal.principalId,
-        'SELF_APPROVAL_FORBIDDEN',
-        correlationId,
-      );
-      throw new ForbiddenException(
-        'SELF_APPROVAL_FORBIDDEN: Initiating administrator cannot approve or decide their own notification provider change.',
-      );
-    }
+        );
+        const proposal = rows[0];
+        if (!proposal) throw new NotFoundException('Notification provider configuration proposal not found.');
+        if (proposal.status !== 'REQUESTED') {
+          throw new ConflictException(
+            `Proposal is already in status ${proposal.status} and cannot be decided again.`,
+          );
+        }
+        if (proposal.proposer_principal_id === principal.principalId) {
+          deniedReason = 'SELF_APPROVAL_FORBIDDEN';
+          throw new ForbiddenException(
+            'SELF_APPROVAL_FORBIDDEN: Initiating administrator cannot approve or decide their own notification provider change.',
+          );
+        }
 
-    const decision = await this.safeDbOperation('decideProposal.approvalService', () =>
-      approve
-        ? approvals.approve({
-            approvalId: proposal.approval_id,
-            principal,
-            comment,
-          })
-        : approvals.reject({
-            approvalId: proposal.approval_id,
-            principal,
-            comment,
-          }),
-    );
+        let existing: DbProviderConfigRow | null = null;
+        if (approve) {
+          // Lock even when the channel row does not exist yet; otherwise concurrent first
+          // activations could both observe version 0 and overwrite one another.
+          await manager.query(
+            `SELECT pg_advisory_xact_lock(hashtext('notification_provider_governance_v2'), hashtext($1))`,
+            [proposal.channel],
+          );
+          const currentRows: DbProviderConfigRow[] = await manager.query(
+            `SELECT * FROM notification_provider_configurations WHERE channel = $1 FOR UPDATE`,
+            [proposal.channel],
+          );
+          existing = currentRows[0] ?? null;
+          if ((existing?.version ?? 0) !== proposal.expected_version) {
+            throw new ConflictException('Provider configuration changed; a new proposal is required.');
+          }
+          const checkedCredential = this.assertProposalIntegrity(proposal, existing);
+          await this.assertLinkedApproval(manager, proposal);
+          if (checkedCredential && comment?.includes(checkedCredential)) {
+            throw new BadRequestException('Provider credential must not appear in approval comments.');
+          }
+        }
 
-    const expectedReason = approve ? 'APPROVED' : 'REJECTED';
-    if (decision.reason !== expectedReason) {
-      await this.recordDeniedGovernanceAudit(
-        proposalId,
-        principal.principalId,
-        decision.reason ?? 'DENIED',
-        correlationId,
-      );
-      throw new ForbiddenException(
-        `Proposal ${approve ? 'approval' : 'rejection'} denied: ${decision.reason ?? 'DENIED'}`,
-      );
-    }
+        const command = { approvalId: proposal.approval_id, principal, comment };
+        const decision = approve
+          ? await approvals.approveInTransaction(manager, command)
+          : await approvals.rejectInTransaction(manager, command);
+        const expectedReason = approve ? 'APPROVED' : 'REJECTED';
+        if (decision.reason !== expectedReason) {
+          deniedReason = decision.reason ?? 'DENIED';
+          throw new ForbiddenException(
+            `Proposal ${approve ? 'approval' : 'rejection'} denied: ${deniedReason}`,
+          );
+        }
+        // Recheck after the approval service's asynchronous work and before committing.
+        // Activation and runtime independently enforce the same commitment again.
+        if (approve) this.assertProposalIntegrity(proposal, existing);
 
-    const nextStatus = approve ? 'APPROVED' : 'REJECTED';
-    await this.safeTransaction('decideProposal.persist', ds, async (manager) => {
-      await manager.query(
-        `UPDATE notification_provider_config_proposals
-            SET status = $1,
-                decided_by = $2,
-                decided_at = NOW(),
-                decision_reason = $3,
-                updated_at = NOW()
-          WHERE id = $4`,
-        [nextStatus, principal.principalId, comment?.trim().slice(0, 500) ?? null, proposalId],
-      );
-
-      if (this.auditService) {
-        await this.auditService.record(manager, {
-          entityType: 'NOTIFICATION_PROVIDER_CONFIG',
-          entityId: proposalId,
-          action: approve
-            ? 'NOTIFICATION_PROVIDER_CONFIG_APPROVED'
-            : 'NOTIFICATION_PROVIDER_CONFIG_REJECTED',
-          actor: principal.principalId,
-          correlationId,
-          newValues: {
-            channel: proposal.channel,
-            status: nextStatus,
-            proposedProvider: proposal.proposed_provider,
-            proposedEnabled: proposal.proposed_enabled,
-            proposedKeyFingerprint: proposal.proposed_key_fingerprint,
-            comment: comment?.trim().slice(0, 500) ?? null,
-          },
-        });
+        const nextStatus = approve ? 'APPROVED' : 'REJECTED';
+        await manager.query(
+          `UPDATE notification_provider_config_proposals
+              SET status = $1, decided_by = $2, decided_at = NOW(), decision_reason = $3, updated_at = NOW()
+            WHERE id = $4`,
+          [nextStatus, principal.principalId, comment?.trim().slice(0, 500) ?? null, proposalId],
+        );
+        if (this.auditService) {
+          await this.auditService.record(manager, {
+            entityType: 'NOTIFICATION_PROVIDER_CONFIG',
+            entityId: proposalId,
+            action: approve ? 'NOTIFICATION_PROVIDER_CONFIG_APPROVED' : 'NOTIFICATION_PROVIDER_CONFIG_REJECTED',
+            actor: principal.principalId,
+            correlationId,
+            newValues: {
+              channel: proposal.channel,
+              status: nextStatus,
+              proposedProvider: proposal.proposed_provider,
+              proposedEnabled: proposal.proposed_enabled,
+              proposedKeyFingerprint: proposal.proposed_key_fingerprint,
+              comment: comment?.trim().slice(0, 500) ?? null,
+            },
+          });
+        }
+      });
+    } catch (error) {
+      if (deniedReason) {
+        await this.recordDeniedGovernanceAudit(proposalId, principal.principalId, deniedReason, correlationId);
       }
-    });
+      throw error;
+    }
 
     return this.getProposal(proposalId);
   }
@@ -1396,6 +1524,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
         );
       }
 
+      await manager.query(
+        `SELECT pg_advisory_xact_lock(hashtext('notification_provider_governance_v2'), hashtext($1))`,
+        [proposal.channel],
+      );
       const existingRows: DbProviderConfigRow[] = await manager.query(
         `SELECT * FROM notification_provider_configurations WHERE channel = $1 FOR UPDATE`,
         [proposal.channel],
@@ -1408,53 +1540,26 @@ export class NotificationProviderConfigService implements OnModuleInit {
         );
       }
 
-      let nextCredSource: CredentialSource = 'NONE';
+      // A legacy or modified proposal cannot be activated, even if its old approval
+      // is still marked APPROVED. No failure below consumes the approval.
+      this.assertProposalIntegrity(proposal, existing);
+      await this.assertLinkedApproval(manager, proposal);
+      const nextCredSource = proposal.proposed_credential_source as CredentialSource;
+      const nextBinding = bindingFromRow(proposal);
       let nextEncryptedKey: string | null = null;
       let nextKeyVersion: string | null = null;
       let nextFingerprint: string | null = null;
 
       if (proposal.credential_action === 'SET_ENCRYPTED') {
-        if (!proposal.proposed_encrypted_api_key || !proposal.proposed_key_fingerprint) {
-          throw new BadRequestException('Proposal is missing encrypted credential material.');
-        }
-        // Verify server can decrypt the proposed envelope right now (fail-closed before activation!)
-        try {
-          this.encryptionService.decrypt(
-            proposal.proposed_encrypted_api_key,
-            proposal.channel,
-            proposal.proposed_encryption_key_version,
-          );
-        } catch (err) {
-          const code =
-            err instanceof NotificationSecretEncryptionError
-              ? err.code
-              : 'PROVIDER_SECRET_DECRYPT_FAILED';
-          throw new BadRequestException(
-            `Cannot activate proposal: ${code} — ensure server encryption key is configured.`,
-          );
-        }
-        nextCredSource = 'ENCRYPTED_DB';
         nextEncryptedKey = proposal.proposed_encrypted_api_key;
         nextKeyVersion = proposal.proposed_encryption_key_version;
         nextFingerprint = proposal.proposed_key_fingerprint;
-      } else if (proposal.credential_action === 'KEEP_EXISTING') {
-        if (existing) {
-          nextCredSource = existing.credential_source;
-          nextEncryptedKey = existing.encrypted_api_key;
-          nextKeyVersion = existing.encryption_key_version;
-          nextFingerprint = existing.key_fingerprint;
-        }
+      } else if (proposal.credential_action === 'KEEP_EXISTING' && nextCredSource !== 'NONE') {
+        nextEncryptedKey = existing!.encrypted_api_key;
+        nextKeyVersion = existing!.encryption_key_version;
+        nextFingerprint = existing!.key_fingerprint;
       } else if (proposal.credential_action === 'USE_ENV_SECRET') {
-        const envSecret = this.getEnvSecretForProvider(proposal.proposed_provider);
-        if (!envSecret) {
-          throw new BadRequestException(
-            `Environment variable credential for "${proposal.proposed_provider}" is missing.`,
-          );
-        }
-        nextCredSource = 'ENV_SECRET';
-        nextFingerprint = computeKeyFingerprint(envSecret);
-      } else if (proposal.credential_action === 'CLEAR') {
-        nextCredSource = 'NONE';
+        nextFingerprint = proposal.proposed_key_fingerprint;
       }
 
       if (isExternalNotificationVendor(proposal.proposed_provider)) {
@@ -1480,6 +1585,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
           `Failed to consume privileged approval for activation: ${consumeDecision.reason}`,
         );
       }
+      // Roll back consumption if a mutable secret changed during asynchronous approval work.
+      this.assertProposalIntegrity(proposal, existing);
 
       // Preserve prior verification / test-send readiness ONLY when the underlying provider,
       // endpoint, sender identity, and credential material have NOT changed (e.g. toggling
@@ -1489,10 +1596,13 @@ export class NotificationProviderConfigService implements OnModuleInit {
         Boolean(existing) &&
         existing!.provider === proposal.proposed_provider &&
         (existing!.base_url ?? null) === (proposal.proposed_base_url ?? null) &&
+        (existing!.sender_id ?? null) === (proposal.proposed_sender_id ?? null) &&
         (existing!.from_email ?? null) === (proposal.proposed_from_email ?? null) &&
+        (existing!.from_name ?? null) === (proposal.proposed_from_name ?? null) &&
+        (existing!.reply_to_email ?? null) === (proposal.proposed_reply_to_email ?? null) &&
         existing!.credential_source === nextCredSource &&
         (existing!.encrypted_api_key ?? null) === (nextEncryptedKey ?? null) &&
-        (existing!.key_fingerprint ?? null) === (nextFingerprint ?? null);
+        sameBinding(bindingFromRow(existing!), nextBinding);
 
       const newVersion = currentVersion + 1;
       const verifiedAt = coreIdentityUnchanged ? existing!.verified_at : null;
@@ -1508,9 +1618,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
             encryption_key_version, key_fingerprint, spf_configured, dkim_configured,
             dmarc_configured, verified_at, verified_by, verification_method,
             last_verification_error, delivery_tested_at, delivery_tested_by,
-            version, active_proposal_id, updated_by, approved_by, updated_at)
+            version, active_proposal_id, updated_by, approved_by,
+            credential_binding_scheme, credential_binding_key_version, credential_binding_mac, updated_at)
          VALUES
-           ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NULL,$20,$21,$22,$23,$24,$25,NOW())
+           ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NULL,$20,$21,$22,$23,$24,$25,$26,$27,$28,NOW())
          ON CONFLICT (channel) DO UPDATE SET
            provider = EXCLUDED.provider,
            enabled = EXCLUDED.enabled,
@@ -1537,6 +1648,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
            active_proposal_id = EXCLUDED.active_proposal_id,
            updated_by = EXCLUDED.updated_by,
            approved_by = EXCLUDED.approved_by,
+           credential_binding_scheme = EXCLUDED.credential_binding_scheme,
+           credential_binding_key_version = EXCLUDED.credential_binding_key_version,
+           credential_binding_mac = EXCLUDED.credential_binding_mac,
            updated_at = NOW()`,
         [
           proposal.channel,
@@ -1564,14 +1678,14 @@ export class NotificationProviderConfigService implements OnModuleInit {
           proposal.id,
           principal.principalId,
           proposal.decided_by,
+          nextBinding?.scheme ?? null,
+          nextBinding?.keyVersion ?? null,
+          nextBinding?.mac ?? null,
         ],
       );
 
-      // Scrub the encrypted envelope from the activated historical proposal row so rotated-out
-      // historical secrets do not linger in proposal history beyond active configuration state:
-      // wait — keep `credential_action` consistent with DB CHECK constraint! Wait: our DB CHECK
-      // constraint `chk_notif_provider_prop_cred_consistency` requires `proposed_encrypted_api_key IS NOT NULL`
-      // when `credential_action = 'SET_ENCRYPTED'`, which is AES-256-GCM encrypted and NEVER exposed in SELECT!
+      // Migration 100 retains encrypted envelopes in historical SET_ENCRYPTED proposals;
+      // preserve that existing, explicitly approved storage behavior without exposing them.
       await manager.query(
         `UPDATE notification_provider_config_proposals
             SET status = 'ACTIVATED',
@@ -1679,8 +1793,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
                 SET verified_at = NULL,
                     last_verification_error = $1,
                     updated_at = NOW()
-              WHERE channel = $2`,
-            ['PROVIDER_BASE_URL_UNTRUSTED', channel],
+              WHERE channel = $2 AND version = $3`,
+            ['PROVIDER_BASE_URL_UNTRUSTED', channel, row.version],
           ),
         );
         throw new BadRequestException('PROVIDER_BASE_URL_UNTRUSTED');
@@ -1745,8 +1859,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
               SET verified_at = NULL,
                   last_verification_error = $1,
                   updated_at = NOW()
-            WHERE channel = $2`,
-          [safeSecretErr, channel],
+            WHERE channel = $2 AND version = $3`,
+          [safeSecretErr, channel, row.version],
         ),
       );
       throw new BadRequestException(safeSecretErr);
@@ -1806,29 +1920,31 @@ export class NotificationProviderConfigService implements OnModuleInit {
       : (normalizeProviderErrorCode(errorCode) ?? 'VERIFY_FAILED');
 
     await this.safeTransaction('verifyChannelConfiguration.persist', ds, async (manager) => {
+      let updateResult: [Array<{ version: number }>, number];
       if (verified) {
-        await manager.query(
+        updateResult = await manager.query(
           `UPDATE notification_provider_configurations
               SET verified_at = NOW(),
                   verified_by = $1,
                   verification_method = $2,
                   last_verification_error = NULL,
                   updated_at = NOW()
-            WHERE channel = $3`,
-          [principal.principalId, verificationMethod, channel],
+            WHERE channel = $3 AND version = $4 RETURNING version`,
+          [principal.principalId, verificationMethod, channel, row.version],
         );
       } else {
-        await manager.query(
+        updateResult = await manager.query(
           `UPDATE notification_provider_configurations
               SET verified_at = NULL,
                   verified_by = NULL,
                   verification_method = $1,
                   last_verification_error = $2,
                   updated_at = NOW()
-            WHERE channel = $3`,
-          [verificationMethod, safeErrorCode ?? 'VERIFY_FAILED', channel],
+            WHERE channel = $3 AND version = $4 RETURNING version`,
+          [verificationMethod, safeErrorCode ?? 'VERIFY_FAILED', channel, row.version],
         );
       }
+      if (updateResult[1] !== 1) throw new ConflictException('PROVIDER_CONFIGURATION_CHANGED');
 
       if (this.auditService) {
         await this.auditService.record(manager, {
@@ -1867,6 +1983,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
     channel: ManagedNotificationChannel;
     actor: string;
     providerName: string;
+    expectedVersion: number;
     success: boolean;
     maskedDestination: string;
     providerRef: string | null;
@@ -1874,7 +1991,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }): Promise<void> {
     if (!this.dataSource || !this.dataSource.isInitialized) return;
     const row = await this.loadDbRow(params.channel);
-    if (!row) return;
+    if (!row || row.version !== params.expectedVersion || row.provider !== params.providerName) return;
 
     const isConsole = row.provider === 'console' || params.providerName === 'console';
     const lastTestStatus: 'SENT' | 'FAILED' | 'CONSOLE_SIMULATED' = !params.success
@@ -1906,7 +2023,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
                 verified_by = CASE WHEN $5 AND verified_by IS NULL THEN $6 ELSE verified_by END,
                 verification_method = CASE WHEN $5 AND verification_method IS NULL THEN 'LIVE_TEST_SEND' ELSE verification_method END,
                 updated_at = NOW()
-          WHERE channel = $7`,
+          WHERE channel = $7 AND version = $8 AND provider = $9`,
         [
           lastTestStatus,
           safeTestDestination(params.channel, params.maskedDestination) ?? '[REDACTED]',
@@ -1915,6 +2032,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
           promoteLiveReadiness,
           params.actor,
           params.channel,
+          params.expectedVersion,
+          params.providerName,
         ],
       ),
     );
@@ -2513,35 +2632,122 @@ export class NotificationProviderConfigService implements OnModuleInit {
     }
   }
 
+  /** Lock and compare the independent approval record before the checker or activator acts. */
+  private async assertLinkedApproval(manager: EntityManager, proposal: DbProposalRow): Promise<void> {
+    const rows: Array<{
+      action_type: string; resource_type: string; resource_id: string | null;
+      action_fingerprint: string; requester_principal_id: string; reason: string;
+      approval_scope: string; required_assurance: string; is_emergency: boolean;
+    }> = await manager.query(
+      `SELECT action_type, resource_type, resource_id, action_fingerprint,
+              requester_principal_id, reason, approval_scope, required_assurance, is_emergency
+         FROM privileged_action_approvals WHERE id = $1 FOR UPDATE`,
+      [proposal.approval_id],
+    );
+    const approval = rows[0];
+    if (!approval || approval.action_type !== GOVERNANCE_ACTION_TYPE ||
+        approval.resource_type !== GOVERNANCE_RESOURCE_TYPE || approval.resource_id !== proposal.id ||
+        approval.requester_principal_id !== proposal.proposer_principal_id ||
+        approval.reason !== proposal.reason || approval.approval_scope !== CONFIGURE_FUNCTION ||
+        approval.required_assurance !== 'MFA' || approval.is_emergency ||
+        !/^[a-f0-9]{64}$/.test(approval.action_fingerprint) ||
+        !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint) ||
+        !timingSafeEqual(Buffer.from(approval.action_fingerprint, 'hex'),
+          Buffer.from(proposal.action_fingerprint, 'hex'))) {
+      throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+    }
+  }
+
+  /** Reconstruct the approved action and validate its exact currently resolved credential. */
+  private assertProposalIntegrity(proposal: DbProposalRow, existing: DbProviderConfigRow | null): string | null {
+    if (!proposalFingerprintMatches(proposal)) {
+      throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+    }
+    const source = proposal.proposed_credential_source;
+    if (source === 'NONE') {
+      if (proposal.credential_binding_scheme !== null ||
+          proposal.credential_binding_key_version !== null || proposal.credential_binding_mac !== null ||
+          (proposal.credential_action !== 'CLEAR' && proposal.credential_action !== 'KEEP_EXISTING') ||
+          (isExternalNotificationVendor(proposal.proposed_provider) && proposal.proposed_enabled) ||
+          (proposal.credential_action === 'KEEP_EXISTING' &&
+            isExternalNotificationVendor(proposal.proposed_provider))) {
+        throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+      }
+      return null;
+    }
+    if ((source !== 'ENV_SECRET' && source !== 'ENCRYPTED_DB') ||
+        !isExternalNotificationVendor(proposal.proposed_provider)) {
+      throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+    }
+    let resolved: { ok: true; apiKey: string } | { ok: false; errorCode: string };
+    if (proposal.credential_action === 'USE_ENV_SECRET' && source === 'ENV_SECRET') {
+      const value = this.getEnvSecretForProvider(proposal.proposed_provider);
+      resolved = value ? this.validateResolvedSecret(proposal.proposed_provider, value)
+        : { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
+    } else if (proposal.credential_action === 'SET_ENCRYPTED' && source === 'ENCRYPTED_DB') {
+      try {
+        if (!proposal.proposed_encrypted_api_key) throw new Error('missing');
+        const value = this.encryptionService.decrypt(
+          proposal.proposed_encrypted_api_key, proposal.channel, proposal.proposed_encryption_key_version,
+        );
+        resolved = this.validateResolvedSecret(proposal.proposed_provider, value);
+      } catch {
+        resolved = { ok: false, errorCode: 'PROVIDER_SECRET_DECRYPT_FAILED' };
+      }
+    } else if (proposal.credential_action === 'KEEP_EXISTING') {
+      if (!existing || existing.channel !== proposal.channel ||
+          existing.provider !== proposal.proposed_provider || existing.credential_source !== source ||
+          existing.version !== proposal.expected_version) {
+        throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+      }
+      const oldBinding = bindingFromRow(existing);
+      const newBinding = bindingFromRow(proposal);
+      if (!oldBinding || !newBinding || !sameBinding(oldBinding, newBinding)) {
+        throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+      }
+      resolved = this.resolveRowSecret(existing);
+    } else {
+      throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+    }
+    if (!resolved.ok || !this.bindingService.verify(
+      bindingFromRow(proposal), proposal.channel, proposal.proposed_provider,
+      source as BoundCredentialSource, resolved.apiKey,
+    )) {
+      throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
+    }
+    return resolved.apiKey;
+  }
+
   private resolveRowSecret(
     row: DbProviderConfigRow,
   ): { ok: true; apiKey: string } | { ok: false; errorCode: string } {
     if (row.credential_source === 'NONE') {
       return { ok: false, errorCode: `${row.channel}_PROVIDER_NOT_CONFIGURED` };
     }
+    let resolved: { ok: true; apiKey: string } | { ok: false; errorCode: string };
     if (row.credential_source === 'ENV_SECRET') {
       const secret = this.getEnvSecretForProvider(row.provider);
-      if (!secret) {
-        return { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
+      if (!secret) return { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
+      resolved = this.validateResolvedSecret(row.provider, secret);
+    } else {
+      if (!row.encrypted_api_key) return { ok: false, errorCode: 'PROVIDER_SECRET_ENVELOPE_INVALID' };
+      try {
+        const apiKey = this.encryptionService.decrypt(
+          row.encrypted_api_key, row.channel, row.encryption_key_version,
+        );
+        resolved = this.validateResolvedSecret(row.provider, apiKey);
+      } catch (err) {
+        return { ok: false, errorCode: err instanceof NotificationSecretEncryptionError
+          ? err.code : 'PROVIDER_SECRET_DECRYPT_FAILED' };
       }
-      return this.validateResolvedSecret(row.provider, secret);
     }
-    if (!row.encrypted_api_key) {
-      return { ok: false, errorCode: 'PROVIDER_SECRET_ENVELOPE_INVALID' };
-    }
-    try {
-      const apiKey = this.encryptionService.decrypt(
-        row.encrypted_api_key,
-        row.channel,
-        row.encryption_key_version,
-      );
-      return this.validateResolvedSecret(row.provider, apiKey);
-    } catch (err) {
-      if (err instanceof NotificationSecretEncryptionError) {
-        return { ok: false, errorCode: err.code };
-      }
-      return { ok: false, errorCode: 'PROVIDER_SECRET_DECRYPT_FAILED' };
-    }
+    if (!resolved.ok) return resolved;
+    if (!this.bindingService.verify(
+      bindingFromRow(row), row.channel, row.provider,
+      row.credential_source as BoundCredentialSource, resolved.apiKey,
+    )) return { ok: false, errorCode: 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' };
+    // This exact validated string is passed to the provider; do not reread the source.
+    return resolved;
   }
 
   private getEnvSecretForProvider(provider: string): string | undefined {
