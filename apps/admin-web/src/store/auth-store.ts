@@ -10,6 +10,8 @@ export interface WorkforcePrincipal {
   scopes: string[];
   customerAccess: string;
   assuranceLevel: string;
+  /** Present when the workforce session is explicitly restricted to read-only actions. */
+  readOnlyPrincipal?: boolean;
 }
 
 export interface WorkforceSession {

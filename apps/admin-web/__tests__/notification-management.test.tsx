@@ -177,6 +177,8 @@ const REGISTRY_EVENT_FIXTURES = [
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
     eventEnabled: false,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -187,6 +189,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'customer.funding.approved',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference', 'amount_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -197,6 +202,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'transfer.completed',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference', 'amount_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -207,6 +215,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'support.ticket.assigned',
     deliveryClass: 'INFORMATIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['reference'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -217,6 +228,9 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'cash_to_cash.created',
     deliveryClass: 'INFORMATIONAL',
     editable: true,
+    eventEnabled: true,
+    eventLocked: false,
+    eventConfigurationVersion: 1,
     variables: ['sender_name', 'amount', 'locator_clause'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -610,7 +624,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
   test('Capability 2: locks SECURITY while transaction trigger changes flow through the real maker-checker lifecycle', async () => {
     mockIntegratedRegistryBackend();
     seedPrincipal({
-      roles: ['OPERATIONS'],
+      roles: ['SUPER_ADMIN'],
       scopes: ['notification.view_deliveries', 'notification.manage_configuration'],
     });
 
@@ -626,7 +640,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const fundingApprovedBtn = view.getByTestId(
       'configure-trigger-customer.funding.approved',
     ) as HTMLButtonElement;
-    expect(fundingApprovedBtn.disabled).toBe(false);
+    await waitFor(() => expect(fundingApprovedBtn.disabled).toBe(false));
 
     // Wait for the live registry rather than the initial offline reference before opening.
     await waitFor(() => expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED'));
@@ -646,7 +660,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const postsBefore = (ApiClient.post as jest.Mock).mock.calls.length;
     fireEvent.click(view.getByTestId('submit-trigger-config-btn'));
     expect(view.getByTestId('trigger-validation-errors').textContent).toMatch(
-      /Modify at least one channel trigger/i,
+      /Modify at least one Event, SMS or Email control/i,
     );
     expect((ApiClient.post as jest.Mock).mock.calls.length).toBe(postsBefore);
 

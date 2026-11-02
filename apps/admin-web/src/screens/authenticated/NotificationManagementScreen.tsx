@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
 import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
+import { Alert, Button, Field } from '../../design-system/primitives';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
   BASELINE_CODE_TEMPLATES,
   deriveNotificationPermissions,
+  effectiveConfiguredChannels,
+  getNotificationConfigurationSnapshot,
   isUuidString,
   ManagedNotificationChannel,
+  NotificationConfigurationTarget,
   NotificationChangeRequestRecord,
   NotificationDeliveryPage,
   NotificationDeliveryRecord,
@@ -24,6 +28,7 @@ import {
   NotificationManagementApi,
   SafeRuntimeConfiguration,
 } from '../../services/notification-management-api';
+import { ApiError } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
 export type NotificationAdminTab =
@@ -40,6 +45,30 @@ export type NotificationAdminTab =
 interface TabDefinition {
   key: NotificationAdminTab;
   label: string;
+}
+
+function canEditConfigurationTarget(
+  event: NotificationEventCatalogueItem,
+  target: NotificationConfigurationTarget,
+): boolean {
+  const snapshot = getNotificationConfigurationSnapshot(event, target);
+  return Boolean(snapshot && !snapshot.locked);
+}
+
+function describePendingConfigurationChange(record: NotificationChangeRequestRecord): string {
+  const desired =
+    record.channel === 'EVENT'
+      ? record.proposedEventEnabled
+      : record.channel === 'SMS'
+        ? record.proposedSmsEnabled
+        : record.channel === 'EMAIL'
+          ? record.proposedEmailEnabled
+          : undefined;
+  const target =
+    typeof desired === 'boolean' ? `${record.channel}: ${desired ? 'enable' : 'disable'}` : record.channel;
+  const status =
+    record.status === 'APPROVED' ? 'Approved, not yet confirmed effective' : 'Pending approval';
+  return `${target} — ${status}`;
 }
 
 const TABS: readonly TabDefinition[] = [
@@ -60,6 +89,23 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const { principal } = useAuthStore();
   const permissions = useMemo(() => deriveNotificationPermissions(principal), [principal]);
   const currentPrincipalId = principal?.principalId ?? '';
+  // Mirror the registry's existing maker policy for this control. The server remains
+  // authoritative for all authorization, MFA, read-only and maker-checker decisions.
+  const isWorkforcePrincipal = principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED';
+  const canProposeTriggerChange = Boolean(
+    isWorkforcePrincipal &&
+    principal?.roles.includes('SUPER_ADMIN') &&
+    principal.scopes.includes('notification.view_deliveries') &&
+    principal.customerAccess === 'NONE' &&
+    !principal.readOnlyPrincipal &&
+    permissions.hasMfaAssurance,
+  );
+  const hasNotificationCheckerIdentity = Boolean(
+    isWorkforcePrincipal &&
+    permissions.canUseWorkforceApprovalEndpoint &&
+    principal?.customerAccess === 'NONE' &&
+    !principal?.readOnlyPrincipal,
+  );
 
   const visibleTabs = useMemo(
     () =>
@@ -116,6 +162,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const [eventGovernanceFilter, setEventGovernanceFilter] = useState<string>('ALL');
   const [editingTriggerEvent, setEditingTriggerEvent] =
     useState<NotificationEventCatalogueItem | null>(null);
+  const [draftEventEnabled, setDraftEventEnabled] = useState<boolean>(false);
   const [draftSmsEnabled, setDraftSmsEnabled] = useState<boolean>(true);
   const [draftEmailEnabled, setDraftEmailEnabled] = useState<boolean>(false);
   const [triggerReason, setTriggerReason] = useState<string>('');
@@ -348,6 +395,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           })
           .catch((err: any) => {
             setEventsSource('OFFLINE_REFERENCE');
+            setEvents(BASELINE_CODE_EVENT_CATALOGUE);
             setGlobalLoadErrors((prev) => ({
               ...prev,
               events: err?.message || 'Failed to load notification events',
@@ -425,6 +473,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             } else {
               setChangeRequestsBlockedMsg('');
               setChangeRequests(res.data);
+              // Configuration receipts bridge submission to the next authoritative
+              // queue load; don't continue presenting omitted/old statuses as current.
+              setSessionSubmittedChanges((prev) =>
+                prev.filter((item) => item.changeType !== 'EVENT_TRIGGER_CONFIG'),
+              );
             }
           })
           .catch((err: any) => {
@@ -534,9 +587,30 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     const security = events.filter((e) => e.deliveryClass === 'SECURITY').length;
     const transactional = events.filter((e) => e.deliveryClass === 'TRANSACTIONAL').length;
     const informational = events.filter((e) => e.deliveryClass === 'INFORMATIONAL').length;
-    const eligibleToggle = events.filter((e) => !e.toggleLocked).length;
-    const smsEnabledCount = events.filter((e) => e.smsEnabled).length;
-    const emailEnabledCount = events.filter((e) => e.emailEnabled).length;
+    const eligibleToggle = events.filter(
+      (event) =>
+        !event.toggleLocked &&
+        (['EVENT', 'SMS', 'EMAIL'] as const).some((target) =>
+          canEditConfigurationTarget(event, target),
+        ),
+    ).length;
+    const ordinary = events.filter((event) => event.deliveryClass !== 'SECURITY');
+    const smsEnabledCount = ordinary.filter(
+      (event) => event.eventEnabled === true && event.smsEnabled === true,
+    ).length;
+    const emailEnabledCount = ordinary.filter(
+      (event) => event.eventEnabled === true && event.emailEnabled === true,
+    ).length;
+    const smsKnownCount = ordinary.filter(
+      (event) =>
+        event.eventEnabled === false ||
+        (event.eventEnabled === true && typeof event.smsEnabled === 'boolean'),
+    ).length;
+    const emailKnownCount = ordinary.filter(
+      (event) =>
+        event.eventEnabled === false ||
+        (event.eventEnabled === true && typeof event.emailEnabled === 'boolean'),
+    ).length;
     return {
       total: events.length,
       security,
@@ -545,6 +619,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       eligibleToggle,
       smsEnabledCount,
       emailEnabledCount,
+      smsKnownCount,
+      emailKnownCount,
     };
   }, [events]);
 
@@ -561,17 +637,44 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       if (eventClassFilter !== 'ALL' && item.deliveryClass !== eventClassFilter) {
         return false;
       }
-      if (eventGovernanceFilter === 'ELIGIBLE' && item.toggleLocked) return false;
+      if (
+        eventGovernanceFilter === 'ELIGIBLE' &&
+        (eventsSource !== 'LIVE' ||
+          item.toggleLocked ||
+          !(['EVENT', 'SMS', 'EMAIL'] as const).some((target) =>
+            canEditConfigurationTarget(item, target),
+          ))
+      ) {
+        return false;
+      }
       if (eventGovernanceFilter === 'LOCKED' && !item.toggleLocked) return false;
       return true;
     });
-  }, [events, eventSearch, eventClassFilter, eventGovernanceFilter]);
+  }, [events, eventsSource, eventSearch, eventClassFilter, eventGovernanceFilter]);
 
   const combinedChangeRequests = useMemo(() => {
     const seen = new Set(changeRequests.map((item) => item.id));
     const extras = sessionSubmittedChanges.filter((item) => !seen.has(item.id));
     return [...extras, ...changeRequests];
   }, [changeRequests, sessionSubmittedChanges]);
+  const pendingConfigurationByEvent = useMemo(() => {
+    const grouped = new Map<string, NotificationChangeRequestRecord[]>();
+    for (const request of combinedChangeRequests) {
+      if (
+        request.changeType !== 'EVENT_TRIGGER_CONFIG' ||
+        (request.status !== 'PENDING_APPROVAL' && request.status !== 'APPROVED')
+      ) continue;
+      const pending = grouped.get(request.eventType) ?? [];
+      pending.push(request);
+      grouped.set(request.eventType, pending);
+    }
+    return grouped;
+  }, [combinedChangeRequests]);
+  const pendingStatusWarning = loadingInitial
+    ? 'Refreshing approval status; shown proposals are last known.'
+    : changeRequestsBlockedMsg || globalLoadErrors.changeRequests
+      ? 'Current approval status is unavailable; shown proposals are last known.'
+      : '';
 
   const emailChannelBlocked = Boolean(
     providerBlockedMsg || (providerStatus !== null && !providerStatus.email.channelEnabledInSchema),
@@ -579,9 +682,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
   // Handlers — Event Trigger Configuration (Capability 2)
   const openTriggerConfigDrawer = (eventItem: NotificationEventCatalogueItem) => {
+    if (!canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial) return;
     setEditingTriggerEvent(eventItem);
-    setDraftSmsEnabled(eventItem.smsEnabled);
-    setDraftEmailEnabled(eventItem.emailEnabled);
+    setDraftEventEnabled(eventItem.eventEnabled ?? false);
+    setDraftSmsEnabled(eventItem.smsEnabled ?? false);
+    setDraftEmailEnabled(eventItem.emailEnabled ?? false);
     setTriggerReason('');
     setTriggerValidationErrors([]);
     setTriggerFeedback(null);
@@ -589,13 +694,19 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
   const handleSubmitTriggerConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!permissions.canManageConfiguration || !editingTriggerEvent) return;
+    if (
+      !canProposeTriggerChange ||
+      !editingTriggerEvent ||
+      eventsSource !== 'LIVE' ||
+      loadingInitial ||
+      isSavingTrigger
+    ) return;
 
     setTriggerValidationErrors([]);
     setTriggerFeedback(null);
-
     const errors = validateTriggerConfigurationChange({
       event: editingTriggerEvent,
+      eventEnabled: draftEventEnabled,
       smsEnabled: draftSmsEnabled,
       emailEnabled: draftEmailEnabled,
       reason: triggerReason,
@@ -605,74 +716,99 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       return;
     }
 
+    const desired: Array<{ channel: NotificationConfigurationTarget; enabled: boolean }> = [
+      { channel: 'EVENT', enabled: draftEventEnabled },
+      { channel: 'SMS', enabled: draftSmsEnabled },
+      { channel: 'EMAIL', enabled: draftEmailEnabled },
+    ];
+    // Never submit untouched targets, and never replace the maker's snapshot version
+    // with a later fetch: that could silently overwrite another administrator's work.
+    const changes = desired.flatMap((target) => {
+      const snapshot = getNotificationConfigurationSnapshot(editingTriggerEvent, target.channel);
+      return snapshot && !snapshot.locked && snapshot.enabled !== target.enabled
+        ? [{ ...target, expectedVersion: snapshot.version, previous: snapshot.enabled }]
+        : [];
+    });
+    const created: Array<{ channel: NotificationConfigurationTarget; approvalId: string }> = [];
+    let failure: { kind: 'blocked' | 'error'; message: string } | null = null;
     setIsSavingTrigger(true);
     try {
-      const result = await NotificationManagementApi.submitEventConfigurationChange(
-        editingTriggerEvent.eventType,
-        {
-          smsEnabled: draftSmsEnabled,
-          emailEnabled: draftEmailEnabled,
-          reason: triggerReason.trim(),
-        },
-      );
-
-      if (result.status === 'BLOCKED') {
-        setTriggerFeedback({ kind: 'blocked', message: result.message });
-        return;
+      for (const change of changes) {
+        try {
+          const result = await NotificationManagementApi.submitEventConfigurationChange(
+            editingTriggerEvent.eventType,
+            {
+              channel: change.channel,
+              enabled: change.enabled,
+              expectedVersion: change.expectedVersion,
+              reason: triggerReason.trim(),
+            },
+          );
+          if (result.status === 'BLOCKED') {
+            failure = { kind: 'blocked', message: `${change.channel}: ${result.message}` };
+            break;
+          }
+          const approvalId = result.data.approvalId;
+          if (!approvalId) {
+            failure = {
+              kind: 'error',
+              message: `${change.channel} submission could not be confirmed. Check the approval queue before retrying.`,
+            };
+            break;
+          }
+          created.push({ channel: change.channel, approvalId });
+          setSessionSubmittedChanges((prev) => [
+            {
+              id: approvalId,
+              approvalId,
+              changeType: 'EVENT_TRIGGER_CONFIG',
+              eventType: editingTriggerEvent.eventType,
+              channel: change.channel,
+              summary: triggerReason.trim(),
+              status: 'PENDING_APPROVAL',
+              requestedBy: result.data.requestedBy ?? currentPrincipalId,
+              requestedAt: result.data.updatedAt ?? new Date().toISOString(),
+              proposedEventEnabled: change.channel === 'EVENT' ? change.enabled : undefined,
+              proposedSmsEnabled: change.channel === 'SMS' ? change.enabled : undefined,
+              proposedEmailEnabled: change.channel === 'EMAIL' ? change.enabled : undefined,
+            },
+            ...prev,
+          ]);
+          // A later target can fail independently. Reset only successful drafts so a
+          // retry does not automatically create duplicate proposals for those targets.
+          if (change.channel === 'EVENT') setDraftEventEnabled(change.previous);
+          else if (change.channel === 'SMS') setDraftSmsEnabled(change.previous);
+          else setDraftEmailEnabled(change.previous);
+        } catch (err: unknown) {
+          const status = err instanceof ApiError ? err.status : undefined;
+          const detail = err instanceof Error ? err.message : '';
+          const message = status === 409
+            ? `Version conflict for ${change.channel}: the configuration changed since this drawer was opened. Close it, refresh the registry, and review the latest state before retrying.`
+            : status === 403
+              ? `Access denied (403) for ${change.channel}: ${detail || 'Not authorized to propose this change.'}`
+              : status === 400 || status === 422
+                ? `${change.channel} proposal was rejected: ${detail || 'Invalid request.'}`
+                : `${change.channel} submission could not be confirmed${detail ? `: ${detail}` : '.'} Check the approval queue before retrying.`;
+          failure = { kind: 'error', message };
+          break;
+        }
       }
 
-      const approvalSuffix = result.data.approvalId
-        ? ` Approval ID: ${result.data.approvalId}.`
+      const receipts = created.length > 0
+        ? `Created ${created.length} separate proposal${created.length === 1 ? '' : 's'} for maker-checker approval: ${created.map((item) => `${item.channel}=${item.approvalId}`).join(', ')}. `
         : '';
-      setTriggerFeedback({
-        kind: 'success',
-        message:
-          result.data.status === 'PENDING_APPROVAL'
-            ? `Trigger configuration change submitted for maker-checker approval.${approvalSuffix}${
-                result.data.message ? ` ${result.data.message}` : ''
-              }`
-            : (result.data.message ??
-              `Trigger configuration updated (${result.data.status}).${approvalSuffix}`),
-      });
-
-      setSessionSubmittedChanges((prev) => [
-        {
-          id:
-            result.data.changeRequestId ??
-            result.data.approvalId ??
-            `trigger-change-${Date.now()}`,
-          approvalId: result.data.approvalId ?? null,
-          changeType: 'EVENT_TRIGGER_CONFIG',
-          eventType: editingTriggerEvent.eventType,
-          channel: 'MULTI',
-          summary: triggerReason.trim(),
-          status: result.data.status === 'APPLIED' ? 'APPLIED' : 'PENDING_APPROVAL',
-          requestedBy: result.data.requestedBy ?? currentPrincipalId,
-          requestedAt: result.data.updatedAt ?? new Date().toISOString(),
-          proposedSmsEnabled: draftSmsEnabled,
-          proposedEmailEnabled: draftEmailEnabled,
-        },
-        ...prev,
-      ]);
-
-      if (result.data.status === 'APPLIED') {
-        setEvents((prev) =>
-          prev.map((row) =>
-            row.eventType === editingTriggerEvent.eventType
-              ? { ...row, smsEnabled: draftSmsEnabled, emailEnabled: draftEmailEnabled }
-              : row,
-          ),
-        );
+      if (failure) {
+        setTriggerFeedback({
+          kind: failure.kind,
+          message: `${receipts}${failure.message} Remaining targets were not attempted. Proposals are not effective until approved and executed.`,
+        });
+      } else {
+        setTriggerFeedback({
+          kind: 'success',
+          message: `${receipts}The effective configuration remains the registry state until each proposal is approved and executed.`,
+        });
+        setTriggerReason('');
       }
-      setTriggerReason('');
-    } catch (err: any) {
-      setTriggerFeedback({
-        kind: 'error',
-        message:
-          err?.status === 403
-            ? `Access denied (403): ${err.message || 'Not authorized to modify notification trigger configuration.'}`
-            : err?.message || 'Failed to submit trigger configuration change.',
-      });
     } finally {
       setIsSavingTrigger(false);
     }
@@ -687,7 +823,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       record.changeType === 'EVENT_TRIGGER_CONFIG'
         ? permissions.canApproveConfiguration
         : permissions.canApproveTemplates;
-    if (!canDecide || !permissions.hasMfaAssurance) return;
+    if (!canDecide || !hasNotificationCheckerIdentity || !permissions.hasMfaAssurance) return;
 
     if (record.requestedBy === currentPrincipalId) {
       setCheckerFeedback({
@@ -716,12 +852,15 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       if (res.status === 'BLOCKED') {
         setCheckerFeedback({ kind: 'blocked', message: res.message });
       } else {
+        const status = res.data.status;
         setCheckerFeedback({
-          kind: 'success',
-          message: `Change request ${targetApprovalId} ${
-            decision === 'approve' ? 'approved and executed' : 'rejected'
-          } (${res.data.status}).`,
+          kind: status === 'APPROVED' ? 'error' : 'success',
+          message: res.data.message ?? `Change request ${targetApprovalId}: ${status}.`,
         });
+        const updateReceipt = (item: NotificationChangeRequestRecord): NotificationChangeRequestRecord =>
+          item.id === record.id ? { ...item, status, decidedBy: currentPrincipalId } : item;
+        setSessionSubmittedChanges((prev) => prev.map(updateReceipt));
+        setChangeRequests((prev) => prev.map(updateReceipt));
         setQueueDecisionComment('');
         await fetchAllReadSurfaces();
       }
@@ -742,6 +881,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   ) => {
     if (
       (!permissions.canApproveTemplates && !permissions.canApproveConfiguration) ||
+      !hasNotificationCheckerIdentity ||
       !permissions.hasMfaAssurance
     ) {
       return;
@@ -981,7 +1121,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           type="button"
           data-testid="refresh-notifications-console-btn"
           style={styles.secondaryBtn}
-          disabled={loadingInitial}
+          disabled={loadingInitial || isSavingTrigger}
           onClick={() => {
             void fetchAllReadSurfaces();
             if (permissions.canViewDeliveries) {
@@ -1040,7 +1180,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               </p>
               <div style={styles.kvList}>
                 <div>
-                  <strong>Enabled Events:</strong> {eventStats.smsEnabledCount} / {eventStats.total}
+                  <strong>Ordinary events with SMS gate enabled:</strong>{' '}
+                  {eventsSource === 'LIVE'
+                    ? `${eventStats.smsEnabledCount} / ${eventStats.smsKnownCount} with known state`
+                    : 'Registry unavailable'}
                 </div>
                 <div>
                   <strong>Direct-Send OTP Flows:</strong> {eventStats.security} mandatory (never persisted)
@@ -1087,7 +1230,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               </p>
               <div style={styles.kvList}>
                 <div>
-                  <strong>Enabled Events:</strong> {eventStats.emailEnabledCount} / {eventStats.total}
+                  <strong>Ordinary events with Email gate enabled:</strong>{' '}
+                  {eventsSource === 'LIVE'
+                    ? `${eventStats.emailEnabledCount} / ${eventStats.emailKnownCount} with known state`
+                    : 'Registry unavailable'}
                 </div>
                 <div>
                   <strong>Customer Preference Column:</strong> <code>notification_email_enabled</code>
@@ -1132,7 +1278,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   Informational)
                 </div>
                 <div>
-                  <strong>Eligible Editable Triggers:</strong> {eventStats.eligibleToggle} events
+                  <strong>Eligible Editable Triggers:</strong>{' '}
+                  {eventsSource === 'LIVE' ? `${eventStats.eligibleToggle} events` : 'Registry unavailable'}
                 </div>
                 <div>
                   <strong>Outbox Worker Posture:</strong>{' '}
@@ -1241,11 +1388,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     <td style={styles.td}>DB Event Catalogue & Eligible Trigger Proposals</td>
                     <td style={styles.td}>
                       <code>GET /internal/notifications/events</code> ·{' '}
-                      <code>PATCH /internal/notifications/events/:eventType</code>
+                      <code>POST /internal/notifications/changes</code>
                     </td>
                     <td style={styles.td}>
-                      <code>notification.view_events</code> ·{' '}
-                      <code>notification.manage_configuration</code>
+                      <code>SUPER_ADMIN</code> · <code>notification.view_deliveries</code> · MFA
                     </td>
                     <td style={styles.td}>
                       {eventsBlockedMsg ? (
@@ -1338,11 +1484,13 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             </div>
           )}
 
-          {!permissions.canManageConfiguration && (
-            <div style={styles.infoBanner} data-testid="events-readonly-scope-notice">
-              Read-only catalogue view: Grant <code>notification.manage_configuration</code> to
-              propose trigger state changes on eligible events. Mandatory <code>SECURITY</code> and{' '}
-              <code>toggleLocked</code> events remain permanently non-toggleable for all roles.
+          {!canProposeTriggerChange && (
+            <div data-testid="events-readonly-scope-notice">
+              <Alert tone="info">
+                Read-only catalogue view. Proposals require a non-read-only SUPER_ADMIN workforce
+                session with notification.view_deliveries and MFA; the server makes the final
+                authorization decision. SECURITY events remain locked.
+              </Alert>
             </div>
           )}
 
@@ -1410,124 +1558,156 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 <h3 style={styles.cardTitle}>
                   ⚙️ Configure Eligible Triggers — <code>{editingTriggerEvent.eventType}</code>
                 </h3>
-                <button
-                  type="button"
-                  style={styles.secondarySmallBtn}
-                  onClick={() => setEditingTriggerEvent(null)}
-                >
+                <Button size="sm" disabled={isSavingTrigger} onClick={() => setEditingTriggerEvent(null)}>
                   Close
-                </button>
+                </Button>
               </div>
               <p style={styles.cardDesc}>{editingTriggerEvent.description}</p>
               {editingTriggerEvent.eventEnabled === false && (
-                <p style={styles.infoBanner} data-testid="event-master-disabled-notice">
-                  This event is disabled. Enabling a channel alone will not send notifications;
-                  the event-wide setting is managed through the governed configuration API.
-                </p>
+                <div data-testid="event-master-disabled-notice">
+                  <Alert tone="info">
+                    This event is disabled. Enabling a channel alone will not send notifications;
+                    saved channel choices are preserved when the event is disabled or re-enabled.
+                  </Alert>
+                </div>
+              )}
+              <p>
+                Disabling the event suppresses both channels without changing their saved choices;
+                re-enabling it uses those choices. These controls are drafts from the effective
+                registry snapshot. Each changed control creates a separate proposal requiring
+                approval and execution before it takes effect.
+              </p>
+              {(pendingConfigurationByEvent.get(editingTriggerEvent.eventType) ?? []).length > 0 && (
+                <div data-testid={`event-pending-drawer-${editingTriggerEvent.eventType}`}>
+                  {pendingStatusWarning && <p>{pendingStatusWarning}</p>}
+                  {(pendingConfigurationByEvent.get(editingTriggerEvent.eventType) ?? []).map((request) => (
+                    <div key={request.id}>{describePendingConfigurationChange(request)}</div>
+                  ))}
+                </div>
               )}
 
-              <form onSubmit={handleSubmitTriggerConfig} noValidate>
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 14 }}>
-                  <label style={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      aria-label="Enable SMS trigger"
-                      data-testid="toggle-sms-enabled-checkbox"
-                      checked={draftSmsEnabled}
-                      onChange={(e) => setDraftSmsEnabled(e.target.checked)}
-                      disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                    />
-                    <span>
-                      <strong>SMS Trigger Enabled</strong> (currently{' '}
-                      {editingTriggerEvent.smsEnabled ? 'ON' : 'OFF'})
-                    </span>
-                  </label>
-
-                  <label style={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      aria-label="Enable Email trigger"
-                      data-testid="toggle-email-enabled-checkbox"
-                      checked={draftEmailEnabled}
-                      onChange={(e) => setDraftEmailEnabled(e.target.checked)}
-                      disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                    />
-                    <span>
-                      <strong>Email Trigger Enabled</strong> (currently{' '}
-                      {editingTriggerEvent.emailEnabled ? 'ON' : 'OFF'})
-                    </span>
-                  </label>
+              <form onSubmit={(event) => void handleSubmitTriggerConfig(event)} noValidate>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--mn-space-6)',
+                    flexWrap: 'wrap',
+                    marginBottom: 'var(--mn-space-4)',
+                  }}
+                >
+                  {[
+                    {
+                      channel: 'EVENT' as const,
+                      label: 'Event master enabled',
+                      testId: 'toggle-event-enabled-checkbox',
+                      value: draftEventEnabled,
+                      setValue: setDraftEventEnabled,
+                    },
+                    {
+                      channel: 'SMS' as const,
+                      label: 'SMS enabled',
+                      testId: 'toggle-sms-enabled-checkbox',
+                      value: draftSmsEnabled,
+                      setValue: setDraftSmsEnabled,
+                    },
+                    {
+                      channel: 'EMAIL' as const,
+                      label: 'Email enabled',
+                      testId: 'toggle-email-enabled-checkbox',
+                      value: draftEmailEnabled,
+                      setValue: setDraftEmailEnabled,
+                    },
+                  ].map((control) => {
+                    const snapshot = getNotificationConfigurationSnapshot(
+                      editingTriggerEvent,
+                      control.channel,
+                    );
+                    const id = `notification-config-${control.channel}`;
+                    const hint = !snapshot
+                      ? 'Versioned configuration unavailable; refresh the registry.'
+                      : snapshot.locked
+                        ? 'This control is locked.'
+                        : `Effective when opened: ${snapshot.enabled ? 'enabled' : 'disabled'}.`;
+                    return (
+                      <Field key={control.channel} label={control.label} htmlFor={id} hint={hint}>
+                        <input
+                          id={id}
+                          type="checkbox"
+                          aria-describedby={`${id}-hint`}
+                          data-testid={control.testId}
+                          checked={control.value}
+                          onChange={(event) => control.setValue(event.target.checked)}
+                          disabled={!canProposeTriggerChange || !snapshot || snapshot.locked || isSavingTrigger}
+                        />
+                      </Field>
+                    );
+                  })}
                 </div>
 
-                <div style={{ marginBottom: 12 }}>
-                  <label htmlFor="trigger-audit-reason" style={styles.label}>
-                    Operational Audit Reason <span style={{ color: '#DC2626' }}>*</span>
-                  </label>
-                  <input
-                    id="trigger-audit-reason"
-                    aria-label="Operational audit reason"
-                    data-testid="trigger-reason-input"
-                    type="text"
-                    style={styles.input}
-                    placeholder="Explain why this trigger configuration is changing (min 10 chars)…"
-                    value={triggerReason}
-                    onChange={(e) => setTriggerReason(e.target.value)}
-                    disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                  />
+                <div style={{ marginBottom: 'var(--mn-space-4)' }}>
+                  <Field
+                    label="Operational audit reason (required)"
+                    htmlFor="trigger-audit-reason"
+                    hint="10 to 500 characters; recorded with each proposal."
+                  >
+                    <input
+                      id="trigger-audit-reason"
+                      data-testid="trigger-reason-input"
+                      type="text"
+                      className="mn-input"
+                      aria-describedby="trigger-audit-reason-hint"
+                      placeholder="Explain why this configuration is changing"
+                      value={triggerReason}
+                      onChange={(event) => setTriggerReason(event.target.value)}
+                      disabled={!canProposeTriggerChange || isSavingTrigger}
+                    />
+                  </Field>
                 </div>
 
                 {triggerValidationErrors.length > 0 && (
-                  <div
-                    style={styles.errorAlert}
-                    role="alert"
-                    data-testid="trigger-validation-errors"
-                  >
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {triggerValidationErrors.map((err, idx) => (
-                        <li key={idx}>{err}</li>
-                      ))}
-                    </ul>
+                  <div data-testid="trigger-validation-errors">
+                    <Alert tone="danger">
+                      <ul>
+                        {triggerValidationErrors.map((err, idx) => <li key={idx}>{err}</li>)}
+                      </ul>
+                    </Alert>
                   </div>
                 )}
-
                 {triggerFeedback && (
-                  <div
-                    style={
-                      triggerFeedback.kind === 'success'
-                        ? styles.successAlert
-                        : triggerFeedback.kind === 'blocked'
-                          ? styles.blockedBanner
-                          : styles.errorAlert
-                    }
-                    role={triggerFeedback.kind === 'error' ? 'alert' : 'status'}
-                    data-testid={`trigger-submit-${triggerFeedback.kind}`}
-                  >
-                    {triggerFeedback.message}
+                  <div data-testid={`trigger-submit-${triggerFeedback.kind}`}>
+                    <Alert
+                      tone={
+                        triggerFeedback.kind === 'success'
+                          ? 'success'
+                          : triggerFeedback.kind === 'blocked'
+                            ? 'warning'
+                            : 'danger'
+                      }
+                    >
+                      {triggerFeedback.message}
+                    </Alert>
                   </div>
                 )}
-
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
                   data-testid="submit-trigger-config-btn"
-                  disabled={!permissions.canManageConfiguration || isSavingTrigger}
-                  style={
-                    !permissions.canManageConfiguration || isSavingTrigger
-                      ? styles.primaryBtnDisabled
-                      : styles.primaryBtn
-                  }
+                  disabled={!canProposeTriggerChange || isSavingTrigger}
                 >
-                  {isSavingTrigger
-                    ? 'Submitting…'
-                    : eventsBlockedMsg
-                      ? 'Validate & Submit Trigger Change (Backend BLOCKED)'
-                      : 'Submit Trigger Change for Approval'}
-                </button>
+                  {isSavingTrigger ? 'Submitting…' : 'Submit changes for approval'}
+                </Button>
               </form>
             </section>
           )}
 
           {/* Event Catalogue Table */}
           <div style={styles.card}>
+            <p>
+              Event and saved channel settings are the last loaded registry state. Effective
+              channels show configuration gates, not a delivery guarantee: recipient eligibility,
+              preferences and provider state also apply. Proposals show only the loaded approval
+              queue (and this session's new receipts); refresh for current status.
+            </p>
             <div style={{ overflowX: 'auto' }}>
               <table style={styles.table} data-testid="notification-events-table">
                 <thead>
@@ -1537,8 +1717,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     <th style={styles.th}>Recipient</th>
                     <th style={styles.th}>Runtime Wiring</th>
                     <th style={styles.th}>Event</th>
-                    <th style={styles.th}>SMS</th>
-                    <th style={styles.th}>Email</th>
+                    <th style={styles.th}>SMS saved</th>
+                    <th style={styles.th}>Email saved</th>
+                    <th style={styles.th}>Effective channels</th>
+                    <th style={styles.th}>Loaded proposals</th>
                     <th style={styles.th}>Governance</th>
                     <th style={styles.th}>Actions</th>
                   </tr>
@@ -1549,6 +1731,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                       row.toggleLocked ||
                       row.deliveryClass === 'SECURITY' ||
                       SECURITY_LOCKED_EVENT_TYPES.has(row.eventType);
+                    const hasEditableTarget = (['EVENT', 'SMS', 'EMAIL'] as const)
+                      .some((target) => canEditConfigurationTarget(row, target));
+                    const configureDisabled = isLocked || !hasEditableTarget ||
+                      !canProposeTriggerChange || eventsSource !== 'LIVE' || loadingInitial || isSavingTrigger;
+                    const pending = pendingConfigurationByEvent.get(row.eventType) ?? [];
 
                     return (
                       <tr key={row.eventType} data-testid={`event-row-${row.eventType}`}>
@@ -1578,49 +1765,61 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                           <span style={{ fontSize: 12 }}>{row.runtimeTriggerState}</span>
                         </td>
                         <td style={styles.td} data-testid={`event-master-${row.eventType}`}>
-                          {row.eventEnabled === undefined ? '—' : row.eventEnabled ? 'ENABLED' : 'DISABLED'}
+                          {eventsSource !== 'LIVE' ? 'UNAVAILABLE' : row.eventEnabled === undefined
+                            ? row.deliveryClass === 'SECURITY' ? 'NOT APPLICABLE' : 'UNAVAILABLE'
+                            : row.eventEnabled ? 'ENABLED' : 'DISABLED'}
                         </td>
-                        <td style={styles.td}>
-                          <span style={row.smsEnabled ? styles.liveBadge : styles.mutedBadge}>
-                            {row.smsEnabled ? 'ENABLED' : 'DISABLED'}
-                          </span>
+                        <td style={styles.td} data-testid={`saved-sms-${row.eventType}`}>
+                          {eventsSource !== 'LIVE' || row.smsEnabled === undefined
+                            ? 'UNAVAILABLE' : row.smsEnabled ? 'ENABLED' : 'DISABLED'}
                         </td>
-                        <td style={styles.td}>
-                          <span style={row.emailEnabled ? styles.liveBadge : styles.mutedBadge}>
-                            {row.emailEnabled ? 'ENABLED' : 'DISABLED'}
-                          </span>
+                        <td style={styles.td} data-testid={`saved-email-${row.eventType}`}>
+                          {eventsSource !== 'LIVE' || row.emailEnabled === undefined
+                            ? 'UNAVAILABLE' : row.emailEnabled ? 'ENABLED' : 'DISABLED'}
+                        </td>
+                        <td style={styles.td} data-testid={`effective-channels-${row.eventType}`}>
+                          {eventsSource === 'LIVE' ? effectiveConfiguredChannels(row) : 'Unavailable'}
+                        </td>
+                        <td style={styles.td} data-testid={`event-pending-${row.eventType}`}>
+                          {pending.length > 0 ? (
+                            <>
+                              {pendingStatusWarning && <div>{pendingStatusWarning}</div>}
+                              {pending.map((request) => (
+                                <div key={request.id} title={request.approvalId ?? undefined}>
+                                  {describePendingConfigurationChange(request)}
+                                </div>
+                              ))}
+                            </>
+                          ) : loadingInitial ? 'Loading' : changeRequestsBlockedMsg || globalLoadErrors.changeRequests
+                            ? 'Approval status unavailable' : 'None in loaded queue'}
                         </td>
                         <td style={styles.td}>
                           {isLocked ? (
                             <span title={row.lockReason ?? undefined} style={styles.lockedChip}>
                               🔒 LOCKED
                             </span>
+                          ) : eventsSource !== 'LIVE' || !hasEditableTarget ? (
+                            'UNAVAILABLE'
                           ) : (
                             <span style={styles.eligibleChip}>✓ ELIGIBLE</span>
                           )}
                         </td>
                         <td style={styles.td}>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <button
-                              type="button"
+                            <Button
+                              size="sm"
                               data-testid={`configure-trigger-${row.eventType}`}
-                              disabled={isLocked || !permissions.canManageConfiguration}
+                              disabled={configureDisabled}
                               title={
-                                isLocked
-                                  ? row.lockReason ?? 'Trigger is locked by policy'
-                                  : !permissions.canManageConfiguration
-                                    ? 'Requires notification.manage_configuration'
-                                    : undefined
-                              }
-                              style={
-                                isLocked || !permissions.canManageConfiguration
-                                  ? styles.disabledSmallBtn
-                                  : styles.secondarySmallBtn
+                                isLocked ? row.lockReason ?? 'Trigger is locked by policy'
+                                  : !canProposeTriggerChange ? 'Requires SUPER_ADMIN, notification.view_deliveries and MFA'
+                                    : eventsSource !== 'LIVE' || !hasEditableTarget ? 'Live, unlocked versioned configuration is required'
+                                      : undefined
                               }
                               onClick={() => openTriggerConfigDrawer(row)}
                             >
                               {isLocked ? 'Locked' : 'Configure Triggers'}
-                            </button>
+                            </Button>
                             {row.templateEditable && (
                               <>
                                 <button
@@ -1710,12 +1909,12 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               <div>
                 <strong>Maker Capabilities:</strong> Templates (
                 {permissions.canManageTemplates ? 'Granted' : 'Not granted'}) · Event Triggers (
-                {permissions.canManageConfiguration ? 'Granted' : 'Not granted'})
+                {canProposeTriggerChange ? 'Granted' : 'Not granted'})
               </div>
               <div>
                 <strong>Checker Capabilities:</strong> Approve Templates (
                 {permissions.canApproveTemplates ? 'Granted' : 'Not granted'}) · Approve Triggers (
-                {permissions.canApproveConfiguration ? 'Granted' : 'Not granted'}) · Separation of
+                {hasNotificationCheckerIdentity && permissions.hasMfaAssurance ? 'Granted' : 'Not granted'}) · Separation of
                 Duties: <strong>Maker ≠ Checker strictly enforced</strong>
               </div>
             </div>
@@ -1803,10 +2002,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   <tbody>
                     {combinedChangeRequests.map((reqRow) => {
                       const isSelf = reqRow.requestedBy === currentPrincipalId;
-                      const hasCheckerScope =
-                        reqRow.changeType === 'EVENT_TRIGGER_CONFIG'
+                      const hasCheckerScope = hasNotificationCheckerIdentity &&
+                        (reqRow.changeType === 'EVENT_TRIGGER_CONFIG'
                           ? permissions.canApproveConfiguration
-                          : permissions.canApproveTemplates;
+                          : permissions.canApproveTemplates);
                       const canAct =
                         reqRow.status === 'PENDING_APPROVAL' &&
                         hasCheckerScope &&

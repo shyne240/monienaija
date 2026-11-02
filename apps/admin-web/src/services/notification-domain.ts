@@ -1,6 +1,7 @@
 import type { WorkforcePrincipal } from '../store/auth-store';
 
 export type ManagedNotificationChannel = 'SMS' | 'EMAIL';
+export type NotificationConfigurationTarget = 'EVENT' | ManagedNotificationChannel;
 export type RuntimeNotificationChannel = 'SMS' | 'EMAIL' | 'PUSH';
 export type NotificationDeliveryClass = 'SECURITY' | 'TRANSACTIONAL' | 'INFORMATIONAL';
 export type NotificationEventCategory =
@@ -36,8 +37,14 @@ export interface NotificationEventCatalogueItem {
   runtimeTriggerState: NotificationRuntimeTriggerState;
   /** Governed event-wide master; absent for direct SECURITY and offline reference rows. */
   eventEnabled?: boolean;
-  smsEnabled: boolean;
-  emailEnabled: boolean;
+  eventLocked?: boolean;
+  eventConfigurationVersion?: number;
+  smsEnabled?: boolean;
+  smsLocked?: boolean;
+  smsConfigurationVersion?: number;
+  emailEnabled?: boolean;
+  emailLocked?: boolean;
+  emailConfigurationVersion?: number;
   toggleLocked: boolean;
   lockReason: string | null;
   templateEditable: boolean;
@@ -77,9 +84,16 @@ export interface NotificationChangeRequestRecord {
   approvalId: string | null;
   changeType: 'TEMPLATE_CREATE' | 'TEMPLATE_ACTIVATE' | 'EVENT_TRIGGER_CONFIG';
   eventType: string;
-  channel: ManagedNotificationChannel | 'MULTI';
+  channel: NotificationConfigurationTarget | 'MULTI';
   summary: string;
-  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'APPLIED';
+  status:
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'APPLIED'
+    | 'CANCELLED'
+    | 'EXPIRED'
+    | 'UNKNOWN';
   requestedBy: string;
   requestedAt: string;
   decidedBy?: string | null;
@@ -87,6 +101,7 @@ export interface NotificationChangeRequestRecord {
   decisionComment?: string | null;
   proposedSubject?: string | null;
   proposedBody?: string | null;
+  proposedEventEnabled?: boolean;
   proposedSmsEnabled?: boolean;
   proposedEmailEnabled?: boolean;
 }
@@ -568,8 +583,56 @@ function scrubSampleValue(value: string): string {
   return trimmed;
 }
 
+export interface NotificationConfigurationSnapshot {
+  enabled: boolean;
+  locked: boolean;
+  version: number;
+}
+
+/** A target is editable only when the live registry supplied its complete versioned state. */
+export function getNotificationConfigurationSnapshot(
+  event: NotificationEventCatalogueItem,
+  target: NotificationConfigurationTarget,
+): NotificationConfigurationSnapshot | null {
+  const enabled =
+    target === 'EVENT' ? event.eventEnabled : target === 'SMS' ? event.smsEnabled : event.emailEnabled;
+  const locked =
+    target === 'EVENT' ? event.eventLocked : target === 'SMS' ? event.smsLocked : event.emailLocked;
+  const version =
+    target === 'EVENT'
+      ? event.eventConfigurationVersion
+      : target === 'SMS'
+        ? event.smsConfigurationVersion
+        : event.emailConfigurationVersion;
+  if (
+    typeof enabled !== 'boolean' ||
+    typeof locked !== 'boolean' ||
+    typeof version !== 'number' ||
+    !Number.isInteger(version) ||
+    version < 1
+  ) {
+    return null;
+  }
+  return { enabled, locked, version };
+}
+
+/** Configuration gates only; actual delivery also depends on recipients and providers. */
+export function effectiveConfiguredChannels(event: NotificationEventCatalogueItem): string {
+  if (event.deliveryClass === 'SECURITY') return 'Managed separately';
+  if (typeof event.eventEnabled !== 'boolean') return 'Unavailable';
+  if (!event.eventEnabled) return 'Event disabled';
+  if (typeof event.smsEnabled !== 'boolean' || typeof event.emailEnabled !== 'boolean') {
+    return 'Unavailable';
+  }
+  if (event.smsEnabled && event.emailEnabled) return 'SMS and Email';
+  if (event.smsEnabled) return 'SMS only';
+  if (event.emailEnabled) return 'Email only';
+  return 'Neither channel';
+}
+
 export interface TriggerConfigValidationInput {
   event: NotificationEventCatalogueItem | null;
+  eventEnabled: boolean;
   smsEnabled: boolean;
   emailEnabled: boolean;
   reason: string;
@@ -577,7 +640,7 @@ export interface TriggerConfigValidationInput {
 
 export function validateTriggerConfigurationChange(input: TriggerConfigValidationInput): string[] {
   const errors: string[] = [];
-  const { event, smsEnabled, emailEnabled, reason } = input;
+  const { event, eventEnabled, smsEnabled, emailEnabled, reason } = input;
 
   if (!event) {
     errors.push('Select a notification event to configure.');
@@ -596,8 +659,24 @@ export function validateTriggerConfigurationChange(input: TriggerConfigValidatio
     return errors;
   }
 
-  if (smsEnabled === event.smsEnabled && emailEnabled === event.emailEnabled) {
-    errors.push('Modify at least one channel trigger (SMS or Email) before submitting a change.');
+  const targets: Array<{ target: NotificationConfigurationTarget; current?: boolean; desired: boolean }> = [
+    { target: 'EVENT', current: event.eventEnabled, desired: eventEnabled },
+    { target: 'SMS', current: event.smsEnabled, desired: smsEnabled },
+    { target: 'EMAIL', current: event.emailEnabled, desired: emailEnabled },
+  ];
+  const changed = targets.filter(
+    ({ current, desired }) => typeof current === 'boolean' && current !== desired,
+  );
+  if (changed.length === 0) {
+    errors.push('Modify at least one Event, SMS or Email control before submitting a change.');
+  }
+  for (const { target } of changed) {
+    const snapshot = getNotificationConfigurationSnapshot(event, target);
+    if (!snapshot) {
+      errors.push(`${target} configuration or version is unavailable; refresh the registry.`);
+    } else if (snapshot.locked) {
+      errors.push(`${target} configuration is locked and cannot be changed.`);
+    }
   }
 
   const trimmedReason = reason.trim();
