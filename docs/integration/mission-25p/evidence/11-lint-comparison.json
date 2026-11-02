@@ -1,0 +1,70 @@
+{
+  "mission": "25P",
+  "date": "2026-11-02T16:47:04.390Z",
+  "scope1_changedFiles": {
+    "description": "TypeScript files added or modified by Mission 25O (the scoped comparison used as the stated baseline)",
+    "head": {
+      "files": 23,
+      "errors": 37,
+      "warnings": 3,
+      "exitCode": 1
+    },
+    "parent": {
+      "files": 18,
+      "errors": 37,
+      "warnings": 3,
+      "exitCode": 1
+    },
+    "perFileProfileMismatches": [],
+    "filesWithFindings": [
+      {
+        "file": "test/a20-outlets-terminals.integration.spec.ts",
+        "errors": 0,
+        "warnings": 2
+      },
+      {
+        "file": "test/v1-003-admin-operational-writes.integration.spec.ts",
+        "errors": 16,
+        "warnings": 1
+      },
+      {
+        "file": "test/v1-007-support-ticket.integration.spec.ts",
+        "errors": 12,
+        "warnings": 0
+      },
+      {
+        "file": "test/v1-limit-02-limit-assignment.integration.spec.ts",
+        "errors": 9,
+        "warnings": 0
+      }
+    ]
+  },
+  "scope2_repositoryWide": {
+    "description": "Full {src,test}/**/*.ts lint, both trees, identical config and eslint binary",
+    "head": {
+      "files": 1405,
+      "errors": 1351,
+      "warnings": 80,
+      "exitCode": 1
+    },
+    "parent": {
+      "files": 1400,
+      "errors": 1351,
+      "warnings": 80,
+      "exitCode": 1
+    },
+    "deltaErrors": 0,
+    "deltaWarnings": 0,
+    "deltaFiles": 5,
+    "filesWithChangedProfile": []
+  },
+  "conclusion": {
+    "newLintRegressions": 0,
+    "preExistingRepoWideBacklog": {
+      "errors": 1351,
+      "warnings": 80,
+      "files": 1405
+    },
+    "note": "All 37 errors / 3 warnings live in four legacy test files and are byte-identical to the 25K baseline. No repository-wide cleanup was performed."
+  }
+}

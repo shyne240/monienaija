@@ -1,0 +1,123 @@
+{
+  "pass": 15,
+  "fail": 0,
+  "total": 15,
+  "results": [
+    {
+      "name": "1. migration 102 is present in the chain",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "2. pre-upgrade schema has no binding columns (genuine 101 state)",
+      "ok": true,
+      "detail": {
+        "found": 0
+      }
+    },
+    {
+      "name": "3. legacy rows seeded before upgrade",
+      "ok": true,
+      "detail": {
+        "c": 1,
+        "p": 1
+      }
+    },
+    {
+      "name": "4. migration 102 applies over an existing 101 database",
+      "ok": true,
+      "detail": {
+        "appliedCount": 1
+      }
+    },
+    {
+      "name": "5. 102 is recorded in typeorm_migrations",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "6. legacy configuration survives the upgrade",
+      "ok": true,
+      "detail": {
+        "rows": 1
+      }
+    },
+    {
+      "name": "7. legacy configuration remains UNBOUND (no silent credential approval)",
+      "ok": true,
+      "detail": {
+        "s": null,
+        "v": null,
+        "m": null,
+        "src": "NONE",
+        "approved_by": "legacy-checker"
+      }
+    },
+    {
+      "name": "8. legacy configuration source and approver are not rewritten",
+      "ok": true,
+      "detail": {
+        "s": null,
+        "v": null,
+        "m": null,
+        "src": "NONE",
+        "approved_by": "legacy-checker"
+      }
+    },
+    {
+      "name": "9. legacy proposal survives with its original status",
+      "ok": true,
+      "detail": {
+        "status": "REQUESTED",
+        "fv": null,
+        "m": null,
+        "src": null
+      }
+    },
+    {
+      "name": "10. legacy proposal is not retro-bound and gains no fingerprint version",
+      "ok": true,
+      "detail": {
+        "status": "REQUESTED",
+        "fv": null,
+        "m": null,
+        "src": null
+      }
+    },
+    {
+      "name": "11. binding check is enforced on the upgraded database (partial metadata refused)",
+      "ok": true,
+      "detail": {
+        "partial": "chk_notif_provider_cfg_binding"
+      }
+    },
+    {
+      "name": "12. well-formed binding still accepted on the upgraded database",
+      "ok": true,
+      "detail": {
+        "good": "accepted"
+      }
+    },
+    {
+      "name": "13. fingerprint version other than 2 is refused on the upgraded database",
+      "ok": true,
+      "detail": {
+        "badFvResult": "chk_notif_provider_prop_fingerprint_version"
+      }
+    },
+    {
+      "name": "14. destructive rollback is refused while governance rows exist",
+      "ok": true,
+      "detail": {
+        "refused": true
+      }
+    },
+    {
+      "name": "15. refused rollback left the data and schema intact",
+      "ok": true,
+      "detail": {
+        "n": 1
+      }
+    }
+  ]
+}

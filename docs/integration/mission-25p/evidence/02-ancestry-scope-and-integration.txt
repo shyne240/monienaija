@@ -1,0 +1,84 @@
+=== ANCESTRY (re-verified independently in 25P) ===
+--- rev-list --parents: 25O implementation ---
+3a0f87eafe86b455e1906d7779f83ca3152b9d00 587c3763944368b9260c9299d18bce1189ca5919
+--- rev-list --parents: 25O evidence ---
+8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+--- ancestry checks ---
+587c376 is ancestor of 3a0f87e: YES
+3a0f87e is ancestor of 8fa35c1: YES
+commits between 587c376 and 3a0f87e: 1
+commits between 3a0f87e and 8fa35c1: 1
+
+=== EVIDENCE COMMIT SCOPE (8fa35c1) ===
+  M	docs/integration/mission-25o/HANDOVER.md
+  A	docs/integration/mission-25o/evidence/README.md
+  A	docs/integration/mission-25o/evidence/build.txt
+  A	docs/integration/mission-25o/evidence/eslint-comparison.txt
+  A	docs/integration/mission-25o/evidence/eslint-focused.txt
+  A	docs/integration/mission-25o/evidence/eslint-summary.json
+  A	docs/integration/mission-25o/evidence/h07-provider-readiness-summary.json
+  A	docs/integration/mission-25o/evidence/h07-provider-readiness.txt
+  A	docs/integration/mission-25o/evidence/postgres-cleanup.txt
+  A	docs/integration/mission-25o/evidence/postgres-matrix-preflight.txt
+  A	docs/integration/mission-25o/evidence/postgres-matrix-summary.json
+  A	docs/integration/mission-25o/evidence/postgres-matrix.txt
+  A	docs/integration/mission-25o/evidence/preservation.json
+  A	docs/integration/mission-25o/evidence/security-finance-agent-a-summary.json
+  A	docs/integration/mission-25o/evidence/security-finance-agent-a.txt
+  A	docs/integration/mission-25o/evidence/security-finance-agent-b-summary.json
+  A	docs/integration/mission-25o/evidence/security-finance-agent-b.txt
+  A	docs/integration/mission-25o/evidence/test-summary.json
+  A	docs/integration/mission-25o/evidence/typecheck.txt
+  A	docs/integration/mission-25o/evidence/unit-preflight-summary.json
+  A	docs/integration/mission-25o/evidence/unit-preflight.txt
+  A	docs/integration/mission-25o/evidence/unit-summary.json
+  A	docs/integration/mission-25o/evidence/unit.txt
+code-path (.ts/.tsx/.js/.json outside docs) changes: 0
+
+=== IMPLEMENTATION INVENTORY (587c376 -> 3a0f87e) ===
+modified: 19  added: 8  deleted: 0
+  M	.env.example
+  A	docs/integration/mission-25o/HANDOVER.md
+  A	docs/integration/mission-25o/PHASE-A-CREDENTIAL-LIFECYCLE-AUDIT.md
+  A	docs/integration/mission-25o/ROLLOUT-AND-COMPATIBILITY.md
+  M	src/admin/admin-notification-provider.controller.ts
+  M	src/authorization/privileged-action-approval.service.ts
+  M	src/common/sensitive-data-redaction.ts
+  M	src/config/environment.ts
+  A	src/migrations/1785753600102-AddNotificationCredentialBinding.ts
+  A	src/notification/notification-credential-binding.service.ts
+  M	src/notification/notification-provider-config.service.ts
+  M	src/notification/notification.types.ts
+  M	src/notification/provider-security.ts
+  M	src/production/production-readiness.service.ts
+  M	test/a19-agent-funding.integration.spec.ts
+  M	test/a20-outlets-terminals.integration.spec.ts
+  M	test/a8-agent-lifecycle.integration.spec.ts
+  M	test/mission-25c-provider-routing.spec.ts
+  A	test/mission-25o-credential-binding-upgrade.integration.spec.ts
+  A	test/mission-25o-credential-binding.integration.spec.ts
+  A	test/mission-25o-credential-binding.spec.ts
+  M	test/notification-migration-upgrade-01.integration.spec.ts
+  M	test/notification-provider-config.unit.spec.ts
+  M	test/v1-003-admin-operational-writes.integration.spec.ts
+  M	test/v1-007-support-ticket.integration.spec.ts
+  M	test/v1-limit-02-limit-assignment.integration.spec.ts
+  M	test/v1-notification-provider-configuration-01.integration.spec.ts
+ 27 files changed, 1696 insertions(+), 238 deletions(-)
+
+=== SCOPE GUARDS (must be zero) ===
+  src/customer-preference                                                  0
+  src/ledger                                                               0
+  src/authorization/route-policy-registry                                  0
+  src/authorization/role-definition-governance.service.ts                  0
+  src/finance-role-administration                                          0
+  src/notification/notification-secret-encryption.service.ts               0
+  src/migrations/1785753600101                                             0
+
+=== INTEGRATION (Phase B) ===
+branch: integration/mission-25p-h07-credential-integrity
+  f157081 merge: Mission 25P — integrate Mission 25O H-07 credential-integrity implementation
+  8fa35c1 Document Mission 25O preservation and final verification
+  3a0f87e fix(notifications): bind governed provider credential identity
+parents of integration commit: 587c3763944368b9260c9299d18bce1189ca5919 8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d
+files differing between 25O tip and 25P HEAD: 0
