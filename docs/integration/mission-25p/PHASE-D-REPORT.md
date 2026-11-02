@@ -63,9 +63,11 @@ the remote and equal to the local commit:
 
 ```
 $ git ls-remote origin integration/mission-25p-h07-credential-integrity
-f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0  refs/heads/integration/mission-25p-h07-credential-integrity   # at integration time
-<tip> <refs/heads/integration/mission-25p-h07-credential-integrity>                           # after the evidence commit
+f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0  refs/heads/integration/mission-25p-h07-credential-integrity
 ```
+
+That read was taken immediately after the integration merge. It was repeated after each subsequent
+push and the remote tip matched local `HEAD` every time.
 
 The tip SHA is intentionally **not** written into this table: this report is a file in the tip commit,
 so citing it would change it. The remote tip was re-read with `git ls-remote` after the final push and
