@@ -161,25 +161,31 @@ export class NotificationDeliveryProcessor {
     });
   }
 
-  private async markStarted(row: DeliveryRow): Promise<boolean> {
+  private async markStarted(row: DeliveryRow): Promise<'STARTED' | 'DISABLED' | 'LOST'> {
     return this.options.dataSource.transaction(async (manager) => {
       const locked = await manager.query<Array<{ id: string }>>(
         `SELECT id FROM notification_deliveries WHERE id=$1 AND lease_token=$2
           AND lease_expires_at > NOW() AND status IN ('PENDING','FAILED') FOR UPDATE`,
         [row.id, row.lease_token],
       );
-      if (!locked[0]) return false;
+      if (!locked[0]) return 'LOST';
       const attempt = await manager.query<Array<{ id: string }>>(
         `SELECT id FROM notification_delivery_attempts WHERE delivery_id=$1 AND lease_token=$2
           AND status='CLAIMED' FOR UPDATE`, [row.id, row.lease_token],
       );
-      if (!attempt[0]) return false;
+      if (!attempt[0]) return 'LOST';
+      // Serialize the final local pre-send decision with governed event/channel changes.
+      // A request already STARTED may still complete and requires operational egress fencing.
+      if ((row.channel === 'SMS' || row.channel === 'EMAIL') &&
+          !(await this.options.templates.isEventEnabled(manager, row.event_type, row.channel, true))) {
+        return 'DISABLED';
+      }
       await manager.query(
         `UPDATE notification_delivery_attempts SET status='STARTED', started_at=NOW()
           WHERE delivery_id=$1 AND lease_token=$2 AND status='CLAIMED'`,
         [row.id, row.lease_token],
       );
-      return true;
+      return 'STARTED';
     });
   }
 
@@ -260,7 +266,9 @@ export class NotificationDeliveryProcessor {
         const status = row.attempts >= this.maxAttempts ? 'DEAD' : 'FAILED';
         return (await this.finish(row, status, 'PROVIDER_OR_CONTENT_UNAVAILABLE')) ? status : 'LOST';
       }
-      if (!(await this.markStarted(row))) return 'LOST';
+      const start = await this.markStarted(row);
+      if (start === 'LOST') return 'LOST';
+      if (start === 'DISABLED') return (await this.finish(row, 'SKIPPED', 'EVENT_DISABLED')) ? 'SKIPPED' : 'LOST';
       started = true;
       let result: NotificationSendResult;
       try {

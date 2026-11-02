@@ -11,6 +11,8 @@ import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import { WalletService } from '../src/wallet/wallet.service';
+import { DepositService } from '../src/deposit/deposit.service';
+import { WithdrawalService } from '../src/withdrawal/withdrawal.service';
 import { SupportService } from '../src/support/support.service';
 import { OutboxService } from '../src/operations/outbox.service';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
@@ -20,6 +22,7 @@ import { NotificationWorkerService } from '../src/notification/notification-work
 import { NotificationTemplateService } from '../src/notification/notification-template.service';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { RobaseNotificationProvider } from '../src/notification/robase-notification-provider';
 import type { ConfigurableSmsNotificationProvider } from '../src/notification/notification-provider-config.service';
 import { NormalizingSmsNotificationProvider } from '../src/notification/normalizing-sms-notification-provider';
@@ -48,6 +51,8 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
   let resolver: NotificationChannelResolverService;
   let templates: NotificationTemplateService;
   let wallet: WalletService;
+  let deposits: DepositService;
+  let withdrawals: WithdrawalService;
   let support: SupportService;
   let outbox: OutboxService;
   let config: ConfigService;
@@ -87,6 +92,8 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     resolver = module.get(NotificationChannelResolverService);
     templates = module.get(NotificationTemplateService);
     wallet = module.get(WalletService);
+    deposits = module.get(DepositService);
+    withdrawals = module.get(WithdrawalService);
     support = module.get(SupportService);
     outbox = module.get(OutboxService);
     config = module.get(ConfigService);
@@ -106,6 +113,7 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     );
     if (rows.length) await ds.query(`TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
     await seedNotificationDefaultsV1(ds.manager);
+    await seedNotificationDefaultsV2(ds.manager);
     await ds.query(`INSERT INTO ledger_accounts
       (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
       VALUES
@@ -155,6 +163,179 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       eventKey: key, payload: { customerId, amountMinor: '25000', reference: 'FUND-OK' } }, manager));
     return result.deliveries[0]!.id;
   }
+
+  it('H-04: committed deposit and withdrawal outcomes reach only their verified wallet owner, once', async () => {
+    const owner = await customer('8012345678');
+    const other = await customer('8023456789');
+    const account = await wallet.createWallet({ customerId: owner, currency: 'NGN', idempotencyKey: `wallet-${randomUUID()}` });
+    const ownership = { kind: 'INTERNAL', principalId: 'synthetic-service', principalType: 'SERVICE' } as const;
+    const command = () => ({ ownership, walletId: account.id, amountMinor: '25000', currency: 'NGN', idempotencyKey: randomUUID() });
+    const completedDeposit = await deposits.createDeposit(command());
+    await deposits.completeDeposit(completedDeposit.id);
+    const failedDeposit = await deposits.createDeposit(command());
+    await deposits.failDeposit(failedDeposit.id, 'FAILURE_PROSE_SENTINEL');
+    const completedWithdrawal = await withdrawals.createWithdrawal({ ...command(), amountMinor: '1000' });
+    await withdrawals.processWithdrawal(completedWithdrawal.id);
+    await withdrawals.completeWithdrawal(completedWithdrawal.id);
+    const failedWithdrawal = await withdrawals.createWithdrawal({ ...command(), amountMinor: '1000' });
+    await withdrawals.failWithdrawal(failedWithdrawal.id, 'FAILURE_PROSE_SENTINEL');
+    const facts = await ds.query<Array<{ event_type: string; event_key: string; aggregate_type: string;
+      aggregate_id: string; payload: Record<string, unknown>; id: string }>>(`SELECT id,event_type,event_key,aggregate_type,aggregate_id,payload
+      FROM outbox_events WHERE event_type=ANY($1::text[]) ORDER BY event_type`,
+      [['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed']]);
+    expect(facts).toHaveLength(4);
+    await ds.query(`UPDATE notification_event_configurations SET is_enabled=true,version=version+1
+      WHERE event_type=ANY($1::text[]) AND channel IN ('EVENT','SMS')`,
+      [facts.map((fact) => fact.event_type)]);
+    const journalCounts = await ds.query(`SELECT (SELECT count(*)::int FROM ledger_journals) AS journals,
+      (SELECT count(*)::int FROM ledger_lines) AS lines`);
+    expect(await dispatcher.processPendingOutboxEvents(20)).toBe(4);
+    const receipts = await ds.query(`SELECT status FROM notification_outbox_receipts
+      WHERE outbox_event_id=ANY($1::uuid[])`, [facts.map((fact) => fact.id)]);
+    expect(receipts).toHaveLength(4);
+    expect(receipts.every((receipt: any) => receipt.status === 'MATERIALIZED')).toBe(true);
+    const deliveries = await ds.query(`SELECT event_type,event_key,recipient_id,status,payload,message,aggregate_id
+      FROM notification_deliveries ORDER BY event_type`);
+    expect(deliveries).toHaveLength(4);
+    for (const delivery of deliveries) {
+      expect(delivery.recipient_id).toBe(owner);
+      expect(delivery.status).toBe('PENDING');
+      expect(delivery.event_key).toBe(`${delivery.event_type}:${delivery.aggregate_id}:v1`);
+      expect(JSON.stringify(delivery)).not.toContain('FAILURE_PROSE_SENTINEL');
+      expect(JSON.stringify(delivery)).not.toMatch(/journalId|failureMessage|failureCode/);
+    }
+    expect(await processor().processBatch(20)).toMatchObject({ sent: 4 });
+    expect(provider.sent).toHaveLength(4);
+    for (const fact of facts) {
+      const base = { eventType: fact.event_type, eventKey: fact.event_key, aggregateType: fact.aggregate_type,
+        aggregateId: fact.aggregate_id, payload: fact.payload };
+      const duplicate = await dispatcher.dispatch({ ...base, eventKey: `replayed:${randomUUID()}` });
+      expect(duplicate.generated).toBe(0);
+      const field = fact.event_type.startsWith('deposit.') ? 'depositId' : 'withdrawalId';
+      for (const forged of [
+        { ...base, payload: { ...base.payload, customerId: other } },
+        { ...base, aggregateType: 'WRONG' },
+        { ...base, aggregateId: randomUUID() },
+        { ...base, payload: { ...base.payload, [field]: randomUUID() } },
+        { ...base, eventType: fact.event_type.endsWith('.completed')
+          ? fact.event_type.replace('.completed', '.failed') : fact.event_type.replace('.failed', '.completed') },
+      ]) expect((await dispatcher.dispatch(forged)).generated).toBe(0);
+    }
+    expect(provider.sent).toHaveLength(4);
+    expect(await ds.query(`SELECT (SELECT count(*)::int FROM ledger_journals) AS journals,
+      (SELECT count(*)::int FROM ledger_lines) AS lines`)).toEqual(journalCounts);
+  }, 60_000);
+
+  it('H-06: event, SMS and EMAIL switches realize all channel combinations independently', async () => {
+    const customerId = await customer('8012345678', { email: 'synthetic@example.test' });
+    const account = await wallet.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${randomUUID()}` });
+    const email = new TestEmailProvider();
+    const both = new NotificationDispatcherService(ds, resolver, templates, provider, email,
+      new CodeNotificationEmailTemplateService(templates));
+    const peerBefore = await ds.query(`SELECT channel,is_enabled,version FROM notification_event_configurations
+      WHERE event_type='withdrawal.completed' ORDER BY channel`);
+    const ownership = { kind: 'INTERNAL', principalId: 'synthetic-service', principalType: 'SERVICE' } as const;
+    const combinations = [
+      { master: false, sms: true, email: true, smsSent: 0, emailSent: 0 },
+      { master: true, sms: false, email: false, smsSent: 0, emailSent: 0 },
+      { master: true, sms: true, email: false, smsSent: 1, emailSent: 0 },
+      { master: true, sms: false, email: true, smsSent: 0, emailSent: 1 },
+      { master: true, sms: true, email: true, smsSent: 1, emailSent: 1 },
+    ];
+    for (const combination of combinations) {
+      for (const [channel, enabled] of [['EVENT', combination.master], ['SMS', combination.sms], ['EMAIL', combination.email]] as const) {
+        await ds.query(`UPDATE notification_event_configurations SET is_enabled=$1,version=version+1
+          WHERE event_type='deposit.completed' AND channel=$2`, [enabled, channel]);
+      }
+      const payment = await deposits.createDeposit({ ownership, walletId: account.id, amountMinor: '1000', currency: 'NGN', idempotencyKey: randomUUID() });
+      await deposits.completeDeposit(payment.id);
+      const fact = (await ds.query(`SELECT event_type,event_key,aggregate_type,aggregate_id,payload
+        FROM outbox_events WHERE event_type='deposit.completed' AND aggregate_id=$1`, [payment.id]))[0];
+      const smsBefore = provider.sent.length;
+      const emailBefore = email.sent.length;
+      const result = await both.dispatch({ eventType: fact.event_type, eventKey: fact.event_key,
+        aggregateType: fact.aggregate_type, aggregateId: fact.aggregate_id, payload: fact.payload });
+      expect(result.generated).toBe(2);
+      expect(provider.sent.length - smsBefore).toBe(combination.smsSent);
+      expect(email.sent.length - emailBefore).toBe(combination.emailSent);
+    }
+    expect(await ds.query(`SELECT channel,is_enabled,version FROM notification_event_configurations
+      WHERE event_type='withdrawal.completed' ORDER BY channel`)).toEqual(peerBefore);
+    // Recipient opt-out still overrides otherwise enabled controls.
+    await ds.query(`UPDATE customer_preferences SET notification_sms_enabled=false,notification_email_enabled=false
+      WHERE customer_id=$1`, [customerId]);
+    const payment = await deposits.createDeposit({ ownership, walletId: account.id, amountMinor: '1000', currency: 'NGN', idempotencyKey: randomUUID() });
+    await deposits.completeDeposit(payment.id);
+    const fact = (await ds.query(`SELECT event_type,event_key,aggregate_type,aggregate_id,payload
+      FROM outbox_events WHERE event_type='deposit.completed' AND aggregate_id=$1`, [payment.id]))[0];
+    const beforeCounts = [provider.sent.length, email.sent.length];
+    const result = await both.dispatch({ eventType: fact.event_type, eventKey: fact.event_key,
+      aggregateType: fact.aggregate_type, aggregateId: fact.aggregate_id, payload: fact.payload });
+    expect(result.skipped).toBe(2);
+    expect([provider.sent.length, email.sent.length]).toEqual(beforeCounts);
+  }, 60_000);
+
+  it('H-06: transfer.failed and transfer.unknown no longer share controls or templates', async () => {
+    const customerId = await customer('8012345678');
+    await ds.query(`UPDATE notification_event_configurations SET is_enabled=false,version=version+1
+      WHERE event_type='transfer.failed' AND channel='EVENT'`);
+    const first = await dispatcher.dispatch({ eventType: 'transfer.unknown', eventKey: `unknown:${randomUUID()}`,
+      payload: { sourceCustomerId: customerId } });
+    const suppressed = await dispatcher.dispatch({ eventType: 'transfer.failed', eventKey: `failed:${randomUUID()}`,
+      payload: { sourceCustomerId: customerId } });
+    expect(first.dispatched).toBe(1);
+    expect(suppressed.skipped).toBe(1);
+    expect(provider.sent[0]?.message).toContain('being confirmed');
+    expect(provider.sent[0]?.message).not.toContain('failed');
+    await ds.query(`UPDATE notification_event_configurations SET is_enabled=true,version=version+1
+      WHERE event_type='transfer.failed' AND channel='EVENT'`);
+    await ds.query(`UPDATE notification_event_configurations SET is_enabled=false,version=version+1
+      WHERE event_type='transfer.unknown' AND channel='SMS'`);
+    const second = await dispatcher.dispatch({ eventType: 'transfer.failed', eventKey: `failed:${randomUUID()}`,
+      payload: { sourceCustomerId: customerId } });
+    const unknownSuppressed = await dispatcher.dispatch({ eventType: 'transfer.unknown', eventKey: `unknown:${randomUUID()}`,
+      payload: { sourceCustomerId: customerId } });
+    expect(second.dispatched).toBe(1);
+    expect(unknownSuppressed.skipped).toBe(1);
+    expect(provider.sent[1]?.message).toContain('failed');
+    expect(provider.sent).toHaveLength(2);
+  }, 30_000);
+
+  it('H-06: retries and the final pre-send boundary honor a newly disabled master or channel', async () => {
+    const customerId = await customer('8012345678');
+    for (const channel of ['EVENT', 'SMS'] as const) {
+      const id = await materialize(customerId);
+      // First check succeeds; disable just after recipient resolution to exercise the final
+      // row-locked STARTED gate rather than only the earlier check.
+      const flippingResolver = {
+        resolve: async (...args: Parameters<NotificationChannelResolverService['resolve']>) => {
+          const resolved = await resolver.resolve(...args);
+          await ds.query(`UPDATE notification_event_configurations SET is_enabled=false,version=version+1
+            WHERE event_type='customer.funding.approved' AND channel=$1`, [channel]);
+          return resolved;
+        },
+      } as NotificationChannelResolverService;
+      const gate = new NotificationDeliveryProcessor({ dataSource: ds, resolver: flippingResolver,
+        templates, smsProvider: provider, emailProvider: null, maxAttempts: 3, baseDelaySeconds: 1, leaseSeconds: 30 });
+      expect(await gate.processOne(id)).toBe('SKIPPED');
+      expect(await ds.query(`SELECT status,last_error FROM notification_deliveries WHERE id=$1`, [id]))
+        .toEqual([{ status: 'SKIPPED', last_error: 'EVENT_DISABLED' }]);
+      expect(await ds.query(`SELECT status FROM notification_delivery_attempts WHERE delivery_id=$1`, [id]))
+        .toEqual([{ status: 'SUPPRESSED' }]);
+      expect(provider.sent).toHaveLength(0);
+      await ds.query(`UPDATE notification_event_configurations SET is_enabled=true,version=version+1
+        WHERE event_type='customer.funding.approved' AND channel=$1`, [channel]);
+    }
+    const retryId = await materialize(customerId);
+    provider.response = { success: false, failureDisposition: 'RETRYABLE' };
+    expect(await processor().processOne(retryId)).toBe('FAILED');
+    await ds.query(`UPDATE notification_event_configurations SET is_enabled=false,version=version+1
+      WHERE event_type='customer.funding.approved' AND channel='EVENT'`);
+    await ds.query(`UPDATE notification_deliveries SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE id=$1`, [retryId]);
+    provider.response = { success: true, providerRef: 'synthetic-ref' };
+    expect(await processor().processOne(retryId)).toBe('SKIPPED');
+    expect(provider.sent).toHaveLength(1);
+  }, 30_000);
 
   it('M25C: real support producer reaches the subscriber once; internal, forged, unauthorized and malformed events stay quarantined', async () => {
     const owner = await customer('8012345678');
@@ -340,7 +521,7 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
       await event('customer.funding.approved', { customerId: cid }, { schema: 2 }),
       await event('support.ticket.message_added', { customerId: cid }),
       await event('support.ticket.message_added', { customerId: cid, isInternal: true }),
-      // These producers exist, but recipient/channel/disclosure policy has not been approved.
+      // H-04 events exist, but these synthetic facts lack a valid committed payment and owner.
       ...await Promise.all(['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed']
         .map((eventType) => event(eventType, { customerId: cid }))),
     ];
@@ -354,7 +535,7 @@ describe('notification reliability (real HTTP and PostgreSQL, synthetic provider
     expect(byId.get(cases[4]!.id)).toMatchObject({ status: 'QUARANTINED', reason: 'SUPPORT_VISIBILITY_UNKNOWN' });
     expect(byId.get(cases[5]!.id)).toMatchObject({ status: 'SUPPRESSED', reason: 'INTERNAL_SUPPORT_MESSAGE' });
     for (const blockedFinancialEvent of cases.slice(6)) {
-      expect(byId.get(blockedFinancialEvent.id)).toMatchObject({ status: 'QUARANTINED', reason: 'EVENT_TYPE_UNSUPPORTED' });
+      expect(byId.get(blockedFinancialEvent.id)).toMatchObject({ status: 'QUARANTINED', reason: 'NO_NOTIFICATION_INTENTS' });
     }
     expect(await ds.query('SELECT id FROM notification_deliveries')).toHaveLength(0);
     expect(JSON.stringify(receipts)).not.toContain('SENTINEL');

@@ -122,6 +122,7 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       'CreateNotificationProviderConfiguration1785753600100',
       'NotificationReliability1785753600101',
       'AddNotificationCredentialBinding1785753600102',
+      'ConfigureTransactionNotificationEvents1785753600103',
     ]);
     expect(await dataSource.showMigrations()).toBe(false);
 
@@ -166,16 +167,16 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
           (SELECT count(*)::text FROM notification_templates) AS templates,
           (SELECT count(*)::text FROM notification_templates WHERE is_active AND version=1) AS active_templates
       `);
-    // 20 transactional defaults + 3 SECURITY config-only events, both channels; SMS enabled
-    // for all 23 (SECURITY rows deliver SMS directly, locked against ordinary edits); EMAIL
-    // dark by default; 20 defaults x 2 channels = 40 active v1 templates (SECURITY has none).
+    // 25 ordinary events each have EVENT/SMS/EMAIL rows; direct SECURITY retains two
+    // locked channels. New deposit/withdrawal controls start disabled; transfer.unknown
+    // inherits the earlier transfer.failed channel settings once during the upgrade.
     expect(counts[0]).toEqual({
-      configs: '46',
-      sms_enabled: '23',
+      configs: '81',
+      sms_enabled: '24',
       email_enabled: '0',
       locked_security: '6',
-      templates: '40',
-      active_templates: '40',
+      templates: '50',
+      active_templates: '50',
     });
   }, 240_000);
 

@@ -1419,6 +1419,12 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 </button>
               </div>
               <p style={styles.cardDesc}>{editingTriggerEvent.description}</p>
+              {editingTriggerEvent.eventEnabled === false && (
+                <p style={styles.infoBanner} data-testid="event-master-disabled-notice">
+                  This event is disabled. Enabling a channel alone will not send notifications;
+                  the event-wide setting is managed through the governed configuration API.
+                </p>
+              )}
 
               <form onSubmit={handleSubmitTriggerConfig} noValidate>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -1530,6 +1536,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     <th style={styles.th}>Class</th>
                     <th style={styles.th}>Recipient</th>
                     <th style={styles.th}>Runtime Wiring</th>
+                    <th style={styles.th}>Event</th>
                     <th style={styles.th}>SMS</th>
                     <th style={styles.th}>Email</th>
                     <th style={styles.th}>Governance</th>
@@ -1569,6 +1576,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                         <td style={styles.td}>{row.recipientTarget}</td>
                         <td style={styles.td}>
                           <span style={{ fontSize: 12 }}>{row.runtimeTriggerState}</span>
+                        </td>
+                        <td style={styles.td} data-testid={`event-master-${row.eventType}`}>
+                          {row.eventEnabled === undefined ? '—' : row.eventEnabled ? 'ENABLED' : 'DISABLED'}
                         </td>
                         <td style={styles.td}>
                           <span style={row.smsEnabled ? styles.liveBadge : styles.mutedBadge}>

@@ -187,6 +187,7 @@ interface RegistryEventItem {
   deliveryClass: string;
   editable: boolean;
   variables: string[];
+  eventEnabled?: boolean;
   channels: {
     SMS?: RegistryChannelState;
     EMAIL?: RegistryChannelState;
@@ -366,11 +367,9 @@ function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueIt
   const sms = item.channels.SMS;
   const email = item.channels.EMAIL;
   const registryLocked = Boolean(sms?.locked || email?.locked) || !item.editable;
-  // The registry lock (SECURITY class) is authoritative; the static catalogue additionally
-  // keeps the stricter product-decision locks (e.g. required V1 transactional outcomes,
-  // Decision D-N8) — the union is displayed and enforced in the UI, and the server still
-  // governs every accepted change with maker-checker approval.
-  const locked = registryLocked || Boolean(baseline?.toggleLocked);
+  // The governed registry is authoritative. Financial outcomes are not statically
+  // mandatory; only the actual server-side lock may disable configuration controls.
+  const locked = registryLocked;
   const approvedVariables = (item.variables ?? []).map((name) => {
     const baselineVariable = baseline?.approvedVariables.find((variable) => variable.name === name);
     const metadata = VARIABLE_METADATA[name] ?? GENERIC_VARIABLE_METADATA;
@@ -390,6 +389,7 @@ function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueIt
     deliveryClass: (item.deliveryClass as NotificationEventCatalogueItem['deliveryClass']) ?? 'TRANSACTIONAL',
     recipientTarget: baseline?.recipientTarget ?? 'CUSTOMER',
     runtimeTriggerState: baseline?.runtimeTriggerState ?? 'LIVE_OUTBOX',
+    eventEnabled: item.eventEnabled,
     smsEnabled: Boolean(sms?.enabled),
     emailEnabled: Boolean(email?.enabled),
     toggleLocked: locked,

@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { NOTIFICATION_DEFAULTS_V1, NOTIFICATION_SECURITY_DEFAULTS_V1 } from '../src/notification/notification-defaults-v1';
+import { NOTIFICATION_ADDITIONAL_DEFAULTS_V2 } from '../src/notification/notification-defaults-v2';
 
 import {
   createEmptyIntegrationDataSource,
@@ -74,8 +75,9 @@ describe('migration chain (real PostgreSQL)', () => {
              (SELECT count(*)::int FROM notification_event_configurations WHERE delivery_class='SECURITY' AND is_locked) AS security_locked,
              (SELECT count(*)::int FROM notification_templates t JOIN notification_event_configurations c
                  ON c.event_type=t.event_type AND c.channel=t.channel WHERE c.delivery_class='SECURITY') AS security_templates`);
-    expect(counts[0]).toEqual({ templates: NOTIFICATION_DEFAULTS_V1.length * 2,
-      configurations: (NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_SECURITY_DEFAULTS_V1.length) * 2,
+    const ordinary = NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_ADDITIONAL_DEFAULTS_V2.length;
+    expect(counts[0]).toEqual({ templates: ordinary * 2,
+      configurations: ordinary * 3 + NOTIFICATION_SECURITY_DEFAULTS_V1.length * 2,
       security_locked: NOTIFICATION_SECURITY_DEFAULTS_V1.length * 2, security_templates: 0 });
   });
 

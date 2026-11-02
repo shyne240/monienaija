@@ -176,6 +176,7 @@ const REGISTRY_EVENT_FIXTURES = [
     eventType: 'customer.funding.requested',
     deliveryClass: 'TRANSACTIONAL',
     editable: true,
+    eventEnabled: false,
     variables: ['reference'],
     channels: {
       SMS: { enabled: true, locked: false, configurationVersion: 1, activeTemplateVersion: 1 },
@@ -606,7 +607,7 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect(view.container.querySelector('pre')).toBeNull();
   });
 
-  test('Capability 2: permanently locks SECURITY and required transactional triggers while eligible trigger changes flow through the real maker-checker change lifecycle', async () => {
+  test('Capability 2: locks SECURITY while transaction trigger changes flow through the real maker-checker lifecycle', async () => {
     mockIntegratedRegistryBackend();
     seedPrincipal({
       roles: ['OPERATIONS'],
@@ -621,13 +622,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     const otpBtn = view.getByTestId('configure-trigger-agent.desk.customer_otp') as HTMLButtonElement;
     expect(otpBtn.disabled).toBe(true);
 
-    // Required transactional funding outcome stays locked by product decision D-N8
-    // (client-side stricter-than-server lock preserved through the registry merge)
+    // The owner-approved policy makes this financial outcome configurable, not mandatory.
     const fundingApprovedBtn = view.getByTestId(
       'configure-trigger-customer.funding.approved',
     ) as HTMLButtonElement;
-    expect(fundingApprovedBtn.disabled).toBe(true);
+    expect(fundingApprovedBtn.disabled).toBe(false);
 
+    // Wait for the live registry rather than the initial offline reference before opening.
+    await waitFor(() => expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED'));
     // Eligible event (customer.funding.requested) can open Configure Triggers drawer
     const eligibleBtn = view.getByTestId(
       'configure-trigger-customer.funding.requested',
@@ -637,6 +639,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
 
     const drawer = view.getByTestId('event-trigger-config-panel');
     expect(drawer).toBeTruthy();
+    expect(view.getByTestId('event-master-customer.funding.requested').textContent).toBe('DISABLED');
+    expect(view.getByTestId('event-master-disabled-notice').textContent).toContain('Enabling a channel alone');
 
     // Submitting with no toggle change and short reason fails validation before any network call
     const postsBefore = (ApiClient.post as jest.Mock).mock.calls.length;

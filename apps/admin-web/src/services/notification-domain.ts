@@ -34,6 +34,8 @@ export interface NotificationEventCatalogueItem {
   deliveryClass: NotificationDeliveryClass;
   recipientTarget: NotificationRecipientTarget;
   runtimeTriggerState: NotificationRuntimeTriggerState;
+  /** Governed event-wide master; absent for direct SECURITY and offline reference rows. */
+  eventEnabled?: boolean;
   smsEnabled: boolean;
   emailEnabled: boolean;
   toggleLocked: boolean;
@@ -1109,8 +1111,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification (Decision D-N8); customer SMS opt-out still honored.',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,
@@ -1125,8 +1127,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification (Decision D-N8).',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,
@@ -1159,8 +1161,8 @@ export const BASELINE_CODE_EVENT_CATALOGUE: NotificationEventCatalogueItem[] = [
     runtimeTriggerState: 'LIVE_OUTBOX',
     smsEnabled: true,
     emailEnabled: false,
-    toggleLocked: true,
-    lockReason: 'Required V1 transactional outcome notification for both transfer counterparties.',
+    toggleLocked: false,
+    lockReason: null,
     templateEditable: true,
     approvedVariables: [REFERENCE_VAR, AMOUNT_CLAUSE_VAR],
     activeSmsVersion: 1,

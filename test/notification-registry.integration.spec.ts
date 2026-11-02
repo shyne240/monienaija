@@ -15,6 +15,8 @@ import {
   NOTIFICATION_DEFAULTS_V1,
   NOTIFICATION_SECURITY_DEFAULTS_V1,
 } from '../src/notification/notification-defaults-v1';
+import { FINANCIAL_NOTIFICATION_EVENT_TYPES, NOTIFICATION_ADDITIONAL_DEFAULTS_V2 } from '../src/notification/notification-defaults-v2';
+import { NOTIFICATION_EVENT_CATALOGUE } from '../src/notification/notification-event-map';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
 import { NotificationWorkerService } from '../src/notification/notification-worker.service';
@@ -177,10 +179,10 @@ describe('notification template/configuration foundation — real PostgreSQL and
     const counts =
       await db.query(`SELECT (SELECT count(*)::int FROM notification_templates) AS templates,
       (SELECT count(*)::int FROM notification_event_configurations) AS configurations`);
+    const ordinary = NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_ADDITIONAL_DEFAULTS_V2.length;
     expect(counts[0]).toEqual({
-      templates: NOTIFICATION_DEFAULTS_V1.length * 2,
-      configurations:
-        (NOTIFICATION_DEFAULTS_V1.length + NOTIFICATION_SECURITY_DEFAULTS_V1.length) * 2,
+      templates: ordinary * 2,
+      configurations: ordinary * 3 + NOTIFICATION_SECURITY_DEFAULTS_V1.length * 2,
     });
     const noAuth = await request(app.getHttpServer()).get(`${base}/events`);
     expect(noAuth.status).toBe(401);
@@ -260,6 +262,62 @@ describe('notification template/configuration foundation — real PostgreSQL and
       });
     expect([400, 403]).toContain(securityChange.status);
   }, 30_000);
+
+  it('governs each financial event master and channel independently, without weakening security', async () => {
+    const read = () => request(app.getHttpServer()).get(`${base}/events`).set(auth(maker));
+    const before = await read();
+    expect(before.status).toBe(200);
+    for (const financial of FINANCIAL_NOTIFICATION_EVENT_TYPES) {
+      const item = before.body.items.find((value: any) => value.eventType === financial);
+      expect(item).toMatchObject({ eventLocked: false, eventConfigurationVersion: 1,
+        channels: { SMS: { locked: false }, EMAIL: { locked: false } } });
+      expect(NOTIFICATION_EVENT_CATALOGUE.find((value) => value.eventType === financial)?.required).toBe(false);
+    }
+    const peer = before.body.items.find((value: any) => value.eventType === 'withdrawal.completed');
+    expect(peer).toMatchObject({ eventEnabled: false, channels: { SMS: { enabled: false }, EMAIL: { enabled: false } } });
+    const proposal = (channel: 'EVENT' | 'SMS' | 'EMAIL', enabled: boolean, expectedVersion: number) => ({
+      type: 'CONFIGURATION', eventType: 'deposit.completed', channel, enabled, expectedVersion,
+      reason: 'Review independent transaction notification setting',
+    });
+    const enableEvent = await propose(proposal('EVENT', true, 1));
+    const staleEvent = await propose(proposal('EVENT', false, 1));
+    expect((await execute(enableEvent)).status).toBeGreaterThanOrEqual(400);
+    await approve(enableEvent);
+    await approve(staleEvent);
+    const eventResult = await execute(enableEvent);
+    expect(eventResult.status).toBe(200);
+    expect((await execute(staleEvent)).status).toBe(409);
+    const sms = await propose(proposal('SMS', true, 1));
+    await approve(sms);
+    expect((await execute(sms)).status).toBe(200);
+    const email = await propose(proposal('EMAIL', true, 1));
+    await approve(email);
+    expect((await execute(email)).status).toBe(200);
+    const afterEnable = await read();
+    expect(afterEnable.body.items.find((value: any) => value.eventType === 'deposit.completed')).toMatchObject({
+      eventEnabled: true, eventConfigurationVersion: 2,
+      channels: { SMS: { enabled: true, configurationVersion: 2 }, EMAIL: { enabled: true, configurationVersion: 2 } },
+    });
+    const disableEvent = await propose(proposal('EVENT', false, 2));
+    await approve(disableEvent);
+    expect((await execute(disableEvent)).status).toBe(200);
+    const after = await read();
+    expect(after.body.items.find((value: any) => value.eventType === 'deposit.completed')).toMatchObject({
+      eventEnabled: false, eventConfigurationVersion: 3,
+      channels: { SMS: { enabled: true }, EMAIL: { enabled: true } },
+    });
+    expect(after.body.items.find((value: any) => value.eventType === 'withdrawal.completed')).toEqual(peer);
+    const audit = await db.query(`SELECT new_values FROM audit_events WHERE action='NOTIFICATION_CONFIGURATION_CHANGED'`);
+    expect(audit).toHaveLength(4);
+    const securityChange = await request(app.getHttpServer()).post(`${base}/changes`).set(auth(maker)).send({
+      type: 'CONFIGURATION', eventType: 'agent.desk.customer_otp', channel: 'EVENT', enabled: false,
+      expectedVersion: 1, reason: 'Attempt forbidden security change',
+    });
+    expect(securityChange.status).toBeGreaterThanOrEqual(400);
+    expect(after.body.items.find((value: any) => value.eventType === 'agent.desk.customer_otp')).toMatchObject({
+      editable: false, channels: { SMS: { enabled: true, locked: true }, EMAIL: { enabled: false, locked: true } },
+    });
+  }, 60_000);
 
   it('requires a distinct checker, persists and audits immutable versions, and dispatches the approved version once', async () => {
     const dual = await provision(['SUPER_ADMIN', 'FINANCE_CONTROLLER']);

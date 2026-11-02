@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { NOTIFICATION_DEFAULTS_V1 } from './notification-defaults-v1';
+import { NOTIFICATION_ORDINARY_DEFAULTS } from './notification-defaults-v2';
 import { isSecurityCriticalNotificationEvent } from './notification-security.constants';
 
 export type TemplateChannel = 'SMS' | 'EMAIL';
-export type TemplateDefinition = (typeof NOTIFICATION_DEFAULTS_V1)[number];
+export type TemplateDefinition = (typeof NOTIFICATION_ORDINARY_DEFAULTS)[number];
 export interface TemplateContent {
   subject: string | null;
   body: string;
@@ -18,7 +18,6 @@ export interface TemplateQuery {
 
 /** Internal aliases are normalized before config lookup; customer-facing text never contains them. */
 export function canonicalNotificationEvent(eventType: string): string {
-  if (eventType === 'transfer.unknown') return 'transfer.failed';
   if (eventType === 'cash-to-cash.claimed') return 'cash_to_cash.claimed';
   if (eventType === 'cash-to-cash.expired') return 'cash_to_cash.expired';
   return eventType;
@@ -102,7 +101,7 @@ export class NotificationTemplateService {
   }
 
   definition(eventType: string): TemplateDefinition | undefined {
-    return NOTIFICATION_DEFAULTS_V1.find((entry) => entry.eventType === eventType);
+    return NOTIFICATION_ORDINARY_DEFAULTS.find((entry) => entry.eventType === eventType);
   }
 
   requireDefinition(eventType: string): TemplateDefinition {
@@ -262,18 +261,27 @@ export class NotificationTemplateService {
     query: TemplateQuery,
     eventType: string,
     channel: TemplateChannel,
+    lock = false,
   ): Promise<boolean> {
     const canonical = canonicalNotificationEvent(eventType);
     this.requireDefinition(canonical);
+    // Separate, independently versioned EVENT and channel rows live in the same governed
+    // registry. Missing/inconsistent rows fail closed; neither is a fallback for the other.
     const rows = (await query.query(
-      `SELECT is_enabled, delivery_class FROM notification_event_configurations
-      WHERE event_type=$1 AND channel=$2`,
+      `SELECT c.is_enabled AS channel_enabled, e.is_enabled AS event_enabled,
+              c.delivery_class AS channel_class, e.delivery_class AS event_class
+         FROM notification_event_configurations c
+         JOIN notification_event_configurations e ON e.event_type=c.event_type AND e.channel='EVENT'
+        WHERE c.event_type=$1 AND c.channel=$2${lock ? ' FOR SHARE OF c, e' : ''}`,
       [canonical, channel],
-    )) as Array<{ is_enabled: boolean; delivery_class: string }>;
-    if (rows.length !== 1 || rows[0]!.delivery_class === 'SECURITY') {
+    )) as Array<{ channel_enabled: boolean; event_enabled: boolean; channel_class: string; event_class: string }>;
+    const row = rows[0];
+    if (rows.length !== 1 || !row || row.channel_class === 'SECURITY' ||
+        row.event_class !== row.channel_class || typeof row.channel_enabled !== 'boolean' ||
+        typeof row.event_enabled !== 'boolean') {
       throw new Error('Notification event configuration unavailable');
     }
-    return rows[0]!.is_enabled;
+    return row.event_enabled && row.channel_enabled;
   }
 
   async renderActive(

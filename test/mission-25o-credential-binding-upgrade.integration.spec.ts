@@ -49,7 +49,10 @@ describe('M25O additive 101-to-102 upgrade (isolated real PostgreSQL)', () => {
     ds = upgraded;
     await ds.initialize();
     const executed = await ds.runMigrations({ transaction: 'all' });
-    expect(executed.map((m) => m.name)).toEqual(['AddNotificationCredentialBinding1785753600102']);
+    expect(executed.map((m) => m.name)).toEqual([
+      'AddNotificationCredentialBinding1785753600102',
+      'ConfigureTransactionNotificationEvents1785753600103',
+    ]);
     expect(await ds.showMigrations()).toBe(false);
     expect(await ds.query(`SELECT channel,provider,enabled,credential_source,key_fingerprint,version,active_proposal_id,updated_by,approved_by FROM notification_provider_configurations`)).toEqual(before.config);
     expect(await ds.query(`SELECT id,status,reason,action_fingerprint,approval_id,decided_by FROM notification_provider_config_proposals`)).toEqual(before.proposal);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument */
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -132,6 +133,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
     const settlement: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
     );
@@ -435,7 +437,7 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
 
   it('13. security-critical events bypass the SMS opt-out (mandatory class)', async () => {
     const customerId = await createCustomerWithPhone('8022222226', false);
-    // V1 fact: the REQUIRED transactional events are NOT security-critical
+    // Configurable transactional events are NOT security-critical
     expect(SECURITY_CRITICAL_NOTIFICATION_EVENT_TYPES.has('customer.funding.approved')).toBe(false);
     expect(SECURITY_CRITICAL_NOTIFICATION_EVENT_TYPES.has('transfer.completed')).toBe(false);
     // Prove the bypass mechanism with a representative OTP-class event added to the registry
