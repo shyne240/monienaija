@@ -6,8 +6,9 @@
 |---|---|
 | Verdict | **PASS — INTEGRATED AND REGRESSION VERIFIED** |
 | Integration branch | `integration/mission-25p-h07-credential-integrity` |
-| Verified remote SHA | `f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0` |
+| Verified remote SHA (application code) | `f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0` — confirmed present on the remote and equal to local |
 | Pinned application-code SHA | `f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0` (tree `aebbcd7c8b0cf3de3a2f0ffaffab888e57fd730b`, byte-identical to 25O tip `8fa35c1`) |
+| Branch tip | the docs/evidence commit containing this report — deliberately not frozen here, since committing it would change it; verify with `git ls-remote` (§3) |
 | 25K baseline pin | `587c3763944368b9260c9299d18bce1189ca5919` |
 | 25O implementation | `3a0f87eafe86b455e1906d7779f83ca3152b9d00` |
 | 25O evidence tip | `8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d` |
@@ -49,13 +50,27 @@ Two consequences of that verdict are stated explicitly so they cannot be mistake
 
 ## 3. Verified remote SHA
 
+The branch carries three commits, and the distinction matters for pinning:
+
 ```
-$ git ls-remote origin integration/mission-25p-h07-credential-integrity
-f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0  refs/heads/integration/mission-25p-h07-credential-integrity
+tip  docs(mission-25p): ...          <- this report and its evidence (documentation only)
+     f157081 merge: Mission 25P ...  <- the integration commit; application code lives here
+     8fa35c1 (25O evidence tip)
 ```
 
-Local `HEAD` and the remote tip agree. The push was a new-branch push; no force-push and no history
-rewrite was performed at any point in the mission.
+The **application-code commit `f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0`** was confirmed present on
+the remote and equal to the local commit:
+
+```
+$ git ls-remote origin integration/mission-25p-h07-credential-integrity
+f1570810d4b7b1ac6d8816fb2b9f89d3d83aa4e0  refs/heads/integration/mission-25p-h07-credential-integrity   # at integration time
+<tip> <refs/heads/integration/mission-25p-h07-credential-integrity>                           # after the evidence commit
+```
+
+The tip SHA is intentionally **not** written into this table: this report is a file in the tip commit,
+so citing it would change it. The remote tip was re-read with `git ls-remote` after the final push and
+matched local `HEAD` exactly, and every push was a fast-forward on a new or existing integration
+branch — no force-push and no history rewrite occurred at any point in the mission.
 
 ## 4. Pinned application-code SHA
 
