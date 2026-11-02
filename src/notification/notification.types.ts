@@ -27,6 +27,8 @@ export interface NotificationSendRequest {
   subject?: string;
   /** EMAIL only — escaped HTML body. `message` always carries the plain-text equivalent. */
   html?: string;
+  /** Internal test-send fence; a different configuration version must not be used. */
+  expectedProviderConfigVersion?: number;
 }
 
 export interface NotificationSendResult {

@@ -121,6 +121,7 @@ describe('NOTIFICATION-MIGRATION-UPGRADE-01 baseline upgrade (real PostgreSQL)',
       'AllowPhoneNotificationRecipients1785753600099',
       'CreateNotificationProviderConfiguration1785753600100',
       'NotificationReliability1785753600101',
+      'AddNotificationCredentialBinding1785753600102',
     ]);
     expect(await dataSource.showMigrations()).toBe(false);
 

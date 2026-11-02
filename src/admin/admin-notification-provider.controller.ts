@@ -341,6 +341,7 @@ export class AdminNotificationProviderController {
         eventKey: `notification.test_send:${correlationId}`,
         recipientType: 'CUSTOMER',
         recipientId: principalId,
+        expectedProviderConfigVersion: snap.version,
         ...(channel === 'EMAIL' ? { subject, html: renderEmailLayout(subject, text) } : {}),
       });
     } catch {
@@ -360,6 +361,7 @@ export class AdminNotificationProviderController {
         channel,
         actor: principalId,
         providerName,
+        expectedVersion: snap.version,
         success,
         maskedDestination,
         providerRef: safeProviderRef,

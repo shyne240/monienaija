@@ -33,6 +33,7 @@ const STATUS_PATH = '/api/v1/internal/notifications/provider-status';
 const TEST_SEND_PATH = '/api/v1/internal/notifications/test-send';
 
 const ENCRYPTION_KEY_V1 = randomBytes(32).toString('base64');
+const BINDING_KEY_V1 = randomBytes(32).toString('base64');
 const LIVE_ROBASE_KEY_1 = 'robe_' + '1a2b3c4d5e6f7081'.repeat(4);
 const LIVE_ROBASE_KEY_2 = 'robe_' + '9988776655443322'.repeat(4);
 const LIVE_BREVO_KEY_1 = 'xkeysib-' + 'abcdef0123456789'.repeat(4) + '-Key1';
@@ -149,6 +150,8 @@ describe('V1-NOTIFICATION-PROVIDER-CONFIGURATION-01 — Governed Robase SMS & Br
       v1: ENCRYPTION_KEY_V1,
     });
     process.env.NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION = 'v1';
+    process.env.NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON = JSON.stringify({ v1: BINDING_KEY_V1 });
+    process.env.NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION = 'v1';
     process.env.NOTIFICATION_WORKER_ENABLED = 'true';
     process.env.NOTIFICATION_WORKER_POLL_INTERVAL_MS = '60000';
 

@@ -7,6 +7,7 @@ import type { DataSource } from 'typeorm';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import type { Environment } from '../src/config/environment';
 import { NotificationProviderConfigService, type ProviderHttpFetchFn } from '../src/notification/notification-provider-config.service';
+import { NotificationCredentialBindingService } from '../src/notification/notification-credential-binding.service';
 import { NotificationSecretEncryptionService } from '../src/notification/notification-secret-encryption.service';
 import type { NotificationSendRequest } from '../src/notification/notification.types';
 
@@ -14,10 +15,22 @@ const SMS_KEY = `robe_${'a1'.repeat(32)}`;
 const EMAIL_KEY = `xkeysib-${'b2'.repeat(32)}`;
 const RESEND_KEY = `re_${'c3'.repeat(20)}`;
 const ENCRYPTION_KEY = randomBytes(32).toString('base64');
+const BINDING_KEY = randomBytes(32).toString('base64');
+const BINDING_CONFIG = { get: (key: string) => ({
+  NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON: JSON.stringify({ v1: BINDING_KEY }),
+  NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION: 'v1',
+} as Record<string, string>)[key] } as unknown as ConfigService<Environment, true>;
 const SECRET_IN_DRIVER_ERROR = 'DRIVER_SECRET_SENTINEL_25C';
 
 type Channel = 'SMS' | 'EMAIL';
 function providerRow(channel: Channel, overrides: Record<string, unknown> = {}) {
+  const provider = typeof overrides.provider === 'string'
+    ? overrides.provider : (channel === 'SMS' ? 'robase' : 'brevo');
+  const source = overrides.credential_source ?? 'ENV_SECRET';
+  const secret = provider === 'robase' ? SMS_KEY : provider === 'resend' ? RESEND_KEY : EMAIL_KEY;
+  const binding = source === 'ENV_SECRET'
+    ? new NotificationCredentialBindingService(BINDING_CONFIG).create(channel, provider, 'ENV_SECRET', secret)
+    : null;
   return {
     channel, provider: channel === 'SMS' ? 'robase' : 'brevo', enabled: true,
     base_url: channel === 'SMS' ? 'https://api.robase.dev' : 'https://api.brevo.com',
@@ -25,6 +38,9 @@ function providerRow(channel: Channel, overrides: Record<string, unknown> = {}) 
     from_email: channel === 'EMAIL' ? 'sender@example.test' : null,
     from_name: null, reply_to_email: null, credential_source: 'ENV_SECRET',
     encrypted_api_key: null, encryption_key_version: null, key_fingerprint: null,
+    credential_binding_scheme: binding?.scheme ?? null,
+    credential_binding_key_version: binding?.keyVersion ?? null,
+    credential_binding_mac: binding?.mac ?? null,
     spf_configured: false, dkim_configured: false, dmarc_configured: false,
     verified_at: null, verified_by: null, verification_method: null, last_verification_error: null,
     delivery_tested_at: null, delivery_tested_by: null, last_test_status: null,
@@ -47,6 +63,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     NODE_ENV: 'test', NOTIFICATION_SMS_PROVIDER: 'robase', NOTIFICATION_EMAIL_PROVIDER: 'brevo',
     ROBASE_API_KEY: SMS_KEY, BREVO_API_KEY: EMAIL_KEY, RESEND_API_KEY: RESEND_KEY,
     NOTIFICATION_EMAIL_FROM: 'sender@example.test', NOTIFICATION_PROVIDER_ENCRYPTION_KEY: ENCRYPTION_KEY,
+    NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON: JSON.stringify({ v1: BINDING_KEY }),
+    NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION: 'v1',
     ...overrides,
   };
   const config = { get: (key: string) => values[key] } as unknown as ConfigService<Environment, true>;

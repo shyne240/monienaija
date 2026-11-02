@@ -187,6 +187,14 @@ export const environmentSchema = z
       .trim()
       .regex(/^[A-Za-z0-9._-]{1,64}$/)
       .default('v1'),
+    // Independent, operator-provisioned HMAC keyring for exact credential approvals.
+    // Absence is allowed at startup but external provider governance and use fail closed.
+    NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON: optionalEnvironmentJson,
+    NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .default('v1'),
     // Background delivery worker (provider-neutral). Disabled by default; enable per environment.
     NOTIFICATION_WORKER_ENABLED: booleanFromEnvironment.default(false),
     NOTIFICATION_WORKER_POLL_INTERVAL_MS: z.coerce

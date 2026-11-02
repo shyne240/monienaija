@@ -446,6 +446,14 @@ export class PrivilegedActionApprovalService {
     return this.decideInTransaction(manager, command, false);
   }
 
+  /** Commit a domain-specific approval and its checked proposal in one transaction. */
+  async approveInTransaction(
+    manager: EntityManager,
+    command: DecidePrivilegedActionCommand,
+  ): Promise<PrivilegedActionDecision> {
+    return this.decideInTransaction(manager, command, true);
+  }
+
   private async decideInTransaction(
     manager: EntityManager,
     command: DecidePrivilegedActionCommand,

@@ -31,6 +31,7 @@ import { AuditService } from '../src/operations/audit.service';
 
 const KEY_V1 = randomBytes(32).toString('base64');
 const KEY_V2 = randomBytes(32).toString('base64');
+const BINDING_TEST_KEY = randomBytes(32).toString('base64');
 const SAMPLE_ROBASE_KEY = 'robe_' + '9f8e7d6c5b4a3210'.repeat(4);
 const SAMPLE_BREVO_KEY = 'xkeysib-' + 'a1b2c3d4e5f60718'.repeat(4) + '-XyZ9';
 
@@ -499,6 +500,8 @@ describe('Provider Configuration Security Hardening (redaction, safeTransaction,
         NODE_ENV: 'test',
         NOTIFICATION_SMS_PROVIDER: 'managed',
         NOTIFICATION_EMAIL_PROVIDER: 'managed',
+        NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON: JSON.stringify({ v1: BINDING_TEST_KEY }),
+        NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION: 'v1',
       }) as unknown as ConfigService<Environment, true>,
       enc,
       mockDs,
