@@ -1,0 +1,8 @@
+Implementation commit: 377b1207905909867dbce75cf78717fa5015b90a
+Run: admin-notification
+Kind: admin
+Exit: 0
+Duration seconds: 7.86
+Suites: {'total': 1, 'passed': 1, 'failed': 0, 'skipped': 0, 'runtime_errors': 0}
+Tests: {'total': 19, 'passed': 19, 'failed': 0, 'skipped': 0, 'todo': 0}
+PASSED apps/admin-web/__tests__/notification-management.test.tsx ({'passed': 19, 'failed': 0, 'pending': 0, 'todo': 0})

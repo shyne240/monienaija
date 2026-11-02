@@ -1,0 +1,3 @@
+Implementation commit: 377b1207905909867dbce75cf78717fa5015b90a
+Remaining namespaced test databases after all runs: 0
+Disposable PostgreSQL process stopped; loopback port 55432 is closed.

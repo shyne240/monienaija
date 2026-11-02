@@ -1,0 +1,92 @@
+{
+  "name": "h07-authorization",
+  "kind": "pg",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 100.69,
+  "requested_paths": [
+    "test/mission-25o-credential-binding.integration.spec.ts",
+    "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+    "test/v1-notification-provider-configuration-01.integration.spec.ts",
+    "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts",
+    "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+    "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts"
+  ],
+  "success": true,
+  "suites": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 81,
+    "passed": 81,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "test/mission-25o-credential-binding-upgrade.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25o-credential-binding.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 21,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 22,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-notification-provider-configuration-01.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-sprint1-notification-delivery-authorization.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

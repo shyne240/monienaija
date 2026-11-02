@@ -1,0 +1,5 @@
+Implementation commit: 377b1207905909867dbce75cf78717fa5015b90a
+Command: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+Working directory: .
+Exit: 0
+Duration seconds: 21.72

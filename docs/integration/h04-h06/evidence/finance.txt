@@ -1,0 +1,14 @@
+Implementation commit: 377b1207905909867dbce75cf78717fa5015b90a
+Run: finance
+Kind: pg
+Exit: 0
+Duration seconds: 99.22
+Suites: {'total': 7, 'passed': 7, 'failed': 0, 'skipped': 0, 'runtime_errors': 0}
+Tests: {'total': 208, 'passed': 208, 'failed': 0, 'skipped': 0, 'todo': 0}
+PASSED test/a12-agent-financial-execution.integration.spec.ts ({'passed': 19, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a15-agent-cash-to-cash.integration.spec.ts ({'passed': 23, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a16-agent-cash-to-cash-claim.integration.spec.ts ({'passed': 87, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a17-agent-cash-to-cash-expiry.integration.spec.ts ({'passed': 30, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a5-ledger-reversal.integration.spec.ts ({'passed': 21, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a5-transfer-lifecycle.integration.spec.ts ({'passed': 15, 'failed': 0, 'pending': 0, 'todo': 0})
+PASSED test/a6-settlement-lifecycle.integration.spec.ts ({'passed': 13, 'failed': 0, 'pending': 0, 'todo': 0})

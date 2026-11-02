@@ -1,0 +1,220 @@
+{
+  "branch": "arena/92fd33dd-monienaija",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "implementation_parent": "8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d",
+  "implementation_tree": "0cfadcf9bd256f4e4e6d1aee7d019c55ce372e12",
+  "head_when_verified": "377b1207905909867dbce75cf78717fa5015b90a",
+  "implementation_source_unchanged_after_tests": true,
+  "isolation": {
+    "database": "new disposable PostgreSQL 18.4 bound to 127.0.0.1",
+    "network": "non-loopback Node network guard",
+    "credentials": "synthetic test fixtures only",
+    "real_vendor_calls": false
+  },
+  "static": {
+    "backend-typecheck": {
+      "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+      "cwd": ".",
+      "exit_code": 0,
+      "duration_seconds": 21.72
+    },
+    "backend-build": {
+      "command": "npm run build",
+      "cwd": ".",
+      "exit_code": 0,
+      "duration_seconds": 19.2
+    },
+    "admin-typecheck": {
+      "command": "npm run ts:check",
+      "cwd": "apps/admin-web",
+      "exit_code": 0,
+      "duration_seconds": 10.56
+    }
+  },
+  "jest_runs": {
+    "backend-unit": {
+      "exit_code": 0,
+      "suites": {
+        "total": 231,
+        "passed": 231,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 2757,
+        "passed": 2757,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "backend-unit.txt",
+        "backend-unit-summary.json"
+      ]
+    },
+    "admin-notification": {
+      "exit_code": 0,
+      "suites": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 19,
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "admin-notification.txt",
+        "admin-notification-summary.json"
+      ]
+    },
+    "notification-migration": {
+      "exit_code": 0,
+      "suites": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 52,
+        "passed": 52,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "notification-migration.txt",
+        "notification-migration-summary.json"
+      ]
+    },
+    "h07-authorization": {
+      "exit_code": 0,
+      "suites": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 81,
+        "passed": 81,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "h07-authorization.txt",
+        "h07-authorization-summary.json"
+      ]
+    },
+    "security-agent": {
+      "exit_code": 0,
+      "suites": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 81,
+        "passed": 81,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "security-agent.txt",
+        "security-agent-summary.json"
+      ]
+    },
+    "finance": {
+      "exit_code": 0,
+      "suites": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "runtime_errors": 0
+      },
+      "tests": {
+        "total": 208,
+        "passed": 208,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence": [
+        "finance.txt",
+        "finance-summary.json"
+      ]
+    }
+  },
+  "postgres_matrix": {
+    "exit_code": 0,
+    "complete": true,
+    "discovered_files": 136,
+    "expected_batches": 23,
+    "batches_started": 23,
+    "batches_finished": 23,
+    "suites": {
+      "passed": 136,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0,
+      "total": 136
+    },
+    "tests": {
+      "passed": 2482,
+      "failed": 0,
+      "skipped": 0,
+      "todo": 0,
+      "total": 2482
+    },
+    "missing_files": [],
+    "unexpected_files": [],
+    "duplicate_files": [],
+    "evidence": [
+      "postgres-matrix.txt",
+      "postgres-matrix-summary.json",
+      "postgres-discovered-files.json"
+    ]
+  },
+  "lint": {
+    "clean_focused_files": 24,
+    "clean_focused_exit_code": 0,
+    "full_backend_exit_code": 1,
+    "full_backend_errors": 132,
+    "full_backend_warnings": 8,
+    "parent_backend_errors": 132,
+    "parent_backend_warnings": 8,
+    "backend_rule_severity_profile_differences": {},
+    "admin_adapted_exit_code": 1,
+    "admin_adapted_errors": 112,
+    "admin_adapted_warnings": 0,
+    "admin_parent_errors": 112,
+    "admin_rule_severity_profile_differences": {},
+    "evidence": [
+      "lint.txt",
+      "lint-summary.json"
+    ]
+  },
+  "frontend_gap": "The Admin Web does not yet provide an EVENT master toggle in the governed approval flow.",
+  "producer_limitations": [
+    "transfer.unknown has no identified production notification outbox producer",
+    "cash_to_cash.claimed and cash_to_cash.expired currently have audit actions but no identified notification outbox producer",
+    "cash_to_cash.created is a phone-only SMS intent; email requires an eligible verified customer"
+  ],
+  "production_activities_performed": false,
+  "all_requested_test_and_build_commands_passed": true,
+  "feature_only_lint_passed": true
+}
