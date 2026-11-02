@@ -1,0 +1,17 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: jest --config ./jest.integration.config.js --runInBand --runTestsByPath --json (files below)
+Database: disposable PostgreSQL on loopback; network guard blocks non-loopback egress
+File: test/mission-25o-credential-binding.integration.spec.ts
+File: test/mission-25o-credential-binding-upgrade.integration.spec.ts
+File: test/v1-notification-provider-configuration-01.integration.spec.ts
+File: test/v1-release-01-production-readiness-migration-sync.integration.spec.ts
+File: test/notification-migration-upgrade-01.integration.spec.ts
+PASS test/v1-notification-provider-configuration-01.integration.spec.ts
+PASS test/notification-migration-upgrade-01.integration.spec.ts
+PASS test/v1-release-01-production-readiness-migration-sync.integration.spec.ts
+PASS test/mission-25o-credential-binding.integration.spec.ts
+PASS test/mission-25o-credential-binding-upgrade.integration.spec.ts
+Test Suites: 5 passed, 5 total
+Tests:       42 passed, 42 total
+Ran all test suites within paths "test/mission-25o-credential-binding.integration.spec.ts", "test/mission-25o-credential-binding-upgrade.integration.spec.ts", "test/v1-notification-provider-configuration-01.integration.spec.ts", "test/v1-release-01-production-readiness-migration-sync.integration.spec.ts", "test/notification-migration-upgrade-01.integration.spec.ts".
+Process exit: 0

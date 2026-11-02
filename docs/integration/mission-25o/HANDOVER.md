@@ -1,10 +1,13 @@
 # Mission 25O — H-07 implementation handover
 
-**Status: NOT YET DETERMINED — regression run in progress.** This is an Arena 1 handover for Arena 3 integration review, not approval to deploy, provision production keys, activate providers or send live notifications.
+**Status: READY for Arena 3 integration review; NOT production-ready.** This is an Arena 1 handover, not approval to deploy, provision production keys, activate providers or send live notifications.
 
-## Provenance and scope
+## Preservation, provenance and scope
 
-- Assigned branch: `arena/92fd33dd-monienaija`. Exact authorized application candidate and intended parent: `587c3763944368b9260c9299d18bce1189ca5919`. The final pushed SHA and its parent must be verified at handoff (`git rev-parse HEAD`, `git rev-parse HEAD^`, and `git ls-remote`); a commit cannot contain its own resulting hash.
+- Assigned branch: `arena/92fd33dd-monienaija`. The implementation was preserved as commit `3a0f87eafe86b455e1906d7779f83ca3152b9d00` (tree `9f048856dd72617a17e013a893e03ffc9a6462b1`), whose **sole parent** is the exact authorized 25K candidate `587c3763944368b9260c9299d18bce1189ca5919`. The implementation commit was non-force pushed to the assigned branch.
+- The restored checkout had stale Git metadata; an independent byte comparison with the complete, non-truncated 25K tree reproduced exactly 19 modified and 8 added files, with zero missing files and no unrelated nonignored differences. A temporary index captured only those 27 files and their blobs were checked against the working files. No working files were reset, cleaned, discarded or blindly staged.
+- The 27-file external backup is `/home/user/m25o-preservation-vR0AmWPr/mission25o-worktree.tar`, SHA-256 `90626889190fbc4565b84787f779273017b96a22382a6317b99fa392b89498af`; all members were extracted and verified against `SHA256SUMS`. The same external directory preserves the prior index/status, manifest and independent comparison. This local backup is supplementary and is not a production database or key backup.
+- Final test evidence and this handover are recorded in a subsequent documentation/evidence-only child of `3a0f87e…`, so that the implementation tested is identifiable without a self-referential commit hash. The final branch tip, remote tip and both parent relationships must be verified and supplied in the direct handoff.
 - Before edits, a read-only review independently examined the credential lifecycle and the Mission 25G design, archived 25F assessment (SHA-256 `86f3e0bc17fc226ee2d669f6942ab529a25feac322bf1b257c6ed38980992ed1`), 25H and 25K evidence. See [Phase A audit](PHASE-A-CREDENTIAL-LIFECYCLE-AUDIT.md).
 - The full Mission 25N report was not located and was **not reviewed**. The owner authorized proceeding on the supplied 25N conclusions: assessed security/integration scope passed, preference/frontend corrections were resolved, and H-07 remained high severity with external activation prohibited.
 - Mission 25O changes no H-04 recipient/channel mappings, H-06 event-lock policy, preference authorization, workforce roles, financial logic, Ordinary Agent authorization or unrelated frontend. Arena 2 owns F-01/F-05; Arena 3 must integrate overlapping work without replacing it. No integration branch or `main` was modified.
@@ -30,7 +33,9 @@ Missing, malformed, revoked, mismatching or legacy-unbound credentials cannot au
 - `test/mission-25o-credential-binding.spec.ts`, `test/mission-25o-credential-binding.integration.spec.ts`, `test/mission-25o-credential-binding-upgrade.integration.spec.ts`: new synthetic cryptographic, real-PostgreSQL governance/race/queue, and 101-to-102 upgrade evidence.
 - `test/mission-25c-provider-routing.spec.ts`, `test/notification-provider-config.unit.spec.ts`, `test/v1-notification-provider-configuration-01.integration.spec.ts`: synthetic binding fixtures for existing provider tests.
 - `test/notification-migration-upgrade-01.integration.spec.ts`, `test/v1-limit-02-limit-assignment.integration.spec.ts`, `test/v1-007-support-ticket.integration.spec.ts`, `test/v1-003-admin-operational-writes.integration.spec.ts`, `test/a8-agent-lifecycle.integration.spec.ts`, `test/a20-outlets-terminals.integration.spec.ts`, `test/a19-agent-funding.integration.spec.ts`: explicit expected migration-head lists/chain updated additively; financial implementation was not altered.
-- `docs/integration/mission-25o/PHASE-A-CREDENTIAL-LIFECYCLE-AUDIT.md`, `ROLLOUT-AND-COMPATIBILITY.md`, `HANDOVER.md`, and `evidence/test-summary.json`: audit, release fence, handover and sanitized results.
+- `docs/integration/mission-25o/PHASE-A-CREDENTIAL-LIFECYCLE-AUDIT.md`, `ROLLOUT-AND-COMPATIBILITY.md`, `HANDOVER.md`: audit, release fence and handover (the latter is updated in the documentation/evidence-only child).
+
+The documentation/evidence-only child separately adds [`evidence/`](evidence/README.md), including `test-summary.json` and the sanitized per-run logs and summaries; it does not change the 27-file implementation.
 
 ## Compatibility, rollout and limitations
 
@@ -38,6 +43,23 @@ Migration 102 leaves legacy metadata null and preserves active rows, historical 
 
 An environment variable cannot report upstream vendor revocation or prove a change-and-revert that occurred between observations. A request already past its local pre-send check may finish while a disable or key retirement propagates. Existing authorized verification of a disabled but bound Brevo configuration can make read-only account/sender HTTP calls; it does not enable delivery. To guarantee no further outbound traffic, operations must use `CLEAR`, stop/drain every sender and enforce an egress fence. Tests use synthetic credentials, fake transport and isolated local PostgreSQL; they are not evidence of real vendor delivery or production key custody.
 
+No unresolved implementation defect was found in the verified scope; the pre-existing lint diagnostics and operational limits above remain. Production requires separately authorized security/infrastructure custody and propagation of independent HMAC keys, coordinated migration 102, a complete fleet/worker and rollback-image upgrade, egress fencing, and fresh independent approvals before any provider reactivation. No deployment, production key provisioning, vendor activation, live send, unauthorized policy change or merge to `main` was performed.
+
 ## Test evidence
 
-Final results and exit codes: pending full PostgreSQL and final post-review reruns. See `evidence/test-summary.json` when generated. Historical/intermediate failures and interrupted runs will be identified separately; they must not be counted as passing evidence.
+The original Mission 25O raw logs did not survive workspace restoration. Previously reported runs are historical observations, not the final evidence below; in particular, the earlier full PostgreSQL matrix preceded the last TTL/cancellation test. A new complete matrix, TypeScript, build, full unit suite and focused regressions were executed against implementation commit `3a0f87e…`; their sanitized logs and machine-readable summaries are under [`evidence/`](evidence/README.md). A bad-config unit preflight ran no suites, and a PostgreSQL preflight was intentionally interrupted to complete its synthetic fixture; neither is counted as passing evidence.
+
+| New verification against `3a0f87e…` | Result | Exit |
+| --- | --- | ---: |
+| `npx tsc --noEmit -p tsconfig.json` | PASS | 0 |
+| `npm run build` | PASS | 0 |
+| Complete backend unit suite | 230 suites, 2,728 tests passed; 0 failed/skipped | 0 |
+| Complete PostgreSQL integration matrix | 134 suites, 2,475 tests passed; 0 failed/skipped; all 134 discovered files accounted for in 23 resource-safe batches | 0 |
+| Focused H-07, maker/checker, provider, readiness/race and upgrade regressions | 5 suites, 42 tests passed; 0 failed/skipped | 0 |
+| Focused preference security, workforce/revocation, Ordinary Agent V1, financial and notification-reliability regressions | 12 suites, 182 tests passed; 0 failed/skipped | 0 |
+
+The focused provider group includes H-07 binding/rotation/race **21/21**, provider governance and maker/checker **14/14**, migration 102 upgrade **2/2**, historical notification upgrade **2/2**, and migration-head readiness **3/3**. The HMAC unit suite separately accounts for **15/15** within the full unit run. The 182-test group includes customer-preference authorization **19/19**, Mission 19A workforce logout **8/8**, workforce sessions **18/18**, Ordinary Agent session/read/PIN coverage **36/36**, financial execution/cash-to-cash/ledger/settlement coverage **84/84**, and notification reliability **17/17**. These focused tests are reruns of suites already included in the full matrix, not additional unique coverage to be added to its total.
+
+Focused ESLint on the other **19 changed TypeScript files passed** (exit 0). Changed-file ESLint including all modified legacy tests found **37 errors and 3 warnings** in four of them (exit 1); an isolated export of their 25K versions had the same per-file, rule and severity counts (also exit 1). All newly added TypeScript files had zero lint diagnostics. This is a count-profile comparison, not a claim that every diagnostic has identical text/line identity or that repository-wide lint is clean; see [`eslint-comparison.txt`](evidence/eslint-comparison.txt).
+
+The PostgreSQL run used a disposable loopback-only cluster, a Node test network guard, synthetic credentials and fake provider transports. No non-template test databases remained after the matrix and focused runs. These tests do not establish live delivery, production key custody or permission to deploy. See the evidence README for commands, collection policy and preflight history.

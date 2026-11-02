@@ -1,0 +1,8 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: PG_TEST_BATCH_SIZE=6 PG_TEST_CONCURRENCY=2 npm run test:pg
+Database: disposable PostgreSQL on loopback; network guard blocks non-loopback egress
+Discovered integration files: 134
+=== PG integration run id: m25overify (database namespace mn_it_*_m25overify_*) ===
+=== PG integration batch 1/23 (6 files) starting ===
+=== PG integration batch 2/23 (6 files) starting ===
+Status: intentionally interrupted before completion to correct a missing synthetic binding/AES fixture in the external PG test environment; not counted as a passing run.

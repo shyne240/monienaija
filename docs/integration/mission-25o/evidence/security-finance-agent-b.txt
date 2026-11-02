@@ -1,0 +1,19 @@
+Implementation commit: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+Command: jest --config ./jest.integration.config.js --runInBand --runTestsByPath --json (files below)
+Database: disposable PostgreSQL on loopback; network guard blocks non-loopback egress
+File: test/mission-16a-agent-read-authorization.integration.spec.ts
+File: test/mission-19a-workforce-logout.integration.spec.ts
+File: test/mission-25g-customer-preference-authorization.integration.spec.ts
+File: test/notification-reliability.integration.spec.ts
+File: test/v1-agent-05-transaction-pin-security.integration.spec.ts
+File: test/v1-ledger-reversal-governance.integration.spec.ts
+PASS test/v1-agent-05-transaction-pin-security.integration.spec.ts
+PASS test/v1-ledger-reversal-governance.integration.spec.ts
+PASS test/mission-25g-customer-preference-authorization.integration.spec.ts
+PASS test/notification-reliability.integration.spec.ts
+PASS test/mission-19a-workforce-logout.integration.spec.ts
+PASS test/mission-16a-agent-read-authorization.integration.spec.ts
+Test Suites: 6 passed, 6 total
+Tests:       72 passed, 72 total
+Ran all test suites within paths "test/mission-16a-agent-read-authorization.integration.spec.ts", "test/mission-19a-workforce-logout.integration.spec.ts", "test/mission-25g-customer-preference-authorization.integration.spec.ts", "test/notification-reliability.integration.spec.ts", "test/v1-agent-05-transaction-pin-security.integration.spec.ts", "test/v1-ledger-reversal-governance.integration.spec.ts".
+Process exit: 0
