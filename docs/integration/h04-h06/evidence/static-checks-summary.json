@@ -1,0 +1,20 @@
+{
+  "backend-typecheck": {
+    "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "cwd": ".",
+    "exit_code": 0,
+    "duration_seconds": 21.72
+  },
+  "backend-build": {
+    "command": "npm run build",
+    "cwd": ".",
+    "exit_code": 0,
+    "duration_seconds": 19.2
+  },
+  "admin-typecheck": {
+    "command": "npm run ts:check",
+    "cwd": "apps/admin-web",
+    "exit_code": 0,
+    "duration_seconds": 10.56
+  }
+}

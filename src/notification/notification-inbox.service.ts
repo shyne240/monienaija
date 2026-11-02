@@ -25,7 +25,8 @@ export interface NotificationInboxResult {
 }
 
 function toCategory(eventType: string): string {
-  if (eventType.startsWith('customer.funding')) return 'FUNDING';
+  if (eventType.startsWith('customer.funding') || eventType.startsWith('deposit.')) return 'FUNDING';
+  if (eventType.startsWith('withdrawal.')) return 'WITHDRAWAL';
   if (eventType.startsWith('transfer.')) return 'TRANSFER';
   if (eventType.startsWith('cash_to_cash') || eventType.startsWith('cash-to-cash')) return 'CASH_TO_CASH';
   if (eventType.startsWith('support.ticket')) return 'SUPPORT';
@@ -40,6 +41,11 @@ function toTitle(eventType: string): string {
     'customer.funding.requested': 'Funding Request Received',
     'transfer.completed': 'Transfer Completed',
     'transfer.failed': 'Transfer Failed',
+    'transfer.unknown': 'Transfer Update',
+    'deposit.completed': 'Deposit Completed',
+    'deposit.failed': 'Deposit Update',
+    'withdrawal.completed': 'Withdrawal Completed',
+    'withdrawal.failed': 'Withdrawal Update',
     'support.ticket.created': 'Support Ticket Created',
     'support.ticket.assigned': 'Support Ticket Assigned',
     'support.ticket.status_changed': 'Support Ticket Updated',

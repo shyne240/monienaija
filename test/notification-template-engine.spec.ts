@@ -126,7 +126,7 @@ describe('notification template security boundary', () => {
       ).toThrow();
     }
     expect(canonicalNotificationEvent('cash-to-cash.claimed')).toBe('cash_to_cash.claimed');
-    expect(canonicalNotificationEvent('transfer.unknown')).toBe('transfer.failed');
+    expect(canonicalNotificationEvent('transfer.unknown')).toBe('transfer.unknown');
     expect(
       mapEventToIntents(
         'cash-to-cash.claimed',

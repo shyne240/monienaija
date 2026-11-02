@@ -1,0 +1,103 @@
+{
+  "name": "finance",
+  "kind": "pg",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 99.22,
+  "requested_paths": [
+    "test/a12-agent-financial-execution.integration.spec.ts",
+    "test/a15-agent-cash-to-cash.integration.spec.ts",
+    "test/a16-agent-cash-to-cash-claim.integration.spec.ts",
+    "test/a17-agent-cash-to-cash-expiry.integration.spec.ts",
+    "test/a5-ledger-reversal.integration.spec.ts",
+    "test/a5-transfer-lifecycle.integration.spec.ts",
+    "test/a6-settlement-lifecycle.integration.spec.ts"
+  ],
+  "success": true,
+  "suites": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 208,
+    "passed": 208,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "test/a12-agent-financial-execution.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a15-agent-cash-to-cash.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 23,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a16-agent-cash-to-cash-claim.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 87,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a17-agent-cash-to-cash-expiry.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 30,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a5-ledger-reversal.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 21,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a5-transfer-lifecycle.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a6-settlement-lifecycle.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 13,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

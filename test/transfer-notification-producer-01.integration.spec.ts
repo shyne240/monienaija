@@ -39,6 +39,7 @@ import { NotificationDispatcherService } from '../src/notification/notification-
 import { NotificationWorkerService } from '../src/notification/notification-worker.service';
 import { ConfigurableSmsNotificationProvider } from '../src/notification/notification-provider-config.service';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import type { NotificationProvider, NotificationSendRequest, NotificationSendResult } from '../src/notification/notification.types';
 import { TransferService } from '../src/transfer/transfer.service';
 import { TransferStatus } from '../src/transfer/transfer.enums';
@@ -120,6 +121,7 @@ describe('transfer notification producer contract v1 (real PostgreSQL, synthetic
     );
     if (rows.length) await ds.query(`TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
     await seedNotificationDefaultsV1(ds.manager);
+    await seedNotificationDefaultsV2(ds.manager);
     const funding = await ledger.createAccount({
       code: `TEST-FUNDING-${randomUUID().slice(0, 8)}`,
       name: 'Seed funding source',

@@ -10,6 +10,7 @@ import {
   NOTIFICATION_PROVIDER_TOKEN,
 } from './notification.constants';
 import { NotificationChannelResolverService } from './notification-channel-resolver.service';
+import { NEW_PAYMENT_NOTIFICATION_EVENTS } from './notification-defaults-v2';
 import { NotificationDeliveryProcessor } from './notification-delivery-processor';
 import { appendCustomerEmailIntents, mapEventToIntents } from './notification-event-map';
 import { CodeNotificationEmailTemplateService } from './notification-email-template.service';
@@ -135,13 +136,22 @@ export class NotificationDispatcherService {
     if (!eventType) throw new Error('eventType is required');
     if (isSecurityCriticalNotificationEvent(eventType)) throw new Error('Security notifications cannot use the outbox dispatcher');
     const payload = command.payload ?? {};
-    // A support message has one identity even if a duplicate outbox fact supplies a
-    // different key. The committed message is verified below before any insertion.
-    const eventKey = eventType === 'support.ticket.message_added' &&
-      typeof payload.messageId === 'string' && UUID_PATTERN.test(payload.messageId)
-      ? `support.ticket.message_added:${payload.messageId}`
-      : command.eventKey?.trim() ||
-        (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
+    const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
+    // H-04: trust the committed payment/wallet owner, never a supplied customerId,
+    // journal id or failure text. Invalid/mismatched facts remain quarantined.
+    const payment = NEW_PAYMENT_NOTIFICATION_EVENTS.has(eventType)
+      ? await this.paymentRecipient(manager, command, eventType)
+      : null;
+    if (NEW_PAYMENT_NOTIFICATION_EVENTS.has(eventType) && !payment) return result;
+    // A payment outcome or support message has one identity even if a duplicate
+    // outbox fact supplies a different key. Neither can cause a second delivery.
+    const eventKey = payment
+      ? `${eventType}:${payment.paymentId}:v1`
+      : eventType === 'support.ticket.message_added' &&
+        typeof payload.messageId === 'string' && UUID_PATTERN.test(payload.messageId)
+        ? `support.ticket.message_added:${payload.messageId}`
+        : command.eventKey?.trim() ||
+          (command.occurredAt ? `${eventType}:${command.aggregateId ?? 'no-agg'}:${command.occurredAt.toISOString()}` : '');
     if (!eventKey || eventKey.length > 180) throw new Error('A stable eventKey or occurredAt is required');
     const safePayload = this.templateService.redactPayload(payload, eventType);
     // Report 26 (N-02): the caller/outbox-supplied correlation id is sanitized
@@ -150,7 +160,6 @@ export class NotificationDispatcherService {
     // normalization when their events are (re)dispatched.
     const correlationId = sanitizeDiagnosticIdentifier(command.correlationId) ?? null;
     const causationId = sanitizeDiagnosticIdentifier(command.causationId) ?? null;
-    const result: DispatchResult = { generated: 0, dispatched: 0, skipped: 0, failed: 0, deliveries: [] };
 
     // A completed internal transfer needs both sides; a producer missing either side is
     // quarantined for the Arena 3 producer handoff rather than partially acknowledged.
@@ -158,7 +167,7 @@ export class NotificationDispatcherService {
     // An event marker alone is not authority to publish a support message. Verify the
     // committed message, its author and ticket binding, and derive recipients only from
     // the ticket. This also protects the legacy direct-dispatch entry point.
-    let mappingPayload = payload;
+    let mappingPayload = payment ? { customerId: payment.customerId } : payload;
     if (eventType === 'support.ticket.message_added') {
       const recipients = await this.publicSupportMessageRecipients(manager, command);
       if (!recipients) return result;
@@ -238,6 +247,34 @@ export class NotificationDispatcherService {
       result.deliveries.push(delivery);
     }
     return result;
+  }
+
+  private async paymentRecipient(
+    manager: EntityManager,
+    command: DispatchCommand,
+    eventType: string,
+  ): Promise<{ paymentId: string; customerId: string } | null> {
+    const deposit = eventType.startsWith('deposit.');
+    const expectedAggregate = deposit ? 'DEPOSIT' : 'WITHDRAWAL';
+    const table = deposit ? 'deposits' : 'withdrawals';
+    const field = deposit ? 'depositId' : 'withdrawalId';
+    const paymentId = command.payload?.[field];
+    if (typeof paymentId !== 'string' || !UUID_PATTERN.test(paymentId) ||
+        command.aggregateType !== expectedAggregate || typeof command.aggregateId !== 'string' ||
+        command.aggregateId.toLowerCase() !== paymentId.toLowerCase()) return null;
+    const expectedStatus = eventType.endsWith('.completed') ? 'COMPLETED' : 'FAILED';
+    const rows = await manager.query<Array<{ customer_id: string }>>(
+      `SELECT c.id::text AS customer_id FROM ${table} p
+        JOIN wallet_accounts w ON w.id=p.wallet_id
+        JOIN customers c ON c.id::text=lower(w.customer_id) AND c.deleted_at IS NULL
+       WHERE p.id=$1 AND p.status=$2 FOR SHARE OF p, w, c`,
+      [paymentId, expectedStatus],
+    );
+    const customerId = rows[0]?.customer_id;
+    if (rows.length !== 1 || !customerId || !UUID_PATTERN.test(customerId)) return null;
+    // A conflicting explicit identity claim is evidence of a tampered fact.
+    if (command.payload.customerId !== undefined && command.payload.customerId !== customerId) return null;
+    return { paymentId: paymentId.toLowerCase(), customerId };
   }
 
   private async publicSupportMessageRecipients(

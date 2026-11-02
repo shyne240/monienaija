@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -131,6 +132,7 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
     const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
     if (settlement.length === 0) {
       await dataSource.query(`

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -142,6 +143,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
     const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
     if (settlement.length === 0) {
       await dataSource.query(`
@@ -576,9 +578,15 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(deliveries[0]!.message).toContain('NGN');
   });
 
-  it('16. catalogue covers required events', async () => {
-    const requiredEvents = ['customer.funding.approved', 'customer.funding.rejected', 'transfer.completed', 'support.ticket.created', 'support.ticket.assigned', 'support.ticket.status_changed', 'support.ticket.resolved', 'support.ticket.closed', 'support.ticket.message_added'];
-    for (const ev of requiredEvents) {
+  it('16. catalogue covers financial and support events without marking financial outcomes mandatory', async () => {
+    const financialEvents = ['customer.funding.approved', 'customer.funding.rejected', 'transfer.completed'];
+    const supportEvents = ['support.ticket.created', 'support.ticket.assigned', 'support.ticket.status_changed', 'support.ticket.resolved', 'support.ticket.closed', 'support.ticket.message_added'];
+    for (const ev of financialEvents) {
+      const entry = NOTIFICATION_EVENT_CATALOGUE.find(c => c.eventType === ev);
+      expect(entry).toBeDefined();
+      expect(entry!.required).toBe(false);
+    }
+    for (const ev of supportEvents) {
       const entry = NOTIFICATION_EVENT_CATALOGUE.find(c => c.eventType === ev);
       expect(entry).toBeDefined();
       expect(entry!.required).toBe(true);
@@ -680,8 +688,8 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
   it('22. Event catalogue explicit mapping verified', async () => {
     // Verify funding, transfer, support 5, cash-to-cash, agent lifecycle documented
     const catalogue = NOTIFICATION_EVENT_CATALOGUE;
-    const hasFundingApproved = catalogue.some(c => c.eventType === 'customer.funding.approved' && c.required);
-    const hasTransfer = catalogue.some(c => c.eventType === 'transfer.completed' && c.required);
+    const hasFundingApproved = catalogue.some(c => c.eventType === 'customer.funding.approved' && !c.required);
+    const hasTransfer = catalogue.some(c => c.eventType === 'transfer.completed' && !c.required);
     const hasSupportCreated = catalogue.some(c => c.eventType === 'support.ticket.created');
     const hasCashClaim = catalogue.some(c => c.eventType === 'cash_to_cash.claimed');
     const hasAgentSuspend = catalogue.some(c => c.eventType === 'agent.suspended');

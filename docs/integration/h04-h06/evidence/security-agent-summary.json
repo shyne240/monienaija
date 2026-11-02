@@ -1,0 +1,92 @@
+{
+  "name": "security-agent",
+  "kind": "pg",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 82.63,
+  "requested_paths": [
+    "test/mission-25g-customer-preference-authorization.integration.spec.ts",
+    "test/mission-19a-workforce-logout.integration.spec.ts",
+    "test/a2-workforce-session.integration.spec.ts",
+    "test/mission-15a-agent-sessions.integration.spec.ts",
+    "test/mission-16a-agent-read-authorization.integration.spec.ts",
+    "test/v1-agent-05-transaction-pin-security.integration.spec.ts"
+  ],
+  "success": true,
+  "suites": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 81,
+    "passed": 81,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "test/a2-workforce-session.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-15a-agent-sessions.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-16a-agent-read-authorization.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-19a-workforce-logout.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25g-customer-preference-authorization.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-agent-05-transaction-pin-security.integration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

@@ -25,6 +25,7 @@ import { NotificationWorkerService } from '../src/notification/notification-work
 import { WalletService } from '../src/wallet/wallet.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — EMAIL delivery infrastructure integration suite (real PostgreSQL).
@@ -161,6 +162,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     // the seed ships EMAIL event configurations DISABLED (email dark by default at the
     // registry level too); these tests exercise the configured-email posture.
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
     await dataSource.query(
       `UPDATE notification_event_configurations SET is_enabled=true, version=version+1, updated_at=now()
         WHERE channel='EMAIL' AND delivery_class <> 'SECURITY'`,

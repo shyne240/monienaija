@@ -1,0 +1,2335 @@
+{
+  "name": "backend-unit",
+  "kind": "unit",
+  "implementation_commit": "377b1207905909867dbce75cf78717fa5015b90a",
+  "exit_code": 0,
+  "duration_seconds": 79.23,
+  "requested_paths": [],
+  "success": true,
+  "suites": {
+    "total": 231,
+    "passed": 231,
+    "failed": 0,
+    "skipped": 0,
+    "runtime_errors": 0
+  },
+  "tests": {
+    "total": 2757,
+    "passed": 2757,
+    "failed": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "files": [
+    {
+      "file": "src/admin/admin-notification.controller.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "src/agent/agent-cash-to-cash-notification.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "src/agent/agent-cash-to-cash-operations.controller.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "src/notification/cash-to-cash-notification.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "src/notification/notification-worker-phone-recipient.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "src/outlet/public-agent-locator.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a2-workforce-authentication.contract.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 11,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a2-workforce-configuration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 30,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a2-workforce-oidc.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a5-ar-control-account-provisioning.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a5-ar-control-account-provisioning.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-command.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 13,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-command.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-command.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 27,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-command.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-customer-binding.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 13,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-customer-binding.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-customer-binding.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 21,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-customer-binding.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 31,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-customer-binding.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-data-minimization.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-data-minimization.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-data-minimization.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 23,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-data-minimization.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-financial-effect.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 22,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-financial-effect.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-financial-effect.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 59,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-financial-effect.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-lifecycle.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 21,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-lifecycle.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-lifecycle.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 60,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-lifecycle.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-notification-delivery.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-notification-delivery.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-notification-delivery.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 31,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-notification-delivery.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-policy.audit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-policy.persistence.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 13,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-policy.profiles.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-policy.replay.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-policy.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-reconciliation.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-reconciliation.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-reconciliation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 29,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/a7-product-reconciliation.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/agent-cash-to-cash-expiry-worker.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/authentication-execution.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/authentication-session.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/authorization-http-matrix.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 160,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/authorization.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-billing-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-billing-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 26,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-billing-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-billing-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-campaign-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-campaign-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 26,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-campaign-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-campaign-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 19,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-analytics-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-analytics-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 26,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-analytics-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-analytics-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 25,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-catalog.constants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-catalog.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-catalog.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 23,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-catalog.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-catalog.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-governance-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-governance-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 33,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-governance-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-commercial-governance-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 31,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-fee-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-fee-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 28,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-fee-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-fee-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-payment-term.contract.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 27,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-payment-term.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-referral-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-referral-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 26,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-referral-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-referral-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 22,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-revenue-recognition-engine.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-revenue-recognition-engine.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 26,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-revenue-recognition-engine.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b1-revenue-recognition-engine.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 24,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-activation-workflow.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-activation-workflow.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-activation-workflow.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-activation-workflow.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-api-consumer.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-api-consumer.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-api-consumer.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-api-consumer.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-consent.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-consent.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-consent.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-consent.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-customer-activation-readiness.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-customer-activation-readiness.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-customer-activation-readiness.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-customer-activation-readiness.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-merchant-agent-activation-readiness.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-merchant-agent-activation-readiness.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-merchant-agent-activation-readiness.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-merchant-agent-activation-readiness.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-openapi.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-public-api-authentication.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-public-api-authentication.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-public-api-authentication.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-public-api-authentication.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-webhook.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-webhook.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-webhook.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2-webhook.types.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-account-mapping.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-account-mapping.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-accounting-treatment.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-accounting-treatment.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-finance-control.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-finance-control.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-fiscal-period.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-fiscal-period.repository.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-fiscal-period.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-journal-governance.module.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/b2f-journal-governance.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/capability-policy-evidence.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/capability-policy-explanation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/capability-policy-persistence.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/capability-policy-recovery.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/capability-policy.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/cash-to-cash-locator-contract.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/commercial-rule-governance.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-app.login.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-authentication-rate-limit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-authentication-runtime.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-authentication.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-beneficiary.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-compliance-route-policy.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-compliance.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-eligibility.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-financial-account-binding-repair.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-financial-account-binding.persistence.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-financial-account-binding.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-financial-account-read.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-financial-account-reconciliation.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-funding-instrument.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-onboarding.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-preference.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-proof-of-address.model.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-proof-of-address.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-registration.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-risk-profile.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-validation.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer-wallet.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/customer.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/environment.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 13,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-data-minimization.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 70,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-funding-target.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-operation-lifecycle.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-operation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-reconciliation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 30,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/external-settlement.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/f01-historical-provider-ref-security.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/financial-invariants.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/governed-action.registry.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/h04-h06-event-map.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 29,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/health.e2e.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/http-exception-filter.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/http-security.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/internal-transfer-gate.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/ledger-reversal-governance.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/m6.expanded-products.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/m7.operational-resilience.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/m9.production-maturity.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mfa-execution.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-15a-expiry-status.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-15a-route-policy.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 30,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-19a-workforce-logout.guard.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 23,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-22a-fastify-dependency.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25c-notification-diagnostics.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 23,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25c-provider-routing.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 28,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25g-customer-preference-policy.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/mission-25o-credential-binding.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/module-di-wiring.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/money.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-direct-security-logging.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 6,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-email-template.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-provider-config.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-reliability.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/notification-template-engine.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/outbox.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/partner-callback-ingestion.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 11,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/partner-connection.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/payment.lifecycle.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/payment.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 11,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/pg-run-namespace.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 28,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/pilot-control.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/privileged-action-approval.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/product-governance.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/production-config.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/production-readiness.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 7,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-authorization.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-dto.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-encryption.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-file-validation.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-migration.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-s3-storage.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 1,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-scanner.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/proof-of-address-storage.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/reconciliation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report16-redaction-hardening.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 29,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report19-final-error-boundary.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 22,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report21-basic-scheme-and-proxy-safety.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 20,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report23-scheme-and-revoked-proxy.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report25-cross-boundary-e2e.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report25-scheme-case-gaps.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 15,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report26-business-correlation-ids.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 17,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/report26-notfound-query-reflection.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 10,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/resend-email-provider.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 20,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/robase-notification-provider.unit.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/runtime-access.guard.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 16,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/sensitive-data-protection.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/sensitive-data-redaction-adversarial.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 35,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/transfer-lifecycle.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 20,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/transfer-reconciliation.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 9,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/transfer.service.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 18,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-admin-local-login-01.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 14,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-sprint3-cross-surface-payloads.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 8,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/v1-test-01-agent-cash-to-cash-retry-exhaustion.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 2,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/workforce-administration-validation.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 60,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "test/workforce-session-principal-type.spec.ts",
+      "status": "passed",
+      "tests": {
+        "passed": 4,
+        "failed": 0,
+        "pending": 0,
+        "todo": 0
+      }
+    }
+  ]
+}

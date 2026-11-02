@@ -14,6 +14,7 @@ import {
   NOTIFICATION_PROVIDER_TOKEN,
 } from '../src/notification/notification.constants';
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
+import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { NotificationChannelResolverService } from '../src/notification/notification-channel-resolver.service';
 import { NotificationDelivery } from '../src/notification/notification-delivery.entity';
 import { NotificationDeliveryProcessor } from '../src/notification/notification-delivery-processor';
@@ -390,6 +391,7 @@ describe('SPRINT-1 F-01 Historical Delivery Disclosure Remediation (disposable P
     delete process.env['RESEND_API_KEY'];
     await truncateAllTables(dataSource);
     await seedNotificationDefaultsV1(dataSource.manager);
+    await seedNotificationDefaultsV2(dataSource.manager);
   });
 
   it('1. zero raw sentinel exposure across HTTP diagnostics, duplicate dispatch, listDeliveriesForEventKey(), ORM loads, logs, and audit projections while preserving safe pvr1 refs', async () => {

@@ -4,6 +4,7 @@ import {
   extractTemplateVariables,
   BASELINE_CODE_EVENT_CATALOGUE,
   ManagedNotificationChannel,
+  NotificationConfigurationTarget,
   NotificationChangeRequestRecord,
   NotificationDeliveryPage,
   NotificationDeliveryRecord,
@@ -41,10 +42,11 @@ export type IntegrationResult<T> =
     };
 
 export interface UpdateEventConfigurationPayload {
-  smsEnabled: boolean;
-  emailEnabled: boolean;
+  channel: NotificationConfigurationTarget;
+  enabled: boolean;
+  /** Version from the effective registry snapshot the maker actually edited. */
+  expectedVersion: number;
   reason: string;
-  approvalIds?: string[];
 }
 
 export interface NotificationMutationOutcome {
@@ -187,6 +189,9 @@ interface RegistryEventItem {
   deliveryClass: string;
   editable: boolean;
   variables: string[];
+  eventEnabled?: boolean;
+  eventLocked?: boolean;
+  eventConfigurationVersion?: number;
   channels: {
     SMS?: RegistryChannelState;
     EMAIL?: RegistryChannelState;
@@ -363,14 +368,16 @@ function extractArray<T>(raw: unknown): T[] {
 
 function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueItem {
   const baseline = BASELINE_CODE_EVENT_CATALOGUE.find((entry) => entry.eventType === item.eventType);
-  const sms = item.channels.SMS;
-  const email = item.channels.EMAIL;
+  const sms = item.channels?.SMS;
+  const email = item.channels?.EMAIL;
   const registryLocked = Boolean(sms?.locked || email?.locked) || !item.editable;
-  // The registry lock (SECURITY class) is authoritative; the static catalogue additionally
-  // keeps the stricter product-decision locks (e.g. required V1 transactional outcomes,
-  // Decision D-N8) — the union is displayed and enforced in the UI, and the server still
-  // governs every accepted change with maker-checker approval.
-  const locked = registryLocked || Boolean(baseline?.toggleLocked);
+  // EVENT, SMS and EMAIL have independent locks. A lock on one target must not
+  // disable the other targets; SECURITY and non-editable events remain locked.
+  const locked =
+    !item.editable ||
+    item.deliveryClass === 'SECURITY' ||
+    SECURITY_LOCKED_EVENT_TYPES.has(item.eventType) ||
+    (item.eventLocked === true && sms?.locked === true && email?.locked === true);
   const approvedVariables = (item.variables ?? []).map((name) => {
     const baselineVariable = baseline?.approvedVariables.find((variable) => variable.name === name);
     const metadata = VARIABLE_METADATA[name] ?? GENERIC_VARIABLE_METADATA;
@@ -390,14 +397,17 @@ function mapRegistryEvent(item: RegistryEventItem): NotificationEventCatalogueIt
     deliveryClass: (item.deliveryClass as NotificationEventCatalogueItem['deliveryClass']) ?? 'TRANSACTIONAL',
     recipientTarget: baseline?.recipientTarget ?? 'CUSTOMER',
     runtimeTriggerState: baseline?.runtimeTriggerState ?? 'LIVE_OUTBOX',
-    smsEnabled: Boolean(sms?.enabled),
-    emailEnabled: Boolean(email?.enabled),
+    eventEnabled: typeof item.eventEnabled === 'boolean' ? item.eventEnabled : undefined,
+    eventLocked: typeof item.eventLocked === 'boolean' ? item.eventLocked : undefined,
+    eventConfigurationVersion: item.eventConfigurationVersion,
+    smsEnabled: typeof sms?.enabled === 'boolean' ? sms.enabled : undefined,
+    smsLocked: typeof sms?.locked === 'boolean' ? sms.locked : undefined,
+    smsConfigurationVersion: sms?.configurationVersion,
+    emailEnabled: typeof email?.enabled === 'boolean' ? email.enabled : undefined,
+    emailLocked: typeof email?.locked === 'boolean' ? email.locked : undefined,
+    emailConfigurationVersion: email?.configurationVersion,
     toggleLocked: locked,
-    lockReason: locked
-      ? (registryLocked
-          ? (baseline?.lockReason ?? 'SECURITY-class events are locked against ordinary template administration.')
-          : (baseline?.lockReason ?? 'Locked by product decision.'))
-      : null,
+    lockReason: locked ? (baseline?.lockReason ?? 'This event is locked against configuration changes.') : null,
     templateEditable: item.editable && !registryLocked,
     securityNotes: baseline?.securityNotes ?? null,
     approvedVariables,
@@ -438,13 +448,15 @@ function mapChangeStatus(status: string): NotificationChangeRequestRecord['statu
     case 'APPROVED':
       return 'APPROVED';
     case 'REJECTED':
-    case 'CANCELLED':
-    case 'EXPIRED':
       return 'REJECTED';
+    case 'CANCELLED':
+      return 'CANCELLED';
+    case 'EXPIRED':
+      return 'EXPIRED';
     case 'CONSUMED':
       return 'APPLIED';
     default:
-      return 'PENDING_APPROVAL';
+      return 'UNKNOWN';
   }
 }
 
@@ -514,11 +526,9 @@ export const NotificationManagementApi = {
   },
 
   /**
-   * ARENA 1 registry — trigger enable/disable via the maker-checker change lifecycle.
-   * The real backend has no PATCH configuration route: each channel whose desired state
-   * differs from the persisted registry state produces a CONFIGURATION change request
-   * (maker = SUPER_ADMIN + MFA) that a FINANCE_CONTROLLER checker must approve and execute.
-   * Locked (SECURITY-class) channels are never proposed and are reported explicitly.
+   * Create one frozen, versioned CONFIGURATION proposal. The caller supplies the
+   * version from the snapshot the maker edited; fetching a newer version here would
+   * hide concurrent changes. Each EVENT/SMS/EMAIL target requires its own approval.
    */
   async submitEventConfigurationChange(
     eventType: string,
@@ -530,64 +540,35 @@ export const NotificationManagementApi = {
       method: 'POST',
       endpoint: '/internal/notifications/changes',
       blockedExplanation:
-        'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. No trigger change was saved.',
+        'The change request or endpoint was unavailable (404/501). Refresh the registry and check integration; submission was not confirmed.',
       run: async () => {
-        const items = await fetchRegistryEvents();
-        const item = items.find((candidate) => candidate.eventType === eventType);
-        if (!item) throw new Error(`Event ${eventType} is not present in the notification registry catalogue.`);
-        const desired: Array<{ channel: ManagedNotificationChannel; enabled: boolean; state?: RegistryChannelState }> = [
-          { channel: 'SMS', enabled: payload.smsEnabled, state: item.channels.SMS },
-          { channel: 'EMAIL', enabled: payload.emailEnabled, state: item.channels.EMAIL },
-        ];
-        const approvals: Array<{ channel: string; approvalId: string }> = [];
-        const notes: string[] = [];
-        for (const entry of desired) {
-          if (!entry.state) continue;
-          if (entry.state.locked) {
-            if (entry.state.enabled !== entry.enabled) {
-              notes.push(`${entry.channel} trigger is locked (SECURITY class) and was NOT changed.`);
-            }
-            continue;
-          }
-          if (entry.state.enabled === entry.enabled) {
-            notes.push(`${entry.channel} trigger already matches the requested state.`);
-            continue;
-          }
-          const created = await ApiClient.post<RegistryChangeCreation>(
-            '/internal/notifications/changes',
-            {
-              type: 'CONFIGURATION',
-              eventType,
-              channel: entry.channel,
-              enabled: entry.enabled,
-              expectedVersion: entry.state.configurationVersion,
-              reason: payload.reason,
-            },
-            { idempotencyKey: `${idempotencyKey}-${entry.channel.toLowerCase()}` },
-          );
-          approvals.push({ channel: entry.channel, approvalId: created.approvalId });
+        if (SECURITY_LOCKED_EVENT_TYPES.has(eventType)) {
+          throw new Error('SECURITY events cannot be changed through notification configuration.');
         }
-        if (approvals.length === 0) {
-          return {
-            status: 'APPLIED',
-            approvalId: null,
-            changeRequestId: null,
-            updatedAt: new Date().toISOString(),
-            message:
-              notes.length > 0
-                ? `No change request created. ${notes.join(' ')}`
-                : 'No configuration change was required.',
-          };
+        if (!Number.isInteger(payload.expectedVersion) || payload.expectedVersion < 1) {
+          throw new Error('A valid snapshot configuration version is required.');
+        }
+        const created = await ApiClient.post<RegistryChangeCreation>(
+          '/internal/notifications/changes',
+          {
+            type: 'CONFIGURATION',
+            eventType,
+            channel: payload.channel,
+            enabled: payload.enabled,
+            expectedVersion: payload.expectedVersion,
+            reason: payload.reason,
+          },
+          { idempotencyKey },
+        );
+        if (!created.approvalId || created.status !== 'REQUESTED') {
+          throw new Error('Proposal status could not be confirmed. Check the approval queue before retrying.');
         }
         return {
           status: 'PENDING_APPROVAL',
-          approvalId: approvals[0]!.approvalId,
-          changeRequestId: approvals[0]!.approvalId,
+          approvalId: created.approvalId,
+          changeRequestId: created.approvalId,
           requestedBy: null,
-          updatedAt: new Date().toISOString(),
-          message: `Change request(s) created: ${approvals
-            .map((entry) => `${entry.channel}=${entry.approvalId}`)
-            .join(', ')}.${notes.length > 0 ? ` ${notes.join(' ')}` : ''}`,
+          updatedAt: created.requestedAt,
         };
       },
     });
@@ -1113,6 +1094,7 @@ export const NotificationManagementApi = {
             decisionComment: null,
             proposedSubject: change?.subject ?? null,
             proposedBody: change?.body ?? null,
+            proposedEventEnabled: change?.channel === 'EVENT' ? change?.enabled : undefined,
             proposedSmsEnabled: change?.channel === 'SMS' ? change?.enabled : undefined,
             proposedEmailEnabled: change?.channel === 'EMAIL' ? change?.enabled : undefined,
           };
@@ -1173,7 +1155,7 @@ export const NotificationManagementApi = {
             approvalId: requestId,
             changeRequestId: requestId,
             updatedAt: new Date().toISOString(),
-            message: `Approval recorded, but execution failed: ${getErrorMessage(error, 'unknown error')}. The proposal remains APPROVED and execution can be retried from the queue.`,
+            message: `Approval recorded, but execution could not be confirmed: ${getErrorMessage(error, 'unknown error')}. Refresh the approval queue and registry before retrying.`,
           };
         }
       },

@@ -1,0 +1,5 @@
+Final changed-file lint verification
+Backend: 34 changed TS files, 132 errors and 8 warnings, exit 1. Parent versions of the 29 modified files: 132 errors and 8 warnings, exit 1. Per-file/rule/severity count profiles match; all 5 added TS files have zero diagnostics.
+Focused backend scope without inherited diagnostics: 24 files, 0 errors, 0 warnings, exit 0. The migration, cash-to-cash test, and upgrade test are included; the earlier seven feature diagnostics are absent.
+Admin Web: no native lint script. An explicit overlay of the full backend rules on its TS project linted all 4 changed frontend files: 112 errors, 0 warnings, exit 1; exact parent files had 112 errors, 0 warnings, exit 1. Per-file/rule/severity count profile differences: 0 files.
+Profiles compare counts, not exact line identity. This is not a repository-wide lint-clean claim. See lint-summary.json for per-file rule counts.
