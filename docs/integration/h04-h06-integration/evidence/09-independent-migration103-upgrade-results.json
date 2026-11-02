@@ -1,0 +1,226 @@
+{
+  "pass": 24,
+  "fail": 0,
+  "total": 24,
+  "results": [
+    {
+      "name": "1. migration 103 present in chain and excluded from pre-upgrade set",
+      "ok": true,
+      "detail": {
+        "total": 104,
+        "pre": 103
+      }
+    },
+    {
+      "name": "2. pre-upgrade schema genuinely predates 103 (no EVENT rows possible)",
+      "ok": true,
+      "detail": {
+        "cols": 9
+      }
+    },
+    {
+      "name": "3. pre-upgrade channel CHECK excludes EVENT",
+      "ok": true,
+      "detail": {
+        "def": "CHECK (((channel)::text = ANY ((ARRAY['SMS'::character varying, 'EMAIL'::character varying])::text[])))"
+      }
+    },
+    {
+      "name": "4. a real SECURITY-class row exists to protect",
+      "ok": true,
+      "detail": {
+        "event_type": "agent.desk.customer_otp",
+        "channel": "EMAIL"
+      }
+    },
+    {
+      "name": "5. pre-103 state seeded (locked financial row, governed choices)",
+      "ok": true,
+      "detail": {
+        "transfer.completed|SMS": {
+          "event_type": "transfer.completed",
+          "channel": "SMS",
+          "delivery_class": "SECURITY",
+          "is_locked": true,
+          "is_enabled": true,
+          "version": 3
+        },
+        "transfer.failed|SMS": {
+          "event_type": "transfer.failed",
+          "channel": "SMS",
+          "delivery_class": "TRANSACTIONAL",
+          "is_locked": false,
+          "is_enabled": true,
+          "version": 3
+        },
+        "cash_to_cash.created|EMAIL": {
+          "event_type": "cash_to_cash.created",
+          "channel": "EMAIL",
+          "delivery_class": "INFORMATIONAL",
+          "is_locked": false,
+          "is_enabled": false,
+          "version": 4
+        }
+      }
+    },
+    {
+      "name": "6. migration 103 applies over an existing 102 database",
+      "ok": true,
+      "detail": {
+        "applied": [
+          "ConfigureTransactionNotificationEvents1785753600103"
+        ]
+      }
+    },
+    {
+      "name": "7. 103 recorded in typeorm_migrations",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "8. channel CHECK now admits EVENT",
+      "ok": true,
+      "detail": {
+        "def": "CHECK (((channel)::text = ANY ((ARRAY['SMS'::character varying, 'EMAIL'::character varying, 'EVENT'::character varying])::text[])))"
+      }
+    },
+    {
+      "name": "9. financial row repaired: lock removed and delivery class restored",
+      "ok": true,
+      "detail": {
+        "delivery_class": "TRANSACTIONAL",
+        "is_locked": false,
+        "version": 4,
+        "updated_by": "SYSTEM_MIGRATION_0103"
+      }
+    },
+    {
+      "name": "10. repair is attributed to the migration and version-bumped",
+      "ok": true,
+      "detail": {
+        "delivery_class": "TRANSACTIONAL",
+        "is_locked": false,
+        "version": 4,
+        "updated_by": "SYSTEM_MIGRATION_0103"
+      }
+    },
+    {
+      "name": "11. financial-lock repair written to the audit trail",
+      "ok": true,
+      "detail": {
+        "rows": 1,
+        "first": {
+          "action": "NOTIFICATION_FINANCIAL_LOCK_REMOVED",
+          "actor": "SYSTEM_MIGRATION_0103"
+        }
+      }
+    },
+    {
+      "name": "12. SECURITY row keeps its lock and class",
+      "ok": true,
+      "detail": {
+        "is_locked": true,
+        "delivery_class": "SECURITY",
+        "version": 1
+      }
+    },
+    {
+      "name": "13. an ordinary governed channel choice survives untouched",
+      "ok": true,
+      "detail": {
+        "is_enabled": false,
+        "version": 4,
+        "updated_by": "pre103-governed"
+      }
+    },
+    {
+      "name": "14. custom template history preserved, not replaced",
+      "ok": true,
+      "detail": {
+        "versions": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "15. EVENT-wide control rows seeded for each ordinary event",
+      "ok": true,
+      "detail": {
+        "events": 25
+      }
+    },
+    {
+      "name": "16. pre-existing ordinary events start event-enabled",
+      "ok": true,
+      "detail": {
+        "event_type": "transfer.completed",
+        "is_enabled": true,
+        "is_locked": false
+      }
+    },
+    {
+      "name": "17. newly created deposit/withdrawal events start disabled",
+      "ok": true,
+      "detail": {
+        "dep": {
+          "event_type": "deposit.completed",
+          "is_enabled": false,
+          "is_locked": false
+        },
+        "wd": {
+          "event_type": "withdrawal.failed",
+          "is_enabled": false,
+          "is_locked": false
+        }
+      }
+    },
+    {
+      "name": "18. EVENT control rows are unlocked (owner-approved policy: no mandatory financial event)",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "19. transfer.unknown inherits the pre-upgrade transfer.failed channel setting once",
+      "ok": true,
+      "detail": {
+        "is_enabled": true
+      }
+    },
+    {
+      "name": "20. guard trigger re-armed: locked SECURITY configuration cannot be modified",
+      "ok": true,
+      "detail": {
+        "guardErr": "Notification configuration is locked"
+      }
+    },
+    {
+      "name": "21. guard trigger still requires version+1 on ordinary rows",
+      "ok": true,
+      "detail": {
+        "illegal": "Invalid notification configuration change"
+      }
+    },
+    {
+      "name": "22. configurations remain undeletable",
+      "ok": true,
+      "detail": {
+        "delErr": "Notification configurations cannot be deleted"
+      }
+    },
+    {
+      "name": "23. destructive rollback refused",
+      "ok": true,
+      "detail": {
+        "refused": true
+      }
+    },
+    {
+      "name": "24. refused rollback left governed EVENT rows intact",
+      "ok": true,
+      "detail": {
+        "n": 25
+      }
+    }
+  ]
+}

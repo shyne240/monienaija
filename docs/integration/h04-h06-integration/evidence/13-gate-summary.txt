@@ -1,0 +1,43 @@
+=== MISSION H-04/H-06 INTEGRATION — GATE SUMMARY ===
+All gates below completed and exited 0 unless stated.
+
+GATE                                                 EXIT   RESULT
+backend npx tsc --noEmit                             0      no type errors
+backend npm run build (nest build)                   0      compiled
+admin-web npm run ts:check                           0      no type errors
+admin-web npm run build (vite)                       0      built in 3.34 s
+backend unit suite (isolated)                        0      231/231 suites, 2757/2757 tests, 0 fail, 0 skip, 49.1 s
+PG integration matrix @ concurrency 1                0      136/136 suites, 2482/2482 tests, 10/10 batches, 0 fail, 0 skip, 42 m 08 s
+admin-web test suite (isolated)                      0      38/38 suites, 308/308 tests, 0 fail, 0 skip, 28.7 s
+focused notification integration (8 files)           0      102/102 tests
+focused notification unit (4 files)                  0      56/56 tests
+focused admin-web notification (2 files)             0      43/43 tests
+independent migration 103 upgrade                    0      24/24 checks
+independent governance invariants                    0      16/16 checks
+independent H-07 credential re-verification          0      39/39 checks
+
+=== BASELINE DELTAS (25P baseline -> integrated) ===
+SUITE                        BASELINE (25P)               INTEGRATED                   DELTA
+backend unit                 230 suites / 2728 tests      231 / 2757                   +1 suite, +29 tests
+PG integration               134 suites / 2475 tests      136 / 2482                   +2 suites, +7 tests
+admin-web                    37 suites / 284 tests        38 / 308                     +1 suite, +24 tests
+
+All deltas originate in H-04/H-06: test/h04-h06-event-map.spec.ts (unit),
+test/h04-h06-cash-to-cash-channels.integration.spec.ts and
+test/h04-h06-notification-upgrade.integration.spec.ts (PG), plus
+apps/admin-web/__tests__/notification-event-master.test.tsx.
+
+=== RESOURCE-CONTENTION INCIDENT (recorded, resolved by evidence) ===
+An initial attempt ran the backend unit suite and the admin-web suite concurrently on the
+2 vCPU / 3,939 MB sandbox. The kernel recorded:
+  [991.563348] Out of memory: Killed process 2549 (node) ... global_oom
+  /proc/vmstat oom_kill: 1
+PID 2549 was the jest worker for test/module-di-wiring.spec.ts; that suite failed with
+'A jest worker process was terminated by another process: signal=SIGKILL' and one admin-web
+test exceeded its 5 s timeout (that suite took 842.7 s versus 28.7 s isolated).
+Both were re-run serially on the same tree with no source change:
+  backend unit -> 231/231 suites, 2757/2757 tests, exit 0, 49.1 s
+  admin-web    -> 38/38 suites, 308/308 tests, exit 0, 28.7 s
+oom_kill remained 1 after both re-runs. The failures were resource contention from the
+Arena 3 harness, not application defects. Raw logs for both attempts are committed as
+03b/05c so the claim is checkable.

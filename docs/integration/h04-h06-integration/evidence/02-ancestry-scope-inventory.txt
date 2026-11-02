@@ -1,0 +1,106 @@
+=== ANCESTRY VERIFICATION (independent) ===
+e2c294b3  parent: 7997543e81575825bdea1bd9670273b1c7d611f2
+7997543e  parent: 377b1207905909867dbce75cf78717fa5015b90a
+377b1207  parent: 8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d
+8fa35c1d  parent: 3a0f87eafe86b455e1906d7779f83ca3152b9d00
+f1570810  parent: 587c3763944368b9260c9299d18bce1189ca5919 8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d
+
+source chain 8fa35c1 -> e2c294b3:
+377b120 Implement governed transaction notification controls (H-04/H-06)
+7997543 Record H-04/H-06 preservation and verification evidence
+e2c294b Complete governed Admin notification event controls
+
+commit counts: 8fa35c1..e2c294b3 = 3
+merge-base(25P tip, source) = 8fa35c1d46c9afb7dbd6b3fb81049e0f4d18155d
+
+=== MERGE RESULT ===
+integration commit parents: 9f4b7489f205fc958392a52a575379b179168180 e2c294b3d0cae8f3017d5a9670475cdf05b26b58
+conflicts encountered: 0 (git merge completed without conflict markers)
+code-tree diff vs source (src apps test scripts package*.json): []
+full-tree diff vs source (25P evidence docs only): 17 files
+
+=== SCOPE GUARDS: source vs 25O tip (must be 0 outside notification) ===
+  src/ledger                                                       0
+  src/customer-preference                                          0
+  src/authorization/privileged-action-approval.service.ts          0
+  src/notification/notification-credential-binding.service.ts      0
+  src/notification/notification-secret-encryption.service.ts       0
+  src/notification/provider-security.ts                            0
+  src/migrations/1785753600102-AddNotificationCredentialBinding.ts 0
+  src/migrations/1785753600101-NotificationReliability.ts          0
+
+=== INVENTORY: 25P baseline -> integrated ===
+modified: 34  added: 39  deleted: 0
+  A	apps/admin-web/__tests__/notification-event-master.test.tsx
+  M	apps/admin-web/__tests__/notification-management.test.tsx
+  M	apps/admin-web/src/screens/authenticated/NotificationManagementScreen.tsx
+  M	apps/admin-web/src/services/notification-domain.ts
+  M	apps/admin-web/src/services/notification-management-api.ts
+  M	apps/admin-web/src/store/auth-store.ts
+  A	docs/integration/h04-h06-transaction-notification-controls.md
+  A	docs/integration/h04-h06/HANDOVER.md
+  A	docs/integration/h04-h06/evidence/README.md
+  A	docs/integration/h04-h06/evidence/SHA256SUMS
+  A	docs/integration/h04-h06/evidence/admin-notification-summary.json
+  A	docs/integration/h04-h06/evidence/admin-notification.txt
+  A	docs/integration/h04-h06/evidence/admin-typecheck.txt
+  A	docs/integration/h04-h06/evidence/backend-build.txt
+  A	docs/integration/h04-h06/evidence/backend-typecheck.txt
+  A	docs/integration/h04-h06/evidence/backend-unit-summary.json
+  A	docs/integration/h04-h06/evidence/backend-unit.txt
+  A	docs/integration/h04-h06/evidence/dependency-setup.txt
+  A	docs/integration/h04-h06/evidence/final-inventory.txt
+  A	docs/integration/h04-h06/evidence/finance-summary.json
+  A	docs/integration/h04-h06/evidence/finance.txt
+  A	docs/integration/h04-h06/evidence/h07-authorization-summary.json
+  A	docs/integration/h04-h06/evidence/h07-authorization.txt
+  A	docs/integration/h04-h06/evidence/implementation-inventory.txt
+  A	docs/integration/h04-h06/evidence/implementation-remote.json
+  A	docs/integration/h04-h06/evidence/lint-summary.json
+  A	docs/integration/h04-h06/evidence/lint.txt
+  A	docs/integration/h04-h06/evidence/notification-migration-summary.json
+  A	docs/integration/h04-h06/evidence/notification-migration.txt
+  A	docs/integration/h04-h06/evidence/postgres-cleanup.txt
+  A	docs/integration/h04-h06/evidence/postgres-discovered-files.json
+  A	docs/integration/h04-h06/evidence/postgres-matrix-progress.json
+  A	docs/integration/h04-h06/evidence/postgres-matrix-summary.json
+  A	docs/integration/h04-h06/evidence/postgres-matrix.txt
+  A	docs/integration/h04-h06/evidence/preservation.json
+  A	docs/integration/h04-h06/evidence/security-agent-summary.json
+  A	docs/integration/h04-h06/evidence/security-agent.txt
+  A	docs/integration/h04-h06/evidence/static-checks-summary.json
+  A	docs/integration/h04-h06/evidence/test-summary.json
+  A	src/migrations/1785753600103-ConfigureTransactionNotificationEvents.ts
+  A	src/notification/notification-defaults-v2.ts
+  M	src/notification/notification-delivery-processor.ts
+  M	src/notification/notification-dispatcher.service.ts
+  M	src/notification/notification-event-map.ts
+  M	src/notification/notification-inbox.service.ts
+  M	src/notification/notification-registry.service.ts
+  M	src/notification/notification-security.constants.ts
+  M	src/notification/notification-template.service.ts
+  M	src/notification/notification.types.ts
+  M	src/production/production-readiness.service.ts
+  M	test/a19-agent-funding.integration.spec.ts
+  M	test/a20-outlets-terminals.integration.spec.ts
+  M	test/a8-agent-lifecycle.integration.spec.ts
+  A	test/h04-h06-cash-to-cash-channels.integration.spec.ts
+  A	test/h04-h06-event-map.spec.ts
+  A	test/h04-h06-notification-upgrade.integration.spec.ts
+  M	test/migration-chain.integration.spec.ts
+  M	test/mission-25o-credential-binding-upgrade.integration.spec.ts
+  M	test/notification-migration-upgrade-01.integration.spec.ts
+  M	test/notification-registry.integration.spec.ts
+  M	test/notification-reliability.integration.spec.ts
+  M	test/notification-template-engine.spec.ts
+  M	test/sms-v1-01.integration.spec.ts
+  M	test/support/pg-harness.ts
+  M	test/transfer-notification-producer-01.integration.spec.ts
+  M	test/v1-003-admin-operational-writes.integration.spec.ts
+  M	test/v1-005-notification-delivery.integration.spec.ts
+  M	test/v1-006-customer-notification-inbox.integration.spec.ts
+  M	test/v1-007-support-ticket.integration.spec.ts
+  M	test/v1-email-notification-01.integration.spec.ts
+  M	test/v1-hardening-09-admin-notification-delivery-diagnostics.integration.spec.ts
+  M	test/v1-limit-02-limit-assignment.integration.spec.ts
+  M	test/v1-sprint1-f01-historical-delivery-disclosure.integration.spec.ts

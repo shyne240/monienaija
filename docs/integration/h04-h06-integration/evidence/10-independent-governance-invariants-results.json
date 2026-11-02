@@ -1,0 +1,201 @@
+{
+  "pass": 16,
+  "fail": 0,
+  "total": 16,
+  "results": [
+    {
+      "name": "0. full chain (through 103) migrates a fresh database",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "1. every ordinary event carries three independent control rows",
+      "ok": true,
+      "detail": {
+        "ev": {
+          "is_enabled": true,
+          "is_locked": false,
+          "version": 1,
+          "delivery_class": "TRANSACTIONAL"
+        },
+        "sms": {
+          "is_enabled": true,
+          "is_locked": false,
+          "version": 1,
+          "delivery_class": "TRANSACTIONAL"
+        },
+        "em": {
+          "is_enabled": false,
+          "is_locked": false,
+          "version": 1,
+          "delivery_class": "TRANSACTIONAL"
+        }
+      }
+    },
+    {
+      "name": "2. event-wide disable suppresses delivery without touching channel settings",
+      "ok": true,
+      "detail": {
+        "afterDisable": {
+          "ev": {
+            "is_enabled": false,
+            "is_locked": false,
+            "version": 2,
+            "delivery_class": "TRANSACTIONAL"
+          },
+          "sms": {
+            "is_enabled": true,
+            "is_locked": false,
+            "version": 1,
+            "delivery_class": "TRANSACTIONAL"
+          },
+          "em": {
+            "is_enabled": false,
+            "is_locked": false,
+            "version": 1,
+            "delivery_class": "TRANSACTIONAL"
+          }
+        }
+      }
+    },
+    {
+      "name": "3. re-enabling the event preserves both channel settings",
+      "ok": true,
+      "detail": {
+        "afterEnable": {
+          "ev": {
+            "is_enabled": true,
+            "is_locked": false,
+            "version": 3,
+            "delivery_class": "TRANSACTIONAL"
+          },
+          "sms": {
+            "is_enabled": true,
+            "is_locked": false,
+            "version": 1,
+            "delivery_class": "TRANSACTIONAL"
+          },
+          "em": {
+            "is_enabled": false,
+            "is_locked": false,
+            "version": 1,
+            "delivery_class": "TRANSACTIONAL"
+          }
+        }
+      }
+    },
+    {
+      "name": "4. SMS-only, email-only, both and neither are independently representable",
+      "ok": true,
+      "detail": [
+        {
+          "combo": "SMS-only",
+          "sms": true,
+          "email": false,
+          "event": true,
+          "ok": true
+        },
+        {
+          "combo": "email-only",
+          "sms": false,
+          "email": true,
+          "event": true,
+          "ok": true
+        },
+        {
+          "combo": "both",
+          "sms": true,
+          "email": true,
+          "event": true,
+          "ok": true
+        },
+        {
+          "combo": "neither",
+          "sms": false,
+          "email": false,
+          "event": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "5. changing one event leaves every other event untouched",
+      "ok": true,
+      "detail": {
+        "changed": false
+      }
+    },
+    {
+      "name": "6. the database refuses an unversioned change (expectedVersion fencing is meaningful)",
+      "ok": true,
+      "detail": {
+        "noBump": "Invalid notification configuration change"
+      }
+    },
+    {
+      "name": "7. the database refuses a version jump (no silent multi-step advance)",
+      "ok": true,
+      "detail": {
+        "skip": "Invalid notification configuration change"
+      }
+    },
+    {
+      "name": "8. SECURITY configurations retain their locks",
+      "ok": true,
+      "detail": {
+        "count": 6,
+        "unlocked": []
+      }
+    },
+    {
+      "name": "9. no SECURITY event gained an event-wide ordinary control row",
+      "ok": true,
+      "detail": {
+        "n": 0
+      }
+    },
+    {
+      "name": "10. a locked SECURITY row cannot be modified at all",
+      "ok": true,
+      "detail": {
+        "secMod": "Notification configuration is locked"
+      }
+    },
+    {
+      "name": "11. deposit and withdrawal events exist with EVENT/SMS/EMAIL controls",
+      "ok": true,
+      "detail": {
+        "events": 4,
+        "rows": 12
+      }
+    },
+    {
+      "name": "12. deposit/withdrawal controls start disabled (no new send enabled by migration)",
+      "ok": true,
+      "detail": {
+        "enabled": []
+      }
+    },
+    {
+      "name": "13. deposit/withdrawal controls are unlocked (owner-approved configurability)",
+      "ok": true,
+      "detail": {
+        "n": 0
+      }
+    },
+    {
+      "name": "14. notification outbox schema untouched by 103 (no producer changes)",
+      "ok": true,
+      "detail": {
+        "cols": 18
+      }
+    },
+    {
+      "name": "15. H-07 credential-binding columns coexist with migration 103",
+      "ok": true,
+      "detail": {
+        "cols": 3
+      }
+    }
+  ]
+}
