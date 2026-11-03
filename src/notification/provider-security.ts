@@ -965,8 +965,14 @@ export function createPinnedProviderHttpFetch(options?: {
           method: init.method,
           headers: init.headers,
           agent: false,
-          lookup: (_host, _lookupOpts, callback) => {
-            callback(null, pinned.address, pinned.family);
+          lookup: (_host, lookupOpts, callback) => {
+            // Node's address-family auto-selection requests the dns.lookup `all` shape.
+            // Return only the validated, pinned address in either callback format.
+            if (lookupOpts.all) {
+              callback(null, [{ address: pinned.address, family: pinned.family }]);
+            } else {
+              callback(null, pinned.address, pinned.family);
+            }
           },
         },
         (res) => {
