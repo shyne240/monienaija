@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
 import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
@@ -6,16 +6,13 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import { AgentClassService } from '../src/agent/agent-class.service';
-import { AgentApplicationService } from '../src/agent/agent-application.service';
-import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { SupportService } from '../src/support/support.service';
-import { SupportTicketCategory } from '../src/support/support.enums';
+import { SupportTicketCategory, SupportTicketPriority } from '../src/support/support.enums';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
 import { TransferLifecycleService } from '../src/transfer/transfer-lifecycle.service';
@@ -40,8 +37,6 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
   let app: NestFastifyApplication;
   let walletService: WalletService;
   let supportService: SupportService;
-  let fundingService: CustomerFundingService;
-  let transferLifecycleService: TransferLifecycleService;
   let dispatcher: NotificationDispatcherService;
   let resolver: NotificationChannelResolverService;
   let testProvider: TestNotificationProvider;
@@ -55,7 +50,6 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -80,7 +74,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     'customer.close',
   ];
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
@@ -96,8 +90,8 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -120,8 +114,8 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
     supportService = moduleRef.get(SupportService);
-    fundingService = moduleRef.get(CustomerFundingService);
-    transferLifecycleService = moduleRef.get(TransferLifecycleService);
+    moduleRef.get(CustomerFundingService);
+    moduleRef.get(TransferLifecycleService);
     dispatcher = moduleRef.get(NotificationDispatcherService);
     resolver = moduleRef.get(NotificationChannelResolverService);
   }, 180000);
@@ -168,7 +162,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     // contact method - authoritative
     await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
     // wallet for NGN
-    try { await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` }); } catch {}
+    try { await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` }); } catch { /* The test permits an already-provisioned wallet. */ }
     // preference row - use correct schema columns (notification_* + security_*)
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
@@ -195,12 +189,12 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     const approveRes = await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
     expect(approveRes.body.status).toBe('APPROVED');
     // Verify outbox event exists (NOTIFICATION EVENT GENERATED)
-    const outbox: Array<{ event_type: string; payload: any; correlation_id: string; event_key: string }> = await dataSource.query(`SELECT event_type, payload, correlation_id, event_key FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
+    const outbox: Array<{ event_type: string; payload: Record<string, unknown>; correlation_id: string; event_key: string }> = await dataSource.query(`SELECT event_type, payload, correlation_id, event_key FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
     expect(outbox.length).toBe(1);
     expect(outbox[0]!.event_type).toBe('customer.funding.approved');
     expect(outbox[0]!.payload.customerId).toBe(customerId);
     // Dispatch via notification dispatcher (DISPATCHED)
-    const payload = outbox[0]!.payload as Record<string, unknown>;
+    const payload = outbox[0]!.payload;
     const result = await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload, correlationId: outbox[0]!.correlation_id });
     expect(result.generated).toBe(1);
     expect(result.dispatched).toBe(1);
@@ -215,7 +209,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(testProvider.sent[0]!.message).not.toMatch(/pin|otp|password|ledger|journal/i);
     // Verify notification_deliveries row
     const deliveries: Array<{
-      event_type: string; recipient_id: string; channel: string; status: string; destination: string; payload: any; message: string; attempts: number;
+      event_type: string; recipient_id: string; channel: string; status: string; destination: string; payload: Record<string, unknown>; message: string; attempts: number;
     }> = await dataSource.query(`SELECT event_type, recipient_id, channel, status, destination, payload, message, attempts FROM notification_deliveries WHERE event_key=$1`, [`customer.funding.approved:${fundingId}`]);
     expect(deliveries.length).toBe(1);
     expect(deliveries[0]!.status).toBe('SENT');
@@ -241,7 +235,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     const fundingId = createRes.body.id as string;
     const rejectRes = await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/reject`).set('Authorization', `Bearer ${checkerToken}`).send({ reason: 'Insufficient docs' }).expect(201);
     expect(rejectRes.body.status).toBe('REJECTED');
-    const outbox: Array<{ event_type: string; payload: any; event_key: string; correlation_id: string }> = await dataSource.query(`SELECT event_type, payload, event_key, correlation_id FROM outbox_events WHERE event_type='customer.funding.rejected' ORDER BY created_at DESC LIMIT 1`);
+    const outbox: Array<{ event_type: string; payload: Record<string, unknown>; event_key: string; correlation_id: string }> = await dataSource.query(`SELECT event_type, payload, event_key, correlation_id FROM outbox_events WHERE event_type='customer.funding.rejected' ORDER BY created_at DESC LIMIT 1`);
     expect(outbox.length).toBe(1);
     const result = await dispatcher.dispatch({ eventType: 'customer.funding.rejected', eventKey: `customer.funding.rejected:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
     expect(result.dispatched).toBe(1);
@@ -356,11 +350,11 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
   it('5. real support service flow: customer creates ticket via service, workforce assigns, dispatcher maps', async () => {
     const custId = await createCustomerWithPhone('8066666666');
     // Authenticate customer via password flow to get token? Use SupportService directly with principal
-    const principalCustomer = { type: 'CUSTOMER' as const, principalId: custId, customerId: custId, agentId: undefined as any, audience: 'test', roles: [], scopes: [], customerAccess: 'SELF', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
-    const ticket = await supportService.createTicket({ subject: 'Help needed', category: 'OTHER' as any, description: 'Need help with wallet valid', priority: 'MEDIUM' as any, principal: principalCustomer as any });
+    const principalCustomer: AuthorizationPrincipal = { type: 'CUSTOMER' as const, principalId: custId, customerId: custId, agentId: undefined, audience: 'test', roles: [], scopes: [], customerAccess: 'SELF', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
+    const ticket = await supportService.createTicket({ subject: 'Help needed', category: SupportTicketCategory.OTHER, description: 'Need help with wallet valid', priority: SupportTicketPriority.MEDIUM, principal: principalCustomer });
     expect(ticket.id).toBeDefined();
     // Check outbox
-    const outbox: Array<{ event_type: string; payload: any }> = await dataSource.query(`SELECT event_type, payload FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.created'`, [ticket.id]);
+    const outbox: Array<{ event_type: string; payload: Record<string, unknown> }> = await dataSource.query(`SELECT event_type, payload FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.created'`, [ticket.id]);
     expect(outbox.length).toBe(1);
     expect(outbox[0]!.payload.customerId).toBe(custId);
     // Dispatch
@@ -368,9 +362,9 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(result.dispatched).toBe(1);
     expect(testProvider.sent[0]!.destination).toBe('8066666666');
     // Workforce assigns
-    const principalSupport = { type: 'SUPPORT' as const, principalId: 'workforce-support-1', audience: 'test', roles: [], scopes: [], customerAccess: 'ALL', agentAccess: 'ALL', aggregatorAccess: 'NONE' } as any;
+    const principalSupport = { type: 'SUPPORT' as const, principalId: 'workforce-support-1', audience: 'test', roles: [], scopes: [], customerAccess: 'ALL', agentAccess: 'ALL', aggregatorAccess: 'NONE' } as unknown as AuthorizationPrincipal;
     await supportService.assignTicket({ ticketId: ticket.id, assignedTo: 'workforce-support-1', principal: principalSupport });
-    const outboxAssign: Array<{ payload: any }> = await dataSource.query(`SELECT payload FROM outbox_events WHERE event_type='support.ticket.assigned' AND aggregate_id=$1 ORDER BY created_at DESC LIMIT 1`, [ticket.id]);
+    const outboxAssign: Array<{ payload: Record<string, unknown> }> = await dataSource.query(`SELECT payload FROM outbox_events WHERE event_type='support.ticket.assigned' AND aggregate_id=$1 ORDER BY created_at DESC LIMIT 1`, [ticket.id]);
     expect(outboxAssign.length).toBe(1);
     testProvider.clear();
     const resultAssign = await dispatcher.dispatch({ eventType: 'support.ticket.assigned', eventKey: `support.ticket.assigned:${ticket.id}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticket.id, payload: outboxAssign[0]!.payload });
@@ -398,7 +392,6 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     const pushOptOut = await resolver.resolve('CUSTOMER', custId, 'PUSH');
     expect(pushOptOut.reason).toBe('PUSH_OPT_OUT');
     // Dispatcher should SKIPPED for Push
-    const payload = { customerId: custId, reference: 'REF-PUSH' };
     // Use a synthetic event that we force to Push? Our map currently only uses SMS, so we test resolver directly for Push SKIPPED path
     // For event that would map to Push if token existed, we can directly call dispatcher with intent via mapped event: we expect SMS only, so Push not generated by default
     // Verify catalogue documents Push dependency
@@ -472,7 +465,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(approveRes.body.status).toBe('APPROVED');
     // Now dispatch with failure
     testProvider.shouldFail = true;
-    const outbox: Array<{ payload: any; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' AND aggregate_id=$1`, [fid]);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' AND aggregate_id=$1`, [fid]);
     const failResult = await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fid}`, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
     expect(failResult.failed).toBe(1);
     // Funding still APPROVED
@@ -529,7 +522,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     } as unknown as Record<string, unknown>;
     const key = `customer.funding.approved:secret-${randomUUID()}`;
     await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload: payloadWithSecrets });
-    const deliveries: Array<{ payload: any; message: string }> = await dataSource.query(`SELECT payload, message FROM notification_deliveries WHERE event_key=$1`, [key]);
+    const deliveries: Array<{ payload: Record<string, unknown>; message: string }> = await dataSource.query(`SELECT payload, message FROM notification_deliveries WHERE event_key=$1`, [key]);
     const stored = JSON.stringify(deliveries[0]!.payload).toLowerCase();
     expect(stored).not.toContain('1234');
     expect(stored).not.toContain('[redacted]'); // unknown/secret keys are omitted, not copied
@@ -578,7 +571,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     expect(deliveries[0]!.message).toContain('NGN');
   });
 
-  it('16. catalogue covers financial and support events without marking financial outcomes mandatory', async () => {
+  it('16. catalogue covers financial and support events without marking financial outcomes mandatory', () => {
     const financialEvents = ['customer.funding.approved', 'customer.funding.rejected', 'transfer.completed'];
     const supportEvents = ['support.ticket.created', 'support.ticket.assigned', 'support.ticket.status_changed', 'support.ticket.resolved', 'support.ticket.closed', 'support.ticket.message_added'];
     for (const ev of financialEvents) {
@@ -670,7 +663,6 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
 
   it('21. NO FAKE DELIVERY — no invented provider credentials stored, console/test adapter only', async () => {
     // Check that no env var contains fake credentials
-    const hasFakeCred = Object.keys(process.env).some(k => k.includes('TWILIO') || k.includes('TERMII') || k.includes('AFRICA'));
     // In test env, should not have real credentials; we only use console/test
     expect(testProvider.name).toBe('test');
     // Verify delivery status distinguishes GENERATED vs DISPATCHED vs PROVIDER DELIVERY via providerRef
@@ -685,7 +677,7 @@ describe('V1-005 Notification Delivery Foundation (real PostgreSQL)', () => {
     // The notification consumer has a separate receipt and does not change shared outbox status.
   });
 
-  it('22. Event catalogue explicit mapping verified', async () => {
+  it('22. Event catalogue explicit mapping verified', () => {
     // Verify funding, transfer, support 5, cash-to-cash, agent lifecycle documented
     const catalogue = NOTIFICATION_EVENT_CATALOGUE;
     const hasFundingApproved = catalogue.some(c => c.eventType === 'customer.funding.approved' && !c.required);

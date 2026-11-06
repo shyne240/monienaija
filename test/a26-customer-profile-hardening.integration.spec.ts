@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-// @ts-nocheck
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
+import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
 
@@ -131,7 +132,7 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     expect(get.body.profile.displayName).toBe(newName);
     // DB verify
     const rows: Array<{ display_name: string }> = await dataSource.query(`SELECT display_name FROM customer_profiles WHERE customer_id=$1 AND is_active=true`, [customerId]);
-    expect(rows[0].display_name).toBe(newName);
+    expect(rows[0]!.display_name).toBe(newName);
   });
 
   // D. Immutable/security-sensitive fields cannot be modified through profile PATCH
@@ -153,8 +154,8 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     }
     // ensure DB unchanged for kyc/reference
     const after: Array<{ kyc_level: string; kyc_status: string; reference: string }> = await dataSource.query(`SELECT kyc_level, kyc_status, reference FROM customers WHERE id=$1`, [customerId]);
-    expect(after[0].kyc_level).toBe(before[0].kyc_level);
-    expect(after[0].reference).toBe(before[0].reference);
+    expect(after[0]!.kyc_level).toBe(before[0]!.kyc_level);
+    expect(after[0]!.reference).toBe(before[0]!.reference);
     // profile still old? patch with valid should succeed after
     const valid = await request(app.getHttpServer()).patch('/api/v1/customers/me/profile').set('Authorization', `Bearer ${token}`).send({ displayName: 'Still Valid' }).expect(200);
     expect(valid.body.profile.displayName).toBe('Still Valid');
@@ -240,9 +241,9 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     const newPass = 'new-plain-789012';
     await request(app.getHttpServer()).post('/api/v1/customers/me/password').set('Authorization', `Bearer ${token}`).send({ currentPassword: password, newPassword: newPass }).expect(200);
     const rows: Array<{ password_hash: string }> = await dataSource.query(`SELECT password_hash FROM customer_authentication_credentials WHERE customer_id=$1`, [customerId]);
-    expect(rows[0].password_hash).not.toContain(password);
-    expect(rows[0].password_hash).not.toContain(newPass);
-    expect(rows[0].password_hash).toMatch(/^PBKDF2\$/);
+    expect(rows[0]!.password_hash).not.toContain(password);
+    expect(rows[0]!.password_hash).not.toContain(newPass);
+    expect(rows[0]!.password_hash).toMatch(/^PBKDF2\$/);
     // audit should not contain plaintext
     const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(`SELECT new_values, previous_values FROM audit_events WHERE entity_type='CUSTOMER_AUTHENTICATION_CREDENTIAL' ORDER BY created_at DESC LIMIT 2`);
     for (const a of audits) {
@@ -331,7 +332,7 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     await ls.postJournal({ idempotencyKey: `fundO-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [{ accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '80000' }, { accountId: wa.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '80000' }] });
     const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-a26o-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '7000', currency: 'NGN', pin: '1234' }).expect(201);
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).expect(200);
-    const found = hist.body.items.find((x: any)=> x.id === tr.body.id);
+    const found = (hist.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture)=> x.id === tr.body.id)!;
     expect(found).toBeDefined();
     expect(found.direction).toBe('SENT');
     const detail = await request(app.getHttpServer()).get(`/api/v1/customers/me/transfers/${tr.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
@@ -375,7 +376,7 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     await ls.postJournal({ idempotencyKey: `fundR-${randomUUID()}`, currency: 'NGN', accountingUnit: 'CUSTOMER_FUNDS', reference: `ref-${randomUUID()}`, lines: [{ accountId: plat.id, direction: 'DEBIT' as any, amountMinor: '100000' }, { accountId: wa.ledgerAccountId, direction: 'CREDIT' as any, amountMinor: '100000' }] });
     const beforeBal = await ws.getWalletBalance(wa.id);
     const beforeJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const beforeCount = Number(beforeJournals[0].count);
+    const beforeCount = Number(beforeJournals[0]!.count);
     // profile patch + password change
     await request(app.getHttpServer()).patch('/api/v1/customers/me/profile').set('Authorization', `Bearer ${token}`).send({ displayName: 'R New' }).expect(200);
     await request(app.getHttpServer()).post('/api/v1/customers/me/password').set('Authorization', `Bearer ${token}`).send({ currentPassword: 'r-pass-123', newPassword: 'r-newpass-12345' }).expect(200);
@@ -383,10 +384,10 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     const afterBal = await ws.getWalletBalance(wa.id);
     expect(afterBal.balanceMinor).toBe(beforeBal.balanceMinor);
     const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    expect(Number(afterJournals[0].count)).toBe(beforeCount);
+    expect(Number(afterJournals[0]!.count)).toBe(beforeCount);
     // also ensure no new transfers
     const transfers: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM transfers WHERE source_wallet_id=$1 OR destination_wallet_id=$1`, [wa.id]);
-    expect(Number(transfers[0].count)).toBe(0);
+    expect(Number(transfers[0]!.count)).toBe(0);
   });
 
   // Extra: V1 boundary
@@ -401,6 +402,6 @@ describe('A26 Customer Profile & Settings Hardening (real PostgreSQL)', () => {
     expect(ctrl).toContain('patchProfile');
     expect(ctrl).toContain('changePassword');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBeGreaterThanOrEqual(67);
+    expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
   });
 });

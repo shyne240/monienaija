@@ -173,7 +173,9 @@ describe('CustomerService', () => {
       [CustomerKycAssessment, kycRepository as unknown as MemoryRepository<ObjectLiteral>],
     ]);
     const manager = new MemoryManager(repositories);
-    const audit = { record: jest.fn().mockResolvedValue({}) };
+    const record = jest.fn() as jest.MockedFunction<AuditService['record']>;
+    record.mockResolvedValue({} as Awaited<ReturnType<AuditService['record']>>);
+    const audit = { record };
     const service = new CustomerService(
       customerRepository as unknown as Repository<Customer>,
       profileRepository as unknown as Repository<CustomerProfile>,
@@ -282,7 +284,7 @@ describe('CustomerService', () => {
   it('persists profile, address, contact and identity corrections with minimal audit metadata', async () => {
     const { service, audit } = fixture();
     const customer = await createCustomer(service);
-    const profile = await service.createProfile(customer.id, {
+    await service.createProfile(customer.id, {
       displayName: 'Synthetic Old Name',
       firstName: 'Synthetic',
       lastName: 'Person',

@@ -3,7 +3,7 @@ import { UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
@@ -15,7 +15,7 @@ import { AgentClassService } from '../src/agent/agent-class.service';
 import { AgentApplicationService } from '../src/agent/agent-application.service';
 import { AgentLifecycleService } from '../src/agent/agent-lifecycle.service';
 import { AggregatorService } from '../src/aggregator/aggregator.service';
-import { CustomerService } from '../src/customer/customer.service';
+
 import { AUTHORIZATION_ROLE_FUNCTION_SEED } from '../src/authorization-catalogue/authorization-catalogue.seed';
 
 describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
@@ -65,7 +65,7 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
     'transaction.view',
   ];
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const [identity, roleRaw] = token.replace('workforce-', '').split('|');
       const type = identity!.toUpperCase();
@@ -95,8 +95,8 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
         // legacy role-less token keeps its prior PASSWORD assurance so non-governance
         // assertions are unchanged. The application control itself is not relaxed.
         assuranceLevel: roleKey ? 'MFA' : 'PASSWORD',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -167,19 +167,7 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
   }
 
   // Helper to get agent/customer bearer via real login (for negative tests)
-  async function getAgentToken(agentId: string): Promise<string> {
-    // create credential if not exists
-    const exists: Array<any> = await dataSource.query(`SELECT id FROM agent_authentication_credentials WHERE agent_id=$1`, [agentId]);
-    if (exists.length === 0) {
-      const hash = 'PBKDF2$sha256$10000$YTIyLXRlc3Qtc2FsdA$testhash';
-      // Use real service to create proper hash? For this test we can directly test via service not HTTP for agent
-      // Instead, we will use a fake agent token via workforce mock with type AGENT to simulate agent principal
-      return workforceToken('AGENT');
-    }
-    // Try login via HTTP
-    const res = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'test' });
-    return res.body.accessToken as string;
-  }
+
 
   it('1. Unauthenticated reject (no token) for admin reads', async () => {
     await request(app.getHttpServer()).get('/api/v1/internal/agents').expect(401);
@@ -217,7 +205,7 @@ describe('A22 Admin Backend Foundation (real PostgreSQL + real HTTP)', () => {
 
   it('4. Workforce SUPPORT/OPERATOR/SERVICE/PRIVILEGED can access admin list', async () => {
     // Ensure at least one agent and customer and aggregator exist
-    const agentId = await createActiveAgent();
+    await createActiveAgent();
     await createCustomer();
     await aggregatorService.create({ reference: `agg-a22-${randomUUID().slice(0, 8)}`, code: `AGG-${randomUUID().slice(0, 6)}`, corporateName: 'Agg A22', actor: 'test-actor' });
 

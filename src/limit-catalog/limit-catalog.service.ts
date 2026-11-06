@@ -76,7 +76,9 @@ export class LimitCatalogService {
             newValues: this.profileValues(saved),
           } as never);
         });
-      } catch {}
+      } catch {
+        // Audit recording is best-effort on this existing path.
+      }
     }
     return this.toProfileSafe(saved);
   }
@@ -143,7 +145,9 @@ export class LimitCatalogService {
             newValues: this.profileValues(saved),
           } as never);
         });
-      } catch {}
+      } catch {
+        // Audit recording is best-effort on this existing path.
+      }
     }
     return this.toProfileSafe(saved);
   }

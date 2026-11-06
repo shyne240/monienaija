@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
-// @ts-nocheck
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { AgentService } from '../src/agent/agent-service.enum';
@@ -185,13 +185,13 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       [customerId],
     );
     if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
+      enrollmentId = enrollRows[0].id;
       const methodRows: Array<{ id: string }> = await dataSource.query(
         `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
         [enrollmentId, customerId],
       );
       if (methodRows[0]) {
-        methodId = methodRows[0]!.id;
+        methodId = methodRows[0].id;
       } else {
         const mRows: Array<{ id: string }> = await dataSource.query(
           `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,

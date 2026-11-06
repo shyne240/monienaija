@@ -64,7 +64,7 @@ export interface AgentUnifiedHistoryItem {
   reference: string | null;
   narration: string | null;
   feeMinor: string;
-  counterparty: any | null;
+  counterparty: Record<string, unknown> | null;
   commission: AgentHistoryCommission | null;
   failureCode: string | null;
   failureMessage: string | null;
@@ -274,13 +274,21 @@ export class AgentTransactionHistoryService {
 
     // ————— batch commission evidence for the page (no N+1; query-boundary filtered by agent) —————
     const journalIds = paginated.map((r) => r.id).filter(Boolean);
-    const snapshotByJournal = new Map<string, any>();
+    const snapshotByJournal = new Map<string, {
+      journal_id: string;
+      commission_decision: {
+        status: string;
+        allocations?: Array<{ beneficiaryId?: string; amountMinor?: string | number | bigint | null } | null>;
+        payable?: boolean;
+        posting?: { treatment?: string } | null;
+      } | null;
+    }>();
     if (journalIds.length > 0) {
       // Linkage is by journal_id ALONE: every page item's journal was selected from THIS agent's
       // own wallet/agent_id rows above, so the journal set is already agent-isolated. The snapshot
       // principal is the transaction's subject (CUSTOMER for W2C/CTW, AGENT for C2C/funding) and
       // must not be used as a filter.
-      const snaps: Array<any> = await this.dataSource.query(
+      const snaps: Array<NonNullable<ReturnType<typeof snapshotByJournal.get>>> = await this.dataSource.query(
         `SELECT journal_id::text AS journal_id, commission_decision
          FROM commercial_decision_snapshots
          WHERE journal_id IS NOT NULL AND journal_id = ANY($1::uuid[])`,
@@ -293,7 +301,7 @@ export class AgentTransactionHistoryService {
 
     const items: AgentUnifiedHistoryItem[] = paginated.map((r) => {
       let direction = 'UNKNOWN';
-      let counterparty: any = null;
+      let counterparty: Record<string, unknown> | null = null;
       let completedAt: Date | null = r.completed_at ? new Date(r.completed_at) : null;
 
       if (r.type === 'CASH_IN') {
@@ -331,12 +339,12 @@ export class AgentTransactionHistoryService {
       let commission: AgentHistoryCommission | null = null;
       const snap = snapshotByJournal.get(r.id);
       if (snap && snap.commission_decision && snap.commission_decision.status === 'ALLOCATED') {
-        const allocations = Array.isArray(snap.commission_decision.allocations)
+        const allocations: Array<{ beneficiaryId?: string; amountMinor?: string | number | bigint | null } | null> = Array.isArray(snap.commission_decision.allocations)
           ? snap.commission_decision.allocations
           : [];
         const own = allocations
-          .filter((a: any) => a && a.beneficiaryId === agentId)
-          .reduce((sum: bigint, a: any) => {
+          .filter((a): a is NonNullable<typeof a> => !!a && a.beneficiaryId === agentId)
+          .reduce((sum: bigint, a) => {
             try {
               return sum + BigInt(String(a.amountMinor ?? '0'));
             } catch {
@@ -359,14 +367,14 @@ export class AgentTransactionHistoryService {
         id: String(r.id),
         type: String(r.type),
         status: String(r.status),
-        amountMinor: r.amount_minor?.toString() ?? '0',
+        amountMinor: (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
         completedAt,
         reference: r.reference ?? null,
         narration: r.narration ?? null,
-        feeMinor: r.fee_minor?.toString() ?? '0',
+        feeMinor: (r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         counterparty,
         commission,
         failureCode: null,

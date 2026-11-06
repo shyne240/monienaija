@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
@@ -40,7 +40,6 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -75,7 +74,7 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
 
   const mockWorkforceSessions = {
     // Synthetic: Bearer workforce-OPERATOR etc -> valid workforce principal of that type
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
@@ -91,8 +90,8 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -154,10 +153,10 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
       name: `Test Class ${randomUUID().slice(0,6)}`,
       description: 'v1-003 test class',
       isActive: true,
-      requirements: { requiredInformation: ['businessName','contactEmail'] } as any,
-      requiredDocumentCategories: ['IDENTITY'] as any,
-      applicableServices: ['CASH_IN','CASH_OUT','CASH_TO_CASH','AGENT_FUNDING'] as any,
-      applicableLimits: {} as any,
+      requirements: { requiredInformation: ['businessName','contactEmail'] },
+      requiredDocumentCategories: ['IDENTITY'],
+      applicableServices: ['CASH_IN','CASH_OUT','CASH_TO_CASH','AGENT_FUNDING'],
+      applicableLimits: {},
       actor: 'test-admin',
     });
     const appEntity = await appService.create({
@@ -275,7 +274,7 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
     await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'audit test' }).expect(200);
-    const rows: Array<{ action: string; actor: string; new_values: any }> = await dataSource.query(`SELECT action, actor, new_values FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1 ORDER BY occurred_at`, [agentId]);
+    const rows: Array<{ action: string; actor: string; new_values: Record<string, unknown> | string }> = await dataSource.query(`SELECT action, actor, new_values FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1 ORDER BY occurred_at`, [agentId]);
     const actions = rows.map(r => r.action);
     expect(actions).toContain('SUSPENDED');
     const last = rows[rows.length-1]!;
@@ -346,13 +345,13 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
   it('14. no wallet balance mutation', async () => {
     const agentId = await createActiveAgentViaService();
     // Fund agent via AgentFundingService directly to have balance? Use funding endpoint via privileged
-    const fundToken = workforceToken('PRIVILEGED');
+    workforceToken('PRIVILEGED');
     // Create wallet for agent if not exists: ensure via AgentFinancialExecution - we can directly insert ledger account and check balance
     // For V1-003 we just verify that suspend does not change any ledger_accounts balance
     // Use ledger getAccountBalance via query
-    const beforeWallets: Array<{ id: string; balance?: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code LIKE 'AGENT%' LIMIT 1`);
+    await dataSource.query(`SELECT id FROM ledger_accounts WHERE code LIKE 'AGENT%' LIMIT 1`);
     // Instead, check all wallet balances sum unchanged
-    const beforeSum: Array<{ sum: string }> = await dataSource.query(`SELECT COALESCE(SUM(balance),0)::text as sum FROM (SELECT 0 as balance) t`); // dummy to avoid error if no ledger
+    await dataSource.query(`SELECT COALESCE(SUM(balance),0)::text as sum FROM (SELECT 0 as balance) t`); // dummy to avoid error if no ledger
     const token = workforceToken('OPERATOR');
     await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
     const afterSum: Array<{ sum: string }> = await dataSource.query(`SELECT count(*)::text as sum FROM ledger_journals`); // reuse journal count as proxy for no financial mutation
@@ -361,10 +360,10 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
   });
 
   it('15. Agent financial position unchanged by lifecycle operation', async () => {
-    const agentId = await createActiveAgentViaService();
+    await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
     // Get financial position before via AGENT SELF token
-    const { token: agentToken } = await createAgentAndToken(AgentStatus.ACTIVE);
+    await createAgentAndToken(AgentStatus.ACTIVE);
     // But agentId from createActiveAgentViaService is different from the agent created for token; create a fresh active agent for this test via direct insert
     const freshId = await createAgentDirect(AgentStatus.ACTIVE);
     const pwd = 'PosTest!';
@@ -382,7 +381,7 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
       expect(afterSuspend.body).toBeDefined();
       // Balance should be same as before (no mutation)
       // Compare stringified without secrets
-      const b = JSON.stringify(before.body); const a = JSON.stringify(afterSuspend.body);
+      const b = JSON.stringify(before.body); JSON.stringify(afterSuspend.body);
       // If suspension doesn't affect position read, they should be equal; if it blocks, we accept blocked
       expect(b.length).toBeGreaterThan(0);
     } else {
@@ -429,7 +428,7 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     const approveRes = await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${requestId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
     expect(approveRes.body.status).toBe('APPROVED');
     // Verify ledger journal created
-    const journals: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_journals WHERE reference LIKE $1`, [`%${requestId.slice(0,8)}%`]);
+    await dataSource.query(`SELECT id FROM ledger_journals WHERE reference LIKE $1`, [`%${requestId.slice(0,8)}%`]);
     // At least one journal should exist (funding creates journal)
     const allJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
     expect(Number(allJournals[0]!.count)).toBeGreaterThan(0);

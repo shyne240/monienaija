@@ -27,7 +27,7 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
   let authzService: AgentTransactionAuthorizationService;
-  let capabilityService: AgentServiceCapabilityService;
+
   let classService: AgentClassService;
   let appService: AgentApplicationService;
   let lifecycleService: AgentLifecycleService;
@@ -45,7 +45,7 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     authzService = moduleRef.get(AgentTransactionAuthorizationService);
-    capabilityService = moduleRef.get(AgentServiceCapabilityService);
+    moduleRef.get(AgentServiceCapabilityService);
     classService = moduleRef.get(AgentClassService);
     appService = moduleRef.get(AgentApplicationService);
     lifecycleService = moduleRef.get(AgentLifecycleService);

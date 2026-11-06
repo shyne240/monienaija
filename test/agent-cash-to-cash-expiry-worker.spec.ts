@@ -3,16 +3,17 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentCashToCashExpiryWorker } from '../src/agent/agent-cash-to-cash-expiry-worker.service';
-import { AgentCashToCashExpiryService, CashToCashExpiryResult } from '../src/agent/agent-cash-to-cash-expiry.service';
+import type { AgentCashToCashExpiryService, CashToCashExpiryResult } from '../src/agent/agent-cash-to-cash-expiry.service';
 import { validateEnvironment } from '../src/config/environment';
 
 const completed = (): CashToCashExpiryResult => ({ expiredCount: 0, expiredIds: [], executedAt: new Date() });
 
 describe('Cash-to-Cash expiry execution lifecycle', () => {
+  let errorSpy: jest.SpyInstance;
   beforeEach(() => {
     jest.useFakeTimers();
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
 
@@ -42,8 +43,8 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
     await jest.advanceTimersByTimeAsync(1000);
     expect(expireDueTransfers).toHaveBeenCalledTimes(2);
     expect(expireDueTransfers).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 100, statementTimeoutMs: 10000, actor: 'system-c2c-expiry-worker' }));
-    expect(Logger.prototype.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'c2c_expiry_tick_failed' }));
-    expect(JSON.stringify((Logger.prototype.error as jest.Mock).mock.calls)).not.toContain('sensitive driver parameters');
+    expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: 'c2c_expiry_tick_failed' }));
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('sensitive driver parameters');
     await worker.onModuleDestroy();
     await jest.advanceTimersByTimeAsync(5000);
     expect(expireDueTransfers).toHaveBeenCalledTimes(2);

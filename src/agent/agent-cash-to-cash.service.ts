@@ -386,8 +386,8 @@ export class AgentCashToCashService {
               });
             } catch (error) {
               if (error instanceof HttpException) {
-                const resp: any = error.getResponse();
-                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                const resp = error.getResponse() as { error?: string; code?: string; message?: string };
+                const code = resp && (resp.error || resp.code);
                 if (code && String(code).startsWith('LIMIT_')) throw error;
               }
               throw error;
@@ -435,7 +435,9 @@ export class AgentCashToCashService {
             if (limitIdempotencyKey && this.limitEnforcementService) {
               try {
                 await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
-              } catch {}
+              } catch {
+                // Preserve the existing best-effort reservation handling.
+              }
             }
             throw error;
           }

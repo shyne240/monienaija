@@ -10,7 +10,7 @@ import { UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
@@ -66,7 +66,7 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     'customer.close',
   ];
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-'))
         throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
@@ -84,8 +84,8 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
         assuranceLevel: 'MFA',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   const OP = { Authorization: 'Bearer workforce-OPERATOR' };
@@ -174,7 +174,7 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     const { temporaryPassword, credentialId, rotationRequired, passwordExpiresAt } = res.body;
     expect(temporaryPassword).toMatch(/^[A-Za-z0-9_-]{16}$/); // CSPRNG base64url, 16 chars
     expect(rotationRequired).toBe(true);
-    expect(new Date(passwordExpiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(passwordExpiresAt as string).getTime()).toBeGreaterThan(Date.now());
     const rows = await dataSource.query(
       `SELECT status, rotation_required, password_version, password_expires_at, password_hash FROM agent_authentication_credentials WHERE id=$1`,
       [credentialId],
@@ -395,10 +395,10 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     expect(login.body.rotationRequired).toBe(true);
     expect(login.body.accessToken).toBeUndefined();
     // audit trail carries REISSUED + REVOKED without secret material
-    const audit = await dataSource.query(
+    const audit: Array<{ action: string }> = await dataSource.query(
       `SELECT action FROM audit_events WHERE entity_type='AGENT_AUTHENTICATION_CREDENTIAL' ORDER BY created_at`,
     );
-    const actions = audit.map((a: any) => a.action);
+    const actions = audit.map((a) => a.action);
     expect(actions).toContain('CREDENTIALS_ISSUED');
     expect(actions).toContain('PASSWORD_ROTATED');
     expect(actions).toContain('REVOKED');

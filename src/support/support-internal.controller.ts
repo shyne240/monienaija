@@ -14,6 +14,7 @@ import {
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { SupportService } from './support.service';
+import { SupportTicketStatus } from './support.enums';
 import { AssignSupportTicketDto } from './dto/assign-support-ticket.dto';
 import { UpdateSupportTicketStatusDto } from './dto/update-support-ticket-status.dto';
 import { CreateSupportTicketMessageDto } from './dto/create-support-ticket-message.dto';
@@ -83,7 +84,7 @@ export class SupportInternalController {
     await this.requireFunction(req, 'customer.manage_support_case');
     return this.supportService.updateStatus({
       ticketId: id,
-      status: dto.status as any,
+      status: dto.status,
       principal,
       version: dto.version,
     });
@@ -99,7 +100,7 @@ export class SupportInternalController {
     await this.requireFunction(req, 'customer.manage_support_case');
     return this.supportService.updateStatus({
       ticketId: id,
-      status: 'RESOLVED' as any,
+      status: SupportTicketStatus.RESOLVED,
       principal,
       version: dto?.version,
     });
@@ -115,7 +116,7 @@ export class SupportInternalController {
     await this.requireFunction(req, 'customer.manage_support_case');
     return this.supportService.updateStatus({
       ticketId: id,
-      status: 'CLOSED' as any,
+      status: SupportTicketStatus.CLOSED,
       principal,
       version: dto?.version,
     });

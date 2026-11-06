@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * P0-A — dedicated real-PostgreSQL, real-HTTP proof suite for commercial-rule maker-checker
  * governance (Decision 2): FINANCE_PREPARER initiates a governed commercial change (fee /
@@ -21,7 +21,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';

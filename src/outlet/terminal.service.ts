@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -67,7 +66,7 @@ export class TerminalService {
       if (type === 'AGENT') throw new ForbiddenException('Agent principal cannot manage terminals');
       if (type === 'AGGREGATOR') {
         if (!aggregatorId) throw new BadRequestException('aggregatorId is required for Aggregator principal');
-        if ((principal as any).aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
+        if (principal.aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
       }
     }
 
@@ -82,7 +81,7 @@ export class TerminalService {
     const outlet = outletRows[0];
     if (!outlet || outlet.deleted_at !== null) throw new NotFoundException(`Outlet ${outletId} not found`);
     if (outlet.agent_id !== agentId) throw new BadRequestException(`Outlet ${outletId} does not belong to Agent ${agentId}`);
-    if (outlet.status !== OutletStatus.ACTIVE) throw new ConflictException(`Outlet ${outletId} is ${outlet.status} and cannot host terminal`);
+    if (outlet.status !== (OutletStatus.ACTIVE as string)) throw new ConflictException(`Outlet ${outletId} is ${outlet.status} and cannot host terminal`);
 
     if (aggregatorId) {
       await this.assertAggregatorRelationship(aggregatorId, agentId);
@@ -122,7 +121,7 @@ export class TerminalService {
           newValues: this.toValues(saved),
         });
         return saved;
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (this.isUniqueViolation(e)) throw new ConflictException('Terminal reference or code already exists');
         throw e;
       }
@@ -131,8 +130,8 @@ export class TerminalService {
 
   async getById(id: string): Promise<AgentTerminal> {
     this.assertUuid(id, 'id');
-    const terminal = await this.dataSource.getRepository(AgentTerminal).findOne({ where: { id } as any });
-    if (!terminal || (terminal as any).deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
+    const terminal = await this.dataSource.getRepository(AgentTerminal).findOne({ where: { id } });
+    if (!terminal || terminal.deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
     return terminal;
   }
 
@@ -140,14 +139,14 @@ export class TerminalService {
     this.assertUuid(agentId, 'agentId');
     const agentRows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agents WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [agentId]);
     if (agentRows.length === 0) throw new NotFoundException(`Agent ${agentId} not found`);
-    return this.dataSource.getRepository(AgentTerminal).find({ where: { agentId } as any, order: { createdAt: 'ASC' } as any });
+    return this.dataSource.getRepository(AgentTerminal).find({ where: { agentId }, order: { createdAt: 'ASC' } });
   }
 
   async listByOutlet(outletId: string): Promise<AgentTerminal[]> {
     this.assertUuid(outletId, 'outletId');
     const outletRows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agent_outlets WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [outletId]);
     if (outletRows.length === 0) throw new NotFoundException(`Outlet ${outletId} not found`);
-    return this.dataSource.getRepository(AgentTerminal).find({ where: { outletId } as any, order: { createdAt: 'ASC' } as any });
+    return this.dataSource.getRepository(AgentTerminal).find({ where: { outletId }, order: { createdAt: 'ASC' } });
   }
 
   async updateMetadata(id: string, input: {
@@ -194,7 +193,7 @@ export class TerminalService {
     // Also ensure outlet still ACTIVE for reactivation
     const outletRows: Array<{ id: string; status: string }> = await this.dataSource.query(`SELECT id, status FROM agent_outlets WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [terminal.outletId]);
     const outlet = outletRows[0];
-    if (!outlet || outlet.status !== OutletStatus.ACTIVE) throw new ConflictException(`Outlet ${terminal.outletId} is ${outlet?.status ?? 'not found'} and cannot host active terminal`);
+    if (!outlet || outlet.status !== (OutletStatus.ACTIVE as string)) throw new ConflictException(`Outlet ${terminal.outletId} is ${outlet?.status ?? 'not found'} and cannot host active terminal`);
     return this.transition(id, TerminalStatus.ACTIVE, actor, 'AGENT_TERMINAL_REACTIVATED');
   }
 
@@ -210,7 +209,7 @@ export class TerminalService {
       const repo = manager.getRepository(AgentTerminal);
       const terminal = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!terminal || terminal.deletedAt !== null) throw new NotFoundException(`Terminal ${id} not found`);
-      const allowed = ALLOWED_TERMINAL_TRANSITIONS[terminal.status as TerminalStatus] ?? [];
+      const allowed = ALLOWED_TERMINAL_TRANSITIONS[terminal.status] ?? [];
       if (!allowed.includes(target)) throw new ConflictException(`Transition ${terminal.status} → ${target} is not allowed`);
       if (terminal.status === TerminalStatus.TERMINATED) throw new ConflictException('TERMINATED terminals cannot be transitioned');
       const previous = this.toValues(terminal);
@@ -236,7 +235,7 @@ export class TerminalService {
     );
     const agent = rows[0];
     if (!agent || agent.deleted_at !== null) throw new NotFoundException(`Agent ${agentId} not found`);
-    if (agent.status !== AgentStatus.ACTIVE) throw new ConflictException(`Agent ${agentId} is ${agent.status} and cannot ${operation} terminal`);
+    if (agent.status !== (AgentStatus.ACTIVE as string)) throw new ConflictException(`Agent ${agentId} is ${agent.status} and cannot ${operation} terminal`);
   }
 
   private async assertAggregatorRelationship(aggregatorId: string, agentId: string): Promise<void> {
@@ -246,7 +245,7 @@ export class TerminalService {
     );
     const agg = aggRows[0];
     if (!agg || agg.deleted_at !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
-    if (agg.status !== AggregatorStatus.ACTIVE) throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
+    if (agg.status !== (AggregatorStatus.ACTIVE as string)) throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
     const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
       `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
       [aggregatorId, agentId],
@@ -296,7 +295,8 @@ export class TerminalService {
     return value;
   }
 
-  private isUniqueViolation(e: any): boolean {
+  private isUniqueViolation(error: unknown): boolean {
+    const e = error as { message?: string; code?: string } | null | undefined;
     const msg = String(e?.message ?? '').toLowerCase();
     const code = String(e?.code ?? '');
     return code === '23505' || msg.includes('duplicate') || msg.includes('uq_agent_terminals');

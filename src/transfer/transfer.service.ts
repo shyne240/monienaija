@@ -475,15 +475,15 @@ export class TransferService {
         });
       } catch (error) {
         if (error instanceof HttpException) {
-          const resp: any = error.getResponse();
-          const rawCode = (resp && (resp.error || resp.code)) as string | undefined;
+          const resp = error.getResponse() as { error?: string; code?: string; message?: string };
+          const rawCode = resp && (resp.error || resp.code);
           // V1-LIMIT-05: type-safe mapping of the stable LIMIT_* union onto TransferFailureCode
           const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
           if (limitCode) {
             return this.markFailed(manager, transfer, {
               code: limitCode,
               statusCode: error.getStatus(),
-              message: (resp.message as string) ?? String(limitCode),
+              message: resp.message ?? String(limitCode),
             }, notificationRecipients);
           }
         }

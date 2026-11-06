@@ -19,8 +19,42 @@ import {
   SupportTicketPriority,
   SupportTicketStatus,
 } from './support.enums';
-import { SupportTicket } from './support-ticket.entity';
-import { SupportTicketMessage } from './support-ticket-message.entity';
+import type { SupportTicket } from './support-ticket.entity';
+import type { SupportTicketMessage } from './support-ticket-message.entity';
+
+// Raw SQL returns snake_case columns, not the entity property names.
+interface SupportTicketRow {
+  id: SupportTicket['id'];
+  reference: SupportTicket['reference'];
+  customer_id: SupportTicket['customerId'];
+  agent_id: SupportTicket['agentId'];
+  created_by_type: SupportTicket['createdByType'];
+  created_by_id: SupportTicket['createdById'];
+  subject: SupportTicket['subject'];
+  category: SupportTicket['category'];
+  description: SupportTicket['description'];
+  status: SupportTicket['status'];
+  priority: SupportTicket['priority'];
+  assigned_to: SupportTicket['assignedTo'];
+  funding_request_id: SupportTicket['fundingRequestId'];
+  related_transfer_id: SupportTicket['relatedTransferId'];
+  created_at: SupportTicket['createdAt'];
+  updated_at: SupportTicket['updatedAt'];
+  resolved_at: SupportTicket['resolvedAt'];
+  closed_at: SupportTicket['closedAt'];
+  version: SupportTicket['version'];
+}
+
+interface SupportTicketMessageRow {
+  id: SupportTicketMessage['id'];
+  ticket_id: SupportTicketMessage['ticketId'];
+  author_type: SupportTicketMessage['authorType'];
+  author_id: SupportTicketMessage['authorId'];
+  body: SupportTicketMessage['body'];
+  is_internal: SupportTicketMessage['isInternal'];
+  created_at: SupportTicketMessage['createdAt'];
+  updated_at: SupportTicketMessage['updatedAt'];
+}
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -153,8 +187,8 @@ export class SupportService {
     // For workforce, allow explicit target if provided, else no owner.
     let customerId: string | null = null;
     let agentId: string | null = null;
-    let createdByType = principal.type;
-    let createdById = principal.principalId;
+    const createdByType = principal.type;
+    const createdById = principal.principalId;
 
     if (principal.type === 'CUSTOMER') {
       if (!principal.customerId) throw new ForbiddenException('Customer principal missing customerId');
@@ -236,10 +270,10 @@ export class SupportService {
               retentionSeconds: 86400,
             });
             if (reservation.kind === 'REPLAY') {
-              const body = reservation.record.responseBody as Record<string, unknown> | null;
+              const body = reservation.record.responseBody;
               const resourceId = reservation.record.resourceId;
-              if (resourceId && body && (body as any).id) {
-                const rows: Array<any> = await manager.query(
+              if (resourceId && body && body.id) {
+                const rows: Array<SupportTicketRow> = await manager.query(
                   `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
                   [resourceId],
                 );
@@ -248,14 +282,14 @@ export class SupportService {
                 return body as unknown as SupportTicketView;
               }
               if (resourceId) {
-                const rows: Array<any> = await manager.query(
+                const rows: Array<SupportTicketRow> = await manager.query(
                   `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
                   [resourceId],
                 );
                 if (rows[0]) return this.toView(rows[0]);
               }
               // No resource yet but replay requested — return stored body if exists
-              if (body && (body as any).id) return body as unknown as SupportTicketView;
+              if (body && body.id) return body as unknown as SupportTicketView;
               throw new ConflictException('The idempotent request is already in progress');
             }
 
@@ -317,11 +351,11 @@ export class SupportService {
               },
             });
 
-            const rows: Array<any> = await manager.query(
+            const rows: Array<SupportTicketRow> = await manager.query(
               `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
               [id],
             );
-            const view = this.toView(rows[0]);
+            const view = this.toView(rows[0]!);
             await this.idempotencyService.complete(manager, reservation.record.id, {
               statusCode: 201,
               responseBody: view as unknown as Record<string, unknown>,
@@ -400,11 +434,11 @@ export class SupportService {
             },
           });
 
-          const rows: Array<any> = await manager.query(
+          const rows: Array<SupportTicketRow> = await manager.query(
             `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
             [id],
           );
-          return this.toView(rows[0]);
+          return this.toView(rows[0]!);
         });
         return view;
       } catch (error) {
@@ -428,7 +462,7 @@ export class SupportService {
     const normalizedPage = this.normalizePage(page);
     const normalizedLimit = this.normalizeLimit(limit);
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE customer_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
       [cid, normalizedLimit, offset],
     );
@@ -459,7 +493,7 @@ export class SupportService {
     const normalizedPage = this.normalizePage(page);
     const normalizedLimit = this.normalizeLimit(limit);
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE agent_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
       [aid, normalizedLimit, offset],
     );
@@ -512,7 +546,7 @@ export class SupportService {
       params.push(filters.assignedTo);
     }
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets ${whereClause} ORDER BY created_at DESC, id DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, normalizedLimit, offset],
     );
@@ -541,12 +575,12 @@ export class SupportService {
   async getForCustomer(ticketId: string, customerId: string): Promise<SupportTicketSafeView> {
     const tid = this.assertUuid(ticketId, 'ticketId');
     const cid = this.assertUuid(customerId, 'customerId');
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
       [tid],
     );
     if (rows.length === 0) throw new NotFoundException('Support ticket not found');
-    const ticket = rows[0];
+    const ticket = rows[0]!;
     if (ticket.customer_id !== cid) throw new NotFoundException('Support ticket not found');
     return this.toSafeView(ticket);
   }
@@ -554,24 +588,24 @@ export class SupportService {
   async getForAgent(ticketId: string, agentId: string): Promise<SupportTicketSafeView> {
     const tid = this.assertUuid(ticketId, 'ticketId');
     const aid = this.assertUuid(agentId, 'agentId');
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
       [tid],
     );
     if (rows.length === 0) throw new NotFoundException('Support ticket not found');
-    const ticket = rows[0];
+    const ticket = rows[0]!;
     if (ticket.agent_id !== aid) throw new NotFoundException('Support ticket not found');
     return this.toSafeView(ticket);
   }
 
   async getForInternal(ticketId: string): Promise<SupportTicketView> {
     const tid = this.assertUuid(ticketId, 'ticketId');
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
       [tid],
     );
     if (rows.length === 0) throw new NotFoundException('Support ticket not found');
-    return this.toView(rows[0]);
+    return this.toView(rows[0]!);
   }
 
   // ──────────────────────────────────────────────
@@ -588,13 +622,13 @@ export class SupportService {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const view = await this.dataSource.transaction(async (manager) => {
-          const rows: Array<any> = await manager.query(
+          const rows: Array<SupportTicketRow> = await manager.query(
             `SELECT * FROM support_tickets WHERE id=$1 FOR UPDATE`,
             [ticketId],
           );
           if (rows.length === 0) throw new NotFoundException('Support ticket not found');
-          const ticket = rows[0];
-          const currentStatus: string = ticket.status;
+          const ticket = rows[0]!;
+          const currentStatus: SupportTicketStatus = ticket.status;
           if (currentStatus === SupportTicketStatus.CLOSED || currentStatus === SupportTicketStatus.RESOLVED) {
             throw new ConflictException(`Cannot assign ticket in ${currentStatus} status`);
           }
@@ -652,11 +686,11 @@ export class SupportService {
             });
           }
 
-          const updated: Array<any> = await manager.query(
+          const updated: Array<SupportTicketRow> = await manager.query(
             `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
             [ticketId],
           );
-          return this.toView(updated[0]);
+          return this.toView(updated[0]!);
         });
         return view;
       } catch (error) {
@@ -681,12 +715,12 @@ export class SupportService {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const view = await this.dataSource.transaction(async (manager) => {
-          const rows: Array<any> = await manager.query(
+          const rows: Array<SupportTicketRow> = await manager.query(
             `SELECT * FROM support_tickets WHERE id=$1 FOR UPDATE`,
             [ticketId],
           );
           if (rows.length === 0) throw new NotFoundException('Support ticket not found');
-          const ticket = rows[0];
+          const ticket = rows[0]!;
           const currentStatus: SupportTicketStatus = ticket.status;
           if (expectedVersion !== undefined && ticket.version !== expectedVersion) {
             throw new ConflictException('Support ticket version is stale');
@@ -738,11 +772,11 @@ export class SupportService {
             payload: { ticketId, from: currentStatus, to: newStatus, actor },
           });
 
-          const updated: Array<any> = await manager.query(
+          const updated: Array<SupportTicketRow> = await manager.query(
             `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
             [ticketId],
           );
-          return this.toView(updated[0]);
+          return this.toView(updated[0]!);
         });
         return view;
       } catch (error) {
@@ -797,27 +831,27 @@ export class SupportService {
         if (reservation.kind === 'REPLAY') {
           const resourceId = reservation.record.resourceId;
           if (resourceId) {
-            const rows: Array<any> = await manager.query(
+            const rows: Array<SupportTicketMessageRow> = await manager.query(
               `SELECT * FROM support_ticket_messages WHERE id=$1 LIMIT 1`,
               [resourceId],
             );
             if (rows[0]) return this.toMessageView(rows[0]);
           }
-          const replayBody = reservation.record.responseBody as Record<string, unknown> | null;
-          if (replayBody && (replayBody as any).id) {
+          const replayBody = reservation.record.responseBody;
+          if (replayBody && replayBody.id) {
             return replayBody as unknown as SupportTicketMessageView;
           }
           throw new ConflictException('The idempotent request is already in progress');
         }
       }
 
-      const ticketRows: Array<any> = await manager.query(
+      const ticketRows: Array<SupportTicketRow> = await manager.query(
         `SELECT * FROM support_tickets WHERE id=$1 FOR UPDATE`,
         [ticketId],
       );
       if (ticketRows.length === 0) throw new NotFoundException('Support ticket not found');
-      const ticket = ticketRows[0];
-      const status: string = ticket.status;
+      const ticket = ticketRows[0]!;
+      const status: SupportTicketStatus = ticket.status;
 
       // Ownership check
       if (principal.type === 'CUSTOMER') {
@@ -869,11 +903,11 @@ export class SupportService {
         });
       }
 
-      const rows: Array<any> = await manager.query(
+      const rows: Array<SupportTicketMessageRow> = await manager.query(
         `SELECT * FROM support_ticket_messages WHERE id=$1 LIMIT 1`,
         [id],
       );
-      const view = this.toMessageView(rows[0]);
+      const view = this.toMessageView(rows[0]!);
       if (reservation) {
         await this.idempotencyService.complete(manager, reservation.record.id, {
           statusCode: 201,
@@ -894,12 +928,12 @@ export class SupportService {
     const tid = this.assertUuid(ticketId, 'ticketId');
     this.assertPrincipal(principal);
 
-    const ticketRows: Array<any> = await this.dataSource.query(
+    const ticketRows: Array<SupportTicketRow> = await this.dataSource.query(
       `SELECT * FROM support_tickets WHERE id=$1 LIMIT 1`,
       [tid],
     );
     if (ticketRows.length === 0) throw new NotFoundException('Support ticket not found');
-    const ticket = ticketRows[0];
+    const ticket = ticketRows[0]!;
 
     // Ownership check for customer/agent
     if (principal.type === 'CUSTOMER') {
@@ -911,7 +945,7 @@ export class SupportService {
     }
 
     const isWorkforce = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type);
-    const rows: Array<any> = isWorkforce
+    const rows: Array<SupportTicketMessageRow> = isWorkforce
       ? await this.dataSource.query(
           `SELECT * FROM support_ticket_messages WHERE ticket_id=$1 ORDER BY created_at ASC, id ASC`,
           [tid],
@@ -927,7 +961,7 @@ export class SupportService {
   // Helpers: mapping
   // ──────────────────────────────────────────────
 
-  private toView(row: any): SupportTicketView {
+  private toView(row: SupportTicketRow): SupportTicketView {
     return {
       id: row.id,
       reference: row.reference,
@@ -936,10 +970,10 @@ export class SupportService {
       createdByType: row.created_by_type,
       createdById: row.created_by_id,
       subject: row.subject,
-      category: row.category as SupportTicketCategory,
+      category: row.category,
       description: row.description,
-      status: row.status as SupportTicketStatus,
-      priority: row.priority as SupportTicketPriority,
+      status: row.status,
+      priority: row.priority,
       assignedTo: row.assigned_to ?? null,
       fundingRequestId: row.funding_request_id ?? null,
       relatedTransferId: row.related_transfer_id ?? null,
@@ -951,16 +985,16 @@ export class SupportService {
     };
   }
 
-  private toSafeView(row: any): SupportTicketSafeView {
+  private toSafeView(row: SupportTicketRow): SupportTicketSafeView {
     // SAFE projection — no assignedTo, no createdBy internal details beyond reference/status
     return {
       id: row.id,
       reference: row.reference,
       subject: row.subject,
-      category: row.category as SupportTicketCategory,
+      category: row.category,
       description: row.description,
-      status: row.status as SupportTicketStatus,
-      priority: row.priority as SupportTicketPriority,
+      status: row.status,
+      priority: row.priority,
       fundingRequestId: row.funding_request_id ?? null,
       relatedTransferId: row.related_transfer_id ?? null,
       createdAt: row.created_at,
@@ -971,7 +1005,7 @@ export class SupportService {
     };
   }
 
-  private toMessageView(row: any): SupportTicketMessageView {
+  private toMessageView(row: SupportTicketMessageRow): SupportTicketMessageView {
     return {
       id: row.id,
       ticketId: row.ticket_id,
@@ -991,7 +1025,7 @@ export class SupportService {
   private assertSubject(value: string): string {
     const v = value?.trim();
     if (!v || v.length < 3 || v.length > 200) throw new BadRequestException('subject must be 3 to 200 characters');
-    if (/[\u0000-\u001F]/.test(v)) throw new BadRequestException('subject contains invalid characters');
+    if ([...v].some((character) => character.charCodeAt(0) <= 0x1f)) throw new BadRequestException('subject contains invalid characters');
     return v;
   }
 

@@ -6,7 +6,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -17,6 +17,18 @@ import { TestNotificationProvider } from '../src/notification/notification-provi
 import { WalletService } from '../src/wallet/wallet.service';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
+
+interface NotificationDiagnosticFixture {
+  id: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+  recipientType: string;
+  recipientId: string;
+  channel: string;
+  eventType: string;
+  eventKey: string;
+}
 
 describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /internal/notifications/deliveries (real PostgreSQL)', () => {
   let dataSource: DataSource;
@@ -34,7 +46,6 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -42,7 +53,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const raw = token.replace('workforce-', '').toUpperCase();
       const noScope = raw.endsWith('-NOSCOPE');
@@ -65,8 +76,8 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -143,7 +154,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
     try {
       await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` });
-    } catch {}
+    } catch { /* The test permits an already-provisioned wallet. */ }
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
        VALUES ($1,$2,'EN','SYSTEM',true,true,true,true,true,true,true,false,1) ON CONFLICT DO NOTHING`,
@@ -261,7 +272,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
 
   it('6. AGENT denied', async () => {
     await insertDelivery({ status: 'SENT' });
-    const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').set('Authorization', `Bearer ${workforceToken('AGENT')}`).expect(401);
+    await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').set('Authorization', `Bearer ${workforceToken('AGENT')}`).expect(401);
   });
 
   it('7. unauthenticated denied', async () => {
@@ -289,16 +300,16 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const cid = await createCustomerWithPhone('8010000008');
     const id = await insertDelivery({ recipientId: cid, status: 'PENDING', attempts: 0, providerRef: null, lastError: null });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=PENDING').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(res.body.data.some((d: any) => d.id === id)).toBe(true);
-    expect(res.body.data.find((d: any) => d.id === id).status).toBe('PENDING');
-    expect(res.body.data.find((d: any) => d.id === id).attempts).toBe(0);
+    expect(res.body.data.some((d: NotificationDiagnosticFixture) => d.id === id)).toBe(true);
+    expect(res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id).status).toBe('PENDING');
+    expect(res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id).attempts).toBe(0);
   });
 
   it('9. SENT delivery visible with sanitized opaque providerRef (F-01)', async () => {
     const cid = await createCustomerWithPhone('8010000009');
     const id = await insertDelivery({ recipientId: cid, status: 'SENT', providerRef: 'test-ref-123' });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=SENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const found = res.body.data.find((d: any) => d.id === id);
+    const found = res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('SENT');
     expect(found.providerRef).toMatch(/^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/);
@@ -311,7 +322,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const cid = await createCustomerWithPhone('8010000010');
     const id = await insertDelivery({ recipientId: cid, status: 'FAILED', lastError: 'Simulated provider failure', failedAt: new Date() });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=FAILED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const found = res.body.data.find((d: any) => d.id === id);
+    const found = res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('FAILED');
     // Arbitrary provider prose collapses to the fixed sentinel; the raw string is never returned.
@@ -326,7 +337,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const cid = await createCustomerWithPhone('8010000011');
     const id = await insertDelivery({ recipientId: cid, status: 'SKIPPED', channel: 'PUSH', destination: 'SKIPPED:PUSH_TOKEN_DEPENDENCY_MISSING', lastError: 'PUSH_TOKEN_DEPENDENCY_MISSING' });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=SKIPPED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const found = res.body.data.find((d: any) => d.id === id);
+    const found = res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id);
     expect(found).toBeDefined();
     expect(found.status).toBe('SKIPPED');
     // Allowlisted first-party skip codes remain visible for triage.
@@ -341,11 +352,11 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await insertDelivery({ recipientId: cid, status: 'SKIPPED', channel: 'PUSH', destination: 'SKIPPED:PUSH_TOKEN_DEPENDENCY_MISSING' });
 
     const sentRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=SENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(sentRes.body.data.every((d: any) => d.status === 'SENT')).toBe(true);
+    expect(sentRes.body.data.every((d: NotificationDiagnosticFixture) => d.status === 'SENT')).toBe(true);
     const failedRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=FAILED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(failedRes.body.data.every((d: any) => d.status === 'FAILED')).toBe(true);
+    expect(failedRes.body.data.every((d: NotificationDiagnosticFixture) => d.status === 'FAILED')).toBe(true);
     const pendingRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=PENDING').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(pendingRes.body.data.every((d: any) => d.status === 'PENDING')).toBe(true);
+    expect(pendingRes.body.data.every((d: NotificationDiagnosticFixture) => d.status === 'PENDING')).toBe(true);
     // Empty when no match
     const noneRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?status=SENT&eventType=nonexistent-type-xyz').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
     expect(noneRes.body.data.length).toBe(0);
@@ -378,18 +389,18 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     expect(p3.body.hasNextPage).toBe(false);
     // Ordering check: p1 first item should be newest (last inserted)
     const all = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?limit=20&page=1').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const dates = all.body.data.map((d: any) => new Date(d.createdAt).getTime());
+    const dates = all.body.data.map((d: NotificationDiagnosticFixture) => new Date(d.createdAt).getTime());
     for (let i = 1; i < dates.length; i++) expect(dates[i - 1]).toBeGreaterThanOrEqual(dates[i]);
     // No duplicate across pages
-    const idsP1 = p1.body.data.map((d: any) => d.id);
-    const idsP2 = p2.body.data.map((d: any) => d.id);
+    const idsP1 = p1.body.data.map((d: NotificationDiagnosticFixture) => d.id);
+    const idsP2 = p2.body.data.map((d: NotificationDiagnosticFixture) => d.id);
     expect(idsP1.some((id: string) => idsP2.includes(id))).toBe(false);
   });
 
   it('14. safe projection and sensitive fields not leaked', async () => {
     const cid = await createCustomerWithPhone('8010000014');
     // Insert with sensitive-like data in payload and destination that should NOT appear in projection
-    const payload = { reference: 'REF-123', pin: '1234', pinHash: 'hash', password: 'secret', tokenHash: 'tok', secret: 'shh', apiKey: 'key' } as any;
+    const payload = { reference: 'REF-123', pin: '1234', pinHash: 'hash', password: 'secret', tokenHash: 'tok', secret: 'shh', apiKey: 'key' };
     const id = await insertDelivery({
       recipientId: cid,
       status: 'SENT',
@@ -399,7 +410,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
       providerRef: 'test-abc123',
     });
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const found = res.body.data.find((d: any) => d.id === id);
+    const found = res.body.data.find((d: NotificationDiagnosticFixture) => d.id === id);
     expect(found).toBeDefined();
     // Safe fields present
     expect(found.id).toBe(id);
@@ -446,17 +457,17 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     await insertDelivery({ recipientId: custId, recipientType: 'CUSTOMER', channel: 'PUSH', eventType: 'support.ticket.created', status: 'SKIPPED', destination: 'SKIPPED:PUSH_TOKEN_DEPENDENCY_MISSING', lastError: 'PUSH_TOKEN_DEPENDENCY_MISSING' });
 
     const custRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?recipientType=CUSTOMER').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(custRes.body.data.every((d: any) => d.recipientType === 'CUSTOMER')).toBe(true);
+    expect(custRes.body.data.every((d: NotificationDiagnosticFixture) => d.recipientType === 'CUSTOMER')).toBe(true);
     const agentRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?recipientType=AGENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(agentRes.body.data.every((d: any) => d.recipientType === 'AGENT')).toBe(true);
+    expect(agentRes.body.data.every((d: NotificationDiagnosticFixture) => d.recipientType === 'AGENT')).toBe(true);
     const smsRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=SMS').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(smsRes.body.data.every((d: any) => d.channel === 'SMS')).toBe(true);
+    expect(smsRes.body.data.every((d: NotificationDiagnosticFixture) => d.channel === 'SMS')).toBe(true);
     const pushRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?channel=PUSH').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(pushRes.body.data.every((d: any) => d.channel === 'PUSH')).toBe(true);
+    expect(pushRes.body.data.every((d: NotificationDiagnosticFixture) => d.channel === 'PUSH')).toBe(true);
     const eventRes = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries?eventType=customer.funding.approved').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(eventRes.body.data.every((d: any) => d.eventType === 'customer.funding.approved')).toBe(true);
+    expect(eventRes.body.data.every((d: NotificationDiagnosticFixture) => d.eventType === 'customer.funding.approved')).toBe(true);
     const recipientRes = await request(app.getHttpServer()).get(`/api/v1/internal/notifications/deliveries?recipientId=${custId}`).set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(recipientRes.body.data.every((d: any) => d.recipientId === custId)).toBe(true);
+    expect(recipientRes.body.data.every((d: NotificationDiagnosticFixture) => d.recipientId === custId)).toBe(true);
   });
 
   it('16. read-only behavior — GET only, POST/PATCH/DELETE 404', async () => {
@@ -520,7 +531,7 @@ describe('V1-HARDENING-09 Admin Notification Delivery Diagnostics — GET /inter
     const result = await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: key, payload, correlationId: randomUUID() });
     expect(result.deliveries[0]!.status).toBe('SENT');
     const res = await request(app.getHttpServer()).get('/api/v1/internal/notifications/deliveries').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const found = res.body.data.find((d: any) => d.eventKey === key);
+    const found = res.body.data.find((d: NotificationDiagnosticFixture) => d.eventKey === key);
     expect(found).toBeDefined();
     expect(found.status).toBe('SENT');
     expect(found.providerRef).toMatch(/test-/);

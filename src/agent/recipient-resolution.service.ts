@@ -119,7 +119,7 @@ export class RecipientResolutionService {
           [agent.originApplicationId],
         );
         const first = appRows[0];
-        if (appRows.length > 0 && first && first.business_name) return first.business_name as string;
+        if (appRows.length > 0 && first && first.business_name) return first.business_name;
       }
     } catch {
       // ignore

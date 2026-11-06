@@ -39,7 +39,37 @@ import { SettlementAccountService } from '../payment/settlement-account.service'
 import { SettlementAccountRole } from '../payment/payment.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerFundingStatus } from './customer-funding.enums';
-import { CustomerFundingRequest } from './customer-funding-request.entity';
+import type { CustomerFundingRequest } from './customer-funding-request.entity';
+
+// Raw query results use database column names and the PostgreSQL bigint wire type.
+interface CustomerFundingRow {
+  id: CustomerFundingRequest['id'];
+  customer_id: CustomerFundingRequest['customerId'];
+  amount_minor: string;
+  currency: CustomerFundingRequest['currency'];
+  status: CustomerFundingRequest['status'];
+  external_reference: CustomerFundingRequest['externalReference'];
+  channel: CustomerFundingRequest['channel'];
+  description: CustomerFundingRequest['description'];
+  reference: CustomerFundingRequest['reference'];
+  correlation_id: CustomerFundingRequest['correlationId'];
+  rejection_reason: CustomerFundingRequest['rejectionReason'];
+  maker_id: CustomerFundingRequest['makerId'];
+  checker_id: CustomerFundingRequest['checkerId'];
+  journal_id: CustomerFundingRequest['journalId'];
+  created_at: CustomerFundingRequest['createdAt'];
+  updated_at: CustomerFundingRequest['updatedAt'];
+  approved_at: CustomerFundingRequest['approvedAt'];
+  rejected_at: CustomerFundingRequest['rejectedAt'];
+}
+
+export interface FundingPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -144,7 +174,7 @@ export class CustomerFundingService {
     const correlationId = sanitizeDiagnosticIdentifier(
       this.optionalText(input.correlationId, 'correlationId', 255),
     );
-    const principal = this.assertWorkforcePrincipal(input.principal, 'create');
+    const principal = this.assertWorkforcePrincipal(input.principal);
     // Create allowed for SUPPORT, OPERATOR, SERVICE, PRIVILEGED
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       throw new ForbiddenException(`Principal type ${principal.type} cannot create funding requests`);
@@ -183,11 +213,11 @@ export class CustomerFundingService {
             if (found.request_hash !== requestHash) {
               throw new ConflictException('The idempotency key was already used for another funding request');
             }
-            const rows: Array<any> = await manager.query(
+            const rows: Array<CustomerFundingRow> = await manager.query(
               `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
               [found.id],
             );
-            return this.toView(rows[0]);
+            return this.toView(rows[0]!);
           }
 
           const id = randomUUID();
@@ -249,11 +279,11 @@ export class CustomerFundingService {
             },
           });
 
-          const inserted: Array<any> = await manager.query(
+          const inserted: Array<CustomerFundingRow> = await manager.query(
             `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
             [id],
           );
-          return this.toView(inserted[0]);
+          return this.toView(inserted[0]!);
         });
         return view;
       } catch (error) {
@@ -272,11 +302,11 @@ export class CustomerFundingService {
           );
           const existingHash = rows[0]?.request_hash;
           if (existingHash && existingHash === requestHash) {
-            const foundRows: Array<any> = await this.dataSource.query(
+            const foundRows: Array<CustomerFundingRow> = await this.dataSource.query(
               `SELECT * FROM customer_funding_requests WHERE idempotency_key=$1 LIMIT 1`,
               [idempotencyKey],
             );
-            return this.toView(foundRows[0]);
+            return this.toView(foundRows[0]!);
           }
           throw new ConflictException('The idempotency key was already used for another funding request');
         }
@@ -291,7 +321,7 @@ export class CustomerFundingService {
     const correlationId = sanitizeDiagnosticIdentifier(
       this.optionalText(input.correlationId, 'correlationId', 255),
     );
-    const principal = this.assertWorkforcePrincipal(input.principal, 'approve');
+    const principal = this.assertWorkforcePrincipal(input.principal);
     const checkerId = principal.principalId;
     const checkerType = principal.type;
 
@@ -299,13 +329,13 @@ export class CustomerFundingService {
       try {
         const view = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
           // Lock funding request row
-          const rows: Array<any> = await manager.query(
+          const rows: Array<CustomerFundingRow> = await manager.query(
             `SELECT * FROM customer_funding_requests WHERE id=$1 FOR UPDATE`,
             [fundingRequestId],
           );
           const request = rows[0];
           if (!request) throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
-          const status: string = request.status;
+          const status: CustomerFundingStatus = request.status;
           if (status !== CustomerFundingStatus.PENDING) {
             throw new ConflictException(`Funding request ${fundingRequestId} is already ${status}`);
           }
@@ -390,7 +420,7 @@ export class CustomerFundingService {
               });
             } catch (error) {
               if (error instanceof HttpException) {
-                const resp: any = error.getResponse();
+                const resp = error.getResponse() as { error?: string; code?: string } | null;
                 const code = (resp && (resp.error || resp.code)) as string | undefined;
                 if (code && String(code).startsWith('LIMIT_')) throw error;
               }
@@ -460,13 +490,17 @@ export class CustomerFundingService {
                 if (limitIdempotencyKey && this.limitEnforcementService) {
                   try {
                     await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
-                  } catch {}
+                  } catch {
+                    // Preserve the existing best-effort reservation handling.
+                  }
                 }
               } else {
                 if (limitIdempotencyKey && this.limitEnforcementService) {
                   try {
                     await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
-                  } catch {}
+                  } catch {
+                    // Preserve the existing best-effort reservation handling.
+                  }
                 }
                 throw error;
               }
@@ -474,7 +508,9 @@ export class CustomerFundingService {
               if (limitIdempotencyKey && this.limitEnforcementService) {
                 try {
                   await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
-                } catch {}
+                } catch {
+                    // Preserve the existing best-effort reservation handling.
+                  }
               }
               throw error;
             }
@@ -483,7 +519,9 @@ export class CustomerFundingService {
           if (limitIdempotencyKey && this.limitEnforcementService) {
             try {
               await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
-            } catch {}
+            } catch {
+                    // Preserve the existing best-effort reservation handling.
+                  }
           }
 
           const now = new Date();
@@ -507,7 +545,6 @@ export class CustomerFundingService {
             journalId,
             makerId,
             checkerId,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             correlationId: correlationId ?? request.correlation_id ?? null,
             limitOutcome,
           });
@@ -547,11 +584,11 @@ export class CustomerFundingService {
             },
           });
 
-          const updated: Array<any> = await manager.query(
+          const updated: Array<CustomerFundingRow> = await manager.query(
             `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
             [fundingRequestId],
           );
-          return this.toView(updated[0]);
+          return this.toView(updated[0]!);
         });
         return view;
       } catch (error) {
@@ -574,20 +611,20 @@ export class CustomerFundingService {
     if (!rejectionReason || rejectionReason.trim().length === 0) {
       throw new BadRequestException('rejectionReason is required for rejection');
     }
-    const principal = this.assertWorkforcePrincipal(input.principal, 'reject');
+    const principal = this.assertWorkforcePrincipal(input.principal);
     const checkerId = principal.principalId;
     const checkerType = principal.type;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const view = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-          const rows: Array<any> = await manager.query(
+          const rows: Array<CustomerFundingRow> = await manager.query(
             `SELECT * FROM customer_funding_requests WHERE id=$1 FOR UPDATE`,
             [fundingRequestId],
           );
           const request = rows[0];
           if (!request) throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
-          const status: string = request.status;
+          const status: CustomerFundingStatus = request.status;
           if (status !== CustomerFundingStatus.PENDING) {
             throw new ConflictException(`Funding request ${fundingRequestId} is already ${status}`);
           }
@@ -633,11 +670,11 @@ export class CustomerFundingService {
             },
           });
 
-          const updated: Array<any> = await manager.query(
+          const updated: Array<CustomerFundingRow> = await manager.query(
             `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
             [fundingRequestId],
           );
-          return this.toView(updated[0]);
+          return this.toView(updated[0]!);
         });
         return view;
       } catch (error) {
@@ -653,24 +690,24 @@ export class CustomerFundingService {
 
   async getById(fundingRequestId: string): Promise<CustomerFundingView> {
     const id = this.assertUuid(fundingRequestId, 'fundingRequestId');
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<CustomerFundingRow> = await this.dataSource.query(
       `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
       [id],
     );
     if (rows.length === 0) throw new NotFoundException(`Funding request ${id} was not found`);
-    return this.toView(rows[0]);
+    return this.toView(rows[0]!);
   }
 
   async listForCustomer(
     customerId: string,
     page = 1,
     limit = 20,
-  ): Promise<{ items: CustomerFundingSafeHistoryView[]; pagination: any }> {
+  ): Promise<{ items: CustomerFundingSafeHistoryView[]; pagination: FundingPagination }> {
     const cid = this.assertUuid(customerId, 'customerId');
     const normalizedPage = this.normalizePage(page);
     const normalizedLimit = this.normalizeLimit(limit);
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<CustomerFundingRow> = await this.dataSource.query(
       `SELECT * FROM customer_funding_requests WHERE customer_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
       [cid, normalizedLimit, offset],
     );
@@ -695,13 +732,13 @@ export class CustomerFundingService {
   async listInternal(customerId?: string): Promise<CustomerFundingView[]> {
     if (customerId) {
       const cid = this.assertUuid(customerId, 'customerId');
-      const rows: Array<any> = await this.dataSource.query(
+      const rows: Array<CustomerFundingRow> = await this.dataSource.query(
         `SELECT * FROM customer_funding_requests WHERE customer_id=$1 ORDER BY created_at DESC, id DESC`,
         [cid],
       );
       return rows.map((r) => this.toView(r));
     }
-    const rows: Array<any> = await this.dataSource.query(
+    const rows: Array<CustomerFundingRow> = await this.dataSource.query(
       `SELECT * FROM customer_funding_requests ORDER BY created_at DESC, id DESC LIMIT 100`,
     );
     return rows.map((r) => this.toView(r));
@@ -871,13 +908,13 @@ export class CustomerFundingService {
     });
   }
 
-  private toView(row: any): CustomerFundingView {
+  private toView(row: CustomerFundingRow): CustomerFundingView {
     return {
       id: row.id,
       customerId: row.customer_id,
       amountMinor: row.amount_minor.toString(),
       currency: row.currency,
-      status: row.status as CustomerFundingStatus,
+      status: row.status,
       externalReference: row.external_reference ?? null,
       channel: row.channel ?? null,
       description: row.description ?? null,
@@ -894,14 +931,14 @@ export class CustomerFundingService {
     };
   }
 
-  private toSafeHistoryView(row: any): CustomerFundingSafeHistoryView {
+  private toSafeHistoryView(row: CustomerFundingRow): CustomerFundingSafeHistoryView {
     // SAFE projection — no journalId, ledger ids, hashes, idempotency, maker/checker internal security details beyond reference/status
     return {
       id: row.id,
       reference: row.reference,
       amountMinor: row.amount_minor.toString(),
       currency: row.currency,
-      status: row.status as CustomerFundingStatus,
+      status: row.status,
       externalReference: row.external_reference ?? null,
       channel: row.channel ?? null,
       description: row.description ?? null,
@@ -964,7 +1001,7 @@ export class CustomerFundingService {
     return limit;
   }
 
-  private assertWorkforcePrincipal(principal: AuthorizationPrincipal | undefined, action: string): AuthorizationPrincipal {
+  private assertWorkforcePrincipal(principal: AuthorizationPrincipal | undefined): AuthorizationPrincipal {
     if (!principal || !principal.type) throw new UnauthorizedException('Authentication required');
     if (!principal.principalId) throw new UnauthorizedException('Principal is invalid');
     return principal;

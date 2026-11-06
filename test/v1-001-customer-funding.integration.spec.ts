@@ -4,17 +4,17 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
-import { AgentFundingService } from '../src/agent/agent-funding.service';
+
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
 import { AgentFundingGovernanceTestFacade } from './support/agent-funding-governance';
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 function encodePbkdf2(password: string, saltStr = 'fund-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -22,13 +22,23 @@ function encodePbkdf2(password: string, saltStr = 'fund-test-salt'): string {
   return `PBKDF2$sha256$10000$${salt.toString('base64url')}$${digest.toString('base64url')}`;
 }
 
+interface FundingHistoryFixture {
+  id: string;
+  reference: string;
+  amountMinor: string;
+  status: string;
+  externalReference: string | null;
+  channel: string | null;
+  rejectionReason: string | null;
+}
+
 describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', () => {
   let dataSource: DataSource;
   let app: NestFastifyApplication;
   let fundingService: CustomerFundingService;
   let walletService: WalletService;
-  let transferService: TransferService;
-  let ledgerService: LedgerService;
+
+
 
   const supportMaker: any = {
     type: 'SUPPORT',
@@ -89,8 +99,8 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     await app.getHttpAdapter().getInstance().ready();
     fundingService = moduleRef.get(CustomerFundingService);
     walletService = moduleRef.get(WalletService);
-    transferService = moduleRef.get(TransferService);
-    ledgerService = moduleRef.get(LedgerService);
+    moduleRef.get(TransferService);
+    moduleRef.get(LedgerService);
   }, 180000);
 
   afterAll(async () => {
@@ -315,7 +325,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     const after = await getBalance(ledgerAccountId);
     expect(after - before).toBe(12345n);
     // via WalletService balance also
-    const bal = await walletService.getWalletBalance((await createCustomerWithCredential()).walletId); // dummy to keep, but we check earlier
+    await walletService.getWalletBalance((await createCustomerWithCredential()).walletId); // dummy to keep, but we check earlier
     // Ensure ledger-derived
     const walletBal = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
     const ledgerBal = await getBalance(walletBal[0].ledger_account_id);
@@ -444,7 +454,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(rejected.length).toBe(1);
     const after = await getBalance(ledgerAccountId);
     expect(after).toBe(before + 30000n);
-    const count: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_lines WHERE journal_id IN (SELECT journal_id FROM customer_funding_requests WHERE id=$1)`, [created.id]);
+    await dataSource.query(`SELECT count(*)::text AS count FROM ledger_lines WHERE journal_id IN (SELECT journal_id FROM customer_funding_requests WHERE id=$1)`, [created.id]);
     // 2 lines per journal, but only one journal
     const journals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals WHERE idempotency_key=$1`, [`customer-funding:${created.id}`]);
     expect(journals[0]!.count).toBe('1');
@@ -519,7 +529,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(hist.body.items).toBeDefined();
-    const item = hist.body.items.find((i: any) => i.id === created.id);
+    const item = (hist.body.items as FundingHistoryFixture[]).find((i: FundingHistoryFixture) => i.id === created.id)!;
     expect(item).toBeDefined();
     expect(item.reference).toMatch(/^CF-/);
     expect(item.amountMinor).toBe('25000');
@@ -556,7 +566,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .get('/api/v1/customers/me/funding-history')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const rejItem = hist3.body.items.find((i: any) => i.id === createdRej.id);
+    const rejItem = (hist3.body.items as FundingHistoryFixture[]).find((i: FundingHistoryFixture) => i.id === createdRej.id)!;
     expect(rejItem.status).toBe('REJECTED');
     expect(rejItem.rejectionReason).toBe('docs missing');
   });
@@ -582,10 +592,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     await fundingService.approve({ fundingRequestId: createdB.id, principal: operatorChecker });
     const histA = await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${custA.token}`).expect(200);
     const histB = await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${custB.token}`).expect(200);
-    expect(histA.body.items.some((i: any) => i.id === createdA.id)).toBe(true);
-    expect(histA.body.items.some((i: any) => i.id === createdB.id)).toBe(false);
-    expect(histB.body.items.some((i: any) => i.id === createdB.id)).toBe(true);
-    expect(histB.body.items.some((i: any) => i.id === createdA.id)).toBe(false);
+    expect((histA.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdA.id)).toBe(true);
+    expect((histA.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdB.id)).toBe(false);
+    expect((histB.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdB.id)).toBe(true);
+    expect((histB.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdA.id)).toBe(false);
     // unauthenticated 401
     await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').expect(401);
     // agent cannot access
@@ -648,7 +658,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-leak-${randomUUID()}`,
       principal: supportMaker,
     });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
     const internal = await dataSource.query(`SELECT * FROM customer_funding_requests WHERE id=$1`, [created.id]);
     const serialInternal = JSON.stringify(internal).toLowerCase();
     expect(serialInternal).not.toContain('password');
@@ -779,7 +789,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   it('outbox events exist for funding approved/rejected', async () => {
     const { customerId } = await createCustomerWithCredential();
     const created = await fundingService.createRequest({ customerId, amountMinor: '12000', currency: 'NGN', idempotencyKey: `idem-outbox-${randomUUID()}`, principal: supportMaker });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
     const outboxApproved: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='customer.funding.approved'`, [created.id]);
     expect(outboxApproved.length).toBe(1);
     const created2 = await fundingService.createRequest({ customerId, amountMinor: '13000', currency: 'NGN', idempotencyKey: `idem-outbox2-${randomUUID()}`, principal: supportMaker });

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, pbkdf2Sync, randomUUID, timingSafeEqual } from 'node:crypto';
 
@@ -803,7 +803,9 @@ export class AgentCashToCashClaimService {
             if (limitIdempotencyKeyForClaim && this.limitEnforcementService) {
               try {
                 await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKeyForClaim);
-              } catch {}
+              } catch {
+                // Preserve the original error; the enclosing transaction will roll back.
+              }
             }
             throw error;
           }

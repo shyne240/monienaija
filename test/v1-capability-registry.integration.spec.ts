@@ -1,16 +1,17 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { CapabilityService } from '../src/capability-registry/capability.service';
+import type { CapabilityCreateInput, CapabilitySafeProjection } from '../src/capability-registry/capability.types';
 import { CAPABILITY_SEED } from '../src/capability-registry/capability.seed';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
@@ -28,7 +29,6 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -36,7 +36,7 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER'];
@@ -50,8 +50,8 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   function workforceToken(type: string): string {
@@ -201,7 +201,7 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
       blockerType: 'NONE',
       blockerDescription: null,
       notes: null,
-    } as any;
+    } as CapabilityCreateInput;
     const created = await capabilityService.create(input);
     expect(created.capabilityCode).toBe(code);
     expect(created.enabled).toBe(false);
@@ -329,33 +329,33 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(r2.body.data[0].capabilityCode).not.toBe(r1.body.data[0].capabilityCode);
     // deterministic ASC
     const all = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?page=1&limit=100').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const codes = all.body.data.map((c:any)=>c.capabilityCode);
+    const codes = all.body.data.map((c: CapabilitySafeProjection)=>c.capabilityCode);
     const sorted = [...codes].sort();
     expect(codes).toEqual(sorted);
   });
 
   it('13. GET /internal/capabilities filtering', async () => {
     const v1 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V1').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(v1.body.data.every((c:any)=>c.productScope==='V1')).toBe(true);
+    expect(v1.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V1')).toBe(true);
     const v2 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(v2.body.data.every((c:any)=>c.productScope==='V2')).toBe(true);
+    expect(v2.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V2')).toBe(true);
     expect(v1.body.total + v2.body.total).toBe(CAPABILITY_SEED.length);
     const commercial = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?domain=COMMERCIAL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
     expect(commercial.body.total).toBeGreaterThanOrEqual(27);
-    expect(commercial.body.data.every((c:any)=>c.domain==='COMMERCIAL')).toBe(true);
+    expect(commercial.body.data.every((c: CapabilitySafeProjection)=>c.domain==='COMMERCIAL')).toBe(true);
     const enabledTrue = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?enabled=true').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(enabledTrue.body.data.every((c:any)=>c.enabled===true)).toBe(true);
+    expect(enabledTrue.body.data.every((c: CapabilitySafeProjection)=>c.enabled===true)).toBe(true);
     const enabledFalse = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?enabled=false').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(enabledFalse.body.data.every((c:any)=>c.enabled===false)).toBe(true);
+    expect(enabledFalse.body.data.every((c: CapabilitySafeProjection)=>c.enabled===false)).toBe(true);
     expect(enabledTrue.body.total + enabledFalse.body.total).toBe(CAPABILITY_SEED.length);
     const blocked = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?blockerType=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(blocked.body.data.every((c:any)=>c.blockerType==='V2')).toBe(true);
+    expect(blocked.body.data.every((c: CapabilitySafeProjection)=>c.blockerType==='V2')).toBe(true);
     expect(blocked.body.total).toBeGreaterThan(0);
     const backendPlanned = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?backendStatus=PLANNED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(backendPlanned.body.data.every((c:any)=>c.backendStatus==='PLANNED')).toBe(true);
+    expect(backendPlanned.body.data.every((c: CapabilitySafeProjection)=>c.backendStatus==='PLANNED')).toBe(true);
     // combined filter
     const combined = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V2&blockerType=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(combined.body.data.every((c:any)=>c.productScope==='V2' && c.blockerType==='V2')).toBe(true);
+    expect(combined.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V2' && c.blockerType==='V2')).toBe(true);
   });
 
   it('14. GET /internal/capabilities/:code success', async () => {
@@ -434,9 +434,9 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
 
   it('19. GET /internal/capabilities filtering by lifecycle and domain', async () => {
     const planned = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?lifecycle=PLANNED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(planned.body.data.every((c:any)=>c.lifecycle==='PLANNED')).toBe(true);
+    expect(planned.body.data.every((c: CapabilitySafeProjection)=>c.lifecycle==='PLANNED')).toBe(true);
     const agent = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?domain=AGENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(agent.body.data.every((c:any)=>c.domain==='AGENT')).toBe(true);
+    expect(agent.body.data.every((c: CapabilitySafeProjection)=>c.domain==='AGENT')).toBe(true);
     expect(agent.body.total).toBe(8); // AGENT domain strictly 8 (others under WALLET/IDENTITY)
   });
 

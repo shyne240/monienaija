@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-// @ts-nocheck
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
@@ -49,18 +49,18 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     await truncateAllTables(dataSource);
   });
 
-  async function captureFinancialState(): Promise<any> {
-    const transfers = await dataSource.query(
+  async function captureFinancialState() {
+    const transfers: Array<{ id: string }> = await dataSource.query(
       `SELECT id, source_wallet_id, destination_wallet_id, journal_id, amount_minor::text AS amount_minor,
               currency, status, idempotency_key, request_hash
          FROM transfers ORDER BY id`,
     );
-    const journals = await dataSource.query(
+    const journals: Array<{ id: string }> = await dataSource.query(
       `SELECT id, idempotency_key, request_hash, currency, accounting_unit, status,
               total_minor::text AS total_minor
          FROM ledger_journals ORDER BY id`,
     );
-    const lines = await dataSource.query(
+    const lines: Array<{ journal_id: string; ledger_account_id: string; direction: string; amount_minor: string }> = await dataSource.query(
       `SELECT id, journal_id, line_number, ledger_account_id, direction,
               amount_minor::text AS amount_minor, currency, accounting_unit
          FROM ledger_lines ORDER BY journal_id, line_number`,
@@ -74,7 +74,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
               allow_negative_balance, is_active
          FROM ledger_accounts ORDER BY id`,
     );
-    const balances = await dataSource.query(
+    const balances: Array<{ ledger_account_id: string; balance_minor: string }> = await dataSource.query(
       `SELECT a.id AS ledger_account_id,
               COALESCE(SUM(CASE WHEN l.direction = a.normal_balance
                                 THEN l.amount_minor ELSE -l.amount_minor END), 0)::text AS balance_minor
@@ -158,7 +158,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(afterTransfer.walletAccounts).toEqual(beforeTransfer.walletAccounts);
     expect(afterTransfer.ledgerAccounts).toEqual(beforeTransfer.ledgerAccounts);
 
-    const insertedTransfer = afterTransfer.transfers.find((row: any) => row.id === res.body.id);
+    const insertedTransfer = afterTransfer.transfers.find((row) => row.id === res.body.id);
     expect(insertedTransfer).toMatchObject({
       source_wallet_id: wa.id,
       destination_wallet_id: wb.id,
@@ -168,19 +168,19 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
       status: 'COMPLETED',
       idempotency_key: idem,
     });
-    const insertedJournal = afterTransfer.journals.find((row: any) => row.id === res.body.journalId);
+    const insertedJournal = afterTransfer.journals.find((row) => row.id === res.body.journalId);
     expect(insertedJournal).toBeDefined();
-    const transferLines = afterTransfer.lines.filter((line: any) => line.journal_id === res.body.journalId);
+    const transferLines = afterTransfer.lines.filter((line) => line.journal_id === res.body.journalId);
     expect(transferLines).toHaveLength(2);
-    expect(transferLines.map((line: any) => [line.ledger_account_id, line.direction, line.amount_minor])).toEqual([
+    expect(transferLines.map((line) => [line.ledger_account_id, line.direction, line.amount_minor])).toEqual([
       [wa.ledgerAccountId, 'DEBIT', '25000'],
       [wb.ledgerAccountId, 'CREDIT', '25000'],
     ]);
 
-    const balanceBefore = new Map(beforeTransfer.balances.map((row: any) => [row.ledger_account_id, row.balance_minor]));
-    const balanceAfter = new Map(afterTransfer.balances.map((row: any) => [row.ledger_account_id, row.balance_minor]));
-    expect(balanceAfter.get(wa.ledgerAccountId)).toBe((BigInt(balanceBefore.get(wa.ledgerAccountId)) - 25000n).toString());
-    expect(balanceAfter.get(wb.ledgerAccountId)).toBe((BigInt(balanceBefore.get(wb.ledgerAccountId)) + 25000n).toString());
+    const balanceBefore = new Map(beforeTransfer.balances.map((row) => [row.ledger_account_id, row.balance_minor]));
+    const balanceAfter = new Map(afterTransfer.balances.map((row) => [row.ledger_account_id, row.balance_minor]));
+    expect(balanceAfter.get(wa.ledgerAccountId)).toBe((BigInt(balanceBefore.get(wa.ledgerAccountId)!) - 25000n).toString());
+    expect(balanceAfter.get(wb.ledgerAccountId)).toBe((BigInt(balanceBefore.get(wb.ledgerAccountId)!) + 25000n).toString());
     for (const [accountId, balance] of balanceBefore) {
       if (accountId !== wa.ledgerAccountId && accountId !== wb.ledgerAccountId) {
         expect(balanceAfter.get(accountId)).toBe(balance);
@@ -248,8 +248,8 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(locked.body.locked).toBe(true);
     // also check DB: accountLocked true
     const pinRows: Array<{ account_locked: boolean; failed_count: number }> = await dataSource.query(`SELECT account_locked, failed_count FROM customer_transaction_pins WHERE customer_id=$1`, [customerId]);
-    expect(pinRows[0].account_locked).toBe(true);
-    expect(Number(pinRows[0].failed_count)).toBeGreaterThanOrEqual(5);
+    expect(pinRows[0]!.account_locked).toBe(true);
+    expect(Number(pinRows[0]!.failed_count)).toBeGreaterThanOrEqual(5);
   });
 
   // 5. Locked rejects even correct PIN via transfers
@@ -273,7 +273,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(locked.body.message).toMatch(/locked/i);
     // not reset by correct attempt
     const rows: Array<{ account_locked: boolean }> = await dataSource.query(`SELECT account_locked FROM customer_transaction_pins WHERE customer_id=$1`, [custA]);
-    expect(rows[0].account_locked).toBe(true);
+    expect(rows[0]!.account_locked).toBe(true);
     const afterWa = await ws.getWalletBalance(wa.id);
     expect(afterWa.balanceMinor).toBe('50000'); // no debit
   });
@@ -335,17 +335,17 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     const journalId = res.body.journalId as string;
     const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> = await dataSource.query(`SELECT ledger_account_id, direction, amount_minor FROM ledger_lines WHERE journal_id=$1 ORDER BY line_number`, [journalId]);
     expect(lines.length).toBe(2);
-    expect(lines[0].direction).toBe('DEBIT');
-    expect(lines[1].direction).toBe('CREDIT');
-    expect(lines[0].amount_minor).toBe('30000');
-    expect(lines[1].amount_minor).toBe('30000');
-    expect(lines[0].ledger_account_id).toBe(wa.ledgerAccountId);
-    expect(lines[1].ledger_account_id).toBe(wb.ledgerAccountId);
+    expect(lines[0]!.direction).toBe('DEBIT');
+    expect(lines[1]!.direction).toBe('CREDIT');
+    expect(lines[0]!.amount_minor).toBe('30000');
+    expect(lines[1]!.amount_minor).toBe('30000');
+    expect(lines[0]!.ledger_account_id).toBe(wa.ledgerAccountId);
+    expect(lines[1]!.ledger_account_id).toBe(wb.ledgerAccountId);
     // total debits = total credits
     // also check transfer has journal
     const trRows: Array<{ journal_id: string; status: string }> = await dataSource.query(`SELECT journal_id, status FROM transfers WHERE id=$1`, [transferId]);
-    expect(trRows[0].journal_id).toBe(journalId);
-    expect(trRows[0].status).toBe('COMPLETED');
+    expect(trRows[0]!.journal_id).toBe(journalId);
+    expect(trRows[0]!.status).toBe('COMPLETED');
     const afterWa = await ws.getWalletBalance(wa.id);
     const afterWb = await ws.getWalletBalance(wb.id);
     expect(afterWa.balanceMinor).toBe('50000');
@@ -377,7 +377,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(afterWb.balanceMinor).toBe('15000');
     // only one transfer row
     const cnt: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM transfers WHERE idempotency_key=$1`, [idem]);
-    expect(Number(cnt[0].count)).toBe(1);
+    expect(Number(cnt[0]!.count)).toBe(1);
   });
 
   // 10. Idempotency — same key same op with same hash but PIN not in hash retains idempotency
@@ -399,7 +399,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     // verify requestHash equals hash of business params only (no pin)
     const rows: Array<{ request_hash: string }> = await dataSource.query(`SELECT request_hash FROM transfers WHERE id=$1`, [tid]);
     const expectedHash = createHash('sha256').update(canonicalJson({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '10000', currency: 'NGN', reference: null, narration: null })).digest('hex');
-    expect(rows[0].request_hash).toBe(expectedHash);
+    expect(rows[0]!.request_hash).toBe(expectedHash);
     // second call same idem same op (still pin 1111) should be same tid
     const second = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', idem).send(payload).expect(201);
     expect(second.body.id).toBe(tid);
@@ -458,7 +458,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     // also check transfer specific audit
     const transferAudits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_type='TRANSFER' AND entity_id=$1`, [tid]);
     if (transferAudits.length > 0) {
-      const blob = JSON.stringify(transferAudits[0].new_values).toLowerCase();
+      const blob = JSON.stringify(transferAudits[0]!.new_values).toLowerCase();
       expect(blob).not.toContain('3333');
       expect(blob).not.toContain('"pin"');
       expect(blob).not.toContain('pinhash');
@@ -481,14 +481,14 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     const tid = res.body.id as string;
     const jid = res.body.journalId as string;
     const tRows: Array<{ request_hash: string; reference: string | null; narration: string | null }> = await dataSource.query(`SELECT request_hash, reference, narration FROM transfers WHERE id=$1`, [tid]);
-    const rh = tRows[0].request_hash;
+    const rh = tRows[0]!.request_hash;
     // recompute expected without PIN
     const expected = createHash('sha256').update(canonicalJson({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '7000', currency: 'NGN', reference: null, narration: null })).digest('hex');
     expect(rh).toBe(expected);
     expect(rh).not.toContain('4444');
     const jRows: Array<{ metadata: any }> = await dataSource.query(`SELECT metadata FROM ledger_journals WHERE id=$1`, [jid]);
-    expect(JSON.stringify(jRows[0].metadata).toLowerCase()).not.toContain('4444');
-    expect(JSON.stringify(jRows[0].metadata).toLowerCase()).not.toContain('pin');
+    expect(JSON.stringify(jRows[0]!.metadata).toLowerCase()).not.toContain('4444');
+    expect(JSON.stringify(jRows[0]!.metadata).toLowerCase()).not.toContain('pin');
     // also check full transfer row dump
     const full: Array<any> = await dataSource.query(`SELECT * FROM transfers WHERE id=$1`, [tid]);
     expect(JSON.stringify(full[0]).toLowerCase()).not.toContain('4444');
@@ -522,7 +522,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
       expect(low).not.toContain('5678');
       expect(low).not.toContain('pinhash');
       // pin key should not appear at all
-      expect(low).not.toMatch(/\"pin\"/);
+      expect(low).not.toMatch(/"pin"/);
     }
   });
 
@@ -538,7 +538,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     const res = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${agentToken}`).set('Idempotency-Key', `idem-a24-15-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '1000', currency: 'NGN', pin: '1234' }).expect((r)=>expect([401,403].includes(r.status)).toBe(true));
     // ensure no transfer created
     const cnt: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM transfers WHERE source_wallet_id=$1`, [wa.id]);
-    expect(Number(cnt[0].count)).toBe(0);
+    expect(Number(cnt[0]!.count)).toBe(0);
   });
 
   // 16. Unauthenticated 401
@@ -623,7 +623,7 @@ describe('A24 Customer Wallet→Wallet Transaction PIN Hardening (real PostgreSQ
     expect(ctrl).toContain('pinService.verifyTransactionPin');
     expect(ctrl).toContain('transferService.createTransfer');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBeGreaterThanOrEqual(67);
+    expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     // verify no new bank/NIBSS tables used via transfer path
     const via = JSON.stringify(ctrl).toLowerCase();
     expect(via).not.toContain('nibss');

@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateCashToCashLocators1785753600096 implements MigrationInterface {
   name = 'CreateCashToCashLocators1785753600096';

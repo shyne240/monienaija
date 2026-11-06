@@ -43,10 +43,10 @@ export class LedgerController {
    */
   @Post('accounts')
   @HttpCode(HttpStatus.CREATED)
-  async createAccount(@Body() dto: CreateLedgerAccountDto, @Req() req: AuthenticatedRequest) {
+  createAccount(@Body() dto: CreateLedgerAccountDto, @Req() req: AuthenticatedRequest): Promise<never> {
     void dto;
     void req;
-    throw new ForbiddenException('Generic ledger account creation is disabled pending approved governance');
+    return Promise.reject(new ForbiddenException('Generic ledger account creation is disabled pending approved governance'));
   }
 
   @Get('accounts')
@@ -69,15 +69,15 @@ export class LedgerController {
 
   @Post('journals')
   @HttpCode(HttpStatus.CREATED)
-  async postJournal(
+  postJournal(
     @Req() req: AuthenticatedRequest,
     @Body() dto: PostJournalDto,
     @Headers('idempotency-key') headerIdempotencyKey?: string,
-  ) {
+  ): Promise<never> {
     void req;
     void dto;
     void headerIdempotencyKey;
-    throw new ForbiddenException('Generic ledger journal posting is disabled pending approved governance');
+    return Promise.reject(new ForbiddenException('Generic ledger journal posting is disabled pending approved governance'));
   }
 
   @Get('journals/:journalId')

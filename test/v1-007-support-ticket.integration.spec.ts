@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
@@ -25,7 +25,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   let supportService: SupportService;
   let fundingService: CustomerFundingService;
   let walletService: WalletService;
-  let ledgerService: LedgerService;
+
 
   const supportMaker: any = {
     type: 'SUPPORT',
@@ -69,7 +69,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     supportService = moduleRef.get(SupportService);
     fundingService = moduleRef.get(CustomerFundingService);
     walletService = moduleRef.get(WalletService);
-    ledgerService = moduleRef.get(LedgerService);
+    moduleRef.get(LedgerService);
   }, 180000);
 
   afterAll(async () => {
@@ -178,7 +178,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   });
 
   it('2. Customer sees own ticket (GET)', async () => {
-    const { customerId, token } = await createCustomerWithCredential();
+    const { token } = await createCustomerWithCredential();
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
@@ -195,7 +195,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(list.body.items.some((i: any) => i.id === created.body.id)).toBe(true);
+    expect((list.body.items as Array<{ id: string }>).some((i: { id: string }) => i.id === created.body.id)).toBe(true);
     expect(list.body.pagination.total).toBeGreaterThanOrEqual(1);
   });
 
@@ -215,7 +215,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${custB.token}`)
       .expect(200);
-    expect(listB.body.items.some((i: any) => i.id === created.body.id)).toBe(false);
+    expect((listB.body.items as Array<{ id: string }>).some((i: { id: string }) => i.id === created.body.id)).toBe(false);
     // service also isolates
     await expect(supportService.getForCustomer(created.body.id, custB.customerId)).rejects.toThrow(/not found/i);
   });
@@ -235,7 +235,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/agents/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(list.body.items.some((i: any) => i.id === res.body.id)).toBe(true);
+    expect((list.body.items as Array<{ id: string }>).some((i: { id: string }) => i.id === res.body.id)).toBe(true);
   });
 
   it('5. Agent cannot see another Agent ticket (404)', async () => {
@@ -462,7 +462,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${custA.token}`)
       .send({ subject: 'Cust A msg isolation', category: 'OTHER', description: 'Valid description A' })
       .expect(201);
-    const ticketB = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${custB.token}`)
       .send({ subject: 'Cust B', category: 'OTHER', description: 'Valid description B' })
@@ -518,8 +518,8 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .expect(200);
     expect(custMsgs.body.length).toBe(1);
     expect(custMsgs.body[0].body).toBe('Public update: we are investigating');
-    expect(custMsgs.body.some((m: any) => m.body.includes('Internal note'))).toBe(false);
-    expect(custMsgs.body.some((m: any) => m.isInternal === true)).toBe(false);
+    expect((custMsgs.body as Array<{ body: string; isInternal: boolean }>).some((m) => m.body.includes('Internal note'))).toBe(false);
+    expect((custMsgs.body as Array<{ body: string; isInternal: boolean }>).some((m) => m.isInternal === true)).toBe(false);
     // agent sees same filtered
     // workforce sees both
     const internalMsgs = await supportService.listMessages(ticket.body.id, supportMaker);
@@ -785,7 +785,7 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       supportService.updateStatus({ ticketId: ticket.id, status: 'RESOLVED' as any, principal: privilegedPrincipal }),
     ]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter((r) => r.status === 'rejected');
+    results.filter((r) => r.status === 'rejected');
     // One should succeed, the other either succeed idempotently or conflict? Our updateStatus returns early if already RESOLVED, so second will be idempotent success, not conflict.
     // So we test that after both, status is RESOLVED and no double audit anomaly: at least one fulfilled and no double ledger mutation (already proven)
     expect(fulfilled.length).toBeGreaterThanOrEqual(1);

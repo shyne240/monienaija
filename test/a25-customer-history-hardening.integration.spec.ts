@@ -1,13 +1,14 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
 
 function encodePbkdf2(password: string, saltStr = 'a25-test-salt'): string {
@@ -97,7 +98,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers?page=1&limit=20').set('Authorization', `Bearer ${token}`).expect(200);
     expect(hist.body.items).toBeDefined();
     expect(hist.body.pagination.total).toBeGreaterThanOrEqual(1);
-    const found = hist.body.items.find((x: any) => x.transferId === tid || x.id === tid);
+    const found = (hist.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.transferId === tid || x.id === tid)!;
     expect(found).toBeDefined();
     expect(found.transactionType).toBe('WALLET_TRANSFER');
     expect(found.type).toBe('WALLET_TRANSFER');
@@ -133,11 +134,11 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const tidBC = trBC.body.id as string;
     // A should not see B->C transfer in list
     const histA = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenA}`).expect(200);
-    const foundInA = histA.body.items.find((x: any) => x.transferId === tidBC || x.id === tidBC);
+    const foundInA = (histA.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.transferId === tidBC || x.id === tidBC);
     expect(foundInA).toBeUndefined();
     // B should see it
     const histB = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenB}`).expect(200);
-    const foundInB = histB.body.items.find((x: any) => x.transferId === tidBC || x.id === tidBC);
+    const foundInB = (histB.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.transferId === tidBC || x.id === tidBC);
     expect(foundInB).toBeDefined();
   });
 
@@ -190,7 +191,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     await request(app.getHttpServer()).get(`/api/v1/customers/me/transactions/${tid}`).set('Authorization', `Bearer ${tokenA}`).expect(404);
     // also by wallet ID enumeration
     const histA = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenA}`).expect(200);
-    expect(histA.body.items.find((x: any) => x.id === tid)).toBeUndefined();
+    expect((histA.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)).toBeUndefined();
   });
 
   // E. Correct direction
@@ -214,10 +215,10 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const detailB = await request(app.getHttpServer()).get(`/api/v1/customers/me/transfers/${tid}`).set('Authorization', `Bearer ${tokenB}`).expect(200);
     expect(detailB.body.direction).toBe('RECEIVED');
     const histA = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenA}`).expect(200);
-    const itemA = histA.body.items.find((x: any) => x.id === tid);
+    const itemA = (histA.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     expect(itemA.direction).toBe('SENT');
     const histB = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenB}`).expect(200);
-    const itemB = histB.body.items.find((x: any) => x.id === tid);
+    const itemB = (histB.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     expect(itemB.direction).toBe('RECEIVED');
   });
 
@@ -238,7 +239,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-a25f-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '33333', currency: 'NGN', reference: ref, narration: nar, pin: '0001' }).expect(201);
     const tid = tr.body.id as string;
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).expect(200);
-    const item = hist.body.items.find((x: any) => x.id === tid);
+    const item = (hist.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     expect(item.amountMinor).toBe('33333');
     expect(item.currency).toBe('NGN');
     expect(item.status).toBe('COMPLETED');
@@ -268,7 +269,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenA}`).set('Idempotency-Key', `idem-a25g-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '15000', currency: 'NGN', pin: '1234' }).expect(201);
     const tid = tr.body.id as string;
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenA}`).expect(200);
-    const item = hist.body.items.find((x: any) => x.id === tid);
+    const item = (hist.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     expect(item.counterparty).toBeDefined();
     expect(item.counterparty.walletId).toBe(wb.id);
     expect(item.counterparty.customerId).toBe(custB);
@@ -285,7 +286,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const loginB = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId: custB, password: 'correct-password-a25' }).expect(200);
     const tokenB2 = loginB.body.accessToken as string;
     const histB = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${tokenB2}`).expect(200);
-    const itemB = histB.body.items.find((x: any) => x.id === tid);
+    const itemB = (histB.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     expect(itemB.counterparty.walletId).toBe(wa.id);
     expect(itemB.counterparty.customerId).toBe(custA);
     expect(itemB.counterparty.displayName).toBe('Alice G');
@@ -339,7 +340,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     const tr = await request(app.getHttpServer()).post('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `idem-a25i-${randomUUID()}`).send({ sourceWalletId: wa.id, destinationWalletId: wb.id, amountMinor: '3000', currency: 'NGN', pin: '1234' }).expect(201);
     const tid = tr.body.id as string;
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${token}`).expect(200);
-    const item = hist.body.items.find((x: any) => x.id === tid);
+    const item = (hist.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture) => x.id === tid)!;
     const detail = await request(app.getHttpServer()).get(`/api/v1/customers/me/transfers/${tid}`).set('Authorization', `Bearer ${token}`).expect(200);
     for (const obj of [item, detail.body]) {
       const blob = JSON.stringify(obj).toLowerCase();
@@ -408,12 +409,12 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
       await new Promise((r) => setTimeout(r, 10));
     }
     const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers?page=1&limit=10').set('Authorization', `Bearer ${token}`).expect(200);
-    const idsInOrder = hist.body.items.map((x: any) => x.id);
+    const idsInOrder = (hist.body.items as HistoryResponseFixture[]).map((x: HistoryResponseFixture) => x.id);
     // most recent first: reverse of creation order
     expect(idsInOrder.slice(0, 3)).toEqual([tids[2], tids[1], tids[0]]);
     // second fetch should be same order
     const hist2 = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers?page=1&limit=10').set('Authorization', `Bearer ${token}`).expect(200);
-    expect(hist2.body.items.map((x: any) => x.id)).toEqual(idsInOrder);
+    expect((hist2.body.items as HistoryResponseFixture[]).map((x: HistoryResponseFixture) => x.id)).toEqual(idsInOrder);
   });
 
   // L. Empty history
@@ -500,7 +501,7 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     expect(hist.body.items[0].id).toBe(tr.body.id);
     expect(hist.body.items[0].transactionType).toBe('WALLET_TRANSFER');
     // ensure no cash-to-cash appears
-    const hasC2C = hist.body.items.some((x: any) => x.beneficiaryPhone || x.beneficiary_phone || x.type === 'CASH_TO_CASH');
+    const hasC2C = (hist.body.items as HistoryResponseFixture[]).some((x: HistoryResponseFixture) => x.beneficiaryPhone || x.beneficiary_phone || x.type === 'CASH_TO_CASH');
     expect(hasC2C).toBe(false);
   });
 
@@ -515,6 +516,6 @@ describe('A25 Customer Transaction History & Detail Hardening (real PostgreSQL)'
     expect(ctrl).toContain('listTransfers');
     expect(ctrl).toContain('getTransferDetail');
     const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
-    expect(Number(rows[0].count)).toBeGreaterThanOrEqual(67);
+    expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
   });
 });

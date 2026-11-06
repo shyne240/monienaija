@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
@@ -30,7 +30,6 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -38,7 +37,7 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED','AGENT','CUSTOMER','AGGREGATOR'];
@@ -56,8 +55,8 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -100,13 +99,7 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
     return rows[0]!.id;
   }
 
-  async function createCustomerDirect(): Promise<string> {
-    const reference = `cust-hard07-${randomUUID().slice(0,8)}`;
-    const rows: Array<{ id: string }> = await dataSource.query(`INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`, [reference]);
-    const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Cust ${customerId.slice(0,4)}`]);
-    return customerId;
-  }
+
 
   // 1. workforce allowed
   it('1. financial-position: SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed', async () => {
@@ -291,7 +284,7 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
     expect(res.body.balanceMinor).toBeDefined();
     expect(res.body.walletId).toBe(wallet.id);
     // ledgerAccountId must not be exposed
-    expect((res.body as any).ledgerAccountId).toBeUndefined();
+    expect(res.body.ledgerAccountId).toBeUndefined();
     // also check via raw wallet has ledgerAccountId but response hides it
     const rawWalletRows: Array<{ledger_account_id:string}> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
     expect(rawWalletRows[0]!.ledger_account_id).toBeDefined();
@@ -301,7 +294,7 @@ describe('V1-HARDENING-07 Admin Agent Financial Investigation (real PostgreSQL)'
   // 15. read-only (POST should 404, no fund/defund)
   it('15. read-only: POST to financial-position is 404 and does not mutate', async () => {
     const agentId = await createAgentDirect();
-    const wallet = await walletService.createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: `hard07-ro-${agentId}` });
+    await walletService.createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: `hard07-ro-${agentId}` });
     const token = workforceToken('OPERATOR');
     const before: Array<{count:string}> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
     const postRes = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/financial-position`).set('Authorization', `Bearer ${token}`).send({});

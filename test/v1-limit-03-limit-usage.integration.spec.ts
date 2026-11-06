@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
+import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -35,7 +36,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED','AGENT','CUSTOMER','AGGREGATOR'];
@@ -49,8 +50,8 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -123,7 +124,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   });
 
   // 02 Daily window key
-  it('02. daily window key deterministic Africa/Lagos', async () => {
+  it('02. daily window key deterministic Africa/Lagos', () => {
     const now = new Date('2026-09-27T10:00:00.000Z'); // Lagos 11:00 same day
     const win = getLagosWindow(now, LimitWindowType.DAILY);
     expect(win.windowType).toBe('DAILY');
@@ -137,7 +138,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   });
 
   // 03 Weekly window key Monday start
-  it('03. weekly window key Monday-start ISO week', async () => {
+  it('03. weekly window key Monday-start ISO week', () => {
     // 2026-09-27 is Sunday, Lagos week Monday is 2026-09-21
     const sunday = new Date('2026-09-27T11:00:00.000Z'); // Lagos Sunday 12:00
     const winSun = getLagosWindow(sunday, LimitWindowType.WEEKLY);
@@ -160,7 +161,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   });
 
   // 04 Monthly window key
-  it('04. monthly window key calendar month Africa/Lagos', async () => {
+  it('04. monthly window key calendar month Africa/Lagos', () => {
     const midMonth = new Date('2026-09-15T10:00:00.000Z');
     const win = getLagosWindow(midMonth, LimitWindowType.MONTHLY);
     expect(win.windowKey).toBe('2026-09:MONTHLY:Africa/Lagos');
@@ -177,7 +178,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   });
 
   // 05 Yearly window key
-  it('05. yearly window key calendar year Africa/Lagos', async () => {
+  it('05. yearly window key calendar year Africa/Lagos', () => {
     const any = new Date('2026-06-15T10:00:00.000Z');
     const win = getLagosWindow(any, LimitWindowType.YEARLY);
     expect(win.windowKey).toBe('2026:YEARLY:Africa/Lagos');
@@ -189,7 +190,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
   });
 
   // 06 Lagos timezone boundary
-  it('06. Lagos timezone boundary deterministic', async () => {
+  it('06. Lagos timezone boundary deterministic', () => {
     // UTC 2026-09-26T23:00:00Z is exactly Lagos 2026-09-27 00:00
     const exactlyMidnight = new Date('2026-09-26T23:00:00.000Z');
     const justBefore = new Date('2026-09-26T22:59:59.999Z'); // Lagos 2026-09-26 23:59
@@ -233,11 +234,11 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(res.usage.windowKey).toBe('2026-09-27:DAILY:Africa/Lagos');
     // Verify DB
     const rows: Array<{ reserved_amount_minor: string; used_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text, used_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_amount_minor).toBe('500000');
-    expect(rows[0].used_amount_minor).toBe('0');
+    expect(rows[0]!.reserved_amount_minor).toBe('500000');
+    expect(rows[0]!.used_amount_minor).toBe('0');
     const resRows: Array<{ status: string; amount_minor: string }> = await dataSource.query(`SELECT status, amount_minor::text FROM limit_reservations WHERE idempotency_key=$1`, [idemKey]);
-    expect(resRows[0].status).toBe('RESERVED');
-    expect(resRows[0].amount_minor).toBe('500000');
+    expect(resRows[0]!.status).toBe('RESERVED');
+    expect(resRows[0]!.amount_minor).toBe('500000');
   });
 
   // 08 Count reservation
@@ -264,8 +265,8 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(res.usage.usedCount).toBe(0);
     expect(res.usage.reservedAmountMinor).toBe('0');
     const rows: Array<{ reserved_count: number; used_count: number }> = await dataSource.query(`SELECT reserved_count, used_count FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_count).toBe(1);
-    expect(rows[0].used_count).toBe(0);
+    expect(rows[0]!.reserved_count).toBe(1);
+    expect(rows[0]!.used_count).toBe(0);
   });
 
   // 09 Multiple simultaneous windows (daily/weekly/monthly/yearly amount)
@@ -347,7 +348,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     for (const r of results) expect(r.kind).toBe('NEW');
     const rows: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
     expect(rows.length).toBe(1);
-    expect(rows[0].reserved_amount_minor).toBe('500000'); // 5 * 100000
+    expect(rows[0]!.reserved_amount_minor).toBe('500000'); // 5 * 100000
   });
 
   // 11 SERIALIZABLE retry behavior (exercised via concurrent inserts)
@@ -370,7 +371,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     expect(r1.kind).toBe('NEW');
     expect(r2.kind).toBe('NEW');
     const rows: Array<{ reserved_count: number }> = await dataSource.query(`SELECT reserved_count FROM limit_usages WHERE principal_id=$1 AND dimension='DAILY_COUNT'`, [subjectId]);
-    expect(rows[0].reserved_count).toBe(2);
+    expect(rows[0]!.reserved_count).toBe(2);
   });
 
   // 12 SELECT FOR UPDATE pessimistic locking (concurrent same-window increments)
@@ -398,7 +399,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     );
     expect(conc.every(c => c.kind === 'NEW')).toBe(true);
     const rows: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1 AND dimension='MONTHLY_AMOUNT'`, [subjectId]);
-    expect(rows[0].reserved_amount_minor).toBe('2500'); // 1000 + 3*500
+    expect(rows[0]!.reserved_amount_minor).toBe('2500'); // 1000 + 3*500
   });
 
   // 13 Idempotent replay does not double-consume
@@ -414,12 +415,12 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const second = await usageService.reserve({ principalType: 'CUSTOMER', principalId: subjectId, limitProfileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', currency: 'NGN', amountMinor: '200000', idempotencyKey: idem, requestHash: hash, now });
     expect(second.kind).toBe('REPLAY');
     const rows: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_amount_minor).toBe('200000'); // not 400000
+    expect(rows[0]!.reserved_amount_minor).toBe('200000'); // not 400000
     // Third replay with same key but different amount should 409? Our service uses IdempotencyService which checks hash, so different hash => 409
     const differentHash = hashFor({ subjectId, profile, replay: 2 });
     await expect(usageService.reserve({ principalType: 'CUSTOMER', principalId: subjectId, limitProfileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', currency: 'NGN', amountMinor: '999999', idempotencyKey: idem, requestHash: differentHash, now })).rejects.toThrow();
     const rows2: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows2[0].reserved_amount_minor).toBe('200000'); // still not incremented
+    expect(rows2[0]!.reserved_amount_minor).toBe('200000'); // still not incremented
   });
 
   // 14 Reservation release (failure path)
@@ -432,15 +433,15 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const now = new Date('2026-09-27T10:00:00.000Z');
     await usageService.reserve({ principalType: 'CUSTOMER', principalId: subjectId, limitProfileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', currency: 'NGN', amountMinor: '300000', idempotencyKey: idem, requestHash: hash, now });
     let rows: Array<{ reserved_amount_minor: string; used_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text, used_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_amount_minor).toBe('300000');
-    expect(rows[0].used_amount_minor).toBe('0');
+    expect(rows[0]!.reserved_amount_minor).toBe('300000');
+    expect(rows[0]!.used_amount_minor).toBe('0');
     const rel = await usageService.release({ idempotencyKey: idem });
     expect(rel.released).toBe(1);
     rows = await dataSource.query(`SELECT reserved_amount_minor::text, used_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_amount_minor).toBe('0');
-    expect(rows[0].used_amount_minor).toBe('0');
+    expect(rows[0]!.reserved_amount_minor).toBe('0');
+    expect(rows[0]!.used_amount_minor).toBe('0');
     const rRows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE idempotency_key=$1`, [idem]);
-    expect(rRows[0].status).toBe('RELEASED');
+    expect(rRows[0]!.status).toBe('RELEASED');
     // idempotent release replay
     const rel2 = await usageService.release({ idempotencyKey: idem });
     expect(rel2.released).toBe(0);
@@ -456,15 +457,15 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const now = new Date('2026-09-27T10:00:00.000Z');
     await usageService.reserve({ principalType: 'CUSTOMER', principalId: subjectId, limitProfileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_COUNT', currency: 'NGN', count: 1, idempotencyKey: idem, requestHash: hash, now });
     let rows: Array<{ reserved_count: number; used_count: number }> = await dataSource.query(`SELECT reserved_count, used_count FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_count).toBe(1);
-    expect(rows[0].used_count).toBe(0);
+    expect(rows[0]!.reserved_count).toBe(1);
+    expect(rows[0]!.used_count).toBe(0);
     const com = await usageService.commit({ idempotencyKey: idem });
     expect(com.committed).toBe(1);
     rows = await dataSource.query(`SELECT reserved_count, used_count FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_count).toBe(0);
-    expect(rows[0].used_count).toBe(1);
+    expect(rows[0]!.reserved_count).toBe(0);
+    expect(rows[0]!.used_count).toBe(1);
     const rRows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE idempotency_key=$1`, [idem]);
-    expect(rRows[0].status).toBe('COMMITTED');
+    expect(rRows[0]!.status).toBe('COMMITTED');
     // commit replay
     const com2 = await usageService.commit({ idempotencyKey: idem });
     expect(com2.committed).toBe(0);
@@ -492,7 +493,7 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const results = await Promise.all(promises);
     expect(results.every(r => r.kind === 'NEW')).toBe(true);
     const rows: Array<{ reserved_count: number }> = await dataSource.query(`SELECT reserved_count FROM limit_usages WHERE principal_id=$1`, [subjectId]);
-    expect(rows[0].reserved_count).toBe(n);
+    expect(rows[0]!.reserved_count).toBe(n);
   });
 
   // 17 Different subjects do not collide
@@ -506,8 +507,8 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     await usageService.reserve({ principalType: 'CUSTOMER', principalId: subj2, limitProfileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', currency: 'NGN', amountMinor: '200000', idempotencyKey: `idem-s2-${randomUUID()}`, requestHash: hashFor({ s:2 }), now });
     const rows1: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subj1]);
     const rows2: Array<{ reserved_amount_minor: string }> = await dataSource.query(`SELECT reserved_amount_minor::text FROM limit_usages WHERE principal_id=$1`, [subj2]);
-    expect(rows1[0].reserved_amount_minor).toBe('100000');
-    expect(rows2[0].reserved_amount_minor).toBe('200000');
+    expect(rows1[0]!.reserved_amount_minor).toBe('100000');
+    expect(rows2[0]!.reserved_amount_minor).toBe('200000');
   });
 
   // 18 Different products/rules do not collide
@@ -542,7 +543,6 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const rows: Array<{ limit_profile_code: string }> = await dataSource.query(`SELECT DISTINCT limit_profile_code FROM limit_usages WHERE principal_id=$1 ORDER BY limit_profile_code`, [subjectId]);
     expect(rows.map(r=>r.limit_profile_code).sort()).toEqual(codes.sort());
     // Verify service file has no hardcoded tier
-    const fs = require('node:fs');
     const svc = fs.readFileSync('src/limit-catalog/limit-usage.service.ts','utf8');
     const ent = fs.readFileSync('src/limit-catalog/limit-usage.entity.ts','utf8');
     const win = fs.readFileSync('src/limit-catalog/limit-window.util.ts','utf8');
@@ -577,21 +577,21 @@ describe('V1-LIMIT-03 Limit Usage & Reservation (real PostgreSQL)', () => {
     const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM wallet_accounts`);
     const afterLines: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_lines`);
     const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_journals`);
-    expect(afterWallets[0].count).toBe(beforeWallets[0].count);
-    expect(afterLines[0].count).toBe(beforeLines[0].count);
-    expect(afterJournals[0].count).toBe(beforeJournals[0].count);
+    expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
+    expect(afterLines[0]!.count).toBe(beforeLines[0]!.count);
+    expect(afterJournals[0]!.count).toBe(beforeJournals[0]!.count);
   });
 
   // 21 No transaction-flow behavior change
   it('21. no TransferService wiring — usage does not auto-reject transfers', async () => {
-    const svc = require('node:fs').readFileSync('src/transfer/transfer.service.ts','utf8');
+    const svc = fs.readFileSync('src/transfer/transfer.service.ts','utf8');
     expect(svc).not.toContain('LimitUsageService');
     expect(svc).not.toContain('limit_usages');
-    const usageSvc = require('node:fs').readFileSync('src/limit-catalog/limit-usage.service.ts','utf8');
+    const usageSvc = fs.readFileSync('src/limit-catalog/limit-usage.service.ts','utf8');
     expect(usageSvc).not.toContain('TransferService');
     expect(usageSvc).not.toContain('LedgerService');
     // Ensure WALLET_BALANCE_MAX not used as window
-    const ent = require('node:fs').readFileSync('src/limit-catalog/limit-usage.entity.ts','utf8');
+    const ent = fs.readFileSync('src/limit-catalog/limit-usage.entity.ts','utf8');
     expect(ent).not.toContain('WALLET_BALANCE_MAX');
     // Verify that reserving WALLET_BALANCE_MAX dimension throws
     const profile = 'WALLET_' + randomUUID().slice(0,6).toUpperCase();

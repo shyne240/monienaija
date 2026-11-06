@@ -29,15 +29,15 @@ export class WithdrawalController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createWithdrawal(
+  createWithdrawal(
     @Body() dto: CreateWithdrawalDto,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Req() req?: AuthenticatedRequest,
-  ) {
+  ): Promise<never> {
     void dto;
     void idempotencyKey;
     void req;
-    throw new ForbiddenException('Generic withdrawal commands are disabled');
+    return Promise.reject(new ForbiddenException('Generic withdrawal commands are disabled'));
   }
 
   @Get()
@@ -54,36 +54,36 @@ export class WithdrawalController {
 
   @Post(':withdrawalId/process')
   @HttpCode(HttpStatus.OK)
-  async processWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest) {
+  processWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest): Promise<never> {
     void withdrawalId;
     void req;
-    throw new ForbiddenException('Generic withdrawal state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
   }
 
   @Post(':withdrawalId/complete')
   @HttpCode(HttpStatus.OK)
-  async completeWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest) {
+  completeWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest): Promise<never> {
     void withdrawalId;
     void req;
-    throw new ForbiddenException('Generic withdrawal state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
   }
 
   @Post(':withdrawalId/fail')
   @HttpCode(HttpStatus.OK)
-  async failWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+  failWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
     void withdrawalId;
     void dto;
     void req;
-    throw new ForbiddenException('Generic withdrawal state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
   }
 
   @Post(':withdrawalId/cancel')
   @HttpCode(HttpStatus.OK)
-  async cancelWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest) {
+  cancelWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
     void withdrawalId;
     void dto;
     void req;
-    throw new ForbiddenException('Generic withdrawal state changes are disabled');
+    return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
   }
 
   private isWorkforce(req?: AuthenticatedRequest): boolean {

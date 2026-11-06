@@ -798,9 +798,9 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
     const results = await Promise.all([restarted.tick(), concurrent.tick()]);
     expect(results.reduce((n, r) => n + r.expiredCount, 0)).toBe(2);
     expect((await restarted.tick()).expiredCount).toBe(0);
-    const rows = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=ANY($1::uuid[])`, [ids]);
+    const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=ANY($1::uuid[])`, [ids]);
     expect(rows.every((r: {status:string}) => r.status === 'EXPIRED')).toBe(true);
-    const audits = await dataSource.query(`SELECT entity_id, count(*)::int AS count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=ANY($1::uuid[]) GROUP BY entity_id`, [ids]);
+    const audits: Array<{ entity_id: string; count: number }> = await dataSource.query(`SELECT entity_id, count(*)::int AS count FROM audit_events WHERE action='CASH_TO_CASH_EXPIRED' AND entity_id=ANY($1::uuid[]) GROUP BY entity_id`, [ids]);
     expect(audits).toHaveLength(3);
     expect(audits.every((r: {count:number}) => r.count === 1)).toBe(true);
     expect((await dataSource.query(`SELECT count(*)::int AS journals FROM ledger_journals`))[0].journals).toBe(before.journals);
@@ -859,7 +859,7 @@ describe('A17 Agent Cash→Cash EXPIRY (real PostgreSQL)', () => {
           expect(result.expiredIds).toContain(transferId);
           resolve();
           return result;
-        } catch (error) { reject(error); throw error; }
+        } catch (error) { reject(error as Error); throw error; }
       });
     });
     const worker = executionWorker();

@@ -50,7 +50,7 @@ describe('A9 Agent MonieNaija receiving number (real PostgreSQL)', () => {
     const cls = await classService.create({ reference: `cls-a-${randomUUID().slice(0,8)}`, code: `CA-${randomUUID().slice(0,6)}`, name: 'Test Class A', isActive: true, actor: 'test-actor' });
     const app = await appService.create({ agentClassId: cls.id, applicantReference: `h-${randomUUID()}`, businessName: 'Biz A', contactEmail: 'a@test.com', actor: 'applicant-a' });
     await appService.submit(app.id, 'applicant-a');
-    const toReview = await dataSource.getRepository('agent_applications' as any).findOne({ where: { id: app.id } }) as any;
+    await dataSource.getRepository<{ id: string }>('agent_applications').findOne({ where: { id: app.id } });
     // Simulate internal approve (set status APPROVED)
     await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [app.id]);
     const agent = await lifecycleService.activateFromApplication(app.id, 'test-actor');
@@ -154,7 +154,7 @@ describe('A9 Agent MonieNaija receiving number (real PostgreSQL)', () => {
     await appService.submit(app.id, 'applicant-g');
     await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [app.id]);
     // Before activation, check no agent yet or PENDING
-    const before = await dataSource.query(`SELECT agent_id FROM agent_applications WHERE id=$1`, [app.id]) as Array<{agent_id:string|null}>;
+    const before: Array<{ agent_id: string | null }> = await dataSource.query(`SELECT agent_id FROM agent_applications WHERE id=$1`, [app.id]);
     expect(before[0]!.agent_id).toBeNull();
     // Now activate
     const agent = await lifecycleService.activateFromApplication(app.id, 'test-actor');
@@ -186,7 +186,7 @@ describe('A9 Agent MonieNaija receiving number (real PostgreSQL)', () => {
     await expect(resolutionService.resolve(rnSuspended!.receivingNumber)).rejects.toThrow();
     // Ensure not reassigned: try to re-activate same agent (should fail)
     await expect(lifecycleService.activate(agent.id, 'test-actor')).rejects.toThrow();
-    const after = await dataSource.query(`SELECT status FROM agent_receiving_numbers WHERE agent_id=$1`, [agent.id]) as Array<{status:string}>;
+    const after: Array<{ status: string }> = await dataSource.query(`SELECT status FROM agent_receiving_numbers WHERE agent_id=$1`, [agent.id]);
     expect(after[0]!.status).toBe('REVOKED');
   });
 

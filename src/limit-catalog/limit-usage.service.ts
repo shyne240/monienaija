@@ -6,18 +6,10 @@ import { IdempotencyRecord } from '../operations/idempotency-record.entity';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { LimitReservation, LimitReservationStatus } from './limit-reservation.entity';
 import { LimitUsage } from './limit-usage.entity';
-import { getLagosWindow, getWindowForDimension, isWindowedDimension, LimitWindowType } from './limit-window.util';
+import { getLagosWindow, getWindowForDimension, LimitWindowType } from './limit-window.util';
 
-const AMOUNT_DIMENSIONS = new Set(['DAILY_AMOUNT', 'WEEKLY_AMOUNT', 'MONTHLY_AMOUNT', 'YEARLY_AMOUNT', 'MIN_AMOUNT_PER_TX', 'MAX_AMOUNT_PER_TX', 'WALLET_BALANCE_MAX']);
-const COUNT_DIMENSIONS = new Set(['DAILY_COUNT', 'WEEKLY_COUNT', 'MONTHLY_COUNT', 'YEARLY_COUNT']);
 const WINDOWED_DIMENSIONS = new Set(['DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT']);
 
-function isAmountDimension(dim: string): boolean {
-  return AMOUNT_DIMENSIONS.has(dim.toUpperCase());
-}
-function isCountDimension(dim: string): boolean {
-  return COUNT_DIMENSIONS.has(dim.toUpperCase());
-}
 function isWindowed(dim: string): boolean {
   return WINDOWED_DIMENSIONS.has(dim.toUpperCase());
 }
@@ -87,7 +79,7 @@ export class LimitUsageService {
         key: input.idempotencyKey,
         requestHash: input.requestHash,
       } as never);
-      if ((idem as any).kind === 'REPLAY') {
+      if (idem.kind === 'REPLAY') {
         const existingReservations: LimitReservation[] = await manager
           .getRepository(LimitReservation)
           .find({ where: { idempotencyKey: input.idempotencyKey } as never });
@@ -227,7 +219,7 @@ export class LimitUsageService {
         const saved = await manager.getRepository(LimitReservation).save(reservation as never);
         reservations.push(saved as unknown as LimitReservation);
       } catch (e) {
-        if (e instanceof QueryFailedError && (e as any).code === '23505') {
+        if (e instanceof QueryFailedError && (e as QueryFailedError & { code?: string }).code === '23505') {
           throw new ConflictException('Reservation already exists for this idempotency key and window');
         }
         throw e;
@@ -238,7 +230,7 @@ export class LimitUsageService {
       const rec = await manager.getRepository(IdempotencyRecord).findOne({ where: { scope, idempotencyKey: input.idempotencyKey } as never });
       if (rec) {
         const firstReservationId = reservations[0]?.id ?? null;
-        await this.idempotencyService.complete(manager, (rec as any).id, { statusCode: 200, responseBody: { reserved: reservations.length }, resourceType: 'LIMIT_RESERVATION', resourceId: firstReservationId } as never);
+        await this.idempotencyService.complete(manager, rec.id, { statusCode: 200, responseBody: { reserved: reservations.length }, resourceType: 'LIMIT_RESERVATION', resourceId: firstReservationId } as never);
       }
     }
 
@@ -269,13 +261,13 @@ export class LimitUsageService {
         usage.usedAmountMinor = (BigInt(usage.usedAmountMinor) + amt).toString();
       }
       if (r.count !== null && r.count !== undefined) {
-        if (usage.reservedCount < (r.count as number)) throw new ConflictException('Reserved count underflow on commit');
-        usage.reservedCount = usage.reservedCount - (r.count as number);
-        usage.usedCount = usage.usedCount + (r.count as number);
+        if (usage.reservedCount < (r.count)) throw new ConflictException('Reserved count underflow on commit');
+        usage.reservedCount = usage.reservedCount - (r.count);
+        usage.usedCount = usage.usedCount + (r.count);
       }
       await manager.getRepository(LimitUsage).save(usage);
-      (r as any).status = LimitReservationStatus.COMMITTED;
-      (r as any).committedAt = new Date();
+      r.status = LimitReservationStatus.COMMITTED;
+      r.committedAt = new Date();
       await manager.getRepository(LimitReservation).save(r as never);
     }
     const updated = await manager.getRepository(LimitReservation).find({ where: { idempotencyKey: input.idempotencyKey } as never });
@@ -305,12 +297,12 @@ export class LimitUsageService {
         usage.reservedAmountMinor = (reserved - amt).toString();
       }
       if (r.count !== null && r.count !== undefined) {
-        if (usage.reservedCount < (r.count as number)) throw new ConflictException('Reserved count underflow on release');
-        usage.reservedCount = usage.reservedCount - (r.count as number);
+        if (usage.reservedCount < (r.count)) throw new ConflictException('Reserved count underflow on release');
+        usage.reservedCount = usage.reservedCount - (r.count);
       }
       await manager.getRepository(LimitUsage).save(usage);
-      (r as any).status = LimitReservationStatus.RELEASED;
-      (r as any).releasedAt = new Date();
+      r.status = LimitReservationStatus.RELEASED;
+      r.releasedAt = new Date();
       await manager.getRepository(LimitReservation).save(r as never);
     }
     const updated = await manager.getRepository(LimitReservation).find({ where: { idempotencyKey: input.idempotencyKey } as never });
@@ -414,13 +406,13 @@ export class LimitUsageService {
               usage.usedAmountMinor = (BigInt(usage.usedAmountMinor) + amt).toString();
             }
             if (r.count !== null && r.count !== undefined) {
-              if (usage.reservedCount < (r.count as number)) throw new ConflictException('Reserved count underflow on commit');
-              usage.reservedCount = usage.reservedCount - (r.count as number);
-              usage.usedCount = usage.usedCount + (r.count as number);
+              if (usage.reservedCount < (r.count)) throw new ConflictException('Reserved count underflow on commit');
+              usage.reservedCount = usage.reservedCount - (r.count);
+              usage.usedCount = usage.usedCount + (r.count);
             }
             await manager.getRepository(LimitUsage).save(usage);
-            (r as any).status = LimitReservationStatus.COMMITTED;
-            (r as any).committedAt = new Date();
+            r.status = LimitReservationStatus.COMMITTED;
+            r.committedAt = new Date();
             await manager.getRepository(LimitReservation).save(r as never);
           }
           const updated = await manager.getRepository(LimitReservation).find({ where: { idempotencyKey: input.idempotencyKey } as never });
@@ -466,12 +458,12 @@ export class LimitUsageService {
               usage.reservedAmountMinor = (reserved - amt).toString();
             }
             if (r.count !== null && r.count !== undefined) {
-              if (usage.reservedCount < (r.count as number)) throw new ConflictException('Reserved count underflow on release');
-              usage.reservedCount = usage.reservedCount - (r.count as number);
+              if (usage.reservedCount < (r.count)) throw new ConflictException('Reserved count underflow on release');
+              usage.reservedCount = usage.reservedCount - (r.count);
             }
             await manager.getRepository(LimitUsage).save(usage);
-            (r as any).status = LimitReservationStatus.RELEASED;
-            (r as any).releasedAt = new Date();
+            r.status = LimitReservationStatus.RELEASED;
+            r.releasedAt = new Date();
             await manager.getRepository(LimitReservation).save(r as never);
           }
           const updated = await manager.getRepository(LimitReservation).find({ where: { idempotencyKey: input.idempotencyKey } as never });
@@ -533,9 +525,9 @@ export class LimitUsageService {
   }
 
   private isRetryable(error: unknown): boolean {
-    const qe = error as any;
+    const qe = error as { code?: string; driverError?: { code?: string }; message?: string } | null | undefined;
     const code = qe?.code ?? qe?.driverError?.code ?? null;
-    const msg: string = (qe?.message ?? '') as string;
+    const msg = qe?.message ?? '';
     const isSer = code === '40001' || code === '40P01' || msg.includes('could not serialize') || msg.includes('deadlock detected') || msg.includes('concurrent update');
     if (error instanceof QueryFailedError) return isSer;
     // also treat generic errors with serialization message as retryable

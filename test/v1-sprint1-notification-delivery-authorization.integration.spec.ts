@@ -732,7 +732,7 @@ describe('SPRINT-1 Notification Delivery Authorization Hardening — F-02 / P0-0
     expect(failed.errorCode).toBe('UNCLASSIFIED');
     const skippedCodes = res.body.data
       .filter((d: any) => d.status === 'SKIPPED')
-      .map((d: any) => d.errorCode)
+      .map((d: any) => d.errorCode as string)
       .sort();
     expect(skippedCodes).toEqual(['SMS_OPT_OUT', 'UNCLASSIFIED']);
     const sent = res.body.data.find((d: any) => d.status === 'SENT');

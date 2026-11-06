@@ -517,8 +517,8 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
         idempotencyKey: key,
       }),
     ]);
-    const fulfilled = results.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<any>).value);
-    const rejected = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+    const fulfilled = results.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<AgentCashToCashService['execute']>>> => r.status === 'fulfilled').map((r) => r.value);
+    const rejected = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason as unknown);
     for (const reason of rejected) {
       // Any rejection must be the clean, bounded-retry-exhaustion conflict — never an
       // unrecognized/raw error — and the common case (both fulfilled) is the expected one.
@@ -531,7 +531,7 @@ describe('A15 Agent Cash→Cash (real PostgreSQL)', () => {
       expect(statuses).toEqual(['COMPLETED', 'REPLAYED']);
     } else {
       expect(fulfilled).toHaveLength(1);
-      expect(fulfilled[0].status).toBe('COMPLETED');
+      expect(fulfilled[0]!.status).toBe('COMPLETED');
     }
     const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
     expect(BigInt(afterJournals[0]!.cnt)).toBe(BigInt(beforeJournals[0]!.cnt) + 1n);

@@ -56,7 +56,7 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
     );
     // Unmapped keys (not email-enabled, but the seam must stay safe for them):
     for (const key of ['agent.suspended', 'totally.unknown.event'] as Array<
-      NotificationTemplateKey | string
+      string
     >) {
       const rendered = await emails.buildEmail(key as NotificationTemplateKey, {});
       expect(rendered.subject).toBe('MonieNaija notification');

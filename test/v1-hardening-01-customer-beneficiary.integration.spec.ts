@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID, randomBytes, createHash } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
@@ -81,7 +81,7 @@ describe('V1-HARDENING-01 Customer Beneficiary Exposure + Wallet→Wallet Transf
     // ensure wallet exists
     try {
       await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}-${randomUUID()}` });
-    } catch {}
+    } catch { /* Preserve the existing best-effort cleanup or setup fallback. */ }
     return { customerId, phone: canonical10, token, reference };
   }
 

@@ -8,18 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import {
-  CapabilityAdminUiStatus,
-  CapabilityAgentUiStatus,
-  CapabilityApiStatus,
-  CapabilityBackendStatus,
-  CapabilityBlockerType,
-  CapabilityConfigurationStatus,
-  CapabilityCustomerUiStatus,
-  CapabilityDomain,
-  CapabilityLifecycle,
-  CapabilityProductScope,
-} from './capability.enums';
+import { CapabilityBlockerType } from './capability.enums';
 
 @Entity({ name: 'capabilities' })
 @Index('idx_capabilities_domain', ['domain'])

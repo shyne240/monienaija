@@ -12,7 +12,6 @@ import {
 
 import {
   LimitProfileConfigurationStatus,
-  LimitProfileKind,
   LimitProfileStatus,
 } from './limit-catalog.enums';
 

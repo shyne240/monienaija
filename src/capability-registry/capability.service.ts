@@ -119,14 +119,14 @@ export class CapabilityService {
   async summary(): Promise<CapabilitySummary> {
     const all = (await this.repo.find({ order: { capabilityCode: 'ASC' } as never })) as unknown as Capability[];
     const total = all.length;
-    const fullyEnabled = all.filter((c) => c.enabled && c.configurationStatus === CapabilityConfigurationStatus.CONFIGURED && c.backendStatus === CapabilityBackendStatus.BACKEND_IMPLEMENTED).length;
-    const backendOnly = all.filter((c) => c.backendStatus === CapabilityBackendStatus.BACKEND_IMPLEMENTED && c.apiStatus === CapabilityApiStatus.NOT_EXPOSED && c.adminUiStatus === CapabilityAdminUiStatus.NOT_EXPOSED && c.customerUiStatus === CapabilityCustomerUiStatus.NOT_EXPOSED && c.agentUiStatus === CapabilityAgentUiStatus.NOT_EXPOSED).length;
-    const apiReadyButUiMissing = all.filter((c) => c.apiStatus === CapabilityApiStatus.API_READY && c.customerUiStatus === CapabilityCustomerUiStatus.NOT_EXPOSED && c.agentUiStatus === CapabilityAgentUiStatus.NOT_EXPOSED).length;
-    const configuredButDisabled = all.filter((c) => c.configurationStatus === CapabilityConfigurationStatus.CONFIGURED && !c.enabled).length;
-    const blocked = all.filter((c) => c.blockerType !== CapabilityBlockerType.NONE || c.lifecycle === CapabilityLifecycle.BLOCKED || c.backendStatus === CapabilityBackendStatus.BLOCKED).length;
-    const planned = all.filter((c) => c.lifecycle === CapabilityLifecycle.PLANNED || c.backendStatus === CapabilityBackendStatus.PLANNED).length;
-    const v1 = all.filter((c) => c.productScope === CapabilityProductScope.V1).length;
-    const v2 = all.filter((c) => c.productScope === CapabilityProductScope.V2).length;
+    const fullyEnabled = all.filter((c) => c.enabled && c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) && c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string)).length;
+    const backendOnly = all.filter((c) => c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string) && c.apiStatus === (CapabilityApiStatus.NOT_EXPOSED as string) && c.adminUiStatus === (CapabilityAdminUiStatus.NOT_EXPOSED as string) && c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) && c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string)).length;
+    const apiReadyButUiMissing = all.filter((c) => c.apiStatus === (CapabilityApiStatus.API_READY as string) && c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) && c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string)).length;
+    const configuredButDisabled = all.filter((c) => c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) && !c.enabled).length;
+    const blocked = all.filter((c) => c.blockerType !== (CapabilityBlockerType.NONE as string) || c.lifecycle === (CapabilityLifecycle.BLOCKED as string) || c.backendStatus === (CapabilityBackendStatus.BLOCKED as string)).length;
+    const planned = all.filter((c) => c.lifecycle === (CapabilityLifecycle.PLANNED as string) || c.backendStatus === (CapabilityBackendStatus.PLANNED as string)).length;
+    const v1 = all.filter((c) => c.productScope === (CapabilityProductScope.V1 as string)).length;
+    const v2 = all.filter((c) => c.productScope === (CapabilityProductScope.V2 as string)).length;
     const byDomain: Record<string, number> = {};
     const byBackendStatus: Record<string, number> = {};
     for (const c of all) {

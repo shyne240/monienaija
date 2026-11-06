@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
@@ -49,7 +49,7 @@ describe('V1-ADMIN-P1-HARDENING — P1 function-level authorization for all inte
     process.env.NODE_ENV = ORIGINAL_NODE_ENV;
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined); } catch {} }
+      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined); } catch { /* Preserve the existing best-effort cleanup. */ } }
     }
   }, 60_000);
 
@@ -103,13 +103,13 @@ describe('V1-ADMIN-P1-HARDENING — P1 function-level authorization for all inte
     return result.accessToken;
   }
 
-  async function expectStatus(path: string, method: 'get'|'post'|'patch' = 'get', token: string, body: any, expected: number | number[]) {
+  async function expectStatus(path: string, method: 'get'|'post'|'patch' = 'get', token: string, body: Record<string, unknown> | null, expected: number | number[]) {
     const exp = Array.isArray(expected) ? expected : [expected];
-    let req = (request(app.getHttpServer()) as any)[method](path);
+    let req = request(app.getHttpServer())[method](path);
     if (body) req = req.send(body);
     const res = await req.set('Authorization', `Bearer ${token}`);
     if (!exp.includes(res.status)) {
-      throw new Error(`Expected ${method.toUpperCase()} ${path} to be ${exp}, got ${res.status} body=${JSON.stringify(res.body).slice(0,800)}`);
+      throw new Error(`Expected ${method.toUpperCase()} ${path} to be ${exp.join(',')}, got ${res.status} body=${JSON.stringify(res.body).slice(0,800)}`);
     }
     return res;
   }

@@ -1,11 +1,12 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
+import type { CustomerLimitProductView, CustomerLimitWindowView } from '../src/limit-catalog/customer-limit-view.service';
 import { AppModule } from '../src/app.module';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
@@ -117,7 +118,7 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       expect(p.perTransactionMinMinor).toBeNull();
       expect(p.perTransactionMaxMinor).toBeNull();
     }
-    const names = res.body.products.map((p: any) => p.product).sort();
+    const names = (res.body.products as CustomerLimitProductView[]).map((p: CustomerLimitProductView) => p.product).sort();
     expect(names).toEqual(['CASH_TO_CASH', 'CASH_TO_WALLET', 'CUSTOMER_FUNDING', 'WALLET_TO_CASH', 'WALLET_TRANSFER'].sort());
   });
 
@@ -149,21 +150,21 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_COUNT', limitValueCount: 10 },
     ]);
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = res.body.products.find((p: any) => p.product === 'WALLET_TRANSFER');
+    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
     expect(wt.configured).toBe(true);
     expect(wt.perTransactionMaxMinor).toBe('500000');
     expect(wt.perTransactionMinMinor).toBe('1000');
-    const dailyAmount = wt.windows.find((w: any) => w.dimension === 'DAILY_AMOUNT');
+    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
     expect(dailyAmount.limitMinor).toBe('1000000');
     expect(dailyAmount.usedMinor).toBe('0');
     expect(dailyAmount.remainingMinor).toBe('1000000');
     expect(dailyAmount.period).toBe('DAILY');
     expect(new Date(dailyAmount.windowResetsAt).getTime()).toBeGreaterThan(Date.now());
-    const dailyCount = wt.windows.find((w: any) => w.dimension === 'DAILY_COUNT');
+    const dailyCount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_COUNT')!;
     expect(dailyCount.limitCount).toBe(10);
     expect(dailyCount.remainingCount).toBe(10);
     // Other products remain unconfigured — buckets are isolated (Part G)
-    const cashIn = res.body.products.find((p: any) => p.product === 'CASH_TO_WALLET');
+    const cashIn = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'CASH_TO_WALLET')!;
     expect(cashIn.configured).toBe(false);
   });
 
@@ -193,8 +194,8 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
     });
 
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = res.body.products.find((p: any) => p.product === 'WALLET_TRANSFER');
-    const dailyAmount = wt.windows.find((w: any) => w.dimension === 'DAILY_AMOUNT');
+    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
+    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
     expect(dailyAmount.usedMinor).toBe('300000');
     expect(dailyAmount.remainingMinor).toBe('700000');
   });
@@ -220,8 +221,8 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       // Deliberately do NOT commit — simulates an in-flight financial operation.
     });
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = res.body.products.find((p: any) => p.product === 'WALLET_TRANSFER');
-    const dailyAmount = wt.windows.find((w: any) => w.dimension === 'DAILY_AMOUNT');
+    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
+    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
     expect(dailyAmount.usedMinor).toBe('0');
     expect(dailyAmount.remainingMinor).toBe('800000'); // 1,000,000 - 0 used - 200,000 reserved
   });
@@ -251,8 +252,8 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
     const resA = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${a.token}`).expect(200);
     const resB = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${b.token}`).expect(200);
 
-    const wtA = resA.body.products.find((p: any) => p.product === 'WALLET_TRANSFER');
-    const wtB = resB.body.products.find((p: any) => p.product === 'WALLET_TRANSFER');
+    const wtA = (resA.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
+    const wtB = (resB.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
     expect(wtA.configured).toBe(true);
     expect(wtA.perTransactionMaxMinor).toBe('50000');
     expect(wtB.configured).toBe(false); // B has no assignment and no GLOBAL default — unaffected by A's profile

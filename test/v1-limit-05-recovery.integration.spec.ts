@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 /**
  * V1-LIMIT-05 — PART 3: safe reservation recovery boundary (manual only — automatic reaping BLOCKED).
  *
@@ -23,7 +23,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { createHash, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -55,7 +55,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
@@ -69,8 +69,8 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -130,7 +130,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
       correlationId: `rec-corr-${randomUUID().slice(0, 8)}`,
     });
     const reservation = result.reservations[0];
-    return { key: idemKey, reservationId: reservation.id, usageId: reservation.limitUsageId };
+    return { key: idemKey, reservationId: reservation!.id, usageId: reservation!.limitUsageId! };
   }
 
   async function getCounters(usageId: string): Promise<{ reserved: string; used: string; reservedCount: number; usedCount: number }> {
@@ -138,7 +138,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
       `SELECT reserved_amount_minor::text AS reserved_amount_minor, used_amount_minor::text AS used_amount_minor, reserved_count, used_count FROM limit_usages WHERE id=$1`,
       [usageId],
     );
-    return { reserved: rows[0].reserved_amount_minor, used: rows[0].used_amount_minor, reservedCount: rows[0].reserved_count, usedCount: rows[0].used_count };
+    return { reserved: rows[0]!.reserved_amount_minor, used: rows[0]!.used_amount_minor, reservedCount: rows[0]!.reserved_count, usedCount: rows[0]!.used_count };
   }
 
   it('01 manual release of RESERVED — RELEASED-only transition, counters decremented once, audited', async () => {
@@ -157,8 +157,8 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     expect(result.auditEventId).toBeTruthy();
 
     const rows: Array<{ status: string; released_at: string | null }> = await dataSource.query(`SELECT status, released_at FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('RELEASED');
-    expect(rows[0].released_at).toBeTruthy();
+    expect(rows[0]!.status).toBe('RELEASED');
+    expect(rows[0]!.released_at).toBeTruthy();
 
     const after = await getCounters(usageId);
     expect(after.reserved).toBe('0');
@@ -168,11 +168,11 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
       `SELECT entity_type, entity_id, action, actor, new_values FROM audit_events WHERE id=$1`,
       [result.auditEventId],
     );
-    expect(audit[0].entity_type).toBe('limit_reservation');
-    expect(audit[0].entity_id).toBe(reservationId);
-    expect(audit[0].action).toBe('MANUAL_RELEASE');
-    expect(audit[0].actor).toBe('workforce-privileged-1');
-    expect(JSON.stringify(audit[0].new_values)).toContain('manual recovery');
+    expect(audit[0]!.entity_type).toBe('limit_reservation');
+    expect(audit[0]!.entity_id).toBe(reservationId);
+    expect(audit[0]!.action).toBe('MANUAL_RELEASE');
+    expect(audit[0]!.actor).toBe('workforce-privileged-1');
+    expect(JSON.stringify(audit[0]!.new_values)).toContain('manual recovery');
   });
 
   it('02 COMMITTED reservations are immutable — release refused with 409', async () => {
@@ -187,7 +187,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     ).rejects.toThrow(ConflictException);
 
     const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('COMMITTED');
+    expect(rows[0]!.status).toBe('COMMITTED');
     const after = await getCounters(usageId);
     expect(after.used).toBe('10000'); // untouched
     expect(after.reserved).toBe('0');
@@ -206,7 +206,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
       `SELECT count(*)::text AS cnt FROM audit_events WHERE entity_type='limit_reservation' AND entity_id=$1 AND action='MANUAL_RELEASE'`,
       [reservationId],
     );
-    expect(audits[0].cnt).toBe('1');
+    expect(audits[0]!.cnt).toBe('1');
   });
 
   it('04 concurrent manual releases — exactly one releases, counters decremented exactly once', async () => {
@@ -228,7 +228,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
       `SELECT count(*)::text AS cnt FROM audit_events WHERE entity_type='limit_reservation' AND entity_id=$1 AND action='MANUAL_RELEASE'`,
       [reservationId],
     );
-    expect(audits[0].cnt).toBe('1');
+    expect(audits[0]!.cnt).toBe('1');
   });
 
   it('05 validation — bad UUID 400, missing/short reason 400, unknown reservation 404', async () => {
@@ -240,7 +240,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     await expect(recoveryService.releaseManually({ reservationId: randomUUID(), actor: 'a', reason: 'a perfectly valid long reason' })).rejects.toThrow(NotFoundException);
     // validation failures must not have mutated anything
     const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('RESERVED');
+    expect(rows[0]!.status).toBe('RESERVED');
   });
 
   it('06 no financial ledger mutation and no DELETE — release touches only reservation+usage', async () => {
@@ -251,7 +251,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     const after = await dataSource.query(`SELECT (SELECT count(*) FROM ledger_lines)::text AS l, (SELECT count(*) FROM ledger_journals)::text AS j, (SELECT count(*) FROM limit_reservations)::text AS r`);
     expect(after).toEqual(before); // row still present (RELEASED, never deleted)
     const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('RELEASED');
+    expect(rows[0]!.status).toBe('RELEASED');
   });
 
   it('07 released allowance becomes available again — no permanent consumption by abandoned work', async () => {
@@ -290,7 +290,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     expect(ok.body.reservationId).toBe(reservationId);
 
     const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('RELEASED');
+    expect(rows[0]!.status).toBe('RELEASED');
   });
 
   it('09 automatic-reaping guard — stale RESERVED rows are NEVER auto-released by any component', async () => {
@@ -306,7 +306,7 @@ describe('V1-LIMIT-05 Reservation Recovery Boundary (real PG)', () => {
     await request(app.getHttpServer()).get(`/api/v1/internal/limit-usages?principalId=${principalId}`).set('Authorization', auth('SERVICE'));
 
     const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(rows[0].status).toBe('RESERVED'); // still reserved — stale age alone never triggers release
+    expect(rows[0]!.status).toBe('RESERVED'); // still reserved — stale age alone never triggers release
     const counters = await getCounters(usageId);
     expect(counters.reserved).toBe('10000');
   });

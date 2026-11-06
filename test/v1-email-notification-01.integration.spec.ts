@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -60,7 +60,6 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -89,7 +88,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
-        } as any;
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
       }
       if (!(suffix in scopeMap)) throw new UnauthorizedException('invalid type');
       return {
@@ -101,7 +100,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
     },
   };
 
@@ -198,7 +197,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     }
     try {
       await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` });
-    } catch {}
+    } catch { /* Preserve the existing best-effort cleanup or setup fallback. */ }
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
        VALUES ($1,$2,'EN','SYSTEM',$3,$4,true,true,true,true,true,false,1) ON CONFLICT DO NOTHING`,
@@ -320,7 +319,7 @@ describe('V1-EMAIL-NOTIFICATION-01 EMAIL delivery infrastructure (real PostgreSQ
     const emailDb = rows.find((r) => r.channel === 'EMAIL')!;
     expect(emailDb.status).toBe('SENT');
     expect(emailDb.message).toBe(sentEmail.message);
-    expect(emailDb.message!.length).toBeLessThanOrEqual(1000);
+    expect(emailDb.message.length).toBeLessThanOrEqual(1000);
     expect(emailDb.payload._templateKey).toBe('transfer.completed');
     expect(emailDb.provider_ref).toMatch(/^test-email-/);
     // Subject/html are NOT persisted (ephemeral render inputs; text body is the record)

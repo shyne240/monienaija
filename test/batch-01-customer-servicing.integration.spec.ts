@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 /**
  * Batch 1 customer servicing proof: real Nest HTTP + isolated PostgreSQL + synthetic records.
  * No authorization provider, repository, API response, or customer record is mocked.
@@ -9,7 +9,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -31,7 +31,6 @@ process.env.DB_HOST ??= postgresConfig.host;
 process.env.DB_NAME ??= postgresConfig.adminDatabase;
 process.env.DB_USER ??= postgresConfig.username;
 process.env.DB_PASSWORD ??= postgresConfig.password;
-const { AppModule } = require('../src/app.module');
 
 const workforceConfig: A2WorkforceConfigurationV1 = {
   enabled: true,
@@ -79,6 +78,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     dataSource = await createIntegrationDataSource('batch01customers');
+    const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)
@@ -345,7 +345,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       legalName: 'Batch One Alpha Legal',
       primaryContact: { type: 'PHONE', maskedValue: '+234*****1234', isVerified: true },
     });
-    expect(new Date(alpha.body.data[0].createdAt).toISOString()).toBe('2026-10-20T12:00:00.000Z');
+    expect(new Date(alpha.body.data[0].createdAt as string).toISOString()).toBe('2026-10-20T12:00:00.000Z');
     expect(JSON.stringify(alpha.body)).not.toContain(syntheticPhone('1234'));
 
     const contactSearch = await request(app.getHttpServer())
@@ -393,7 +393,7 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
   });
 
   it('serves customer profile, authorized contact/address data and masked workforce phone views', async () => {
-    await seedAddress(customers.alpha.id);
+    await seedAddress(customers.alpha.id as string);
     const profile = await request(app.getHttpServer())
       .get(`/api/v1/customers/${customers.alpha.id}/profile`)
       .set(auth(superAdmin.token))

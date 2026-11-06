@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 /** Batch 2A: real PostgreSQL + authenticated HTTP proof for Admin customer registration and corrections. */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
@@ -26,7 +26,6 @@ process.env.DB_HOST ??= postgresConfig.host;
 process.env.DB_NAME ??= postgresConfig.adminDatabase;
 process.env.DB_USER ??= postgresConfig.username;
 process.env.DB_PASSWORD ??= postgresConfig.password;
-const { AppModule } = require('../src/app.module');
 
 const workforceConfig: A2WorkforceConfigurationV1 = {
   enabled: true,
@@ -64,6 +63,7 @@ describe('Batch 2A Admin customer registration (real PostgreSQL + authenticated 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     dataSource = await createIntegrationDataSource('batch2acustomer');
+    const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSource)

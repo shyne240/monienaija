@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -76,7 +75,7 @@ export class OutletService {
       if (type === 'AGENT') throw new ForbiddenException('Agent principal cannot manage outlets');
       if (type === 'AGGREGATOR') {
         if (!aggregatorId) throw new BadRequestException('aggregatorId is required for Aggregator principal');
-        if ((principal as any).aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
+        if (principal.aggregatorId !== aggregatorId) throw new ForbiddenException('Aggregator principal mismatch');
       }
     }
 
@@ -92,7 +91,7 @@ export class OutletService {
       const repo = manager.getRepository(AgentOutlet);
 
       // Pre-check uniqueness for clearer error (DB constraint is source of truth for race)
-      const existingRef = await repo.findOne({ where: { reference } as any });
+      await repo.findOne({ where: { reference } });
       // Need to check soft delete: findOne without deleted_at may include deleted; we query raw for non-deleted
       const refRows: Array<{ id: string }> = await manager.query(`SELECT id FROM agent_outlets WHERE reference=$1 AND deleted_at IS NULL LIMIT 1`, [reference]);
       if (refRows.length > 0) throw new ConflictException(`Outlet reference ${reference} already exists`);
@@ -128,7 +127,7 @@ export class OutletService {
           newValues: this.toValues(saved),
         });
         return saved;
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (this.isUniqueViolation(e)) {
           throw new ConflictException('Outlet reference or code already exists');
         }
@@ -139,8 +138,8 @@ export class OutletService {
 
   async getById(id: string): Promise<AgentOutlet> {
     this.assertUuid(id, 'id');
-    const outlet = await this.dataSource.getRepository(AgentOutlet).findOne({ where: { id } as any });
-    if (!outlet || (outlet as any).deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
+    const outlet = await this.dataSource.getRepository(AgentOutlet).findOne({ where: { id } });
+    if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
     return outlet;
   }
 
@@ -149,7 +148,7 @@ export class OutletService {
     // Ensure agent exists
     const agentRows: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM agents WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [agentId]);
     if (agentRows.length === 0) throw new NotFoundException(`Agent ${agentId} not found`);
-    return this.dataSource.getRepository(AgentOutlet).find({ where: { agentId } as any, order: { createdAt: 'ASC' } as any });
+    return this.dataSource.getRepository(AgentOutlet).find({ where: { agentId }, order: { createdAt: 'ASC' } });
   }
 
   async updateMetadata(id: string, input: {
@@ -221,7 +220,7 @@ export class OutletService {
       const repo = manager.getRepository(AgentOutlet);
       const outlet = await repo.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
       if (!outlet || outlet.deletedAt !== null) throw new NotFoundException(`Outlet ${id} not found`);
-      const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status as OutletStatus] ?? [];
+      const allowed = ALLOWED_OUTLET_TRANSITIONS[outlet.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${outlet.status} → ${target} is not allowed`);
       }
@@ -251,7 +250,7 @@ export class OutletService {
     );
     const agent = rows[0];
     if (!agent || agent.deleted_at !== null) throw new NotFoundException(`Agent ${agentId} not found`);
-    if (agent.status !== AgentStatus.ACTIVE) {
+    if (agent.status !== (AgentStatus.ACTIVE as string)) {
       throw new ConflictException(`Agent ${agentId} is ${agent.status} and cannot ${operation} outlet`);
     }
   }
@@ -263,7 +262,7 @@ export class OutletService {
     );
     const agg = aggRows[0];
     if (!agg || agg.deleted_at !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
-    if (agg.status !== AggregatorStatus.ACTIVE) throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
+    if (agg.status !== (AggregatorStatus.ACTIVE as string)) throw new ConflictException(`Aggregator ${aggregatorId} is ${agg.status}`);
     const relRows: Array<{ id: string; status: string }> = await this.dataSource.query(
       `SELECT id, status FROM aggregator_agent_assignments WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
       [aggregatorId, agentId],
@@ -437,7 +436,8 @@ export class OutletService {
     return value;
   }
 
-  private isUniqueViolation(e: any): boolean {
+  private isUniqueViolation(error: unknown): boolean {
+    const e = error as { message?: string; code?: string } | null | undefined;
     const msg = String(e?.message ?? '').toLowerCase();
     const code = String(e?.code ?? '');
     return code === '23505' || msg.includes('duplicate') || msg.includes('uq_agent_outlets');

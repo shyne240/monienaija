@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-// @ts-nocheck
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
@@ -154,7 +154,7 @@ describe('V1-CUSTOMER-05 Customer Transaction PIN security (real PostgreSQL)', (
     await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${token}`).send({ pin: '1234' }).expect(200);
     await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin/change').set('Authorization', `Bearer ${token}`).send({ currentPin: '0000', newPin: '5678' }).expect(401);
     const rows: Array<{ failed_count: number }> = await dataSource.query(`SELECT failed_count FROM customer_transaction_pins WHERE customer_id=$1`, [customerId]);
-    expect(Number(rows[0].failed_count)).toBe(1);
+    expect(Number(rows[0]!.failed_count)).toBe(1);
   });
 
   // 6. Locked PIN cannot be bypassed via change — 5 wrong change attempts lock it, then even correct-looking attempts are rejected
@@ -165,7 +165,7 @@ describe('V1-CUSTOMER-05 Customer Transaction PIN security (real PostgreSQL)', (
       await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin/change').set('Authorization', `Bearer ${token}`).send({ currentPin: '0000', newPin: '5678' }).expect(401);
     }
     const rows: Array<{ account_locked: boolean }> = await dataSource.query(`SELECT account_locked FROM customer_transaction_pins WHERE customer_id=$1`, [customerId]);
-    expect(rows[0].account_locked).toBe(true);
+    expect(rows[0]!.account_locked).toBe(true);
     // Even presenting the CORRECT current PIN after lockout must be rejected — cannot bypass lockout via change.
     const attemptAfterLock = await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin/change').set('Authorization', `Bearer ${token}`).send({ currentPin: '1234', newPin: '9999' }).expect(401);
     expect(attemptAfterLock.body.message).toMatch(/locked/i);

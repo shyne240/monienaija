@@ -9,7 +9,7 @@ import { createSign, generateKeyPairSync, type KeyObject } from 'node:crypto';
 import { canonical } from '../src/authorization/workforce-crypto';
 import type { A2BootstrapStatementV1 } from '../src/authorization/workforce-authentication.types';
 import { readFileSync } from 'node:fs';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import { A2FinanceRoleAdministrationService } from '../src/authorization/finance-role-administration.service';
@@ -240,7 +240,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     expect(view.principalId).toBe(`${ISSUER}:${SUBJECT}`);
     expect(view.scopes).toEqual(['privileged:execute']);
     expect(view.bootstrapReference).toMatch(/^a2-bootstrap-/);
-    const rows = await dataSource.query(
+    const rows: Array<{ role_key: string; status: string }> = await dataSource.query(
       `SELECT role_key, status FROM a2_finance_role_assignments`,
     );
     expect(rows).toEqual([{ role_key: 'SUPER_ADMIN', status: 'ACTIVE' }]);

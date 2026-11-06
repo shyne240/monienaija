@@ -14,7 +14,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync, randomBytes } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { AgentService } from '../src/agent/agent-service.enum';
@@ -677,7 +677,7 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     )[0].n;
     expect(afterJournals).toBe(beforeJournals);
     const balAfter = await ledgerService.getAccountBalance(wallet.ledgerAccountId);
-    expect(balAfter.toString()).toBe(balBefore.toString());
+    expect(balAfter.balanceMinor).toBe(balBefore.balanceMinor);
     // issuance wrote only audit + MFA-context rows — including the desk-OTP delivery audit
     const audit: Array<{ action: string; n: number }> = await dataSource.query(
       `SELECT action, count(*)::int AS n FROM audit_events WHERE entity_type='MFA_CHALLENGE' GROUP BY action`,

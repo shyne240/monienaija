@@ -44,7 +44,7 @@ describe('V1-CUSTOMER-01 Customer Self-Service Lifecycle (Real PostgreSQL)', () 
   const VERIFY_PATH = '/api/v1/customers/registration/otp/verify';
   const REGISTER_PATH = '/api/v1/customers/registration';
   const LOGIN_PATH = '/api/v1/customers/sessions';
-  const ME_PATH = '/api/v1/customers/me';
+
   const DASHBOARD_PATH = '/api/v1/customers/me/dashboard';
 
   const nextPhone = (() => {

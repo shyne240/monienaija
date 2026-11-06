@@ -29,7 +29,7 @@ import {
 import { CommissionRuleRegistryService } from '../src/commission/commission-rule-registry.service';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
-import { AgentService } from '../src/agent/agent-service.enum';
+
 import { AgentCashInService } from '../src/agent/agent-cash-in.service';
 import { AgentCashOutService } from '../src/agent/agent-cash-out.service';
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
@@ -378,7 +378,6 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     );
     const credentialId = cRows[0]!.id;
     const sessionId = randomUUID();
-    await lifecycleService; // keep linter quiet about unused import symmetry
     await dataSource
       .query(
         `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,

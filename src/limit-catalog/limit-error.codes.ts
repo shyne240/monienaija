@@ -17,6 +17,8 @@ export enum LimitFailureCode {
 }
 
 export function dimensionToFailureCode(dimension: string, exceeded: boolean): LimitFailureCode {
+  // Retain the parameter for compatibility with existing callers.
+  void exceeded;
   const d = dimension.toUpperCase();
   if (d === 'MIN_AMOUNT_PER_TX') return LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET;
   if (d === 'MAX_AMOUNT_PER_TX') return LimitFailureCode.LIMIT_MAX_AMOUNT_EXCEEDED;

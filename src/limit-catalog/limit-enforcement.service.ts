@@ -1,9 +1,9 @@
-import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { LimitFailureCode, dimensionToFailureCode } from './limit-error.codes';
 import { LimitProfileResolverService } from './limit-profile-resolver.service';
-import { LimitUsageService, LimitUsageReserveEntry } from './limit-usage.service';
+import { LimitUsageService } from './limit-usage.service';
 import { getWindowForDimension } from './limit-window.util';
 
 function toUpper(v?: string | null): string | null {
@@ -217,7 +217,6 @@ export class LimitEnforcementService {
       let balance = 0n;
       for (const row of balanceRows) {
         const amt = BigInt(row.amount_minor);
-        const isNormal = row.direction === 'CREDIT' ? ledgerAcc.normal_balance === 'CREDIT' : ledgerAcc.normal_balance === 'DEBIT';
         // Simplify: if normal is CREDIT, CREDIT adds, DEBIT subtracts
         // Normal CREDIT means liability (wallet), so CREDIT increases balance
         const isCredit = row.direction === 'CREDIT';
@@ -458,8 +457,8 @@ export class LimitEnforcementService {
           ],
         );
         if (insertedReservation[0]?.id) newReservationIds.push(insertedReservation[0].id);
-      } catch (e: any) {
-        if (e?.code === '23505') {
+      } catch (e: unknown) {
+        if ((e as { code?: string } | null | undefined)?.code === '23505') {
           // Unique violation — concurrent reserve for same window/idempotencyKey, treat as already reserved (should be replay)
           // Continue
         } else throw e;
@@ -505,8 +504,8 @@ export class LimitEnforcementService {
   private limitException(code: LimitFailureCode, message: string): HttpException {
     // Map to 422 for exceeded, 400 for min? Spec says stable codes, use 422 for most, 400 for min not met
     const status = code === LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET ? HttpStatus.BAD_REQUEST : HttpStatus.UNPROCESSABLE_ENTITY;
-    const err: any = new HttpException({ message, error: code, code }, status);
-    (err as any).code = code;
+    const err = new HttpException({ message, error: code, code }, status) as HttpException & { code: LimitFailureCode };
+    err.code = code;
     return err;
   }
 
@@ -531,7 +530,7 @@ export class LimitEnforcementService {
         await manager.query(`UPDATE limit_usages SET reserved_amount_minor=$1, updated_at=NOW() WHERE id=$2`, [newReserved, u.id]);
       }
       if (r.count !== null) {
-        const newReserved = u.reserved_count - (r.count as number);
+        const newReserved = u.reserved_count - r.count;
         await manager.query(`UPDATE limit_usages SET reserved_count=$1, updated_at=NOW() WHERE id=$2`, [newReserved, u.id]);
       }
       await manager.query(`UPDATE limit_reservations SET status='RELEASED', released_at=NOW(), updated_at=NOW() WHERE id=$1`, [r.id]);
@@ -570,8 +569,8 @@ export class LimitEnforcementService {
         await manager.query(`UPDATE limit_usages SET reserved_amount_minor=$1, used_amount_minor=$2, updated_at=NOW() WHERE id=$3`, [newReserved, newUsed, u.id]);
       }
       if (r.count !== null) {
-        const newReserved = u.reserved_count - (r.count as number);
-        const newUsed = u.used_count + (r.count as number);
+        const newReserved = u.reserved_count - r.count;
+        const newUsed = u.used_count + r.count;
         await manager.query(`UPDATE limit_usages SET reserved_count=$1, used_count=$2, updated_at=NOW() WHERE id=$3`, [newReserved, newUsed, u.id]);
       }
       await manager.query(`UPDATE limit_reservations SET status='COMMITTED', committed_at=NOW(), updated_at=NOW() WHERE id=$1`, [r.id]);

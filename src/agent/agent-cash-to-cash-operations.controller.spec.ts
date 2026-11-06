@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
+import type { AuthorizationService } from '../authorization/authorization.service';
 import { AgentCashToCashOperationsController } from './agent-cash-to-cash-operations.controller';
 
 const agentId = '11111111-1111-4111-8111-111111111111';
@@ -39,19 +40,16 @@ const row = {
 };
 
 describe('AgentCashToCashOperationsController', () => {
-  let query: jest.Mock;
+  let query: jest.Mock<Promise<Array<typeof row | { total: string }>>, [string, unknown[]]>;
   let requireFunction: jest.Mock;
   let controller: AgentCashToCashOperationsController;
 
   beforeEach(() => {
-    query = jest.fn(async (sql: string) => {
-      if (sql.includes('count(*)')) return [{ total: '1' }];
-      return [row];
-    });
+    query = jest.fn<Promise<Array<typeof row | { total: string }>>, [string, unknown[]]>((sql) => Promise.resolve(sql.includes('count(*)') ? [{ total: '1' }] : [row]));
     requireFunction = jest.fn().mockResolvedValue(principal.principalId);
     controller = new AgentCashToCashOperationsController(
       { query } as unknown as DataSource,
-      { requireFunction } as any,
+      { requireFunction } as unknown as AuthorizationService,
     );
   });
 
@@ -88,9 +86,9 @@ describe('AgentCashToCashOperationsController', () => {
     expect(result.data[0]).not.toHaveProperty('idempotencyKey');
     expect(result.data[0]).not.toHaveProperty('requestHash');
     expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[0][1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001']);
-    expect(query.mock.calls[1][1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001', 50, 50]);
-    expect(query.mock.calls[1][0]).not.toMatch(/transfer_code_hash|idempotency_key|request_hash/i);
+    expect(query.mock.calls[0]![1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001']);
+    expect(query.mock.calls[1]![1]).toEqual(['CLAIMED', agentId, transferId, 'C2C-001', 50, 50]);
+    expect(query.mock.calls[1]![0]).not.toMatch(/transfer_code_hash|idempotency_key|request_hash/i);
   });
 
   test('rejects malformed filters before querying transfer data', async () => {

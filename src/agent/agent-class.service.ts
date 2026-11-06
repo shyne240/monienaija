@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { AgentClass } from './agent-class.entity';
@@ -19,10 +19,10 @@ export interface CreateAgentClassCommand {
   description?: string | null;
   isActive?: boolean;
   requirements?: Record<string, unknown> | null;
-  requiredInformation?: unknown | null;
-  requiredDocumentCategories?: unknown | null;
-  applicableServices?: unknown | null;
-  applicableLimits?: unknown | null;
+  requiredInformation?: unknown;
+  requiredDocumentCategories?: unknown;
+  applicableServices?: unknown;
+  applicableLimits?: unknown;
   actor: string;
 }
 
@@ -31,10 +31,10 @@ export interface UpdateAgentClassCommand {
   description?: string | null;
   isActive?: boolean;
   requirements?: Record<string, unknown> | null;
-  requiredInformation?: unknown | null;
-  requiredDocumentCategories?: unknown | null;
-  applicableServices?: unknown | null;
-  applicableLimits?: unknown | null;
+  requiredInformation?: unknown;
+  requiredDocumentCategories?: unknown;
+  applicableServices?: unknown;
+  applicableLimits?: unknown;
   actor: string;
   expectedVersion?: number;
 }
@@ -161,7 +161,7 @@ export class AgentClassService {
   }
 
   private async audit(
-    manager: import('typeorm').EntityManager,
+    manager: EntityManager,
     entityType: string,
     entityId: string,
     action: string,

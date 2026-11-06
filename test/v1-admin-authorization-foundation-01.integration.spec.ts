@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 import { UnauthorizedException } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 
@@ -32,7 +32,8 @@ import { createIntegrationDataSource, destroyIntegrationDataSource } from './sup
  */
 describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real PostgreSQL)', () => {
   let dataSource: DataSource;
-  let moduleRef: Awaited<ReturnType<typeof Test.createTestingModule>> extends infer T ? any : never;
+  let moduleRef: TestingModule;
+  let app: NestFastifyApplication;
   let seedService: AuthorizationCatalogueSeedService;
 
   const workforceConfig: A2WorkforceConfigurationV1 = {
@@ -44,7 +45,6 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -52,7 +52,7 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token) throw new UnauthorizedException('invalid workforce token');
       return {
         type: 'OPERATOR',
@@ -63,8 +63,8 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -78,14 +78,12 @@ describe('V1-ADMIN-AUTHORIZATION-FOUNDATION-01 — Function/Role Catalogue (real
       .useValue(workforceConfig)
       .compile();
 
-    const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init(); // runs OnApplicationBootstrap -> AuthorizationCatalogueSeedService.seedIfEmpty()
     seedService = moduleRef.get(AuthorizationCatalogueSeedService);
-    (moduleRef as any).__app = app;
   }, 180000);
 
   afterAll(async () => {
-    const app = (moduleRef as any)?.__app;
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
       try {

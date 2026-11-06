@@ -31,13 +31,13 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
-import { DashboardTemplate } from '../src/dashboard/dashboard-template.entity';
+
 import { RoleDashboardAssignment } from '../src/dashboard/role-dashboard-assignment.entity';
 import { DASHBOARD_WIDGET_REGISTRY } from '../src/dashboard/dashboard-widget-registry';
 import {
@@ -191,9 +191,9 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const token = await loginSuperAdmin();
       const res = await request(app.getHttpServer()).get(`${DASH}/assignments`).set(auth(token));
       expect(res.status).toBe(200);
-      const byRole = new Map<string, any>(res.body.map((a: any) => [a.roleKey, a]));
+      const byRole = new Map((res.body as Array<{ roleKey: string; templateKey: string }>).map((a) => [a.roleKey, a] as const));
       for (const roleKey of ALL_V1_ROLES) {
-        const assignment = byRole.get(roleKey);
+        const assignment = byRole.get(roleKey)!;
         expect(assignment).toBeDefined();
         const templateRes = await request(app.getHttpServer())
           .get(`${DASH}/templates/${assignment.templateKey}`)
@@ -209,7 +209,7 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       expect(res.status).toBe(200);
       expect(res.body.length).toBe(12);
       const registryKeys = new Set(DASHBOARD_WIDGET_REGISTRY.map((w) => w.widgetKey));
-      for (const template of res.body) {
+      for (const template of res.body as Array<{ layout: { widgets: Array<{ widgetKey: string }> } }>) {
         for (const w of template.layout.widgets) {
           expect(registryKeys.has(w.widgetKey)).toBe(true);
         }
@@ -306,11 +306,11 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const { token: treasuryToken } = await provisionRole('TREASURY');
       const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(treasuryToken));
       expect(mine.body.templateKey).toBe('EXECUTIVE_GOVERNANCE');
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
-      expect(byKey.get('reconciliation-status').authorized).toBe(true);
-      expect(byKey.get('transaction-summary').authorized).toBe(false);
-      expect(byKey.get('workforce-overview').authorized).toBe(false);
-      expect(byKey.get('role-governance-queue').authorized).toBe(false);
+      const byKey = new Map((mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map((w) => [w.widgetKey, w] as const));
+      expect(byKey.get('reconciliation-status')!.authorized).toBe(true);
+      expect(byKey.get('transaction-summary')!.authorized).toBe(false);
+      expect(byKey.get('workforce-overview')!.authorized).toBe(false);
+      expect(byKey.get('role-governance-queue')!.authorized).toBe(false);
     });
   });
 
@@ -370,8 +370,8 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       const { token } = await provisionRole('CUSTOMER_SERVICE');
       const mine = await request(app.getHttpServer()).get(`${DASH}/my-dashboard`).set(auth(token));
       expect(mine.body.templateKey).toBe('EXECUTIVE_GOVERNANCE');
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
-      expect(byKey.get('transaction-summary').authorized).toBe(false);
+      const byKey = new Map((mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map((w) => [w.widgetKey, w] as const));
+      expect(byKey.get('transaction-summary')!.authorized).toBe(false);
 
       // Even if the frontend ignored `authorized: false` and called the widget endpoint anyway:
       const widgetRes = await request(app.getHttpServer())
@@ -484,7 +484,7 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
           .set(auth(token));
         expect(res.status).toBe(200);
         expect(res.body.period).toBe(period);
-        expect(new Date(res.body.from).getTime()).toBeLessThanOrEqual(new Date(res.body.to).getTime());
+        expect(new Date(res.body.from as string).getTime()).toBeLessThanOrEqual(new Date(res.body.to as string).getTime());
         expect(res.body.currency).toBe('NGN');
         expect(Array.isArray(res.body.byType)).toBe(true);
         expect(res.body.byType.map((t: any) => t.type).sort()).toEqual(['C2C', 'C2W', 'W2C', 'W2W']);
@@ -509,11 +509,11 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
           .get(`${DASH}/widgets/transaction-summary?period=${period}`)
           .set(auth(token));
         expect(res.status).toBe(200);
-        const byType = new Map<string, any>(res.body.byType.map((t: any) => [t.type, t]));
-        expect(byType.get('W2W').feeRevenueMinor).toEqual(expect.any(String));
-        expect(byType.get('C2C').feeRevenueMinor).toEqual(expect.any(String));
-        expect(byType.get('C2W').feeRevenueMinor).toBeNull();
-        expect(byType.get('W2C').feeRevenueMinor).toBeNull();
+        const byType = new Map((res.body.byType as Array<{ type: string; feeRevenueMinor: string | null }>).map((t) => [t.type, t] as const));
+        expect(byType.get('W2W')!.feeRevenueMinor).toEqual(expect.any(String));
+        expect(byType.get('C2C')!.feeRevenueMinor).toEqual(expect.any(String));
+        expect(byType.get('C2W')!.feeRevenueMinor).toBeNull();
+        expect(byType.get('W2C')!.feeRevenueMinor).toBeNull();
       }
     });
 
@@ -524,7 +524,7 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
         .set(auth(token));
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('previousPeriod');
-      expect(new Date(res.body.previousPeriod.to).getTime()).toBe(new Date(res.body.from).getTime());
+      expect(new Date(res.body.previousPeriod.to as string).getTime()).toBe(new Date(res.body.from as string).getTime());
       expect(res.body).toHaveProperty('comparison');
       expect(res.body.comparison).toHaveProperty('definition');
       // With an empty, freshly-truncated database both periods have zero completed transactions,
@@ -682,7 +682,7 @@ describe('V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01 — real PostgreSQL + real
       }
 
       // self-widgets always present and always authorized (no function required)
-      const byKey = new Map<string, any>(mine.body.widgets.map((w: any) => [w.widgetKey, w]));
+      const byKey = new Map((mine.body.widgets as Array<{ widgetKey: string; authorized: boolean }>).map((w) => [w.widgetKey, w] as const));
       expect(byKey.get('identity-session')?.authorized).toBe(true);
       expect(byKey.get('entitlements-scopes')?.authorized).toBe(true);
     });

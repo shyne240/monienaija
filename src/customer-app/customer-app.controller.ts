@@ -4,7 +4,6 @@ import {
   Controller,
   ForbiddenException,
   Get,
-  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -21,6 +20,7 @@ import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
+import { ContactMethodType } from '../customer/customer.enums';
 import { CustomerProfile } from '../customer/customer-profile.entity';
 import { CustomerService } from '../customer/customer.service';
 import { CustomerTransactionPinService } from '../customer/customer-transaction-pin.service';
@@ -35,6 +35,8 @@ import { PasswordHashVerificationService } from '../customer-authentication/pass
 import { AuditService } from '../operations/audit.service';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
+import type { CustomerBeneficiaryView } from '../customer-beneficiary/customer-beneficiary.types';
+import type { RecipientResolution } from '../agent/agent-receiving-number.types';
 import { CustomerBeneficiaryStatus } from '../customer-beneficiary/customer-beneficiary.enums';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerLoginDto } from './dto/customer-login.dto';
@@ -307,12 +309,12 @@ export class CustomerAppController {
         throw new BadRequestException(`Field '${key}' is not allowed`);
       }
     }
-    const raw = (dto as any)?.displayName;
+    const raw = dto?.displayName;
     if (typeof raw !== 'string') throw new BadRequestException('displayName must be a string');
     const displayName = raw.trim();
     if (displayName.length === 0 || displayName.length > 200) throw new BadRequestException('displayName must be 1 to 200 characters');
     // Basic hygiene: disallow control chars
-    if (/[\u0000-\u001F]/.test(displayName)) throw new BadRequestException('displayName contains invalid characters');
+    if ([...displayName].some((character) => character.charCodeAt(0) <= 0x1f)) throw new BadRequestException('displayName contains invalid characters');
     const customer = await this.customerRepository.findOne({ where: { id: principal.customerId } });
     if (!customer || customer.deletedAt !== null) throw new NotFoundException('Customer not found');
     let profile: CustomerProfile | null = null;
@@ -345,11 +347,10 @@ export class CustomerAppController {
         updatedAt: customer.updatedAt,
       };
     }
-    const previousDisplayName = profile.displayName;
     // Reuse existing transaction/audit pattern — keep controller thin, no hashing/policy here
     const updated = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(CustomerProfile);
-      const locked = await repo.findOne({ where: { id: profile!.id, customerId: principal.customerId } });
+      const locked = await repo.findOne({ where: { id: profile.id, customerId: principal.customerId } });
       if (!locked || locked.deletedAt !== null) throw new NotFoundException('Profile not found');
       const previousValues = { displayName: locked.displayName };
       locked.displayName = displayName;
@@ -394,8 +395,8 @@ export class CustomerAppController {
   @HttpCode(200)
   async changePassword(@Req() req: AuthenticatedRequest, @Body() dto: Record<string, unknown>) {
     const principal = this.requireCustomerPrincipal(req);
-    const currentPassword = (dto as any)?.currentPassword;
-    const newPassword = (dto as any)?.newPassword;
+    const currentPassword = dto?.currentPassword;
+    const newPassword = dto?.newPassword;
     if (typeof currentPassword !== 'string' || currentPassword.length === 0) throw new BadRequestException('currentPassword is required');
     if (typeof newPassword !== 'string' || newPassword.length === 0) throw new BadRequestException('newPassword is required');
     if (currentPassword.length > 1024 || newPassword.length > 128) throw new BadRequestException('Password length is invalid');
@@ -427,7 +428,7 @@ export class CustomerAppController {
     })();
     await this.customerAuthService.rotatePassword(principal.customerId!, credentialId, {
       passwordHash: newHash,
-      hashAlgorithm: 'PBKDF2' as any,
+      hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
       passwordVersion: (credentialView.passwordVersion ?? 1) + 1,
       actor: principal.customerId!,
     });
@@ -470,7 +471,7 @@ export class CustomerAppController {
   @Get('customers/me/wallets')
   async listWallets(@Req() req: AuthenticatedRequest) {
     const principal = this.requireCustomerPrincipal(req);
-    const wallets = await this.walletService.listWallets(principal.customerId!);
+    const wallets = await this.walletService.listWallets(principal.customerId);
     // Never leak internal creationIdempotencyKey
     return wallets.map((w) => ({
       id: w.id,
@@ -518,7 +519,7 @@ export class CustomerAppController {
   @Get('customers/me/financial-position')
   async getFinancialPosition(@Req() req: AuthenticatedRequest) {
     const principal = this.requireCustomerPrincipal(req);
-    const wallets = await this.walletService.listWallets(principal.customerId!);
+    const wallets = await this.walletService.listWallets(principal.customerId);
     const ngnWallet = wallets.find((w) => w.currency === 'NGN');
     if (!ngnWallet) {
       return {
@@ -556,7 +557,7 @@ export class CustomerAppController {
   async getReceivingIdentity(@Req() req: AuthenticatedRequest) {
     const principal = this.requireCustomerPrincipal(req);
     const contacts = await this.contactRepository.find({ where: { customerId: principal.customerId } });
-    const primaryPhone = contacts.find((c) => c.type === 'PHONE' && c.isPrimary) ?? contacts.find((c) => c.type === 'PHONE') ?? null;
+    const primaryPhone = contacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ?? contacts.find((c) => c.type === ContactMethodType.PHONE) ?? null;
     if (!primaryPhone) {
       return { customerId: principal.customerId, receivingIdentity: null, status: 'NONE' };
     }
@@ -622,8 +623,8 @@ export class CustomerAppController {
     const key = (idempotencyKey ?? '').trim();
     if (!key) throw new BadRequestException('Idempotency-Key header is required');
     // Mutually exclusive destination: exactly one of destinationWalletId OR beneficiaryId
-    const hasDestWallet = typeof (dto as any).destinationWalletId === 'string' && String((dto as any).destinationWalletId).trim().length > 0;
-    const hasBeneficiary = typeof (dto as any).beneficiaryId === 'string' && String((dto as any).beneficiaryId).trim().length > 0;
+    const hasDestWallet = typeof dto.destinationWalletId === 'string' && String(dto.destinationWalletId).trim().length > 0;
+    const hasBeneficiary = typeof dto.beneficiaryId === 'string' && String(dto.beneficiaryId).trim().length > 0;
     if (hasDestWallet && hasBeneficiary) {
       throw new BadRequestException('Provide exactly one of destinationWalletId or beneficiaryId, not both');
     }
@@ -632,12 +633,12 @@ export class CustomerAppController {
     }
     let resolvedDestinationWalletId: string;
     if (hasBeneficiary) {
-      const beneficiaryId = String((dto as any).beneficiaryId).trim();
+      const beneficiaryId = String(dto.beneficiaryId).trim();
       // Ownership enforced: scoped query WHERE id=$1 AND customer_id=$2, also require ACTIVE+verified
-      let beneficiary: any;
+      let beneficiary: CustomerBeneficiaryView & { normalizedDestinationIdentifier?: string | null };
       try {
         beneficiary = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
-      } catch (e: any) {
+      } catch {
         // Do not leak existence — generic not-found for foreign or missing
         throw new NotFoundException('Beneficiary not found');
       }
@@ -647,12 +648,12 @@ export class CustomerAppController {
       if (!beneficiary.verified) {
         throw new BadRequestException('Beneficiary is not verified');
       }
-      const destIdentifier = (beneficiary as any).destinationIdentifier ?? (beneficiary as any).normalizedDestinationIdentifier;
+      const destIdentifier = beneficiary.destinationIdentifier ?? beneficiary.normalizedDestinationIdentifier;
       if (!destIdentifier) throw new BadRequestException('Beneficiary has no destination');
-      let resolution: any;
+      let resolution: RecipientResolution;
       try {
         resolution = await this.recipientService.resolve(String(destIdentifier));
-      } catch (e: any) {
+      } catch {
         throw new BadRequestException('Beneficiary recipient could not be resolved');
       }
       if (!resolution || resolution.ownerType !== 'CUSTOMER') {
@@ -664,18 +665,18 @@ export class CustomerAppController {
         throw new NotFoundException('Destination wallet not found for beneficiary');
       }
       // Prefer wallet matching requested currency, else first
-      const currency = String((dto as any).currency ?? 'NGN').trim().toUpperCase();
-      const matched = wallets.find((w: any) => String(w.currency).toUpperCase() === currency);
+      const currency = String(dto.currency ?? 'NGN').trim().toUpperCase();
+      const matched = wallets.find((w) => String(w.currency).toUpperCase() === currency);
       const chosen = matched ?? wallets[0];
       if (!chosen) throw new NotFoundException('Destination wallet not found for beneficiary');
       resolvedDestinationWalletId = chosen.id;
     } else {
-      const rawDest = String((dto as any).destinationWalletId).trim();
+      const rawDest = String(dto.destinationWalletId).trim();
       if (!rawDest) throw new BadRequestException('destinationWalletId is required');
       resolvedDestinationWalletId = rawDest;
     }
     // Ensure source wallet belongs to SELF (fail-closed ownership binding)
-    const rawSource = (dto as any).sourceWalletId;
+    const rawSource = dto.sourceWalletId;
     if (typeof rawSource !== 'string' || !String(rawSource).trim()) {
       throw new BadRequestException('sourceWalletId is required');
     }
@@ -684,7 +685,7 @@ export class CustomerAppController {
     // ── A24 Customer Transaction PIN authorization (reuse PBKDF2 service, keep controller thin) ──
     // PIN is bound to authenticated CUSTOMER principal (do not trust body customerId), verified immediately before financial execution.
     // PIN is never persisted in requestHash/transfer metadata/journal/audit/response/logs (pinoHttp redacts req.body.pin, requestHash is business params only).
-    const rawPin = (dto as any).pin;
+    const rawPin = dto.pin;
     if (rawPin === undefined || rawPin === null || (typeof rawPin === 'string' && rawPin.trim().length === 0)) {
       throw new UnauthorizedException('Transaction PIN required');
     }
@@ -711,9 +712,9 @@ export class CustomerAppController {
       },
     };
     const outcome = await this.pinService.verifyTransactionPin(
-      principal.customerId!,
-      { pin, actor: principal.customerId! },
-      verifier as any,
+      principal.customerId,
+      { pin, actor: principal.customerId },
+      verifier,
     );
     if (!outcome.verified) {
       if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
@@ -729,7 +730,7 @@ export class CustomerAppController {
     // Note: destination wallet ownership is not restricted — can be any customer/agent wallet
     // Do not perform direct ledger mutation; delegate to TransferService (preserves SERIALIZABLE/wallet-locking/double-entry)
     return this.transferService.createTransfer({
-      sourceWalletId: String((dto as any).sourceWalletId).trim(),
+      sourceWalletId: String(dto.sourceWalletId).trim(),
       // INTEGRATION (integration/main-backend-frontend-20261030): main's wallet-ownership binding
       // (39a9e504, `src/wallet/wallet-ownership.ts`) is now required by `CreateTransferCommand` and
       // is asserted inside `TransferService.createTransfer` — including on the idempotency-replay
@@ -740,7 +741,7 @@ export class CustomerAppController {
       // wallets cannot be enumerated). No financial rule changes: amount, currency, fee/commission
       // treatment, limits, ledger posting and the unrestricted DESTINATION wallet rule above are
       // all untouched; `assertWalletOwnership` binds only the source wallet.
-      ownership: { kind: 'CUSTOMER_SELF', customerId: principal.customerId! },
+      ownership: { kind: 'CUSTOMER_SELF', customerId: principal.customerId },
       destinationWalletId: resolvedDestinationWalletId,
       amountMinor: dto.amountMinor,
       currency: dto.currency,
@@ -805,7 +806,7 @@ export class CustomerAppController {
       }
       const contacts = await this.contactRepository.find({ where: { customerId: In(customerIds) } });
       for (const c of contacts) {
-        if (c.type === 'PHONE' && !contactMap.has(c.customerId)) {
+        if (c.type === ContactMethodType.PHONE && !contactMap.has(c.customerId)) {
           // prefer primary, else first
           if (c.isPrimary || !contactMap.has(c.customerId)) contactMap.set(c.customerId, c);
           // if we already have a primary, don't overwrite with non-primary
@@ -815,7 +816,7 @@ export class CustomerAppController {
       }
       // ensure primary preference: re-scan for primary if we stored non-primary first
       for (const c of contacts) {
-        if (c.type === 'PHONE' && c.isPrimary) contactMap.set(c.customerId, c);
+        if (c.type === ContactMethodType.PHONE && c.isPrimary) contactMap.set(c.customerId, c);
       }
     }
     const items = transfers.map((t) => {
@@ -931,7 +932,7 @@ export class CustomerAppController {
         const cpCustomerId = cpWallet.customerId;
         const cpProfile = await this.profileRepository.findOne({ where: { customerId: cpCustomerId, isActive: true } });
         const cpContacts = await this.contactRepository.find({ where: { customerId: cpCustomerId } });
-        const primary = cpContacts.find((c) => c.type === 'PHONE' && c.isPrimary) ?? cpContacts.find((c) => c.type === 'PHONE') ?? null;
+        const primary = cpContacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ?? cpContacts.find((c) => c.type === ContactMethodType.PHONE) ?? null;
         counterparty = {
           walletId: counterpartyWalletId,
           customerId: cpCustomerId,
@@ -987,10 +988,10 @@ export class CustomerAppController {
     } catch {
       profile = null;
     }
-    const wallets = await this.walletService.listWallets(principal.customerId!);
+    const wallets = await this.walletService.listWallets(principal.customerId);
     const receiving = await this.getReceivingIdentity(req);
     // Recent transactions: last 5
-    let recent: any = { items: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0, hasNextPage: false } };
+    let recent: Awaited<ReturnType<CustomerAppController['listTransfers']>> = { items: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0, hasNextPage: false } };
     if (wallets.length > 0) {
       recent = await this.listTransfers(req, '1', '5');
     }
@@ -1110,8 +1111,8 @@ export class CustomerAppController {
   @HttpCode(200)
   async changeTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: { currentPin: string; newPin: string }) {
     const principal = this.requireCustomerPrincipal(req);
-    const currentPin = (dto as any)?.currentPin;
-    const newPin = (dto as any)?.newPin;
+    const currentPin = dto?.currentPin;
+    const newPin = dto?.newPin;
     if (typeof currentPin !== 'string' || !/^\d{4,12}$/.test(currentPin)) {
       throw new BadRequestException('currentPin must be 4-12 digits');
     }
@@ -1153,7 +1154,7 @@ export class CustomerAppController {
     const outcome = await this.pinService.verifyTransactionPin(
       principal.customerId!,
       { pin: currentPin, actor: principal.customerId! },
-      verifier as any,
+      verifier,
     );
     if (!outcome.verified) {
       if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
@@ -1210,7 +1211,7 @@ export class CustomerAppController {
     const outcome = await this.pinService.verifyTransactionPin(
       principal.customerId!,
       { pin: dto.pin, actor: principal.customerId! },
-      verifier as any,
+      verifier,
     );
     if (outcome.verified) return { verified: true };
     return { verified: false, reason: outcome.failureReason ?? 'MISMATCH', locked: outcome.locked ?? false };

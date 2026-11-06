@@ -16,17 +16,17 @@ export class TransferController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createTransfer(
+  createTransfer(
     @Body() dto: CreateTransferDto,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Req() req?: AuthenticatedRequest,
-  ) {
+  ): Promise<never> {
     void dto;
     void idempotencyKey;
     void req;
-    throw new ForbiddenException(
+    return Promise.reject(new ForbiddenException(
       'Generic transfer commands are disabled; use the authenticated customer transfer flow',
-    );
+    ));
   }
 
   @Get(':transferId')

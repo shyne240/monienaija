@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
-import { ValidationPipe, UnauthorizedException, HttpException } from '@nestjs/common';
+
+import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -14,32 +14,11 @@ import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllT
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
+import { LedgerEntryDirection } from '../src/ledger/ledger.enums';
 import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
 
 // Helper to create a customer row directly
-async function createCustomer(dataSource: DataSource, status = 'ACTIVE'): Promise<string> {
-  const customerId = randomUUID();
-  const now = new Date().toISOString();
-  // customers table has columns: id, phone, status, created_at etc. We need minimal. Check schema via earlier tests.
-  // Look at a13 test: they insert customers via query? Let's inspect a13 for creation.
-  // For now, try to insert via repository is not available; use raw query with minimal required columns.
-  // Customers table: id, phone, status, tier, etc. We need to find required columns.
-  // We'll attempt to use WalletService's ensure pattern: wallets are tied to customerId string, not FK to customers for transfer.
-  // For limit tests, we don't need real customers row for Transfer, only wallet_accounts. But for CashIn/CashOut we need customers table for eligibility.
-  // We'll try to insert with minimal columns if table exists.
-  try {
-    await dataSource.query(
-      `INSERT INTO customers (id, first_name, last_name, phone, email, status, tier, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,'TIER_1',NOW(),NOW(),1)`,
-      [customerId, 'Test', 'User', `080${Math.floor(10000000 + Math.random()*90000000)}`, `test-${customerId}@example.com`, status],
-    );
-  } catch (e) {
-    // Fallback simpler
-    try {
-      await dataSource.query(`INSERT INTO customers (id, status, created_at, updated_at) VALUES ($1,$2,NOW(),NOW())`, [customerId, status]);
-    } catch {}
-  }
-  return customerId;
-}
+
 
 describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   let dataSource: DataSource;
@@ -47,7 +26,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   let walletService: WalletService;
   let transferService: TransferService;
   let ledgerService: LedgerService;
-  let limitUsageService: LimitUsageService;
+
 
   const workforceConfig: A2WorkforceConfigurationV1 = {
     enabled: true,
@@ -65,7 +44,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED','AGENT','CUSTOMER','AGGREGATOR'];
@@ -79,8 +58,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -101,7 +80,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     walletService = app.get(WalletService);
     transferService = app.get(TransferService);
     ledgerService = app.get(LedgerService);
-    limitUsageService = app.get(LimitUsageService);
+    app.get(LimitUsageService);
   });
 
   afterAll(async () => {
@@ -138,7 +117,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     const view = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `test-${customerId}-${randomUUID()}` });
     // fetch ledgerAccountId
     const rows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [view.id]);
-    return { id: view.id, ledgerAccountId: rows[0].ledger_account_id };
+    return { id: view.id, ledgerAccountId: rows[0]!.ledger_account_id };
   }
 
   async function fundWallet(walletLedgerAccountId: string, amountMinor: string): Promise<void> {
@@ -159,8 +138,8 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
         accountingUnit: 'CUSTOMER_FUNDS',
         reference: `FUND-${walletLedgerAccountId.slice(0,8)}`,
         lines: [
-          { accountId: settlementId, direction: 'DEBIT', amountMinor },
-          { accountId: walletLedgerAccountId, direction: 'CREDIT', amountMinor },
+          { accountId: settlementId, direction: LedgerEntryDirection.DEBIT, amountMinor },
+          { accountId: walletLedgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor },
         ],
       });
     });
@@ -177,7 +156,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
       ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' }, sourceWalletId: sourceId, destinationWalletId: destId, amountMinor: amount, currency: 'NGN', idempotencyKey });
       return { success: true, view };
     } catch (e: any) {
-      const resp = e.getResponse?.() as any;
+      const resp = e.getResponse?.();
       const code = resp?.error || resp?.code || e.message;
       return { success: false, errorCode: code };
     }
@@ -599,11 +578,11 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     const wB = await createWallet(customerB);
     await fundWallet(wA.ledgerAccountId, '5000000');
     const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const beforeCount = Number(before[0].count);
+    const beforeCount = Number(before[0]!.count);
     const res = await tryTransfer(wA.id, wB.id, '50000', `idem-24-${randomUUID()}`);
     expect(res.success).toBe(false);
     const after: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    expect(Number(after[0].count)).toBe(beforeCount);
+    expect(Number(after[0]!.count)).toBe(beforeCount);
   });
 
   // The remaining 4 tests cover product/channel/direction mismatches and GLOBAL fallback
@@ -657,7 +636,7 @@ describe('V1-LIMIT-04 Limit Runtime Wiring (real PG)', () => {
     const profile = 'TEST_PROFILE_28';
     await seedProfile(profile, 'AGENT');
     const agentClassId = randomUUID();
-    await seedAssignment({ profileCode: profile, subjectType: 'AGENT_CLASS', subjectId: agentClassId } as any);
+    await seedAssignment({ profileCode: profile, subjectType: 'AGENT_CLASS', subjectId: agentClassId });
     await seedRule({ profileCode: profile, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', limitMinor: '10000' });
     const wA = await createWallet(customerA);
     const wB = await createWallet(customerB);

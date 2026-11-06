@@ -395,7 +395,7 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
       otp: 'wrong-code-otp',
       idempotencyKey: `claim-4-${randomUUID()}`,
     })).rejects.toThrow(/Transfer code invalid/i);
-    const audit: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH_CLAIM'`);
+    const audit: Array<{ new_values: unknown }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_type='AGENT_CASH_TO_CASH_CLAIM'`);
     const serial = JSON.stringify(audit.map(a => a.new_values)).toLowerCase();
     expect(serial).not.toContain('99999999');
     const idem: Array<{ response_body: any }> = await dataSource.query(`SELECT response_body FROM idempotency_records WHERE scope LIKE 'cash-to-cash-claim%'`);
@@ -2274,12 +2274,12 @@ describe('A16 Agent Cash→Cash CLAIM (real PostgreSQL)', () => {
     });
     expect(second.transferId).not.toBe(first.transferId);
     expect(second.reference).toBe(reference);
-    const rows = await dataSource.query(
+    const rows: Array<{ id: string; reference: string; status: string }> = await dataSource.query(
       `SELECT id, reference, status FROM cash_to_cash_transfers WHERE agent_id=$1 AND beneficiary_phone=$2 AND reference=$3`,
       [first.agent.id, first.phone, reference],
     );
     expect(rows).toHaveLength(2);
-    expect(rows.every((row: any) => row.status === 'UNCLAIMED')).toBe(true);
+    expect(rows.every((row) => row.status === 'UNCLAIMED')).toBe(true);
   });
 
   it.each(['CUSTOMER_WALLET', 'AGENT_CASH'] as const)(

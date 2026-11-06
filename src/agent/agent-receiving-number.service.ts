@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -119,7 +119,7 @@ export class AgentReceivingNumberService {
         throw new ConflictException('SUSPENDED Agent has no receiving number to retain');
       }
       if (agent.status !== AgentStatus.ACTIVE) {
-        throw new ConflictException(`Cannot allocate receiving number for agent status ${agent.status}`);
+        throw new ConflictException(`Cannot allocate receiving number for agent status ${agent.status as string}`);
       }
 
       // Lock agent row to serialize concurrent ensures for same agent
@@ -152,7 +152,7 @@ export class AgentReceivingNumberService {
         const collidesAgent = await recvRepo.findOne({ where: { receivingNumber: candidate } });
         if (collidesAgent) continue;
         try {
-          const id = require('node:crypto').randomUUID();
+          const id = randomUUID();
           const now = new Date();
           const record = recvRepo.create({
             id,
@@ -223,7 +223,7 @@ export class AgentReceivingNumberService {
       const collidesAgent = await recvRepo.findOne({ where: { receivingNumber: candidate } });
       if (collidesAgent) continue;
       try {
-        const id = require('node:crypto').randomUUID();
+        const id = randomUUID();
         const now = new Date();
         const record = recvRepo.create({
           id,

@@ -518,7 +518,7 @@ export class CustomerRegistrationService {
       // Provision Password Credential & Primary NGN Wallet if self-service password provided
       let provisionedWallet: WalletAccount | null = null;
       if (hasPassword) {
-        const passwordHash = this.pbkdf2PasswordHash(password!);
+        const passwordHash = this.pbkdf2PasswordHash(password);
         const credentialRepository = manager.getRepository(CustomerAuthenticationCredential);
         const credentialDraft = credentialRepository.create({
           id: randomUUID(),
@@ -630,7 +630,7 @@ export class CustomerRegistrationService {
           .getOne()
           .catch(() => null);
         if (existingRecord) {
-          await this.idempotencyService.complete(manager, (existingRecord as any).id, {
+          await this.idempotencyService.complete(manager, existingRecord.id, {
             responseBody: view as unknown as Record<string, unknown>,
             statusCode: 201,
             resourceType: 'CUSTOMER',

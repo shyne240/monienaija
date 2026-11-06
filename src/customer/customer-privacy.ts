@@ -1,5 +1,3 @@
-import { ContactMethodType } from './customer.enums';
-
 const MASK = '••••';
 
 /**
@@ -38,9 +36,9 @@ export function maskEmailAddress(value: string): string {
   return `${visibleCharacter}•••@${domain}`;
 }
 
-export function maskContactValue(type: ContactMethodType | string, value: string): string {
-  if (type === ContactMethodType.PHONE || type === 'PHONE') return maskPhoneNumber(value);
-  if (type === ContactMethodType.EMAIL || type === 'EMAIL') return maskEmailAddress(value);
+export function maskContactValue(type: string, value: string): string {
+  if (type === 'PHONE') return maskPhoneNumber(value);
+  if (type === 'EMAIL') return maskEmailAddress(value);
   return MASK;
 }
 

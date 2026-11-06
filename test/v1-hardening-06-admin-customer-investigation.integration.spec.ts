@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +44,6 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -52,7 +51,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-'))
         throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
@@ -86,8 +85,8 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   beforeAll(async () => {
@@ -284,7 +283,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
   // 5. transactions pagination/ordering deterministic createdAt DESC id DESC
   it('5. transactions: pagination deterministic ordering createdAt DESC id DESC', async () => {
     const { customerId } = await createCustomerWithPhone('8111111111');
-    const wallet = await walletService.createWallet({
+    await walletService.createWallet({
       customerId,
       currency: 'NGN',
       idempotencyKey: `hard06-ord-${customerId}`,
@@ -336,9 +335,9 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       .get(`/api/v1/internal/customers/${customerId}/transactions?page=1&limit=10`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const idsSameTime = all.body.items
-      .filter((x: any) => [idA, idB].includes(x.id))
-      .map((x: any) => x.id);
+    const idsSameTime = (all.body.items as Array<{ id: string }>)
+      .filter((x) => ([idA, idB] as string[]).includes(x.id))
+      .map((x) => x.id);
     // should be descending id
     expect(idsSameTime).toEqual(sorted);
   });
@@ -371,7 +370,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       [randomUUID(), walletA.id, walletB.id, `idem-${randomUUID()}`, 'a'.repeat(64)],
     );
     // CASH_TO_CASH (beneficiary phone matches customer phone)
-    const plat = await ledgerService.createAccount({
+    await ledgerService.createAccount({
       code: `PLAT6_${randomUUID().slice(0, 6)}`,
       name: 'Plat6',
       accountType: 'ASSET' as any,
@@ -398,7 +397,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       [agentId],
     );
     let agentWalletId: string;
-    if (agentWalletRows.length) agentWalletId = agentWalletRows[0].id;
+    if (agentWalletRows.length) agentWalletId = agentWalletRows[0]!.id;
     else {
       const aw = await walletService.createWallet({
         customerId: agentId,
@@ -499,7 +498,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
     });
-    const cashInJournal = await ledgerService.postJournal({
+    await ledgerService.postJournal({
       idempotencyKey: `cashin6-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
@@ -514,7 +513,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
         },
       ],
     });
-    const cashOutJournal = await ledgerService.postJournal({
+    await ledgerService.postJournal({
       idempotencyKey: `cashout6-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
@@ -534,7 +533,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       .get(`/api/v1/internal/customers/${customerId}/transactions?page=1&limit=20`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const types = new Set(all.body.items.map((x: any) => x.type));
+    const types = new Set((all.body.items as Array<{ type: string }>).map((x) => x.type));
     // should contain all 5
     expect(types.has('FUNDING')).toBe(true);
     expect(types.has('WALLET_TRANSFER')).toBe(true);
@@ -810,7 +809,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(res.body.items.length).toBe(2);
-    const ids = res.body.items.map((x: any) => x.id);
+    const ids = (res.body.items as Array<{ id: string }>).map((x) => x.id);
     expect(ids).toContain(ticketA1);
     expect(ids).toContain(ticketA2);
     expect(ids).not.toContain(ticketB);
@@ -1025,7 +1024,7 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
     const { customerId } = await createCustomerWithPhone('8110000002');
-    const wallet = await walletService.createWallet({
+    await walletService.createWallet({
       customerId,
       currency: 'NGN',
       idempotencyKey: `hard06-inv-${randomUUID()}`,

@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
+import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -26,7 +27,6 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -34,7 +34,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const requestedRole = token.replace('workforce-', '').toUpperCase();
       const isAgentNetworkManager = requestedRole === 'AGENT_NETWORK_MANAGER';
@@ -60,8 +60,8 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -141,39 +141,39 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(migs.some(m=>m.timestamp==='1785753600067')).toBe(true);
     expect(migs.some(m=>m.timestamp==='1785753600068')).toBe(true);
     const last = migs[migs.length - 1];
-    expect(['1785753600068','1785753600069','1785753600070','1785753600071','1785753600072','1785753600073','1785753600074','1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090', '1785753600094', '1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101', '1785753600102', '1785753600103']).toContain(last.timestamp);
-    if (last.timestamp === '1785753600076') expect(last.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
-    else if (last.timestamp === '1785753600077') expect(last.name).toBe('AddAgentCredentialRotation1785753600077');
-    else if (last.timestamp === '1785753600078') expect(last.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
-    else if (last.timestamp === '1785753600079') expect(last.name).toBe('AddCustomerCredentialRotation1785753600079');
-    else if (last.timestamp === '1785753600080') expect(last.name).toBe('AddMfaChallengePurpose1785753600080');
-    else if (last.timestamp === '1785753600081') expect(last.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
-    else if (last.timestamp === '1785753600082') expect(last.name).toBe('CreateLocalAdminAuthentication1785753600082');
-    else if (last.timestamp === '1785753600083') expect(last.name).toBe('CreateAuthorizationCatalogue1785753600083');
-    else if (last.timestamp === '1785753600084') expect(last.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
-    else if (last.timestamp === '1785753600085') expect(last.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
-    else if (last.timestamp === '1785753600086') expect(last.name).toBe('CreateRoleDefinitionGovernance1785753600086');
-    else if (last.timestamp === '1785753600087') expect(last.name).toBe('CreateDashboardPlatform1785753600087');
-    else if (last.timestamp === '1785753600096') expect(last.name).toBe('CreateCashToCashLocators1785753600096');
-    else if (last.timestamp === '1785753600097') expect(last.name).toBe('AddEmailNotificationChannel1785753600097');
-    else if (last.timestamp === '1785753600098') expect(last.name).toBe('CreateNotificationTemplateRegistry1785753600098');
-    else if (last.timestamp === '1785753600099') expect(last.name).toBe('AllowPhoneNotificationRecipients1785753600099');
-    else if (last.timestamp === '1785753600100') expect(last.name).toBe('CreateNotificationProviderConfiguration1785753600100');
-    else if (last.timestamp === '1785753600101') expect(last.name).toBe('NotificationReliability1785753600101');
-    else if (last.timestamp === '1785753600102') expect(last.name).toBe('AddNotificationCredentialBinding1785753600102');
-    else if (last.timestamp === '1785753600103') expect(last.name).toBe('ConfigureTransactionNotificationEvents1785753600103');
-    else if (last.timestamp === '1785753600095') expect(last.name).toBe('SecureAgentApplicationAccess1785753600095');
-    else if (last.timestamp === '1785753600094') expect(last.name).toBe('AddSecureCustomerProofOfAddressUploads1785753600094');
-    else if (last.timestamp === '1785753600090') expect(last.name).toBe('CreateAgentFundingRequests1785753600090');
-    else if (last.timestamp === '1785753600089') expect(last.name).toBe('WidenAuthorizationActorColumns1785753600089');
-    else     if (last.timestamp === '1785753600075') expect(last.name).toBe('AddTransferFeeColumns1785753600075');
-    else if (last.timestamp === '1785753600074') expect(last.name).toBe('CreateRewardRules1785753600074');
-    else if (last.timestamp === '1785753600073') expect(last.name).toBe('CreateCommissionRules1785753600073');
-    else if (last.timestamp === '1785753600072') expect(last.name).toBe('CreateFeeRules1785753600072');
-    else if (last.timestamp === '1785753600071') expect(last.name).toBe('CreateProductCatalogue1785753600071');
-    else if (last.timestamp === '1785753600070') expect(last.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
-    else if (last.timestamp === '1785753600069') expect(last.name).toBe('CreateLimitUsages1785753600069');
-    else expect(last.name).toBe('CreateLimitAssignments1785753600068');
+    expect(['1785753600068','1785753600069','1785753600070','1785753600071','1785753600072','1785753600073','1785753600074','1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090', '1785753600094', '1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101', '1785753600102', '1785753600103']).toContain(last!.timestamp);
+    if (last!.timestamp === '1785753600076') expect(last!.name).toBe('ProvisionV1CommercialAccountingFamilies1785753600076');
+    else if (last!.timestamp === '1785753600077') expect(last!.name).toBe('AddAgentCredentialRotation1785753600077');
+    else if (last!.timestamp === '1785753600078') expect(last!.name).toBe('CreateCustomerRegistrationPhoneChallenges1785753600078');
+    else if (last!.timestamp === '1785753600079') expect(last!.name).toBe('AddCustomerCredentialRotation1785753600079');
+    else if (last!.timestamp === '1785753600080') expect(last!.name).toBe('AddMfaChallengePurpose1785753600080');
+    else if (last!.timestamp === '1785753600081') expect(last!.name).toBe('CreateSupportWorkforceAuthentication1785753600081');
+    else if (last!.timestamp === '1785753600082') expect(last!.name).toBe('CreateLocalAdminAuthentication1785753600082');
+    else if (last!.timestamp === '1785753600083') expect(last!.name).toBe('CreateAuthorizationCatalogue1785753600083');
+    else if (last!.timestamp === '1785753600084') expect(last!.name).toBe('RenameWorkforceBootstrapRoleToSuperAdmin1785753600084');
+    else if (last!.timestamp === '1785753600085') expect(last!.name).toBe('AddAdministratorRoleAssignmentScope1785753600085');
+    else if (last!.timestamp === '1785753600086') expect(last!.name).toBe('CreateRoleDefinitionGovernance1785753600086');
+    else if (last!.timestamp === '1785753600087') expect(last!.name).toBe('CreateDashboardPlatform1785753600087');
+    else if (last!.timestamp === '1785753600096') expect(last!.name).toBe('CreateCashToCashLocators1785753600096');
+    else if (last!.timestamp === '1785753600097') expect(last!.name).toBe('AddEmailNotificationChannel1785753600097');
+    else if (last!.timestamp === '1785753600098') expect(last!.name).toBe('CreateNotificationTemplateRegistry1785753600098');
+    else if (last!.timestamp === '1785753600099') expect(last!.name).toBe('AllowPhoneNotificationRecipients1785753600099');
+    else if (last!.timestamp === '1785753600100') expect(last!.name).toBe('CreateNotificationProviderConfiguration1785753600100');
+    else if (last!.timestamp === '1785753600101') expect(last!.name).toBe('NotificationReliability1785753600101');
+    else if (last!.timestamp === '1785753600102') expect(last!.name).toBe('AddNotificationCredentialBinding1785753600102');
+    else if (last!.timestamp === '1785753600103') expect(last!.name).toBe('ConfigureTransactionNotificationEvents1785753600103');
+    else if (last!.timestamp === '1785753600095') expect(last!.name).toBe('SecureAgentApplicationAccess1785753600095');
+    else if (last!.timestamp === '1785753600094') expect(last!.name).toBe('AddSecureCustomerProofOfAddressUploads1785753600094');
+    else if (last!.timestamp === '1785753600090') expect(last!.name).toBe('CreateAgentFundingRequests1785753600090');
+    else if (last!.timestamp === '1785753600089') expect(last!.name).toBe('WidenAuthorizationActorColumns1785753600089');
+    else     if (last!.timestamp === '1785753600075') expect(last!.name).toBe('AddTransferFeeColumns1785753600075');
+    else if (last!.timestamp === '1785753600074') expect(last!.name).toBe('CreateRewardRules1785753600074');
+    else if (last!.timestamp === '1785753600073') expect(last!.name).toBe('CreateCommissionRules1785753600073');
+    else if (last!.timestamp === '1785753600072') expect(last!.name).toBe('CreateFeeRules1785753600072');
+    else if (last!.timestamp === '1785753600071') expect(last!.name).toBe('CreateProductCatalogue1785753600071');
+    else if (last!.timestamp === '1785753600070') expect(last!.name).toBe('CreateCommercialDecisionSnapshots1785753600070');
+    else if (last!.timestamp === '1785753600069') expect(last!.name).toBe('CreateLimitUsages1785753600069');
+    else expect(last!.name).toBe('CreateLimitAssignments1785753600068');
     const tables: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('limit_assignments','limit_profiles','limit_rules') ORDER BY tablename`);
     expect(tables.map(t=>t.tablename).sort()).toEqual(['limit_assignments','limit_profiles','limit_rules']);
     // CHECK constraints
@@ -257,7 +257,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   });
 
   it('03. unlimited arbitrary assignments — not fixed at 3, not Tier-bound', async () => {
-    const base = 'ARBITRARY';
+
     // create 6 distinct arbitrary profiles beyond Tier 1/2/3
     const codes = ['ARB_1','ARB_2','ARB_3','ARB_4','ARB_5','ARB_6'];
     for (const c of codes) {
@@ -286,7 +286,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     r = await createAssignment({ limitProfileCode: 'EFF_PROFILE', subjectType: 'CUSTOMER', subjectId: custId, precedence: 10, effectiveFrom: '2026-02-01T00:00:00.000Z', effectiveTo: '2026-03-01T00:00:00.000Z' });
     expect(r.status).toBe(201);
     expect(r.body.precedence).toBe(10);
-    expect(new Date(r.body.effectiveTo).toISOString()).toBe('2026-03-01T00:00:00.000Z');
+    expect(new Date(r.body.effectiveTo as string).toISOString()).toBe('2026-03-01T00:00:00.000Z');
     // different profile same subject/effective same date — allowed (unique includes profile code)
     await createProfile('EFF_PROFILE_2');
     r = await createAssignment({ limitProfileCode: 'EFF_PROFILE_2', subjectType: 'CUSTOMER', subjectId: custId, precedence: 5, effectiveFrom: '2026-01-01T00:00:00.000Z' });
@@ -307,7 +307,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   it('05. version/concurrency — PATCH requires version, stale 409, correct increments', async () => {
     await createProfile('CONC_ASSIGN');
     const custId = await seedCustomer();
-    let r = await createAssignment({ limitProfileCode: 'CONC_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId, precedence: 1 });
+    const r = await createAssignment({ limitProfileCode: 'CONC_ASSIGN', subjectType: 'CUSTOMER', subjectId: custId, precedence: 1 });
     expect(r.status).toBe(201);
     const id = r.body.id;
     expect(r.body.version).toBe(1);
@@ -585,7 +585,7 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(list.body.total).toBe(0);
     // history still exists in DB with deleted_at
     const hist: Array<{ deleted_at: string }> = await dataSource.query(`SELECT deleted_at FROM limit_assignments WHERE id = $1`, [id]);
-    expect(hist[0].deleted_at).not.toBeNull();
+    expect(hist[0]!.deleted_at).not.toBeNull();
   });
 
   it('11. no ledger mutation — assignment does not touch wallets/ledger, no limit_usages', async () => {
@@ -600,21 +600,21 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM wallet_accounts`);
     const afterLines: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_lines`);
     const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_journals`);
-    expect(afterWallets[0].count).toBe(beforeWallets[0].count);
-    expect(afterLines[0].count).toBe(beforeLines[0].count);
-    expect(afterJournals[0].count).toBe(beforeJournals[0].count);
+    expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
+    expect(afterLines[0]!.count).toBe(beforeLines[0]!.count);
+    expect(afterJournals[0]!.count).toBe(beforeJournals[0]!.count);
     // V1-LIMIT-03 additive: limit_usages + limit_reservations now exist but assignment must not auto-create them
     const hasUsages = await dataSource.query(`SELECT to_regclass('public.limit_usages') as reg`);
     expect(hasUsages[0].reg).toBe('limit_usages');
     const hasReservations = await dataSource.query(`SELECT to_regclass('public.limit_reservations') as reg`);
     expect(hasReservations[0].reg).toBe('limit_reservations');
     const usagesCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_usages`);
-    expect(usagesCnt[0].cnt).toBe('0');
+    expect(usagesCnt[0]!.cnt).toBe('0');
     const resCnt: Array<{ cnt: string }> = await dataSource.query(`SELECT COUNT(*)::text as cnt FROM limit_reservations`);
-    expect(resCnt[0].cnt).toBe('0');
+    expect(resCnt[0]!.cnt).toBe('0');
     // also no commercial decision tables mutated via assignment — now 3 limit migrations
     const hasDecisions: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations WHERE name LIKE '%Limit%'`);
-    expect(Number(hasDecisions[0].cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
+    expect(Number(hasDecisions[0]!.cnt)).toBe(3); // profile catalogue + assignments + usages (V1-LIMIT-03)
   });
 
   it('12. legacy preservation — customer_limit_profiles & AgentClass.applicableLimits untouched', async () => {
@@ -633,8 +633,8 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     await createAssignment({ limitProfileCode: 'LEGACY_ASSIGN', subjectType: 'AGENT_CLASS', subjectId: acId });
     const afterClp: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customer_limit_profiles`);
     const afterLimits: Array<{ applicable_limits: any }> = await dataSource.query(`SELECT applicable_limits FROM agent_classes WHERE id = $1`, [acId]);
-    expect(afterClp[0].cnt).toBe(beforeClp[0].cnt);
-    expect(JSON.stringify(afterLimits[0].applicable_limits)).toBe(JSON.stringify(beforeLimits[0].applicable_limits));
+    expect(afterClp[0]!.cnt).toBe(beforeClp[0]!.cnt);
+    expect(JSON.stringify(afterLimits[0]!.applicable_limits)).toBe(JSON.stringify(beforeLimits[0]!.applicable_limits));
   });
 
   it('13. no flow change — LimitEngine & TransferService not invoked, no reservation', async () => {
@@ -644,9 +644,8 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     await createAssignment({ limitProfileCode: 'NO_FLOW', subjectType: 'CUSTOMER', subjectId: custId });
     // check that no transfer, wallet mutation present
     const transfers: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM transfers`);
-    expect(transfers[0].count).toBe('0');
+    expect(transfers[0]!.count).toBe('0');
     // assignment service does not depend on TransferService — inspect file
-    const fs = require('node:fs');
     const svc = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts','utf8');
     expect(svc).not.toContain('TransferService');
     expect(svc).not.toContain('AgentCash');
@@ -655,7 +654,6 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
   });
 
   it('14. fixed Tier 1/2/3 disproof — no hardcoded KYC tiers in assignment', async () => {
-    const fs = require('node:fs');
     const service = fs.readFileSync('src/limit-catalog/limit-assignment.service.ts','utf8');
     const controller = fs.readFileSync('src/limit-catalog/limit-assignment.controller.ts','utf8');
     const entity = fs.readFileSync('src/limit-catalog/limit-assignment.entity.ts','utf8');
@@ -694,9 +692,9 @@ describe('V1-LIMIT-02 Generic Limit Profile Assignment (real PostgreSQL)', () =>
     expect(patch.body.version).toBe(2);
     // direct DB check: updated_at changed
     const row: Array<{ created_by: string; updated_by: string; version: number }> = await dataSource.query(`SELECT created_by, updated_by, version FROM limit_assignments WHERE id = $1`, [id]);
-    expect(row[0].created_by).toBeDefined();
-    expect(row[0].updated_by).toBeDefined();
-    expect(row[0].version).toBe(2);
+    expect(row[0]!.created_by).toBeDefined();
+    expect(row[0]!.updated_by).toBeDefined();
+    expect(row[0]!.version).toBe(2);
     // audit trail would be recorded via AuditService if present — at minimum audit table not polluted unexpectedly; just ensure no error
   });
 });

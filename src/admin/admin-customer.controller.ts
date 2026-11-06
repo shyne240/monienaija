@@ -6,7 +6,6 @@ import {
   Query,
   Req,
   UnauthorizedException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -117,13 +116,26 @@ export class AdminCustomerController {
       ${contactJoin}
     `;
     const whereSql = predicates.join(' AND ');
-    const countRows = (await this.dataSource.query(
+    const countRows: Array<{ total: string }> = await this.dataSource.query(
       `SELECT COUNT(DISTINCT customer.id)::text AS total ${fromAndJoins} WHERE ${whereSql}`,
       parameters,
-    )) as Array<{ total: string }>;
+    );
     const total = Number(countRows[0]?.total ?? '0');
     const offset = (page - 1) * limit;
-    const rows = (await this.dataSource.query(
+    const rows: Array<{
+      id: string;
+      reference: string;
+      type: string;
+      status: string;
+      kycLevel: string;
+      kycStatus: string;
+      createdAt: Date;
+      displayName: string | null;
+      legalName: string | null;
+      contactType: string | null;
+      contactValue: string | null;
+      contactVerifiedAt: Date | null;
+    }> = await this.dataSource.query(
       `SELECT
         customer.id::text AS id,
         customer.reference AS reference,
@@ -140,20 +152,7 @@ export class AdminCustomerController {
       ORDER BY customer.created_at DESC, customer.id DESC
       LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
       [...parameters, limit, offset],
-    )) as Array<{
-      id: string;
-      reference: string;
-      type: string;
-      status: string;
-      kycLevel: string;
-      kycStatus: string;
-      createdAt: Date;
-      displayName: string | null;
-      legalName: string | null;
-      contactType: string | null;
-      contactValue: string | null;
-      contactVerifiedAt: Date | null;
-    }>;
+    );
 
     const data = rows.map((row) => ({
       id: row.id,
@@ -193,13 +192,13 @@ export class AdminCustomerController {
     this.assertUuid(id, 'id');
     const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
-    const profiles = (await this.dataSource.query(
+    const profiles: Array<{ display_name: string | null; legal_name: string | null }> = await this.dataSource.query(
       `SELECT display_name, legal_name
        FROM customer_profiles
        WHERE customer_id = $1 AND is_active = TRUE AND deleted_at IS NULL
        LIMIT 1`,
       [id],
-    )) as Array<{ display_name: string | null; legal_name: string | null }>;
+    );
     return {
       ...this.toSafeCustomer(customer),
       displayName: profiles[0]?.display_name ?? null,
@@ -290,18 +289,18 @@ export class AdminCustomerController {
     const customer = await this.findVisibleCustomer(id);
     if (!customer) throw new NotFoundException('Customer not found');
     const wallet = await this.walletRepo.findOne({ where: { id: walletId } as never });
-    if (!wallet || (wallet as any).customerId !== id) {
+    if (!wallet || wallet.customerId !== id) {
       throw new NotFoundException('Wallet not found');
     }
     // Reuse authoritative ledger-derived balance (no fabricated/cached balance, no second ledger)
     const balance = await this.walletService.getWalletBalance(walletId);
     // Safe projection — hide ledgerAccountId, expose currency explicitly
     return {
-      walletId: (balance as any).walletId ?? walletId,
+      walletId: balance.walletId ?? walletId,
       customerId: id,
-      currency: (balance as any).currency ?? (wallet as any).currency,
-      balanceMinor: (balance as any).balanceMinor,
-      status: (wallet as any).status,
+      currency: balance.currency ?? wallet.currency,
+      balanceMinor: balance.balanceMinor,
+      status: wallet.status,
     };
   }
 
@@ -446,7 +445,7 @@ export class AdminCustomerController {
     ]);
   }
 
-  private toSafeCustomer(customer: any): any {
+  private toSafeCustomer(customer: Customer) {
     // Safe projection — hide internal fields, expose identity only (no credential hashes)
     // Customer entity: id, reference, type, status, kycLevel, kycStatus, version, createdAt, updatedAt, deletedAt
     const {
@@ -460,7 +459,7 @@ export class AdminCustomerController {
       createdAt,
       updatedAt,
       deletedAt,
-    } = customer as any;
+    } = customer;
     return {
       id,
       reference: maskCustomerReference(reference),

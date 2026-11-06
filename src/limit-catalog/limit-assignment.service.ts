@@ -42,7 +42,7 @@ export class LimitAssignmentService {
     const subjectId = input.subjectId ? input.subjectId.trim() : null;
     const segmentCode = input.segmentCode ? input.segmentCode.trim().toUpperCase() : null;
 
-    await this.validateSubjectExistence(subjectType, subjectId, segmentCode);
+    await this.validateSubjectExistence(subjectType, subjectId);
     this.validateSubjectConsistency(subjectType, subjectId, segmentCode);
 
     const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom as string) : new Date();
@@ -81,7 +81,9 @@ export class LimitAssignmentService {
               newValues: this.assignmentValues(saved),
             } as never);
           });
-        } catch {}
+        } catch {
+          // Audit recording is best-effort on this existing path.
+        }
       }
       return this.toSafe(saved);
     } catch (e) {
@@ -125,7 +127,7 @@ export class LimitAssignmentService {
     }
     // validate consistency after potential subject change
     this.validateSubjectConsistency(row.subjectType, row.subjectId, row.segmentCode);
-    await this.validateSubjectExistence(row.subjectType, row.subjectId, row.segmentCode);
+    await this.validateSubjectExistence(row.subjectType, row.subjectId);
 
     if (input.precedence !== undefined) {
       if (!Number.isSafeInteger(input.precedence)) throw new BadRequestException('precedence must be integer');
@@ -160,7 +162,9 @@ export class LimitAssignmentService {
               newValues: this.assignmentValues(saved),
             } as never);
           });
-        } catch {}
+        } catch {
+          // Audit recording is best-effort on this existing path.
+        }
       }
       return this.toSafe(saved);
     } catch (e) {
@@ -267,7 +271,7 @@ export class LimitAssignmentService {
     }
   }
 
-  private async validateSubjectExistence(subjectType: string, subjectId: string | null, segmentCode: string | null): Promise<void> {
+  private async validateSubjectExistence(subjectType: string, subjectId: string | null): Promise<void> {
     const t = subjectType.trim().toUpperCase();
     if (t === 'CUSTOMER' && subjectId) {
       const row: Array<{ id: string }> = await this.dataSource.query(`SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [subjectId]);

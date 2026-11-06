@@ -172,10 +172,10 @@ export class DashboardWidgetDataService {
         return {
           type: t.type,
           completedCount: Number(completed?.count ?? 0),
-          completedValueMinor: String(completed?.value_minor ?? '0'),
+          completedValueMinor: String((completed?.value_minor as string | null | undefined) ?? '0'),
           failedCount,
           pendingCount,
-          feeRevenueMinor: t.feeColumn ? String(completed?.fee_minor ?? '0') : null,
+          feeRevenueMinor: t.feeColumn ? String((completed?.fee_minor as string | null | undefined) ?? '0') : null,
         };
       }),
     );
@@ -258,7 +258,7 @@ export class DashboardWidgetDataService {
       daily: rows.map((r) => ({
         date: String(r.day),
         completedCount: Number(r.count ?? 0),
-        completedValueMinor: String(r.value_minor ?? '0'),
+        completedValueMinor: String((r.value_minor as string | null | undefined) ?? '0'),
       })),
     };
   }
@@ -288,8 +288,8 @@ export class DashboardWidgetDataService {
     return rows.map((r) => ({
       type: r.type,
       reference: r.id,
-      amountMinor: String(r.amount_minor ?? '0'),
-      feeMinor: r.fee_minor !== null ? String(r.fee_minor) : null,
+      amountMinor: String((r.amount_minor as string | null | undefined) ?? '0'),
+      feeMinor: r.fee_minor !== null ? String(r.fee_minor as string | undefined) : null,
       currency: r.currency,
       status: r.status,
       createdAt: r.created_at,
@@ -385,6 +385,6 @@ export class DashboardWidgetDataService {
 
   private async rows(sql: string, parameters: unknown[] = []): Promise<Row[]> {
     const result: unknown = await this.dataSource.query(sql, parameters);
-    return Array.isArray(result) ? result.filter((v) => typeof v === 'object' && v !== null) : [];
+    return Array.isArray(result) ? (result as unknown[]).filter((v): v is Row => typeof v === 'object' && v !== null) : [];
   }
 }

@@ -134,14 +134,14 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
     );
     expect(response.body).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
-    expect(response.body.data[0]).toMatchObject({
+    expect((response.body as { data: unknown[] }).data[0]).toMatchObject({
       id: transferId,
       agentId,
       beneficiaryPhoneMasked: '••••••0123',
       principalMinor: '123456',
       currency: 'NGN',
       status: 'UNCLAIMED',
-      reference: expect.stringMatching(/^C2C-HTTP-/),
+      reference: expect.stringMatching(/^C2C-HTTP-/) as unknown,
       redemptionMethod: null,
       claimJournalId: null,
     });

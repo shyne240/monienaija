@@ -18,6 +18,7 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 import { CreateLimitAssignmentDto } from './dto/create-limit-assignment.dto';
 import { UpdateLimitAssignmentDto } from './dto/update-limit-assignment.dto';
 import { LimitAssignmentService } from './limit-assignment.service';
+import { LimitAssignmentSubjectType } from './limit-catalog.enums';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -34,7 +35,7 @@ export class LimitAssignmentController {
   @Post('limit-assignments')
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateLimitAssignmentDto) {
     let actor: string;
-    if (dto.subjectType === 'AGENT') {
+    if (dto.subjectType === LimitAssignmentSubjectType.AGENT) {
       actor = await this.requireAgentAssignmentFunction(req);
     } else {
       this.requireWorkforce(req);
@@ -170,7 +171,7 @@ export class LimitAssignmentController {
     // a nonexistent identifier have the same non-enumerating 404 response.
     const hasAgentAssignmentFunction =
       req.authorizationPrincipal?.scopes.includes('agent.assign_limit') ?? false;
-    const agentAssignmentAuthorized = dto.subjectType === 'AGENT' || hasAgentAssignmentFunction;
+    const agentAssignmentAuthorized = dto.subjectType === LimitAssignmentSubjectType.AGENT || hasAgentAssignmentFunction;
     let actor: string;
     if (agentAssignmentAuthorized) {
       actor = await this.requireAgentAssignmentFunction(req);

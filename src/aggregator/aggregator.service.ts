@@ -100,7 +100,7 @@ export class AggregatorService {
   }
 
   async list(): Promise<Aggregator[]> {
-    return this.aggregatorRepository.find({ where: {} as any, order: { createdAt: 'ASC' } });
+    return this.aggregatorRepository.find({ where: {}, order: { createdAt: 'ASC' } });
   }
 
   async activate(id: string, actor: string): Promise<Aggregator> {
@@ -141,10 +141,10 @@ export class AggregatorService {
       const agg = await repo.findOne({ where: { id } });
       if (!agg || agg.deletedAt !== null) throw new NotFoundException(`Aggregator ${id} not found`);
       // Validate status enum
-      if (!Object.values(AggregatorStatus).includes(target as AggregatorStatus)) {
+      if (!Object.values(AggregatorStatus).includes(target)) {
         throw new BadRequestException(`Invalid status ${target}`);
       }
-      const allowed = ALLOWED_AGGREGATOR_TRANSITIONS[agg.status as AggregatorStatus] ?? [];
+      const allowed = ALLOWED_AGGREGATOR_TRANSITIONS[agg.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${agg.status} → ${target} is not allowed`);
       }

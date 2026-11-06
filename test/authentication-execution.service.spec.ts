@@ -57,7 +57,7 @@ function credential(overrides: Partial<CustomerAuthenticationCredential> = {}) {
 // S-FIX-01: authenticate() binds session issuance to the customer's CURRENT lifecycle status
 function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
   const customerRepository = {
-    findOne: jest.fn().mockImplementation(({ where }: any) => {
+    findOne: jest.fn().mockImplementation(({ where }: { where: { id?: string; reference?: string } }) => {
       if (where.id === CUSTOMER_ID) {
         return Promise.resolve({
           id: CUSTOMER_ID,
@@ -78,7 +78,7 @@ function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
     }),
   };
   const contactRepository = {
-    findOne: jest.fn().mockImplementation(({ where }: any) => {
+    findOne: jest.fn().mockImplementation(({ where }: { where: { normalizedValue?: string; type?: string } }) => {
       if (where.normalizedValue === CANONICAL_PHONE && where.type === 'PHONE') {
         return Promise.resolve({
           id: 'contact-01',

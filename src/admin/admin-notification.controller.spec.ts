@@ -14,7 +14,7 @@ const AGGREGATOR_UUID = '33333333-3333-4333-8333-333333333333';
 
 describe('AdminNotificationController — notification.view_deliveries enforcement & redaction', () => {
   function setup() {
-    const query = jest.fn();
+    const query = jest.fn<Promise<unknown[]>, [string, unknown[]?]>();
     const auditRecord = jest.fn().mockResolvedValue(undefined);
     const dataSource = {
       query,

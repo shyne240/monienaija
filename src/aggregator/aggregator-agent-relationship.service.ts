@@ -118,7 +118,7 @@ export class AggregatorAgentRelationshipService {
           },
         });
         return saved;
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Unique constraint violation for active assignment
         if (this.isUniqueViolation(error)) {
           throw new ConflictException(`Agent ${agentId} already has an active Aggregator assignment`);
@@ -175,7 +175,7 @@ export class AggregatorAgentRelationshipService {
       const repo = manager.getRepository(AggregatorAgentAssignment);
       const assignment = await repo.findOne({ where: { aggregatorId: aggregatorIdNorm, agentId: agentIdNorm } });
       if (!assignment) throw new NotFoundException(`Assignment between Aggregator ${aggregatorIdNorm} and Agent ${agentIdNorm} not found`);
-      const allowed = ALLOWED_RELATIONSHIP_TRANSITIONS[assignment.status as AggregatorAgentRelationshipStatus] ?? [];
+      const allowed = ALLOWED_RELATIONSHIP_TRANSITIONS[assignment.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${assignment.status} → ${target} is not allowed`);
       }
@@ -222,10 +222,11 @@ export class AggregatorAgentRelationshipService {
     return trimmed;
   }
 
-  private isUniqueViolation(error: any): boolean {
-    const msg = String(error?.message ?? '').toLowerCase();
-    const detail = String(error?.detail ?? '').toLowerCase();
-    const code = String(error?.code ?? '');
+  private isUniqueViolation(error: unknown): boolean {
+    const e = error as { message?: string; detail?: string; code?: string } | null | undefined;
+    const msg = String(e?.message ?? '').toLowerCase();
+    const detail = String(e?.detail ?? '').toLowerCase();
+    const code = String(e?.code ?? '');
     return code === '23505' || msg.includes('duplicate') || msg.includes('unique') || detail.includes('duplicate') || detail.includes('already exists');
   }
 }

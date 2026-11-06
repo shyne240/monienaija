@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
@@ -188,7 +188,7 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
       .get('/api/v1/customers/me/transactions')
       .set('Authorization', `Bearer ${customerA.token}`)
       .expect(200);
-    const transferRows = (history.body.items as any[]).filter((item) => item.type === 'WALLET_TRANSFER');
+    const transferRows = (history.body.items as Array<{ type: string; id: string }>).filter((item) => item.type === 'WALLET_TRANSFER');
     expect(transferRows).toHaveLength(2);
     const ids = transferRows.map((row) => row.id).sort();
     expect(ids).toEqual([transfer1.body.id, transfer2.body.id].sort());
@@ -241,7 +241,7 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     expect(successes.length).toBeGreaterThanOrEqual(1);
     // Every successful response must report the SAME transfer id — never two different ids for
     // what is, by Idempotency-Key, declared to be one logical operation.
-    const distinctIds = new Set(successes.map((r) => r.body.id));
+    const distinctIds = new Set(successes.map((r) => r.body.id as string));
     expect(distinctIds.size).toBe(1);
 
     // PROOF (the actual financial-safety question): exactly ONE debit happened, not two.

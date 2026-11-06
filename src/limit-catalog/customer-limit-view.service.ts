@@ -227,7 +227,7 @@ export class CustomerLimitViewService {
           const candidateRemaining = isCount ? candidate.remainingCount : candidate.remainingMinor ? BigInt(candidate.remainingMinor) : null;
           const candidateIsMoreRestrictive =
             currentRemaining === null ||
-            (candidateRemaining !== null && candidateRemaining < (currentRemaining as any));
+            (candidateRemaining !== null && candidateRemaining < currentRemaining);
           if (candidateIsMoreRestrictive) {
             windows[existingIndex] = candidate;
           }

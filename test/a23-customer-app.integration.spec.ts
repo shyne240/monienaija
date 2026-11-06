@@ -4,8 +4,9 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
+import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { AppModule } from '../src/app.module';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
 
@@ -250,7 +251,7 @@ describe('A23 Customer App Backend Foundation (real PostgreSQL)', () => {
     expect(history.body.items).toBeDefined();
     expect(history.body.pagination).toBeDefined();
     expect(history.body.pagination.total).toBeGreaterThanOrEqual(1);
-    const found = history.body.items.find((x: any)=> x.transferId===tid || x.id===tid);
+    const found = (history.body.items as HistoryResponseFixture[]).find((x: HistoryResponseFixture)=> x.transferId===tid || x.id===tid)!;
     expect(found).toBeDefined();
     expect(found.direction === 'SENT' || found.direction === 'RECEIVED' || found.direction === 'INTERNAL').toBe(true);
     expect(found.amountMinor).toBe('5000');

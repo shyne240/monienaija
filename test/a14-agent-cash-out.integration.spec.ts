@@ -1025,8 +1025,8 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     ]);
     expect(results.filter((r) => r.status === 'fulfilled').length).toBe(2);
     const agentBal = await ledgerService.getAccountBalance((await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `y-agent-${agent.id}-${randomUUID()}` }).catch(async () => {
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [agent.id]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
+      const w: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [agent.id]);
+      return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<ReturnType<WalletService['createWallet']>>;
     })).ledgerAccountId);
     expect(BigInt(agentBal.balanceMinor)).toBe(5000n);
   });
@@ -1064,8 +1064,8 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const beforeVal = BigInt(beforeCust[0]!.cnt);
     const { challengeId } = await createMfaChallenge(customerId, 'aa001');
     const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `aa-wallet-${customerId}-${randomUUID()}` }).catch(async () => {
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
+      const w: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
+      return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<ReturnType<WalletService['createWallet']>>;
     });
     await fundCustomer(wallet.ledgerAccountId, '5000');
     await cashOutService.execute({
@@ -1177,8 +1177,8 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     expect(res.status).toBe('COMPLETED');
     const custWallet = await walletService.createWallet({ customerId: (await dataSource.query(`SELECT id FROM customers WHERE reference LIKE 'cust-a14%' ORDER BY created_at DESC LIMIT 1`))[0].id, currency: 'NGN', idempotencyKey: `ad-cust-wallet-${randomUUID()}` }).catch(async () => {
       const cid = (await dataSource.query(`SELECT customer_id FROM customer_contact_methods WHERE normalized_value=$1`, [phone]))[0].customer_id;
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [cid]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
+      const w: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [cid]);
+      return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<ReturnType<WalletService['createWallet']>>;
     });
     // Just check that cashIn succeeded
     expect(res.journalId).toBeDefined();

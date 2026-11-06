@@ -14,7 +14,6 @@ import {
 
 import type { ValueTransformer } from 'typeorm';
 
-import { LimitDirection, LimitDimension } from './limit-catalog.enums';
 import { LimitProfile } from './limit-profile.entity';
 
 const nullableBigintTransformer: ValueTransformer = {

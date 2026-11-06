@@ -3,8 +3,8 @@ import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
-import { randomUUID } from 'node:crypto';
+import * as request from 'supertest';
+
 
 import { AppModule } from '../src/app.module';
 import { SupportService } from '../src/support/support.service';
@@ -71,7 +71,7 @@ describe('V1-CUSTOMER-09 Part C — /internal/support workforce permission bound
   // real RuntimeAccessGuard / route-policy chain. Mirrors the established pattern in
   // test/v1-003-admin-operational-writes.integration.spec.ts.
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) {
         throw new UnauthorizedException('invalid workforce token');
       }
@@ -93,8 +93,8 @@ describe('V1-CUSTOMER-09 Part C — /internal/support workforce permission bound
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   function workforceToken(type: string): string {

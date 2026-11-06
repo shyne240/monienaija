@@ -1,12 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, createHash, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import type { HistoryResponseFixture } from './support/history-response-fixture';
 import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
 
 function encodePbkdf2(password: string, saltStr = 'a23-test-salt'): string {
@@ -168,7 +169,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
       const bal = Number(balRows[0]?.bal ?? '0');
       if (bal < Number(opts.amountMinor)) {
         const topUp = String(Number(opts.amountMinor) * 2 + 5000);
-        const topUpJournal = await insertJournalWithLines({
+        await insertJournalWithLines({
           totalMinor: topUp,
           lines: [{ accountId: plat, direction: 'DEBIT', amountMinor: topUp }, { accountId: srcLedger, direction: 'CREDIT', amountMinor: topUp }],
           reference: `prefund-${randomUUID().slice(0,6)}`,
@@ -232,7 +233,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     }
     const reference = `C2C-${randomUUID().slice(0,8)}`;
     const idempotencyKey = `c2c-${randomUUID()}`;
-    const requestHash = sha64(idempotencyKey);
+    sha64(idempotencyKey);
     const expiresAt = new Date(createdAt.getTime() + 3600_000);
     const claimedAt = opts.status === 'CLAIMED' ? new Date(createdAt.getTime() + 60000) : null;
     const expiredAt = opts.status === 'EXPIRED' ? expiresAt : null;
@@ -248,7 +249,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
       try {
         const w = await ws2.createWallet({ customerId: agentId, currency: 'NGN', idempotencyKey: `c2c-agent-w-${agentId}-${randomUUID().slice(0,6)}` });
         agentLedgerId = w.ledgerAccountId;
-      } catch (e) {
+      } catch {
         // fallback: create ledger account manually
         agentLedgerId = await ensureLedgerAccount(`C2C_AGENT_${randomUUID().slice(0,6)}`, 'LIABILITY');
         await dataSource.query(`INSERT INTO wallet_accounts (id, customer_id, currency, ledger_account_id, status) VALUES ($1,$2,'NGN',$3,'ACTIVE')`, [randomUUID(), agentId, agentLedgerId]);
@@ -311,7 +312,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
           await manager.query(`INSERT INTO ledger_lines (id, journal_id, ledger_account_id, line_number, direction, amount_minor, currency, accounting_unit, created_at) VALUES ($1,$2,$3,1,'DEBIT','5000000','NGN','CUSTOMER_FUNDS',$4)`, [randomUUID(), jid, platform, now]);
           await manager.query(`INSERT INTO ledger_lines (id, journal_id, ledger_account_id, line_number, direction, amount_minor, currency, accounting_unit, created_at) VALUES ($1,$2,$3,2,'CREDIT','5000000','NGN','CUSTOMER_FUNDS',$4)`, [randomUUID(), jid, equityId, now]);
         });
-      } catch (e) {}
+      } catch { /* Preserve the existing test fallback. */ }
     }
     const metadata = { canonicalService: opts.service, agentId: opts.agentId ?? `agent-${randomUUID().slice(0,6)}` };
     if (opts.service === 'CASH_IN') {
@@ -361,7 +362,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
   it('3. Customer A cannot see Customer B history (isolation)', async () => {
     const a = await createCustomer({ displayName: 'A iso' });
     const b = await createCustomer({ displayName: 'B iso' });
-    const wA = await createWallet(a.customerId);
+    await createWallet(a.customerId);
     const wB = await createWallet(b.customerId);
     const thirdW = (await createWallet((await createCustomer()).customerId));
     // Create transfer B->third not involving A
@@ -381,7 +382,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
   it('4. Forged ?customerId= param is ignored, SELF still enforced', async () => {
     const a = await createCustomer({ displayName: 'A forged' });
     const b = await createCustomer({ displayName: 'B forged' });
-    const wA = await createWallet(a.customerId);
+    await createWallet(a.customerId);
     const wB = await createWallet(b.customerId);
     const wThird = (await createWallet((await createCustomer()).customerId));
     await insertTransfer({ sourceWalletId: wB.walletAccountId, destWalletId: wThird.walletAccountId, amountMinor: '2100', status: 'COMPLETED', sourceLedgerId: wB.ledgerAccountId, destLedgerId: wThird.ledgerAccountId });
@@ -406,7 +407,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const c = await createCustomer();
     const w = await createWallet(c.customerId);
     const w2 = await createWallet((await createCustomer()).customerId);
-    const w3 = await createWallet((await createCustomer()).customerId);
+    await createWallet((await createCustomer()).customerId);
     const t1 = await insertTransfer({ sourceWalletId: w.walletAccountId, destWalletId: w2.walletAccountId, amountMinor: '1111', status: 'COMPLETED', sourceLedgerId: w.ledgerAccountId });
     await insertFunding({ customerId: c.customerId, amountMinor: '2222', status: 'PENDING' });
     await insertCashToCash({ beneficiaryPhone: c.phone10, principalMinor: '3333', status: 'UNCLAIMED' });
@@ -425,8 +426,8 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const f2 = await insertFunding({ customerId: c.customerId, amountMinor: '88000', status: 'APPROVED' });
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=FUNDING').set('Authorization', `Bearer ${c.token}`).expect(200);
     expect(res.body.pagination.total).toBe(2);
-    expect(res.body.items.every((it: any)=>it.type==='FUNDING')).toBe(true);
-    const ids = res.body.items.map((i:any)=>i.id);
+    expect((res.body.items as HistoryResponseFixture[]).every((it: HistoryResponseFixture)=>it.type==='FUNDING')).toBe(true);
+    const ids = (res.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id);
     expect(ids).toContain(f1);
     expect(ids).toContain(f2);
   });
@@ -441,7 +442,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     await insertCashToCash({ beneficiaryPhone: otherPhone, principalMinor: '7000', status: 'UNCLAIMED' });
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=CASH_TO_CASH').set('Authorization', `Bearer ${c.token}`).expect(200);
     expect(res.body.pagination.total).toBe(2);
-    const ids = res.body.items.map((i:any)=>i.id);
+    const ids = (res.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id);
     expect(ids).toContain(unclaimed);
     expect(ids).toContain(claimed);
   });
@@ -458,7 +459,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     expect(resIn.body.items[0].type).toBe('CASH_IN');
     expect(resIn.body.items[0].id).toBe(cashInId);
     // Ensure CASH_OUT not in CASH_IN filter
-    expect(resIn.body.items.map((i:any)=>i.id)).not.toContain(cashOutId);
+    expect((resIn.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).not.toContain(cashOutId);
   });
 
   it('10. ?type=CASH_OUT returns only ledger CASH_OUT', async () => {
@@ -472,7 +473,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     expect(resOut.body.pagination.total).toBe(1);
     expect(resOut.body.items[0].type).toBe('CASH_OUT');
     expect(resOut.body.items[0].id).toBe(outId);
-    expect(resOut.body.items.map((i:any)=>i.id)).not.toContain(inId);
+    expect((resOut.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).not.toContain(inId);
   });
 
   it('11. Pagination page 1 limit 1 total/hasNext correct', async () => {
@@ -514,11 +515,11 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     // Page 1 limit 2 should be cashOut (newest) + cashIn
     const p1 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=1&limit=2').set('Authorization', `Bearer ${c.token}`).expect(200);
     expect(p1.body.pagination.total).toBe(5);
-    expect(p1.body.items.map((i:any)=>i.id)).toEqual([cashOut, cashIn]);
+    expect((p1.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).toEqual([cashOut, cashIn]);
     const p2 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=2&limit=2').set('Authorization', `Bearer ${c.token}`).expect(200);
-    expect(p2.body.items.map((i:any)=>i.id)).toEqual([c2cId, trId]);
+    expect((p2.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).toEqual([c2cId, trId]);
     const p3 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=3&limit=2').set('Authorization', `Bearer ${c.token}`).expect(200);
-    expect(p3.body.items.map((i:any)=>i.id)).toEqual([fId]);
+    expect((p3.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).toEqual([fId]);
     // Ensure not just per-table concat: if buggy per-table page1 concat, p1 would be newest of each table mixed wrong.
   });
 
@@ -580,7 +581,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
       // transfer feeMinor is 0 in V1, cash_to_cash feeMinor exists as stored but projected
       expect(it.feeMinor).toMatch(/^\d+$/);
     }
-    const tr = res.body.items.find((i:any)=>i.type==='WALLET_TRANSFER');
+    const tr = (res.body.items as HistoryResponseFixture[]).find((i: HistoryResponseFixture)=>i.type==='WALLET_TRANSFER')!;
     expect(tr.feeMinor).toBe('0');
   });
 
@@ -597,14 +598,14 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     // Insert expired directly (expires_at < now)
     const expired = await insertCashToCash({ beneficiaryPhone: c.phone10, principalMinor: '1010', status: 'EXPIRED' });
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions').set('Authorization', `Bearer ${c.token}`).expect(200);
-    const byId = new Map(res.body.items.map((i:any)=>[i.id,i]));
-    expect((byId.get(failedId) as any).status).toBe('FAILED');
-    expect((byId.get(pendingFund) as any).status).toBe('PENDING');
-    expect((byId.get(approvedFund) as any).status).toBe('APPROVED');
-    expect((byId.get(rejectedFund) as any).status).toBe('REJECTED');
-    expect((byId.get(unclaimed) as any).status).toBe('UNCLAIMED');
-    expect((byId.get(claimed) as any).status).toBe('CLAIMED');
-    expect((byId.get(expired) as any).status).toBe('EXPIRED');
+    const byId = new Map((res.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>[i.id,i] as const));
+    expect(byId.get(failedId)!.status).toBe('FAILED');
+    expect(byId.get(pendingFund)!.status).toBe('PENDING');
+    expect(byId.get(approvedFund)!.status).toBe('APPROVED');
+    expect(byId.get(rejectedFund)!.status).toBe('REJECTED');
+    expect(byId.get(unclaimed)!.status).toBe('UNCLAIMED');
+    expect(byId.get(claimed)!.status).toBe('CLAIMED');
+    expect(byId.get(expired)!.status).toBe('EXPIRED');
   });
 
   it('17. Counterparty batch enriched for WALLET_TRANSFER (displayName/receivingNumber), safe Agent for CASH', async () => {
@@ -637,7 +638,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=WALLET_TRANSFER').set('Authorization', `Bearer ${c.token}`).expect(200);
     // Both have same time, should be ordered id DESC
     const expectedOrder = [idA, idB].sort().reverse();
-    expect(res.body.items.map((i:any)=>i.id)).toEqual(expectedOrder);
+    expect((res.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).toEqual(expectedOrder);
   });
 
   it('19. Multi-source pagination not fetching page1 per table concat (correct global total)', async () => {
@@ -659,8 +660,8 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const p2 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=2&limit=3').set('Authorization', `Bearer ${c.token}`).expect(200);
     const p3 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=3&limit=3').set('Authorization', `Bearer ${c.token}`).expect(200);
     const p4 = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?page=4&limit=3').set('Authorization', `Bearer ${c.token}`).expect(200);
-    const combinedIds = [...p1.body.items, ...p2.body.items, ...p3.body.items, ...p4.body.items].map((i:any)=>i.id);
-    expect(combinedIds).toEqual(full.body.items.map((i:any)=>i.id));
+    const combinedIds = [...p1.body.items, ...p2.body.items, ...p3.body.items, ...p4.body.items].map((i: HistoryResponseFixture)=>i.id);
+    expect(combinedIds).toEqual((full.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id));
     expect(combinedIds.length).toBe(10);
     expect(new Set(combinedIds).size).toBe(10);
   });
@@ -674,7 +675,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const fundingContains = JSON.stringify(fundingHist.body).includes(fundId);
     expect(fundingContains).toBe(true);
     const unified = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=FUNDING').set('Authorization', `Bearer ${c.token}`).expect(200);
-    expect(unified.body.items.map((i:any)=>i.id)).toContain(fundId);
+    expect((unified.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id)).toContain(fundId);
   });
 
   it('21. GET /customers/me/transfers still preserved (transfers only)', async () => {
@@ -685,7 +686,7 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     await insertFunding({ customerId: c.customerId, amountMinor: '7000', status: 'PENDING' });
     const transfers = await request(app.getHttpServer()).get('/api/v1/customers/me/transfers').set('Authorization', `Bearer ${c.token}`).expect(200);
     expect(transfers.body.pagination).toBeDefined();
-    expect(transfers.body.items.every((i:any)=> !!i.sourceWalletId || !!i.destinationWalletId)).toBe(true);
+    expect((transfers.body.items as HistoryResponseFixture[]).every((i: HistoryResponseFixture)=> !!i.sourceWalletId || !!i.destinationWalletId)).toBe(true);
     // funding should not be in transfers list
     expect(JSON.stringify(transfers.body).includes('FUNDING')).toBe(false);
   });
@@ -697,13 +698,13 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const claimedId = await insertCashToCash({ beneficiaryPhone: c.phone10, principalMinor: '11000', status: 'CLAIMED', claimantCustomerId: c.customerId });
     const expiredId = await insertCashToCash({ beneficiaryPhone: c.phone10, principalMinor: '12000', status: 'EXPIRED' });
     const res = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions?type=CASH_TO_CASH').set('Authorization', `Bearer ${c.token}`).expect(200);
-    const byId = new Map(res.body.items.map((i:any)=>[i.id,i]));
-    expect((byId.get(unclaimedId) as any).direction).toBe('PENDING');
-    expect((byId.get(claimedId) as any).direction).toBe('RECEIVED');
-    expect((byId.get(expiredId) as any).direction).toBe('EXPIRED');
+    const byId = new Map((res.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>[i.id,i] as const));
+    expect(byId.get(unclaimedId)!.direction).toBe('PENDING');
+    expect(byId.get(claimedId)!.direction).toBe('RECEIVED');
+    expect(byId.get(expiredId)!.direction).toBe('EXPIRED');
     // completedAt for CLAIMED should be claimed_at, for EXPIRED should be expired_at
-    expect(new Date((byId.get(claimedId) as any).completedAt).getTime()).toBeGreaterThan(0);
-    expect(new Date((byId.get(expiredId) as any).completedAt).getTime()).toBeGreaterThan(0);
+    expect(new Date(byId.get(claimedId)!.completedAt!).getTime()).toBeGreaterThan(0);
+    expect(new Date(byId.get(expiredId)!.completedAt!).getTime()).toBeGreaterThan(0);
   });
 
   it('23. Ledger CASH_IN/CASH_OUT via metadata canonicalService projection correctness', async () => {
@@ -716,10 +717,10 @@ describe('V1-HARDENING-04 Customer Transaction History Unification (real Postgre
     const plat = await ensureLedgerAccount(`PLAT_RND_${randomUUID().slice(0,5)}`);
     await insertJournalWithLines({ totalMinor: '9999', lines: [{ accountId: plat, direction: 'DEBIT', amountMinor: '9999'}, {accountId: w.ledgerAccountId, direction: 'CREDIT', amountMinor: '9999'}], metadata: { foo: 'bar' }, createdAt: new Date() });
     const unified = await request(app.getHttpServer()).get('/api/v1/customers/me/transactions').set('Authorization', `Bearer ${c.token}`).expect(200);
-    const ids = unified.body.items.map((i:any)=>i.id);
+    const ids = (unified.body.items as HistoryResponseFixture[]).map((i: HistoryResponseFixture)=>i.id);
     expect(ids).toContain(cashInJ);
     expect(ids).toContain(cashOutJ);
-    const types = unified.body.items.filter((i:any)=>[cashInJ,cashOutJ].includes(i.id)).map((i:any)=>i.type);
+    const types = (unified.body.items as HistoryResponseFixture[]).filter((i: HistoryResponseFixture)=>[cashInJ,cashOutJ].includes(i.id)).map((i: HistoryResponseFixture)=>i.type);
     expect(types).toContain('CASH_IN');
     expect(types).toContain('CASH_OUT');
     // random journal not included

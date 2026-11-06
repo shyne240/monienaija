@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
+import * as fs from 'node:fs';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -25,7 +26,6 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     internalAudience: 'workforce-admin',
     sessionTtlSeconds: 900,
     jwksJson: [],
-    // @ts-ignore
     financeRoles: [],
     makerCheckerRules: [],
     rateLimits: [],
@@ -33,7 +33,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED','AGENT','CUSTOMER','AGGREGATOR'];
@@ -53,8 +53,8 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -240,7 +240,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(r.body.product).toBe('WALLET_TRANSFER');
     expect(r.body.direction).toBe('OUTGOING');
     expect(r.body.version).toBe(1);
-    expect(new Date(r.body.effectiveFrom).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(new Date(r.body.effectiveFrom as string).toISOString()).toBe('2026-01-01T00:00:00.000Z');
     const ruleId = r.body.id;
 
     // cumulative daily amount
@@ -418,7 +418,7 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     const stale = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-rules/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 1, limitValueMinor: '300000' });
     expect(stale.status).toBe(409);
     // concurrency also for amount->count switch invalid should 400 even with correct version
-    const badSwitch = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-rules/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 2, dimension: 'DAILY_COUNT', limitValueCount: 10, limitValueMinor: null });
+    await request(app.getHttpServer()).patch(`/api/v1/internal/limit-rules/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 2, dimension: 'DAILY_COUNT', limitValueCount: 10, limitValueMinor: null });
     // this should succeed because DAILY_COUNT requires count and not minor — but we send minor null explicit; however our DTO treats undefined vs null differently; we send explicit null so service sets minor null, count 10 => should succeed? Actually DAILY_COUNT with count 10 and minor null is valid.
     // Let's test invalid: try to set count dimension but keep minor 200000 => expect 400
     const invalidSwitch = await request(app.getHttpServer()).patch(`/api/v1/internal/limit-rules/${id}`).set('Authorization', auth('OPERATOR')).send({ version: 2, dimension: 'DAILY_COUNT', limitValueCount: 10 });
@@ -443,16 +443,16 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM wallet_accounts`);
     const afterEntries: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_lines`);
     const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM ledger_journals`);
-    expect(afterWallets[0].count).toBe(beforeWallets[0].count);
-    expect(afterEntries[0].count).toBe(beforeEntries[0].count);
-    expect(afterJournals[0].count).toBe(beforeJournals[0].count);
+    expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
+    expect(afterEntries[0]!.count).toBe(beforeEntries[0]!.count);
+    expect(afterJournals[0]!.count).toBe(beforeJournals[0]!.count);
     // V1-LIMIT-03 additive: limit_usages table now exists but catalogue must not auto-create usages/ledger side effects
     const hasLimitUsages = await dataSource.query(`SELECT to_regclass('public.limit_usages') as reg`);
     expect(hasLimitUsages[0].reg).toBe('limit_usages');
     const usagesCount: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM limit_usages`);
-    expect(usagesCount[0].count).toBe('0');
+    expect(usagesCount[0]!.count).toBe('0');
     const reservationCount: Array<{ count: string }> = await dataSource.query(`SELECT COUNT(*)::text as count FROM limit_reservations`);
-    expect(reservationCount[0].count).toBe('0');
+    expect(reservationCount[0]!.count).toBe('0');
   });
 
   it('11. list filters, deterministic ordering, pagination for rules', async () => {
@@ -481,10 +481,9 @@ describe('V1-LIMIT-01 Limit Profile & Rule Catalogue (real PostgreSQL)', () => {
     expect(agentClassCheck.length).toBe(1);
   });
 
-  it('13. fixed-tier disproof — code search shows no hardcoded Tier 1/2/3 business logic in limit-catalog', async () => {
+  it('13. fixed-tier disproof — code search shows no hardcoded Tier 1/2/3 business logic in limit-catalog', () => {
     // the service accepts any code matching ^[A-Z0-9_]{3,80}$; we proved with TIER_100, VIP, BASIC etc.
     // Also verify controller/service does not contain hard-coded tier list
-    const fs = require('node:fs');
     const service = fs.readFileSync('src/limit-catalog/limit-catalog.service.ts','utf8');
     const controller = fs.readFileSync('src/limit-catalog/limit-catalog.controller.ts','utf8');
     const entity = fs.readFileSync('src/limit-catalog/limit-profile.entity.ts','utf8');

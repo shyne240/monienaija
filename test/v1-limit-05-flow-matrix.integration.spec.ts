@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, no-empty */
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+
 /**
  * V1-LIMIT-05 — PART 1: per-flow limit regression matrix over ALL 8 wired V1 financial flows.
  *
@@ -94,7 +94,7 @@ interface RuleSeed {
 }
 
 function errorCodeOf(e: any): string {
-  const resp = e?.getResponse?.() as any;
+  const resp = e?.getResponse?.();
   return (resp && (resp.error || resp.code)) || e?.code || e?.message || 'UNKNOWN';
 }
 
@@ -195,7 +195,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       code: `L5-${randomUUID().slice(0, 6)}`,
       name: 'L5 Matrix Class',
       isActive: true,
-      applicableServices: services as unknown,
+      applicableServices: services,
       actor: 'matrix',
     });
     const appEntity = await appService.create({
@@ -217,7 +217,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     });
     const wallet = await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `l5-agent-w-${agent.id}-${randomUUID()}` });
     const rows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
-    return { agentId: agent.id, walletLedgerAccountId: rows[0].ledger_account_id };
+    return { agentId: agent.id, walletLedgerAccountId: rows[0]!.ledger_account_id };
   }
 
   function agentPrincipal(agentId: string): any {
@@ -229,7 +229,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [`cust-l5-${randomUUID().slice(0, 8)}`],
     );
-    const customerId = custRows[0].id;
+    const customerId = custRows[0]!.id;
     await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer L5 ${randomUUID().slice(0, 4)}`]);
     let phone: string | undefined;
     if (opts.phone) {
@@ -241,7 +241,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     }
     const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `l5-cust-w-${customerId}-${randomUUID()}` });
     const rows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [wallet.id]);
-    return { customerId, walletLedgerAccountId: rows[0].ledger_account_id, phone };
+    return { customerId, walletLedgerAccountId: rows[0]!.ledger_account_id, phone };
   }
 
   async function fundAccount(ledgerAccountId: string, amountMinor: string): Promise<void> {
@@ -281,7 +281,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
           [randomUUID(), customerId, enrollmentId, `m-${randomUUID().slice(0, 6)}`],
         );
-        methodId = ins[0].id;
+        methodId = ins[0]!.id;
       }
     } else {
       // Concurrent callers may race here (uq_mfa_enrollments_active_customer) — insert-or-reselect.
@@ -290,19 +290,19 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
           [randomUUID(), customerId, `mfa-e-${randomUUID().slice(0, 6)}`],
         );
-        enrollmentId = e[0].id;
+        enrollmentId = e[0]!.id;
       } catch {
         const e: Array<{ id: string }> = await dataSource.query(
           `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
           [customerId],
         );
-        enrollmentId = e[0].id;
+        enrollmentId = e[0]!.id;
       }
       const m: Array<{ id: string }> = await dataSource.query(
         `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
         [randomUUID(), customerId, enrollmentId, `m-${randomUUID().slice(0, 6)}`],
       );
-      methodId = m[0].id;
+      methodId = m[0]!.id;
     }
     const credRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 LIMIT 1`, [customerId]);
     let credentialId = credRows[0]?.id;
@@ -311,7 +311,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         `INSERT INTO customer_authentication_credentials (id, customer_id, credential_type, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PASSWORD','dummyhash','PBKDF2',1,NOW(),'ACTIVE') RETURNING id`,
         [randomUUID(), customerId],
       );
-      credentialId = c[0].id;
+      credentialId = c[0]!.id;
     }
     const sessionId = randomUUID();
     const tokenHash = randomBytes(32).toString('hex');
@@ -320,7 +320,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       [sessionId, customerId, credentialId, tokenHash],
     );
     const principal: any = { principalType: 'CUSTOMER', customerId, credentialId, sessionId };
-    const challenge = await mfaService.issueChallenge({ principal, enrollmentId, methodId, challengeHash: otp, ttlSeconds: 300, actor: customerId } as any);
+    const challenge = await mfaService.issueChallenge({ principal, enrollmentId, methodId, challengeHash: otp, ttlSeconds: 300, actor: customerId } as Parameters<typeof mfaService.issueChallenge>[0]);
     return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp };
   }
 
@@ -448,7 +448,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         }
         return last;
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
         let last: AttemptResult = { ok: false, code: 'UNKNOWN' };
         for (let i = 0; i < 10; i += 1) {
           last = await origReplay(amountMinor, key, first);
@@ -457,7 +457,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         }
         return last;
       },
-      async prepareConcurrent(count: number): Promise<Array<() => Promise<AttemptResult>>> {
+      async prepareConcurrent(this: Harness, count: number): Promise<Array<() => Promise<AttemptResult>>> {
         const fns = await origPrepare(count);
         return fns.map((fn) => async () => {
           let last: AttemptResult = { ok: false, code: 'UNKNOWN' };
@@ -491,7 +491,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       case 'AGENT_DEFUNDING':
         return buildAgentFundingHarness('AGENT_DEFUNDING');
       default:
-        throw new Error(`Unknown flow ${flow}`);
+        throw new Error(`Unknown flow ${flow as string}`);
     }
   }
 
@@ -524,19 +524,19 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
             amountMinor,
             currency: 'NGN',
             idempotencyKey: idem,
-          } as any);
+          } as Parameters<typeof transferService.createTransfer>[0]);
           return { ok: true, raw: view };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e) };
         }
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
         const second = await this.attempt(amountMinor, key);
         if (second.ok && first.raw?.id) second.replayed = second.raw?.id === first.raw.id;
         return second;
       },
-      async prepareConcurrent(count: number) {
-        return Array.from({ length: count }, () => () => this.attempt('30000'));
+      prepareConcurrent(this: Harness, count: number) {
+        return Promise.resolve(Array.from({ length: count }, () => () => this.attempt('30000')));
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [source.walletLedgerAccountId]);
@@ -546,7 +546,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
 
   async function walletIdOf(customerId: string): Promise<string> {
     const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN' LIMIT 1`, [customerId]);
-    return rows[0].id;
+    return rows[0]!.id;
   }
 
   async function buildCashInHarness(): Promise<Harness> {
@@ -572,17 +572,17 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
             amountMinor,
             currency: 'NGN',
             idempotencyKey: key ?? `l5-ci-${randomUUID()}`,
-          } as any);
+          } as Parameters<typeof cashInService.execute>[0]);
           return { ok: true, replayed: res.replayed, raw: res };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e) };
         }
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         return this.attempt(amountMinor, key);
       },
-      async prepareConcurrent(count: number) {
-        return Array.from({ length: count }, () => () => this.attempt('30000'));
+      prepareConcurrent(this: Harness, count: number) {
+        return Promise.resolve(Array.from({ length: count }, () => () => this.attempt('30000')));
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [recipient.walletLedgerAccountId]);
@@ -618,18 +618,18 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
             amountMinor,
             currency: 'NGN',
             idempotencyKey: key ?? `l5-co-${randomUUID()}`,
-          } as any);
+          } as Parameters<typeof cashOutService.execute>[0]);
           return { ok: true, replayed: res.replayed, raw: res };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e) };
         }
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         return this.attempt(amountMinor, key);
       },
-      async prepareConcurrent(count: number) {
+      prepareConcurrent(this: Harness, count: number) {
         // Challenge is created INSIDE each closure so a serialization-retry gets a fresh OTP.
-        return Array.from({ length: count }, () => async () => {
+        return Promise.resolve(Array.from({ length: count }, () => async () => {
           try {
             const { challengeId, otp } = await createMfaChallenge(payer.customerId);
             const res = await cashOutService.execute({
@@ -643,13 +643,13 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
               amountMinor: '30000',
               currency: 'NGN',
               idempotencyKey: `l5-co-c-${randomUUID()}`,
-            } as any);
+            } as Parameters<typeof cashOutService.execute>[0]);
             return { ok: true, replayed: res.replayed, raw: res } as AttemptResult;
           } catch (e) {
             console.error('DBG_CO3', JSON.stringify({code:(e as any)?.code, msg:(e as any)?.message, detail:(e as any)?.detail}));
             return { ok: false, code: errorCodeOf(e) } as AttemptResult;
           }
-        });
+        }));
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [payer.walletLedgerAccountId]);
@@ -680,17 +680,17 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
             amountMinor,
             currency: 'NGN',
             idempotencyKey: key ?? `l5-c2c-${randomUUID()}`,
-          } as any);
+          } as Parameters<typeof cashToCashService.execute>[0]);
           return { ok: true, replayed: res.replayed, raw: res };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e) };
         }
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         return this.attempt(amountMinor, key);
       },
-      async prepareConcurrent(count: number) {
-        return Array.from({ length: count }, () => () => this.attempt('30000'));
+      prepareConcurrent(this: Harness, count: number) {
+        return Promise.resolve(Array.from({ length: count }, () => () => this.attempt('30000')));
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [walletLedgerAccountId]);
@@ -715,7 +715,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         amountMinor,
         currency: 'NGN',
         idempotencyKey: `l5-c2c-init-${randomUUID()}`,
-      } as any);
+      } as Parameters<typeof cashToCashService.execute>[0]);
       if (res.status !== 'COMPLETED') throw new Error(`c2c init failed: ${JSON.stringify(res)}`);
       return { transferId: res.transferId, transferCode: res.transferCode! };
     }
@@ -731,7 +731,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           mfaChallengeId: challengeId,
           otp,
           idempotencyKey: key,
-        } as any);
+        } as Parameters<typeof claimService.execute>[0]);
         return { ok: true, replayed: res.replayed, raw: res };
       } catch (e) {
         return { ok: false, code: errorCodeOf(e) };
@@ -739,7 +739,6 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     }
 
     let lastInit: { transferId: string; transferCode: string } | null = null;
-    let lastKey: string | null = null;
 
     return {
       flow: 'C2C_CLAIM',
@@ -753,15 +752,14 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       async attempt(amountMinor: string, key?: string): Promise<AttemptResult> {
         const k = key ?? `l5-claim-${randomUUID()}`;
         lastInit = await initiate(amountMinor);
-        lastKey = k;
         return claim(lastInit.transferId, lastInit.transferCode, amountMinor, k);
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         // Replay the same claim (same transfer + same idempotency key) — no new initiation.
         if (!lastInit) throw new Error('no claim to replay');
         return claim(lastInit.transferId, lastInit.transferCode, amountMinor, key);
       },
-      async prepareConcurrent(count: number) {
+      async prepareConcurrent(this: Harness, count: number) {
         const inits: Array<{ transferId: string; transferCode: string }> = [];
         for (let i = 0; i < count; i += 1) inits.push(await initiate('30000'));
         return inits.map((init) => () => claim(init.transferId, init.transferCode, '30000', `l5-claim-c-${randomUUID()}`));
@@ -789,13 +787,13 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           description: 'matrix',
           idempotencyKey: makerKey,
           principal: supportMaker,
-        } as any);
+        } as Parameters<typeof customerFundingService.createRequest>[0]);
         requestId = created.id;
       } catch (e) {
         return { result: { ok: false, code: errorCodeOf(e) } };
       }
       try {
-        const approved = await customerFundingService.approve({ fundingRequestId: requestId, principal: operatorChecker } as any);
+        const approved = await customerFundingService.approve({ fundingRequestId: requestId, principal: operatorChecker } as Parameters<typeof customerFundingService.approve>[0]);
         return { result: { ok: true, raw: approved }, requestId };
       } catch (e) {
         return { result: { ok: false, code: errorCodeOf(e) }, requestId };
@@ -818,7 +816,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
         lastRequestId = requestId ?? lastRequestId;
         return result;
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         // Replay the maker request (same idempotency key → same request) then re-approve:
         // the approve is one-shot, so a 409 ALREADY-APPROVED is the expected replay outcome.
         const created = await customerFundingService.createRequest({
@@ -830,15 +828,15 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
           description: 'matrix replay',
           idempotencyKey: key,
           principal: supportMaker,
-        } as any);
+        } as Parameters<typeof customerFundingService.createRequest>[0]);
         try {
-          await customerFundingService.approve({ fundingRequestId: created.id, principal: operatorChecker } as any);
+          await customerFundingService.approve({ fundingRequestId: created.id, principal: operatorChecker } as Parameters<typeof customerFundingService.approve>[0]);
           return { ok: true, replayed: true };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e), replayed: true };
         }
       },
-      async prepareConcurrent(count: number) {
+      async prepareConcurrent(this: Harness, count: number) {
         const requestIds: string[] = [];
         for (let i = 0; i < count; i += 1) {
           const created = await customerFundingService.createRequest({
@@ -850,12 +848,12 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
             description: 'matrix concurrent',
             idempotencyKey: `l5-cf-c-${randomUUID()}`,
             principal: supportMaker,
-          } as any);
+          } as Parameters<typeof customerFundingService.createRequest>[0]);
           requestIds.push(created.id);
         }
         return requestIds.map((fundingRequestId) => async () => {
           try {
-            const approved = await customerFundingService.approve({ fundingRequestId, principal: operatorChecker } as any);
+            const approved = await customerFundingService.approve({ fundingRequestId, principal: operatorChecker } as Parameters<typeof customerFundingService.approve>[0]);
             return { ok: true, raw: approved } as AttemptResult;
           } catch (e) {
             return { ok: false, code: errorCodeOf(e) } as AttemptResult;
@@ -874,7 +872,7 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
     if (!isFund) {
       // defunding needs pre-existing balance; fund via the funding service WITHOUT any limit
       // assignment in place yet (assignments are seeded per-case after harness creation).
-      await agentFundingService.fund({ agentId, amountMinor: '500000000', currency: 'NGN', idempotencyKey: `l5-seed-fund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as any);
+      await agentFundingService.fund({ agentId, amountMinor: '500000000', currency: 'NGN', idempotencyKey: `l5-seed-fund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as Parameters<typeof agentFundingService.fund>[0]);
     }
     return {
       flow: kind === 'AGENT_FUNDING' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING',
@@ -888,18 +886,18 @@ describe('V1-LIMIT-05 Per-Flow Limit Regression Matrix (real PG)', () => {
       async attempt(amountMinor: string, key?: string): Promise<AttemptResult> {
         try {
           const res = isFund
-            ? await agentFundingService.fund({ agentId, amountMinor, currency: 'NGN', idempotencyKey: key ?? `l5-af-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as any)
-            : await agentFundingService.defund({ agentId, amountMinor, currency: 'NGN', idempotencyKey: key ?? `l5-ad-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as any);
+            ? await agentFundingService.fund({ agentId, amountMinor, currency: 'NGN', idempotencyKey: key ?? `l5-af-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as Parameters<typeof agentFundingService.fund>[0])
+            : await agentFundingService.defund({ agentId, amountMinor, currency: 'NGN', idempotencyKey: key ?? `l5-ad-${randomUUID()}`, principal: privilegedPrincipal, actor: 'matrix' } as Parameters<typeof agentFundingService.defund>[0]);
           return { ok: true, replayed: (res as any).replayed === true, raw: res };
         } catch (e) {
           return { ok: false, code: errorCodeOf(e) };
         }
       },
-      async replay(amountMinor: string, key: string, first: AttemptResult): Promise<AttemptResult> {
+      async replay(this: Harness, amountMinor: string, key: string): Promise<AttemptResult> {
         return this.attempt(amountMinor, key);
       },
-      async prepareConcurrent(count: number) {
-        return Array.from({ length: count }, () => () => this.attempt('30000'));
+      prepareConcurrent(this: Harness, count: number) {
+        return Promise.resolve(Array.from({ length: count }, () => () => this.attempt('30000')));
       },
       async deactivatePrincipalWallet() {
         await dataSource.query(`UPDATE ledger_accounts SET is_active=false WHERE id=$1`, [walletLedgerAccountId]);

@@ -25,7 +25,7 @@ export interface UnifiedHistoryItem {
   feeMinor: string;
   sourceWalletId: string | null;
   destinationWalletId: string | null;
-  counterparty: any | null;
+  counterparty: Record<string, unknown> | null;
   failureCode: string | null;
   failureMessage: string | null;
 }
@@ -329,7 +329,7 @@ export class CustomerTransactionHistoryService {
 
     const items: UnifiedHistoryItem[] = paginated.map((r) => {
       let direction: string = 'UNKNOWN';
-      let counterparty: any = null;
+      let counterparty: Record<string, unknown> | null = null;
       const sourceWalletId: string | null = r.source_wallet_id ?? null;
       const destinationWalletId: string | null = r.destination_wallet_id ?? null;
       let failureCode: string | null = r.failure_code ?? null;
@@ -413,10 +413,10 @@ export class CustomerTransactionHistoryService {
         if (r.status === 'EXPIRED' && r.expired_at) completedAt = new Date(r.expired_at);
         else if (r.status === 'CLAIMED' && r.claimed_at) completedAt = new Date(r.claimed_at);
       }
-      if (r.type === 'FUNDING' && r.status === 'REJECTED' && (r as any).rejected_at) {
-        completedAt = new Date((r as any).rejected_at);
-      } else if (r.type === 'FUNDING' && r.status === 'APPROVED' && (r as any).approved_at) {
-        completedAt = new Date((r as any).approved_at);
+      if (r.type === 'FUNDING' && r.status === 'REJECTED' && r.rejected_at) {
+        completedAt = new Date(r.rejected_at);
+      } else if (r.type === 'FUNDING' && r.status === 'APPROVED' && r.approved_at) {
+        completedAt = new Date(r.approved_at);
       }
 
       // Safe projection: hide PIN/OTP/hash/journalId/ledgerAccountId/internal workforce, expose feeMinor as 0 where V1 has no fee ledger
@@ -424,14 +424,14 @@ export class CustomerTransactionHistoryService {
         id: String(r.id),
         type: String(r.type),
         status: String(r.status),
-        amountMinor: r.amount_minor?.toString() ?? '0',
+        amountMinor: (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
         completedAt,
         reference: r.reference ?? null,
         narration: r.narration ?? null,
-        feeMinor: r.fee_minor?.toString() ?? '0',
+        feeMinor: (r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         sourceWalletId,
         destinationWalletId,
         counterparty,

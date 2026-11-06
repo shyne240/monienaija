@@ -4,7 +4,7 @@ import { ConflictException } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 
 import { AgentCashToCashService } from '../src/agent/agent-cash-to-cash.service';
-import { AgentService } from '../src/agent/agent-service.enum';
+
 import { MAX_SERIALIZABLE_ATTEMPTS } from '../src/common/serializable-transaction';
 
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';

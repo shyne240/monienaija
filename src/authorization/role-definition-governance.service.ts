@@ -732,7 +732,8 @@ export class RoleDefinitionGovernanceService {
     }
     const seen = new Set<string>();
     const normalized: RoleDefinitionFunctionGrant[] = [];
-    for (const g of input) {
+    // Array.isArray narrows to any[]; restore the declared grant shape for validation.
+    for (const g of input as readonly RoleDefinitionFunctionGrantInput[]) {
       const functionCode = typeof g?.functionCode === 'string' ? g.functionCode.trim() : '';
       const accessType = typeof g?.accessType === 'string' ? g.accessType.trim().toUpperCase() : '';
       if (!functionCode || functionCode.length > 100) {

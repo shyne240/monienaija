@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
-// @ts-nocheck
+
 /**
  * V1-LIMIT-05 — PART 2: workforce-only operational diagnostics.
  *
@@ -23,7 +23,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { createHash, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -53,7 +53,7 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
+    validate: (token: string, audience: string) => Promise.resolve().then(() => {
       if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
       const raw = token.replace('workforce-', '').toUpperCase();
       // '-NOFN' suffix: type-permitted workforce principal that holds NO catalogue function —
@@ -76,8 +76,8 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-      } as any;
-    },
+      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+    }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -253,7 +253,7 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
     // both pA rows share the same DAILY window key (amount + count dimensions) → 2 rows
     const byWindowKey = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-usages?principalId=${pA}&windowKey=${encodeURIComponent(byProduct.body.data[0].windowKey)}`)
+      .get(`/api/v1/internal/limit-usages?principalId=${pA}&windowKey=${encodeURIComponent(byProduct.body.data[0].windowKey as string)}`)
       .set('Authorization', auth('OPERATOR'));
     expect(byWindowKey.status).toBe(200);
     expect(byWindowKey.body.total).toBe(2);
@@ -374,21 +374,21 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(page1.body.data.length).toBe(3);
     expect(page2.body.data.length).toBe(3);
     expect(page3.body.data.length).toBe(1);
-    const ids = [...page1.body.data, ...page2.body.data, ...page3.body.data].map((d) => d.id);
+    const ids = [...page1.body.data, ...page2.body.data, ...page3.body.data].map((d: { id: string }) => d.id);
     expect(new Set(ids).size).toBe(7); // no overlap, no gaps
     // deterministic re-fetch
     const again = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?principalId=${pA}&page=1&limit=3`)
       .set('Authorization', auth('OPERATOR'));
-    expect(again.body.data.map((d) => d.id)).toEqual(page1.body.data.map((d) => d.id));
+    expect(again.body.data.map((d: { id: string }) => d.id)).toEqual(page1.body.data.map((d: { id: string }) => d.id));
 
     const resPage = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}&page=1&limit=4`)
       .set('Authorization', auth('OPERATOR'));
     expect(resPage.body.total).toBe(7);
     expect(resPage.body.data.length).toBe(4);
-    const stamps = resPage.body.data.map((d) => new Date(d.reservedAt).getTime());
-    for (let i = 1; i < stamps.length; i += 1) expect(stamps[i]).toBeLessThanOrEqual(stamps[i - 1]);
+    const stamps = (resPage.body.data as Array<{ reservedAt: string }>).map((d) => new Date(d.reservedAt).getTime());
+    for (let i = 1; i < stamps.length; i += 1) expect(stamps[i]!).toBeLessThanOrEqual(stamps[i - 1]!);
 
     const badLimit = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?limit=5000`)
@@ -477,7 +477,7 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const all = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}`)
       .set('Authorization', auth('OPERATOR'));
-    const freshItem = all.body.data.find((d) => d.idempotencyKey === fresh.key);
+    const freshItem = all.body.data.find((d: { idempotencyKey: string }) => d.idempotencyKey === fresh.key);
     expect(freshItem.stale).toBe(false);
 
     // configurable threshold — diagnostic flag only, never triggers release
@@ -501,7 +501,7 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const pA = randomUUID();
     const { key } = await reserve({ principalId: pA });
     const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [key]);
-    const reservationId = rows[0].id;
+    const reservationId = rows[0]!.id;
 
     for (const role of ['OPERATOR', 'SERVICE', 'SUPPORT']) {
       const res = await request(app.getHttpServer())
@@ -517,6 +517,6 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
     // still RESERVED after all denied attempts
     const after: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
-    expect(after[0].status).toBe('RESERVED');
+    expect(after[0]!.status).toBe('RESERVED');
   });
 });

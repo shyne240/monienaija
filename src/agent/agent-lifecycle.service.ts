@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -5,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, type EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
 import { AgentAuthenticationSessionService } from '../agent-authentication/agent-authentication-session.service';
@@ -148,7 +150,7 @@ export class AgentLifecycleService {
       // This lock is also taken before issuing or administratively revoking sessions.
       const agent = await repo.findOne({ where: { id: agentId }, lock: { mode: 'pessimistic_write' } });
       if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
-      const allowed = ALLOWED_TRANSITIONS[agent.status as AgentStatus] ?? [];
+      const allowed = ALLOWED_TRANSITIONS[agent.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${agent.status} → ${target} is not allowed`);
       }
@@ -191,7 +193,7 @@ export class AgentLifecycleService {
   }
 
   private async audit(
-    manager: import('typeorm').EntityManager,
+    manager: EntityManager,
     entityType: string,
     entityId: string,
     action: string,
@@ -220,9 +222,4 @@ export class AgentLifecycleService {
       throw new BadRequestException(`${field} must be a UUID`);
     }
   }
-}
-
-function randomUUID(): string {
-  // local helper to avoid import collision
-  return require('node:crypto').randomUUID();
 }

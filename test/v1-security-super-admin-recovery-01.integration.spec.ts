@@ -9,7 +9,7 @@
  * see generateKeyPairSync() calls below. None of them are, or resemble, production secrets.
  */
 import { createSign, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import type { AuthorizationPrincipal } from '../src/authorization/authorization.types';
 import { AuthorizationService } from '../src/authorization/authorization.service';
 import {
@@ -25,11 +25,7 @@ import { PrivilegedActionApproval } from '../src/authorization/privileged-action
 import { PrivilegedActionApprovalService } from '../src/authorization/privileged-action-approval.service';
 import { workforceConfiguration } from '../src/authorization/workforce-configuration';
 import { canonical } from '../src/authorization/workforce-crypto';
-import {
-  A2FinanceRoleAssignment,
-  A2SuperAdminRecoveryConsumption,
-  A2WorkforceSession,
-} from '../src/authorization/workforce-authentication.entity';
+import { A2WorkforceSession } from '../src/authorization/workforce-authentication.entity';
 import type {
   A2RecoveryStatementV1,
   A2TrustedJwkV1,
@@ -373,7 +369,7 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     expect(view.consumedBy).toBe(administratorPrincipal.principalId);
     expect(view.recoveryReference).toMatch(/^a2-recovery-/);
 
-    const assignmentRows = await dataSource.query(
+    const assignmentRows: Array<{ role_key: string; status: string; revoked_by: string }> = await dataSource.query(
       `SELECT role_key, status, revoked_by FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
     );
     expect(assignmentRows).toEqual([
@@ -385,12 +381,12 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
       .findOne({ where: { id: sessionId } });
     expect(session?.status).toBe('REVOKED');
 
-    const auditRows = await dataSource.query(
+    const auditRows: Array<{ action: string }> = await dataSource.query(
       `SELECT action FROM audit_events WHERE action = 'SUPER_ADMIN_REVOKED'`,
     );
     expect(auditRows).toHaveLength(1);
 
-    const consumptionRows = await dataSource.query(
+    const consumptionRows: Array<{ operation: string; target_principal_id: string; consumed_by: string }> = await dataSource.query(
       `SELECT operation, target_principal_id, consumed_by FROM a2_super_admin_recovery_consumptions`,
     );
     expect(consumptionRows).toEqual([
@@ -523,14 +519,14 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     await expect(recovery.consumeRevocation(statement, administratorPrincipal)).rejects.toThrow(
       /No matching active SUPER_ADMIN/i,
     );
-    const rows = await dataSource.query(
+    const rows: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
     );
     expect(rows).toEqual([{ status: 'ACTIVE' }]); // untouched
-    const consumptionRows = await dataSource.query(
+    const consumptionRows: Array<{ c: number }> = await dataSource.query(
       `SELECT count(*)::int AS c FROM a2_super_admin_recovery_consumptions`,
     );
-    expect(consumptionRows[0].c).toBe(0); // atomic: nothing persisted on failure
+    expect(consumptionRows[0]!.c).toBe(0); // atomic: nothing persisted on failure
   });
 
   it('7. replayed statement is rejected after a successful consumption (sequential)', async () => {
@@ -553,14 +549,14 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     const rejected = results.filter((r) => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    const rows = await dataSource.query(
+    const rows: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
     );
     expect(rows).toEqual([{ status: 'REVOKED' }]);
-    const consumptionRows = await dataSource.query(
+    const consumptionRows: Array<{ c: number }> = await dataSource.query(
       `SELECT count(*)::int AS c FROM a2_super_admin_recovery_consumptions`,
     );
-    expect(consumptionRows[0].c).toBe(1);
+    expect(consumptionRows[0]!.c).toBe(1);
   });
 
   it('9. unauthorized workforce principal (not ADMINISTRATOR) cannot trigger consumption, even with a valid statement', async () => {
@@ -574,7 +570,7 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     await expect(recovery.consumeRevocation(statement, operations)).rejects.toThrow(
       /ADMINISTRATOR role/i,
     );
-    const rows = await dataSource.query(
+    const rows: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
     );
     expect(rows).toEqual([{ status: 'ACTIVE' }]);

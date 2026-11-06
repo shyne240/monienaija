@@ -17,7 +17,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -220,7 +220,7 @@ describe('P0-B ledger journal reversal maker-checker governance — real Postgre
 
   it('rejects unauthorized makers (FINANCE_AUDITOR cannot initiate)', async () => {
     const auditor = await provisionRole('FINANCE_AUDITOR');
-    const preparer = await provisionRole('FINANCE_PREPARER');
+    await provisionRole('FINANCE_PREPARER');
     const { journalId, reason } = await seedJournal();
 
     const res = await request(app.getHttpServer())
