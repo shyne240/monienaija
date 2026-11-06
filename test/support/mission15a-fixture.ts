@@ -36,16 +36,22 @@ export async function createMission15aFixture(label: string) {
     recoveryKeys: [],
     roles: [],
     makerCheckerRules: [],
-    rateLimits: [{ category: 'privileged-approval', capacity: 100, refillRatePerSecond: 100, enabled: true }],
+    rateLimits: [
+      { category: 'privileged-approval', capacity: 100, refillRatePerSecond: 100, enabled: true },
+    ],
     trustedProxyAddresses: [],
   } as unknown as A2WorkforceConfigurationV1;
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(DataSource).useValue(dataSource)
-    .overrideProvider(A2_WORKFORCE_CONFIG).useValue(config)
+    .overrideProvider(DataSource)
+    .useValue(dataSource)
+    .overrideProvider(A2_WORKFORCE_CONFIG)
+    .useValue(config)
     .compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
   app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+  );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   const workforceSessions = moduleRef.get(A2WorkforceSessionService);
@@ -54,22 +60,44 @@ export async function createMission15aFixture(label: string) {
     const id = `mission15a:${randomUUID()}`;
     const now = new Date();
     await dataSource.getRepository(A2FinanceRoleAssignment).save({
-      id: randomUUID(), assignmentReference: randomUUID(), assignmentVersion: 1,
-      principalId: id, roleKey, scopes: [], status: 'ACTIVE', initiatedScope: 'SUPER_ADMIN_SCOPE',
-      interim: true, effectiveFrom: new Date(now.getTime() - 60_000),
-      effectiveTo: new Date(now.getTime() + 3_600_000), assignedBy: 'test', assignedAt: now,
-      revokedBy: null, revokedAt: null, bootstrapReference: null, approvalIds: [], auditReferences: [],
+      id: randomUUID(),
+      assignmentReference: randomUUID(),
+      assignmentVersion: 1,
+      principalId: id,
+      roleKey,
+      scopes: [],
+      status: 'ACTIVE',
+      initiatedScope: 'SUPER_ADMIN_SCOPE',
+      interim: true,
+      effectiveFrom: new Date(now.getTime() - 60_000),
+      effectiveTo: new Date(now.getTime() + 3_600_000),
+      assignedBy: 'test',
+      assignedAt: now,
+      revokedBy: null,
+      revokedAt: null,
+      bootstrapReference: null,
+      approvalIds: [],
+      auditReferences: [],
     });
     const session = await workforceSessions.establish({
-      issuer: 'https://workforce.test', subject: id, principalId: id, audience: ['workforce-admin'],
-      issuedAt: now.toISOString(), expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
-      authenticatedAt: now.toISOString(), assuranceLevel: 'MFA', amr: ['pwd', 'otp'], acr: null,
+      issuer: 'https://workforce.test',
+      subject: id,
+      principalId: id,
+      audience: ['workforce-admin'],
+      issuedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
+      authenticatedAt: now.toISOString(),
+      assuranceLevel: 'MFA',
+      amr: ['pwd', 'otp'],
+      acr: null,
       signingKeyId: 'test',
     });
     return { id, token: session.accessToken };
   }
 
-  async function agent(classId?: string): Promise<{ id: string; credentialId: string; password: string }> {
+  async function agent(
+    classId?: string,
+  ): Promise<{ id: string; credentialId: string; password: string }> {
     const id = randomUUID();
     const password = `Test-${randomUUID()}`;
     const salt = Buffer.from('mission-15a-test-salt');
@@ -88,12 +116,17 @@ export async function createMission15aFixture(label: string) {
     return { id, credentialId: credentials[0]!.id, password };
   }
 
-  async function login(identity: { id: string; password: string }): Promise<{ token: string; sessionId: string }> {
+  async function login(identity: {
+    id: string;
+    password: string;
+  }): Promise<{ token: string; sessionId: string }> {
     const response = await app.inject({
-      method: 'POST', url: '/api/v1/agents/sessions',
+      method: 'POST',
+      url: '/api/v1/agents/sessions',
       payload: { agentId: identity.id, password: identity.password },
     });
-    if (response.statusCode !== 200) throw new Error(`Agent test login failed: ${response.statusCode}`);
+    if (response.statusCode !== 200)
+      throw new Error(`Agent test login failed: ${response.statusCode}`);
     const body = response.json<{ accessToken: string; sessionId: string }>();
     return { token: body.accessToken, sessionId: body.sessionId };
   }

@@ -15,12 +15,8 @@ import {
 } from '../authorization/governed-action.registry';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
-import {
-  governedChangeConsumptionError,
-} from '../authorization/commercial-rule-governance.service';
-import type {
-  GovernedChangeRequestView,
-} from '../authorization/commercial-rule-governance.service';
+import { governedChangeConsumptionError } from '../authorization/commercial-rule-governance.service';
+import type { GovernedChangeRequestView } from '../authorization/commercial-rule-governance.service';
 import { LedgerJournal } from './ledger-journal.entity';
 import type { LedgerJournalView } from './ledger.types';
 import { LedgerService } from './ledger.service';
@@ -144,13 +140,18 @@ export class LedgerReversalGovernanceService {
     const journalId = this.normalizeJournalId(command.journalId);
     const approvalId = (command.approvalId ?? '').trim();
     if (!approvalId) {
-      throw new BadRequestException('approvalId is required to execute a governed journal reversal');
+      throw new BadRequestException(
+        'approvalId is required to execute a governed journal reversal',
+      );
     }
     const approval = await this.approvals.getApproval(approvalId);
     if (!approval) {
       throw new NotFoundException('Approval not found');
     }
-    if (approval.actionType !== REVERSAL_ACTION || approval.resourceType !== REVERSAL_RESOURCE_TYPE) {
+    if (
+      approval.actionType !== REVERSAL_ACTION ||
+      approval.resourceType !== REVERSAL_RESOURCE_TYPE
+    ) {
       throw new ForbiddenException('Approval does not govern a journal reversal');
     }
     if (approval.resourceId !== journalId) {

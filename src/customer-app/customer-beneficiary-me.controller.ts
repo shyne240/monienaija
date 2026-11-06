@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   NotFoundException,
   Param,
@@ -18,7 +17,12 @@ import { DataSource } from 'typeorm';
 import { randomBytes } from 'node:crypto';
 
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
-import { CustomerBeneficiaryStatus, CustomerBeneficiaryType } from '../customer-beneficiary/customer-beneficiary.enums';
+import type { CustomerBeneficiaryView } from '../customer-beneficiary/customer-beneficiary.types';
+import type { RecipientResolution } from '../agent/agent-receiving-number.types';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../customer-beneficiary/customer-beneficiary.enums';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -44,7 +48,12 @@ function normalizePageLimit(pageRaw?: string, limitRaw?: string): { page: number
   return { page, limit };
 }
 
-function toSafeProjection(view: any, beneficiaryCustomerId: string | null) {
+// Some older projections can include this optional field; retain the existing fallback.
+type BeneficiaryView = CustomerBeneficiaryView & {
+  normalizedDestinationIdentifier?: string | null;
+};
+
+function toSafeProjection(view: BeneficiaryView, beneficiaryCustomerId: string | null) {
   return {
     id: view.id,
     nickname: view.nickname,
@@ -78,7 +87,7 @@ export class CustomerBeneficiaryMeController {
     // Use service list then paginate deterministically; service already filters deleted and validates customer
     const all = await this.beneficiaryService.listBeneficiaries(principal.customerId!);
     // Deterministic: sort by createdAt ASC, id ASC (service already does sortByCreatedAt, but ensure)
-    const sorted = [...all].sort((a: any, b: any) => {
+    const sorted: BeneficiaryView[] = [...all].sort((a, b) => {
       const ca = new Date(a.createdAt).getTime();
       const cb = new Date(b.createdAt).getTime();
       if (ca !== cb) return ca - cb;
@@ -91,13 +100,13 @@ export class CustomerBeneficiaryMeController {
 
     // Resolve beneficiaryCustomerId for each via DataSource query (single query per beneficiary, but bounded max 100)
     // For performance, we do batch lookup via DataSource for all destinationIdentifiers at once
-    const safeItems: any[] = [];
+    const safeItems: Array<ReturnType<typeof toSafeProjection>> = [];
     for (const view of pageItems) {
       let beneficiaryCustomerId: string | null = null;
       try {
         // Try to resolve via RecipientResolutionService for canonical phone; if fails, fallback to null
         // Use destinationIdentifier normalized
-        const dest = (view as any).destinationIdentifier ?? (view as any).normalizedDestinationIdentifier;
+        const dest = view.destinationIdentifier ?? view.normalizedDestinationIdentifier;
         if (dest) {
           try {
             const res = await this.recipientService.resolve(String(dest));
@@ -113,10 +122,14 @@ export class CustomerBeneficiaryMeController {
                 );
                 if (rows[0]?.customer_id) beneficiaryCustomerId = rows[0].customer_id;
               }
-            } catch {}
+            } catch {
+              // Keep an unresolved customer ID when the fallback lookup fails.
+            }
           }
         }
-      } catch {}
+      } catch {
+        // Keep an unresolved customer ID when resolution fails.
+      }
       safeItems.push(toSafeProjection(view, beneficiaryCustomerId));
     }
 
@@ -137,35 +150,47 @@ export class CustomerBeneficiaryMeController {
   @HttpCode(201)
   async create(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: { nickname?: string; beneficiaryIdentifier?: string; displayName?: string },
+    @Body()
+    dto: {
+      nickname?: string;
+      beneficiaryIdentifier?: string;
+      displayName?: string;
+      identifier?: string;
+      receivingNumber?: string;
+    },
   ) {
     const principal = requireCustomerPrincipal(req);
-    const nicknameRaw = (dto as any)?.nickname;
-    const identifierRaw = (dto as any)?.beneficiaryIdentifier ?? (dto as any)?.identifier ?? (dto as any)?.receivingNumber;
+    const nicknameRaw = dto?.nickname;
+    const identifierRaw = dto?.beneficiaryIdentifier ?? dto?.identifier ?? dto?.receivingNumber;
     if (typeof identifierRaw !== 'string' || identifierRaw.trim().length === 0) {
       throw new BadRequestException('beneficiaryIdentifier is required');
     }
     const beneficiaryIdentifier = String(identifierRaw).trim();
     let nickname: string | undefined = undefined;
     if (nicknameRaw !== undefined && nicknameRaw !== null) {
-      if (typeof nicknameRaw !== 'string') throw new BadRequestException('nickname must be a string');
+      if (typeof nicknameRaw !== 'string')
+        throw new BadRequestException('nickname must be a string');
       const trimmed = nicknameRaw.trim();
       if (trimmed.length === 0) throw new BadRequestException('nickname must not be empty');
-      if (trimmed.length > 120) throw new BadRequestException('nickname must be at most 120 characters');
+      if (trimmed.length > 120)
+        throw new BadRequestException('nickname must be at most 120 characters');
       nickname = trimmed;
     }
 
     // Resolve identifier via existing mechanism — must be valid Nigerian 10-digit and map to CUSTOMER
-    let resolution: any;
+    let resolution: RecipientResolution;
     try {
       resolution = await this.recipientService.resolve(beneficiaryIdentifier);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Convert NotFound/BadRequest from resolution to 400 invalid
-      const msg = e?.message ?? 'Invalid beneficiaryIdentifier';
+      const msg =
+        (e as { message?: string } | null | undefined)?.message ?? 'Invalid beneficiaryIdentifier';
       throw new BadRequestException(msg);
     }
     if (!resolution || resolution.ownerType !== 'CUSTOMER') {
-      throw new BadRequestException('beneficiaryIdentifier must resolve to an internal wallet customer');
+      throw new BadRequestException(
+        'beneficiaryIdentifier must resolve to an internal wallet customer',
+      );
     }
     if (resolution.ownerId === principal.customerId) {
       throw new BadRequestException('Cannot add self as beneficiary');
@@ -179,7 +204,7 @@ export class CustomerBeneficiaryMeController {
     const destinationIdentifier = resolution.receivingNumber ?? beneficiaryIdentifier;
     const reference = `CUST-BEN-${principal.customerId!.slice(0, 8)}-${randomBytes(4).toString('hex').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
-    let view: any;
+    let view: BeneficiaryView;
     try {
       view = await this.beneficiaryService.createBeneficiary(principal.customerId!, {
         type: CustomerBeneficiaryType.INTERNAL_CUSTOMER,
@@ -191,7 +216,7 @@ export class CustomerBeneficiaryMeController {
         nickname: nickname ?? displayName,
         actor: principal.customerId!,
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Preserve 409 duplicates, 400 invalid
       if (e instanceof ConflictException) throw e;
       if (e instanceof BadRequestException) throw e;
@@ -206,11 +231,11 @@ export class CustomerBeneficiaryMeController {
         verificationMethod: 'CUSTOMER_RESOLUTION',
         remarks: 'Auto-verified via RecipientResolutionService for internal wallet beneficiary',
       });
-    } catch (e) {
+    } catch {
       // If already verified or conflict, ignore? But we want to ensure verified true
       // Fetch latest and check
     }
-    let latest: any;
+    let latest: BeneficiaryView;
     try {
       latest = await this.beneficiaryService.getBeneficiary(principal.customerId!, view.id);
     } catch {
@@ -223,9 +248,9 @@ export class CustomerBeneficiaryMeController {
         await this.beneficiaryService.updateBeneficiary(principal.customerId!, view.id, {
           status: CustomerBeneficiaryStatus.ACTIVE,
           actor: principal.customerId!,
-          version: (fresh as any).version,
+          version: fresh.version,
         });
-      } catch (e: any) {
+      } catch {
         // If fails due to already ACTIVE or version conflict, fetch again
       }
     }
@@ -238,13 +263,17 @@ export class CustomerBeneficiaryMeController {
   @Get(':beneficiaryId')
   async getOne(@Req() req: AuthenticatedRequest, @Param('beneficiaryId') beneficiaryId: string) {
     const principal = requireCustomerPrincipal(req);
-    if (!beneficiaryId || typeof beneficiaryId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())) {
+    if (
+      !beneficiaryId ||
+      typeof beneficiaryId !== 'string' ||
+      !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())
+    ) {
       throw new BadRequestException('Invalid beneficiaryId');
     }
-    let view: any;
+    let view: BeneficiaryView;
     try {
       view = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Map not found to generic 404 without leaking existence
       if (e instanceof NotFoundException) throw new NotFoundException('Beneficiary not found');
       throw e;
@@ -252,12 +281,14 @@ export class CustomerBeneficiaryMeController {
     // Resolve beneficiaryCustomerId
     let beneficiaryCustomerId: string | null = null;
     try {
-      const dest = (view as any).destinationIdentifier ?? (view as any).normalizedDestinationIdentifier;
+      const dest = view.destinationIdentifier ?? view.normalizedDestinationIdentifier;
       if (dest) {
         const res = await this.recipientService.resolve(String(dest));
         if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
       }
-    } catch {}
+    } catch {
+      // Keep an unresolved customer ID when resolution fails.
+    }
     return toSafeProjection(view, beneficiaryCustomerId);
   }
 
@@ -269,7 +300,11 @@ export class CustomerBeneficiaryMeController {
     @Body() dto: Record<string, unknown>,
   ) {
     const principal = requireCustomerPrincipal(req);
-    if (!beneficiaryId || typeof beneficiaryId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())) {
+    if (
+      !beneficiaryId ||
+      typeof beneficiaryId !== 'string' ||
+      !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())
+    ) {
       throw new BadRequestException('Invalid beneficiaryId');
     }
     const allowed = new Set(['nickname', 'isActive', 'status', 'is_active']);
@@ -280,24 +315,25 @@ export class CustomerBeneficiaryMeController {
       }
     }
     // Fetch ownership enforced
-    let current: any;
+    let current: BeneficiaryView;
     try {
       current = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (e instanceof NotFoundException) throw new NotFoundException('Beneficiary not found');
       throw e;
     }
 
-    let updatedView: any = current;
+    let updatedView: BeneficiaryView = current;
     let didUpdate = false;
 
     // Handle nickname if provided
-    if ((dto as any).nickname !== undefined) {
-      const raw = (dto as any).nickname;
+    if (dto.nickname !== undefined) {
+      const raw = dto.nickname;
       if (typeof raw !== 'string') throw new BadRequestException('nickname must be a string');
       const trimmed = raw.trim();
       if (trimmed.length === 0) throw new BadRequestException('nickname must not be empty');
-      if (trimmed.length > 120) throw new BadRequestException('nickname must be at most 120 characters');
+      if (trimmed.length > 120)
+        throw new BadRequestException('nickname must be at most 120 characters');
       if (trimmed !== current.nickname) {
         // Direct update via DataSource with ownership check, no ledger, audit via service? We'll do direct save and manual audit is inside service? For nickname, service does not support, so we do direct repository update
         // Reuse DataSource transaction with single scoped query
@@ -306,7 +342,7 @@ export class CustomerBeneficiaryMeController {
           [trimmed, beneficiaryId, principal.customerId!],
         );
         // Verify update succeeded
-        const maybe = await this.dataSource.query(
+        const maybe: Array<{ id: string }> = await this.dataSource.query(
           `SELECT id FROM customer_beneficiaries WHERE id = $1 AND customer_id = $2 AND deleted_at IS NULL LIMIT 1`,
           [beneficiaryId, principal.customerId!],
         );
@@ -317,46 +353,64 @@ export class CustomerBeneficiaryMeController {
 
     // Handle status / isActive
     let desiredStatus: CustomerBeneficiaryStatus | undefined = undefined;
-    if ((dto as any).status !== undefined) {
-      const rawStatus = String((dto as any).status).trim().toUpperCase();
-      if (rawStatus !== CustomerBeneficiaryStatus.ACTIVE && rawStatus !== CustomerBeneficiaryStatus.SUSPENDED) {
+    if (dto.status !== undefined) {
+      // Preserve the existing string conversion before checking the allowed statuses.
+      const rawStatus = String(dto.status as string)
+        .trim()
+        .toUpperCase();
+      if (
+        rawStatus !== (CustomerBeneficiaryStatus.ACTIVE as string) &&
+        rawStatus !== (CustomerBeneficiaryStatus.SUSPENDED as string)
+      ) {
         throw new BadRequestException('status must be ACTIVE or SUSPENDED');
       }
       desiredStatus = rawStatus as CustomerBeneficiaryStatus;
-    } else if ((dto as any).isActive !== undefined || (dto as any).is_active !== undefined) {
-      const raw = (dto as any).isActive ?? (dto as any).is_active;
+    } else if (dto.isActive !== undefined || dto.is_active !== undefined) {
+      const raw = dto.isActive ?? dto.is_active;
       if (typeof raw !== 'boolean') throw new BadRequestException('isActive must be a boolean');
       desiredStatus = raw ? CustomerBeneficiaryStatus.ACTIVE : CustomerBeneficiaryStatus.SUSPENDED;
     }
 
     if (desiredStatus && desiredStatus !== current.status) {
       // If nickname was updated, need fresh version
-      const fresh = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
+      const fresh = await this.beneficiaryService.getBeneficiary(
+        principal.customerId!,
+        beneficiaryId,
+      );
       try {
-        updatedView = await this.beneficiaryService.updateBeneficiary(principal.customerId!, beneficiaryId, {
-          status: desiredStatus,
-          actor: principal.customerId!,
-          version: (fresh as any).version,
-        });
+        updatedView = await this.beneficiaryService.updateBeneficiary(
+          principal.customerId!,
+          beneficiaryId,
+          {
+            status: desiredStatus,
+            actor: principal.customerId!,
+            version: fresh.version,
+          },
+        );
         didUpdate = true;
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof ConflictException || e instanceof BadRequestException) throw e;
         if (e instanceof NotFoundException) throw new NotFoundException('Beneficiary not found');
         throw e;
       }
     } else if (didUpdate) {
-      updatedView = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
+      updatedView = await this.beneficiaryService.getBeneficiary(
+        principal.customerId!,
+        beneficiaryId,
+      );
     }
 
     // If no field changed, return current safe projection
     let beneficiaryCustomerId: string | null = null;
     try {
-      const dest = (updatedView as any).destinationIdentifier ?? (updatedView as any).normalizedDestinationIdentifier;
+      const dest = updatedView.destinationIdentifier ?? updatedView.normalizedDestinationIdentifier;
       if (dest) {
         const res = await this.recipientService.resolve(String(dest));
         if (res.ownerType === 'CUSTOMER') beneficiaryCustomerId = res.ownerId;
       }
-    } catch {}
+    } catch {
+      // Keep an unresolved customer ID when resolution fails.
+    }
     return toSafeProjection(updatedView, beneficiaryCustomerId);
   }
 }

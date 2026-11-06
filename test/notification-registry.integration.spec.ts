@@ -15,7 +15,10 @@ import {
   NOTIFICATION_DEFAULTS_V1,
   NOTIFICATION_SECURITY_DEFAULTS_V1,
 } from '../src/notification/notification-defaults-v1';
-import { FINANCIAL_NOTIFICATION_EVENT_TYPES, NOTIFICATION_ADDITIONAL_DEFAULTS_V2 } from '../src/notification/notification-defaults-v2';
+import {
+  FINANCIAL_NOTIFICATION_EVENT_TYPES,
+  NOTIFICATION_ADDITIONAL_DEFAULTS_V2,
+} from '../src/notification/notification-defaults-v2';
 import { NOTIFICATION_EVENT_CATALOGUE } from '../src/notification/notification-event-map';
 import { NotificationDispatcherService } from '../src/notification/notification-dispatcher.service';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
@@ -269,14 +272,30 @@ describe('notification template/configuration foundation — real PostgreSQL and
     expect(before.status).toBe(200);
     for (const financial of FINANCIAL_NOTIFICATION_EVENT_TYPES) {
       const item = before.body.items.find((value: any) => value.eventType === financial);
-      expect(item).toMatchObject({ eventLocked: false, eventConfigurationVersion: 1,
-        channels: { SMS: { locked: false }, EMAIL: { locked: false } } });
-      expect(NOTIFICATION_EVENT_CATALOGUE.find((value) => value.eventType === financial)?.required).toBe(false);
+      expect(item).toMatchObject({
+        eventLocked: false,
+        eventConfigurationVersion: 1,
+        channels: { SMS: { locked: false }, EMAIL: { locked: false } },
+      });
+      expect(
+        NOTIFICATION_EVENT_CATALOGUE.find((value) => value.eventType === financial)?.required,
+      ).toBe(false);
     }
     const peer = before.body.items.find((value: any) => value.eventType === 'withdrawal.completed');
-    expect(peer).toMatchObject({ eventEnabled: false, channels: { SMS: { enabled: false }, EMAIL: { enabled: false } } });
-    const proposal = (channel: 'EVENT' | 'SMS' | 'EMAIL', enabled: boolean, expectedVersion: number) => ({
-      type: 'CONFIGURATION', eventType: 'deposit.completed', channel, enabled, expectedVersion,
+    expect(peer).toMatchObject({
+      eventEnabled: false,
+      channels: { SMS: { enabled: false }, EMAIL: { enabled: false } },
+    });
+    const proposal = (
+      channel: 'EVENT' | 'SMS' | 'EMAIL',
+      enabled: boolean,
+      expectedVersion: number,
+    ) => ({
+      type: 'CONFIGURATION',
+      eventType: 'deposit.completed',
+      channel,
+      enabled,
+      expectedVersion,
       reason: 'Review independent transaction notification setting',
     });
     const enableEvent = await propose(proposal('EVENT', true, 1));
@@ -294,28 +313,51 @@ describe('notification template/configuration foundation — real PostgreSQL and
     await approve(email);
     expect((await execute(email)).status).toBe(200);
     const afterEnable = await read();
-    expect(afterEnable.body.items.find((value: any) => value.eventType === 'deposit.completed')).toMatchObject({
-      eventEnabled: true, eventConfigurationVersion: 2,
-      channels: { SMS: { enabled: true, configurationVersion: 2 }, EMAIL: { enabled: true, configurationVersion: 2 } },
+    expect(
+      afterEnable.body.items.find((value: any) => value.eventType === 'deposit.completed'),
+    ).toMatchObject({
+      eventEnabled: true,
+      eventConfigurationVersion: 2,
+      channels: {
+        SMS: { enabled: true, configurationVersion: 2 },
+        EMAIL: { enabled: true, configurationVersion: 2 },
+      },
     });
     const disableEvent = await propose(proposal('EVENT', false, 2));
     await approve(disableEvent);
     expect((await execute(disableEvent)).status).toBe(200);
     const after = await read();
-    expect(after.body.items.find((value: any) => value.eventType === 'deposit.completed')).toMatchObject({
-      eventEnabled: false, eventConfigurationVersion: 3,
+    expect(
+      after.body.items.find((value: any) => value.eventType === 'deposit.completed'),
+    ).toMatchObject({
+      eventEnabled: false,
+      eventConfigurationVersion: 3,
       channels: { SMS: { enabled: true }, EMAIL: { enabled: true } },
     });
-    expect(after.body.items.find((value: any) => value.eventType === 'withdrawal.completed')).toEqual(peer);
-    const audit = await db.query(`SELECT new_values FROM audit_events WHERE action='NOTIFICATION_CONFIGURATION_CHANGED'`);
+    expect(
+      after.body.items.find((value: any) => value.eventType === 'withdrawal.completed'),
+    ).toEqual(peer);
+    const audit = await db.query(
+      `SELECT new_values FROM audit_events WHERE action='NOTIFICATION_CONFIGURATION_CHANGED'`,
+    );
     expect(audit).toHaveLength(4);
-    const securityChange = await request(app.getHttpServer()).post(`${base}/changes`).set(auth(maker)).send({
-      type: 'CONFIGURATION', eventType: 'agent.desk.customer_otp', channel: 'EVENT', enabled: false,
-      expectedVersion: 1, reason: 'Attempt forbidden security change',
-    });
+    const securityChange = await request(app.getHttpServer())
+      .post(`${base}/changes`)
+      .set(auth(maker))
+      .send({
+        type: 'CONFIGURATION',
+        eventType: 'agent.desk.customer_otp',
+        channel: 'EVENT',
+        enabled: false,
+        expectedVersion: 1,
+        reason: 'Attempt forbidden security change',
+      });
     expect(securityChange.status).toBeGreaterThanOrEqual(400);
-    expect(after.body.items.find((value: any) => value.eventType === 'agent.desk.customer_otp')).toMatchObject({
-      editable: false, channels: { SMS: { enabled: true, locked: true }, EMAIL: { enabled: false, locked: true } },
+    expect(
+      after.body.items.find((value: any) => value.eventType === 'agent.desk.customer_otp'),
+    ).toMatchObject({
+      editable: false,
+      channels: { SMS: { enabled: true, locked: true }, EMAIL: { enabled: false, locked: true } },
     });
   }, 60_000);
 
@@ -623,11 +665,19 @@ describe('notification template/configuration foundation — real PostgreSQL and
     const before = (await db.query(`SELECT count(*)::int AS n FROM ledger_journals`))[0].n;
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(0);
     const failed = (
-      await db.query(`SELECT status,attempts,reason FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId])
+      await db.query(
+        `SELECT status,attempts,reason FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`,
+        [outboxId],
+      )
     )[0];
     expect(failed).toEqual({ status: 'FAILED', attempts: 1, reason: 'MATERIALIZATION_FAILED' });
-    expect((await db.query(`SELECT status,attempts,last_error FROM outbox_events WHERE id=$1`, [outboxId]))[0])
-      .toEqual({ status: 'PENDING', attempts: 0, last_error: null });
+    expect(
+      (
+        await db.query(`SELECT status,attempts,last_error FROM outbox_events WHERE id=$1`, [
+          outboxId,
+        ])
+      )[0],
+    ).toEqual({ status: 'PENDING', attempts: 0, last_error: null });
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(0); // independent retry backoff
     expect(provider.sent).toHaveLength(0);
     // Simulate an approved operator repair in the isolated test database.
@@ -636,12 +686,22 @@ describe('notification template/configuration foundation — real PostgreSQL and
       VALUES ($1,'SMS','en-NG',2,true,NULL,'Recovered {{reference}}.','test-repair')`,
       [eventType],
     );
-    await db.query(`UPDATE notification_outbox_receipts SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId]);
+    await db.query(
+      `UPDATE notification_outbox_receipts SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`,
+      [outboxId],
+    );
     expect(await dispatcher.processPendingOutboxEvents(10)).toBe(1);
-    expect((await db.query(`SELECT status,attempts FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`, [outboxId]))[0])
-      .toEqual({ status: 'MATERIALIZED', attempts: 2 });
-    expect((await db.query(`SELECT status,attempts FROM outbox_events WHERE id=$1`, [outboxId]))[0])
-      .toEqual({ status: 'PENDING', attempts: 0 });
+    expect(
+      (
+        await db.query(
+          `SELECT status,attempts FROM notification_outbox_receipts WHERE outbox_event_id=$1 AND consumer_name='notification.v1'`,
+          [outboxId],
+        )
+      )[0],
+    ).toEqual({ status: 'MATERIALIZED', attempts: 2 });
+    expect(
+      (await db.query(`SELECT status,attempts FROM outbox_events WHERE id=$1`, [outboxId]))[0],
+    ).toEqual({ status: 'PENDING', attempts: 0 });
     expect(provider.sent).toHaveLength(0); // no provider call in materialization transaction
     await worker.tick();
     expect(provider.sent).toHaveLength(1);

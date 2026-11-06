@@ -6,10 +6,7 @@ import { AuditService } from '../operations/audit.service';
 import { Agent } from './agent.entity';
 import { AgentClass } from './agent-class.entity';
 import { AgentStatus } from './agent.enums';
-import {
-  type AgentService,
-  normalizeAgentService,
-} from './agent-service.enum';
+import { type AgentService, normalizeAgentService } from './agent-service.enum';
 import type {
   AgentServiceCapabilityEvaluation,
   CapabilityReason,
@@ -36,10 +33,7 @@ export class AgentServiceCapabilityService {
    * Fail-closed: NULL/empty/malformed applicableServices → DENIED.
    * No wallet/ledger/journal side-effects.
    */
-  async evaluate(
-    agentId: string,
-    rawService: string,
-  ): Promise<AgentServiceCapabilityEvaluation> {
+  async evaluate(agentId: string, rawService: string): Promise<AgentServiceCapabilityEvaluation> {
     return this.internalEvaluate(agentId, rawService, undefined);
   }
 
@@ -111,7 +105,14 @@ export class AgentServiceCapabilityService {
       return evalRes;
     }
     if (agent.deletedAt !== null) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_DELETED', agent.status, agent.agentClassId ?? null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_DELETED',
+        agent.status,
+        agent.agentClassId ?? null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
@@ -119,46 +120,107 @@ export class AgentServiceCapabilityService {
     // 5. Lifecycle status
     const status = agent.status;
     if (status === AgentStatus.PENDING) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_PENDING', status, agent.agentClassId ?? null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_PENDING',
+        status,
+        agent.agentClassId ?? null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (status === AgentStatus.SUSPENDED) {
       // No inventoried exception — SUSPENDED cannot initiate new financial services
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_SUSPENDED', status, agent.agentClassId ?? null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_SUSPENDED',
+        status,
+        agent.agentClassId ?? null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (status === AgentStatus.TERMINATED) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_TERMINATED', status, agent.agentClassId ?? null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_TERMINATED',
+        status,
+        agent.agentClassId ?? null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (status !== AgentStatus.ACTIVE) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_NOT_ACTIVE', status, agent.agentClassId ?? null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_NOT_ACTIVE',
+        status,
+        agent.agentClassId ?? null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
 
     // 6. Agent class
     if (!agent.agentClassId) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'MISSING_AGENT_CLASS', status, null);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'MISSING_AGENT_CLASS',
+        status,
+        null,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
-    const agentClass = await this.agentClassRepository.findOne({ where: { id: agent.agentClassId } });
+    const agentClass = await this.agentClassRepository.findOne({
+      where: { id: agent.agentClassId },
+    });
     if (!agentClass) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_CLASS_NOT_FOUND', status, agent.agentClassId);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_CLASS_NOT_FOUND',
+        status,
+        agent.agentClassId,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (agentClass.deletedAt !== null) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_CLASS_DELETED', status, agentClass.id);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_CLASS_DELETED',
+        status,
+        agentClass.id,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (!agentClass.isActive) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'AGENT_CLASS_INACTIVE', status, agentClass.id, false, agentClass.applicableServices, agentClass.applicableLimits);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'AGENT_CLASS_INACTIVE',
+        status,
+        agentClass.id,
+        false,
+        agentClass.applicableServices,
+        agentClass.applicableLimits,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
@@ -167,17 +229,47 @@ export class AgentServiceCapabilityService {
     const applicable = agentClass.applicableServices;
     // Fail closed on NULL/empty/malformed
     if (applicable === null || applicable === undefined) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'EMPTY_APPLICABLE_SERVICES', status, agentClass.id, true, applicable, agentClass.applicableLimits);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'EMPTY_APPLICABLE_SERVICES',
+        status,
+        agentClass.id,
+        true,
+        applicable,
+        agentClass.applicableLimits,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (!Array.isArray(applicable)) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'MALFORMED_APPLICABLE_SERVICES', status, agentClass.id, true, applicable, agentClass.applicableLimits);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'MALFORMED_APPLICABLE_SERVICES',
+        status,
+        agentClass.id,
+        true,
+        applicable,
+        agentClass.applicableLimits,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
     if (applicable.length === 0) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'EMPTY_APPLICABLE_SERVICES', status, agentClass.id, true, applicable, agentClass.applicableLimits);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'EMPTY_APPLICABLE_SERVICES',
+        status,
+        agentClass.id,
+        true,
+        applicable,
+        agentClass.applicableLimits,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }
@@ -188,7 +280,17 @@ export class AgentServiceCapabilityService {
       if (!n) {
         // Malformed entry — fail closed per J: malformed/unknown service → DENIED
         // But we treat the class config as malformed; deny the request
-        const evalRes = this.denied(agentId, rawService, canonical, 'MALFORMED_APPLICABLE_SERVICES', status, agentClass.id, true, applicable, agentClass.applicableLimits);
+        const evalRes = this.denied(
+          agentId,
+          rawService,
+          canonical,
+          'MALFORMED_APPLICABLE_SERVICES',
+          status,
+          agentClass.id,
+          true,
+          applicable,
+          agentClass.applicableLimits,
+        );
         await this.auditDenied(evalRes, principal?.type);
         return evalRes;
       }
@@ -196,7 +298,17 @@ export class AgentServiceCapabilityService {
     }
     // Now check if requested canonical is included
     if (!normalizedApplicable.includes(canonical)) {
-      const evalRes = this.denied(agentId, rawService, canonical, 'SERVICE_NOT_PERMITTED', status, agentClass.id, true, applicable, agentClass.applicableLimits);
+      const evalRes = this.denied(
+        agentId,
+        rawService,
+        canonical,
+        'SERVICE_NOT_PERMITTED',
+        status,
+        agentClass.id,
+        true,
+        applicable,
+        agentClass.applicableLimits,
+      );
       await this.auditDenied(evalRes, principal?.type);
       return evalRes;
     }

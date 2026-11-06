@@ -194,7 +194,9 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
     roleKey: string,
   ): Promise<request.Response> {
     return request(app.getHttpServer())
-      .delete(`${ROLES_PATH}/${encodeURIComponent(targetPrincipalId)}/${encodeURIComponent(roleKey)}`)
+      .delete(
+        `${ROLES_PATH}/${encodeURIComponent(targetPrincipalId)}/${encodeURIComponent(roleKey)}`,
+      )
       .set(auth(token))
       .send({
         effectiveFrom: new Date(Date.now() - 60_000).toISOString(),
@@ -309,29 +311,32 @@ describe('V1-ADMINISTRATOR-ROLE-AND-ASSIGNMENT-IMPLEMENTATION-01 — real Postgr
   // =====================================================================================
 
   describe('2. ADMINISTRATOR delegated assignment of the six operational roles', () => {
-    it.each(OPERATIONAL_ROLES)('assigns then revokes %s for another user via real HTTP', async (roleKey) => {
-      const admin = await provisionRole('ADMINISTRATOR');
-      const targetPrincipalId = `admroleassign01:target:${randomUUID()}`.slice(0, 160);
+    it.each(OPERATIONAL_ROLES)(
+      'assigns then revokes %s for another user via real HTTP',
+      async (roleKey) => {
+        const admin = await provisionRole('ADMINISTRATOR');
+        const targetPrincipalId = `admroleassign01:target:${randomUUID()}`.slice(0, 160);
 
-      const assignRes = await assignViaHttp(admin.token, targetPrincipalId, roleKey);
-      expect(assignRes.status).toBeLessThan(300);
+        const assignRes = await assignViaHttp(admin.token, targetPrincipalId, roleKey);
+        expect(assignRes.status).toBeLessThan(300);
 
-      const active = await dataSource.getRepository(A2FinanceRoleAssignment).findOne({
-        where: { principalId: targetPrincipalId, roleKey, status: 'ACTIVE' },
-      });
-      expect(active).not.toBeNull();
-      expect(active!.initiatedScope).toBe('ADMINISTRATOR_SCOPE');
-      expect(active!.assignedBy).toBe(admin.principalId);
+        const active = await dataSource.getRepository(A2FinanceRoleAssignment).findOne({
+          where: { principalId: targetPrincipalId, roleKey, status: 'ACTIVE' },
+        });
+        expect(active).not.toBeNull();
+        expect(active!.initiatedScope).toBe('ADMINISTRATOR_SCOPE');
+        expect(active!.assignedBy).toBe(admin.principalId);
 
-      const revokeRes = await revokeViaHttp(admin.token, targetPrincipalId, roleKey);
-      expect(revokeRes.status).toBeLessThan(300);
+        const revokeRes = await revokeViaHttp(admin.token, targetPrincipalId, roleKey);
+        expect(revokeRes.status).toBeLessThan(300);
 
-      const revoked = await dataSource.getRepository(A2FinanceRoleAssignment).findOne({
-        where: { assignmentReference: active!.assignmentReference, status: 'REVOKED' },
-      });
-      expect(revoked).not.toBeNull();
-      expect(revoked!.revokedBy).toBe(admin.principalId);
-    });
+        const revoked = await dataSource.getRepository(A2FinanceRoleAssignment).findOne({
+          where: { assignmentReference: active!.assignmentReference, status: 'REVOKED' },
+        });
+        expect(revoked).not.toBeNull();
+        expect(revoked!.revokedBy).toBe(admin.principalId);
+      },
+    );
   });
 
   // =====================================================================================

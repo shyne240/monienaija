@@ -40,7 +40,11 @@ import {
   limitRejected,
   rewardNone,
 } from '../src/commercial-decision/commercial-decision.defaults';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (real PG)', () => {
   let dataSource: DataSource;
@@ -64,9 +68,18 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -95,7 +108,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     service = app.get(CommercialDecisionSnapshotService);
@@ -141,7 +156,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   }
 
   async function rowCount(table: string): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ${table}`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ${table}`,
+    );
     return Number(rows[0]!.cnt);
   }
 
@@ -163,7 +180,10 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   }
 
   async function getRow(id: string): Promise<Record<string, unknown>> {
-    const rows: Array<Record<string, unknown>> = await dataSource.query(`SELECT * FROM commercial_decision_snapshots WHERE id=$1`, [id]);
+    const rows: Array<Record<string, unknown>> = await dataSource.query(
+      `SELECT * FROM commercial_decision_snapshots WHERE id=$1`,
+      [id],
+    );
     return rows[0]!;
   }
 
@@ -195,7 +215,13 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
       `SELECT column_name FROM information_schema.columns WHERE table_name='commercial_decision_snapshots' ORDER BY column_name`,
     );
     const cols = columns.map((c) => c.column_name);
-    for (const expected of ['fee_decision', 'commission_decision', 'reward_decision', 'limit_decision', 'revenue_decision']) {
+    for (const expected of [
+      'fee_decision',
+      'commission_decision',
+      'reward_decision',
+      'limit_decision',
+      'revenue_decision',
+    ]) {
       expect(cols).toContain(expected);
     }
 
@@ -262,7 +288,11 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
   it('03. records a fee-free snapshot: product, reference, principal, currency, amount persisted exactly', async () => {
     const before = await sideEffectTables();
-    const input = baseInput({ product: 'CUST_FUNDING', currency: 'NGN', principalAmountMinor: '500000' });
+    const input = baseInput({
+      product: 'CUST_FUNDING',
+      currency: 'NGN',
+      principalAmountMinor: '500000',
+    });
     const result = await service.recordDecision(input);
     expect(result.replayed).toBe(false);
     const id = result.snapshot.id as string;
@@ -326,14 +356,34 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   });
 
   it('07. validation rejects malformed decisions (status closed sets, amount guards, required fields)', async () => {
-    await expect(service.recordDecision(baseInput({ feeDecision: { status: 'BOGUS' } } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ commissionDecision: { status: 'ALLOCATED', allocations: [] } } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ rewardDecision: { status: 'GRANTED', grants: [] } } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ limitDecision: { status: 'REJECTED' } } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ principalAmountMinor: '-5' } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ currency: 'ngn' } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ principalType: 'AGGREGATOR' } as any))).rejects.toMatchObject({ status: 400 });
-    await expect(service.recordDecision(baseInput({ idempotencyKey: '' } as any))).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ feeDecision: { status: 'BOGUS' } } as any)),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(
+        baseInput({ commissionDecision: { status: 'ALLOCATED', allocations: [] } } as any),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(
+        baseInput({ rewardDecision: { status: 'GRANTED', grants: [] } } as any),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ limitDecision: { status: 'REJECTED' } } as any)),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ principalAmountMinor: '-5' } as any)),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ currency: 'ngn' } as any)),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ principalType: 'AGGREGATOR' } as any)),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.recordDecision(baseInput({ idempotencyKey: '' } as any)),
+    ).rejects.toMatchObject({ status: 400 });
     expect(await rowCount('commercial_decision_snapshots')).toBe(0);
   });
 
@@ -357,7 +407,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
       limitDecision: limitApproved({
         profileCode: 'CD_P1',
         assignmentId: randomUUID(),
-        ruleRefs: [{ ruleId, ruleVersion: 2, dimension: 'DAILY_AMOUNT', limitValueMinor: '100000' }],
+        ruleRefs: [
+          { ruleId, ruleVersion: 2, dimension: 'DAILY_AMOUNT', limitValueMinor: '100000' },
+        ],
         reservationIds: [reservationId],
         usageIds: [usageId],
       }),
@@ -368,7 +420,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     expect(limit.status).toBe('APPROVED');
     expect(limit.profileCode).toBe('CD_P1');
     expect(limit.failureCode ?? null).toBeNull();
-    expect(limit.ruleRefs).toEqual([{ ruleId, ruleVersion: 2, dimension: 'DAILY_AMOUNT', limitValueMinor: '100000' }]);
+    expect(limit.ruleRefs).toEqual([
+      { ruleId, ruleVersion: 2, dimension: 'DAILY_AMOUNT', limitValueMinor: '100000' },
+    ]);
     expect(limit.reservationIds).toEqual([reservationId]);
     expect(limit.usageIds).toEqual([usageId]);
 
@@ -383,7 +437,11 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
   it('09. captures a REJECTED limit decision with failure code (and no reservation evidence)', async () => {
     const input = baseInput({
-      limitDecision: limitRejected({ failureCode: 'DAILY_AMOUNT_EXCEEDED', profileCode: 'CD_P1', ruleRefs: [{ ruleId: randomUUID(), ruleVersion: 1 }] }),
+      limitDecision: limitRejected({
+        failureCode: 'DAILY_AMOUNT_EXCEEDED',
+        profileCode: 'CD_P1',
+        ruleRefs: [{ ruleId: randomUUID(), ruleVersion: 1 }],
+      }),
     });
     const { snapshot } = await service.recordDecision(input);
     const row = await getRow(snapshot.id as string);
@@ -408,17 +466,26 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
     const input = baseInput({
       configurationVersion: 'CFG-V1',
-      limitDecision: limitApproved({ profileCode: 'CD_P2', ruleRefs: [{ ruleId, ruleVersion: 1, limitValueMinor: '50000' }] }),
+      limitDecision: limitApproved({
+        profileCode: 'CD_P2',
+        ruleRefs: [{ ruleId, ruleVersion: 1, limitValueMinor: '50000' }],
+      }),
     });
     const { snapshot } = await service.recordDecision(input);
     const snapshotId = snapshot.id as string;
 
     // Admin changes the rule (version bump + new value) and the commercial configuration version
-    await dataSource.query(`UPDATE limit_rules SET limit_value_minor=75000, version=2 WHERE id=$1`, [ruleId]);
+    await dataSource.query(
+      `UPDATE limit_rules SET limit_value_minor=75000, version=2 WHERE id=$1`,
+      [ruleId],
+    );
 
     const input2 = baseInput({
       configurationVersion: 'CFG-V2',
-      limitDecision: limitApproved({ profileCode: 'CD_P2', ruleRefs: [{ ruleId, ruleVersion: 2, limitValueMinor: '75000' }] }),
+      limitDecision: limitApproved({
+        profileCode: 'CD_P2',
+        ruleRefs: [{ ruleId, ruleVersion: 2, limitValueMinor: '75000' }],
+      }),
     });
     await service.recordDecision(input2);
 
@@ -427,10 +494,11 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     const limit = row.limit_decision as Record<string, unknown>;
     expect(row.configuration_version).toBe('CFG-V1');
     expect(limit.ruleRefs).toEqual([{ ruleId, ruleVersion: 1, limitValueMinor: '50000' }]);
-    const currentRule: Array<{ version: number; limit_value_minor: string }> = await dataSource.query(
-      `SELECT version, limit_value_minor::text AS limit_value_minor FROM limit_rules WHERE id=$1`,
-      [ruleId],
-    );
+    const currentRule: Array<{ version: number; limit_value_minor: string }> =
+      await dataSource.query(
+        `SELECT version, limit_value_minor::text AS limit_value_minor FROM limit_rules WHERE id=$1`,
+        [ruleId],
+      );
     expect(currentRule[0]!.version).toBe(2);
     expect(String(currentRule[0]!.limit_value_minor)).toBe('75000');
   });
@@ -442,15 +510,21 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     const id = snapshot.id as string;
     const original = await getRow(id);
 
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET principal_amount_minor=1 WHERE id=$1`, [id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET fee_decision='{"status":"APPLIED"}'::jsonb WHERE id=$1`, [id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(
+        `UPDATE commercial_decision_snapshots SET principal_amount_minor=1 WHERE id=$1`,
+        [id],
+      ),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(
+        `UPDATE commercial_decision_snapshots SET fee_decision='{"status":"APPLIED"}'::jsonb WHERE id=$1`,
+        [id],
+      ),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [id]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
 
     const after = await getRow(id);
     expect(String(after.principal_amount_minor)).toBe(String(original.principal_amount_minor));
@@ -459,11 +533,15 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   });
 
   it('12. corrections are NEW compensating rows via supersedes_snapshot_id — original untouched; reason required', async () => {
-    const original = await service.recordDecision(baseInput({ transactionReference: 'TXN-CORR-1' }));
+    const original = await service.recordDecision(
+      baseInput({ transactionReference: 'TXN-CORR-1' }),
+    );
     const originalId = original.snapshot.id as string;
 
     await expect(
-      service.recordDecision(baseInput({ transactionReference: 'TXN-CORR-1', supersedesSnapshotId: originalId } as any)),
+      service.recordDecision(
+        baseInput({ transactionReference: 'TXN-CORR-1', supersedesSnapshotId: originalId } as any),
+      ),
     ).rejects.toMatchObject({ status: 400 }); // reason required
 
     const correction = await service.recordDecision(
@@ -477,7 +555,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     expect(correction.snapshot.id).not.toBe(originalId);
     const corrRow = await getRow(correction.snapshot.id as string);
     expect(corrRow.supersedes_snapshot_id).toBe(originalId);
-    expect(corrRow.superseded_reason).toBe('Wrong principal captured at decision time; compensating record');
+    expect(corrRow.superseded_reason).toBe(
+      'Wrong principal captured at decision time; compensating record',
+    );
 
     // original still immutable and present
     const origRow = await getRow(originalId);
@@ -494,7 +574,9 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
   it('13. service exposes no mutating API surface (write-once foundation)', async () => {
     const proto = Object.getPrototypeOf(service) as Record<string, unknown>;
-    const methodNames = Object.getOwnPropertyNames(proto).filter((n) => typeof proto[n] === 'function');
+    const methodNames = Object.getOwnPropertyNames(proto).filter(
+      (n) => typeof proto[n] === 'function',
+    );
     for (const bad of ['update', 'remove', 'delete', 'softDelete', 'restore', 'patch', 'modify']) {
       expect(methodNames.some((n) => n.toLowerCase().startsWith(bad))).toBe(false);
     }
@@ -523,20 +605,30 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   it('15. same idempotency key with a different decision payload is rejected with 409 (no silent overwrite)', async () => {
     const input = baseInput({ principalAmountMinor: '100000' });
     await service.recordDecision(input);
-    await expect(service.recordDecision({ ...input, principalAmountMinor: '999999' })).rejects.toMatchObject({ status: 409 });
-    await expect(service.recordDecision({ ...input, feeDecision: feeNotConfigured('NGN', '999999') })).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.recordDecision({ ...input, principalAmountMinor: '999999' }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.recordDecision({ ...input, feeDecision: feeNotConfigured('NGN', '999999') }),
+    ).rejects.toMatchObject({ status: 409 });
     expect(await rowCount('commercial_decision_snapshots')).toBe(1);
-    const rows: Array<{ principal_amount_minor: string }> = await dataSource.query(`SELECT principal_amount_minor::text FROM commercial_decision_snapshots`);
+    const rows: Array<{ principal_amount_minor: string }> = await dataSource.query(
+      `SELECT principal_amount_minor::text FROM commercial_decision_snapshots`,
+    );
     expect(rows[0]!.principal_amount_minor).toBe('100000');
   });
 
   it('16. a second ORIGINAL snapshot for the same product+reference conflicts (unique association)', async () => {
     await service.recordDecision(baseInput({ transactionReference: 'TXN-UNIQ-1' }));
-    await expect(service.recordDecision(baseInput({ transactionReference: 'TXN-UNIQ-1' }))).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.recordDecision(baseInput({ transactionReference: 'TXN-UNIQ-1' })),
+    ).rejects.toMatchObject({ status: 409 });
     // different reference is fine
     await service.recordDecision(baseInput({ transactionReference: 'TXN-UNIQ-2' }));
     // same reference under a different product is also a distinct association
-    await service.recordDecision(baseInput({ transactionReference: 'TXN-UNIQ-1', product: 'AGENT_FUNDING' }));
+    await service.recordDecision(
+      baseInput({ transactionReference: 'TXN-UNIQ-1', product: 'AGENT_FUNDING' }),
+    );
     expect(await rowCount('commercial_decision_snapshots')).toBe(3);
   });
 
@@ -561,19 +653,26 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   it('19. recordDecisionWithManager writes inside a caller-managed SERIALIZABLE transaction (future in-flow wiring point)', async () => {
     const before = await sideEffectTables();
     const input = baseInput({ transactionReference: 'TXN-MGR-1' });
-    const result = await dataSource.transaction('SERIALIZABLE', (manager) => service.recordDecisionWithManager(manager, input));
+    const result = await dataSource.transaction('SERIALIZABLE', (manager) =>
+      service.recordDecisionWithManager(manager, input),
+    );
     expect(result.replayed).toBe(false);
     expect(await rowCount('commercial_decision_snapshots')).toBe(1);
 
     // replay path also works inside a managed transaction
-    const replay = await dataSource.transaction('SERIALIZABLE', (manager) => service.recordDecisionWithManager(manager, { ...input }));
+    const replay = await dataSource.transaction('SERIALIZABLE', (manager) =>
+      service.recordDecisionWithManager(manager, { ...input }),
+    );
     expect(replay.replayed).toBe(true);
     expect(replay.snapshot.id).toBe(result.snapshot.id);
 
     // a rolled-back boundary never persists a snapshot (atomicity with future flow writes)
     await expect(
       dataSource.transaction('SERIALIZABLE', async (manager) => {
-        await service.recordDecisionWithManager(manager, baseInput({ transactionReference: 'TXN-MGR-ROLLBACK' }));
+        await service.recordDecisionWithManager(
+          manager,
+          baseInput({ transactionReference: 'TXN-MGR-ROLLBACK' }),
+        );
         throw new Error('simulated flow failure');
       }),
     ).rejects.toThrow('simulated flow failure');
@@ -588,7 +687,11 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     for (let i = 0; i < 3; i += 1) {
       await service.recordDecision(
         baseInput({
-          limitDecision: limitApproved({ profileCode: 'CD_X', ruleRefs: [{ ruleId: randomUUID(), ruleVersion: 1 }], reservationIds: [randomUUID()] }),
+          limitDecision: limitApproved({
+            profileCode: 'CD_X',
+            ruleRefs: [{ ruleId: randomUUID(), ruleVersion: 1 }],
+            reservationIds: [randomUUID()],
+          }),
         }),
       );
     }
@@ -599,21 +702,42 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
 
   // ── 8. read-only workforce API ──
 
-  async function seedForApi(): Promise<{ id: string; product: string; reference: string; principalId: string }> {
+  async function seedForApi(): Promise<{
+    id: string;
+    product: string;
+    reference: string;
+    principalId: string;
+  }> {
     const principalId = randomUUID();
-    const input = baseInput({ product: 'WALLET_TRANSFER', principalId, transactionReference: 'TXN-API-1' });
+    const input = baseInput({
+      product: 'WALLET_TRANSFER',
+      principalId,
+      transactionReference: 'TXN-API-1',
+    });
     const { snapshot } = await service.recordDecision(input);
-    return { id: snapshot.id as string, product: 'WALLET_TRANSFER', reference: 'TXN-API-1', principalId };
+    return {
+      id: snapshot.id as string,
+      product: 'WALLET_TRANSFER',
+      reference: 'TXN-API-1',
+      principalId,
+    };
   }
 
   it('21. unauthenticated list/get → 401', async () => {
-    await request(app.getHttpServer()).get('/api/v1/internal/commercial-decision-snapshots').expect(401);
-    await request(app.getHttpServer()).get(`/api/v1/internal/commercial-decision-snapshots/${randomUUID()}`).expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/commercial-decision-snapshots')
+      .expect(401);
+    await request(app.getHttpServer())
+      .get(`/api/v1/internal/commercial-decision-snapshots/${randomUUID()}`)
+      .expect(401);
   });
 
   it('22. non-workforce principals denied (CUSTOMER, AGENT, AGGREGATOR, SUPPORT)', async () => {
     for (const type of ['CUSTOMER', 'AGENT', 'AGGREGATOR', 'SUPPORT']) {
-      await request(app.getHttpServer()).get('/api/v1/internal/commercial-decision-snapshots').set('Authorization', auth(type)).expect(403);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/commercial-decision-snapshots')
+        .set('Authorization', auth(type))
+        .expect(403);
       await request(app.getHttpServer())
         .get(`/api/v1/internal/commercial-decision-snapshots/${randomUUID()}`)
         .set('Authorization', auth(type))
@@ -670,7 +794,11 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
     const principalId = randomUUID();
     for (let i = 0; i < 5; i += 1) {
       await service.recordDecision(
-        baseInput({ product: i % 2 === 0 ? 'WALLET_TRANSFER' : 'CUST_FUNDING', principalId, decidedAt: new Date(Date.now() + i * 1000).toISOString() }),
+        baseInput({
+          product: i % 2 === 0 ? 'WALLET_TRANSFER' : 'CUST_FUNDING',
+          principalId,
+          decidedAt: new Date(Date.now() + i * 1000).toISOString(),
+        }),
       );
     }
     const page1 = await request(app.getHttpServer())
@@ -709,8 +837,14 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
       .expect(200);
     expect(byPrincipal.body.total).toBe(5);
 
-    await request(app.getHttpServer()).get('/api/v1/internal/commercial-decision-snapshots?limit=0').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/commercial-decision-snapshots?page=0').set('Authorization', auth('OPERATOR')).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/commercial-decision-snapshots?limit=0')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/commercial-decision-snapshots?page=0')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
   });
 
   it('26. get-by-id validation and 404; the surface is read-only (no POST/PATCH/DELETE routes)', async () => {
@@ -743,7 +877,10 @@ describe('V1-COMMERCIAL-DECISION-01 Commercial Decision Snapshot foundation (rea
   it('27. runtime wiring boundary is honored: foundation records decisions but 8 financial flows stay untouched', async () => {
     // This suite intentionally exercises the foundation in isolation. Wiring into the flows is
     // V1-COMMERCIAL-DECISION-02; nothing in this task changes fee-free financial behavior.
-    const source = readFileSync(join(__dirname, '../src/commercial-decision/commercial-decision-snapshot.service.ts'), 'utf8');
+    const source = readFileSync(
+      join(__dirname, '../src/commercial-decision/commercial-decision-snapshot.service.ts'),
+      'utf8',
+    );
     expect(source).not.toContain('TransferService');
     expect(source).not.toContain('CustomerFundingService');
     expect(source).not.toContain('AgentFundingService');

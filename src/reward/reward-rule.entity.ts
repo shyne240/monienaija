@@ -45,7 +45,11 @@ export type RewardCustomerKycLevel = 'NONE' | 'LEVEL_1' | 'LEVEL_2' | 'LEVEL_3';
 
 export const REWARD_BENEFICIARY_TYPES: readonly RewardBeneficiaryType[] = ['CUSTOMER', 'AGENT'];
 export const REWARD_GRANT_TYPES: readonly RewardGrantType[] = ['CASHBACK', 'BONUS', 'PROMOTION'];
-export const REWARD_CALCULATION_BASES: readonly RewardCalculationBasis[] = ['PRINCIPAL', 'FEE', 'NET'];
+export const REWARD_CALCULATION_BASES: readonly RewardCalculationBasis[] = [
+  'PRINCIPAL',
+  'FEE',
+  'NET',
+];
 export const REWARD_CALCULATION_MODELS: readonly RewardCalculationModel[] = [
   'FIXED',
   'PERCENTAGE',
@@ -55,7 +59,12 @@ export const REWARD_CALCULATION_MODELS: readonly RewardCalculationModel[] = [
   'FLAT_PLUS_PERCENTAGE',
   'TIERED',
 ];
-export const REWARD_CUSTOMER_KYC_LEVELS: readonly RewardCustomerKycLevel[] = ['NONE', 'LEVEL_1', 'LEVEL_2', 'LEVEL_3'];
+export const REWARD_CUSTOMER_KYC_LEVELS: readonly RewardCustomerKycLevel[] = [
+  'NONE',
+  'LEVEL_1',
+  'LEVEL_2',
+  'LEVEL_3',
+];
 
 /**
  * One marginal bracket of a TIERED rule:
@@ -85,8 +94,14 @@ const nullableBigintTransformer: ValueTransformer = {
 @Check('chk_reward_rules_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_reward_rules_beneficiary', "beneficiary_type IN ('CUSTOMER','AGENT')")
 @Check('chk_reward_rules_reward_type', "reward_type IN ('CASHBACK','BONUS','PROMOTION')")
-@Check('chk_reward_rules_kyc_level', "customer_kyc_level IS NULL OR customer_kyc_level IN ('NONE','LEVEL_1','LEVEL_2','LEVEL_3')")
-@Check('chk_reward_rules_min_max', 'minimum_reward_minor IS NULL OR maximum_reward_minor IS NULL OR minimum_reward_minor <= maximum_reward_minor')
+@Check(
+  'chk_reward_rules_kyc_level',
+  "customer_kyc_level IS NULL OR customer_kyc_level IN ('NONE','LEVEL_1','LEVEL_2','LEVEL_3')",
+)
+@Check(
+  'chk_reward_rules_min_max',
+  'minimum_reward_minor IS NULL OR maximum_reward_minor IS NULL OR minimum_reward_minor <= maximum_reward_minor',
+)
 @Check('chk_reward_rules_effective', 'effective_to IS NULL OR effective_to > effective_from')
 @Check('chk_reward_rules_version', 'version > 0')
 export class RewardRuleDefinition {
@@ -112,16 +127,31 @@ export class RewardRuleDefinition {
   @Column({ name: 'calculation_basis', type: 'varchar', length: 20 })
   calculationBasis!: RewardCalculationBasis;
 
-  @Column({ name: 'flat_reward_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'flat_reward_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   flatRewardMinor!: string | null;
 
   @Column({ name: 'percentage_bps', type: 'integer', nullable: true })
   percentageBps!: number | null;
 
-  @Column({ name: 'minimum_reward_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'minimum_reward_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   minimumRewardMinor!: string | null;
 
-  @Column({ name: 'maximum_reward_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'maximum_reward_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   maximumRewardMinor!: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

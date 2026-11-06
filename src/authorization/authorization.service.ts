@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -236,7 +241,11 @@ export class AuthorizationService {
       };
     }
 
-    const aggregatorReason = this.checkAggregatorScope(principal, policy.aggregatorAccess, resource);
+    const aggregatorReason = this.checkAggregatorScope(
+      principal,
+      policy.aggregatorAccess,
+      resource,
+    );
     if (aggregatorReason) {
       return {
         ...base,
@@ -371,10 +380,16 @@ export class AuthorizationService {
     if (!['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.customerAccess)) {
       return false;
     }
-    if (principal.agentAccess && !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.agentAccess)) {
+    if (
+      principal.agentAccess &&
+      !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.agentAccess)
+    ) {
       return false;
     }
-    if (principal.aggregatorAccess && !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.aggregatorAccess)) {
+    if (
+      principal.aggregatorAccess &&
+      !['NONE', 'SELF', 'ASSIGNED', 'ANY'].includes(principal.aggregatorAccess)
+    ) {
       return false;
     }
     if (principal.type === 'CUSTOMER') {
@@ -387,12 +402,18 @@ export class AuthorizationService {
     }
     if (principal.type === 'AGENT') {
       return Boolean(
-        principal.agentId && UUID_PATTERN.test(principal.agentId) && !principal.customerId && !principal.aggregatorId,
+        principal.agentId &&
+          UUID_PATTERN.test(principal.agentId) &&
+          !principal.customerId &&
+          !principal.aggregatorId,
       );
     }
     if (principal.type === 'AGGREGATOR') {
       return Boolean(
-        principal.aggregatorId && UUID_PATTERN.test(principal.aggregatorId) && !principal.customerId && !principal.agentId,
+        principal.aggregatorId &&
+          UUID_PATTERN.test(principal.aggregatorId) &&
+          !principal.customerId &&
+          !principal.agentId,
       );
     }
     if (principal.customerId && !UUID_PATTERN.test(principal.customerId)) {

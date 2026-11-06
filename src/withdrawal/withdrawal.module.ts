@@ -9,7 +9,12 @@ import { WithdrawalController } from './withdrawal.controller';
 import { WithdrawalService } from './withdrawal.service';
 
 @Module({
-  imports: [forwardRef(() => AuthorizationModule), LedgerModule, PaymentModule, TypeOrmModule.forFeature([Withdrawal])],
+  imports: [
+    forwardRef(() => AuthorizationModule),
+    LedgerModule,
+    PaymentModule,
+    TypeOrmModule.forFeature([Withdrawal]),
+  ],
   controllers: [WithdrawalController],
   providers: [WithdrawalService],
   exports: [WithdrawalService],

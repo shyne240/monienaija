@@ -267,15 +267,26 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
   const config = () => app.get(ConfigService);
   const service = () => app.get(NotificationProviderConfigService);
   const message = () => ({
-    channel: 'SMS' as const, destination: '+2348012345678', message: 'Synthetic test',
-    payload: {}, eventType: 'customer.funding.approved', eventKey: randomUUID(),
-    recipientType: 'CUSTOMER' as const, recipientId: randomUUID(),
+    channel: 'SMS' as const,
+    destination: '+2348012345678',
+    message: 'Synthetic test',
+    payload: {},
+    eventType: 'customer.funding.approved',
+    eventKey: randomUUID(),
+    recipientType: 'CUSTOMER' as const,
+    recipientId: randomUUID(),
   });
   const resetSecrets = () => {
     config().set('ROBASE_API_KEY', credentialA);
-    config().set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', JSON.stringify({ v1: BINDING_KEY_V1 }));
+    config().set(
+      'NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON',
+      JSON.stringify({ v1: BINDING_KEY_V1 }),
+    );
     config().set('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION', 'v1');
-    config().set('NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON', JSON.stringify({ v1: ENCRYPTION_KEY_V1 }));
+    config().set(
+      'NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON',
+      JSON.stringify({ v1: ENCRYPTION_KEY_V1 }),
+    );
     config().set('NOTIFICATION_PROVIDER_ENCRYPTION_ACTIVE_KEY_VERSION', 'v1');
   };
   async function actors() {
@@ -285,19 +296,34 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     return { maker, checker: checker.token };
   }
   async function propose(maker: string, overrides: Record<string, unknown> = {}) {
-    const response = await request(app.getHttpServer()).post(PROPOSALS_PATH).set(auth(maker)).send({
-      channel: 'SMS', expectedVersion: 0, provider: 'robase', enabled: true,
-      baseUrl: 'https://api.robase.dev', senderId: 'MonieNaija',
-      credentialAction: 'USE_ENV_SECRET', reason: 'Synthetic governed credential change',
-      ...overrides,
-    }).expect(201);
+    const response = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(maker))
+      .send({
+        channel: 'SMS',
+        expectedVersion: 0,
+        provider: 'robase',
+        enabled: true,
+        baseUrl: 'https://api.robase.dev',
+        senderId: 'MonieNaija',
+        credentialAction: 'USE_ENV_SECRET',
+        reason: 'Synthetic governed credential change',
+        ...overrides,
+      })
+      .expect(201);
     return response.body as ProviderConfigProposalView;
   }
   async function decide(id: string, checker: string, status = 200) {
-    return request(app.getHttpServer()).post(`${PROPOSALS_PATH}/${id}/approve`).set(auth(checker)).expect(status);
+    return request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${id}/approve`)
+      .set(auth(checker))
+      .expect(status);
   }
   async function activate(id: string, checker: string, status = 200) {
-    return request(app.getHttpServer()).post(`${PROPOSALS_PATH}/${id}/activate`).set(auth(checker)).expect(status);
+    return request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${id}/activate`)
+      .set(auth(checker))
+      .expect(status);
   }
   async function active() {
     const { maker, checker } = await actors();
@@ -321,7 +347,10 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const p = await propose(maker);
     config().set('ROBASE_API_KEY', credentialB);
     await decide(p.id, checker, 409);
-    const rows = await dataSource.query(`SELECT status FROM notification_provider_config_proposals WHERE id=$1`, [p.id]);
+    const rows = await dataSource.query(
+      `SELECT status FROM notification_provider_config_proposals WHERE id=$1`,
+      [p.id],
+    );
     expect(rows[0].status).toBe('REQUESTED');
     expect(outboundCalls).toHaveLength(0);
   });
@@ -332,9 +361,16 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     await decide(p.id, checker);
     config().set('ROBASE_API_KEY', credentialB);
     await activate(p.id, checker, 409);
-    const rows = await dataSource.query(`SELECT status FROM notification_provider_config_proposals WHERE id=$1`, [p.id]);
+    const rows = await dataSource.query(
+      `SELECT status FROM notification_provider_config_proposals WHERE id=$1`,
+      [p.id],
+    );
     expect(rows[0].status).toBe('APPROVED');
-    expect(await dataSource.query(`SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`,
+      ),
+    ).toHaveLength(0);
     expect(outboundCalls).toHaveLength(0);
   });
 
@@ -380,11 +416,17 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     await decide(first.id, checker);
     await decide(second.id, checker);
     const results = await Promise.all([
-      request(app.getHttpServer()).post(`${PROPOSALS_PATH}/${first.id}/activate`).set(auth(checker)),
-      request(app.getHttpServer()).post(`${PROPOSALS_PATH}/${second.id}/activate`).set(auth(checker)),
+      request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${first.id}/activate`)
+        .set(auth(checker)),
+      request(app.getHttpServer())
+        .post(`${PROPOSALS_PATH}/${second.id}/activate`)
+        .set(auth(checker)),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    const rows = await dataSource.query(`SELECT version FROM notification_provider_configurations WHERE channel='SMS'`);
+    const rows = await dataSource.query(
+      `SELECT version FROM notification_provider_configurations WHERE channel='SMS'`,
+    );
     expect(rows).toEqual([{ version: 1 }]);
     await activate((results[0].status === 200 ? first : second).id, checker, 409);
   });
@@ -392,30 +434,51 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
   it('requires a fresh governed approval for rotation and resets old readiness evidence', async () => {
     const { maker, checker } = await active();
     const ops = await provisionRole('OPERATIONS');
-    await request(app.getHttpServer()).post(`${CFG_BASE}/SMS/verify`).set(auth(ops.token)).expect(200);
-    await request(app.getHttpServer()).post(TEST_SEND_PATH).set(auth(ops.token))
-      .send({ channel: 'SMS', destination: '+2348012345678' }).expect(201);
+    await request(app.getHttpServer())
+      .post(`${CFG_BASE}/SMS/verify`)
+      .set(auth(ops.token))
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(TEST_SEND_PATH)
+      .set(auth(ops.token))
+      .send({ channel: 'SMS', destination: '+2348012345678' })
+      .expect(201);
     config().set('ROBASE_API_KEY', credentialB);
     outboundCalls.length = 0;
     expect((await service().sendSms(message())).success).toBe(false);
     expect(outboundCalls).toHaveLength(0);
-    const p = await propose(maker, { expectedVersion: 1, reason: 'Synthetic rotation requiring reapproval' });
+    const p = await propose(maker, {
+      expectedVersion: 1,
+      reason: 'Synthetic rotation requiring reapproval',
+    });
     await activate(p.id, checker, 409);
     await decide(p.id, checker);
     await activate(p.id, checker);
-    const rows = await dataSource.query(`SELECT version,verified_at,delivery_tested_at FROM notification_provider_configurations WHERE channel='SMS'`);
+    const rows = await dataSource.query(
+      `SELECT version,verified_at,delivery_tested_at FROM notification_provider_configurations WHERE channel='SMS'`,
+    );
     expect(rows).toEqual([{ version: 2, verified_at: null, delivery_tested_at: null }]);
     expect((await service().sendSms(message())).success).toBe(true);
-    expect(Object.values(outboundCalls[0]!.headers).some((v) => v.includes(credentialB))).toBe(true);
+    expect(Object.values(outboundCalls[0]!.headers).some((v) => v.includes(credentialB))).toBe(
+      true,
+    );
   });
 
   it('retains old verification versions only when present; missing, revoked and invalid keys fail closed', async () => {
     await active();
-    config().set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', JSON.stringify({ v1: BINDING_KEY_V1, v2: secondBindingKey }));
+    config().set(
+      'NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON',
+      JSON.stringify({ v1: BINDING_KEY_V1, v2: secondBindingKey }),
+    );
     config().set('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION', 'v2');
     expect((await service().sendSms(message())).success).toBe(true);
     outboundCalls.length = 0;
-    for (const bad of [JSON.stringify({ v2: secondBindingKey }), '{}', '{broken', JSON.stringify({ v1: 'invalid' })]) {
+    for (const bad of [
+      JSON.stringify({ v2: secondBindingKey }),
+      '{}',
+      '{broken',
+      JSON.stringify({ v1: 'invalid' }),
+    ]) {
       config().set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', bad);
       expect((await service().sendSms(message())).success).toBe(false);
     }
@@ -428,24 +491,51 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     try {
       const { maker, checker, proposal } = await active();
-      const overview = await request(app.getHttpServer()).get(OVERVIEW_PATH).set(auth(maker)).expect(200);
-      const status = await request(app.getHttpServer()).get(STATUS_PATH).set(auth(maker)).expect(200);
-      const metadata = await dataSource.query<Array<{ credential_binding_mac: string }>>(`SELECT credential_binding_mac FROM notification_provider_configurations WHERE channel='SMS'`);
+      const overview = await request(app.getHttpServer())
+        .get(OVERVIEW_PATH)
+        .set(auth(maker))
+        .expect(200);
+      const status = await request(app.getHttpServer())
+        .get(STATUS_PATH)
+        .set(auth(maker))
+        .expect(200);
+      const metadata = await dataSource.query<Array<{ credential_binding_mac: string }>>(
+        `SELECT credential_binding_mac FROM notification_provider_configurations WHERE channel='SMS'`,
+      );
       const tag = metadata[0]!.credential_binding_mac;
       expect(typeof tag).toBe('string');
-      const audit = await dataSource.query(`SELECT entity_type,action,previous_values,new_values FROM audit_events WHERE entity_type='NOTIFICATION_PROVIDER_CONFIG'`);
-      const contents = JSON.stringify([proposal, overview.body, status.body, audit, log.mock.calls, warn.mock.calls, error.mock.calls]);
-      for (const value of [credentialA, credentialB, BINDING_KEY_V1, tag]) expect(contents.includes(value)).toBe(false);
-      const stored = JSON.stringify(await dataSource.query(`SELECT * FROM notification_provider_configurations`));
+      const audit = await dataSource.query(
+        `SELECT entity_type,action,previous_values,new_values FROM audit_events WHERE entity_type='NOTIFICATION_PROVIDER_CONFIG'`,
+      );
+      const contents = JSON.stringify([
+        proposal,
+        overview.body,
+        status.body,
+        audit,
+        log.mock.calls,
+        warn.mock.calls,
+        error.mock.calls,
+      ]);
+      for (const value of [credentialA, credentialB, BINDING_KEY_V1, tag])
+        expect(contents.includes(value)).toBe(false);
+      const stored = JSON.stringify(
+        await dataSource.query(`SELECT * FROM notification_provider_configurations`),
+      );
       expect(stored.includes(credentialA)).toBe(false);
       expect(stored.includes(BINDING_KEY_V1)).toBe(false);
       expect(checker).toBeTruthy();
-    } finally { log.mockRestore(); warn.mockRestore(); error.mockRestore(); }
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      error.mockRestore();
+    }
   });
 
   it('fails legacy unbound configurations closed, without allowing environment fallback', async () => {
     await active();
-    await dataSource.query(`UPDATE notification_provider_configurations SET credential_binding_scheme=NULL,credential_binding_key_version=NULL,credential_binding_mac=NULL WHERE channel='SMS'`);
+    await dataSource.query(
+      `UPDATE notification_provider_configurations SET credential_binding_scheme=NULL,credential_binding_key_version=NULL,credential_binding_mac=NULL WHERE channel='SMS'`,
+    );
     expect((await service().sendSms(message())).success).toBe(false);
     expect(outboundCalls).toHaveLength(0);
     const overview = await service().getOverview();
@@ -466,24 +556,56 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
   it('preserves durable retry and event idempotency for a blocked pre-send binding mismatch', async () => {
     await active();
     const id = randomUUID();
-    await dataSource.query(`INSERT INTO customers (id,reference,customer_type,status,kyc_level,kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [id, `cust-${randomUUID()}`]);
-    await dataSource.query(`INSERT INTO customer_profiles (id,customer_id,display_name,is_active) VALUES ($1,$2,'Synthetic',TRUE)`, [randomUUID(), id]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (id,customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,$2,'PHONE','8031112222','8031112222',TRUE,NOW())`, [randomUUID(), id]);
-    await dataSource.query(`INSERT INTO customer_preferences (id,customer_id,language_code,theme_code,notification_email_enabled,notification_sms_enabled,notification_push_enabled,notification_in_app_enabled,security_login_alerts,security_transaction_alerts,security_device_registration_alerts,security_biometric_allowed,version) VALUES ($1,$2,'EN','SYSTEM',FALSE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,1)`, [randomUUID(), id]);
+    await dataSource.query(
+      `INSERT INTO customers (id,reference,customer_type,status,kyc_level,kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [id, `cust-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (id,customer_id,display_name,is_active) VALUES ($1,$2,'Synthetic',TRUE)`,
+      [randomUUID(), id],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (id,customer_id,type,value,normalized_value,is_primary,verified_at) VALUES ($1,$2,'PHONE','8031112222','8031112222',TRUE,NOW())`,
+      [randomUUID(), id],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_preferences (id,customer_id,language_code,theme_code,notification_email_enabled,notification_sms_enabled,notification_push_enabled,notification_in_app_enabled,security_login_alerts,security_transaction_alerts,security_device_registration_alerts,security_biometric_allowed,version) VALUES ($1,$2,'EN','SYSTEM',FALSE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,1)`,
+      [randomUUID(), id],
+    );
     config().set('ROBASE_API_KEY', credentialB);
     const eventKey = `customer.funding.approved:${randomUUID()}`;
-    const command = { eventType: 'customer.funding.approved', eventKey, payload: { customerId: id, amountMinor: '25000', reference: 'M25O-FAKE' } };
+    const command = {
+      eventType: 'customer.funding.approved',
+      eventKey,
+      payload: { customerId: id, amountMinor: '25000', reference: 'M25O-FAKE' },
+    };
     await dispatcher.dispatch(command);
-    const failed = await dataSource.query(`SELECT status,attempts FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`, [eventKey]);
+    const failed = await dataSource.query(
+      `SELECT status,attempts FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+      [eventKey],
+    );
     expect(failed).toEqual([{ status: 'FAILED', attempts: 1 }]);
     expect(outboundCalls).toHaveLength(0);
     await dispatcher.dispatch(command);
     expect(outboundCalls).toHaveLength(0);
-    expect(await dataSource.query(`SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`, [eventKey])).toHaveLength(1);
+    expect(
+      await dataSource.query(
+        `SELECT id FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+        [eventKey],
+      ),
+    ).toHaveLength(1);
     config().set('ROBASE_API_KEY', credentialA);
-    await dataSource.query(`UPDATE notification_deliveries SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE event_key=$1`, [eventKey]);
+    await dataSource.query(
+      `UPDATE notification_deliveries SET next_attempt_at=NOW()-INTERVAL '1 second' WHERE event_key=$1`,
+      [eventKey],
+    );
     await worker.tick();
-    expect(await dataSource.query(`SELECT status,attempts FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`, [eventKey])).toEqual([{ status: 'SENT', attempts: 2 }]);
+    expect(
+      await dataSource.query(
+        `SELECT status,attempts FROM notification_deliveries WHERE event_key=$1 AND channel='SMS'`,
+        [eventKey],
+      ),
+    ).toEqual([{ status: 'SENT', attempts: 2 }]);
     expect(outboundCalls).toHaveLength(1);
     await worker.tick();
     expect(outboundCalls).toHaveLength(1);
@@ -492,22 +614,41 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const { maker, checker } = await actors();
     const one = await propose(maker, { credentialAction: 'SET_ENCRYPTED', apiKey: credentialA });
     const two = await propose(maker, { credentialAction: 'SET_ENCRYPTED', apiKey: credentialB });
-    await dataSource.query(`UPDATE notification_provider_config_proposals AS p SET proposed_encrypted_api_key=(SELECT proposed_encrypted_api_key FROM notification_provider_config_proposals WHERE id=$2) WHERE p.id=$1`, [one.id, two.id]);
+    await dataSource.query(
+      `UPDATE notification_provider_config_proposals AS p SET proposed_encrypted_api_key=(SELECT proposed_encrypted_api_key FROM notification_provider_config_proposals WHERE id=$2) WHERE p.id=$1`,
+      [one.id, two.id],
+    );
     await decide(one.id, checker, 409);
     await decide(two.id, checker);
-    await dataSource.query(`UPDATE notification_provider_config_proposals SET action_fingerprint_version=NULL,proposed_credential_source=NULL,credential_binding_scheme=NULL,credential_binding_key_version=NULL,credential_binding_mac=NULL WHERE id=$1`, [two.id]);
+    await dataSource.query(
+      `UPDATE notification_provider_config_proposals SET action_fingerprint_version=NULL,proposed_credential_source=NULL,credential_binding_scheme=NULL,credential_binding_key_version=NULL,credential_binding_mac=NULL WHERE id=$1`,
+      [two.id],
+    );
     await activate(two.id, checker, 409);
     expect(outboundCalls).toHaveLength(0);
-    expect(await dataSource.query(`SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`,
+      ),
+    ).toHaveLength(0);
   });
 
   it('blocks proposal and activation with unavailable keys but allows a governed disable', async () => {
     const { maker, checker } = await actors();
     config().set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', '{}');
-    await request(app.getHttpServer()).post(PROPOSALS_PATH).set(auth(maker)).send({
-      channel: 'SMS', expectedVersion: 0, provider: 'robase', enabled: true,
-      baseUrl: 'https://api.robase.dev', credentialAction: 'USE_ENV_SECRET', reason: 'Synthetic unavailable key',
-    }).expect(400);
+    await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(maker))
+      .send({
+        channel: 'SMS',
+        expectedVersion: 0,
+        provider: 'robase',
+        enabled: true,
+        baseUrl: 'https://api.robase.dev',
+        credentialAction: 'USE_ENV_SECRET',
+        reason: 'Synthetic unavailable key',
+      })
+      .expect(400);
     resetSecrets();
     const p = await propose(maker);
     await decide(p.id, checker);
@@ -516,11 +657,18 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     resetSecrets();
     await activate(p.id, checker);
     config().set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', '{}');
-    const disable = await propose(maker, { expectedVersion: 1, enabled: false, credentialAction: 'CLEAR', reason: 'Governed fail-closed disable' });
+    const disable = await propose(maker, {
+      expectedVersion: 1,
+      enabled: false,
+      credentialAction: 'CLEAR',
+      reason: 'Governed fail-closed disable',
+    });
     await decide(disable.id, checker);
     await activate(disable.id, checker);
     expect((await service().sendSms(message())).success).toBe(false);
-    const rows = await dataSource.query(`SELECT version,enabled,credential_source FROM notification_provider_configurations WHERE channel='SMS'`);
+    const rows = await dataSource.query(
+      `SELECT version,enabled,credential_source FROM notification_provider_configurations WHERE channel='SMS'`,
+    );
     expect(rows).toEqual([{ version: 2, enabled: false, credential_source: 'NONE' }]);
     expect(outboundCalls).toHaveLength(0);
   });
@@ -530,40 +678,81 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const ops = await provisionRole('OPERATIONS');
     let began!: () => void;
     let release!: () => void;
-    const started = new Promise<void>((resolve) => { began = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     customTransportOverride = async () => {
       began();
       await gate;
-      return { ok: true, status: 200, json: async () => ({ status: 'success', id: 'm25o-safe-ref' }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 'success', id: 'm25o-safe-ref' }),
+      };
     };
-    const sending = request(app.getHttpServer()).post(TEST_SEND_PATH).set(auth(ops.token))
-      .send({ channel: 'SMS', destination: '+2348012345678' }).then((response) => response);
+    const sending = request(app.getHttpServer())
+      .post(TEST_SEND_PATH)
+      .set(auth(ops.token))
+      .send({ channel: 'SMS', destination: '+2348012345678' })
+      .then((response) => response);
     try {
       await started;
-      const p = await propose(maker, { expectedVersion: 1, senderId: 'Updated', credentialAction: 'KEEP_EXISTING', reason: 'Synthetic config race' });
+      const p = await propose(maker, {
+        expectedVersion: 1,
+        senderId: 'Updated',
+        credentialAction: 'KEEP_EXISTING',
+        reason: 'Synthetic config race',
+      });
       await decide(p.id, checker);
       await activate(p.id, checker);
-    } finally { release(); }
+    } finally {
+      release();
+    }
     await sending;
-    const rows = await dataSource.query(`SELECT version,delivery_tested_at,verified_at,last_test_at FROM notification_provider_configurations WHERE channel='SMS'`);
-    expect(rows).toEqual([{ version: 2, delivery_tested_at: null, verified_at: null, last_test_at: null }]);
+    const rows = await dataSource.query(
+      `SELECT version,delivery_tested_at,verified_at,last_test_at FROM notification_provider_configurations WHERE channel='SMS'`,
+    );
+    expect(rows).toEqual([
+      { version: 2, delivery_tested_at: null, verified_at: null, last_test_at: null },
+    ]);
     expect(outboundCalls).toHaveLength(1);
   });
   it('rejects copying the effective credential into proposal reasons or approval comments', async () => {
     const { maker, checker } = await actors();
-    const base = { channel: 'SMS', expectedVersion: 0, provider: 'robase', enabled: true,
-      baseUrl: 'https://api.robase.dev', credentialAction: 'USE_ENV_SECRET' };
-    const rejected = await request(app.getHttpServer()).post(PROPOSALS_PATH).set(auth(maker)).send({
-      ...base, reason: `accidental ${credentialA}`,
-    }).expect(400);
+    const base = {
+      channel: 'SMS',
+      expectedVersion: 0,
+      provider: 'robase',
+      enabled: true,
+      baseUrl: 'https://api.robase.dev',
+      credentialAction: 'USE_ENV_SECRET',
+    };
+    const rejected = await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(maker))
+      .send({
+        ...base,
+        reason: `accidental ${credentialA}`,
+      })
+      .expect(400);
     expect(JSON.stringify(rejected.body).includes(credentialA)).toBe(false);
-    expect(await dataSource.query(`SELECT 1 FROM notification_provider_config_proposals`)).toHaveLength(0);
+    expect(
+      await dataSource.query(`SELECT 1 FROM notification_provider_config_proposals`),
+    ).toHaveLength(0);
     const p = await propose(maker);
-    const rejectedComment = await request(app.getHttpServer()).post(`${PROPOSALS_PATH}/${p.id}/approve`)
-      .set(auth(checker)).send({ comment: `accidental ${credentialA}` }).expect(400);
+    const rejectedComment = await request(app.getHttpServer())
+      .post(`${PROPOSALS_PATH}/${p.id}/approve`)
+      .set(auth(checker))
+      .send({ comment: `accidental ${credentialA}` })
+      .expect(400);
     expect(JSON.stringify(rejectedComment.body).includes(credentialA)).toBe(false);
-    const rows = await dataSource.query(`SELECT reason,decision_reason,status FROM notification_provider_config_proposals WHERE id=$1`, [p.id]);
+    const rows = await dataSource.query(
+      `SELECT reason,decision_reason,status FROM notification_provider_config_proposals WHERE id=$1`,
+      [p.id],
+    );
     expect(rows[0].status).toBe('REQUESTED');
     expect(JSON.stringify(rows).includes(credentialA)).toBe(false);
     const audit = await dataSource.query(`SELECT new_values,previous_values FROM audit_events`);
@@ -578,13 +767,27 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const resendB = `re_${randomBytes(24).toString('hex')}tail`;
     config().set('BREVO_API_KEY', brevoA);
     config().set('RESEND_API_KEY', resendA);
-    customTransportOverride = async (url) => url.includes('resend.com')
-      ? { ok: true, status: 200, json: async () => ({ id: 'm25o-resend-fake' }) }
-      : { ok: true, status: 201, json: async () => ({ messageId: 'm25o-brevo-fake' }) };
-    const email = { ...message(), channel: 'EMAIL' as const, destination: 'synthetic@example.test', subject: 'Synthetic' };
-    const base = { channel: 'EMAIL', expectedVersion: 0, provider: 'brevo', baseUrl: 'https://api.brevo.com',
-      fromEmail: 'notifications@monienaija.ng', fromName: 'MonieNaija', spfConfigured: true,
-      dkimConfigured: true, dmarcConfigured: true };
+    customTransportOverride = async (url) =>
+      url.includes('resend.com')
+        ? { ok: true, status: 200, json: async () => ({ id: 'm25o-resend-fake' }) }
+        : { ok: true, status: 201, json: async () => ({ messageId: 'm25o-brevo-fake' }) };
+    const email = {
+      ...message(),
+      channel: 'EMAIL' as const,
+      destination: 'synthetic@example.test',
+      subject: 'Synthetic',
+    };
+    const base = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'brevo',
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'notifications@monienaija.ng',
+      fromName: 'MonieNaija',
+      spfConfigured: true,
+      dkimConfigured: true,
+      dmarcConfigured: true,
+    };
     const brevo = await propose(maker, base);
     await decide(brevo.id, checker);
     await activate(brevo.id, checker);
@@ -593,11 +796,25 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     config().set('BREVO_API_KEY', brevoB);
     expect((await service().sendEmail(email)).success).toBe(false);
     expect(outboundCalls).toHaveLength(0);
-    await request(app.getHttpServer()).post(PROPOSALS_PATH).set(auth(maker)).send({
-      ...base, expectedVersion: 1, provider: 'resend', baseUrl: 'https://api.resend.com', enabled: true,
-      credentialAction: 'KEEP_EXISTING', reason: 'Synthetic provider switch',
-    }).expect(400);
-    const resend = await propose(maker, { ...base, expectedVersion: 1, provider: 'resend', baseUrl: 'https://api.resend.com' });
+    await request(app.getHttpServer())
+      .post(PROPOSALS_PATH)
+      .set(auth(maker))
+      .send({
+        ...base,
+        expectedVersion: 1,
+        provider: 'resend',
+        baseUrl: 'https://api.resend.com',
+        enabled: true,
+        credentialAction: 'KEEP_EXISTING',
+        reason: 'Synthetic provider switch',
+      })
+      .expect(400);
+    const resend = await propose(maker, {
+      ...base,
+      expectedVersion: 1,
+      provider: 'resend',
+      baseUrl: 'https://api.resend.com',
+    });
     await decide(resend.id, checker);
     await activate(resend.id, checker);
     expect((await service().sendEmail(email)).success).toBe(true);
@@ -612,60 +829,113 @@ describe('MISSION-25O — exact credential identity (isolated real PostgreSQL + 
     const brevo = `xkeysib-${randomBytes(24).toString('hex')}tail`;
     config().set('BREVO_API_KEY', brevo);
     const ops = await provisionRole('OPERATIONS');
-    const base = { channel: 'EMAIL', expectedVersion: 0, provider: 'brevo', baseUrl: 'https://api.brevo.com',
-      fromEmail: 'notifications@monienaija.ng', fromName: 'MonieNaija', spfConfigured: true,
-      dkimConfigured: true, dmarcConfigured: true };
+    const base = {
+      channel: 'EMAIL',
+      expectedVersion: 0,
+      provider: 'brevo',
+      baseUrl: 'https://api.brevo.com',
+      fromEmail: 'notifications@monienaija.ng',
+      fromName: 'MonieNaija',
+      spfConfigured: true,
+      dkimConfigured: true,
+      dmarcConfigured: true,
+    };
     const p = await propose(maker, base);
     await decide(p.id, checker);
     await activate(p.id, checker);
     let began!: () => void;
     let release!: () => void;
-    const started = new Promise<void>((resolve) => { began = resolve; });
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     customTransportOverride = async (url) => {
       if (url.endsWith('/account')) {
         began();
         await gate;
         return { ok: true, status: 200, json: async () => ({ email: 'synthetic@example.test' }) };
       }
-      return { ok: true, status: 200, json: async () => ({ senders: [{ email: 'notifications@monienaija.ng', active: true }] }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ senders: [{ email: 'notifications@monienaija.ng', active: true }] }),
+      };
     };
-    const verifying = request(app.getHttpServer()).post(`${CFG_BASE}/EMAIL/verify`).set(auth(ops.token)).then((response) => response);
+    const verifying = request(app.getHttpServer())
+      .post(`${CFG_BASE}/EMAIL/verify`)
+      .set(auth(ops.token))
+      .then((response) => response);
     try {
       await started;
-      const next = await propose(maker, { ...base, expectedVersion: 1, fromName: 'Updated', credentialAction: 'KEEP_EXISTING', reason: 'Synthetic verification race' });
+      const next = await propose(maker, {
+        ...base,
+        expectedVersion: 1,
+        fromName: 'Updated',
+        credentialAction: 'KEEP_EXISTING',
+        reason: 'Synthetic verification race',
+      });
       await decide(next.id, checker);
       await activate(next.id, checker);
-    } finally { release(); }
+    } finally {
+      release();
+    }
     expect((await verifying).status).toBe(409);
-    const rows = await dataSource.query(`SELECT version,verified_at,verification_method FROM notification_provider_configurations WHERE channel='EMAIL'`);
+    const rows = await dataSource.query(
+      `SELECT version,verified_at,verification_method FROM notification_provider_configurations WHERE channel='EMAIL'`,
+    );
     expect(rows).toEqual([{ version: 2, verified_at: null, verification_method: null }]);
   });
   it('refuses to approve a proposal whose independent approval record has a different fingerprint', async () => {
     const { maker, checker } = await actors();
     const p = await propose(maker);
-    await dataSource.query(`UPDATE privileged_action_approvals SET action_fingerprint=$1 WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$2)`, ['f'.repeat(64), p.id]);
+    await dataSource.query(
+      `UPDATE privileged_action_approvals SET action_fingerprint=$1 WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$2)`,
+      ['f'.repeat(64), p.id],
+    );
     await decide(p.id, checker, 409);
-    const rows = await dataSource.query(`SELECT p.status AS proposal_status,a.status AS approval_status FROM notification_provider_config_proposals p JOIN privileged_action_approvals a ON a.id=p.approval_id WHERE p.id=$1`, [p.id]);
+    const rows = await dataSource.query(
+      `SELECT p.status AS proposal_status,a.status AS approval_status FROM notification_provider_config_proposals p JOIN privileged_action_approvals a ON a.id=p.approval_id WHERE p.id=$1`,
+      [p.id],
+    );
     expect(rows).toEqual([{ proposal_status: 'REQUESTED', approval_status: 'REQUESTED' }]);
     expect(outboundCalls).toHaveLength(0);
   });
   it('rejects expired or cancelled approvals without allowing activation or delivery', async () => {
     const { maker, checker } = await actors();
     const expired = await propose(maker);
-    await dataSource.query(`UPDATE privileged_action_approvals SET expires_at=NOW()-INTERVAL '1 second' WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`, [expired.id]);
+    await dataSource.query(
+      `UPDATE privileged_action_approvals SET expires_at=NOW()-INTERVAL '1 second' WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`,
+      [expired.id],
+    );
     await decide(expired.id, checker, 403);
     await activate(expired.id, checker, 409);
     const cancelled = await propose(maker);
-    await dataSource.query(`UPDATE privileged_action_approvals SET status='CANCELLED',cancelled_at=NOW() WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`, [cancelled.id]);
+    await dataSource.query(
+      `UPDATE privileged_action_approvals SET status='CANCELLED',cancelled_at=NOW() WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`,
+      [cancelled.id],
+    );
     await decide(cancelled.id, checker, 403);
     await activate(cancelled.id, checker, 409);
     const approved = await propose(maker);
     await decide(approved.id, checker);
-    await dataSource.query(`UPDATE privileged_action_approvals SET expires_at=NOW()-INTERVAL '1 second' WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`, [approved.id]);
+    await dataSource.query(
+      `UPDATE privileged_action_approvals SET expires_at=NOW()-INTERVAL '1 second' WHERE id=(SELECT approval_id FROM notification_provider_config_proposals WHERE id=$1)`,
+      [approved.id],
+    );
     await activate(approved.id, checker, 403);
-    expect(await dataSource.query(`SELECT status FROM notification_provider_config_proposals WHERE id=$1`, [approved.id])).toEqual([{ status: 'APPROVED' }]);
-    expect(await dataSource.query(`SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`)).toHaveLength(0);
+    expect(
+      await dataSource.query(
+        `SELECT status FROM notification_provider_config_proposals WHERE id=$1`,
+        [approved.id],
+      ),
+    ).toEqual([{ status: 'APPROVED' }]);
+    expect(
+      await dataSource.query(
+        `SELECT 1 FROM notification_provider_configurations WHERE channel='SMS'`,
+      ),
+    ).toHaveLength(0);
     expect(outboundCalls).toHaveLength(0);
   });
 });

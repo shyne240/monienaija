@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { NotificationTemplateService, canonicalNotificationEvent } from './notification-template.service';
+import {
+  NotificationTemplateService,
+  canonicalNotificationEvent,
+} from './notification-template.service';
 import type {
   NotificationEmailQuery,
   NotificationEmailTemplateLookup,
@@ -68,7 +71,8 @@ export class CodeNotificationEmailTemplateService implements NotificationEmailTe
       // inconsistent; bounded worker retries apply, code defaults are never substituted).
       const event = canonicalNotificationEvent(templateKey);
       const rendered = await this.templateService.renderActive(query, event, 'EMAIL', payload);
-      const rawSubject = rendered.subject && rendered.subject.trim().length > 0 ? rendered.subject : GENERIC_SUBJECT;
+      const rawSubject =
+        rendered.subject && rendered.subject.trim().length > 0 ? rendered.subject : GENERIC_SUBJECT;
       const subject = sanitizeEmailSubject(rawSubject);
       return { subject, text: rendered.body, html: renderEmailLayout(subject, rendered.body) };
     }
@@ -99,8 +103,14 @@ export function escapeHtml(value: string): string {
  * become spaces, runs of whitespace collapse, length capped at 200.
  */
 export function sanitizeEmailSubject(value: string): string {
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return (
+    value
+      // eslint-disable-next-line no-control-regex -- required to remove control characters from headers
+      .replace(/[\u0000-\u001F\u007F]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200)
+  );
 }
 
 /**
@@ -113,7 +123,10 @@ export function renderEmailLayout(heading: string, text: string): string {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => `<p style="margin:0 0 10px 0;font-size:15px;line-height:1.5;color:#111827;">${escapeHtml(line)}</p>`)
+    .map(
+      (line) =>
+        `<p style="margin:0 0 10px 0;font-size:15px;line-height:1.5;color:#111827;">${escapeHtml(line)}</p>`,
+    )
     .join('');
   return [
     '<!DOCTYPE html>',

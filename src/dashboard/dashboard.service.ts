@@ -78,16 +78,24 @@ export class DashboardService {
   }): Promise<RoleDashboardAssignment> {
     const role = await this.roleRepo.findOne({ where: { roleKey: params.roleKey } as never });
     if (!role || !role.isActive) {
-      throw new BadRequestException(`Role '${params.roleKey}' is not a known, active authorization role.`);
+      throw new BadRequestException(
+        `Role '${params.roleKey}' is not a known, active authorization role.`,
+      );
     }
-    const template = await this.templateRepo.findOne({ where: { templateKey: params.templateKey } as never });
+    const template = await this.templateRepo.findOne({
+      where: { templateKey: params.templateKey } as never,
+    });
     if (!template || !template.isActive) {
-      throw new BadRequestException(`Dashboard template '${params.templateKey}' is not a known, active template.`);
+      throw new BadRequestException(
+        `Dashboard template '${params.templateKey}' is not a known, active template.`,
+      );
     }
 
     return this.dataSource.transaction(async (manager) => {
       const assignmentRepo = manager.getRepository(RoleDashboardAssignment);
-      const existing = await assignmentRepo.findOne({ where: { roleKey: params.roleKey } as never });
+      const existing = await assignmentRepo.findOne({
+        where: { roleKey: params.roleKey } as never,
+      });
       const previousTemplateKey = existing?.templateKey ?? null;
       const saved = await assignmentRepo.save(
         assignmentRepo.create({
@@ -106,7 +114,11 @@ export class DashboardService {
         actor: params.actorPrincipalId,
         correlationId: params.correlationId,
         previousValues: previousTemplateKey ? { templateKey: previousTemplateKey } : undefined,
-        newValues: { roleKey: params.roleKey, templateKey: params.templateKey, reason: params.reason ?? null },
+        newValues: {
+          roleKey: params.roleKey,
+          templateKey: params.templateKey,
+          reason: params.reason ?? null,
+        },
       });
       return saved;
     });
@@ -129,14 +141,19 @@ export class DashboardService {
    * the data endpoint for) a widget the caller does not actually hold the function(s) for, even
    * if the assigned template lists it.
    */
-  async resolveMyDashboard(roleKeys: readonly string[], grantedFunctionCodes: readonly string[]): Promise<ResolvedDashboard> {
+  async resolveMyDashboard(
+    roleKeys: readonly string[],
+    grantedFunctionCodes: readonly string[],
+  ): Promise<ResolvedDashboard> {
     let resolvedTemplate: DashboardTemplate | null = null;
     let fallbackReason: string | undefined;
 
     for (const roleKey of roleKeys) {
       const assignment = await this.assignmentRepo.findOne({ where: { roleKey } as never });
       if (!assignment) continue;
-      const template = await this.templateRepo.findOne({ where: { templateKey: assignment.templateKey } as never });
+      const template = await this.templateRepo.findOne({
+        where: { templateKey: assignment.templateKey } as never,
+      });
       if (template && template.isActive) {
         resolvedTemplate = template;
         break;
@@ -148,7 +165,9 @@ export class DashboardService {
         roleKeys.length === 0
           ? 'No recognized role held by this session.'
           : 'No active dashboard template assignment found for any held role.';
-      resolvedTemplate = await this.templateRepo.findOne({ where: { templateKey: DEFAULT_FALLBACK_TEMPLATE_KEY } as never });
+      resolvedTemplate = await this.templateRepo.findOne({
+        where: { templateKey: DEFAULT_FALLBACK_TEMPLATE_KEY } as never,
+      });
       if (!resolvedTemplate) {
         // Should never happen (seeded at bootstrap) — construct an in-memory, code-level minimum
         // so the dashboard can never render zero content or throw for an authenticated caller.
@@ -159,8 +178,24 @@ export class DashboardService {
           isFallback: true,
           fallbackReason: `${fallbackReason} (seeded fallback template itself was not found — using an in-code minimum.)`,
           widgets: [
-            { widgetKey: 'identity-session', order: 0, displayName: 'Session Identity', description: '', fetchMode: 'direct', kind: 'identity', authorized: true },
-            { widgetKey: 'entitlements-scopes', order: 1, displayName: 'Entitlements', description: '', fetchMode: 'direct', kind: 'entitlements', authorized: true },
+            {
+              widgetKey: 'identity-session',
+              order: 0,
+              displayName: 'Session Identity',
+              description: '',
+              fetchMode: 'direct',
+              kind: 'identity',
+              authorized: true,
+            },
+            {
+              widgetKey: 'entitlements-scopes',
+              order: 1,
+              displayName: 'Entitlements',
+              description: '',
+              fetchMode: 'direct',
+              kind: 'entitlements',
+              authorized: true,
+            },
           ],
         };
       }

@@ -395,7 +395,9 @@ describe('A7 Agent authentication HTTP surface (real PostgreSQL + real HTTP)', (
     expect(verifyBOk.body.verified).toBe(true);
 
     // Check DB isolation: each agent has its own pin row
-    const pins: Array<{ agent_id: string }> = await dataSource.query(`SELECT agent_id FROM agent_transaction_pins`);
+    const pins: Array<{ agent_id: string }> = await dataSource.query(
+      `SELECT agent_id FROM agent_transaction_pins`,
+    );
     expect(pins.map((p) => p.agent_id)).toEqual(expect.arrayContaining([agentA, agentB]));
   });
 
@@ -442,10 +444,18 @@ describe('A7 Agent authentication HTTP surface (real PostgreSQL + real HTTP)', (
   });
 
   it('Z. Authentication creates no financial records', async () => {
-    const beforeWallets: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM wallet_accounts`);
-    const beforeBindings: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM customer_financial_account_bindings`);
-    const beforeJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM ledger_journals`);
-    const beforeLedgers: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM ledger_lines`);
+    const beforeWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM wallet_accounts`,
+    );
+    const beforeBindings: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM customer_financial_account_bindings`,
+    );
+    const beforeJournals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM ledger_journals`,
+    );
+    const beforeLedgers: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM ledger_lines`,
+    );
 
     const agentId = await createAgent('ACTIVE', `a7-z-${randomUUID()}`);
     await createAgentCredential(agentId, 'correct-password');
@@ -454,10 +464,18 @@ describe('A7 Agent authentication HTTP surface (real PostgreSQL + real HTTP)', (
       .send({ agentId, password: 'correct-password' })
       .expect(200);
 
-    const afterWallets: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM wallet_accounts`);
-    const afterBindings: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM customer_financial_account_bindings`);
-    const afterJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM ledger_journals`);
-    const afterLedgers: Array<{ count: string }> = await dataSource.query(`SELECT count(*) FROM ledger_lines`);
+    const afterWallets: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM wallet_accounts`,
+    );
+    const afterBindings: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM customer_financial_account_bindings`,
+    );
+    const afterJournals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM ledger_journals`,
+    );
+    const afterLedgers: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*) FROM ledger_lines`,
+    );
 
     expect(afterWallets[0]!.count).toBe(beforeWallets[0]!.count);
     expect(afterBindings[0]!.count).toBe(beforeBindings[0]!.count);

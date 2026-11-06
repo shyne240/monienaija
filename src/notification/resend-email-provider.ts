@@ -200,6 +200,12 @@ export class ResendEmailProvider implements NotificationProvider {
  * bound the length. Applied to every subject before it reaches the provider.
  */
 export function sanitizeHeader(value: string): string {
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return (
+    value
+      // eslint-disable-next-line no-control-regex -- required to remove control characters from headers
+      .replace(/[\u0000-\u001F\u007F]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300)
+  );
 }

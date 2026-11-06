@@ -25,10 +25,12 @@ export interface NotificationInboxResult {
 }
 
 function toCategory(eventType: string): string {
-  if (eventType.startsWith('customer.funding') || eventType.startsWith('deposit.')) return 'FUNDING';
+  if (eventType.startsWith('customer.funding') || eventType.startsWith('deposit.'))
+    return 'FUNDING';
   if (eventType.startsWith('withdrawal.')) return 'WITHDRAWAL';
   if (eventType.startsWith('transfer.')) return 'TRANSFER';
-  if (eventType.startsWith('cash_to_cash') || eventType.startsWith('cash-to-cash')) return 'CASH_TO_CASH';
+  if (eventType.startsWith('cash_to_cash') || eventType.startsWith('cash-to-cash'))
+    return 'CASH_TO_CASH';
   if (eventType.startsWith('support.ticket')) return 'SUPPORT';
   if (eventType.startsWith('agent.')) return 'AGENT';
   return 'GENERAL';
@@ -109,7 +111,7 @@ export class NotificationInboxService {
           payload = {};
         }
       } else {
-        payload = (r.payload ?? {}) ;
+        payload = r.payload ?? {};
       }
       // Safe reference — prefer public reference, fallback to aggregate short id, never ledger/journal
       const reference =
@@ -155,12 +157,14 @@ export class NotificationInboxService {
   }
 
   private normalizePage(page: number): number {
-    if (!Number.isSafeInteger(page) || page < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(page) || page < 1)
+      throw new BadRequestException('page must be a positive integer');
     return page;
   }
 
   private normalizeLimit(limit: number): number {
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return limit;
   }
 }

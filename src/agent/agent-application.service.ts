@@ -51,9 +51,21 @@ export class AgentApplicationService {
 
   async create(command: CreateApplicationCommand): Promise<AgentApplication> {
     const requestedActor = this.normalizeActor(command.actor);
-    const applicantReference = this.normalizeText(command.applicantReference, 'applicantReference', 160);
-    const businessName = this.normalizeOptionalText(command.businessName ?? null, 'businessName', 320);
-    const contactEmail = this.normalizeOptionalText(command.contactEmail ?? null, 'contactEmail', 320);
+    const applicantReference = this.normalizeText(
+      command.applicantReference,
+      'applicantReference',
+      160,
+    );
+    const businessName = this.normalizeOptionalText(
+      command.businessName ?? null,
+      'businessName',
+      320,
+    );
+    const contactEmail = this.normalizeOptionalText(
+      command.contactEmail ?? null,
+      'contactEmail',
+      320,
+    );
 
     let agentClass: AgentClass | null = null;
     if (command.agentClassId) {
@@ -71,11 +83,14 @@ export class AgentApplicationService {
     }
 
     const applicantAccessToken = randomBytes(32).toString('base64url');
-    const applicantAccessTokenHash = createHash('sha256').update(applicantAccessToken).digest('hex');
+    const applicantAccessTokenHash = createHash('sha256')
+      .update(applicantAccessToken)
+      .digest('hex');
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const id = randomUUID();
-      const actor = requestedActor === 'ANONYMOUS_APPLICANT' ? `agent-application:${id}` : requestedActor;
+      const actor =
+        requestedActor === 'ANONYMOUS_APPLICANT' ? `agent-application:${id}` : requestedActor;
       const reference = `AGENT-APP-${randomUUID().slice(0, 8).toUpperCase()}`;
       const entity = await repo.save(
         repo.create({
@@ -99,7 +114,15 @@ export class AgentApplicationService {
           version: 1,
         }),
       );
-      await this.audit(manager, 'AGENT_APPLICATION', entity.id, 'CREATED', actor, undefined, this.values(entity));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        entity.id,
+        'CREATED',
+        actor,
+        undefined,
+        this.values(entity),
+      );
       // Do not return the stored verifier; only the random bearer token is exposed once.
       const response = Object.assign(new AgentApplication(), entity);
       Reflect.deleteProperty(response, 'applicantAccessTokenHash');
@@ -111,7 +134,8 @@ export class AgentApplicationService {
   async getById(id: string): Promise<AgentApplication> {
     this.assertUuid(id, 'id');
     const app = await this.applicationRepository.findOne({ where: { id } });
-    if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
+    if (!app || app.deletedAt !== null)
+      throw new NotFoundException(`AgentApplication ${id} not found`);
     return app;
   }
 
@@ -147,7 +171,8 @@ export class AgentApplicationService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${id} not found`);
       if (app.status !== AgentApplicationStatus.DRAFT) {
         throw new ConflictException('Only DRAFT applications can be updated');
       }
@@ -159,19 +184,31 @@ export class AgentApplicationService {
       // For now, allow any actor that matches createdBy, otherwise require privileged check at controller.
       // We enforce that if actor looks like an Agent principalId (uuid), it must own nothing else; but we delegate to controller.
       const previous = this.values(app);
-      if (command.businessName !== undefined) app.businessName = this.normalizeOptionalText(command.businessName, 'businessName', 320);
-      if (command.contactEmail !== undefined) app.contactEmail = this.normalizeOptionalText(command.contactEmail, 'contactEmail', 320);
+      if (command.businessName !== undefined)
+        app.businessName = this.normalizeOptionalText(command.businessName, 'businessName', 320);
+      if (command.contactEmail !== undefined)
+        app.contactEmail = this.normalizeOptionalText(command.contactEmail, 'contactEmail', 320);
       if (command.payload !== undefined) app.payload = command.payload;
       if (command.agentClassId !== undefined) {
         this.assertUuid(command.agentClassId, 'agentClassId');
-        const cls = await manager.getRepository(AgentClass).findOne({ where: { id: command.agentClassId } });
+        const cls = await manager
+          .getRepository(AgentClass)
+          .findOne({ where: { id: command.agentClassId } });
         if (!cls || cls.deletedAt !== null) throw new NotFoundException('AgentClass not found');
         if (!cls.isActive) throw new BadRequestException('Target class is inactive');
         app.agentClassId = cls.id;
       }
       app.updatedBy = actor;
       const saved = await repo.save(app);
-      await this.audit(manager, 'AGENT_APPLICATION', saved.id, 'DRAFT_UPDATED', actor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        saved.id,
+        'DRAFT_UPDATED',
+        actor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -182,7 +219,8 @@ export class AgentApplicationService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${id} not found`);
       if (app.status !== AgentApplicationStatus.DRAFT) {
         throw new ConflictException('Only DRAFT applications can be submitted');
       }
@@ -200,7 +238,15 @@ export class AgentApplicationService {
       // To satisfy tests that expect UNDER_REVIEW after submit, we will optionally support either.
       // Let's set to SUBMITTED here; tests that check UNDER_REVIEW can call review()
       const saved = await repo.save(app);
-      await this.audit(manager, 'AGENT_APPLICATION', saved.id, 'SUBMITTED', normalizedActor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        saved.id,
+        'SUBMITTED',
+        normalizedActor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -214,7 +260,8 @@ export class AgentApplicationService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${id} not found`);
       if (app.status !== AgentApplicationStatus.SUBMITTED) {
         throw new ConflictException('Only SUBMITTED applications can be moved to UNDER_REVIEW');
       }
@@ -223,7 +270,15 @@ export class AgentApplicationService {
       app.reviewedAt = new Date();
       app.updatedBy = normalizedActor;
       const saved = await repo.save(app);
-      await this.audit(manager, 'AGENT_APPLICATION', saved.id, 'UNDER_REVIEW', normalizedActor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        saved.id,
+        'UNDER_REVIEW',
+        normalizedActor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -238,17 +293,23 @@ export class AgentApplicationService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${id} not found`);
       if (app.status === AgentApplicationStatus.APPROVED) {
         return app;
       }
-      if (app.status !== AgentApplicationStatus.SUBMITTED && app.status !== AgentApplicationStatus.UNDER_REVIEW) {
+      if (
+        app.status !== AgentApplicationStatus.SUBMITTED &&
+        app.status !== AgentApplicationStatus.UNDER_REVIEW
+      ) {
         throw new ConflictException(
           `Only SUBMITTED or UNDER_REVIEW applications can be approved (current: ${app.status})`,
         );
       }
       // Ensure class is still active at approval time
-      const cls = await manager.getRepository(AgentClass).findOne({ where: { id: app.agentClassId } });
+      const cls = await manager
+        .getRepository(AgentClass)
+        .findOne({ where: { id: app.agentClassId } });
       if (!cls || cls.deletedAt !== null) throw new NotFoundException('AgentClass not found');
       if (!cls.isActive) throw new BadRequestException('Agent class is inactive');
       const previous = this.values(app);
@@ -282,16 +343,32 @@ export class AgentApplicationService {
             }),
           );
           app.agentId = agent.id;
-          await this.audit(manager, 'AGENT', agent.id, 'CREATED_PENDING', normalizedActor, undefined, {
-            reference: agent.reference,
-            status: agent.status,
-            agentClassId: agent.agentClassId,
-            originApplicationId: agent.originApplicationId,
-          });
+          await this.audit(
+            manager,
+            'AGENT',
+            agent.id,
+            'CREATED_PENDING',
+            normalizedActor,
+            undefined,
+            {
+              reference: agent.reference,
+              status: agent.status,
+              agentClassId: agent.agentClassId,
+              originApplicationId: agent.originApplicationId,
+            },
+          );
         }
       }
       const saved = await repo.save(app);
-      await this.audit(manager, 'AGENT_APPLICATION', saved.id, 'APPROVED', normalizedActor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        saved.id,
+        'APPROVED',
+        normalizedActor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -303,8 +380,12 @@ export class AgentApplicationService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentApplication);
       const app = await repo.findOne({ where: { id } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${id} not found`);
-      if (app.status !== AgentApplicationStatus.SUBMITTED && app.status !== AgentApplicationStatus.UNDER_REVIEW) {
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${id} not found`);
+      if (
+        app.status !== AgentApplicationStatus.SUBMITTED &&
+        app.status !== AgentApplicationStatus.UNDER_REVIEW
+      ) {
         throw new ConflictException('Only SUBMITTED or UNDER_REVIEW applications can be rejected');
       }
       const previous = this.values(app);
@@ -315,7 +396,15 @@ export class AgentApplicationService {
       // Rejected application does not activate Agent — ensure no Agent created
       // If a PENDING Agent was already created (should not), we leave it but do not activate
       const saved = await repo.save(app);
-      await this.audit(manager, 'AGENT_APPLICATION', saved.id, 'REJECTED', normalizedActor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_APPLICATION',
+        saved.id,
+        'REJECTED',
+        normalizedActor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -366,17 +455,23 @@ export class AgentApplicationService {
 
   private normalizeActor(actor: string): string {
     const v = actor?.trim();
-    if (!v || v.length < 1 || v.length > 160) throw new BadRequestException('actor must be 1-160 chars');
+    if (!v || v.length < 1 || v.length > 160)
+      throw new BadRequestException('actor must be 1-160 chars');
     return v;
   }
 
   private normalizeText(value: string, field: string, max: number): string {
     const v = value?.trim();
-    if (!v || v.length < 1 || v.length > max) throw new BadRequestException(`${field} must be 1-${max} chars`);
+    if (!v || v.length < 1 || v.length > max)
+      throw new BadRequestException(`${field} must be 1-${max} chars`);
     return v;
   }
 
-  private normalizeOptionalText(value: string | null | undefined, field: string, max: number): string | null {
+  private normalizeOptionalText(
+    value: string | null | undefined,
+    field: string,
+    max: number,
+  ): string | null {
     if (value === null || value === undefined) return null;
     const v = value.trim();
     if (v.length === 0) return null;

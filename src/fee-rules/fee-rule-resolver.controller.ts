@@ -1,4 +1,12 @@
-import { BadRequestException, Controller, ForbiddenException, Get, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -64,13 +72,19 @@ export class FeeRuleResolverController {
               maximumFeeMinor: resolution.rule.maximumFeeMinor,
               vatBps: resolution.rule.vatBps,
               effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-              effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+              effectiveTo:
+                resolution.rule.effectiveTo === null
+                  ? null
+                  : resolution.rule.effectiveTo.toISOString(),
               priority: resolution.rule.priority,
             },
           }
         : {}),
       ...(resolution.ambiguousRuleIds
-        ? { ambiguousRuleIds: resolution.ambiguousRuleIds, ambiguousPriority: resolution.ambiguousPriority }
+        ? {
+            ambiguousRuleIds: resolution.ambiguousRuleIds,
+            ambiguousPriority: resolution.ambiguousPriority,
+          }
         : {}),
     };
   }
@@ -80,7 +94,9 @@ export class FeeRuleResolverController {
     if (!principal) throw new UnauthorizedException('Authentication required');
     const allowed = ['OPERATOR', 'SERVICE', 'PRIVILEGED'];
     if (!allowed.includes((principal as { type?: string }).type as string)) {
-      throw new ForbiddenException('Fee-rule resolution diagnostics are workforce-only — OPERATOR/SERVICE/PRIVILEGED only');
+      throw new ForbiddenException(
+        'Fee-rule resolution diagnostics are workforce-only — OPERATOR/SERVICE/PRIVILEGED only',
+      );
     }
   }
 }

@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 
@@ -109,15 +114,26 @@ function optionalNonEmptyString(value: unknown, field: string, maxLength: number
 
 function parseNonNegativeBigInt(value: unknown, field: string): string {
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) || value < 0) throw badRequest(`${field} must be a non-negative integer`);
+    if (!Number.isSafeInteger(value) || value < 0)
+      throw badRequest(`${field} must be a non-negative integer`);
     return String(value);
   }
   if (typeof value === 'string' && /^\d+$/.test(value.trim())) return value.trim();
   throw badRequest(`${field} must be a non-negative integer (string or number)`);
 }
 
-function assertDecisionObject(section: unknown, field: string, allowedStatuses: readonly string[], extra: (obj: Record<string, unknown>) => void = () => undefined): Record<string, unknown> {
-  if (section === null || section === undefined || typeof section !== 'object' || Array.isArray(section)) {
+function assertDecisionObject(
+  section: unknown,
+  field: string,
+  allowedStatuses: readonly string[],
+  extra: (obj: Record<string, unknown>) => void = () => undefined,
+): Record<string, unknown> {
+  if (
+    section === null ||
+    section === undefined ||
+    typeof section !== 'object' ||
+    Array.isArray(section)
+  ) {
     throw badRequest(`${field} must be a JSON object`);
   }
   const obj = section as Record<string, unknown>;
@@ -153,7 +169,10 @@ function hashRequest(input: RecordCommercialDecisionInput): string {
     principalType: input.principalType,
     principalId: input.principalId,
     currency: input.currency,
-    principalAmountMinor: parseNonNegativeBigInt(input.principalAmountMinor, 'principalAmountMinor'),
+    principalAmountMinor: parseNonNegativeBigInt(
+      input.principalAmountMinor,
+      'principalAmountMinor',
+    ),
     transactionReference: input.transactionReference,
     decisionStatus: input.decisionStatus ?? 'FINAL',
     feeDecision: input.feeDecision,
@@ -189,7 +208,9 @@ export class CommercialDecisionSnapshotService {
    * Future flow wiring MUST use recordDecisionWithManager() inside the flow's existing boundary
    * instead of this wrapper (no second transaction boundary allowed).
    */
-  async recordDecision(input: RecordCommercialDecisionInput): Promise<RecordCommercialDecisionResult> {
+  async recordDecision(
+    input: RecordCommercialDecisionInput,
+  ): Promise<RecordCommercialDecisionResult> {
     let attempt = 0;
     for (;;) {
       attempt += 1;
@@ -219,7 +240,11 @@ export class CommercialDecisionSnapshotService {
   ): Promise<RecordCommercialDecisionResult> {
     const idempotencyKey = nonEmptyString(input.idempotencyKey, 'idempotencyKey', 255);
     const product = nonEmptyString(input.product, 'product', 80);
-    const transactionReference = nonEmptyString(input.transactionReference, 'transactionReference', 255);
+    const transactionReference = nonEmptyString(
+      input.transactionReference,
+      'transactionReference',
+      255,
+    );
     const createdBy = nonEmptyString(input.createdBy, 'createdBy', 80);
     const principalType = nonEmptyString(input.principalType, 'principalType', 20);
     if (!PRINCIPAL_TYPES.includes(principalType)) {
@@ -230,8 +255,12 @@ export class CommercialDecisionSnapshotService {
       throw badRequest('principalId must be a UUID');
     }
     const currency = nonEmptyString(input.currency, 'currency', 3);
-    if (!/^[A-Z]{3}$/.test(currency)) throw badRequest('currency must be a 3-letter uppercase ISO code');
-    const principalAmountMinor = parseNonNegativeBigInt(input.principalAmountMinor, 'principalAmountMinor');
+    if (!/^[A-Z]{3}$/.test(currency))
+      throw badRequest('currency must be a 3-letter uppercase ISO code');
+    const principalAmountMinor = parseNonNegativeBigInt(
+      input.principalAmountMinor,
+      'principalAmountMinor',
+    );
 
     const direction = optionalNonEmptyString(input.direction, 'direction', 20);
     if (direction !== null && !DIRECTIONS.includes(direction)) {
@@ -240,22 +269,41 @@ export class CommercialDecisionSnapshotService {
     const channel = optionalNonEmptyString(input.channel, 'channel', 30);
     const correlationId = optionalNonEmptyString(input.correlationId, 'correlationId', 160);
     const journalId = optionalNonEmptyString(input.journalId, 'journalId', 64);
-    if (journalId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journalId)) {
+    if (
+      journalId !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journalId)
+    ) {
       throw badRequest('journalId must be a UUID or null');
     }
-    const configurationVersion = optionalNonEmptyString(input.configurationVersion, 'configurationVersion', 80);
-    const supersedesSnapshotId = optionalNonEmptyString(input.supersedesSnapshotId, 'supersedesSnapshotId', 64);
-    const supersededReason = optionalNonEmptyString(input.supersededReason, 'supersededReason', 255);
+    const configurationVersion = optionalNonEmptyString(
+      input.configurationVersion,
+      'configurationVersion',
+      80,
+    );
+    const supersedesSnapshotId = optionalNonEmptyString(
+      input.supersedesSnapshotId,
+      'supersedesSnapshotId',
+      64,
+    );
+    const supersededReason = optionalNonEmptyString(
+      input.supersededReason,
+      'supersededReason',
+      255,
+    );
     if (supersedesSnapshotId !== null && supersededReason === null) {
       throw badRequest('supersededReason is required when supersedesSnapshotId is set');
     }
 
-    const decisionStatus: CommercialDecisionInputStatus = input.decisionStatus === 'PENDING' ? 'PENDING' : 'FINAL';
+    const decisionStatus: CommercialDecisionInputStatus =
+      input.decisionStatus === 'PENDING' ? 'PENDING' : 'FINAL';
     const decidedAt = input.decidedAt !== undefined ? new Date(input.decidedAt) : new Date();
     if (Number.isNaN(decidedAt.getTime())) throw badRequest('decidedAt must be a valid date');
     let finalizedAt: Date | null = null;
     if (decisionStatus === 'FINAL') {
-      finalizedAt = input.finalizedAt !== undefined && input.finalizedAt !== null ? new Date(input.finalizedAt) : new Date();
+      finalizedAt =
+        input.finalizedAt !== undefined && input.finalizedAt !== null
+          ? new Date(input.finalizedAt)
+          : new Date();
       if (Number.isNaN(finalizedAt.getTime())) throw badRequest('finalizedAt must be a valid date');
     }
 
@@ -265,27 +313,52 @@ export class CommercialDecisionSnapshotService {
         if (v !== undefined && v !== null) parseNonNegativeBigInt(v, `feeDecision.${field}`);
       }
     });
-    assertDecisionObject(input.commissionDecision, 'commissionDecision', COMMISSION_STATUSES, (commission) => {
-      if (commission.allocations !== undefined && commission.allocations !== null && !Array.isArray(commission.allocations)) {
-        throw badRequest('commissionDecision.allocations must be an array when present');
-      }
-      if (commission.status === 'ALLOCATED' && (!Array.isArray(commission.allocations) || commission.allocations.length === 0)) {
-        throw badRequest('commissionDecision.allocations must be non-empty when status is ALLOCATED');
-      }
-    });
+    assertDecisionObject(
+      input.commissionDecision,
+      'commissionDecision',
+      COMMISSION_STATUSES,
+      (commission) => {
+        if (
+          commission.allocations !== undefined &&
+          commission.allocations !== null &&
+          !Array.isArray(commission.allocations)
+        ) {
+          throw badRequest('commissionDecision.allocations must be an array when present');
+        }
+        if (
+          commission.status === 'ALLOCATED' &&
+          (!Array.isArray(commission.allocations) || commission.allocations.length === 0)
+        ) {
+          throw badRequest(
+            'commissionDecision.allocations must be non-empty when status is ALLOCATED',
+          );
+        }
+      },
+    );
     assertDecisionObject(input.rewardDecision, 'rewardDecision', REWARD_STATUSES, (reward) => {
       if (reward.grants !== undefined && reward.grants !== null && !Array.isArray(reward.grants)) {
         throw badRequest('rewardDecision.grants must be an array when present');
       }
-      if (reward.status === 'GRANTED' && (!Array.isArray(reward.grants) || reward.grants.length === 0)) {
+      if (
+        reward.status === 'GRANTED' &&
+        (!Array.isArray(reward.grants) || reward.grants.length === 0)
+      ) {
         throw badRequest('rewardDecision.grants must be non-empty when status is GRANTED');
       }
     });
     assertDecisionObject(input.limitDecision, 'limitDecision', LIMIT_STATUSES, (limit) => {
-      if (limit.reservationIds !== undefined && limit.reservationIds !== null && !Array.isArray(limit.reservationIds)) {
+      if (
+        limit.reservationIds !== undefined &&
+        limit.reservationIds !== null &&
+        !Array.isArray(limit.reservationIds)
+      ) {
         throw badRequest('limitDecision.reservationIds must be an array when present');
       }
-      if (limit.usageIds !== undefined && limit.usageIds !== null && !Array.isArray(limit.usageIds)) {
+      if (
+        limit.usageIds !== undefined &&
+        limit.usageIds !== null &&
+        !Array.isArray(limit.usageIds)
+      ) {
         throw badRequest('limitDecision.usageIds must be an array when present');
       }
       if (limit.status === 'REJECTED' && typeof limit.failureCode !== 'string') {
@@ -482,7 +555,10 @@ export class CommercialDecisionSnapshotService {
    * including any compensating correction (corrections are NEW rows via supersedes_snapshot_id;
    * the original stays immutable and retrievable by id).
    */
-  async findByReference(product: string, transactionReference: string): Promise<Record<string, unknown> | null> {
+  async findByReference(
+    product: string,
+    transactionReference: string,
+  ): Promise<Record<string, unknown> | null> {
     const rows: Array<Record<string, unknown>> = await this.dataSource.query(
       `SELECT id, idempotency_key, product, direction, channel, principal_type, principal_id, currency,
               principal_amount_minor, transaction_reference, correlation_id, journal_id, decision_status,
@@ -517,13 +593,16 @@ export class CommercialDecisionSnapshotService {
     if (query.product) add('product = ?', nonEmptyString(query.product, 'product', 80));
     if (query.principalType) {
       const pt = nonEmptyString(query.principalType, 'principalType', 20);
-      if (!PRINCIPAL_TYPES.includes(pt)) throw badRequest(`principalType must be one of ${PRINCIPAL_TYPES.join('/')}`);
+      if (!PRINCIPAL_TYPES.includes(pt))
+        throw badRequest(`principalType must be one of ${PRINCIPAL_TYPES.join('/')}`);
       add('principal_type = ?', pt);
     }
-    if (query.principalId) add('principal_id = ?', nonEmptyString(query.principalId, 'principalId', 64));
+    if (query.principalId)
+      add('principal_id = ?', nonEmptyString(query.principalId, 'principalId', 64));
     if (query.decisionStatus) {
       const ds = nonEmptyString(query.decisionStatus, 'decisionStatus', 20);
-      if (!['PENDING', 'FINAL'].includes(ds)) throw badRequest('decisionStatus must be PENDING or FINAL');
+      if (!['PENDING', 'FINAL'].includes(ds))
+        throw badRequest('decisionStatus must be PENDING or FINAL');
       add('decision_status = ?', ds);
     }
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -532,7 +611,8 @@ export class CommercialDecisionSnapshotService {
     let take = DEFAULT_PAGE_LIMIT;
     if (query.page !== undefined) {
       page = Number.parseInt(String(query.page), 10);
-      if (!Number.isSafeInteger(page) || page < 1) throw badRequest('page must be a positive integer');
+      if (!Number.isSafeInteger(page) || page < 1)
+        throw badRequest('page must be a positive integer');
     }
     if (query.limit !== undefined) {
       take = Number.parseInt(String(query.limit), 10);

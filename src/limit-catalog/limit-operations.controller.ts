@@ -155,7 +155,8 @@ export class LimitOperationsController {
   private optionalInt(v: string | undefined, name: string): number | undefined {
     if (v === undefined || v === '') return undefined;
     const n = Number.parseInt(v, 10);
-    if (isNaN(n) || !Number.isSafeInteger(n)) throw new BadRequestException(`${name} must be an integer`);
+    if (isNaN(n) || !Number.isSafeInteger(n))
+      throw new BadRequestException(`${name} must be an integer`);
     return n;
   }
 
@@ -182,12 +183,16 @@ export class LimitOperationsController {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if ((principal.type as string) !== 'PRIVILEGED') {
-      throw new ForbiddenException('Manual reservation release requires the PRIVILEGED workforce role');
+      throw new ForbiddenException(
+        'Manual reservation release requires the PRIVILEGED workforce role',
+      );
     }
   }
 
   private actorOf(req: AuthenticatedRequest): string {
-    const p = req.authorizationPrincipal as unknown as { principalId?: string; type?: string } | undefined;
+    const p = req.authorizationPrincipal as unknown as
+      | { principalId?: string; type?: string }
+      | undefined;
     return p?.principalId ?? p?.type ?? 'workforce';
   }
 }

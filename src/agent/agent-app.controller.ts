@@ -1,4 +1,12 @@
-import { Controller, Get, NotFoundException, Param, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -56,7 +64,9 @@ export class AgentAppController {
     const principal = this.requireAgentPrincipal(req);
     const agent = await this.agentRepository.findOne({ where: { id: principal.agentId } });
     if (!agent || agent.deletedAt !== null) throw new NotFoundException('Agent not found');
-    const agentClass = agent.agentClassId ? await this.agentClassRepository.findOne({ where: { id: agent.agentClassId } }) : null;
+    const agentClass = agent.agentClassId
+      ? await this.agentClassRepository.findOne({ where: { id: agent.agentClassId } })
+      : null;
     return {
       id: agent.id,
       reference: agent.reference,
@@ -79,9 +89,17 @@ export class AgentAppController {
   @Get('capabilities')
   async getCapabilities(@Req() req: AuthenticatedRequest) {
     const principal = this.requireAgentPrincipal(req);
-    const services = [AgentService.CASH_IN, AgentService.CASH_OUT, AgentService.CASH_TO_CASH, AgentService.AGENT_FUNDING, AgentService.AGENT_DEFUNDING];
+    const services = [
+      AgentService.CASH_IN,
+      AgentService.CASH_OUT,
+      AgentService.CASH_TO_CASH,
+      AgentService.AGENT_FUNDING,
+      AgentService.AGENT_DEFUNDING,
+    ];
     const results = await Promise.all(
-      services.map((svc) => this.capabilityService.evaluateWithPrincipal(principal.agentId!, svc, principal)),
+      services.map((svc) =>
+        this.capabilityService.evaluateWithPrincipal(principal.agentId!, svc, principal),
+      ),
     );
     const permitted = results.filter((r) => r.allowed).map((r) => r.canonicalService);
     return {

@@ -186,12 +186,13 @@ describe('A2 workforce session (real PostgreSQL + real JWKS endpoint)', () => {
     // recognize nothing, leaving role/type resolution on the legacy config path this file
     // already exercises.
     const catalogue = {
-      resolveForRoleKeys: () => Promise.resolve({
-        recognizedRoleKeys: [],
-        functionCodes: [],
-        hasAdministrativeCapability: false,
-        allRecognizedRolesReadOnly: false,
-      }),
+      resolveForRoleKeys: () =>
+        Promise.resolve({
+          recognizedRoleKeys: [],
+          functionCodes: [],
+          hasAdministrativeCapability: false,
+          allRecognizedRolesReadOnly: false,
+        }),
     } as never;
     sessions = new A2WorkforceSessionService(
       dataSource,

@@ -27,9 +27,18 @@ import { CommissionRuleDefinition } from './commission-rule.entity';
  * commission policy (rates/bases/recipients/precedence) AND a separate wiring task.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([CommissionRuleDefinition]), OperationsModule, forwardRef(() => AuthorizationModule)],
+  imports: [
+    TypeOrmModule.forFeature([CommissionRuleDefinition]),
+    OperationsModule,
+    forwardRef(() => AuthorizationModule),
+  ],
   controllers: [CommissionRuleRegistryController, CommissionRuleResolverController],
-  providers: [CommissionCalculator, CommissionRuleRegistryService, CommissionRuleResolverService, CommissionEngine],
+  providers: [
+    CommissionCalculator,
+    CommissionRuleRegistryService,
+    CommissionRuleResolverService,
+    CommissionEngine,
+  ],
   exports: [CommissionRuleRegistryService, CommissionRuleResolverService, CommissionEngine],
 })
 export class CommissionModule {}

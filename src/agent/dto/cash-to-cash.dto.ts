@@ -30,7 +30,9 @@ export class CashToCashDto {
   amountMinor!: string;
 
   @IsString()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
   @Matches(/^[A-Z]{3}$/)
   currency!: string;
 

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-AGENT-CREDENTIALS-01 — real Agent credential issuance & first-login rotation (real PostgreSQL + real HTTP).
  *
@@ -10,7 +10,7 @@ import { UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
-import request = require('supertest');
+import * as request from 'supertest';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
@@ -66,26 +66,35 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     'customer.close',
   ];
   const mockWorkforceSessions = {
-    validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-'))
-        throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-        assuranceLevel: 'MFA',
-      } as any;
-    },
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+          assuranceLevel: 'MFA',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   const OP = { Authorization: 'Bearer workforce-OPERATOR' };
@@ -103,7 +112,9 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     classService = moduleRef.get(AgentClassService);
@@ -143,7 +154,10 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
 
   async function activeAgent(): Promise<string> {
     const applicationId = await approvedApplication();
-    const agent = await lifecycleService.activateFromApplication(applicationId, 'workforce-operator-1');
+    const agent = await lifecycleService.activateFromApplication(
+      applicationId,
+      'workforce-operator-1',
+    );
     expect(agent.status).toBe('ACTIVE');
     return agent.id;
   }
@@ -155,7 +169,11 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
       .send(body);
   }
 
-  async function rotatedAgentSession(): Promise<{ agentId: string; password: string; token: string }> {
+  async function rotatedAgentSession(): Promise<{
+    agentId: string;
+    password: string;
+    token: string;
+  }> {
     const agentId = await activeAgent();
     const issued = await issueHttp(agentId).expect(200);
     const temp = issued.body.temporaryPassword as string;
@@ -174,7 +192,7 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     const { temporaryPassword, credentialId, rotationRequired, passwordExpiresAt } = res.body;
     expect(temporaryPassword).toMatch(/^[A-Za-z0-9_-]{16}$/); // CSPRNG base64url, 16 chars
     expect(rotationRequired).toBe(true);
-    expect(new Date(passwordExpiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(new Date(passwordExpiresAt as string).getTime()).toBeGreaterThan(Date.now());
     const rows = await dataSource.query(
       `SELECT status, rotation_required, password_version, password_expires_at, password_hash FROM agent_authentication_credentials WHERE id=$1`,
       [credentialId],
@@ -275,7 +293,11 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     const issued = await issueHttp(agentId).expect(200);
     await request(app.getHttpServer())
       .post('/api/v1/agents/credentials/rotate')
-      .send({ agentId, currentPassword: issued.body.temporaryPassword, newPassword: 'Strong-First-88' })
+      .send({
+        agentId,
+        currentPassword: issued.body.temporaryPassword,
+        newPassword: 'Strong-First-88',
+      })
       .expect(200);
     await request(app.getHttpServer())
       .post('/api/v1/agents/sessions')
@@ -395,10 +417,10 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     expect(login.body.rotationRequired).toBe(true);
     expect(login.body.accessToken).toBeUndefined();
     // audit trail carries REISSUED + REVOKED without secret material
-    const audit = await dataSource.query(
+    const audit: Array<{ action: string }> = await dataSource.query(
       `SELECT action FROM audit_events WHERE entity_type='AGENT_AUTHENTICATION_CREDENTIAL' ORDER BY created_at`,
     );
-    const actions = audit.map((a: any) => a.action);
+    const actions = audit.map((a) => a.action);
     expect(actions).toContain('CREDENTIALS_ISSUED');
     expect(actions).toContain('PASSWORD_ROTATED');
     expect(actions).toContain('REVOKED');
@@ -428,7 +450,11 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
       .expect(200);
     const rotated = await request(app.getHttpServer())
       .post('/api/v1/agents/credentials/rotate')
-      .send({ agentId, currentPassword: reissue.body.temporaryPassword, newPassword: 'Second-Final-55' })
+      .send({
+        agentId,
+        currentPassword: reissue.body.temporaryPassword,
+        newPassword: 'Second-Final-55',
+      })
       .expect(200);
     // PIN row identical, still verifies in the new session
     const hashAfter = await dataSource.query(
@@ -447,9 +473,7 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
   // ── 15: MFA/OTP machinery untouched ──────────────────────────────────────
   it('15. credential issuance/rotation creates no MFA/OTP challenge and no customer-side security events', async () => {
     const { agentId } = await rotatedAgentSession();
-    const challenges = await dataSource.query(
-      `SELECT count(*)::text AS n FROM mfa_challenges`,
-    );
+    const challenges = await dataSource.query(`SELECT count(*)::text AS n FROM mfa_challenges`);
     expect(challenges[0].n).toBe('0');
     const customerEvents = await dataSource.query(
       `SELECT count(*)::text AS n FROM security_event_histories WHERE customer_id IS NOT NULL`,
@@ -473,7 +497,11 @@ describe('V1-AGENT-CREDENTIALS-01 (real PG) — Agent credential issuance & rota
     const issued = await issueHttp(agentId).expect(200);
     await request(app.getHttpServer())
       .post('/api/v1/agents/credentials/rotate')
-      .send({ agentId, currentPassword: issued.body.temporaryPassword, newPassword: 'Final-pass-77' })
+      .send({
+        agentId,
+        currentPassword: issued.body.temporaryPassword,
+        newPassword: 'Final-pass-77',
+      })
       .expect(200);
     expect({
       lines: await count('ledger_lines'),

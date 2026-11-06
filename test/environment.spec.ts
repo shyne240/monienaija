@@ -35,12 +35,24 @@ describe('validateEnvironment', () => {
 
   it('accepts only credential-free HTTPS URLs for the optional Cash-to-Cash locator link', () => {
     expect(validateEnvironment(validEnvironment).CASH_TO_CASH_LOCATOR_URL).toBeUndefined();
-    expect(validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'https://locator.example.ng/cash-to-cash' }).CASH_TO_CASH_LOCATOR_URL)
-      .toBe('https://locator.example.ng/cash-to-cash');
-    expect(() => validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'http://locator.example.ng/cash-to-cash' }))
-      .toThrow('Invalid environment configuration');
-    expect(() => validateEnvironment({ ...validEnvironment, CASH_TO_CASH_LOCATOR_URL: 'https://user:password@locator.example.ng/cash-to-cash' }))
-      .toThrow('Invalid environment configuration');
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        CASH_TO_CASH_LOCATOR_URL: 'https://locator.example.ng/cash-to-cash',
+      }).CASH_TO_CASH_LOCATOR_URL,
+    ).toBe('https://locator.example.ng/cash-to-cash');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        CASH_TO_CASH_LOCATOR_URL: 'http://locator.example.ng/cash-to-cash',
+      }),
+    ).toThrow('Invalid environment configuration');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        CASH_TO_CASH_LOCATOR_URL: 'https://user:password@locator.example.ng/cash-to-cash',
+      }),
+    ).toThrow('Invalid environment configuration');
   });
 
   it('keeps secure PoA uploads disabled by default with the documented 10 MB cap', () => {
@@ -82,9 +94,9 @@ describe('validateEnvironment', () => {
       POA_STORAGE_PROVIDER: 's3',
       POA_ENCRYPTION_ACTIVE_KEY_VERSION: 'v1',
     });
-    expect(() =>
-      validateEnvironment({ ...base, POA_ENCRYPTION_KEYRING_JSON: undefined }),
-    ).toThrow('Invalid environment configuration');
+    expect(() => validateEnvironment({ ...base, POA_ENCRYPTION_KEYRING_JSON: undefined })).toThrow(
+      'Invalid environment configuration',
+    );
   });
 
   it('fails fast when required database configuration is absent', () => {
@@ -105,9 +117,9 @@ describe('validateEnvironment', () => {
   // V1-RELEASE-01: the 'console' SMS provider never delivers real SMS and logs live OTP
   // codes to stdout; a production deployment must not be able to fall into it silently.
   it('rejects a production environment that has not explicitly selected a real SMS provider', () => {
-    expect(() =>
-      validateEnvironment({ ...validEnvironment, NODE_ENV: 'production' }),
-    ).toThrow('Invalid environment configuration');
+    expect(() => validateEnvironment({ ...validEnvironment, NODE_ENV: 'production' })).toThrow(
+      'Invalid environment configuration',
+    );
     expect(() =>
       validateEnvironment({
         ...validEnvironment,

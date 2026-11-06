@@ -22,7 +22,17 @@ import { LimitUsage } from './limit-usage.entity';
 import { LimitUsageService } from './limit-usage.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([LimitProfile, LimitRule, LimitAssignment, LimitUsage, LimitReservation]), OperationsModule, forwardRef(() => AuthorizationModule)],
+  imports: [
+    TypeOrmModule.forFeature([
+      LimitProfile,
+      LimitRule,
+      LimitAssignment,
+      LimitUsage,
+      LimitReservation,
+    ]),
+    OperationsModule,
+    forwardRef(() => AuthorizationModule),
+  ],
   controllers: [LimitCatalogController, LimitAssignmentController, LimitOperationsController],
   providers: [
     LimitCatalogService,

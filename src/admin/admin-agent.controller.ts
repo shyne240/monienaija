@@ -73,10 +73,7 @@ export class AdminAgentController {
   // No getSettlementPosition service found; reuse WalletService.listWallets (authoritative ledger)
   // ──────────────────────────────────────────────
   @Get(':id/financial-position')
-  async getFinancialPosition(
-    @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
-  ) {
+  async getFinancialPosition(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
     await this.requireFunction(req, 'agent.view');
     this.assertUuid(id, 'id');
@@ -175,12 +172,31 @@ export class AdminAgentController {
     ]);
   }
 
-  private toSafeAgent(agent: any): any {
+  private toSafeAgent(agent: Agent) {
     // Safe projection — hide internal fields, expose identity only (no credential hashes)
     // Agent entity: id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt
-    const { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt } =
-      agent as any;
-    return { id, reference, status, agentClassId, originApplicationId, version, createdAt, updatedAt, deletedAt };
+    const {
+      id,
+      reference,
+      status,
+      agentClassId,
+      originApplicationId,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    } = agent;
+    return {
+      id,
+      reference,
+      status,
+      agentClassId,
+      originApplicationId,
+      version,
+      createdAt,
+      updatedAt,
+      deletedAt,
+    };
   }
 
   private assertUuid(value: string, field: string): void {

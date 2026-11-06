@@ -15,7 +15,12 @@ import { AgentPasswordHashVerificationService } from './agent-password-hash-veri
 @Module({
   imports: [
     forwardRef(() => OperationsModule),
-    TypeOrmModule.forFeature([Agent, AgentAuthenticationCredential, AgentTransactionPin, AgentAuthenticationSession]),
+    TypeOrmModule.forFeature([
+      Agent,
+      AgentAuthenticationCredential,
+      AgentTransactionPin,
+      AgentAuthenticationSession,
+    ]),
   ],
   controllers: [AgentAuthenticationController],
   providers: [

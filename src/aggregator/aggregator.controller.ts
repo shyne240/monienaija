@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { AggregatorService } from './aggregator.service';
 import { AggregatorAgentRelationshipService } from './aggregator-agent-relationship.service';
@@ -49,7 +58,11 @@ export class AggregatorController {
 
   @Post(':id/suspend')
   @HttpCode(200)
-  async suspend(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: AuthenticatedRequest) {
+  async suspend(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     return this.aggregatorService.suspend(id, actor, body.reason);
   }
@@ -63,7 +76,11 @@ export class AggregatorController {
 
   @Post(':id/terminate')
   @HttpCode(200)
-  async terminate(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: AuthenticatedRequest) {
+  async terminate(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     return this.aggregatorService.terminate(id, actor, body.reason);
   }
@@ -133,7 +150,11 @@ export class AggregatorController {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     // Aggregator and Agent principals are not privileged; only SUPPORT/OPERATOR/SERVICE/PRIVILEGED can manage aggregators
-    if (principal.type === 'AGENT' || principal.type === 'CUSTOMER' || (principal.type as string) === 'AGGREGATOR') {
+    if (
+      principal.type === 'AGENT' ||
+      principal.type === 'CUSTOMER' ||
+      (principal.type as string) === 'AGGREGATOR'
+    ) {
       throw new UnauthorizedException('Privileged access required');
     }
     return principal.principalId;

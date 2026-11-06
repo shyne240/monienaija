@@ -25,7 +25,7 @@ export interface UnifiedHistoryItem {
   feeMinor: string;
   sourceWalletId: string | null;
   destinationWalletId: string | null;
-  counterparty: any | null;
+  counterparty: Record<string, unknown> | null;
   failureCode: string | null;
   failureMessage: string | null;
 }
@@ -47,7 +47,9 @@ function canonicalizeTo10(input: string): string | null {
 export class CustomerTransactionHistoryService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async listUnified(query: UnifiedHistoryQuery): Promise<{ items: UnifiedHistoryItem[]; pagination: any }> {
+  async listUnified(
+    query: UnifiedHistoryQuery,
+  ): Promise<{ items: UnifiedHistoryItem[]; pagination: any }> {
     const customerId = String(query.customerId).trim();
     if (!customerId) throw new BadRequestException('customerId is required');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) {
@@ -69,20 +71,26 @@ export class CustomerTransactionHistoryService {
     const shouldInclude = (t: string) => !typeFilter || typeFilter === t;
 
     // Fetch wallets + ledger account ids for this customer (bounded, indexed)
-    const walletRows: Array<{ id: string; ledger_account_id: string }> = await this.dataSource.query(
-      `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
-      [customerId],
-    );
+    const walletRows: Array<{ id: string; ledger_account_id: string }> =
+      await this.dataSource.query(
+        `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+        [customerId],
+      );
     const walletIds = walletRows.map((r) => r.id);
     const ledgerAccountIds = walletRows.map((r) => r.ledger_account_id).filter(Boolean);
 
     // Fetch phones and canonicalize to 10-digit for beneficiary matching
-    const phoneRows: Array<{ normalized_value: string; value: string }> = await this.dataSource.query(
-      `SELECT normalized_value, value FROM customer_contact_methods WHERE customer_id=$1 AND type='PHONE' AND deleted_at IS NULL`,
-      [customerId],
-    );
-    const rawPhones = phoneRows.map((r) => r.normalized_value ?? r.value).filter((v): v is string => !!v);
-    const canonicalPhones = rawPhones.map((v) => canonicalizeTo10(v)).filter((v): v is string => !!v);
+    const phoneRows: Array<{ normalized_value: string; value: string }> =
+      await this.dataSource.query(
+        `SELECT normalized_value, value FROM customer_contact_methods WHERE customer_id=$1 AND type='PHONE' AND deleted_at IS NULL`,
+        [customerId],
+      );
+    const rawPhones = phoneRows
+      .map((r) => r.normalized_value ?? r.value)
+      .filter((v): v is string => !!v);
+    const canonicalPhones = rawPhones
+      .map((v) => canonicalizeTo10(v))
+      .filter((v): v is string => !!v);
     const phoneSet = new Set<string>(canonicalPhones);
 
     // Count total deterministically across included types
@@ -141,7 +149,13 @@ export class CustomerTransactionHistoryService {
     if (total === 0 || offset >= total) {
       return {
         items: [],
-        pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages, hasNextPage: false },
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total,
+          totalPages,
+          hasNextPage: false,
+        },
       };
     }
 
@@ -303,7 +317,9 @@ export class CustomerTransactionHistoryService {
           [counterpartyWalletIds],
         );
         for (const w of cpWallets) walletMap.set(w.id, w);
-        const customerIds = [...new Set(cpWallets.map((w) => w.customer_id).filter(Boolean))] as string[];
+        const customerIds = [
+          ...new Set(cpWallets.map((w) => w.customer_id).filter(Boolean)),
+        ] as string[];
         if (customerIds.length > 0) {
           const profiles: Array<any> = await this.dataSource.query(
             `SELECT customer_id::text as customer_id, display_name::text as display_name, is_active, deleted_at FROM customer_profiles WHERE customer_id = ANY($1::uuid[])`,
@@ -329,7 +345,7 @@ export class CustomerTransactionHistoryService {
 
     const items: UnifiedHistoryItem[] = paginated.map((r) => {
       let direction: string = 'UNKNOWN';
-      let counterparty: any = null;
+      let counterparty: Record<string, unknown> | null = null;
       const sourceWalletId: string | null = r.source_wallet_id ?? null;
       const destinationWalletId: string | null = r.destination_wallet_id ?? null;
       let failureCode: string | null = r.failure_code ?? null;
@@ -348,10 +364,12 @@ export class CustomerTransactionHistoryService {
           if (isSource && isDest) return r.destination_wallet_id;
           return null;
         })();
-        const cpWallet = counterpartyWalletId ? walletMap.get(counterpartyWalletId) ?? null : null;
+        const cpWallet = counterpartyWalletId
+          ? (walletMap.get(counterpartyWalletId) ?? null)
+          : null;
         const cpCustomerId = cpWallet?.customer_id ?? null;
-        const cpProfile = cpCustomerId ? profileMap.get(cpCustomerId) ?? null : null;
-        const cpContact = cpCustomerId ? contactMap.get(cpCustomerId) ?? null : null;
+        const cpProfile = cpCustomerId ? (profileMap.get(cpCustomerId) ?? null) : null;
+        const cpContact = cpCustomerId ? (contactMap.get(cpCustomerId) ?? null) : null;
         counterparty = counterpartyWalletId
           ? {
               walletId: counterpartyWalletId,
@@ -384,10 +402,15 @@ export class CustomerTransactionHistoryService {
           };
         } else if (phoneSet.has(r.beneficiary_phone)) {
           if (r.status === 'UNCLAIMED') direction = 'PENDING';
-          else if (r.status === 'CLAIMED') direction = r.claimant_customer_id === customerId ? 'RECEIVED' : 'UNKNOWN';
+          else if (r.status === 'CLAIMED')
+            direction = r.claimant_customer_id === customerId ? 'RECEIVED' : 'UNKNOWN';
           else if (r.status === 'EXPIRED') direction = 'EXPIRED';
           else direction = 'PENDING';
-          counterparty = { type: 'AGENT', agentId: r.agent_id, beneficiaryPhone: r.beneficiary_phone };
+          counterparty = {
+            type: 'AGENT',
+            agentId: r.agent_id,
+            beneficiaryPhone: r.beneficiary_phone,
+          };
         } else {
           direction = 'UNKNOWN';
           counterparty = { beneficiaryPhone: r.beneficiary_phone, agentId: r.agent_id };
@@ -413,10 +436,10 @@ export class CustomerTransactionHistoryService {
         if (r.status === 'EXPIRED' && r.expired_at) completedAt = new Date(r.expired_at);
         else if (r.status === 'CLAIMED' && r.claimed_at) completedAt = new Date(r.claimed_at);
       }
-      if (r.type === 'FUNDING' && r.status === 'REJECTED' && (r as any).rejected_at) {
-        completedAt = new Date((r as any).rejected_at);
-      } else if (r.type === 'FUNDING' && r.status === 'APPROVED' && (r as any).approved_at) {
-        completedAt = new Date((r as any).approved_at);
+      if (r.type === 'FUNDING' && r.status === 'REJECTED' && r.rejected_at) {
+        completedAt = new Date(r.rejected_at);
+      } else if (r.type === 'FUNDING' && r.status === 'APPROVED' && r.approved_at) {
+        completedAt = new Date(r.approved_at);
       }
 
       // Safe projection: hide PIN/OTP/hash/journalId/ledgerAccountId/internal workforce, expose feeMinor as 0 where V1 has no fee ledger
@@ -424,14 +447,15 @@ export class CustomerTransactionHistoryService {
         id: String(r.id),
         type: String(r.type),
         status: String(r.status),
-        amountMinor: r.amount_minor?.toString() ?? '0',
+        amountMinor:
+          (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
         completedAt,
         reference: r.reference ?? null,
         narration: r.narration ?? null,
-        feeMinor: r.fee_minor?.toString() ?? '0',
+        feeMinor: (r.fee_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         sourceWalletId,
         destinationWalletId,
         counterparty,
@@ -442,7 +466,13 @@ export class CustomerTransactionHistoryService {
 
     return {
       items,
-      pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages, hasNextPage: normalizedPage < totalPages },
+      pagination: {
+        page: normalizedPage,
+        limit: normalizedLimit,
+        total,
+        totalPages,
+        hasNextPage: normalizedPage < totalPages,
+      },
     };
   }
 }

@@ -20,7 +20,10 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { normalizeCurrency } from '../common/money';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
@@ -91,9 +94,7 @@ export class AgentFinancialExecutionService {
    *  - Double-entry balanced journal via LedgerService (authoritative)
    *  - Audit without PIN/secrets
    */
-  async execute(
-    rawInput: AgentFinancialExecutionInput,
-  ): Promise<AgentFinancialExecutionResult> {
+  async execute(rawInput: AgentFinancialExecutionInput): Promise<AgentFinancialExecutionResult> {
     // Report 26 (N-02): normalize the caller-supplied correlation identifier ONCE at the
     // execution boundary so every downstream sink (journal, limit decisions, commercial
     // accounting, policy decisions, metadata) can only persist sanitized values.
@@ -103,7 +104,9 @@ export class AgentFinancialExecutionService {
     };
     const ctx = input.authorizedContext;
     if (!ctx || !ctx.agentId || !ctx.principal || !ctx.canonicalService) {
-      throw new UnauthorizedException('Agent financial execution requires an authorized transaction context');
+      throw new UnauthorizedException(
+        'Agent financial execution requires an authorized transaction context',
+      );
     }
     // Ensure context is AUTHORIZED (A11 guarantees, but double-check fail-closed)
     // The context itself does not carry decision, but we can infer via presence; if caller passes a DENIED result's context it would be undefined.
@@ -118,7 +121,9 @@ export class AgentFinancialExecutionService {
 
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 255) {
-      throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
     }
     const currency = normalizeCurrency(input.currency);
     if (currency !== 'NGN') {
@@ -133,7 +138,10 @@ export class AgentFinancialExecutionService {
       if (!UUID_PATTERN.test(line.accountId)) {
         throw new BadRequestException(`lines[${idx}].accountId must be a UUID`);
       }
-      if (line.direction !== LedgerEntryDirection.DEBIT && line.direction !== LedgerEntryDirection.CREDIT) {
+      if (
+        line.direction !== LedgerEntryDirection.DEBIT &&
+        line.direction !== LedgerEntryDirection.CREDIT
+      ) {
         throw new BadRequestException(`lines[${idx}].direction must be DEBIT or CREDIT`);
       }
       // amountMinor positivity checked by ledger, but we ensure not zero
@@ -173,7 +181,12 @@ export class AgentFinancialExecutionService {
             // If we have a journalId stored, fetch it for richer response, but not required.
             // We can return the stored body if present.
             if (body && body.journalId) {
-              return { ...body, status: 'REPLAYED' as const, replayed: true, replayedFrom: resourceId ?? undefined };
+              return {
+                ...body,
+                status: 'REPLAYED' as const,
+                replayed: true,
+                replayedFrom: resourceId ?? undefined,
+              };
             }
             // Fallback: treat as replayed with same journalId
             if (resourceId) {
@@ -207,7 +220,9 @@ export class AgentFinancialExecutionService {
               // But generic credit (funding Agent) does involve Agent's account as CREDIT, so it will be involved.
               // To keep foundation generic but safe, we enforce that Agent's ledger account must be among lines when wallet exists.
               // If caller tries to move funds between two non-Agent accounts using Agent's context, reject.
-              throw new BadRequestException('Agent financial execution must involve the Agent wallet ledger account');
+              throw new BadRequestException(
+                'Agent financial execution must involve the Agent wallet ledger account',
+              );
             }
           }
 
@@ -233,12 +248,17 @@ export class AgentFinancialExecutionService {
                 correlationId: input.correlationId ?? null,
                 now: new Date(),
                 walletLedgerAccountId: input.limit.walletLedgerAccountId ?? null,
-                principalWalletCustomerId: input.limit.principalWalletCustomerId ?? input.limit.principalId,
+                principalWalletCustomerId:
+                  input.limit.principalWalletCustomerId ?? input.limit.principalId,
               });
             } catch (error) {
               if (error instanceof HttpException) {
-                const resp: any = error.getResponse();
-                const code = (resp && (resp.error || resp.code)) as string | undefined;
+                const resp = error.getResponse() as {
+                  error?: string;
+                  code?: string;
+                  message?: string;
+                };
+                const code = resp && (resp.error || resp.code);
                 if (code && String(code).startsWith('LIMIT_')) throw error;
               }
               throw error;
@@ -253,38 +273,48 @@ export class AgentFinancialExecutionService {
           let journalId: string;
           try {
             journalId = await this.ledgerService.postJournalInTransaction(manager, {
-            idempotencyKey: ledgerIdempotencyKey,
-            currency,
-            accountingUnit,
-            reference: input.reference,
-            description: input.description,
-            correlationId: input.correlationId,
-            metadata: {
-              ...(input.metadata ?? {}),
-              agentId,
-              canonicalService: ctx.canonicalService,
-              idempotencyKey,
-              requestHash,
-            },
-            lines: input.lines.map((l) => ({
-              accountId: l.accountId,
-              direction: l.direction as LedgerEntryDirection,
-              amountMinor: l.amountMinor,
-            })),
-          });
+              idempotencyKey: ledgerIdempotencyKey,
+              currency,
+              accountingUnit,
+              reference: input.reference,
+              description: input.description,
+              correlationId: input.correlationId,
+              metadata: {
+                ...(input.metadata ?? {}),
+                agentId,
+                canonicalService: ctx.canonicalService,
+                idempotencyKey,
+                requestHash,
+              },
+              lines: input.lines.map((l) => ({
+                accountId: l.accountId,
+                direction: l.direction as LedgerEntryDirection,
+                amountMinor: l.amountMinor,
+              })),
+            });
           } catch (error) {
             if (limitIdempotencyKey && this.limitEnforcementService) {
               try {
-                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey!);
-              } catch {}
+                await this.limitEnforcementService.releaseReservationsWithManager(
+                  manager,
+                  limitIdempotencyKey!,
+                );
+              } catch {
+                // Preserve the existing best-effort reservation handling.
+              }
             }
             throw error;
           }
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
             try {
-              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
-            } catch {}
+              await this.limitEnforcementService.commitReservationsWithManager(
+                manager,
+                limitIdempotencyKey,
+              );
+            } catch {
+              // Preserve the existing best-effort reservation handling.
+            }
           }
 
           // — V1-COMMERCIAL-DECISION-03A/03B (pilot extension): record the immutable commercial
@@ -450,8 +480,8 @@ export class AgentFinancialExecutionService {
           principalAmountMinor: amountMinor,
           currency: ctx.currency,
         }),
-      // flow context evidence (allowed by the snapshot's jsonb contract) — the acting Agent
-      agentId: ctx.agentId,
+        // flow context evidence (allowed by the snapshot's jsonb contract) — the acting Agent
+        agentId: ctx.agentId,
       };
     } else {
       feeDecision = {
@@ -470,7 +500,10 @@ export class AgentFinancialExecutionService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -509,7 +542,8 @@ export class AgentFinancialExecutionService {
             {
               ...engineDecision,
               allocations: (engineDecision.allocations ?? []).map((a) =>
-                a.beneficiaryType === 'AGENT' && (a.beneficiaryId === null || a.beneficiaryId === undefined)
+                a.beneficiaryType === 'AGENT' &&
+                (a.beneficiaryId === null || a.beneficiaryId === undefined)
                   ? { ...a, beneficiaryId: ctx.agentId }
                   : a,
               ),
@@ -544,9 +578,13 @@ export class AgentFinancialExecutionService {
         commissionDecision,
       });
       feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
-      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
-        commissionEvent: 'TRANSACTION_COMPLETION',
-      });
+      commissionDecision = annotateCommissionDecisionWithPosting(
+        commissionDecision,
+        accountingOutcome,
+        {
+          commissionEvent: 'TRANSACTION_COMPLETION',
+        },
+      );
     }
 
     const limitDecision = ctx.limitOutcome
@@ -567,7 +605,9 @@ export class AgentFinancialExecutionService {
     await this.commercialDecisionSnapshotService.recordDecisionWithManager(manager, {
       idempotencyKey: `${isCashIn ? 'cash-in' : 'cash-out'}:${ctx.agentId}:${ctx.idempotencyKey}`,
       product: productCode,
-      direction: (limitInput.direction as 'INCOMING' | 'OUTGOING' | 'BOTH') ?? (isCashIn ? 'INCOMING' : 'OUTGOING'),
+      direction:
+        (limitInput.direction as 'INCOMING' | 'OUTGOING' | 'BOTH') ??
+        (isCashIn ? 'INCOMING' : 'OUTGOING'),
       channel: limitInput.channel ?? null,
       principalType: principalType as 'CUSTOMER' | 'AGENT',
       principalId: limitInput.principalId.trim(),

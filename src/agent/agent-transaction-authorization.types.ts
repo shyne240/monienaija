@@ -70,7 +70,9 @@ export interface AuthorizeAgentTransactionInput {
   /** Transaction PIN (plaintext, never logged). Undefined/empty → PIN_REQUIRED */
   pin?: string;
   /** Authenticated principal (from RuntimeAccessGuard). Undefined → UNAUTHENTICATED */
-  principal?: AuthorizationPrincipal | { type: string; agentId?: string; customerId?: string; principalId?: string };
+  principal?:
+    | AuthorizationPrincipal
+    | { type: string; agentId?: string; customerId?: string; principalId?: string };
   /** Optional actor override for PIN audit (defaults to principalId or agentId) */
   actor?: string;
 }

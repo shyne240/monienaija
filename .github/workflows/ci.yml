@@ -22,7 +22,12 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run build
-      - run: npm test
+      - name: Run unit tests with outbound network blocked
+        env:
+          NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
+          NOTIFICATION_WORKER_ENABLED: 'false'
+          CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'false'
+        run: npm test
 
   # Real PostgreSQL integration gate. The service container is a genuine PostgreSQL 16 server
   # (the major version verified against 16.14); the suites under jest.integration.config.js run
@@ -55,6 +60,8 @@ jobs:
       DB_PASSWORD: monienaija-ci-password
       DB_ADMIN_NAME: postgres
       DB_SSL: 'false'
+      NOTIFICATION_WORKER_ENABLED: 'false'
+      CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -67,7 +74,13 @@ jobs:
         run: |
           npm run migration:run:compiled
           npm run migration:show:compiled
+      # Use the repository's public test placeholders, including the complete workforce role
+      # catalogue required by AppModule integration tests. Existing CI DB env takes precedence.
+      - name: Prepare isolated PostgreSQL test configuration
+        run: node scripts/prepare-pg-test-env.js
       - name: Run the real-PostgreSQL integration suites
+        env:
+          NODE_OPTIONS: --require ./test/support/mission-25c-network-guard.cjs
         run: npm run test:pg
 
   admin-web:

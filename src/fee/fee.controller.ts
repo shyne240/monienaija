@@ -9,7 +9,11 @@ export class FeeController {
 
   @Post('calculate')
   @HttpCode(HttpStatus.OK)
-  async calculate(@Body() dto: CalculateFeeDto) {
-    return this.feeEngine.calculate(dto.amountMinor, dto.currency, dto);
+  calculate(@Body() dto: CalculateFeeDto): Promise<ReturnType<FeeEngine['calculate']>> {
+    try {
+      return Promise.resolve(this.feeEngine.calculate(dto.amountMinor, dto.currency, dto));
+    } catch (error) {
+      return Promise.reject(error as Error);
+    }
   }
 }

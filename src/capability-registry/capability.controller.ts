@@ -41,8 +41,10 @@ export class CapabilityController {
     this.requireWorkforce(req);
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let enabledBool: boolean | undefined;
     if (enabled !== undefined && enabled !== '') {
       if (enabled === 'true') enabledBool = true;
@@ -74,11 +76,13 @@ export class CapabilityController {
   @Get(':code')
   async getOne(@Param('code') code: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim())) throw new BadRequestException('capabilityCode must be 3-80 chars A-Z0-9_');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim()))
+      throw new BadRequestException('capabilityCode must be 3-80 chars A-Z0-9_');
     try {
       return await this.service.findByCode(code.trim());
     } catch (e) {
-      if ((e as Error).message?.includes('not found')) throw new NotFoundException((e as Error).message);
+      if ((e as Error).message?.includes('not found'))
+        throw new NotFoundException((e as Error).message);
       throw e;
     }
   }
@@ -86,7 +90,11 @@ export class CapabilityController {
   private requireWorkforce(req: AuthenticatedRequest): void {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'AGENT' || principal.type === 'CUSTOMER' || (principal.type as string) === 'AGGREGATOR') {
+    if (
+      principal.type === 'AGENT' ||
+      principal.type === 'CUSTOMER' ||
+      (principal.type as string) === 'AGGREGATOR'
+    ) {
       throw new UnauthorizedException('Privileged access required');
     }
   }

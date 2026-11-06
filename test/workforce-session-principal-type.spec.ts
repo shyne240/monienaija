@@ -61,10 +61,7 @@ describe('A2WorkforceSessionService — resolved principal type (Part C boundary
     } as unknown as A2WorkforceConfigurationV1;
   }
 
-  function role(
-    roleKey: string,
-    scopes: string[] = [],
-  ): A2FinanceRoleDefinitionV1 {
+  function role(roleKey: string, scopes: string[] = []): A2FinanceRoleDefinitionV1 {
     return {
       roleKey,
       displayName: roleKey,

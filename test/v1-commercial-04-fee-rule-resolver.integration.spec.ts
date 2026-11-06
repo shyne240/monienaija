@@ -33,7 +33,11 @@ import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { FeeRuleResolverService } from '../src/fee-rules/fee-rule-resolver.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   let dataSource: DataSource;
@@ -58,9 +62,18 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -93,7 +106,9 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     registry = app.get(FeeRuleRegistryService);
@@ -127,13 +142,23 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   }
 
   async function rowCount(table: string): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ${table}`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ${table}`,
+    );
     return Number(rows[0]!.cnt);
   }
 
   async function financialTables(): Promise<Record<string, number>> {
     const out: Record<string, number> = {};
-    for (const t of ['ledger_accounts', 'ledger_journals', 'ledger_lines', 'wallet_accounts', 'limit_usages', 'limit_reservations', 'commercial_decision_snapshots']) {
+    for (const t of [
+      'ledger_accounts',
+      'ledger_journals',
+      'ledger_lines',
+      'wallet_accounts',
+      'limit_usages',
+      'limit_reservations',
+      'commercial_decision_snapshots',
+    ]) {
       out[t] = await rowCount(t);
     }
     return out;
@@ -146,7 +171,11 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
 
   it('01. no rules → NOT_CONFIGURED (never an exception)', async () => {
     expect(await registry.countRules()).toBe(0);
-    const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date() });
+    const r = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('NOT_CONFIGURED');
     expect(r.productCode).toBe('WALLET_TRANSFER');
     expect(r.currency).toBe('NGN');
@@ -155,14 +184,22 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
 
   it('02. product mismatch → NOT_CONFIGURED', async () => {
     await registry.createRule(baseRule({ productCode: 'WALLET_TRANSFER' }), 'test');
-    const r = await resolver.resolve({ productCode: 'AGENT_FUNDING', currency: 'NGN', at: new Date() });
+    const r = await resolver.resolve({
+      productCode: 'AGENT_FUNDING',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('NOT_CONFIGURED');
   });
 
   it('03. currency mismatch → NOT_CONFIGURED (exact match, no conversion)', async () => {
     await registry.createRule(baseRule({ currency: 'NGN' }), 'test');
     for (const c of ['USD', 'GBP', 'EUR']) {
-      const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: c, at: new Date() });
+      const r = await resolver.resolve({
+        productCode: 'WALLET_TRANSFER',
+        currency: c,
+        at: new Date(),
+      });
       expect(r.status).toBe('NOT_CONFIGURED');
     }
   });
@@ -170,20 +207,32 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   it('04. inactive rules are ignored', async () => {
     const created = await registry.createRule(baseRule(), 'test');
     await registry.updateRule(created.id, { isActive: false, version: 1 }, 'test');
-    const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date() });
+    const r = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('NOT_CONFIGURED');
   });
 
   it('05. soft-deleted rules are ignored', async () => {
     const created = await registry.createRule(baseRule(), 'test');
     await dataSource.query(`UPDATE fee_rules SET deleted_at = NOW() WHERE id = $1`, [created.id]);
-    const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date() });
+    const r = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('NOT_CONFIGURED');
   });
 
   it('06. effective_from boundary: at == effective_from is included, one ms earlier is not', async () => {
     await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
-    const included = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date(T1) });
+    const included = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(T1),
+    });
     expect(included.status).toBe('RESOLVED');
     const excluded = await resolver.resolve({
       productCode: 'WALLET_TRANSFER',
@@ -201,24 +250,46 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       at: new Date(new Date(T2).getTime() - 1),
     });
     expect(included.status).toBe('RESOLVED');
-    const excluded = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date(T2) });
+    const excluded = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(T2),
+    });
     expect(excluded.status).toBe('NOT_CONFIGURED');
   });
 
   it('08. open-ended rule (no effective_to) resolves for any at >= effective_from', async () => {
     await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
-    for (const at of ['2030-01-01T00:00:00.000Z', '2031-06-15T12:00:00.000Z', '2099-12-31T23:59:59.999Z']) {
-      const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date(at) });
+    for (const at of [
+      '2030-01-01T00:00:00.000Z',
+      '2031-06-15T12:00:00.000Z',
+      '2099-12-31T23:59:59.999Z',
+    ]) {
+      const r = await resolver.resolve({
+        productCode: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        at: new Date(at),
+      });
       expect(r.status).toBe('RESOLVED');
     }
   });
 
   it('09. single applicable rule → RESOLVED with exact ruleId, version and fee parameters', async () => {
     const created = await registry.createRule(
-      baseRule({ flatFeeMinor: '1500', percentageBps: 25, minimumFeeMinor: '100', maximumFeeMinor: '90000', vatBps: 750 }),
+      baseRule({
+        flatFeeMinor: '1500',
+        percentageBps: 25,
+        minimumFeeMinor: '100',
+        maximumFeeMinor: '90000',
+        vatBps: 750,
+      }),
       'test',
     );
-    const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date() });
+    const r = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('RESOLVED');
     expect(r.rule).toEqual({
       ruleId: created.id,
@@ -233,59 +304,119 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       priority: 0,
     });
     // manager-bound variant returns the identical resolution (future flow-integration primitive)
-    const rm = await resolver.resolveWithManager(dataSource.manager, { productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date() });
+    const rm = await resolver.resolveWithManager(dataSource.manager, {
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(rm.status).toBe('RESOLVED');
     expect(rm.rule!.ruleId).toBe(created.id);
     expect(rm.rule!.ruleVersion).toBe(1);
   });
 
   it('10. multiple applicable rules → highest priority wins (established convention)', async () => {
-    await registry.createRule(baseRule({ effectiveFrom: T1, priority: 5, flatFeeMinor: '111' }), 'test');
-    const mid = await registry.createRule(baseRule({ effectiveFrom: '2030-01-10T00:00:00.000Z', priority: 10, flatFeeMinor: '222' }), 'test');
-    await registry.createRule(baseRule({ effectiveFrom: '2030-01-20T00:00:00.000Z', priority: 20, flatFeeMinor: '333' }), 'test');
+    await registry.createRule(
+      baseRule({ effectiveFrom: T1, priority: 5, flatFeeMinor: '111' }),
+      'test',
+    );
+    const mid = await registry.createRule(
+      baseRule({ effectiveFrom: '2030-01-10T00:00:00.000Z', priority: 10, flatFeeMinor: '222' }),
+      'test',
+    );
+    await registry.createRule(
+      baseRule({ effectiveFrom: '2030-01-20T00:00:00.000Z', priority: 20, flatFeeMinor: '333' }),
+      'test',
+    );
     // all three applicable at 2030-03-01 → priority 20 wins (not the earliest, not the lowest number)
-    const winner = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-03-01T00:00:00.000Z') });
+    const winner = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-03-01T00:00:00.000Z'),
+    });
     expect(winner.status).toBe('RESOLVED');
     expect(winner.rule!.priority).toBe(20);
     expect(winner.rule!.flatFeeMinor).toBe('333');
     // before the priority-20 window opens, priority-10 is the highest applicable
-    const earlier = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-01-15T00:00:00.000Z') });
+    const earlier = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-01-15T00:00:00.000Z'),
+    });
     expect(earlier.status).toBe('RESOLVED');
     expect(earlier.rule!.ruleId).toBe(mid.id);
     expect(earlier.rule!.priority).toBe(10);
   });
 
   it('11. same-priority ambiguity → explicit deterministic AMBIGUOUS, never a silent pick', async () => {
-    const a = await registry.createRule(baseRule({ effectiveFrom: T1, priority: 5, flatFeeMinor: '111' }), 'test');
-    const b = await registry.createRule(baseRule({ effectiveFrom: T2, priority: 5, flatFeeMinor: '222' }), 'test');
+    const a = await registry.createRule(
+      baseRule({ effectiveFrom: T1, priority: 5, flatFeeMinor: '111' }),
+      'test',
+    );
+    const b = await registry.createRule(
+      baseRule({ effectiveFrom: T2, priority: 5, flatFeeMinor: '222' }),
+      'test',
+    );
     const both = [a.id, b.id].sort();
     for (let i = 0; i < 5; i += 1) {
-      const r = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-03-01T00:00:00.000Z') });
+      const r = await resolver.resolve({
+        productCode: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        at: new Date('2030-03-01T00:00:00.000Z'),
+      });
       expect(r.status).toBe('AMBIGUOUS');
       expect(r.ambiguousRuleIds).toEqual(both); // deterministic report, sorted — never a selection
       expect(r.ambiguousPriority).toBe(5);
       expect(r.rule).toBeUndefined();
     }
     // a lower-priority rule applicable at the same time does not hide the ambiguity
-    await registry.createRule(baseRule({ effectiveFrom: '2030-01-05T00:00:00.000Z', priority: 1, flatFeeMinor: '999' }), 'test');
-    const still = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-03-01T00:00:00.000Z') });
+    await registry.createRule(
+      baseRule({ effectiveFrom: '2030-01-05T00:00:00.000Z', priority: 1, flatFeeMinor: '999' }),
+      'test',
+    );
+    const still = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-03-01T00:00:00.000Z'),
+    });
     expect(still.status).toBe('AMBIGUOUS');
     expect(still.ambiguousRuleIds).toEqual(both);
   });
 
   it('12. historical resolution: windowed rules answer past timestamps; current state never leaks in', async () => {
-    const v1 = await registry.createRule(baseRule({ effectiveFrom: T1, effectiveTo: T2, flatFeeMinor: '100' }), 'test');
-    const v2 = await registry.createRule(baseRule({ effectiveFrom: T2, flatFeeMinor: '200' }), 'test');
+    const v1 = await registry.createRule(
+      baseRule({ effectiveFrom: T1, effectiveTo: T2, flatFeeMinor: '100' }),
+      'test',
+    );
+    const v2 = await registry.createRule(
+      baseRule({ effectiveFrom: T2, flatFeeMinor: '200' }),
+      'test',
+    );
     // before any window → NOT_CONFIGURED
-    expect((await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2029-12-31T23:59:59.999Z') })).status).toBe('NOT_CONFIGURED');
+    expect(
+      (
+        await resolver.resolve({
+          productCode: 'WALLET_TRANSFER',
+          currency: 'NGN',
+          at: new Date('2029-12-31T23:59:59.999Z'),
+        })
+      ).status,
+    ).toBe('NOT_CONFIGURED');
     // inside v1 window → v1
-    const r1 = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-01-15T00:00:00.000Z') });
+    const r1 = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-01-15T00:00:00.000Z'),
+    });
     expect(r1.status).toBe('RESOLVED');
     expect(r1.rule!.ruleId).toBe(v1.id);
     expect(r1.rule!.ruleVersion).toBe(1);
     expect(r1.rule!.flatFeeMinor).toBe('100');
     // exactly at the window seam → v2 (effective_from <= at < effective_to)
-    const r2 = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date(T2) });
+    const r2 = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date(T2),
+    });
     expect(r2.status).toBe('RESOLVED');
     expect(r2.rule!.ruleId).toBe(v2.id);
     expect(r2.rule!.flatFeeMinor).toBe('200');
@@ -294,30 +425,74 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     expect(updated.version).toBe(2);
     // … and the HISTORICAL window still resolves to v1 with unchanged parameters —
     // the resolver selects the applicable row at `at`, it never re-reads "current" state afterwards
-    const r3 = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-01-15T00:00:00.000Z') });
+    const r3 = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-01-15T00:00:00.000Z'),
+    });
     expect(r3.status).toBe('RESOLVED');
     expect(r3.rule!.ruleId).toBe(v1.id);
     expect(r3.rule!.flatFeeMinor).toBe('100');
     // deactivating the current rule does not rewrite history either
     await registry.updateRule(v2.id, { isActive: false, version: 2 }, 'test');
-    const r4 = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-01-15T00:00:00.000Z') });
+    const r4 = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-01-15T00:00:00.000Z'),
+    });
     expect(r4.status).toBe('RESOLVED');
     expect(r4.rule!.ruleId).toBe(v1.id);
     // after v2's window: now NOT_CONFIGURED (v2 inactive) — the result follows applicability at `at`
-    const r5 = await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-03-01T00:00:00.000Z') });
+    const r5 = await resolver.resolve({
+      productCode: 'WALLET_TRANSFER',
+      currency: 'NGN',
+      at: new Date('2030-03-01T00:00:00.000Z'),
+    });
     expect(r5.status).toBe('NOT_CONFIGURED');
   });
 
   it('13. overlapping effective windows: different priorities resolve, same priority is ambiguous', async () => {
     // overlap with distinct priorities
-    await registry.createRule(baseRule({ productCode: 'AGENT_FUNDING', effectiveFrom: T1, priority: 10, flatFeeMinor: '10' }), 'test');
-    const higher = await registry.createRule(baseRule({ productCode: 'AGENT_FUNDING', effectiveFrom: T2, priority: 20, flatFeeMinor: '20' }), 'test');
-    const overlapped = await resolver.resolve({ productCode: 'AGENT_FUNDING', currency: 'NGN', at: new Date('2030-06-01T00:00:00.000Z') });
+    await registry.createRule(
+      baseRule({
+        productCode: 'AGENT_FUNDING',
+        effectiveFrom: T1,
+        priority: 10,
+        flatFeeMinor: '10',
+      }),
+      'test',
+    );
+    const higher = await registry.createRule(
+      baseRule({
+        productCode: 'AGENT_FUNDING',
+        effectiveFrom: T2,
+        priority: 20,
+        flatFeeMinor: '20',
+      }),
+      'test',
+    );
+    const overlapped = await resolver.resolve({
+      productCode: 'AGENT_FUNDING',
+      currency: 'NGN',
+      at: new Date('2030-06-01T00:00:00.000Z'),
+    });
     expect(overlapped.status).toBe('RESOLVED');
     expect(overlapped.rule!.ruleId).toBe(higher.id);
     // overlap with the SAME priority → explicit ambiguity
-    await registry.createRule(baseRule({ productCode: 'AGENT_FUNDING', effectiveFrom: '2030-03-01T00:00:00.000Z', priority: 20, flatFeeMinor: '30' }), 'test');
-    const ambiguous = await resolver.resolve({ productCode: 'AGENT_FUNDING', currency: 'NGN', at: new Date('2030-06-01T00:00:00.000Z') });
+    await registry.createRule(
+      baseRule({
+        productCode: 'AGENT_FUNDING',
+        effectiveFrom: '2030-03-01T00:00:00.000Z',
+        priority: 20,
+        flatFeeMinor: '30',
+      }),
+      'test',
+    );
+    const ambiguous = await resolver.resolve({
+      productCode: 'AGENT_FUNDING',
+      currency: 'NGN',
+      at: new Date('2030-06-01T00:00:00.000Z'),
+    });
     expect(ambiguous.status).toBe('AMBIGUOUS');
     expect(ambiguous.ambiguousRuleIds!.length).toBe(2);
     expect(ambiguous.ambiguousRuleIds).toContain(higher.id);
@@ -327,7 +502,11 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     const created = await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
     const results = new Set<string>();
     for (let i = 0; i < 10; i += 1) {
-      const r = await resolver.resolve({ productCode: 'wallet_transfer', currency: 'ngn', at: '2030-05-05T05:05:05.000Z' });
+      const r = await resolver.resolve({
+        productCode: 'wallet_transfer',
+        currency: 'ngn',
+        at: '2030-05-05T05:05:05.000Z',
+      });
       expect(r.status).toBe('RESOLVED');
       expect(r.rule!.ruleId).toBe(created.id);
       expect(r.productCode).toBe('WALLET_TRANSFER'); // normalized against the catalogue identity
@@ -338,23 +517,46 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   });
 
   it('15. safe failure for invalid/unknown products: malformed 400, unknown catalogue product NOT_CONFIGURED', async () => {
-    await expect(resolver.resolve({ productCode: '', currency: 'NGN' })).rejects.toThrow('productCode is required');
-    await expect(resolver.resolve({ productCode: 'bad code!', currency: 'NGN' })).rejects.toThrow('productCode must match');
-    await expect(resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NAIRA' })).rejects.toThrow('currency must be a 3-letter');
-    await expect(resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: 'not-a-date' })).rejects.toThrow('at must be a valid date');
+    await expect(resolver.resolve({ productCode: '', currency: 'NGN' })).rejects.toThrow(
+      'productCode is required',
+    );
+    await expect(resolver.resolve({ productCode: 'bad code!', currency: 'NGN' })).rejects.toThrow(
+      'productCode must match',
+    );
+    await expect(
+      resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NAIRA' }),
+    ).rejects.toThrow('currency must be a 3-letter');
+    await expect(
+      resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: 'not-a-date' }),
+    ).rejects.toThrow('at must be a valid date');
     // syntactically valid but not in the authoritative catalogue → deterministic NOT_CONFIGURED, no exception
-    const unknown = await resolver.resolve({ productCode: 'NO_SUCH_PRODUCT', currency: 'NGN', at: new Date() });
+    const unknown = await resolver.resolve({
+      productCode: 'NO_SUCH_PRODUCT',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(unknown.status).toBe('NOT_CONFIGURED');
   });
 
   it('16. NOT_CONFIGURED ≠ ZERO: an explicit zero-fee rule resolves as RESOLVED with flatFeeMinor 0', async () => {
-    const free = await registry.createRule(baseRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '0', percentageBps: null }), 'test');
-    const r = await resolver.resolve({ productCode: 'WALLET_TO_CASH', currency: 'NGN', at: new Date() });
+    const free = await registry.createRule(
+      baseRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '0', percentageBps: null }),
+      'test',
+    );
+    const r = await resolver.resolve({
+      productCode: 'WALLET_TO_CASH',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(r.status).toBe('RESOLVED');
     expect(r.rule!.ruleId).toBe(free.id);
     expect(r.rule!.flatFeeMinor).toBe('0');
     // a product with NO rule at all is NOT_CONFIGURED — a distinct semantic
-    const none = await resolver.resolve({ productCode: 'CASH_TO_CASH', currency: 'NGN', at: new Date() });
+    const none = await resolver.resolve({
+      productCode: 'CASH_TO_CASH',
+      currency: 'NGN',
+      at: new Date(),
+    });
     expect(none.status).toBe('NOT_CONFIGURED');
     expect(none.rule).toBeUndefined();
   });
@@ -362,7 +564,9 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
   it('17. workforce-only read-only diagnostic route GET /internal/fee-rules/resolve', async () => {
     const created = await registry.createRule(baseRule({ flatFeeMinor: '250' }), 'test');
     // unauthenticated
-    await request(app.getHttpServer()).get('/api/v1/internal/fee-rules/resolve?productCode=WALLET_TRANSFER').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules/resolve?productCode=WALLET_TRANSFER')
+      .expect(401);
     // non-workforce principals
     for (const t of ['customer', 'agent', 'aggregator', 'support']) {
       await request(app.getHttpServer())
@@ -390,7 +594,9 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
     expect(empty.body.status).toBe('NOT_CONFIGURED');
     // explicit `at` parameter drives historical resolution over HTTP too
     const past = await request(app.getHttpServer())
-      .get(`/api/v1/internal/fee-rules/resolve?productCode=WALLET_TRANSFER&at=2020-01-01T00:00:00.000Z`)
+      .get(
+        `/api/v1/internal/fee-rules/resolve?productCode=WALLET_TRANSFER&at=2020-01-01T00:00:00.000Z`,
+      )
       .set('Authorization', auth('operator'))
       .expect(200);
     expect(past.body.status).toBe('NOT_CONFIGURED'); // rule is effective from now, not in 2020
@@ -412,11 +618,22 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
 
   it('18. the resolver is read-only: zero mutation of wallets, ledger, limits, reservations, snapshots', async () => {
     await registry.createRule(baseRule({ effectiveFrom: T1 }), 'test');
-    await registry.createRule(baseRule({ productCode: 'AGENT_FUNDING', effectiveFrom: T1, effectiveTo: T2, priority: 5 }), 'test');
+    await registry.createRule(
+      baseRule({ productCode: 'AGENT_FUNDING', effectiveFrom: T1, effectiveTo: T2, priority: 5 }),
+      'test',
+    );
     const before = await financialTables();
     for (let i = 0; i < 25; i += 1) {
-      await resolver.resolve({ productCode: 'WALLET_TRANSFER', currency: 'NGN', at: new Date('2030-06-01T00:00:00.000Z') });
-      await resolver.resolve({ productCode: 'AGENT_FUNDING', currency: 'NGN', at: new Date('2030-01-15T00:00:00.000Z') });
+      await resolver.resolve({
+        productCode: 'WALLET_TRANSFER',
+        currency: 'NGN',
+        at: new Date('2030-06-01T00:00:00.000Z'),
+      });
+      await resolver.resolve({
+        productCode: 'AGENT_FUNDING',
+        currency: 'NGN',
+        at: new Date('2030-01-15T00:00:00.000Z'),
+      });
       await resolver.resolve({ productCode: 'NO_SUCH_PRODUCT', currency: 'NGN', at: new Date() });
     }
     const after = await financialTables();
@@ -464,14 +681,20 @@ describe('V1-COMMERCIAL-04 Fee Rule Resolution foundation (real PG)', () => {
       expect(source).not.toContain('calculate('); // no fee calculation
     }
     // the pilot wiring is evidence-only: no fee calculation/charging anywhere in TransferService
-    const transferSource = readFileSync(join(__dirname, '../src/transfer/transfer.service.ts'), 'utf8');
+    const transferSource = readFileSync(
+      join(__dirname, '../src/transfer/transfer.service.ts'),
+      'utf8',
+    );
     expect(transferSource).toContain('resolveWithManager'); // read-only resolution inside the tx
     expect(transferSource).toContain('recordDecisionWithManager'); // snapshot joins the SAME tx
     expect(transferSource).not.toMatch(/\.recordDecision\(/); // never the second-transaction variant
     expect(transferSource).not.toContain('feeEngine'); // no FeeEngine participation
     expect(transferSource).not.toContain('calculate('); // no fee calculation
     // the resolver itself never writes: no INSERT/UPDATE/DELETE anywhere in the service
-    const resolverSource = readFileSync(join(__dirname, '../src/fee-rules/fee-rule-resolver.service.ts'), 'utf8');
+    const resolverSource = readFileSync(
+      join(__dirname, '../src/fee-rules/fee-rule-resolver.service.ts'),
+      'utf8',
+    );
     expect(resolverSource).not.toContain('INSERT INTO');
     expect(resolverSource).not.toContain('UPDATE ');
     expect(resolverSource).not.toContain('DELETE FROM');

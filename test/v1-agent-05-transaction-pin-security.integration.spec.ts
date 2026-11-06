@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
-// @ts-nocheck
+
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { AgentService } from '../src/agent/agent-service.enum';
@@ -18,10 +18,18 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 function encodePbkdf2(secret: string): string {
   const salt = randomBytes(16);
@@ -72,7 +80,9 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -89,7 +99,10 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
-    if (dataSource) await destroyIntegrationDataSource(dataSource).catch(() => dataSource.destroy().catch(() => undefined));
+    if (dataSource)
+      await destroyIntegrationDataSource(dataSource).catch(() =>
+        dataSource.destroy().catch(() => undefined),
+      );
   }, 60000);
 
   beforeEach(async () => {
@@ -155,14 +168,24 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
     };
   }
 
-  async function createCustomerWithPhoneAndPin(phoneCanonical: string, pin: string, displayName = 'Customer V1A05') {
+  async function createCustomerWithPhoneAndPin(
+    phoneCanonical: string,
+    pin: string,
+    displayName = 'Customer V1A05',
+  ) {
     const custRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [`cust-v1a05-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, displayName]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, displayName],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      [customerId, phoneCanonical],
+    );
     await customerPinService.setTransactionPin(customerId, {
       pinHash: encodePbkdf2(pin),
       hashAlgorithm: 'PBKDF2',
@@ -185,13 +208,13 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       [customerId],
     );
     if (enrollRows[0]) {
-      enrollmentId = enrollRows[0]!.id;
+      enrollmentId = enrollRows[0].id;
       const methodRows: Array<{ id: string }> = await dataSource.query(
         `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND customer_id=$2 AND status='ENABLED' AND deleted_at IS NULL LIMIT 1`,
         [enrollmentId, customerId],
       );
       if (methodRows[0]) {
-        methodId = methodRows[0]!.id;
+        methodId = methodRows[0].id;
       } else {
         const mRows: Array<{ id: string }> = await dataSource.query(
           `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP',$4,'ENABLED') RETURNING id`,
@@ -261,7 +284,11 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
         { accountId: sys.id, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: customerWalletLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: customerWalletLedgerId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
@@ -275,7 +302,12 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
     return { customerId, wallet };
   }
 
-  async function cashOutAs(agentId: string, agentPin: string, customerId: string, amountMinor: string) {
+  async function cashOutAs(
+    agentId: string,
+    agentPin: string,
+    customerId: string,
+    amountMinor: string,
+  ) {
     const otp = String(100000 + Math.floor(Math.random() * 899999));
     const { challengeId } = await createMfaChallenge(customerId, otp);
     return cashOutService.execute({
@@ -293,7 +325,10 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
   }
 
   function setPinViaHttp(token: string, pin: string) {
-    return request(app.getHttpServer()).post('/api/v1/agents/me/transaction-pin').set('Authorization', `Bearer ${token}`).send({ pin });
+    return request(app.getHttpServer())
+      .post('/api/v1/agents/me/transaction-pin')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin });
   }
 
   function changePinViaHttp(token: string, currentPin: string, newPin: string) {
@@ -304,11 +339,16 @@ describe('V1-AGENT-05 Agent Transaction PIN security (real PostgreSQL)', () => {
   }
 
   function statusViaHttp(token: string) {
-    return request(app.getHttpServer()).get('/api/v1/agents/me/transaction-pin').set('Authorization', `Bearer ${token}`);
+    return request(app.getHttpServer())
+      .get('/api/v1/agents/me/transaction-pin')
+      .set('Authorization', `Bearer ${token}`);
   }
 
   function verifyViaHttp(token: string, pin: string) {
-    return request(app.getHttpServer()).post('/api/v1/agents/me/transaction-pin/verify').set('Authorization', `Bearer ${token}`).send({ pin });
+    return request(app.getHttpServer())
+      .post('/api/v1/agents/me/transaction-pin/verify')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ pin });
   }
 
   // ── Tests ───────────────────────────────────────────────────────────────

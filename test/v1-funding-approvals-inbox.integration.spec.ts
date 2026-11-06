@@ -72,7 +72,8 @@ describe('V1-SPRINT2-FUNDING-INBOX-01 global funding approvals inbox (real Postg
       {
         roleKey: 'FINANCE_CONTROLLER',
         displayName: 'Finance Controller test fixture',
-        description: 'Provides the legacy approval scope used by the existing approval workflow tests.',
+        description:
+          'Provides the legacy approval scope used by the existing approval workflow tests.',
         enabled: true,
         scopes: ['privileged:approve'],
         applicableActions: [],
@@ -319,14 +320,16 @@ describe('V1-SPRINT2-FUNDING-INBOX-01 global funding approvals inbox (real Postg
     const own = await request(app.getHttpServer())
       .post(`/api/v1/internal/agents/${agentA}/fund-request`)
       .set(headers(dual.token))
-      .send({ amountMinor: '2500', currency: 'NGN', idempotencyKey: randomUUID(), reason: 'Dual-role own request' })
+      .send({
+        amountMinor: '2500',
+        currency: 'NGN',
+        idempotencyKey: randomUUID(),
+        reason: 'Dual-role own request',
+      })
       .expect(201);
     const other = await createRequest(agentA, 'fund');
 
-    const res = await request(app.getHttpServer())
-      .get(inbox)
-      .set(headers(dual.token))
-      .expect(200);
+    const res = await request(app.getHttpServer()).get(inbox).set(headers(dual.token)).expect(200);
     const ids = (res.body.items as Array<{ id: string }>).map((i) => i.id);
     expect(ids).not.toContain(own.body.id); // maker-checker independence, server-side
     expect(ids).toContain(other.id); // other makers' work is still discoverable

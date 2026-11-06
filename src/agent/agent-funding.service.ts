@@ -38,12 +38,18 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { normalizeCurrency, parsePositiveMinorUnits } from '../common/money';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
 import { AgentServiceCapabilityService } from './agent-service-capability.service';
 import { AgentStatus } from './agent.enums';
 import { AgentService } from './agent-service.enum';
 import { AggregatorStatus } from '../aggregator/aggregator.enums';
-import { AGENT_FUNDING_ACTIONS, governedChangeFingerprint } from '../authorization/governed-action.registry';
+import {
+  AGENT_FUNDING_ACTIONS,
+  governedChangeFingerprint,
+} from '../authorization/governed-action.registry';
 import { PrivilegedActionApproval } from '../authorization/privileged-action-approval.entity';
 import { PrivilegedActionApprovalService } from '../authorization/privileged-action-approval.service';
 import { PrivilegedActionApprovalStatus } from '../authorization/privileged-action-approval.enums';
@@ -259,11 +265,13 @@ export class AgentFundingService {
       await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
         `agent-funding-request:${direction}:${payload.agentId}:${payload.idempotencyKey}`,
       ]);
-      const existingRows = databaseRows<AgentFundingRequestDbRow>(await manager.query(
-        `SELECT * FROM agent_funding_requests
+      const existingRows = databaseRows<AgentFundingRequestDbRow>(
+        await manager.query(
+          `SELECT * FROM agent_funding_requests
          WHERE direction=$1 AND agent_id=$2 AND idempotency_key=$3 LIMIT 1`,
-        [direction, payload.agentId, payload.idempotencyKey],
-      ));
+          [direction, payload.agentId, payload.idempotencyKey],
+        ),
+      );
       const existing = existingRows[0];
       if (existing) {
         if (
@@ -320,8 +328,9 @@ export class AgentFundingService {
         );
       }
 
-      const rows = databaseRows<{ id: string }>(await manager.query(
-        `INSERT INTO agent_funding_requests (
+      const rows = databaseRows<{ id: string }>(
+        await manager.query(
+          `INSERT INTO agent_funding_requests (
            id, direction, agent_id, aggregator_id, amount_minor, currency, idempotency_key,
            reference, correlation_id, description, metadata, is_aggregator_funding,
            request_hash, approval_fingerprint, approval_id, maker_principal_id, maker_role,
@@ -330,26 +339,27 @@ export class AgentFundingService {
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16,
            'AGENT_NETWORK_MANAGER', $17
          ) RETURNING id`,
-        [
-          id,
-          direction,
-          payload.agentId,
-          payload.aggregatorId,
-          payload.amountMinor,
-          payload.currency,
-          payload.idempotencyKey,
-          payload.reference,
-          payload.correlationId,
-          payload.description,
-          JSON.stringify(payload.metadata),
-          payload.isAggregatorFunding,
-          requestHash,
-          approvalFingerprint,
-          approval.id,
-          principal.principalId,
-          principal.type,
-        ],
-      ));
+          [
+            id,
+            direction,
+            payload.agentId,
+            payload.aggregatorId,
+            payload.amountMinor,
+            payload.currency,
+            payload.idempotencyKey,
+            payload.reference,
+            payload.correlationId,
+            payload.description,
+            JSON.stringify(payload.metadata),
+            payload.isAggregatorFunding,
+            requestHash,
+            approvalFingerprint,
+            approval.id,
+            principal.principalId,
+            principal.type,
+          ],
+        ),
+      );
       if (!rows[0]) throw new ConflictException('Agent funding request was not persisted');
       await this.auditService.record(manager, {
         entityType: 'AGENT_FUNDING_REQUEST',
@@ -379,8 +389,9 @@ export class AgentFundingService {
 
   async getFundingRequest(requestId: string): Promise<AgentFundingRequestView> {
     if (!UUID_PATTERN.test(requestId)) throw new BadRequestException('requestId must be a UUID');
-    const rows = databaseRows<AgentFundingRequestDbRow>(await this.dataSource.query(
-      `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
+    const rows = databaseRows<AgentFundingRequestDbRow>(
+      await this.dataSource.query(
+        `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
               a.expires_at AS approval_expires_at, a.reason AS approval_reason,
               a.action_type AS approval_action_type,
               a.resource_type AS approval_resource_type, a.resource_id AS approval_resource_id,
@@ -389,8 +400,9 @@ export class AgentFundingService {
          FROM agent_funding_requests r
          JOIN privileged_action_approvals a ON a.id=r.approval_id
         WHERE r.id=$1 LIMIT 1`,
-      [requestId],
-    ));
+        [requestId],
+      ),
+    );
     if (!rows[0]) throw new NotFoundException('Agent funding request not found');
     return this.toFundingRequestView(rows[0]);
   }
@@ -412,15 +424,18 @@ export class AgentFundingService {
         ['AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER'].includes(role),
       )
     ) {
-      throw new ForbiddenException('Funding instruction access requires an entitled MFA workforce session');
+      throw new ForbiddenException(
+        'Funding instruction access requires an entitled MFA workforce session',
+      );
     }
     const checker = principal.roles.includes('FINANCE_CONTROLLER');
     const canFund = principal.scopes.includes('agent.fund');
     const canDefund = principal.scopes.includes('agent.defund');
     if (!canFund && !canDefund) throw new ForbiddenException('Funding function required');
 
-    const rows = databaseRows<AgentFundingRequestDbRow>(await this.dataSource.query(
-      `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
+    const rows = databaseRows<AgentFundingRequestDbRow>(
+      await this.dataSource.query(
+        `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
               a.expires_at AS approval_expires_at, a.reason AS approval_reason,
               a.action_type AS approval_action_type,
               a.resource_type AS approval_resource_type, a.resource_id AS approval_resource_id,
@@ -434,8 +449,16 @@ export class AgentFundingService {
           AND (r.maker_principal_id=$5 OR r.checker_principal_id=$5 OR ($6::boolean AND r.status='PENDING'))
         ORDER BY r.created_at DESC, r.id DESC
         LIMIT 50`,
-      [agentId, idempotencyKey?.trim() ?? null, canFund, canDefund, principal.principalId, checker],
-    ));
+        [
+          agentId,
+          idempotencyKey?.trim() ?? null,
+          canFund,
+          canDefund,
+          principal.principalId,
+          checker,
+        ],
+      ),
+    );
 
     return rows.map((row) => {
       const view = this.toFundingRequestView(row);
@@ -498,15 +521,18 @@ export class AgentFundingService {
     const whereClause = `WHERE r.maker_principal_id <> $1
           AND ($2::text IS NULL OR r.status=$2)
           AND ($3::text IS NULL OR r.direction=$3)`;
-    const countRows = databaseRows<{ cnt: string }>(await this.dataSource.query(
-      `SELECT count(*)::text AS cnt
+    const countRows = databaseRows<{ cnt: string }>(
+      await this.dataSource.query(
+        `SELECT count(*)::text AS cnt
          FROM agent_funding_requests r
          JOIN privileged_action_approvals a ON a.id=r.approval_id
         ${whereClause}`,
-      [principal.principalId, status, direction],
-    ));
-    const rows = databaseRows<AgentFundingRequestDbRow>(await this.dataSource.query(
-      `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
+        [principal.principalId, status, direction],
+      ),
+    );
+    const rows = databaseRows<AgentFundingRequestDbRow>(
+      await this.dataSource.query(
+        `SELECT r.*, a.status AS approval_status, a.approved_by AS approval_approved_by,
               a.expires_at AS approval_expires_at, a.reason AS approval_reason,
               a.action_type AS approval_action_type,
               a.resource_type AS approval_resource_type, a.resource_id AS approval_resource_id,
@@ -517,8 +543,9 @@ export class AgentFundingService {
         ${whereClause}
         ORDER BY r.created_at DESC, r.id DESC
         LIMIT $4 OFFSET $5`,
-      [principal.principalId, status, direction, limit, (page - 1) * limit],
-    ));
+        [principal.principalId, status, direction, limit, (page - 1) * limit],
+      ),
+    );
 
     const items = rows.map((row) => {
       const view = this.toFundingRequestView(row);
@@ -546,17 +573,20 @@ export class AgentFundingService {
     if (request.makerPrincipalId === principal.principalId) {
       throw new ForbiddenException('Funding maker cannot reject their own request');
     }
-    if (request.status !== 'PENDING') throw new ConflictException('Agent funding request is no longer pending');
+    if (request.status !== 'PENDING')
+      throw new ConflictException('Agent funding request is no longer pending');
     const comment = reason?.trim();
-    if (!comment || comment.length > 500) throw new BadRequestException('A rejection reason of 1–500 characters is required');
+    if (!comment || comment.length > 500)
+      throw new BadRequestException('A rejection reason of 1–500 characters is required');
 
     const outcome = await this.dataSource.transaction(async (manager) => {
       // Lock in the same order as execution (request, then approval) so approve/reject/execute
       // races serialize without splitting approval and request state across transactions.
-      const locked = databaseRows<AgentFundingRequestDbRow>(await manager.query(
-        `SELECT * FROM agent_funding_requests WHERE id=$1 FOR UPDATE`,
-        [requestId],
-      ));
+      const locked = databaseRows<AgentFundingRequestDbRow>(
+        await manager.query(`SELECT * FROM agent_funding_requests WHERE id=$1 FOR UPDATE`, [
+          requestId,
+        ]),
+      );
       const row = locked[0];
       if (!row || row.status !== 'PENDING') {
         throw new ConflictException('Agent funding request is no longer pending');
@@ -571,18 +601,18 @@ export class AgentFundingService {
       const payload = this.payloadFromFundingRequest(row);
       const action = AGENT_FUNDING_ACTIONS[row.direction];
       const requestHash = this.computeRequestHash({ direction: row.direction, ...payload });
-      const fingerprint = governedChangeFingerprint(
-        action.action,
-        action.resourceType,
-        row.id,
-        { direction: row.direction, ...payload },
-      );
+      const fingerprint = governedChangeFingerprint(action.action, action.resourceType, row.id, {
+        direction: row.direction,
+        ...payload,
+      });
       if (
         requestHash !== row.request_hash ||
         fingerprint !== row.approval_fingerprint ||
         row.approval_id !== request.approvalId
       ) {
-        throw new ConflictException('Agent funding request payload or approval binding has changed');
+        throw new ConflictException(
+          'Agent funding request payload or approval binding has changed',
+        );
       }
 
       const decision = await this.approvalService.rejectInTransaction(manager, {
@@ -605,17 +635,21 @@ export class AgentFundingService {
         approval.actionFingerprint !== row.approval_fingerprint ||
         approval.status !== PrivilegedActionApprovalStatus.REJECTED
       ) {
-        throw new ConflictException('The rejection approval does not match the stored funding request');
+        throw new ConflictException(
+          'The rejection approval does not match the stored funding request',
+        );
       }
 
       const now = new Date();
-      const updated = databaseRows<AgentFundingRequestDbRow>(await manager.query(
-        `UPDATE agent_funding_requests
+      const updated = databaseRows<AgentFundingRequestDbRow>(
+        await manager.query(
+          `UPDATE agent_funding_requests
          SET status='REJECTED', checker_principal_id=$2, checker_role='FINANCE_CONTROLLER',
              checker_type=$3, rejection_reason=$4, rejected_at=$5, updated_at=$5, version=version+1
          WHERE id=$1 AND status='PENDING' RETURNING *`,
-        [requestId, principal.principalId, principal.type, comment, now],
-      ));
+          [requestId, principal.principalId, principal.type, comment, now],
+        ),
+      );
       if (!updated[0]) throw new ConflictException('Agent funding request was already resolved');
       await this.auditService.record(manager, {
         entityType: 'AGENT_FUNDING_REQUEST',
@@ -656,12 +690,14 @@ export class AgentFundingService {
     this.assertCheckerPrincipal(checker, request.direction);
     if (expectedInstruction) {
       const expectedPayload = this.normalizeFundingPayload(expectedInstruction, request.direction);
-      const expectedHash = this.computeRequestHash({ direction: request.direction, ...expectedPayload });
-      if (
-        expectedPayload.agentId !== request.agentId ||
-        expectedHash !== request.requestHash
-      ) {
-        throw new ForbiddenException('Executed instruction does not match the approved funding request');
+      const expectedHash = this.computeRequestHash({
+        direction: request.direction,
+        ...expectedPayload,
+      });
+      if (expectedPayload.agentId !== request.agentId || expectedHash !== request.requestHash) {
+        throw new ForbiddenException(
+          'Executed instruction does not match the approved funding request',
+        );
       }
     }
     if (request.status === 'EXECUTED') {
@@ -671,10 +707,11 @@ export class AgentFundingService {
       throw new ConflictException(`Agent funding request is ${request.status.toLowerCase()}`);
     }
 
-    const rows = databaseRows<AgentFundingRequestDbRow>(await this.dataSource.query(
-      `SELECT * FROM agent_funding_requests WHERE id=$1 LIMIT 1`,
-      [requestId],
-    ));
+    const rows = databaseRows<AgentFundingRequestDbRow>(
+      await this.dataSource.query(`SELECT * FROM agent_funding_requests WHERE id=$1 LIMIT 1`, [
+        requestId,
+      ]),
+    );
     const row = rows[0];
     if (!row) throw new NotFoundException('Agent funding request not found');
     const payload = this.payloadFromFundingRequest(row);
@@ -686,7 +723,10 @@ export class AgentFundingService {
       row.id,
       { direction: row.direction, ...payload },
     );
-    if (expectedRequestHash !== row.request_hash || expectedFingerprint !== row.approval_fingerprint) {
+    if (
+      expectedRequestHash !== row.request_hash ||
+      expectedFingerprint !== row.approval_fingerprint
+    ) {
       throw new ConflictException('Agent funding request payload or fingerprint has changed');
     }
 
@@ -702,7 +742,9 @@ export class AgentFundingService {
       approval.resourceId !== row.id ||
       approval.actionFingerprint !== row.approval_fingerprint
     ) {
-      throw new ForbiddenException('A matching independent FINANCE_CONTROLLER approval is required');
+      throw new ForbiddenException(
+        'A matching independent FINANCE_CONTROLLER approval is required',
+      );
     }
 
     const input: FundingInput = {
@@ -748,7 +790,10 @@ export class AgentFundingService {
       isAggregatorFunding: request.isAggregatorFunding,
     };
     const action = AGENT_FUNDING_ACTIONS[request.direction];
-    const expectedRequestHash = this.computeRequestHash({ direction: request.direction, ...payload });
+    const expectedRequestHash = this.computeRequestHash({
+      direction: request.direction,
+      ...payload,
+    });
     const expectedFingerprint = governedChangeFingerprint(
       action.action,
       action.resourceType,
@@ -848,15 +893,17 @@ export class AgentFundingService {
 
     const requestHash = this.computeRequestHash({ direction, ...payload });
 
-    const scope = direction === 'FUND' ? `agent-funding.v1:${agentId}` : `agent-defunding.v1:${agentId}`;
+    const scope =
+      direction === 'FUND' ? `agent-funding.v1:${agentId}` : `agent-defunding.v1:${agentId}`;
 
     for (let attempt = 0; attempt < MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
       try {
         return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-          const lockedRequests = databaseRows<AgentFundingRequestDbRow>(await manager.query(
-            `SELECT * FROM agent_funding_requests WHERE id=$1 FOR UPDATE`,
-            [approvalContext.requestId],
-          ));
+          const lockedRequests = databaseRows<AgentFundingRequestDbRow>(
+            await manager.query(`SELECT * FROM agent_funding_requests WHERE id=$1 FOR UPDATE`, [
+              approvalContext.requestId,
+            ]),
+          );
           const lockedRequest = lockedRequests[0];
           if (!lockedRequest) throw new NotFoundException('Agent funding request not found');
           const lockedPayload = this.payloadFromFundingRequest(lockedRequest);
@@ -880,18 +927,18 @@ export class AgentFundingService {
             lockedRequest.approval_fingerprint !== approvalContext.approvalFingerprint ||
             lockedFingerprint !== approvalContext.approvalFingerprint
           ) {
-            throw new ConflictException('Agent funding approval no longer matches the stored request payload');
+            throw new ConflictException(
+              'Agent funding approval no longer matches the stored request payload',
+            );
           }
           if (lockedRequest.status === 'EXECUTED') {
             if (lockedRequest.checker_principal_id !== principal.principalId) {
               throw new ForbiddenException('Funding result recovery requires the original checker');
             }
-            const priorApproval = await manager
-              .getRepository(PrivilegedActionApproval)
-              .findOne({
-                where: { id: lockedRequest.approval_id },
-                lock: { mode: 'pessimistic_read' },
-              });
+            const priorApproval = await manager.getRepository(PrivilegedActionApproval).findOne({
+              where: { id: lockedRequest.approval_id },
+              lock: { mode: 'pessimistic_read' },
+            });
             if (
               !priorApproval ||
               priorApproval.status !== PrivilegedActionApprovalStatus.CONSUMED ||
@@ -960,12 +1007,28 @@ export class AgentFundingService {
           const lines =
             direction === 'FUND'
               ? [
-                  { accountId: poolId, direction: LedgerEntryDirection.DEBIT as const, amountMinor: amountString },
-                  { accountId: walletInTx.ledgerAccountId, direction: LedgerEntryDirection.CREDIT as const, amountMinor: amountString },
+                  {
+                    accountId: poolId,
+                    direction: LedgerEntryDirection.DEBIT as const,
+                    amountMinor: amountString,
+                  },
+                  {
+                    accountId: walletInTx.ledgerAccountId,
+                    direction: LedgerEntryDirection.CREDIT as const,
+                    amountMinor: amountString,
+                  },
                 ]
               : [
-                  { accountId: walletInTx.ledgerAccountId, direction: LedgerEntryDirection.DEBIT as const, amountMinor: amountString },
-                  { accountId: poolId, direction: LedgerEntryDirection.CREDIT as const, amountMinor: amountString },
+                  {
+                    accountId: walletInTx.ledgerAccountId,
+                    direction: LedgerEntryDirection.DEBIT as const,
+                    amountMinor: amountString,
+                  },
+                  {
+                    accountId: poolId,
+                    direction: LedgerEntryDirection.CREDIT as const,
+                    amountMinor: amountString,
+                  },
                 ];
 
           // V1-LIMIT-04: enforce limits for AGENT_FUNDING/AGENT_DEFUNDING
@@ -974,10 +1037,11 @@ export class AgentFundingService {
           // commercial snapshot records what actually governed this execution — never re-evaluated.
           let limitOutcome: EnforceResult | null = null;
           if (this.limitEnforcementService) {
-            const agentRows = databaseRows<{ agent_class_id: string | null }>(await manager.query(
-              `SELECT agent_class_id FROM agents WHERE id = $1 LIMIT 1`,
-              [agentId],
-            ));
+            const agentRows = databaseRows<{ agent_class_id: string | null }>(
+              await manager.query(`SELECT agent_class_id FROM agents WHERE id = $1 LIMIT 1`, [
+                agentId,
+              ]),
+            );
             const agentClassId = agentRows[0]?.agent_class_id ?? null;
             limitIdempotencyKey = idempotencyKey;
             const product = direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING';
@@ -1004,7 +1068,11 @@ export class AgentFundingService {
                 const response = error.getResponse();
                 const code =
                   typeof response === 'object' && response !== null
-                    ? ('error' in response ? response.error : 'code' in response ? response.code : undefined)
+                    ? 'error' in response
+                      ? response.error
+                      : 'code' in response
+                        ? response.code
+                        : undefined
                     : undefined;
                 if (typeof code === 'string' && code.startsWith('LIMIT_')) throw error;
               }
@@ -1052,7 +1120,10 @@ export class AgentFundingService {
           } catch (e) {
             if (limitIdempotencyKey && this.limitEnforcementService) {
               try {
-                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                await this.limitEnforcementService.releaseReservationsWithManager(
+                  manager,
+                  limitIdempotencyKey,
+                );
               } catch (releaseError) {
                 throw new AggregateError(
                   [e, releaseError],
@@ -1066,7 +1137,10 @@ export class AgentFundingService {
           if (limitIdempotencyKey && this.limitEnforcementService) {
             // Reservation commit is part of the financial transaction. Any failure must roll back
             // the journal and approval consumption rather than leave an unaccounted posting.
-            await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            await this.limitEnforcementService.commitReservationsWithManager(
+              manager,
+              limitIdempotencyKey,
+            );
           }
 
           // — V1-COMMERCIAL-DECISION-03E: record the immutable commercial decision snapshot inside
@@ -1117,7 +1191,14 @@ export class AgentFundingService {
           await this.auditService.record(manager, {
             entityType: direction === 'FUND' ? 'AGENT_FUNDING' : 'AGENT_DEFUNDING',
             entityId: journalId,
-            action: direction === 'FUND' ? (isAggregatorFunding ? 'AGGREGATOR_AGENT_FUNDED' : 'AGENT_FUNDED') : (isAggregatorFunding ? 'AGGREGATOR_AGENT_DEFUNDED' : 'AGENT_DEFUNDED'),
+            action:
+              direction === 'FUND'
+                ? isAggregatorFunding
+                  ? 'AGGREGATOR_AGENT_FUNDED'
+                  : 'AGENT_FUNDED'
+                : isAggregatorFunding
+                  ? 'AGGREGATOR_AGENT_DEFUNDED'
+                  : 'AGENT_DEFUNDED',
             actor,
             correlationId: correlationId ?? undefined,
             newValues: {
@@ -1148,21 +1229,23 @@ export class AgentFundingService {
           });
 
           const executedAt = new Date();
-          const updatedRequests = databaseRows<{ id: string }>(await manager.query(
-            `UPDATE agent_funding_requests
+          const updatedRequests = databaseRows<{ id: string }>(
+            await manager.query(
+              `UPDATE agent_funding_requests
              SET status='EXECUTED', checker_principal_id=$2, checker_role='FINANCE_CONTROLLER',
                  checker_type=$3, journal_id=$4, approved_at=$5, executed_at=$6,
                  updated_at=$6, version=version+1
              WHERE id=$1 AND status='PENDING' RETURNING id`,
-            [
-              approvalContext.requestId,
-              principal.principalId,
-              principal.type,
-              journalId,
-              consumed.approval?.approvedAt ?? executedAt,
-              executedAt,
-            ],
-          ));
+              [
+                approvalContext.requestId,
+                principal.principalId,
+                principal.type,
+                journalId,
+                consumed.approval?.approvedAt ?? executedAt,
+                executedAt,
+              ],
+            ),
+          );
           if (!updatedRequests[0]) {
             throw new ConflictException('Agent funding request was already consumed');
           }
@@ -1282,9 +1365,9 @@ export class AgentFundingService {
           principalAmountMinor: ctx.amountMinor,
           currency: ctx.currency,
         }),
-      // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
-      agentId: ctx.agentId,
-      aggregatorId: ctx.aggregatorId,
+        // flow evidence (allowed by the snapshot's jsonb contract): acting Agent + funding source
+        agentId: ctx.agentId,
+        aggregatorId: ctx.aggregatorId,
       };
     } else {
       feeDecision = {
@@ -1304,7 +1387,10 @@ export class AgentFundingService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -1395,14 +1481,17 @@ export class AgentFundingService {
   ): NormalizedFundingPayload {
     const principal = input.principal;
     if (!principal || !principal.type) throw new UnauthorizedException('principal is required');
-    if (principal.type === 'CUSTOMER') throw new ForbiddenException('Customer principal cannot fund Agents');
-    if (principal.type === 'AGENT') throw new ForbiddenException('Agent principal cannot fund Agents');
+    if (principal.type === 'CUSTOMER')
+      throw new ForbiddenException('Customer principal cannot fund Agents');
+    if (principal.type === 'AGENT')
+      throw new ForbiddenException('Agent principal cannot fund Agents');
     if (principal.type === 'AGGREGATOR') {
       throw new ForbiddenException('Decision 7 requires AGENT_NETWORK_MANAGER maker authorization');
     }
 
     const agentId = input.agentId?.trim();
-    if (!agentId || !UUID_PATTERN.test(agentId)) throw new BadRequestException('agentId must be a UUID');
+    if (!agentId || !UUID_PATTERN.test(agentId))
+      throw new BadRequestException('agentId must be a UUID');
     const aggregatorId = input.aggregatorId?.trim() || null;
     if (aggregatorId && !UUID_PATTERN.test(aggregatorId)) {
       throw new BadRequestException('aggregatorId must be a UUID');
@@ -1412,12 +1501,15 @@ export class AgentFundingService {
     const amountMinor = parsePositiveMinorUnits(input.amountMinor, 'amountMinor').toString();
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 255) {
-      throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
     }
     const reference = input.reference?.trim() || `${direction}-${idempotencyKey}`;
     if (reference.length > 255) throw new BadRequestException('reference too long');
     const correlationId = sanitizeDiagnosticIdentifier(input.correlationId) ?? null;
-    const description = input.description?.trim() ||
+    const description =
+      input.description?.trim() ||
       `${direction} ${amountMinor} NGN for Agent ${agentId}${aggregatorId ? ` via Aggregator ${aggregatorId}` : ' via platform'}`;
     if (description.length > 255) throw new BadRequestException('description too long');
 
@@ -1447,7 +1539,10 @@ export class AgentFundingService {
     };
   }
 
-  private assertMakerPrincipal(principal: AuthorizationPrincipal, direction: 'FUND' | 'DEFUND'): void {
+  private assertMakerPrincipal(
+    principal: AuthorizationPrincipal,
+    direction: 'FUND' | 'DEFUND',
+  ): void {
     if (!principal?.principalId) throw new UnauthorizedException('Workforce principal is required');
     const functionCode = AGENT_FUNDING_ACTIONS[direction].initiatingFunctionCodes[0]!;
     if (
@@ -1489,11 +1584,16 @@ export class AgentFundingService {
     direction: 'FUND' | 'DEFUND',
   ): Promise<{ poolId: string }> {
     if (payload.aggregatorId) {
-      const aggregators = databaseRows<{ id: string; status: AggregatorStatus; deleted_at: string | null }>(
+      const aggregators = databaseRows<{
+        id: string;
+        status: AggregatorStatus;
+        deleted_at: string | null;
+      }>(
         await this.dataSource.query(
           `SELECT id, status, deleted_at FROM aggregators WHERE id=$1 LIMIT 1`,
           [payload.aggregatorId],
-        ));
+        ),
+      );
       const aggregator = aggregators[0];
       if (!aggregator || aggregator.deleted_at !== null) {
         throw new NotFoundException(`Aggregator ${payload.aggregatorId} not found`);
@@ -1501,11 +1601,13 @@ export class AgentFundingService {
       if (aggregator.status !== AggregatorStatus.ACTIVE) {
         throw new ForbiddenException(`Aggregator ${payload.aggregatorId} is ${aggregator.status}`);
       }
-      const relationship = databaseRows<{ id: string }>(await this.dataSource.query(
-        `SELECT id FROM aggregator_agent_assignments
+      const relationship = databaseRows<{ id: string }>(
+        await this.dataSource.query(
+          `SELECT id FROM aggregator_agent_assignments
          WHERE aggregator_id=$1 AND agent_id=$2 AND status='ACTIVE' LIMIT 1`,
-        [payload.aggregatorId, payload.agentId],
-      ));
+          [payload.aggregatorId, payload.agentId],
+        ),
+      );
       if (!relationship.length) {
         throw new ForbiddenException(
           `No ACTIVE Aggregator-Agent relationship for ${payload.aggregatorId} → ${payload.agentId}`,
@@ -1514,32 +1616,41 @@ export class AgentFundingService {
     }
 
     const agents = databaseRows<{ id: string; status: AgentStatus; deleted_at: string | null }>(
-      await this.dataSource.query(
-        `SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1`,
-        [payload.agentId],
-      ));
+      await this.dataSource.query(`SELECT id, status, deleted_at FROM agents WHERE id=$1 LIMIT 1`, [
+        payload.agentId,
+      ]),
+    );
     const agent = agents[0];
-    if (!agent || agent.deleted_at !== null) throw new NotFoundException(`Agent ${payload.agentId} not found`);
+    if (!agent || agent.deleted_at !== null)
+      throw new NotFoundException(`Agent ${payload.agentId} not found`);
     if (agent.status !== AgentStatus.ACTIVE) {
-      throw new ForbiddenException(`Agent ${payload.agentId} is ${agent.status} and cannot be funded`);
+      throw new ForbiddenException(
+        `Agent ${payload.agentId} is ${agent.status} and cannot be funded`,
+      );
     }
-    const expectedService = direction === 'FUND' ? AgentService.AGENT_FUNDING : AgentService.AGENT_DEFUNDING;
+    const expectedService =
+      direction === 'FUND' ? AgentService.AGENT_FUNDING : AgentService.AGENT_DEFUNDING;
     const capability = await this.capabilityService.evaluate(payload.agentId, expectedService);
     if (!capability.allowed) {
-      throw new ForbiddenException(`Agent does not have ${expectedService} capability: ${capability.reason}`);
+      throw new ForbiddenException(
+        `Agent does not have ${expectedService} capability: ${capability.reason}`,
+      );
     }
-    const pools = databaseRows<{ id: string }>(await this.dataSource.query(
-      `SELECT id FROM ledger_accounts WHERE code=$1 LIMIT 1`,
-      [FUNDING_POOL_CODE],
-    ));
-    if (!pools[0]) throw new NotFoundException('Funding pool ledger account not found — migration missing');
+    const pools = databaseRows<{ id: string }>(
+      await this.dataSource.query(`SELECT id FROM ledger_accounts WHERE code=$1 LIMIT 1`, [
+        FUNDING_POOL_CODE,
+      ]),
+    );
+    if (!pools[0])
+      throw new NotFoundException('Funding pool ledger account not found — migration missing');
     return { poolId: pools[0].id };
   }
 
   private payloadFromFundingRequest(row: AgentFundingRequestDbRow): NormalizedFundingPayload {
-    const metadata = typeof row.metadata === 'string'
-      ? JSON.parse(row.metadata) as Record<string, unknown>
-      : row.metadata;
+    const metadata =
+      typeof row.metadata === 'string'
+        ? (JSON.parse(row.metadata) as Record<string, unknown>)
+        : row.metadata;
     return {
       agentId: row.agent_id,
       aggregatorId: row.aggregator_id,

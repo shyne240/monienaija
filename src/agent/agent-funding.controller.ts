@@ -15,7 +15,10 @@ import {
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { AgentFundingService, type FundingInput } from './agent-funding.service';
-import { RequestAgentFundingDto, RejectAgentFundingRequestDto } from './dto/agent-funding-request.dto';
+import {
+  RequestAgentFundingDto,
+  RejectAgentFundingRequestDto,
+} from './dto/agent-funding-request.dto';
 import { DefundAgentDto, FundAgentDto } from './dto/fund-agent.dto';
 
 interface AuthenticatedRequest {
@@ -80,10 +83,10 @@ export class AgentFundingController {
   ) {
     const principal = await this.requireFundingChecker(req);
     if (status !== undefined && !['PENDING', 'REJECTED', 'EXECUTED'].includes(status)) {
-      throw new BadRequestException("status must be one of PENDING, REJECTED, EXECUTED");
+      throw new BadRequestException('status must be one of PENDING, REJECTED, EXECUTED');
     }
     if (direction !== undefined && !['FUND', 'DEFUND'].includes(direction)) {
-      throw new BadRequestException("direction must be one of FUND, DEFUND");
+      throw new BadRequestException('direction must be one of FUND, DEFUND');
     }
     return this.fundingService.listGlobalFundingRequests(principal, {
       ...(status !== undefined ? { status: status as 'PENDING' | 'REJECTED' | 'EXECUTED' } : {}),
@@ -263,12 +266,11 @@ export class AgentFundingController {
     // functions up front rather than reading the row to choose one. Seeded controllers
     // hold both; maker access to either function is not checker authority.
     for (const functionCode of ['agent.fund', 'agent.defund'] as const) {
-      await this.authorizationService.requireFunction(
-        principal,
-        functionCode,
-        'agent-funding',
-        ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-      );
+      await this.authorizationService.requireFunction(principal, functionCode, 'agent-funding', [
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+      ]);
     }
     return principal;
   }
@@ -278,12 +280,11 @@ export class AgentFundingController {
     functionCode: 'agent.fund' | 'agent.defund',
   ): Promise<AuthorizationPrincipal> {
     const principal = this.requirePrincipal(req);
-    await this.authorizationService.requireFunction(
-      principal,
-      functionCode,
-      'agent-funding',
-      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-    );
+    await this.authorizationService.requireFunction(principal, functionCode, 'agent-funding', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
     return principal;
   }
 

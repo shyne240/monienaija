@@ -27,13 +27,22 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
 
   it('1. plain-text body is byte-identical to buildMessage (SMS parity) for live keys', async () => {
     const cases: Array<{ key: NotificationTemplateKey; payload: Record<string, unknown> }> = [
-      { key: 'customer.funding.approved', payload: { reference: 'FND-1234', amountMinor: '25000' } },
+      {
+        key: 'customer.funding.approved',
+        payload: { reference: 'FND-1234', amountMinor: '25000' },
+      },
       { key: 'customer.funding.rejected', payload: { reference: 'FND-1235' } },
       { key: 'customer.funding.requested', payload: { fundingRequestId: 'aaaaaaaa-bbbb-cccc' } },
-      { key: 'transfer.completed', payload: { transferId: 'dddddddd-eeee-ffff', amountMinor: '10050' } },
+      {
+        key: 'transfer.completed',
+        payload: { transferId: 'dddddddd-eeee-ffff', amountMinor: '10050' },
+      },
       { key: 'transfer.failed', payload: { reference: 'TRF-9', amountMinor: '500' } },
       { key: 'support.ticket.created', payload: { reference: 'SUP-1' } },
-      { key: 'support.ticket.status_changed', payload: { reference: 'SUP-2', status: 'IN_PROGRESS' } },
+      {
+        key: 'support.ticket.status_changed',
+        payload: { reference: 'SUP-2', status: 'IN_PROGRESS' },
+      },
       { key: 'support.ticket.resolved', payload: { reference: 'SUP-3' } },
       { key: 'support.ticket.message_added', payload: { reference: 'SUP-4' } },
     ];
@@ -55,9 +64,7 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
       'We received your support request',
     );
     // Unmapped keys (not email-enabled, but the seam must stay safe for them):
-    for (const key of ['agent.suspended', 'totally.unknown.event'] as Array<
-      NotificationTemplateKey | string
-    >) {
+    for (const key of ['agent.suspended', 'totally.unknown.event'] as Array<string>) {
       const rendered = await emails.buildEmail(key as NotificationTemplateKey, {});
       expect(rendered.subject).toBe('MonieNaija notification');
       expect(rendered.subject.toLowerCase()).not.toContain('agent.');
@@ -121,7 +128,9 @@ describe('CodeNotificationEmailTemplateService (rendering seam)', () => {
   });
 
   it('5. sanitizeEmailSubject strips CRLF/control chars, collapses whitespace, caps at 200', async () => {
-    expect(sanitizeEmailSubject('Transfer\r\nBcc: evil@bad.com')).toBe('Transfer Bcc: evil@bad.com');
+    expect(sanitizeEmailSubject('Transfer\r\nBcc: evil@bad.com')).toBe(
+      'Transfer Bcc: evil@bad.com',
+    );
     expect(sanitizeEmailSubject('a\u0000b\u001fc')).toBe('a b c');
     expect(sanitizeEmailSubject('  many   spaces  ')).toBe('many spaces');
     expect(sanitizeEmailSubject('x'.repeat(500)).length).toBe(200);

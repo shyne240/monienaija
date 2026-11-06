@@ -9,7 +9,11 @@ export class LimitController {
 
   @Post('evaluate')
   @HttpCode(HttpStatus.OK)
-  async evaluate(@Body() dto: EvaluateLimitDto) {
-    return this.limitEngine.evaluate(dto);
+  evaluate(@Body() dto: EvaluateLimitDto): Promise<ReturnType<LimitEngine['evaluate']>> {
+    try {
+      return Promise.resolve(this.limitEngine.evaluate(dto));
+    } catch (error) {
+      return Promise.reject(error as Error);
+    }
   }
 }

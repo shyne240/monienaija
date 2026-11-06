@@ -42,7 +42,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
@@ -92,9 +96,18 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -121,7 +134,9 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     cashOutService = moduleRef.get(AgentCashOutService);
@@ -157,7 +172,11 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
 
   // ── harness (synthetic test data only; mirrors the a14 conventions) ──
 
-  async function createActiveAgentWithServicesAndPin(services: unknown, pin: string | null, isActive = true) {
+  async function createActiveAgentWithServicesAndPin(
+    services: unknown,
+    pin: string | null,
+    isActive = true,
+  ) {
     const cls = await classService.create({
       reference: `cls-03b-${randomUUID().slice(0, 8)}`,
       code: `C03B-${randomUUID().slice(0, 6)}`,
@@ -174,7 +193,10 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       actor: 'applicant-03b',
     });
     await appService.submit(appEntity.id, 'applicant-03b');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -211,8 +233,14 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       [`cust-03b-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0].id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03B',true)`, [customerId]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'Customer 03B',true)`,
+      [customerId],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      [customerId, phoneCanonical],
+    );
     await customerPinService.setTransactionPin(customerId, {
       pinHash: hashPin(pin),
       hashAlgorithm: 'PBKDF2',
@@ -275,10 +303,12 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     }
     const sessionId = randomUUID();
     const tokenHash = randomBytes(32).toString('hex');
-    await dataSource.query(
-      `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-      [sessionId, customerId, credentialId, tokenHash],
-    ).catch(() => {});
+    await dataSource
+      .query(
+        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
+        [sessionId, customerId, credentialId, tokenHash],
+      )
+      .catch(() => {});
     const principal: any = {
       principalType: 'CUSTOMER',
       customerId,
@@ -302,8 +332,16 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: customerWalletLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
+        {
+          accountId: customerWalletLedgerId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
@@ -324,17 +362,33 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     );
   }
 
-  async function seedLimitRule(profileCode: string, dimension: string, limitMinor: string | null, limitCount: number | null): Promise<string> {
+  async function seedLimitRule(
+    profileCode: string,
+    dimension: string,
+    limitMinor: string | null,
+    limitCount: number | null,
+  ): Promise<string> {
     const id = randomUUID();
     await dataSource.query(
       `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
        VALUES ($1,$2,'WALLET_TO_CASH',NULL,NULL,'NGN',$3,$4,$5,$6,NULL,true,'test')`,
-      [id, profileCode, dimension, limitMinor, limitCount, new Date(Date.now() - 86400000).toISOString()],
+      [
+        id,
+        profileCode,
+        dimension,
+        limitMinor,
+        limitCount,
+        new Date(Date.now() - 86400000).toISOString(),
+      ],
     );
     return id;
   }
 
-  async function snapshotsFor(key: { journalId?: string; idempotencyKey?: string; product?: string }): Promise<any[]> {
+  async function snapshotsFor(key: {
+    journalId?: string;
+    idempotencyKey?: string;
+    product?: string;
+  }): Promise<any[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
     if (key.journalId) {
@@ -417,7 +471,10 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     expect(snap.limit_decision.profileCode).toBe(profile);
     const ruleIds = snap.limit_decision.ruleRefs.map((r: any) => r.ruleId).sort();
     expect(ruleIds).toEqual([minRule, dailyRule].sort());
-    const reservations: Array<any> = await dataSource.query(`SELECT id, limit_usage_id, status FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`, [idem]);
+    const reservations: Array<any> = await dataSource.query(
+      `SELECT id, limit_usage_id, status FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`,
+      [idem],
+    );
     expect(reservations.length).toBe(1); // DAILY_AMOUNT only
     expect(snap.limit_decision.reservationIds).toEqual(reservations.map((r) => r.id));
     expect(snap.limit_decision.usageIds).toEqual(reservations.map((r) => r.limit_usage_id));
@@ -427,19 +484,28 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       .get('/api/v1/internal/commercial-decision-snapshots?product=WALLET_TO_CASH')
       .set('Authorization', 'Bearer workforce-operator')
       .expect(200);
-    const items = Array.isArray(list.body) ? list.body : list.body.data ?? [];
-    expect(items.some((s: any) => (s.transactionReference ?? s.transaction_reference) === result.journalId)).toBe(true);
+    const items = Array.isArray(list.body) ? list.body : (list.body.data ?? []);
+    expect(
+      items.some(
+        (s: any) => (s.transactionReference ?? s.transaction_reference) === result.journalId,
+      ),
+    ).toBe(true);
   });
 
   // ── 2. zero-fee financial proof ──
 
   it('02. financial behavior identical: principal-only journal, Customer debit + Agent credit, no fee/revenue accounts', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = newPhone();
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '80000');
 
-    const accountsBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_accounts`);
+    const accountsBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_accounts`,
+    );
     const agentBefore = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     const custBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
 
@@ -471,7 +537,9 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     expect(credit.amount_minor).toBe('22000');
     expect(credit.ledger_account_id).toBe(agentWallet.ledgerAccountId); // Agent electronic value CREDIT unchanged
 
-    const accountsAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_accounts`);
+    const accountsAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_accounts`,
+    );
     expect(accountsAfter[0].cnt).toBe(accountsBefore[0].cnt); // no physical-cash/fee/revenue account created
     const agentAfter = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     const custAfter = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
@@ -504,7 +572,9 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     };
     const first = await cashOutService.execute(payload);
     expect(first.status).toBe('COMPLETED');
-    const journalsAfterFirst: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsAfterFirst: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
 
     // Genuine idempotent retry: same challengeId+otp → OTP layer reports REPLAYED, which the
     // service permits ONLY because the financial idempotency record is already COMPLETED.
@@ -513,9 +583,13 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     expect(replay.journalId).toBe(first.journalId);
 
     expect(await snapshotsFor({ journalId: first.journalId })).toHaveLength(1); // NOT duplicated
-    const journalsAfterReplay: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsAfterReplay: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
     expect(journalsAfterReplay[0].cnt).toBe(journalsAfterFirst[0].cnt); // no duplicate ledger transaction
-    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe('45000'); // debited once
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      '45000',
+    ); // debited once
   });
 
   it('04. same idempotency key with a different payload remains rejected (409)', async () => {
@@ -536,13 +610,23 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       currency: 'NGN',
       idempotencyKey: idem,
     };
-    const first = await cashOutService.execute({ ...base, mfaChallengeId: challenge1, otp: otp1, amountMinor: '10000' });
+    const first = await cashOutService.execute({
+      ...base,
+      mfaChallengeId: challenge1,
+      otp: otp1,
+      amountMinor: '10000',
+    });
     expect(first.status).toBe('COMPLETED');
 
     const otp2 = 'c03b-otp-04b';
     const { challengeId: challenge2 } = await createMfaChallenge(customerId, otp2);
     await expect(
-      cashOutService.execute({ ...base, mfaChallengeId: challenge2, otp: otp2, amountMinor: '10001' }),
+      cashOutService.execute({
+        ...base,
+        mfaChallengeId: challenge2,
+        otp: otp2,
+        amountMinor: '10001',
+      }),
     ).rejects.toMatchObject({ status: 409 });
     expect(await snapshotsFor({ idempotencyKey: `cash-out:${agent.id}:${idem}` })).toHaveLength(1);
   });
@@ -550,7 +634,10 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
   // ── 4. rollback atomicity (real in-transaction failure, not a mocked service failure) ──
 
   it('05. forced downstream failure after the snapshot rolls back snapshot + limits + journal + balances', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = newPhone();
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '70000');
@@ -567,7 +654,9 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     });
     expect(authRes.allowed).toBe(true);
 
-    const journalsBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    const journalsBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
     const agentBefore = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     const custBefore = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     const idem = `c03b-05-${randomUUID()}`;
@@ -579,8 +668,16 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
         currency: 'NGN',
         accountingUnit: 'CUSTOMER_FUNDS',
         lines: [
-          { accountId: custWallet.ledgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '25000' },
-          { accountId: agentWallet.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '25000' },
+          {
+            accountId: custWallet.ledgerAccountId,
+            direction: LedgerEntryDirection.DEBIT,
+            amountMinor: '25000',
+          },
+          {
+            accountId: agentWallet.ledgerAccountId,
+            direction: LedgerEntryDirection.CREDIT,
+            amountMinor: '25000',
+          },
         ],
         limit: {
           product: 'WALLET_TO_CASH',
@@ -599,12 +696,28 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
 
     // everything rolled back together
     expect(await snapshotsFor({ idempotencyKey: `cash-out:${agent.id}:${idem}` })).toHaveLength(0); // snapshot gone
-    expect((await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [idem])).length).toBe(0);
-    expect((await dataSource.query(`SELECT id FROM limit_usages WHERE principal_id=$1 AND product='WALLET_TO_CASH'`, [customerId])).length).toBe(0);
-    const journalsAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`);
+    expect(
+      (await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [idem]))
+        .length,
+    ).toBe(0);
+    expect(
+      (
+        await dataSource.query(
+          `SELECT id FROM limit_usages WHERE principal_id=$1 AND product='WALLET_TO_CASH'`,
+          [customerId],
+        )
+      ).length,
+    ).toBe(0);
+    const journalsAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ledger_journals`,
+    );
     expect(journalsAfter[0].cnt).toBe(journalsBefore[0].cnt); // journal gone
-    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(agentBefore.balanceMinor);
-    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(custBefore.balanceMinor);
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      agentBefore.balanceMinor,
+    );
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      custBefore.balanceMinor,
+    );
     const idemRows: Array<{ id: string }> = await dataSource.query(
       `SELECT id FROM idempotency_records WHERE scope=$1 AND idempotency_key=$2`,
       [`agent-financial.v1:${agent.id}`, idem],
@@ -615,7 +728,10 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
   // ── 5. limit rejection ──
 
   it('06. limit-rejected WALLET_TO_CASH: rejected, no snapshot, no stranded reservation, no mutation', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = newPhone();
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '90000');
@@ -643,10 +759,24 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     ).rejects.toMatchObject({ status: 422 });
 
     expect(await snapshotsFor({ idempotencyKey: `cash-out:${agent.id}:${idem}` })).toHaveLength(0); // consistent with the pilots
-    expect((await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [idem])).length).toBe(0);
-    expect((await dataSource.query(`SELECT id FROM limit_usages WHERE principal_id=$1 AND product='WALLET_TO_CASH'`, [customerId])).length).toBe(0);
-    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe('90000');
-    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('0');
+    expect(
+      (await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [idem]))
+        .length,
+    ).toBe(0);
+    expect(
+      (
+        await dataSource.query(
+          `SELECT id FROM limit_usages WHERE principal_id=$1 AND product='WALLET_TO_CASH'`,
+          [customerId],
+        )
+      ).length,
+    ).toBe(0);
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      '90000',
+    );
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '0',
+    );
   });
 
   // ── 6. synthetic fee rule captured as evidence, without charging ──
@@ -668,7 +798,10 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
       'test',
     );
 
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = newPhone();
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '50000');
@@ -708,11 +841,18 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     expect(fee.ruleRefs[0].percentageBps).toBe(10);
 
     // money flow UNCHANGED: principal-only journal, exact balances
-    const lines: Array<any> = await dataSource.query(`SELECT direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`, [result.journalId]);
+    const lines: Array<any> = await dataSource.query(
+      `SELECT direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1`,
+      [result.journalId],
+    );
     expect(lines).toHaveLength(2);
     for (const l of lines) expect(l.amount_minor).toBe('18000');
-    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe('32000');
-    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe('18000');
+    expect((await ledgerService.getAccountBalance(custWallet.ledgerAccountId)).balanceMinor).toBe(
+      '32000',
+    );
+    expect((await ledgerService.getAccountBalance(agentWallet.ledgerAccountId)).balanceMinor).toBe(
+      '18000',
+    );
   });
 
   // ── 7. immutability + wiring boundary ──
@@ -738,26 +878,37 @@ describe('V1-COMMERCIAL-DECISION-03B WALLET_TO_CASH snapshot wiring (real PG)', 
     });
     const snapshots = await snapshotsFor({ journalId: result.journalId });
     expect(snapshots).toHaveLength(1);
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [snapshots[0].id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [
+        snapshots[0].id,
+      ]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
 
     // wiring boundary: the shared execution service gates snapshot recording to exactly
     // CASH_TO_WALLET + WALLET_TO_CASH; the flow orchestrators themselves stay unwired
     const { readFileSync } = require('node:fs');
     const { join } = require('node:path');
-    const executionSource = readFileSync(join(__dirname, '../src/agent/agent-financial-execution.service.ts'), 'utf8');
+    const executionSource = readFileSync(
+      join(__dirname, '../src/agent/agent-financial-execution.service.ts'),
+      'utf8',
+    );
     expect(executionSource).toContain(`['CASH_TO_WALLET', 'WALLET_TO_CASH']`); // explicit product gate
     expect(executionSource).toContain('recordDecisionWithManager'); // same-transaction recording
     expect(executionSource).not.toMatch(/\.recordDecision\(/); // never the second-transaction variant
     expect(executionSource).not.toContain('feeEngine'); // no FeeEngine participation
-    const cashOutSource = readFileSync(join(__dirname, '../src/agent/agent-cash-out.service.ts'), 'utf8');
+    const cashOutSource = readFileSync(
+      join(__dirname, '../src/agent/agent-cash-out.service.ts'),
+      'utf8',
+    );
     expect(cashOutSource).not.toContain('CommercialDecisionSnapshotService');
     expect(cashOutSource).not.toContain('FeeRuleResolverService');
-    const cashInSource = readFileSync(join(__dirname, '../src/agent/agent-cash-in.service.ts'), 'utf8');
+    const cashInSource = readFileSync(
+      join(__dirname, '../src/agent/agent-cash-in.service.ts'),
+      'utf8',
+    );
     expect(cashInSource).not.toContain('CommercialDecisionSnapshotService');
     expect(cashInSource).not.toContain('FeeRuleResolverService');
   });

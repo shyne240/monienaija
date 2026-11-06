@@ -13,10 +13,7 @@ import {
   resolveRunIdentifier,
   validateRunIdentifier,
 } from './support/pg-run-namespace';
-import {
-  integrationDatabaseName,
-  migrationTemplateDatabaseName,
-} from './support/pg-harness';
+import { integrationDatabaseName, migrationTemplateDatabaseName } from './support/pg-harness';
 
 const LEGACY_FOREIGN_DATABASE = 'mn_it_h04unify_20364';
 
@@ -65,9 +62,7 @@ describe('integration-test run namespace (pg-run-namespace + pg-harness naming)'
       // Mutating the environment mid-run must not change the namespace.
       process.env[PG_TEST_RUN_ID_ENV] = 'otherid';
       expect(resolveRunIdentifier()).toBe('win21oct');
-      expect(integrationDatabaseName('suite-a')).toBe(
-        `mn_it_suite_a_win21oct_${process.pid}`,
-      );
+      expect(integrationDatabaseName('suite-a')).toBe(`mn_it_suite_a_win21oct_${process.pid}`);
       expect(migrationTemplateDatabaseName()).toBe(`mn_it_tpl_win21oct_${process.pid}`);
     });
 
@@ -172,9 +167,7 @@ describe('integration-test run namespace (pg-run-namespace + pg-harness naming)'
 
     it('fails loudly (not silently) when the run identifier is missing during cleanup', () => {
       delete process.env[PG_TEST_RUN_ID_ENV];
-      expect(() => assertOwnRunDatabaseName('mn_it_suite_a_whatever_1')).toThrow(
-        /PG_TEST_RUN_ID/,
-      );
+      expect(() => assertOwnRunDatabaseName('mn_it_suite_a_whatever_1')).toThrow(/PG_TEST_RUN_ID/);
     });
   });
 });

@@ -39,10 +39,7 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { CommissionRuleRegistryService } from '../src/commission/commission-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
@@ -129,7 +126,15 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
         throw new UnauthorizedException('invalid workforce token');
       }
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -178,7 +183,9 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     walletService = app.get(WalletService);
@@ -237,9 +244,24 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   async function provisionAccountingFamilies(): Promise<void> {
     const families = [
       { role: 'FEE_REVENUE', code: ACCOUNT_LEGEND.FEE_REVENUE, type: 'REVENUE', normal: 'CREDIT' },
-      { role: 'VAT_PAYABLE', code: ACCOUNT_LEGEND.VAT_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
-      { role: 'COMMISSION_EXPENSE', code: ACCOUNT_LEGEND.COMMISSION_EXPENSE, type: 'EXPENSE', normal: 'DEBIT' },
-      { role: 'COMMISSION_PAYABLE', code: ACCOUNT_LEGEND.COMMISSION_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
+      {
+        role: 'VAT_PAYABLE',
+        code: ACCOUNT_LEGEND.VAT_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
+      {
+        role: 'COMMISSION_EXPENSE',
+        code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+        type: 'EXPENSE',
+        normal: 'DEBIT',
+      },
+      {
+        role: 'COMMISSION_PAYABLE',
+        code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
     ];
     for (const f of families) {
       await dataSource.query(
@@ -347,7 +369,10 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   }
 
   async function snapshotsFor(where: string, params: unknown[]): Promise<Array<any>> {
-    return dataSource.query(`SELECT * FROM commercial_decision_snapshots WHERE ${where} ORDER BY created_at`, params);
+    return dataSource.query(
+      `SELECT * FROM commercial_decision_snapshots WHERE ${where} ORDER BY created_at`,
+      params,
+    );
   }
 
   async function walletBalance(ledgerAccountId: string): Promise<bigint> {
@@ -378,7 +403,10 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   }
 
   function expectBlocked(error: any, code: string): void {
-    const body = error instanceof CommercialAccountingBlockedError ? error.getResponse() : error?.response ?? error?.getResponse?.() ?? error;
+    const body =
+      error instanceof CommercialAccountingBlockedError
+        ? error.getResponse()
+        : (error?.response ?? error?.getResponse?.() ?? error);
     const blob = JSON.stringify(body);
     expect(blob).toContain(code);
     const isBlocked = error instanceof CommercialAccountingBlockedError || body?.error === code;
@@ -411,7 +439,14 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
          VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [randomUUID(), code, product, dimension, value, new Date(Date.now() - 86400000).toISOString()],
+        [
+          randomUUID(),
+          code,
+          product,
+          dimension,
+          value,
+          new Date(Date.now() - 86400000).toISOString(),
+        ],
       );
     }
   }
@@ -546,7 +581,12 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     const { customerId, walletLedgerAccountId: custWalletLedgerId } =
       await createCustomerWithPhoneAndPin(phone, '1234');
     await fundWallet(custWalletLedgerId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const otp = 'csv01-otp';
     const { challengeId } = await createMfaChallenge(customerId, otp);
     const key = input.key ?? `csv01-out-${randomUUID()}`;
@@ -594,7 +634,11 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   it('S01. three real accruals accumulate the pooled payable and expense balances additively', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     for (let i = 0; i < 3; i += 1) {
       const run = await runCashOut({ amountMinor: '30000' });
       expect(run.result.status).toBe('COMPLETED');
@@ -605,17 +649,33 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     expect(journals).toHaveLength(3);
     for (const j of journals) {
       const lines = await linesForJournal(j.id);
-      expectLine(lines, { direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-      expectLine(lines, { direction: 'CREDIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE });
-      const dr = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
-      const cr = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+      expectLine(lines, {
+        direction: 'DEBIT',
+        amount_minor: '100',
+        account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+      });
+      expectLine(lines, {
+        direction: 'CREDIT',
+        amount_minor: '100',
+        account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+      });
+      const dr = lines
+        .filter((l) => l.direction === 'DEBIT')
+        .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+      const cr = lines
+        .filter((l) => l.direction === 'CREDIT')
+        .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
       expect(dr).toBe(cr);
     }
   });
 
   it('S02. settlement is a V2 rail: evidence says so, no settle entry point exists, claim/expiry never reduce the payable', async () => {
     await seedFeeRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
 
     // The accounting strategy boundary exposes exactly two public entry points — no settlement rail.
     const publicMethods = Object.getOwnPropertyNames(
@@ -631,7 +691,12 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
     // Accrue via C2C initiation.
     const bundle = await createActiveAgentWithPin([AgentService.CASH_TO_CASH], '1234');
     await fundWallet(bundle.walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', bundle.agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      bundle.agent.id,
+      'CASH_TO_CASH',
+    );
     const beneficiaryPhone = newPhone();
     const init = await cashToCashService.execute({
       agentId: bundle.agent.id,
@@ -652,7 +717,12 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
     // Claim the transfer: no settlement happens, payable unchanged.
     const { customerId } = await createCustomerWithPhoneAndPin(beneficiaryPhone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_CASH',
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'csv01-claim');
     const claim = await claimService.execute({
       transferId: init.transferId,
@@ -690,7 +760,11 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   it('S03. two agents accrue into ONE pooled payable; attribution lives in the snapshots', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run1 = await runCashOut({ amountMinor: '30000' });
     const run2 = await runCashOut({ amountMinor: '30000' });
     expect(run1.result.status).toBe('COMPLETED');
@@ -720,13 +794,31 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   it('S04. engine multi-allocation (AGENT + AGGREGATOR) → accounting fails closed on a real flow', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE', recipientType: 'AGENT' });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 500, calculationBasis: 'FEE', recipientType: 'AGGREGATOR' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+      recipientType: 'AGENT',
+    });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 500,
+      calculationBasis: 'FEE',
+      recipientType: 'AGGREGATOR',
+    });
     const bundle = await createActiveAgentWithPin([AgentService.CASH_OUT], '1234');
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWallet(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'csv01-s04');
     try {
       await cashOutService.execute({
@@ -753,25 +845,49 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   it('S05. two AGENT allocations post ONE lump DR expense / CR payable (allocationCount 2)', async () => {
     const outcome = await postCommissionOnly('s05', [
-      { beneficiaryType: 'AGENT', beneficiaryId: randomUUID(), amountMinor: '150', currency: 'NGN' },
-      { beneficiaryType: 'AGENT', beneficiaryId: randomUUID(), amountMinor: '100', currency: 'NGN' },
+      {
+        beneficiaryType: 'AGENT',
+        beneficiaryId: randomUUID(),
+        amountMinor: '150',
+        currency: 'NGN',
+      },
+      {
+        beneficiaryType: 'AGENT',
+        beneficiaryId: randomUUID(),
+        amountMinor: '100',
+        currency: 'NGN',
+      },
     ]);
     expect(outcome.accountingJournalId).toBeTruthy();
     const lines = await linesForJournal(outcome.accountingJournalId);
     expect(lines).toHaveLength(2);
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '250', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '250', account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '250',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '250',
+      account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+    });
     expect(outcome.commissionPosting.allocationCount).toBe(2);
     expect(outcome.commissionPosting.expenseMinor).toBe('250');
     expect(outcome.commissionPosting.payableMinor).toBe('250');
-    expect(outcome.commissionPosting.settlementState).toBe('ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED');
+    expect(outcome.commissionPosting.settlementState).toBe(
+      'ACCRUED_SETTLEMENT_RAIL_V2_SCOPE_NOT_IMPLEMENTED',
+    );
   });
 
   // ═══════════════════ DEFUNDING INDEPENDENCE ═══════════════════
 
   it('S06. AGENT_DEFUNDING with a standing payable: no coupling to COMMISSION_PAYABLE', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run = await runCashOut({ amountMinor: '30000' });
     expect(run.result.status).toBe('COMPLETED');
     expect(await pooledBalance(ACCOUNT_LEGEND.COMMISSION_PAYABLE)).toBe(100n);
@@ -782,28 +898,42 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
        VALUES (gen_random_uuid(),'AGENT_FUNDING_POOL-NGN','Agent Funding Pool NGN','LIABILITY','CREDIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
        ON CONFLICT (code) DO NOTHING`,
     );
-    const pool: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
+    const pool: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
+    );
     await fundWallet(pool[0].id, '1000000');
     // Grant the fixture agent the funding capabilities on its class (test fixture only).
-    await dataSource.query(
-      `UPDATE agent_classes SET applicable_services=$2::jsonb WHERE id=$1`,
-      [run.cls.id, JSON.stringify(['CASH_OUT', 'AGENT_FUNDING', 'AGENT_DEFUNDING'])],
-    );
+    await dataSource.query(`UPDATE agent_classes SET applicable_services=$2::jsonb WHERE id=$1`, [
+      run.cls.id,
+      JSON.stringify(['CASH_OUT', 'AGENT_FUNDING', 'AGENT_DEFUNDING']),
+    ]);
     const privilegedPrincipal: any = {
-      type: 'OPERATOR', principalId: 'test-agent-network-manager',
-      roles: ['AGENT_NETWORK_MANAGER'], scopes: ['agent.fund', 'agent.defund'],
-      customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
-      assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
+      type: 'OPERATOR',
+      principalId: 'test-agent-network-manager',
+      roles: ['AGENT_NETWORK_MANAGER'],
+      scopes: ['agent.fund', 'agent.defund'],
+      customerAccess: 'NONE',
+      agentAccess: 'NONE',
+      aggregatorAccess: 'NONE',
+      assuranceLevel: 'MFA', // Decision 7: agent funding requires an MFA-assured maker,
     };
     const fund = await fundingService.fund({
-      agentId: run.agent.id, amountMinor: '5000', currency: 'NGN',
-      idempotencyKey: `csv01-s06-fund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: run.agent.id,
+      amountMinor: '5000',
+      currency: 'NGN',
+      idempotencyKey: `csv01-s06-fund-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     expect(fund.status).toBe('COMPLETED');
     const before = await walletBalance(run.walletLedgerAccountId);
     const defund = await fundingService.defund({
-      agentId: run.agent.id, amountMinor: '2000', currency: 'NGN',
-      idempotencyKey: `csv01-s06-defund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: run.agent.id,
+      amountMinor: '2000',
+      currency: 'NGN',
+      idempotencyKey: `csv01-s06-defund-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     expect(defund.status).toBe('COMPLETED');
     expect(await walletBalance(run.walletLedgerAccountId)).toBe(before - 2000n);
@@ -822,7 +952,11 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
 
   it('S07. real-flow replay of the same WTC key accrues the payable exactly once', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const key = `csv01-s07-${randomUUID()}`;
     const first = await runCashOut({ amountMinor: '30000', key });
     expect(first.result.status).toBe('COMPLETED');
@@ -850,7 +984,14 @@ describe('V1-COMMISSION-SETTLEMENT-VERIFICATION-01 (real PG)', () => {
   it('S08. service-level double recognition with the same base key resolves to the SAME journal; a differing request under that key is refused', async () => {
     const baseKey = `csv01-s08-${randomUUID()}`;
     const snapKey = `csv01-snap-s08-${randomUUID()}`;
-    const alloc = [{ beneficiaryType: 'AGENT', beneficiaryId: randomUUID(), amountMinor: '175', currency: 'NGN' }];
+    const alloc = [
+      {
+        beneficiaryType: 'AGENT',
+        beneficiaryId: randomUUID(),
+        amountMinor: '175',
+        currency: 'NGN',
+      },
+    ];
     const first = await postCommissionOnly('s08a', alloc, baseKey, snapKey);
     // IDENTICAL duplicate request (the shape a flow idempotent retry produces): same journal.
     const second = await postCommissionOnly('s08b', alloc, baseKey, snapKey);

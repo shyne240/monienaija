@@ -50,10 +50,7 @@ import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { CommissionRuleRegistryService } from '../src/commission/commission-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
@@ -141,7 +138,15 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
         throw new UnauthorizedException('invalid workforce token');
       }
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -190,7 +195,9 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     walletService = app.get(WalletService);
@@ -250,9 +257,24 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   async function provisionAccountingFamilies(): Promise<void> {
     const families = [
       { role: 'FEE_REVENUE', code: ACCOUNT_LEGEND.FEE_REVENUE, type: 'REVENUE', normal: 'CREDIT' },
-      { role: 'VAT_PAYABLE', code: ACCOUNT_LEGEND.VAT_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
-      { role: 'COMMISSION_EXPENSE', code: ACCOUNT_LEGEND.COMMISSION_EXPENSE, type: 'EXPENSE', normal: 'DEBIT' },
-      { role: 'COMMISSION_PAYABLE', code: ACCOUNT_LEGEND.COMMISSION_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
+      {
+        role: 'VAT_PAYABLE',
+        code: ACCOUNT_LEGEND.VAT_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
+      {
+        role: 'COMMISSION_EXPENSE',
+        code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+        type: 'EXPENSE',
+        normal: 'DEBIT',
+      },
+      {
+        role: 'COMMISSION_PAYABLE',
+        code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
     ];
     for (const f of families) {
       await dataSource.query(
@@ -332,7 +354,9 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     return rule.id;
   }
 
-  async function createWallet(customerId: string): Promise<{ id: string; ledgerAccountId: string }> {
+  async function createWallet(
+    customerId: string,
+  ): Promise<{ id: string; ledgerAccountId: string }> {
     const view = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -391,12 +415,17 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     return balance;
   }
 
-  async function doTransfer(sourceId: string, destId: string, amount: string, idempotencyKey: string): Promise<any> {
+  async function doTransfer(
+    sourceId: string,
+    destId: string,
+    amount: string,
+    idempotencyKey: string,
+  ): Promise<any> {
     return transferService.createTransfer({
-// INTEGRATION (integration/main-backend-frontend-20261030): main's required
-                                          // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
-                                          // directly with no HTTP principal, so an INTERNAL binding is used — which
-                                          // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+      // INTEGRATION (integration/main-backend-frontend-20261030): main's required
+      // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+      // directly with no HTTP principal, so an INTERNAL binding is used — which
+      // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
       ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
       sourceWalletId: sourceId,
       destinationWalletId: destId,
@@ -407,7 +436,10 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   }
 
   function expectBlocked(error: any, code: string): void {
-    const body = error instanceof CommercialAccountingBlockedError ? error.getResponse() : error?.response ?? error?.getResponse?.() ?? error;
+    const body =
+      error instanceof CommercialAccountingBlockedError
+        ? error.getResponse()
+        : (error?.response ?? error?.getResponse?.() ?? error);
     const blob = JSON.stringify(body);
     expect(blob).toContain(code);
     const isBlocked = error instanceof CommercialAccountingBlockedError || body?.error === code;
@@ -440,7 +472,14 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
          VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [randomUUID(), code, product, dimension, value, new Date(Date.now() - 86400000).toISOString()],
+        [
+          randomUUID(),
+          code,
+          product,
+          dimension,
+          value,
+          new Date(Date.now() - 86400000).toISOString(),
+        ],
       );
     }
   }
@@ -574,7 +613,12 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     const { customerId, walletLedgerAccountId: custWalletLedgerId } =
       await createCustomerWithPhoneAndPin(phone, '1234');
     await fundWallet(custWalletLedgerId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const otp = 'csm01-otp';
     const { challengeId } = await createMfaChallenge(customerId, otp);
     const key = input.key ?? `csm01-out-${randomUUID()}`;
@@ -593,11 +637,18 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     return { ...bundle, customerId, custWalletLedgerId, phone, result, key };
   }
 
-  async function runC2cInitiation(input: { amountMinor?: string; key?: string; beneficiaryPhone?: string } = {}) {
+  async function runC2cInitiation(
+    input: { amountMinor?: string; key?: string; beneficiaryPhone?: string } = {},
+  ) {
     const bundle = await createActiveAgentWithPin([AgentService.CASH_TO_CASH], '1234');
     const { agent, wallet: agentWallet, walletLedgerAccountId } = bundle;
     await fundWallet(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     const beneficiaryPhone = input.beneficiaryPhone ?? newPhone();
     const key = input.key ?? `csm01-c2c-${randomUUID()}`;
     const result = await cashToCashService.execute({
@@ -614,7 +665,12 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   async function runClaim(initResult: any, phone: string): Promise<any> {
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_CASH',
+    );
     const otp = 'csm01-claim-otp';
     const { challengeId } = await createMfaChallenge(customerId, otp);
     const claim = await claimService.execute({
@@ -646,19 +702,27 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     const lines = await linesForJournal(journals[0].id);
     expect(lines).toHaveLength(2);
     expectLine(lines, {
-      direction: 'DEBIT', amount_minor: expectedFeeMinor, account_code: expect.stringMatching(/^WALLET/),
+      direction: 'DEBIT',
+      amount_minor: expectedFeeMinor,
+      account_code: expect.stringMatching(/^WALLET/),
     });
     expectLine(lines, {
-      direction: 'CREDIT', amount_minor: expectedFeeMinor, account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+      direction: 'CREDIT',
+      amount_minor: expectedFeeMinor,
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
     });
     const snap = await snapshotsFor(
       `product='WALLET_TRANSFER' AND idempotency_key LIKE 'transfer:%'`,
       [],
     );
     expect(snap[0].fee_decision.feeMinor).toBe(expectedFeeMinor);
-    if (expected.minimumApplied !== undefined) expect(snap[0].fee_decision.minimumApplied).toBe(expected.minimumApplied);
-    if (expected.maximumApplied !== undefined) expect(snap[0].fee_decision.maximumApplied).toBe(expected.maximumApplied);
-    expect(await walletBalance(a.ledgerAccountId)).toBe(500000n - BigInt(amountMinor) - BigInt(expectedFeeMinor));
+    if (expected.minimumApplied !== undefined)
+      expect(snap[0].fee_decision.minimumApplied).toBe(expected.minimumApplied);
+    if (expected.maximumApplied !== undefined)
+      expect(snap[0].fee_decision.maximumApplied).toBe(expected.maximumApplied);
+    expect(await walletBalance(a.ledgerAccountId)).toBe(
+      500000n - BigInt(amountMinor) - BigInt(expectedFeeMinor),
+    );
   }
 
   // ═══════════════════ FEE CALCULATION MODELS — exact amounts → exact legs ═══════════════════
@@ -693,42 +757,85 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
   });
 
   it('F04a. PCT+MIN below band: raw 200 clamps to minimum 500 (minimumApplied)', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, minimumFeeMinor: '500', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      minimumFeeMinor: '500',
+      vatBps: 0,
+    });
     await wtFeeScenario('f04a', '20000', '500', { minimumApplied: true });
   });
 
   it('F04b. PCT+MIN at band: raw 800 ≥ min → fee 800 unclamped', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, minimumFeeMinor: '500', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      minimumFeeMinor: '500',
+      vatBps: 0,
+    });
     await wtFeeScenario('f04b', '80000', '800', { minimumApplied: false });
   });
 
   it('F05a. PCT+MAX below band: raw 300 ≤ max → fee 300 unclamped', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, maximumFeeMinor: '800', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      maximumFeeMinor: '800',
+      vatBps: 0,
+    });
     await wtFeeScenario('f05a', '30000', '300', { maximumApplied: false });
   });
 
   it('F05b. PCT+MAX above band: raw 1000 clamps to maximum 800 (maximumApplied)', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, maximumFeeMinor: '800', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      maximumFeeMinor: '800',
+      vatBps: 0,
+    });
     await wtFeeScenario('f05b', '100000', '800', { maximumApplied: true });
   });
 
   it('F06a. PCT+MIN+MAX below band: raw 200 clamps to 400', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, minimumFeeMinor: '400', maximumFeeMinor: '800', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      minimumFeeMinor: '400',
+      maximumFeeMinor: '800',
+      vatBps: 0,
+    });
     await wtFeeScenario('f06a', '20000', '400', { minimumApplied: true, maximumApplied: false });
   });
 
   it('F06b. PCT+MIN+MAX inside band: raw 600 stays 600', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, minimumFeeMinor: '400', maximumFeeMinor: '800', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      minimumFeeMinor: '400',
+      maximumFeeMinor: '800',
+      vatBps: 0,
+    });
     await wtFeeScenario('f06b', '60000', '600', { minimumApplied: false, maximumApplied: false });
   });
 
   it('F06c. PCT+MIN+MAX above band: raw 1000 clamps to 800', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', percentageBps: 100, minimumFeeMinor: '400', maximumFeeMinor: '800', vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 100,
+      minimumFeeMinor: '400',
+      maximumFeeMinor: '800',
+      vatBps: 0,
+    });
     await wtFeeScenario('f06c', '100000', '800', { minimumApplied: false, maximumApplied: true });
   });
 
   it('F07. FLAT+PERCENTAGE: 100 flat + 100bps on 50000 → fee 600, model FLAT_PLUS_PERCENTAGE', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '100', percentageBps: 100, vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      flatFeeMinor: '100',
+      percentageBps: 100,
+      vatBps: 0,
+    });
     await wtFeeScenario('f07', '50000', '600', { minimumApplied: false, maximumApplied: false });
     const snap = await snapshotsFor(`product='WALLET_TRANSFER'`, []);
     expect(snap[0].fee_decision.calculationModel).toBe('FLAT_PLUS_PERCENTAGE');
@@ -745,9 +852,21 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v01-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '1010', account_code: expect.stringMatching(/^WALLET/) });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '10', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '1010',
+      account_code: expect.stringMatching(/^WALLET/),
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '10',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
     const snap = await snapshotsFor(`product='WALLET_TRANSFER'`, []);
     expect(snap[0].fee_decision.posting.vatMinorPosted).toBe(snap[0].fee_decision.vatMinor);
     expect(await walletBalance(a.ledgerAccountId)).toBe(500000n - 50000n - 1010n);
@@ -760,8 +879,16 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v02-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '123', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '1357', account_code: expect.stringMatching(/^WALLET/) });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '123',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '1357',
+      account_code: expect.stringMatching(/^WALLET/),
+    });
   });
 
   it('V03. INCLUSIVE (750bps): fee 1000 → VAT 69 inside; revenue 931; payer debited fee only', async () => {
@@ -772,9 +899,21 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v03-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '1000', account_code: expect.stringMatching(/^WALLET/) });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '931', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '69', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '1000',
+      account_code: expect.stringMatching(/^WALLET/),
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '931',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '69',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
     expect(await walletBalance(a.ledgerAccountId)).toBe(500000n - 50000n - 1000n);
   });
 
@@ -786,30 +925,45 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     await fundWallet(a.ledgerAccountId, '500000');
     await doTransfer(a.id, b.id, '50000', `csm01-v04-${randomUUID()}`);
     const lines = await linesForJournal((await accountingJournals())[0].id);
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '19', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '982', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '19',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '982',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
   });
 
   it('V05. decision drift vs config (EXCLUSIVE): tampered vatMinor → COMMERCIAL_VAT_DECISION_MISMATCH, no journal', async () => {
-    await dataSource.transaction(async (manager) => {
-      try {
-        await accountingService.postForCompletion(manager, {
-          productCode: 'WALLET_TRANSFER',
-          currency: 'NGN',
-          baseIdempotencyKey: `csm01-v05-${randomUUID()}`,
-          correlationId: null,
-          reference: null,
-          snapshotIdempotencyKey: `csm01-v05-${randomUUID()}`,
-          metadata: {},
-          feePayerCustomerId: randomUUID(),
-          feeDecision: { status: 'APPLIED', feeMinor: '1000', vatMinor: '500', ruleRefs: [{ vatBps: 750 }] },
-          commissionDecision: { status: 'NONE' },
-        });
-        throw new Error('expected COMMERCIAL_VAT_DECISION_MISMATCH');
-      } catch (e) {
-        expectBlocked(e, 'COMMERCIAL_VAT_DECISION_MISMATCH');
-      }
-    }).catch(() => undefined);
+    await dataSource
+      .transaction(async (manager) => {
+        try {
+          await accountingService.postForCompletion(manager, {
+            productCode: 'WALLET_TRANSFER',
+            currency: 'NGN',
+            baseIdempotencyKey: `csm01-v05-${randomUUID()}`,
+            correlationId: null,
+            reference: null,
+            snapshotIdempotencyKey: `csm01-v05-${randomUUID()}`,
+            metadata: {},
+            feePayerCustomerId: randomUUID(),
+            feeDecision: {
+              status: 'APPLIED',
+              feeMinor: '1000',
+              vatMinor: '500',
+              ruleRefs: [{ vatBps: 750 }],
+            },
+            commissionDecision: { status: 'NONE' },
+          });
+          throw new Error('expected COMMERCIAL_VAT_DECISION_MISMATCH');
+        } catch (e) {
+          expectBlocked(e, 'COMMERCIAL_VAT_DECISION_MISMATCH');
+        }
+      })
+      .catch(() => undefined);
     expect((await accountingJournals()).length).toBe(0);
   });
 
@@ -821,17 +975,38 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run = await runCashOut({ amountMinor: '30000' });
     expect(run.result.status).toBe('COMPLETED');
     const journals = await accountingJournals();
     expect(journals).toHaveLength(1);
     const lines = await linesForJournal(journals[0].id);
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '100', ledger_account_id: run.walletLedgerAccountId, account_code: expect.stringMatching(/^WALLET/) });
-    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
-    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '100',
+      ledger_account_id: run.walletLedgerAccountId,
+      account_code: expect.stringMatching(/^WALLET/),
+    });
+    const debit = lines
+      .filter((l) => l.direction === 'DEBIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    const credit = lines
+      .filter((l) => l.direction === 'CREDIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
     expect(debit).toBe(credit);
     // Agent wallet: 0 start + 30000 cash-out principal + 100 netting credit.
     expect(await walletBalance(run.walletLedgerAccountId)).toBe(30100n);
@@ -846,17 +1021,39 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run = await runC2cInitiation({ amountMinor: '30000' });
     expect(run.result.status).toBe('COMPLETED');
     const journals = await accountingJournals();
     expect(journals).toHaveLength(1);
     const lines = await linesForJournal(journals[0].id);
     expect(lines).toHaveLength(4);
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '1000', ledger_account_id: run.walletLedgerAccountId, account_code: expect.stringMatching(/^WALLET/) });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expectLine(lines, { direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-    expectLine(lines, { direction: 'CREDIT', amount_minor: '100', ledger_account_id: run.walletLedgerAccountId, account_code: expect.stringMatching(/^WALLET/) });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '1000',
+      ledger_account_id: run.walletLedgerAccountId,
+      account_code: expect.stringMatching(/^WALLET/),
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expectLine(lines, {
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expectLine(lines, {
+      direction: 'CREDIT',
+      amount_minor: '100',
+      ledger_account_id: run.walletLedgerAccountId,
+      account_code: expect.stringMatching(/^WALLET/),
+    });
     // 500000 funded − 30000 principal − 1000 fee + 100 netting:
     expect(await walletBalance(run.walletLedgerAccountId)).toBe(469100n);
     const snap = await snapshotsFor(`product='CASH_TO_CASH' AND direction='OUTGOING'`, []);
@@ -871,12 +1068,24 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const bundle = await createActiveAgentWithPin([AgentService.CASH_OUT], '1234');
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWallet(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'csm01-x');
     try {
       await cashOutService.execute({
@@ -902,8 +1111,16 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('C04. WALLET_TRANSFER with commission rules present for OTHER products → fee journal has NO commission legs', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '500000');
@@ -919,13 +1136,25 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('Y01. invalid runtime config value → operation aborts, wallet unchanged, zero orphans', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     configureAccounting({ COMMERCIAL_ACCOUNTING_VAT_TREATMENT: 'BOGUS_VALUE' });
     const bundle = await createActiveAgentWithPin([AgentService.CASH_OUT], '1234');
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWallet(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'csm01-y');
     await expect(
       cashOutService.execute({
@@ -953,9 +1182,17 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     await fundWallet(w1.ledgerAccountId, '500000');
     const bundle = await createActiveAgentWithPin([AgentService.CASH_OUT], '1234');
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId: c1Wallet } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId: c1Wallet } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWallet(c1Wallet, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const { challengeId } = await createMfaChallenge(customerId, 'csm01-y2a');
     try {
       await cashOutService.execute({
@@ -976,7 +1213,9 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     }
 
     // (b) registry evidence deleted → COMMERCIAL_ACCOUNTING_REGISTRY_EVIDENCE_MISSING on WT.
-    await dataSource.query(`DELETE FROM commercial_accounting_registry WHERE family_code='FEE_REVENUE'`);
+    await dataSource.query(
+      `DELETE FROM commercial_accounting_registry WHERE family_code='FEE_REVENUE'`,
+    );
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
@@ -989,7 +1228,9 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     }
 
     expect((await accountingJournals()).length).toBe(0);
-    expect((await snapshotsFor(`product IN ('WALLET_TO_CASH','WALLET_TRANSFER')`, [])).length).toBe(0);
+    expect((await snapshotsFor(`product IN ('WALLET_TO_CASH','WALLET_TRANSFER')`, [])).length).toBe(
+      0,
+    );
     expect(await walletBalance(c1Wallet)).toBe(500000n);
     expect(await walletBalance(a.ledgerAccountId)).toBe(500000n);
   });
@@ -1000,58 +1241,69 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     const beneficiaryWithoutWallet = randomUUID();
-    await dataSource.transaction(async (manager) => {
-      try {
-        await accountingService.postForCompletion(manager, {
-          productCode: 'CASH_TO_WALLET',
-          currency: 'NGN',
-          baseIdempotencyKey: `csm01-y03-${randomUUID()}`,
-          correlationId: null,
-          reference: null,
-          snapshotIdempotencyKey: `csm01-y03-${randomUUID()}`,
-          metadata: {},
-          feePayerCustomerId: randomUUID(),
-          feeDecision: { status: 'ZERO', feeMinor: '0' },
-          commissionDecision: {
-            status: 'ALLOCATED',
-            allocations: [{
-              beneficiaryType: 'AGENT',
-              beneficiaryId: beneficiaryWithoutWallet,
-              amountMinor: '100',
-              currency: 'NGN',
-            }],
-          },
-        });
-        throw new Error('expected beneficiary wallet blocker');
-      } catch (e) {
-        expectBlocked(e, 'COMMERCIAL_BENEFICIARY_WALLET_NOT_RESOLVABLE');
-      }
-    }).catch(() => undefined);
+    await dataSource
+      .transaction(async (manager) => {
+        try {
+          await accountingService.postForCompletion(manager, {
+            productCode: 'CASH_TO_WALLET',
+            currency: 'NGN',
+            baseIdempotencyKey: `csm01-y03-${randomUUID()}`,
+            correlationId: null,
+            reference: null,
+            snapshotIdempotencyKey: `csm01-y03-${randomUUID()}`,
+            metadata: {},
+            feePayerCustomerId: randomUUID(),
+            feeDecision: { status: 'ZERO', feeMinor: '0' },
+            commissionDecision: {
+              status: 'ALLOCATED',
+              allocations: [
+                {
+                  beneficiaryType: 'AGENT',
+                  beneficiaryId: beneficiaryWithoutWallet,
+                  amountMinor: '100',
+                  currency: 'NGN',
+                },
+              ],
+            },
+          });
+          throw new Error('expected beneficiary wallet blocker');
+        } catch (e) {
+          expectBlocked(e, 'COMMERCIAL_BENEFICIARY_WALLET_NOT_RESOLVABLE');
+        }
+      })
+      .catch(() => undefined);
     expect((await accountingJournals()).length).toBe(0);
   });
 
   // ═══════════════════ NON-FEE PRODUCTS (policy guard) ═══════════════════
 
   it('P01. CUSTOMER_FUNDING with an APPLIED fee decision → COMMERCIAL_FEE_ACCOUNTING_PRODUCT_UNSUPPORTED', async () => {
-    await dataSource.transaction(async (manager) => {
-      try {
-        await accountingService.postForCompletion(manager, {
-          productCode: 'CUSTOMER_FUNDING',
-          currency: 'NGN',
-          baseIdempotencyKey: `csm01-p01-${randomUUID()}`,
-          correlationId: null,
-          reference: null,
-          snapshotIdempotencyKey: `csm01-p01-${randomUUID()}`,
-          metadata: {},
-          feePayerCustomerId: randomUUID(),
-          feeDecision: { status: 'APPLIED', feeMinor: '1000', vatMinor: '0', ruleRefs: [{ vatBps: 0 }] },
-          commissionDecision: { status: 'NONE' },
-        });
-        throw new Error('expected product-scope blocker');
-      } catch (e) {
-        expectBlocked(e, 'COMMERCIAL_FEE_ACCOUNTING_PRODUCT_UNSUPPORTED');
-      }
-    }).catch(() => undefined);
+    await dataSource
+      .transaction(async (manager) => {
+        try {
+          await accountingService.postForCompletion(manager, {
+            productCode: 'CUSTOMER_FUNDING',
+            currency: 'NGN',
+            baseIdempotencyKey: `csm01-p01-${randomUUID()}`,
+            correlationId: null,
+            reference: null,
+            snapshotIdempotencyKey: `csm01-p01-${randomUUID()}`,
+            metadata: {},
+            feePayerCustomerId: randomUUID(),
+            feeDecision: {
+              status: 'APPLIED',
+              feeMinor: '1000',
+              vatMinor: '0',
+              ruleRefs: [{ vatBps: 0 }],
+            },
+            commissionDecision: { status: 'NONE' },
+          });
+          throw new Error('expected product-scope blocker');
+        } catch (e) {
+          expectBlocked(e, 'COMMERCIAL_FEE_ACCOUNTING_PRODUCT_UNSUPPORTED');
+        }
+      })
+      .catch(() => undefined);
     expect((await accountingJournals()).length).toBe(0);
   });
 
@@ -1062,25 +1314,40 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
        VALUES (gen_random_uuid(),'AGENT_FUNDING_POOL-NGN','Agent Funding Pool NGN','LIABILITY','CREDIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
        ON CONFLICT (code) DO NOTHING`,
     );
-    const pool: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
+    const pool: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
+    );
     await fundWallet(pool[0].id, '1000000');
     const bundle = await createActiveAgentWithPin(
-      ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'], null,
+      ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'],
+      null,
     );
     const privilegedPrincipal: any = {
-      type: 'OPERATOR', principalId: 'test-agent-network-manager',
-      roles: ['AGENT_NETWORK_MANAGER'], scopes: ['agent.fund', 'agent.defund'],
-      customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
-      assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
+      type: 'OPERATOR',
+      principalId: 'test-agent-network-manager',
+      roles: ['AGENT_NETWORK_MANAGER'],
+      scopes: ['agent.fund', 'agent.defund'],
+      customerAccess: 'NONE',
+      agentAccess: 'NONE',
+      aggregatorAccess: 'NONE',
+      assuranceLevel: 'MFA', // Decision 7: agent funding requires an MFA-assured maker,
     };
     const fund = await fundingService.fund({
-      agentId: bundle.agent.id, amountMinor: '5000', currency: 'NGN',
-      idempotencyKey: `csm01-fund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: bundle.agent.id,
+      amountMinor: '5000',
+      currency: 'NGN',
+      idempotencyKey: `csm01-fund-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     expect(fund.status).toBe('COMPLETED');
     const defund = await fundingService.defund({
-      agentId: bundle.agent.id, amountMinor: '2000', currency: 'NGN',
-      idempotencyKey: `csm01-defund-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: bundle.agent.id,
+      amountMinor: '2000',
+      currency: 'NGN',
+      idempotencyKey: `csm01-defund-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     expect(defund.status).toBe('COMPLETED');
     expect((await accountingJournals()).length).toBe(0);
@@ -1091,7 +1358,11 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
 
   it('L01. initiation→claim + initiation→expiry: ONE commission accounting event per initiation; claim/expiry add none', async () => {
     await seedFeeRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
 
     const t1 = await runC2cInitiation({ amountMinor: '30000' });
     expect(t1.result.status).toBe('COMPLETED');
@@ -1126,14 +1397,20 @@ describe('V1-COMMERCIAL-SCENARIO-MATRIX-01 (real PG)', () => {
     let expenseLegs = 0;
     for (const j of journals) {
       const lines = await linesForJournal(j.id);
-      expenseLegs += lines.filter((l) => l.account_code === ACCOUNT_LEGEND.COMMISSION_EXPENSE).length;
+      expenseLegs += lines.filter(
+        (l) => l.account_code === ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+      ).length;
     }
     expect(expenseLegs).toBe(2);
   });
 
   it('L02. C2C initiation idempotent replay → exactly ONE accounting journal and ONE allocation', async () => {
     await seedFeeRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const key = `csm01-l02-${randomUUID()}`;
     const run = await runC2cInitiation({ amountMinor: '30000', key });
     expect(run.result.status).toBe('COMPLETED');

@@ -20,7 +20,13 @@ import { LimitCatalogModule } from '../limit-catalog/limit-catalog.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, CustomerProfile, CustomerContactMethod, WalletAccount, Transfer]),
+    TypeOrmModule.forFeature([
+      Customer,
+      CustomerProfile,
+      CustomerContactMethod,
+      WalletAccount,
+      Transfer,
+    ]),
     CustomerModule,
     WalletModule,
     TransferModule,

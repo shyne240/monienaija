@@ -74,8 +74,10 @@ function normalizeEnum(v: string | undefined, name: string, maxLength: number): 
   if (v === undefined || v === null) return undefined;
   const t = v.trim().toUpperCase();
   if (t.length === 0) return undefined;
-  if (t.length > maxLength) throw new BadRequestException(`${name} exceeds ${maxLength} characters`);
-  if (!/^[A-Z0-9_-]+$/.test(t)) throw new BadRequestException(`${name} contains invalid characters`);
+  if (t.length > maxLength)
+    throw new BadRequestException(`${name} exceeds ${maxLength} characters`);
+  if (!/^[A-Z0-9_-]+$/.test(t))
+    throw new BadRequestException(`${name} contains invalid characters`);
   return t;
 }
 
@@ -83,27 +85,34 @@ function normalizeId(v: string | undefined, name: string, maxLength: number): st
   if (v === undefined || v === null) return undefined;
   const t = v.trim();
   if (t.length === 0) return undefined;
-  if (t.length > maxLength) throw new BadRequestException(`${name} exceeds ${maxLength} characters`);
+  if (t.length > maxLength)
+    throw new BadRequestException(`${name} exceeds ${maxLength} characters`);
   return t;
 }
 
 function parseIso(v: string | undefined, name: string): Date | undefined {
   if (v === undefined || v === null || v.trim() === '') return undefined;
   const d = new Date(v.trim());
-  if (isNaN(d.getTime())) throw new BadRequestException(`${name} must be a valid ISO-8601 timestamp`);
+  if (isNaN(d.getTime()))
+    throw new BadRequestException(`${name} must be a valid ISO-8601 timestamp`);
   return d;
 }
 
-function parsePaging(page: string | number | undefined, limit: string | number | undefined): { offset: number; take: number; page: number } {
+function parsePaging(
+  page: string | number | undefined,
+  limit: string | number | undefined,
+): { offset: number; take: number; page: number } {
   let p = 1;
   let l = DEFAULT_PAGE_LIMIT;
   if (page !== undefined) {
     p = typeof page === 'number' ? page : Number.parseInt(String(page), 10);
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
   }
   if (limit !== undefined) {
     l = typeof limit === 'number' ? limit : Number.parseInt(String(limit), 10);
-    if (!Number.isSafeInteger(l) || l < 1 || l > MAX_PAGE_LIMIT) throw new BadRequestException(`limit must be between 1 and ${MAX_PAGE_LIMIT}`);
+    if (!Number.isSafeInteger(l) || l < 1 || l > MAX_PAGE_LIMIT)
+      throw new BadRequestException(`limit must be between 1 and ${MAX_PAGE_LIMIT}`);
   }
   return { offset: (p - 1) * l, take: l, page: p };
 }
@@ -116,7 +125,13 @@ export class LimitDiagnosticsService {
    * Read-only listing of limit_usages. Answers: "what usage has this principal consumed?"
    * and "which windows are active?" for a profile/product/dimension/currency/window key.
    */
-  async listUsages(query: UsageDiagnosticsQuery): Promise<{ page: number; limit: number; total: number; totalPages: number; data: Array<Record<string, unknown>> }> {
+  async listUsages(query: UsageDiagnosticsQuery): Promise<{
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    data: Array<Record<string, unknown>>;
+  }> {
     const where: string[] = [];
     const params: unknown[] = [];
     const add = (sql: string, value: unknown) => {
@@ -218,7 +233,8 @@ export class LimitDiagnosticsService {
     };
     const status = normalizeEnum(query.status, 'status', 20);
     if (status) {
-      if (!['RESERVED', 'COMMITTED', 'RELEASED'].includes(status)) throw new BadRequestException('status must be RESERVED, COMMITTED or RELEASED');
+      if (!['RESERVED', 'COMMITTED', 'RELEASED'].includes(status))
+        throw new BadRequestException('status must be RESERVED, COMMITTED or RELEASED');
       add('status = ?', status);
     }
     const profileCode = normalizeEnum(query.limitProfileCode, 'limitProfileCode', 80);
@@ -303,8 +319,18 @@ export class LimitDiagnosticsService {
         createdAt: r.created_at,
         updatedAt: r.updated_at,
         version: r.version,
-        ageSeconds: r.status === 'RESERVED' && r.reserved_at ? Math.max(0, Math.floor((Date.now() - new Date(r.reserved_at as string).getTime()) / 1000)) : null,
-        stale: r.status === 'RESERVED' && r.reserved_at ? new Date(r.reserved_at as string).getTime() < Date.now() - staleThresholdMinutes * 60000 : false,
+        ageSeconds:
+          r.status === 'RESERVED' && r.reserved_at
+            ? Math.max(
+                0,
+                Math.floor((Date.now() - new Date(r.reserved_at as string).getTime()) / 1000),
+              )
+            : null,
+        stale:
+          r.status === 'RESERVED' && r.reserved_at
+            ? new Date(r.reserved_at as string).getTime() <
+              Date.now() - staleThresholdMinutes * 60000
+            : false,
       })),
     };
   }

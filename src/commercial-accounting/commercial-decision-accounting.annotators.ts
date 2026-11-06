@@ -35,7 +35,8 @@ export function annotateCommissionDecisionWithPosting(
   const feeCollectionState =
     outcome.feeCollected === true
       ? 'FEE_COLLECTED'
-      : typeof (commissionDecision as { feeCollectionState?: unknown }).feeCollectionState === 'string'
+      : typeof (commissionDecision as { feeCollectionState?: unknown }).feeCollectionState ===
+          'string'
         ? (commissionDecision as { feeCollectionState?: unknown }).feeCollectionState
         : 'FEE_NOT_CONFIGURED';
 
@@ -50,7 +51,9 @@ export function annotateCommissionDecisionWithPosting(
   //    "settled by netting" reason.
   //  - Not posted (zero amount / blocked would have thrown): keep payable:false with the recorded
   //    reason — never faked.
-  const treatment = posted ? (outcome.commissionPosting as { treatment?: unknown }).treatment : null;
+  const treatment = posted
+    ? (outcome.commissionPosting as { treatment?: unknown }).treatment
+    : null;
 
   return {
     ...commissionDecision,

@@ -61,7 +61,8 @@ export class NotificationCredentialBindingService {
         binding.scheme !== CREDENTIAL_BINDING_SCHEME ||
         !KEY_VERSION_PATTERN.test(binding.keyVersion) ||
         !MAC_PATTERN.test(binding.mac)
-      ) return false;
+      )
+        return false;
       const { keys } = this.loadKeyring();
       const key = keys.get(binding.keyVersion);
       if (!key) return false;
@@ -94,7 +95,8 @@ export class NotificationCredentialBindingService {
 
   private loadKeyring(): { active: string; keys: Map<string, Buffer> } {
     const raw = this.config.get<string>('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON');
-    const active = this.config.get<string>('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION') ?? 'v1';
+    const active =
+      this.config.get<string>('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION') ?? 'v1';
     if (!raw || !KEY_VERSION_PATTERN.test(active)) throw new CredentialBindingError();
     let parsed: unknown;
     try {

@@ -33,9 +33,15 @@ export enum LimitReservationStatus {
 @Index('idx_limit_reservations_principal', ['principalType', 'principalId'])
 @Index('idx_limit_reservations_usage', ['limitUsageId'])
 @Index('idx_limit_reservations_status', ['status'])
-@Index('uq_limit_reservations_idempotent', ['idempotencyKey', 'limitUsageId'], { unique: true, where: 'limit_usage_id IS NOT NULL' })
+@Index('uq_limit_reservations_idempotent', ['idempotencyKey', 'limitUsageId'], {
+  unique: true,
+  where: 'limit_usage_id IS NOT NULL',
+})
 @Check('chk_limit_reservations_status', "status IN ('RESERVED','COMMITTED','RELEASED')")
-@Check('chk_limit_reservations_dimension', "dimension IN ('DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')")
+@Check(
+  'chk_limit_reservations_dimension',
+  "dimension IN ('DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT')",
+)
 @Check('chk_limit_reservations_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_limit_reservations_version', 'version > 0')
 export class LimitReservation {

@@ -37,7 +37,9 @@ describe('shared customer-field policy', () => {
 
   describe('email and country-aware phone values', () => {
     it('normalizes valid internationalized email addresses and enforces syntax/byte limits', () => {
-      expect(normalizeEmailAddress('  Test.User+one@Example.COM  ')).toBe('test.user+one@example.com');
+      expect(normalizeEmailAddress('  Test.User+one@Example.COM  ')).toBe(
+        'test.user+one@example.com',
+      );
       expect(isValidEmailAddress('test.user+one@example.com')).toBe(true);
       expect(isValidEmailAddress('élise@example.com')).toBe(true);
       expect(isValidEmailAddress('missing-at.example.com')).toBe(false);
@@ -80,21 +82,33 @@ describe('shared customer-field policy', () => {
     });
 
     it('enforces exact Nigerian BVN/NIN shape and excludes their issue/expiry dates', () => {
-      expect(validateIdentityDocumentFields({
-        type: 'NIN',
-        documentNumber: '12345678901',
-        issuingCountry: 'NG',
-      }, { requireDocumentNumber: true })).toEqual({});
-      expect(validateIdentityDocumentFields({
-        type: 'BVN',
-        documentNumber: '1234567890',
-        issuingCountry: 'NG',
-      }, { requireDocumentNumber: true }).documentNumber).toMatch(/exactly 11 digits/);
-      expect(validateIdentityDocumentFields({
-        type: 'NIN',
-        documentNumber: '12345678901',
-        issuingCountry: 'GB',
-      }).issuingCountry).toMatch(/Nigeria/);
+      expect(
+        validateIdentityDocumentFields(
+          {
+            type: 'NIN',
+            documentNumber: '12345678901',
+            issuingCountry: 'NG',
+          },
+          { requireDocumentNumber: true },
+        ),
+      ).toEqual({});
+      expect(
+        validateIdentityDocumentFields(
+          {
+            type: 'BVN',
+            documentNumber: '1234567890',
+            issuingCountry: 'NG',
+          },
+          { requireDocumentNumber: true },
+        ).documentNumber,
+      ).toMatch(/exactly 11 digits/);
+      expect(
+        validateIdentityDocumentFields({
+          type: 'NIN',
+          documentNumber: '12345678901',
+          issuingCountry: 'GB',
+        }).issuingCountry,
+      ).toMatch(/Nigeria/);
       const datedNin = validateIdentityDocumentFields({
         type: 'NIN',
         documentNumber: '12345678901',
@@ -106,32 +120,40 @@ describe('shared customer-field policy', () => {
     });
 
     it('validates non-national-document dates and customer-specific document categories without claiming official verification', () => {
-      expect(validateIdentityDocumentFields({
-        type: 'INTERNATIONAL_PASSPORT',
-        documentNumber: 'P1234567',
-        issuingCountry: 'NG',
-        issuedAt: '2020-02-29',
-        expiresAt: '2030-02-28',
-      })).toEqual({});
-      expect(validateIdentityDocumentFields({
-        type: 'INTERNATIONAL_PASSPORT',
-        documentNumber: 'P1234567',
-        issuingCountry: 'NG',
-        issuedAt: '2030-02-28',
-      }).issuedAt).toMatch(/future/);
-      expect(validateIdentityDocumentFields({
-        type: 'DRIVERS_LICENSE',
-        documentNumber: 'DL-0001',
-        issuingCountry: 'NG',
-        issuedAt: '2020-04-31',
-      }).issuedAt).toMatch(/calendar/);
-      expect(validateIdentityDocumentFields({
-        type: 'INTERNATIONAL_PASSPORT',
-        documentNumber: 'P1234567',
-        issuingCountry: 'NG',
-        issuedAt: '2020-01-01',
-        expiresAt: '2019-12-31',
-      }).expiresAt).toMatch(/on or after/);
+      expect(
+        validateIdentityDocumentFields({
+          type: 'INTERNATIONAL_PASSPORT',
+          documentNumber: 'P1234567',
+          issuingCountry: 'NG',
+          issuedAt: '2020-02-29',
+          expiresAt: '2030-02-28',
+        }),
+      ).toEqual({});
+      expect(
+        validateIdentityDocumentFields({
+          type: 'INTERNATIONAL_PASSPORT',
+          documentNumber: 'P1234567',
+          issuingCountry: 'NG',
+          issuedAt: '2030-02-28',
+        }).issuedAt,
+      ).toMatch(/future/);
+      expect(
+        validateIdentityDocumentFields({
+          type: 'DRIVERS_LICENSE',
+          documentNumber: 'DL-0001',
+          issuingCountry: 'NG',
+          issuedAt: '2020-04-31',
+        }).issuedAt,
+      ).toMatch(/calendar/);
+      expect(
+        validateIdentityDocumentFields({
+          type: 'INTERNATIONAL_PASSPORT',
+          documentNumber: 'P1234567',
+          issuingCountry: 'NG',
+          issuedAt: '2020-01-01',
+          expiresAt: '2019-12-31',
+        }).expiresAt,
+      ).toMatch(/on or after/);
       expect(getIdentityDocumentTypes('BUSINESS')).toEqual(['BUSINESS_REGISTRATION']);
       expect(getIdentityDocumentTypes('INDIVIDUAL')).not.toContain('BUSINESS_REGISTRATION');
     });
@@ -141,15 +163,19 @@ describe('shared customer-field policy', () => {
     it('validates country postal codes and required address fields', () => {
       expect(validatePostalCode('90210', 'US').valid).toBe(true);
       expect(validatePostalCode('not a postal code?', 'US').valid).toBe(false);
-      expect(validateAddressFields({
-        type: 'RESIDENTIAL',
-        lineOne: '  1 Example Road ',
-        city: 'Abuja',
-        state: 'FCT',
-        country: 'NG',
-        postalCode: '900001',
-      })).toEqual({});
-      expect(validateAddressFields({ lineOne: '', city: '', state: '', country: 'ZZ' })).toMatchObject({
+      expect(
+        validateAddressFields({
+          type: 'RESIDENTIAL',
+          lineOne: '  1 Example Road ',
+          city: 'Abuja',
+          state: 'FCT',
+          country: 'NG',
+          postalCode: '900001',
+        }),
+      ).toEqual({});
+      expect(
+        validateAddressFields({ lineOne: '', city: '', state: '', country: 'ZZ' }),
+      ).toMatchObject({
         lineOne: 'Address line 1 is required.',
         city: 'City is required.',
         state: 'State or province is required.',
@@ -158,22 +184,26 @@ describe('shared customer-field policy', () => {
     });
 
     it('computes stable, country-code-normalized duplicate signatures', () => {
-      expect(addressSignature({
-        type: 'RESIDENTIAL',
-        lineOne: '  1 Example ROAD ',
-        lineTwo: '',
-        city: 'Abuja',
-        state: 'FCT',
-        country: 'NGA',
-        postalCode: '900001',
-      })).toBe(addressSignature({
-        type: 'RESIDENTIAL',
-        lineOne: '1 example road',
-        city: 'ABUJA',
-        state: 'fct',
-        country: 'NG',
-        postalCode: '900001',
-      }));
+      expect(
+        addressSignature({
+          type: 'RESIDENTIAL',
+          lineOne: '  1 Example ROAD ',
+          lineTwo: '',
+          city: 'Abuja',
+          state: 'FCT',
+          country: 'NGA',
+          postalCode: '900001',
+        }),
+      ).toBe(
+        addressSignature({
+          type: 'RESIDENTIAL',
+          lineOne: '1 example road',
+          city: 'ABUJA',
+          state: 'fct',
+          country: 'NG',
+          postalCode: '900001',
+        }),
+      );
     });
   });
 
@@ -191,11 +221,13 @@ describe('shared customer-field policy', () => {
   });
 
   it('rejects individual-only profile fields on a business customer', () => {
-    expect(validateProfileFields({
-      customerType: 'BUSINESS',
-      displayName: 'Example Limited',
-      legalName: 'Example Limited',
-      firstName: 'Jane',
-    }).firstName).toMatch(/business profile/);
+    expect(
+      validateProfileFields({
+        customerType: 'BUSINESS',
+        displayName: 'Example Limited',
+        legalName: 'Example Limited',
+        firstName: 'Jane',
+      }).firstName,
+    ).toMatch(/business profile/);
   });
 });

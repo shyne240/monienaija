@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * P0-B — dedicated real-PostgreSQL, real-HTTP proof suite for the journal-reversal maker
  * request wiring (`LedgerReversalGovernanceService` + `LedgerController`):
@@ -17,7 +17,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -26,7 +26,11 @@ import { PrivilegedActionApproval } from '../src/authorization/privileged-action
 import { PrivilegedActionApprovalStatus } from '../src/authorization/privileged-action-approval.enums';
 import { ledgerReversalRequestFingerprint } from '../src/ledger/ledger-reversal-governance.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerEntryDirection, LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerEntryDirection,
+  LedgerAccountType,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import {
   createIntegrationDataSource,
   destroyIntegrationDataSource,
@@ -220,7 +224,7 @@ describe('P0-B ledger journal reversal maker-checker governance — real Postgre
 
   it('rejects unauthorized makers (FINANCE_AUDITOR cannot initiate)', async () => {
     const auditor = await provisionRole('FINANCE_AUDITOR');
-    const preparer = await provisionRole('FINANCE_PREPARER');
+    await provisionRole('FINANCE_PREPARER');
     const { journalId, reason } = await seedJournal();
 
     const res = await request(app.getHttpServer())

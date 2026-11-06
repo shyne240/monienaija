@@ -5,5 +5,4 @@ import { CustomerStatus } from '../customer.enums';
 export class UpdateCustomerDto {
   @IsEnum(CustomerStatus)
   status!: CustomerStatus;
-
 }

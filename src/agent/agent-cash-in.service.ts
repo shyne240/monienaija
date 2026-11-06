@@ -68,7 +68,9 @@ export class AgentCashInService {
 
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 255) {
-      throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
     }
 
     const pin = input.pin;
@@ -89,9 +91,10 @@ export class AgentCashInService {
 
     // 2. Customer eligibility — ACTIVE and not deleted
     const custRows: Array<{ id: string; status: string; deleted_at: string | null }> =
-      await this.dataSource.query(`SELECT id, status, deleted_at FROM customers WHERE id = $1 LIMIT 1`, [
-        customerId,
-      ]);
+      await this.dataSource.query(
+        `SELECT id, status, deleted_at FROM customers WHERE id = $1 LIMIT 1`,
+        [customerId],
+      );
     const customer = custRows[0];
     if (!customer || customer.deleted_at !== null) {
       throw new NotFoundException(`Recipient ${resolution.receivingNumber} not found`);
@@ -117,16 +120,31 @@ export class AgentCashInService {
       if (reason === 'PIN_LOCKED') {
         throw new UnauthorizedException('Transaction PIN is locked');
       }
-      if (reason === 'PRINCIPAL_MISMATCH' || reason === 'PRINCIPAL_NOT_AGENT' || reason === 'WORKFORCE_NOT_PERMITTED') {
+      if (
+        reason === 'PRINCIPAL_MISMATCH' ||
+        reason === 'PRINCIPAL_NOT_AGENT' ||
+        reason === 'WORKFORCE_NOT_PERMITTED'
+      ) {
         throw new ForbiddenException(`Authorization denied: ${reason}`);
       }
-      if (reason === 'AGENT_PENDING' || reason === 'AGENT_SUSPENDED' || reason === 'AGENT_TERMINATED' || reason === 'AGENT_NOT_FOUND' || reason === 'AGENT_DELETED') {
+      if (
+        reason === 'AGENT_PENDING' ||
+        reason === 'AGENT_SUSPENDED' ||
+        reason === 'AGENT_TERMINATED' ||
+        reason === 'AGENT_NOT_FOUND' ||
+        reason === 'AGENT_DELETED'
+      ) {
         throw new ForbiddenException(`Agent not permitted: ${reason}`);
       }
       if (reason === 'SERVICE_NOT_PERMITTED' || reason === 'UNKNOWN_SERVICE') {
         throw new ForbiddenException('Agent does not have CASH_IN capability');
       }
-      if (reason === 'AGENT_CLASS_INACTIVE' || reason === 'MISSING_AGENT_CLASS' || reason === 'AGENT_CLASS_NOT_FOUND' || reason === 'AGENT_CLASS_DELETED') {
+      if (
+        reason === 'AGENT_CLASS_INACTIVE' ||
+        reason === 'MISSING_AGENT_CLASS' ||
+        reason === 'AGENT_CLASS_NOT_FOUND' ||
+        reason === 'AGENT_CLASS_DELETED'
+      ) {
         throw new ForbiddenException(`Agent class invalid: ${reason}`);
       }
       throw new ForbiddenException(`Authorization denied: ${reason}`);
@@ -139,7 +157,9 @@ export class AgentCashInService {
 
     // 5. Financial execution via A12 — DEBIT Agent, CREDIT Customer
     // Reference must be deterministic for idempotency: use caller-provided reference or derive from idempotencyKey
-    const reference = input.reference?.trim() ? input.reference.trim() : `CASH_IN-${idempotencyKey}`;
+    const reference = input.reference?.trim()
+      ? input.reference.trim()
+      : `CASH_IN-${idempotencyKey}`;
     const description = input.description?.trim()
       ? input.description.trim()
       : `Cash→Wallet ${amountString} NGN from Agent ${agentId} to Customer ${customerId}`;

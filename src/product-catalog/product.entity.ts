@@ -24,11 +24,17 @@ import {
 @Index('idx_products_status', ['status'])
 @Index('idx_products_enabled', ['enabled'])
 @Check('chk_products_code', "code ~ '^[A-Z0-9_]{3,80}$'")
-@Check('chk_products_domain', "domain IN ('CUSTOMER','AGENT','AGGREGATOR','FINANCE','SUPPORT','PLATFORM')")
+@Check(
+  'chk_products_domain',
+  "domain IN ('CUSTOMER','AGENT','AGGREGATOR','FINANCE','SUPPORT','PLATFORM')",
+)
 @Check('chk_products_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_products_scope', "product_scope IN ('V1','V2')")
 @Check('chk_products_status', "status IN ('ACTIVE','DISABLED','DEPRECATED')")
-@Check('chk_products_configuration', "configuration_status IN ('CONFIGURED','NOT_CONFIGURED','DISABLED')")
+@Check(
+  'chk_products_configuration',
+  "configuration_status IN ('CONFIGURED','NOT_CONFIGURED','DISABLED')",
+)
 @Check('chk_products_version', 'version > 0')
 export class Product {
   @PrimaryColumn({ type: 'varchar', length: 80 })

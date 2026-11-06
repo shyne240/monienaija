@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { CustomerFundingService } from '../src/customer-funding/customer-funding.service';
@@ -25,7 +25,6 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   let supportService: SupportService;
   let fundingService: CustomerFundingService;
   let walletService: WalletService;
-  let ledgerService: LedgerService;
 
   const supportMaker: any = {
     type: 'SUPPORT',
@@ -63,19 +62,29 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     supportService = moduleRef.get(SupportService);
     fundingService = moduleRef.get(CustomerFundingService);
     walletService = moduleRef.get(WalletService);
-    ledgerService = moduleRef.get(LedgerService);
+    moduleRef.get(LedgerService);
   }, 180000);
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(()=>undefined);} catch { void 0; } }
+      try {
+        await destroyIntegrationDataSource(dataSource);
+      } catch {
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
+      }
     }
   }, 60000);
 
@@ -87,7 +96,9 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       await dataSource.query(`
         INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
@@ -105,7 +116,9 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     }
   });
 
-  async function createCustomerWithCredential(opts: { reference?: string; password?: string } = {}): Promise<{ customerId: string; token: string; walletId: string; ledgerAccountId: string }> {
+  async function createCustomerWithCredential(
+    opts: { reference?: string; password?: string } = {},
+  ): Promise<{ customerId: string; token: string; walletId: string; ledgerAccountId: string }> {
     const reference = opts.reference ?? `cust-support-${randomUUID()}`;
     const password = opts.password ?? 'correct-password-support';
     const rows: Array<{ id: string }> = await dataSource.query(
@@ -113,16 +126,29 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Support Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'Support Customer'],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`, [customerId, `0${canonical10.slice(1)}`, canonical10]);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      [customerId, `0${canonical10.slice(1)}`, canonical10],
+    );
     const hash = encodePbkdf2(password);
     await dataSource.query(
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `support-wallet-${customerId}-${randomUUID()}` });
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(200);
+    const wallet = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `support-wallet-${customerId}-${randomUUID()}`,
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(200);
     const token = login.body.accessToken as string;
     return { customerId, token, walletId: wallet.id, ledgerAccountId: wallet.ledgerAccountId };
   }
@@ -130,15 +156,30 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   async function createAgentWithCredential(): Promise<{ agentId: string; token: string }> {
     const classRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits) VALUES ($1,$2,$3,true,$4,$5) RETURNING id`,
-      [`cls-sup-${randomUUID().slice(0,8)}`, `SUP-${randomUUID().slice(0,6)}`, 'Support Class', JSON.stringify(['CASH_IN']), JSON.stringify({})],
+      [
+        `cls-sup-${randomUUID().slice(0, 8)}`,
+        `SUP-${randomUUID().slice(0, 6)}`,
+        'Support Class',
+        JSON.stringify(['CASH_IN']),
+        JSON.stringify({}),
+      ],
     );
     const classId = classRows[0]!.id;
     const ref = `agent-sup-${randomUUID()}`;
-    const agentRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`, [ref, classId]);
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [ref, classId],
+    );
     const agentId = agentRows[0]!.id;
     const hash = encodePbkdf2('agent-pass-sup', 'agent-salt-sup');
-    await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`, [agentId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'agent-pass-sup' }).expect(200);
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'agent-pass-sup' })
+      .expect(200);
     return { agentId, token: login.body.accessToken as string };
   }
 
@@ -160,7 +201,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', `cust-create-${randomUUID()}`)
-      .send({ subject: 'My funding not credited', category: 'FUNDING', description: 'I paid 50k but not credited, funding ref pending' })
+      .send({
+        subject: 'My funding not credited',
+        category: 'FUNDING',
+        description: 'I paid 50k but not credited, funding ref pending',
+      })
       .expect(201);
     expect(res.body.id).toBeTruthy();
     expect(res.body.reference).toMatch(/^SUP-/);
@@ -178,11 +223,15 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   });
 
   it('2. Customer sees own ticket (GET)', async () => {
-    const { customerId, token } = await createCustomerWithCredential();
+    const { token } = await createCustomerWithCredential();
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
-      .send({ subject: 'Cannot transfer', category: 'TRANSFER', description: 'Transfer failed with 500' })
+      .send({
+        subject: 'Cannot transfer',
+        category: 'TRANSFER',
+        description: 'Transfer failed with 500',
+      })
       .expect(201);
     const get = await request(app.getHttpServer())
       .get(`/api/v1/customers/me/support/tickets/${created.body.id}`)
@@ -195,7 +244,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(list.body.items.some((i: any) => i.id === created.body.id)).toBe(true);
+    expect(
+      (list.body.items as Array<{ id: string }>).some(
+        (i: { id: string }) => i.id === created.body.id,
+      ),
+    ).toBe(true);
     expect(list.body.pagination.total).toBeGreaterThanOrEqual(1);
   });
 
@@ -215,9 +268,15 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${custB.token}`)
       .expect(200);
-    expect(listB.body.items.some((i: any) => i.id === created.body.id)).toBe(false);
+    expect(
+      (listB.body.items as Array<{ id: string }>).some(
+        (i: { id: string }) => i.id === created.body.id,
+      ),
+    ).toBe(false);
     // service also isolates
-    await expect(supportService.getForCustomer(created.body.id, custB.customerId)).rejects.toThrow(/not found/i);
+    await expect(supportService.getForCustomer(created.body.id, custB.customerId)).rejects.toThrow(
+      /not found/i,
+    );
   });
 
   it('4. Agent creates ticket (SELF)', async () => {
@@ -225,7 +284,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/agents/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
-      .send({ subject: 'Outlet not working', category: 'OUTLET', description: 'My outlet terminal offline since yesterday' })
+      .send({
+        subject: 'Outlet not working',
+        category: 'OUTLET',
+        description: 'My outlet terminal offline since yesterday',
+      })
       .expect(201);
     expect(res.body.id).toBeTruthy();
     expect(res.body.status).toBe('OPEN');
@@ -235,7 +298,9 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get('/api/v1/agents/me/support/tickets')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(list.body.items.some((i: any) => i.id === res.body.id)).toBe(true);
+    expect(
+      (list.body.items as Array<{ id: string }>).some((i: { id: string }) => i.id === res.body.id),
+    ).toBe(true);
   });
 
   it('5. Agent cannot see another Agent ticket (404)', async () => {
@@ -250,13 +315,21 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .get(`/api/v1/agents/me/support/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${agentB.token}`)
       .expect(404);
-    await expect(supportService.getForAgent(created.body.id, agentB.agentId)).rejects.toThrow(/not found/i);
+    await expect(supportService.getForAgent(created.body.id, agentB.agentId)).rejects.toThrow(
+      /not found/i,
+    );
   });
 
   it('6. unauthenticated rejected (401 CUSTOMER/AGENT/INTERNAL)', async () => {
-    await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').send({ subject: 'x', category: 'OTHER', description: 'y' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .send({ subject: 'x', category: 'OTHER', description: 'y' })
+      .expect(401);
     await request(app.getHttpServer()).get('/api/v1/customers/me/support/tickets').expect(401);
-    await request(app.getHttpServer()).post('/api/v1/agents/me/support/tickets').send({ subject: 'x', category: 'OTHER', description: 'y' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/v1/agents/me/support/tickets')
+      .send({ subject: 'x', category: 'OTHER', description: 'y' })
+      .expect(401);
     await request(app.getHttpServer()).get('/api/v1/internal/support/tickets').expect(401);
     await request(app.getHttpServer()).get('/api/v1/internal/support/tickets/some-id').expect(401);
   });
@@ -266,7 +339,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Internal list test', category: 'WALLET', description: 'Wallet balance mismatch' })
+      .send({
+        subject: 'Internal list test',
+        category: 'WALLET',
+        description: 'Wallet balance mismatch',
+      })
       .expect(201);
     const list = await supportService.listForInternal(1, 20);
     expect(list.items.length).toBeGreaterThanOrEqual(1);
@@ -293,7 +370,14 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       subject: 'Assignment test',
       category: 'OTHER' as any,
       description: 'Need assignment',
-      principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any,
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
     });
     expect(created.assignedTo).toBeNull();
     const assigned = await supportService.assignTicket({
@@ -308,10 +392,16 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const fetched = await supportService.getForInternal(created.id);
     expect(fetched.assignedTo).toBe('support-agent-007');
     // audit exists
-    const audits: Array<{ action: string }> = await dataSource.query(`SELECT action FROM audit_events WHERE entity_id=$1 AND entity_type='SUPPORT_TICKET'`, [created.id]);
+    const audits: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_id=$1 AND entity_type='SUPPORT_TICKET'`,
+      [created.id],
+    );
     expect(audits.some((a) => a.action === 'SUPPORT_TICKET_ASSIGNED')).toBe(true);
     // outbox
-    const outbox: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.assigned'`, [created.id]);
+    const outbox: Array<{ event_type: string }> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.assigned'`,
+      [created.id],
+    );
     expect(outbox.length).toBe(1);
     // reassignment audited
     const reassigned = await supportService.assignTicket({
@@ -320,7 +410,10 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       principal: operatorChecker,
     });
     expect(reassigned.assignedTo).toBe('support-agent-007-b');
-    const audits2: Array<{ action: string }> = await dataSource.query(`SELECT action FROM audit_events WHERE entity_id=$1 AND action='SUPPORT_TICKET_ASSIGNED'`, [created.id]);
+    const audits2: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_id=$1 AND action='SUPPORT_TICKET_ASSIGNED'`,
+      [created.id],
+    );
     expect(audits2.length).toBe(2);
   });
 
@@ -338,11 +431,38 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .send({ assignedTo: 'someone' })
       .expect((r) => expect([401, 403].includes(r.status)).toBe(true));
     // service with customer principal should throw Forbidden
-    const custPrincipal: any = { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' };
-    await expect(supportService.assignTicket({ ticketId: created.body.id, assignedTo: 'x', principal: custPrincipal })).rejects.toThrow(/not allowed|Forbidden/i);
+    const custPrincipal: any = {
+      type: 'CUSTOMER',
+      principalId: cust.customerId,
+      customerId: cust.customerId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF',
+    };
+    await expect(
+      supportService.assignTicket({
+        ticketId: created.body.id,
+        assignedTo: 'x',
+        principal: custPrincipal,
+      }),
+    ).rejects.toThrow(/not allowed|Forbidden/i);
     const agent = await createAgentWithCredential();
-    const agentPrincipal: any = { type: 'AGENT', principalId: agent.agentId, agentId: agent.agentId, roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'SELF' };
-    await expect(supportService.assignTicket({ ticketId: created.body.id, assignedTo: 'x', principal: agentPrincipal })).rejects.toThrow(/not allowed/i);
+    const agentPrincipal: any = {
+      type: 'AGENT',
+      principalId: agent.agentId,
+      agentId: agent.agentId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE',
+      agentAccess: 'SELF',
+    };
+    await expect(
+      supportService.assignTicket({
+        ticketId: created.body.id,
+        assignedTo: 'x',
+        principal: agentPrincipal,
+      }),
+    ).rejects.toThrow(/not allowed/i);
   });
 
   it('10. valid status transition (OPEN -> IN_PROGRESS -> RESOLVED -> CLOSED)', async () => {
@@ -351,19 +471,41 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       subject: 'Status valid',
       category: 'OTHER' as any,
       description: 'status test',
-      principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any,
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
     });
     expect(created.status).toBe('OPEN');
-    const inProg = await supportService.updateStatus({ ticketId: created.id, status: 'IN_PROGRESS' as any, principal: supportMaker });
+    const inProg = await supportService.updateStatus({
+      ticketId: created.id,
+      status: 'IN_PROGRESS' as any,
+      principal: supportMaker,
+    });
     expect(inProg.status).toBe('IN_PROGRESS');
-    const resolved = await supportService.updateStatus({ ticketId: created.id, status: 'RESOLVED' as any, principal: operatorChecker });
+    const resolved = await supportService.updateStatus({
+      ticketId: created.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
     expect(resolved.status).toBe('RESOLVED');
     expect(resolved.resolvedAt).toBeTruthy();
-    const closed = await supportService.updateStatus({ ticketId: created.id, status: 'CLOSED' as any, principal: privilegedPrincipal });
+    const closed = await supportService.updateStatus({
+      ticketId: created.id,
+      status: 'CLOSED' as any,
+      principal: privilegedPrincipal,
+    });
     expect(closed.status).toBe('CLOSED');
     expect(closed.closedAt).toBeTruthy();
     // outbox for resolved and closed
-    const outboxRes: Array<any> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type IN ('support.ticket.resolved','support.ticket.closed','support.ticket.status_changed')`, [created.id]);
+    const outboxRes: Array<any> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type IN ('support.ticket.resolved','support.ticket.closed','support.ticket.status_changed')`,
+      [created.id],
+    );
     expect(outboxRes.some((r) => r.event_type === 'support.ticket.resolved')).toBe(true);
     expect(outboxRes.some((r) => r.event_type === 'support.ticket.closed')).toBe(true);
   });
@@ -374,16 +516,55 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       subject: 'Invalid transition',
       category: 'OTHER' as any,
       description: 'invalid',
-      principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any,
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
     });
     // OPEN -> CLOSED is allowed, but RESOLVED -> OPEN is not, CLOSED -> anything not
-    await supportService.updateStatus({ ticketId: created.id, status: 'RESOLVED' as any, principal: operatorChecker });
-    await expect(supportService.updateStatus({ ticketId: created.id, status: 'OPEN' as any, principal: operatorChecker })).rejects.toThrow(/Invalid.*transition/i);
-    await expect(supportService.updateStatus({ ticketId: created.id, status: 'IN_PROGRESS' as any, principal: operatorChecker })).rejects.toThrow(/Invalid.*transition/i);
-    await supportService.updateStatus({ ticketId: created.id, status: 'CLOSED' as any, principal: operatorChecker });
-    await expect(supportService.updateStatus({ ticketId: created.id, status: 'RESOLVED' as any, principal: operatorChecker })).rejects.toThrow(/Invalid.*transition/i);
+    await supportService.updateStatus({
+      ticketId: created.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
+    await expect(
+      supportService.updateStatus({
+        ticketId: created.id,
+        status: 'OPEN' as any,
+        principal: operatorChecker,
+      }),
+    ).rejects.toThrow(/Invalid.*transition/i);
+    await expect(
+      supportService.updateStatus({
+        ticketId: created.id,
+        status: 'IN_PROGRESS' as any,
+        principal: operatorChecker,
+      }),
+    ).rejects.toThrow(/Invalid.*transition/i);
+    await supportService.updateStatus({
+      ticketId: created.id,
+      status: 'CLOSED' as any,
+      principal: operatorChecker,
+    });
+    await expect(
+      supportService.updateStatus({
+        ticketId: created.id,
+        status: 'RESOLVED' as any,
+        principal: operatorChecker,
+      }),
+    ).rejects.toThrow(/Invalid.*transition/i);
     // also test CLOSED cannot be assigned
-    await expect(supportService.assignTicket({ ticketId: created.id, assignedTo: 'someone', principal: supportMaker })).rejects.toThrow(/Cannot assign/i);
+    await expect(
+      supportService.assignTicket({
+        ticketId: created.id,
+        assignedTo: 'someone',
+        principal: supportMaker,
+      }),
+    ).rejects.toThrow(/Cannot assign/i);
   });
 
   it('12. resolution works and 13. customer sees resolved status', async () => {
@@ -393,7 +574,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${cust.token}`)
       .send({ subject: 'Resolve me', category: 'FUNDING', description: 'Please resolve' })
       .expect(201);
-    const sw = await supportService.updateStatus({ ticketId: created.body.id, status: 'RESOLVED' as any, principal: operatorChecker });
+    const sw = await supportService.updateStatus({
+      ticketId: created.body.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
     expect(sw.status).toBe('RESOLVED');
     const custView = await request(app.getHttpServer())
       .get(`/api/v1/customers/me/support/tickets/${created.body.id}`)
@@ -402,7 +587,10 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     expect(custView.body.status).toBe('RESOLVED');
     expect(custView.body.resolvedAt).toBeTruthy();
     // audit
-    const audits: Array<{ action: string }> = await dataSource.query(`SELECT action FROM audit_events WHERE entity_id=$1`, [created.body.id]);
+    const audits: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_id=$1`,
+      [created.body.id],
+    );
     expect(audits.some((a) => a.action === 'SUPPORT_TICKET_RESOLVED')).toBe(true);
   });
 
@@ -460,9 +648,13 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const ticketA = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${custA.token}`)
-      .send({ subject: 'Cust A msg isolation', category: 'OTHER', description: 'Valid description A' })
+      .send({
+        subject: 'Cust A msg isolation',
+        category: 'OTHER',
+        description: 'Valid description A',
+      })
       .expect(201);
-    const ticketB = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${custB.token}`)
       .send({ subject: 'Cust B', category: 'OTHER', description: 'Valid description B' })
@@ -485,9 +677,24 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${custB.token}`)
       .expect(404);
     // Service also isolates
-    const custBPrincipal: any = { type: 'CUSTOMER', principalId: custB.customerId, customerId: custB.customerId, roles: [], scopes: [], customerAccess: 'SELF' };
-    await expect(supportService.addMessage({ ticketId: ticketA.body.id, body: 'hack', principal: custBPrincipal })).rejects.toThrow(/not found/i);
-    await expect(supportService.listMessages(ticketA.body.id, custBPrincipal)).rejects.toThrow(/not found/i);
+    const custBPrincipal: any = {
+      type: 'CUSTOMER',
+      principalId: custB.customerId,
+      customerId: custB.customerId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF',
+    };
+    await expect(
+      supportService.addMessage({
+        ticketId: ticketA.body.id,
+        body: 'hack',
+        principal: custBPrincipal,
+      }),
+    ).rejects.toThrow(/not found/i);
+    await expect(supportService.listMessages(ticketA.body.id, custBPrincipal)).rejects.toThrow(
+      /not found/i,
+    );
   });
 
   it('16. internal-only messages not leaked to customer/agent', async () => {
@@ -518,8 +725,16 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .expect(200);
     expect(custMsgs.body.length).toBe(1);
     expect(custMsgs.body[0].body).toBe('Public update: we are investigating');
-    expect(custMsgs.body.some((m: any) => m.body.includes('Internal note'))).toBe(false);
-    expect(custMsgs.body.some((m: any) => m.isInternal === true)).toBe(false);
+    expect(
+      (custMsgs.body as Array<{ body: string; isInternal: boolean }>).some((m) =>
+        m.body.includes('Internal note'),
+      ),
+    ).toBe(false);
+    expect(
+      (custMsgs.body as Array<{ body: string; isInternal: boolean }>).some(
+        (m) => m.isInternal === true,
+      ),
+    ).toBe(false);
     // agent sees same filtered
     // workforce sees both
     const internalMsgs = await supportService.listMessages(ticket.body.id, supportMaker);
@@ -547,7 +762,12 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const ticket = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Funding link', category: 'FUNDING', description: 'My funding pending', fundingRequestId: funding.id })
+      .send({
+        subject: 'Funding link',
+        category: 'FUNDING',
+        description: 'My funding pending',
+        fundingRequestId: funding.id,
+      })
       .expect(201);
     expect(ticket.body.fundingRequestId).toBe(funding.id);
     const fetched = await supportService.getForCustomer(ticket.body.id, cust.customerId);
@@ -559,7 +779,12 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Bad funding', category: 'FUNDING', description: 'bad', fundingRequestId: randomUUID() })
+      .send({
+        subject: 'Bad funding',
+        category: 'FUNDING',
+        description: 'bad',
+        fundingRequestId: randomUUID(),
+      })
       .expect((r) => expect([400, 404].includes(r.status)).toBe(true));
   });
 
@@ -575,7 +800,12 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const ticket = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Funding pending support', category: 'FUNDING', description: 'Please check', fundingRequestId: funding.id })
+      .send({
+        subject: 'Funding pending support',
+        category: 'FUNDING',
+        description: 'Please check',
+        fundingRequestId: funding.id,
+      })
       .expect(201);
     expect(ticket.body.fundingRequestId).toBe(funding.id);
     // approve funding still credits wallet, ticket remains
@@ -584,7 +814,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const after = await getBalance(cust.ledgerAccountId);
     expect(after).toBe(before + 25000n);
     // ticket still resolvable
-    await supportService.updateStatus({ ticketId: ticket.body.id, status: 'RESOLVED' as any, principal: operatorChecker });
+    await supportService.updateStatus({
+      ticketId: ticket.body.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
     const afterTicket = await supportService.getForCustomer(ticket.body.id, cust.customerId);
     expect(afterTicket.status).toBe('RESOLVED');
   });
@@ -592,7 +826,9 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   it('19. ticket creation does not mutate ledger', async () => {
     const cust = await createCustomerWithCredential();
     const before = await getBalance(cust.ledgerAccountId);
-    const settlementRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlementRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     const settlementBalBeforeRows: Array<{ balance: string }> = await dataSource.query(
       `SELECT COALESCE(SUM(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END),0)::text AS balance FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.ledger_account_id=$1`,
       [settlementRows[0]!.id],
@@ -612,11 +848,27 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const settlementAfter = BigInt(settlementBalAfterRows[0]!.balance);
     expect(settlementAfter).toBe(settlementBefore);
     // count journals not increased for support
-    const journals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals`);
+    const journals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM ledger_journals`,
+    );
     // create extra ticket via service and check again not increased
     const countBefore = Number(journals[0]!.count);
-    await supportService.createTicket({ subject: 'Second', category: 'OTHER' as any, description: 'second ticket', principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any });
-    const journals2: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals`);
+    await supportService.createTicket({
+      subject: 'Second',
+      category: 'OTHER' as any,
+      description: 'second ticket',
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
+    });
+    const journals2: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM ledger_journals`,
+    );
     expect(Number(journals2[0]!.count)).toBe(countBefore);
   });
 
@@ -627,7 +879,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Wallet balance unchanged', category: 'WALLET', description: 'Balance question' })
+      .send({
+        subject: 'Wallet balance unchanged',
+        category: 'WALLET',
+        description: 'Balance question',
+      })
       .expect(201);
     const walletAfter = await walletService.getWallet(cust.walletId);
     expect(walletAfter.balanceMinor).toBe(beforeMinor);
@@ -635,8 +891,12 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const wallet2 = await walletService.getWallet(cust.walletId);
     expect(wallet2.balanceMinor).toBe(beforeMinor);
     // no financial journals for ticket
-    const fundingBefore: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM customer_funding_requests`);
-    const fundingAfter: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM customer_funding_requests`);
+    const fundingBefore: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM customer_funding_requests`,
+    );
+    const fundingAfter: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM customer_funding_requests`,
+    );
     expect(Number(fundingAfter[0]!.count)).toBe(Number(fundingBefore[0]!.count));
   });
 
@@ -671,11 +931,16 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     expect(JSON.stringify(msgs.body).toLowerCase()).not.toContain('passwordhash');
     expect(JSON.stringify(msgs.body).toLowerCase()).not.toContain('tokenhash');
     // internal view also redacted via audit
-    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(`SELECT new_values, previous_values FROM audit_events WHERE entity_type='SUPPORT_TICKET'`);
+    const audits: Array<{ new_values: any; previous_values: any }> = await dataSource.query(
+      `SELECT new_values, previous_values FROM audit_events WHERE entity_type='SUPPORT_TICKET'`,
+    );
     const auditStr = JSON.stringify(audits).toLowerCase();
     expect(auditStr).not.toContain('password');
     // DB tables should not contain hashes
-    const ticketRows: Array<any> = await dataSource.query(`SELECT * FROM support_tickets WHERE id=$1`, [ticket.body.id]);
+    const ticketRows: Array<any> = await dataSource.query(
+      `SELECT * FROM support_tickets WHERE id=$1`,
+      [ticket.body.id],
+    );
     expect(JSON.stringify(ticketRows).toLowerCase()).not.toContain('password');
     expect(JSON.stringify(ticketRows).toLowerCase()).not.toContain('pin');
   });
@@ -683,7 +948,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   it('22. duplicate/idempotent creation behavior (Idempotency-Key)', async () => {
     const cust = await createCustomerWithCredential();
     const key = `idem-sup-${randomUUID()}`;
-    const payload = { subject: 'Idempotent ticket', category: 'OTHER', description: 'Idempotent description' };
+    const payload = {
+      subject: 'Idempotent ticket',
+      category: 'OTHER',
+      description: 'Idempotent description',
+    };
     const first = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
@@ -703,7 +972,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
       .set('Idempotency-Key', key)
-      .send({ subject: 'Different subject', category: 'OTHER', description: 'Different description' })
+      .send({
+        subject: 'Different subject',
+        category: 'OTHER',
+        description: 'Different description',
+      })
       .expect(409);
     // without key, different tickets created
     const a = await request(app.getHttpServer())
@@ -724,7 +997,11 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     const created = await request(app.getHttpServer())
       .post('/api/v1/customers/me/support/tickets')
       .set('Authorization', `Bearer ${cust.token}`)
-      .send({ subject: 'Reply idempotency test', category: 'OTHER', description: 'testing reply idempotency' })
+      .send({
+        subject: 'Reply idempotency test',
+        category: 'OTHER',
+        description: 'testing reply idempotency',
+      })
       .expect(201);
     const key = `idem-msg-${randomUUID()}`;
     const first = await request(app.getHttpServer())
@@ -773,19 +1050,38 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       subject: 'Concurrent status',
       category: 'OTHER' as any,
       description: 'concurrent',
-      principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any,
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
     });
     // assign first to move to IN_PROGRESS
-    await supportService.assignTicket({ ticketId: ticket.id, assignedTo: 'support-1', principal: supportMaker });
+    await supportService.assignTicket({
+      ticketId: ticket.id,
+      assignedTo: 'support-1',
+      principal: supportMaker,
+    });
     const afterAssign = await supportService.getForInternal(ticket.id);
     expect(afterAssign.status).toBe('IN_PROGRESS');
     // two concurrent resolves
     const results = await Promise.allSettled([
-      supportService.updateStatus({ ticketId: ticket.id, status: 'RESOLVED' as any, principal: operatorChecker }),
-      supportService.updateStatus({ ticketId: ticket.id, status: 'RESOLVED' as any, principal: privilegedPrincipal }),
+      supportService.updateStatus({
+        ticketId: ticket.id,
+        status: 'RESOLVED' as any,
+        principal: operatorChecker,
+      }),
+      supportService.updateStatus({
+        ticketId: ticket.id,
+        status: 'RESOLVED' as any,
+        principal: privilegedPrincipal,
+      }),
     ]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter((r) => r.status === 'rejected');
+    results.filter((r) => r.status === 'rejected');
     // One should succeed, the other either succeed idempotently or conflict? Our updateStatus returns early if already RESOLVED, so second will be idempotent success, not conflict.
     // So we test that after both, status is RESOLVED and no double audit anomaly: at least one fulfilled and no double ledger mutation (already proven)
     expect(fulfilled.length).toBeGreaterThanOrEqual(1);
@@ -794,7 +1090,12 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
     // Now test version conflict: try stale version
     const currentVersion = fetched.version;
     // first succeeds with correct version
-    await supportService.updateStatus({ ticketId: ticket.id, status: 'CLOSED' as any, principal: operatorChecker, version: currentVersion });
+    await supportService.updateStatus({
+      ticketId: ticket.id,
+      status: 'CLOSED' as any,
+      principal: operatorChecker,
+      version: currentVersion,
+    });
     const afterClosed = await supportService.getForInternal(ticket.id);
     expect(afterClosed.status).toBe('CLOSED');
     // stale version should be rejected (but our earlier closed, next with same old version should Conflict if we attempted with old version)
@@ -803,12 +1104,30 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       subject: 'Version stale',
       category: 'OTHER' as any,
       description: 'version',
-      principal: { type: 'CUSTOMER', principalId: cust.customerId, customerId: cust.customerId, roles: [], scopes: [], customerAccess: 'SELF' } as any,
+      principal: {
+        type: 'CUSTOMER',
+        principalId: cust.customerId,
+        customerId: cust.customerId,
+        roles: [],
+        scopes: [],
+        customerAccess: 'SELF',
+      } as any,
     });
     const staleVersion = ticket2.version;
     // do concurrent assignment + status to bump version
-    await supportService.assignTicket({ ticketId: ticket2.id, assignedTo: 'x', principal: supportMaker });
-    await expect(supportService.updateStatus({ ticketId: ticket2.id, status: 'RESOLVED' as any, principal: operatorChecker, version: staleVersion })).rejects.toThrow(/version is stale/i);
+    await supportService.assignTicket({
+      ticketId: ticket2.id,
+      assignedTo: 'x',
+      principal: supportMaker,
+    });
+    await expect(
+      supportService.updateStatus({
+        ticketId: ticket2.id,
+        status: 'RESOLVED' as any,
+        principal: operatorChecker,
+        version: staleVersion,
+      }),
+    ).rejects.toThrow(/version is stale/i);
   });
 
   it('24. audit events exist for lifecycle', async () => {
@@ -818,10 +1137,25 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${cust.token}`)
       .send({ subject: 'Audit test', category: 'OTHER', description: 'audit' })
       .expect(201);
-    await supportService.assignTicket({ ticketId: ticket.body.id, assignedTo: 'auditor-1', principal: supportMaker });
-    await supportService.updateStatus({ ticketId: ticket.body.id, status: 'RESOLVED' as any, principal: operatorChecker });
-    await supportService.addMessage({ ticketId: ticket.body.id, body: 'audit message', principal: supportMaker });
-    const audits: Array<{ action: string; entity_type: string }> = await dataSource.query(`SELECT action, entity_type FROM audit_events WHERE entity_id=$1 OR entity_id IN (SELECT id FROM support_ticket_messages WHERE ticket_id=$1) ORDER BY occurred_at`, [ticket.body.id]);
+    await supportService.assignTicket({
+      ticketId: ticket.body.id,
+      assignedTo: 'auditor-1',
+      principal: supportMaker,
+    });
+    await supportService.updateStatus({
+      ticketId: ticket.body.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
+    await supportService.addMessage({
+      ticketId: ticket.body.id,
+      body: 'audit message',
+      principal: supportMaker,
+    });
+    const audits: Array<{ action: string; entity_type: string }> = await dataSource.query(
+      `SELECT action, entity_type FROM audit_events WHERE entity_id=$1 OR entity_id IN (SELECT id FROM support_ticket_messages WHERE ticket_id=$1) ORDER BY occurred_at`,
+      [ticket.body.id],
+    );
     const actions = audits.map((a) => a.action);
     expect(actions).toContain('SUPPORT_TICKET_CREATED');
     expect(actions).toContain('SUPPORT_TICKET_ASSIGNED');
@@ -838,16 +1172,40 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
       .set('Authorization', `Bearer ${cust.token}`)
       .send({ subject: 'Outbox test', category: 'OTHER', description: 'outbox' })
       .expect(201);
-    const outboxCreated: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.created'`, [ticket.body.id]);
+    const outboxCreated: Array<{ event_type: string }> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.created'`,
+      [ticket.body.id],
+    );
     expect(outboxCreated.length).toBe(1);
-    await supportService.assignTicket({ ticketId: ticket.body.id, assignedTo: 'outbox-assignee', principal: supportMaker });
-    const outboxAssigned: Array<any> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.assigned'`, [ticket.body.id]);
+    await supportService.assignTicket({
+      ticketId: ticket.body.id,
+      assignedTo: 'outbox-assignee',
+      principal: supportMaker,
+    });
+    const outboxAssigned: Array<any> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.assigned'`,
+      [ticket.body.id],
+    );
     expect(outboxAssigned.length).toBe(1);
-    await supportService.updateStatus({ ticketId: ticket.body.id, status: 'RESOLVED' as any, principal: operatorChecker });
-    const outboxResolved: Array<any> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.resolved'`, [ticket.body.id]);
+    await supportService.updateStatus({
+      ticketId: ticket.body.id,
+      status: 'RESOLVED' as any,
+      principal: operatorChecker,
+    });
+    const outboxResolved: Array<any> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.resolved'`,
+      [ticket.body.id],
+    );
     expect(outboxResolved.length).toBe(1);
-    await supportService.addMessage({ ticketId: ticket.body.id, body: 'outbox msg', principal: supportMaker });
-    const outboxMsg: Array<any> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.message_added'`, [ticket.body.id]);
+    await supportService.addMessage({
+      ticketId: ticket.body.id,
+      body: 'outbox msg',
+      principal: supportMaker,
+    });
+    const outboxMsg: Array<any> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='support.ticket.message_added'`,
+      [ticket.body.id],
+    );
     expect(outboxMsg.length).toBe(1);
   });
 
@@ -907,21 +1265,74 @@ describe('V1-007 Support Ticket Lifecycle (real PostgreSQL)', () => {
   });
 
   it('migration chain and support tables remain valid', async () => {
-    const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
-    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(`SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090', '1785753600091', '1785753600092', '1785753600093', '1785753600094', '1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101', '1785753600102', '1785753600103']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddCustomerProfileNameParts1785753600091|AllowMultipleCustomerIdentityDocuments1785753600092|CreateCustomerProofOfAddressWorkflows1785753600093|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/);
-    const supportTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_tickets'`);
+    const latest: Array<{ timestamp: string; name: string }> = await dataSource.query(
+      `SELECT timestamp::text AS timestamp, name FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
+    );
+    expect([
+      '1785753600066',
+      '1785753600067',
+      '1785753600068',
+      '1785753600069',
+      '1785753600070',
+      '1785753600071',
+      '1785753600072',
+      '1785753600073',
+      '1785753600074',
+      '1785753600075',
+      '1785753600076',
+      '1785753600077',
+      '1785753600078',
+      '1785753600079',
+      '1785753600080',
+      '1785753600081',
+      '1785753600082',
+      '1785753600083',
+      '1785753600084',
+      '1785753600085',
+      '1785753600086',
+      '1785753600087',
+      '1785753600088',
+      '1785753600089',
+      '1785753600090',
+      '1785753600091',
+      '1785753600092',
+      '1785753600093',
+      '1785753600094',
+      '1785753600095',
+      '1785753600096',
+      '1785753600097',
+      '1785753600098',
+      '1785753600099',
+      '1785753600100',
+      '1785753600101',
+      '1785753600102',
+      '1785753600103',
+    ]).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(
+      /^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddCustomerProfileNameParts1785753600091|AllowMultipleCustomerIdentityDocuments1785753600092|CreateCustomerProofOfAddressWorkflows1785753600093|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/,
+    );
+    const supportTable: Array<{ tablename: string }> = await dataSource.query(
+      `SELECT tablename FROM pg_tables WHERE tablename='support_tickets'`,
+    );
     expect(supportTable.length).toBe(1);
-    const messageTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='support_ticket_messages'`);
+    const messageTable: Array<{ tablename: string }> = await dataSource.query(
+      `SELECT tablename FROM pg_tables WHERE tablename='support_ticket_messages'`,
+    );
     expect(messageTable.length).toBe(1);
   });
 
   it('no second ledger/balance/provider for support', async () => {
-    const cols: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='support_tickets' AND column_name IN ('balance_minor','ledger_account_id','journal_id')`);
+    const cols: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='support_tickets' AND column_name IN ('balance_minor','ledger_account_id','journal_id')`,
+    );
     expect(cols.length).toBe(0);
-    const supportJournals: Array<any> = await dataSource.query(`SELECT * FROM ledger_journals WHERE reference LIKE 'SUP-%'`);
+    const supportJournals: Array<any> = await dataSource.query(
+      `SELECT * FROM ledger_journals WHERE reference LIKE 'SUP-%'`,
+    );
     expect(supportJournals.length).toBe(0);
   });
 });

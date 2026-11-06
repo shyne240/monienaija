@@ -23,7 +23,10 @@ import { LedgerService } from '../ledger/ledger.service';
 import { WalletAccount } from '../wallet/wallet-account.entity';
 import { assertWalletOwnership } from '../wallet/wallet-ownership';
 import { WalletStatus } from '../wallet/wallet.enums';
-import { LimitEnforcementService, type EnforceResult } from '../limit-catalog/limit-enforcement.service';
+import {
+  LimitEnforcementService,
+  type EnforceResult,
+} from '../limit-catalog/limit-enforcement.service';
 import { FeeRuleCalculatorService } from '../fee-rules/fee-rule-calculator.service';
 import { FeeRuleResolverService } from '../fee-rules/fee-rule-resolver.service';
 import { CommissionEngine } from '../commission/commission.engine';
@@ -56,7 +59,12 @@ import {
   transferFailedEventKey,
   type AuditedTransferRecipientIdentity,
 } from './transfer-events';
-import { limitCodeToTransferFailureCode, TransferDirection, TransferFailureCode, TransferStatus } from './transfer.enums';
+import {
+  limitCodeToTransferFailureCode,
+  TransferDirection,
+  TransferFailureCode,
+  TransferStatus,
+} from './transfer.enums';
 import type {
   CreateTransferCommand,
   TransferFailure,
@@ -382,11 +390,16 @@ export class TransferService {
       sourceWallet.status !== WalletStatus.ACTIVE ||
       destinationWallet.status !== WalletStatus.ACTIVE
     ) {
-      return this.markFailed(manager, transfer, {
-        code: TransferFailureCode.WALLET_NOT_ACTIVE,
-        statusCode: 409,
-        message: 'Both wallets must be active to transfer funds',
-      }, notificationRecipients);
+      return this.markFailed(
+        manager,
+        transfer,
+        {
+          code: TransferFailureCode.WALLET_NOT_ACTIVE,
+          statusCode: 409,
+          message: 'Both wallets must be active to transfer funds',
+        },
+        notificationRecipients,
+      );
     }
 
     // V1-SYSTEM-01: WalletAccount.status alone is not authoritative for whether the owning
@@ -426,11 +439,16 @@ export class TransferService {
           return !!row && (row.deleted_at !== null || row.status !== 'ACTIVE');
         })();
       if (sourceIneligible || destinationIneligible) {
-        return this.markFailed(manager, transfer, {
-          code: TransferFailureCode.CUSTOMER_NOT_ACTIVE,
-          statusCode: 409,
-          message: 'Both the sending and receiving customer must be active to transfer funds',
-        }, notificationRecipients);
+        return this.markFailed(
+          manager,
+          transfer,
+          {
+            code: TransferFailureCode.CUSTOMER_NOT_ACTIVE,
+            statusCode: 409,
+            message: 'Both the sending and receiving customer must be active to transfer funds',
+          },
+          notificationRecipients,
+        );
       }
     }
 
@@ -439,11 +457,16 @@ export class TransferService {
       destinationWallet.currency !== command.currency ||
       sourceWallet.currency !== destinationWallet.currency
     ) {
-      return this.markFailed(manager, transfer, {
-        code: TransferFailureCode.CURRENCY_MISMATCH,
-        statusCode: 409,
-        message: 'Source, destination, and transfer currencies must match',
-      }, notificationRecipients);
+      return this.markFailed(
+        manager,
+        transfer,
+        {
+          code: TransferFailureCode.CURRENCY_MISMATCH,
+          statusCode: 409,
+          message: 'Source, destination, and transfer currencies must match',
+        },
+        notificationRecipients,
+      );
     }
 
     // — V1-LIMIT-04: limit enforcement for WALLET_TRANSFER (principal = source customer, OUTGOING) —
@@ -475,16 +498,21 @@ export class TransferService {
         });
       } catch (error) {
         if (error instanceof HttpException) {
-          const resp: any = error.getResponse();
-          const rawCode = (resp && (resp.error || resp.code)) as string | undefined;
+          const resp = error.getResponse() as { error?: string; code?: string; message?: string };
+          const rawCode = resp && (resp.error || resp.code);
           // V1-LIMIT-05: type-safe mapping of the stable LIMIT_* union onto TransferFailureCode
           const limitCode = rawCode ? limitCodeToTransferFailureCode(String(rawCode)) : null;
           if (limitCode) {
-            return this.markFailed(manager, transfer, {
-              code: limitCode,
-              statusCode: error.getStatus(),
-              message: (resp.message as string) ?? String(limitCode),
-            }, notificationRecipients);
+            return this.markFailed(
+              manager,
+              transfer,
+              {
+                code: limitCode,
+                statusCode: error.getStatus(),
+                message: resp.message ?? String(limitCode),
+              },
+              notificationRecipients,
+            );
           }
         }
         throw error;
@@ -525,17 +553,28 @@ export class TransferService {
 
       if (limitIdempotencyKey && this.limitEnforcementService) {
         try {
-          await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+          await this.limitEnforcementService.releaseReservationsWithManager(
+            manager,
+            limitIdempotencyKey,
+          );
         } catch {
           // best-effort release; if no reservations exist this is a no-op
         }
       }
-      return this.markFailed(manager, transfer, this.failureFromLedgerException(error), notificationRecipients);
+      return this.markFailed(
+        manager,
+        transfer,
+        this.failureFromLedgerException(error),
+        notificationRecipients,
+      );
     }
 
     if (limitIdempotencyKey && this.limitEnforcementService) {
       try {
-        await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+        await this.limitEnforcementService.commitReservationsWithManager(
+          manager,
+          limitIdempotencyKey,
+        );
       } catch {
         // best-effort commit; if no reservations exist this is a no-op
       }
@@ -653,7 +692,6 @@ export class TransferService {
           principalAmountMinor: amountMinor,
           currency: ctx.command.currency,
         }),
-
       };
     } else {
       feeDecision = { ...feeNotConfigured(ctx.command.currency, amountMinor) };
@@ -668,7 +706,10 @@ export class TransferService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -736,9 +777,13 @@ export class TransferService {
         commissionDecision,
       });
       feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
-      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
-        commissionEvent: 'TRANSACTION_COMPLETION',
-      });
+      commissionDecision = annotateCommissionDecisionWithPosting(
+        commissionDecision,
+        accountingOutcome,
+        {
+          commissionEvent: 'TRANSACTION_COMPLETION',
+        },
+      );
     }
 
     const limitDecision = ctx.limitOutcome

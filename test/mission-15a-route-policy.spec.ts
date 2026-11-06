@@ -64,16 +64,30 @@ describe('Mission 15A declared Agent route policies', () => {
   });
 
   it('does not replace the applicant capability or open internal reads through the public locator', () => {
-    expect(registry.resolve({ method: 'GET', url: `/api/v1/agents/applications/${id}` }).authenticationMode).toBe('APPLICATION_ACCESS');
-    expect(registry.resolve({ method: 'GET', url: '/api/v1/public/agents/cash-to-cash-outlets' }).public).toBe(true);
-    expect(registry.resolve({ method: 'GET', url: `/api/v1/internal/outlets/${id}` }).public).toBe(false);
+    expect(
+      registry.resolve({ method: 'GET', url: `/api/v1/agents/applications/${id}` })
+        .authenticationMode,
+    ).toBe('APPLICATION_ACCESS');
+    expect(
+      registry.resolve({ method: 'GET', url: '/api/v1/public/agents/cash-to-cash-outlets' }).public,
+    ).toBe(true);
+    expect(registry.resolve({ method: 'GET', url: `/api/v1/internal/outlets/${id}` }).public).toBe(
+      false,
+    );
   });
 
   it('preserves the checker inbox and Agent SELF receiving-number policies', () => {
-    const inbox = registry.resolve({ method: 'GET', url: '/api/v1/internal/agents/funding-requests' });
+    const inbox = registry.resolve({
+      method: 'GET',
+      url: '/api/v1/internal/agents/funding-requests',
+    });
     expect(inbox.policy?.requiredRoles).toEqual(['FINANCE_CONTROLLER']);
     expect(inbox.policy?.requiredFunctions).toEqual(['agent.fund', 'agent.defund']);
-    const own = registry.resolve({ method: 'GET', url: `/api/v1/agents/${id}/receiving-number`, params: { id } });
+    const own = registry.resolve({
+      method: 'GET',
+      url: `/api/v1/agents/${id}/receiving-number`,
+      params: { id },
+    });
     expect(own.agentId).toBe(id);
     expect(own.policy?.agentAccess).toBe('SELF');
   });

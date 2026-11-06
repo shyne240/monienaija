@@ -64,10 +64,7 @@ import { OutboxService } from '../src/operations/outbox.service';
 import { WalletService } from '../src/wallet/wallet.service';
 import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { CommissionRuleRegistryService } from '../src/commission/commission-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
@@ -159,7 +156,13 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       }
       const type = token.replace('workforce-', '').toUpperCase();
       const allowed = [
-        'SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR',
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
       ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
@@ -313,9 +316,24 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   async function provisionAccountingFamilies(): Promise<void> {
     const families = [
       { role: 'FEE_REVENUE', code: ACCOUNT_LEGEND.FEE_REVENUE, type: 'REVENUE', normal: 'CREDIT' },
-      { role: 'VAT_PAYABLE', code: ACCOUNT_LEGEND.VAT_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
-      { role: 'COMMISSION_EXPENSE', code: ACCOUNT_LEGEND.COMMISSION_EXPENSE, type: 'EXPENSE', normal: 'DEBIT' },
-      { role: 'COMMISSION_PAYABLE', code: ACCOUNT_LEGEND.COMMISSION_PAYABLE, type: 'LIABILITY', normal: 'CREDIT' },
+      {
+        role: 'VAT_PAYABLE',
+        code: ACCOUNT_LEGEND.VAT_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
+      {
+        role: 'COMMISSION_EXPENSE',
+        code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+        type: 'EXPENSE',
+        normal: 'DEBIT',
+      },
+      {
+        role: 'COMMISSION_PAYABLE',
+        code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+        type: 'LIABILITY',
+        normal: 'CREDIT',
+      },
     ];
     for (const f of families) {
       await dataSource.query(
@@ -399,7 +417,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     return rule.id;
   }
 
-  async function createWallet(customerId: string): Promise<{ id: string; ledgerAccountId: string }> {
+  async function createWallet(
+    customerId: string,
+  ): Promise<{ id: string; ledgerAccountId: string }> {
     const view = await walletService.createWallet({
       customerId,
       currency: 'NGN',
@@ -465,10 +485,10 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     idempotencyKey: string,
   ): Promise<any> {
     return transferService.createTransfer({
-// INTEGRATION (integration/main-backend-frontend-20261030): main's required
-                                          // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
-                                          // directly with no HTTP principal, so an INTERNAL binding is used — which
-                                          // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+      // INTEGRATION (integration/main-backend-frontend-20261030): main's required
+      // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+      // directly with no HTTP principal, so an INTERNAL binding is used — which
+      // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
       ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
       sourceWalletId: sourceId,
       destinationWalletId: destId,
@@ -479,11 +499,13 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   }
 
   function expectBlocked(error: any, code: string): void {
-    const body = error instanceof CommercialAccountingBlockedError ? error.getResponse() : error?.response ?? error?.getResponse?.() ?? error;
+    const body =
+      error instanceof CommercialAccountingBlockedError
+        ? error.getResponse()
+        : (error?.response ?? error?.getResponse?.() ?? error);
     const blob = JSON.stringify(body);
     expect(blob).toContain(code);
-    const isBlocked =
-      error instanceof CommercialAccountingBlockedError || body?.error === code;
+    const isBlocked = error instanceof CommercialAccountingBlockedError || body?.error === code;
     expect(isBlocked).toBe(true);
   }
 
@@ -566,7 +588,14 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
          VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [randomUUID(), code, product, dimension, value, new Date(Date.now() - 86400000).toISOString()],
+        [
+          randomUUID(),
+          code,
+          product,
+          dimension,
+          value,
+          new Date(Date.now() - 86400000).toISOString(),
+        ],
       );
     }
   }
@@ -649,8 +678,14 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const { agent, wallet: agentWallet } = bundle;
     await fundWallet(agentWallet.ledgerAccountId, '500000');
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId: custWalletLedgerId } = await createCustomerWithPhone(phone);
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_WALLET');
+    const { customerId, walletLedgerAccountId: custWalletLedgerId } =
+      await createCustomerWithPhone(phone);
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_WALLET',
+    );
     const result = await cashInService.execute({
       agentId: agent.id,
       principal: agentPrincipal(agent.id) as any,
@@ -671,7 +706,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const { customerId, walletLedgerAccountId: custWalletLedgerId } =
       await createCustomerWithPhoneAndPin(phone, '1234');
     await fundWallet(custWalletLedgerId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const otp = 'ca01-otp';
     const { challengeId } = await createMfaChallenge(customerId, otp);
     const result = await cashOutService.execute({
@@ -691,7 +731,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   async function runClaim(initResult: any, phone: string): Promise<any> {
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_CASH',
+    );
     const otp = 'ca01-claim-otp';
     const { challengeId } = await createMfaChallenge(customerId, otp);
     const claim = await claimService.execute({
@@ -726,15 +771,24 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const lines = await linesForJournal(journals[0].id);
     expect(lines).toHaveLength(2);
     expect(lines).toContainEqual({
-      direction: 'DEBIT', amount_minor: '1000', account_code: expect.stringMatching(/^WALLET/),
+      direction: 'DEBIT',
+      amount_minor: '1000',
+      account_code: expect.stringMatching(/^WALLET/),
     });
     expect(lines).toContainEqual({
-      direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
     });
   });
 
   it('02. revenue amount == authoritative fee decision; snapshot linkage is real', async () => {
-    await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '2500', percentageBps: 0, vatBps: 0 });
+    await seedFeeRule({
+      productCode: 'WALLET_TRANSFER',
+      flatFeeMinor: '2500',
+      percentageBps: 0,
+      vatBps: 0,
+    });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');
@@ -801,8 +855,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const journals = await accountingJournals();
     expect(journals).toHaveLength(1);
     const lines = await linesForJournal(journals[0].id);
-    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
-    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    const debit = lines
+      .filter((l) => l.direction === 'DEBIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    const credit = lines
+      .filter((l) => l.direction === 'CREDIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
     expect(debit).toBe(credit);
     expect(debit).toBeGreaterThan(0n);
   });
@@ -896,7 +954,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const bundle = await createActiveAgentWithPin([AgentService.CASH_TO_CASH], '1234');
     const { agent, wallet: agentWallet } = bundle;
     await fundWallet(agentWallet.ledgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     const phone = newPhone();
     const init = await cashToCashService.execute({
       agentId: agent.id,
@@ -911,7 +974,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     expect(journalsAfterInit).toHaveLength(1);
     const lines = await linesForJournal(journalsAfterInit[0].id);
     expect(lines).toContainEqual({
-      direction: 'CREDIT', amount_minor: '750', account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+      direction: 'CREDIT',
+      amount_minor: '750',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
     });
     expect(await walletBalance(agentWallet.ledgerAccountId)).toBe(500000n - 20000n - 750n);
 
@@ -924,17 +989,37 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   it('11. WALLET_TO_CASH: fee + commission legs in ONE combined journal (single atomic operation)', async () => {
     await seedFeeRule({ productCode: 'WALLET_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const { result } = await runCashOut({ amountMinor: '30000' });
     expect(result.status).toBe('COMPLETED');
     const journals = await accountingJournals();
     expect(journals.length).toBeGreaterThanOrEqual(1);
     const lines = await linesForJournal(journals[0].id);
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expect(lines).toContainEqual({ direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE });
-    const debit = lines.filter((l) => l.direction === 'DEBIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
-    const credit = lines.filter((l) => l.direction === 'CREDIT').reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+    });
+    const debit = lines
+      .filter((l) => l.direction === 'DEBIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
+    const credit = lines
+      .filter((l) => l.direction === 'CREDIT')
+      .reduce((s, l) => s + BigInt(l.amount_minor), 0n);
     expect(debit).toBe(credit);
   });
 
@@ -949,8 +1034,16 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const journals = await accountingJournals();
     const lines = await linesForJournal(journals[0].id);
     // fee=1000 → vat=floor(1000*750/10000)=75 → payer debited 1075.
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '1000', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '75', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '1000',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '75',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
     expect(lines.filter((l) => l.direction === 'DEBIT')[0].amount_minor).toBe('1075');
     const snap = await snapshotsFor(`product='WALLET_TRANSFER'`, []);
     expect(snap[0].fee_decision.posting.vatMinorPosted).toBe(snap[0].fee_decision.vatMinor);
@@ -966,8 +1059,16 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const journals = await accountingJournals();
     const lines = await linesForJournal(journals[0].id);
     // carved = floor(1000*750/10750)=69 → revenue=931, vat=69, DR payer 1000.
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '931', account_code: ACCOUNT_LEGEND.FEE_REVENUE });
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '69', account_code: ACCOUNT_LEGEND.VAT_PAYABLE });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '931',
+      account_code: ACCOUNT_LEGEND.FEE_REVENUE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '69',
+      account_code: ACCOUNT_LEGEND.VAT_PAYABLE,
+    });
     expect(lines.filter((l) => l.direction === 'DEBIT')[0].amount_minor).toBe('1000');
   });
 
@@ -1020,14 +1121,26 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   it('17. EXPENSE_PAYABLE + ACCRUE_NOW_SETTLE_LATER → expense/payable legs + payable snapshot evidence', async () => {
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run = await runCashIn({ amountMinor: '30000' });
     expect(run.result.status).toBe('COMPLETED');
     const journals = await accountingJournals();
     expect(journals).toHaveLength(1);
     const lines = await linesForJournal(journals[0].id);
-    expect(lines).toContainEqual({ direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
-    expect(lines).toContainEqual({ direction: 'CREDIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE });
+    expect(lines).toContainEqual({
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
+    expect(lines).toContainEqual({
+      direction: 'CREDIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_PAYABLE,
+    });
     const snap = await snapshotsFor(`product='CASH_TO_WALLET'`, []);
     expect(snap[0].commission_decision.status).toBe('ALLOCATED');
     expect(snap[0].commission_decision.payable).toBe(true);
@@ -1038,7 +1151,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   it('18. unset treatment + non-zero allocation → COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT_NOT_CONFIGURED', async () => {
     configureAccounting({ COMMERCIAL_COMMISSION_ACCOUNTING_TREATMENT: undefined });
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     await expect(runCashIn({ amountMinor: '30000' })).rejects.toMatchObject({});
     expect(await accountingJournals()).toHaveLength(0);
     expect(await snapshotsFor(`true`, [])).toHaveLength(0);
@@ -1047,7 +1164,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   it('19. treatment×timing inconsistency → COMMERCIAL_COMMISSION_ACCOUNTING_CONFIG_INCONSISTENT (both arms)', async () => {
     configureAccounting({ COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION' });
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     await expect(runCashIn({ amountMinor: '30000' })).rejects.toMatchObject({});
     expect(await accountingJournals()).toHaveLength(0);
 
@@ -1065,12 +1186,20 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const run = await runCashIn({ amountMinor: '30000' });
     expect(run.result.status).toBe('COMPLETED');
     const journals = await accountingJournals();
     const lines = await linesForJournal(journals[0].id);
-    expect(lines).toContainEqual({ direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
+    expect(lines).toContainEqual({
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
     expect(lines.some((l) => l.direction === 'CREDIT' && l.amount_minor === '100')).toBe(true);
     const snap = await snapshotsFor(`product='CASH_TO_WALLET'`, []);
     expect(snap[0].commission_decision.payable).toBe(false);
@@ -1086,11 +1215,17 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TRANSFER', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');
-    await expect(doTransfer(a.id, b.id, '50000', `ca01-t-${randomUUID()}`)).rejects.toMatchObject({});
+    await expect(doTransfer(a.id, b.id, '50000', `ca01-t-${randomUUID()}`)).rejects.toMatchObject(
+      {},
+    );
     expect(await accountingJournals()).toHaveLength(0);
     expect(await snapshotsFor(`true`, [])).toHaveLength(0);
   });
@@ -1101,7 +1236,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
       COMMERCIAL_COMMISSION_RECOGNITION_TIMING: 'AT_COMPLETION',
     });
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     await expect(runCashIn({ amountMinor: '30000' })).rejects.toMatchObject({});
     expect(await accountingJournals()).toHaveLength(0);
   });
@@ -1109,14 +1248,22 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   it('22. unset timing → COMMERCIAL_COMMISSION_TIMING_NOT_CONFIGURED, tx aborts', async () => {
     configureAccounting({ COMMERCIAL_COMMISSION_RECOGNITION_TIMING: undefined });
     await seedFeeRule({ productCode: 'CASH_TO_WALLET', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_WALLET', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_WALLET',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     await expect(runCashIn({ amountMinor: '30000' })).rejects.toMatchObject({});
     expect(await accountingJournals()).toHaveLength(0);
   });
 
   it('23. zero-amount ALLOCATED commission → no commission legs, explicit evidence', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'WALLET_TRANSFER', flatCommissionMinor: '0', calculationBasis: 'PRINCIPAL' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      flatCommissionMinor: '0',
+      calculationBasis: 'PRINCIPAL',
+    });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');
@@ -1134,11 +1281,20 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   it('24. C2C: SINGLE commission accounting event at initiation; claim creates none', async () => {
     await seedFeeRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', vatBps: 0 });
-    await seedCommissionRule({ productCode: 'CASH_TO_CASH', percentageBps: 1000, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'CASH_TO_CASH',
+      percentageBps: 1000,
+      calculationBasis: 'FEE',
+    });
     const bundle = await createActiveAgentWithPin([AgentService.CASH_TO_CASH], '1234');
     const { agent, wallet: agentWallet } = bundle;
     await fundWallet(agentWallet.ledgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1151,7 +1307,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     const journals = await accountingJournals();
     expect(journals).toHaveLength(1);
     const lines = await linesForJournal(journals[0].id);
-    expect(lines).toContainEqual({ direction: 'DEBIT', amount_minor: '100', account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE });
+    expect(lines).toContainEqual({
+      direction: 'DEBIT',
+      amount_minor: '100',
+      account_code: ACCOUNT_LEGEND.COMMISSION_EXPENSE,
+    });
     const snap = await snapshotsFor(`product='CASH_TO_CASH' AND direction='OUTGOING'`, []);
     expect(snap[0].commission_decision.commissionEvent).toBe('CASH_TO_CASH_INITIATION');
     const claimSnapshot = await snapshotsFor(`product='CASH_TO_CASH' AND direction='INCOMING'`, []);
@@ -1159,10 +1319,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
   });
 
   it('25. AGGREGATOR / PLATFORM allocations → precise fail-closed blockers (V1 scope invariants)', async () => {
-    await dataSource.query(
-      `INSERT INTO aggregators (id, code, name, status) VALUES ($1, $2, 'test', 'ACTIVE') ON CONFLICT DO NOTHING`,
-      [randomUUID(), `agg-${randomUUID().slice(0, 6)}`],
-    ).catch(() => undefined);
+    await dataSource
+      .query(
+        `INSERT INTO aggregators (id, code, name, status) VALUES ($1, $2, 'test', 'ACTIVE') ON CONFLICT DO NOTHING`,
+        [randomUUID(), `agg-${randomUUID().slice(0, 6)}`],
+      )
+      .catch(() => undefined);
     // Direct service-level invocation of the strategy boundary is sufficient and precise here.
     await expect(
       accountingService['postForCompletion']({} as any, {
@@ -1178,7 +1340,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         commissionDecision: {
           status: 'ALLOCATED',
           allocations: [
-            { beneficiaryType: 'AGGREGATOR', beneficiaryId: randomUUID(), amountMinor: '10', currency: 'NGN' },
+            {
+              beneficiaryType: 'AGGREGATOR',
+              beneficiaryId: randomUUID(),
+              amountMinor: '10',
+              currency: 'NGN',
+            },
           ],
         },
       }),
@@ -1197,7 +1364,12 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
         commissionDecision: {
           status: 'ALLOCATED',
           allocations: [
-            { beneficiaryType: 'PLATFORM', beneficiaryId: null, amountMinor: '10', currency: 'NGN' },
+            {
+              beneficiaryType: 'PLATFORM',
+              beneficiaryId: null,
+              amountMinor: '10',
+              currency: 'NGN',
+            },
           ],
         },
       });
@@ -1221,20 +1393,30 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
     );
     const byCode = new Map(bootstrapAccountRows.map((r) => [r.code, r]));
     expect(byCode.get(ACCOUNT_LEGEND.FEE_REVENUE)).toMatchObject({
-      account_type: 'REVENUE', normal_balance: 'CREDIT', currency: 'NGN',
-      accounting_unit: 'CUSTOMER_FUNDS', allow_negative_balance: false, is_active: true,
+      account_type: 'REVENUE',
+      normal_balance: 'CREDIT',
+      currency: 'NGN',
+      accounting_unit: 'CUSTOMER_FUNDS',
+      allow_negative_balance: false,
+      is_active: true,
     });
     expect(byCode.get(ACCOUNT_LEGEND.COMMISSION_EXPENSE)).toMatchObject({
-      account_type: 'EXPENSE', normal_balance: 'DEBIT', is_active: true,
+      account_type: 'EXPENSE',
+      normal_balance: 'DEBIT',
+      is_active: true,
     });
     expect(byCode.get(ACCOUNT_LEGEND.COMMISSION_PAYABLE)).toMatchObject({
-      account_type: 'LIABILITY', normal_balance: 'CREDIT', is_active: true,
+      account_type: 'LIABILITY',
+      normal_balance: 'CREDIT',
+      is_active: true,
     });
   });
 
   it('27. missing registry evidence → COMMERCIAL_ACCOUNTING_REGISTRY_EVIDENCE_MISSING (fail closed)', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
-    await dataSource.query(`DELETE FROM commercial_accounting_registry WHERE family_code='VAT_PAYABLE'`);
+    await dataSource.query(
+      `DELETE FROM commercial_accounting_registry WHERE family_code='VAT_PAYABLE'`,
+    );
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');
@@ -1249,7 +1431,9 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   it('28. registered-but-unprovisioned account → COMMERCIAL_ACCOUNTING_ACCOUNT_NOT_PROVISIONED', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 0 });
-    await dataSource.query(`DELETE FROM ledger_accounts WHERE code=$1`, [ACCOUNT_LEGEND.FEE_REVENUE]);
+    await dataSource.query(`DELETE FROM ledger_accounts WHERE code=$1`, [
+      ACCOUNT_LEGEND.FEE_REVENUE,
+    ]);
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');
@@ -1281,7 +1465,11 @@ describe('V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 (real PG)', () => {
 
   it('30. accounting journals touch ONLY payer wallets + the 4 provisioned codes (no repurposing)', async () => {
     await seedFeeRule({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '1000', vatBps: 750 });
-    await seedCommissionRule({ productCode: 'WALLET_TRANSFER', percentageBps: 500, calculationBasis: 'FEE' });
+    await seedCommissionRule({
+      productCode: 'WALLET_TRANSFER',
+      percentageBps: 500,
+      calculationBasis: 'FEE',
+    });
     const a = await createWallet(randomUUID());
     const b = await createWallet(randomUUID());
     await fundWallet(a.ledgerAccountId, '200000');

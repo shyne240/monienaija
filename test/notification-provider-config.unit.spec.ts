@@ -105,14 +105,11 @@ describe('NotificationSecretEncryptionService (AES-256-GCM at rest)', () => {
     const enc = svc.encrypt(SAMPLE_BREVO_KEY, 'EMAIL');
 
     // Cross-channel substitution (EMAIL envelope used as SMS) fails GCM authentication
-    expect(() => svc.decrypt(enc.envelope, 'SMS', 'v1')).toThrow(
-      NotificationSecretEncryptionError,
-    );
+    expect(() => svc.decrypt(enc.envelope, 'SMS', 'v1')).toThrow(NotificationSecretEncryptionError);
 
     // Tampered ciphertext fails GCM authentication without echoing secret or envelope
     const segments = enc.envelope.split(':');
-    const flipped =
-      segments[4]!.slice(0, -2) + (segments[4]!.endsWith('AA') ? 'BB' : 'AA');
+    const flipped = segments[4]!.slice(0, -2) + (segments[4]!.endsWith('AA') ? 'BB' : 'AA');
     const tampered = [segments[0], segments[1], segments[2], segments[3], flipped].join(':');
     try {
       svc.decrypt(tampered, 'EMAIL', 'v1');
@@ -297,9 +294,7 @@ describe('BrevoEmailProvider & verifyBrevoConnection (documented v3 contract, mo
           ok: true,
           status: 200,
           json: async () => ({
-            senders: [
-              { email: 'notifications@monienaija.ng', name: 'MonieNaija', active: true },
-            ],
+            senders: [{ email: 'notifications@monienaija.ng', name: 'MonieNaija', active: true }],
           }),
         };
       },
@@ -888,8 +883,7 @@ describe('Sprint 1 Remediation F-01 & F-02 — Closed error-code allowlist & pin
     try {
       const sentinelMessageId =
         '<xkeysib-2XX_BREVO_CRED_88776655@TX-NGN-95000000-ACCT-0123456789.example>';
-      const sentinelBatchId =
-        'MNNPS1:v1:2XX_BATCH_LEAK:robe_998877665544:re_112233445566:PIN_4910';
+      const sentinelBatchId = 'MNNPS1:v1:2XX_BATCH_LEAK:robe_998877665544:re_112233445566:PIN_4910';
 
       const singleProvider = new BrevoEmailProvider(
         {
@@ -984,13 +978,13 @@ describe('Sprint 1 Remediation F-01 & F-02 — Closed error-code allowlist & pin
 
       // Boundary idempotency and historical/harness rules
       expect(sanitizeProviderRefForBoundary(brevoDigest, 'brevo')).toBe(brevoDigest);
-      expect(
-        sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'test-email'),
-      ).toBe('test-email-1793207380288-a1b2');
+      expect(sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'test-email')).toBe(
+        'test-email-1793207380288-a1b2',
+      );
       // External vendor NEVER passes through even a harness-shaped string
-      expect(
-        sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'brevo'),
-      ).toMatch(/^pvr1:brevo:[0-9a-f]{32}$/);
+      expect(sanitizeProviderRefForBoundary('test-email-1793207380288-a1b2', 'brevo')).toMatch(
+        /^pvr1:brevo:[0-9a-f]{32}$/,
+      );
 
       // Historical NOTIFICATION_TEST_SEND audit read projection sanitizes raw providerRef while keeping unrelated fields intact
       const historicalEvent = {

@@ -38,10 +38,10 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
     const reference = `C2C-HTTP-${randomUUID().slice(0, 8)}`;
     const amountMinor = '123456';
 
-    await dataSource.query(
-      `INSERT INTO agents (id, reference, status) VALUES ($1, $2, 'ACTIVE')`,
-      [agentId, `AG-HTTP-${randomUUID().slice(0, 8)}`],
-    );
+    await dataSource.query(`INSERT INTO agents (id, reference, status) VALUES ($1, $2, 'ACTIVE')`, [
+      agentId,
+      `AG-HTTP-${randomUUID().slice(0, 8)}`,
+    ]);
 
     await dataSource.transaction(async (manager) => {
       await manager.query(
@@ -77,7 +77,14 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
             status, transfer_code_hash, hash_algorithm, journal_id, reference, idempotency_key, expires_at)
          VALUES ($1, $2, '7000000123', $3, 0, 0, $3, 'NGN', 'UNCLAIMED', 'TEST_HASH_NOT_FOR_RESPONSE',
                  'PBKDF2', $4, $5, $6, clock_timestamp() + INTERVAL '1 day')`,
-        [transferId, agentId, amountMinor, journalId, reference, `c2c-http-transfer-${randomUUID()}`],
+        [
+          transferId,
+          agentId,
+          amountMinor,
+          journalId,
+          reference,
+          `c2c-http-transfer-${randomUUID()}`,
+        ],
       );
     });
 
@@ -134,14 +141,14 @@ describe('V1 Admin Cash-to-Cash operations HTTP/PostgreSQL', () => {
       ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
     );
     expect(response.body).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
-    expect(response.body.data[0]).toMatchObject({
+    expect((response.body as { data: unknown[] }).data[0]).toMatchObject({
       id: transferId,
       agentId,
       beneficiaryPhoneMasked: '••••••0123',
       principalMinor: '123456',
       currency: 'NGN',
       status: 'UNCLAIMED',
-      reference: expect.stringMatching(/^C2C-HTTP-/),
+      reference: expect.stringMatching(/^C2C-HTTP-/) as unknown,
       redemptionMethod: null,
       claimJournalId: null,
     });

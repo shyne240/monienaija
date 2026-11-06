@@ -13,7 +13,11 @@ import { LocalAdminAuthenticationController } from './local-admin-authentication
  * operate outside NODE_ENV=development/test.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([LocalAdminCredential]), AuthorizationModule, OperationsModule],
+  imports: [
+    TypeOrmModule.forFeature([LocalAdminCredential]),
+    AuthorizationModule,
+    OperationsModule,
+  ],
   controllers: [LocalAdminAuthenticationController],
   providers: [LocalAdminAuthenticationService],
   exports: [LocalAdminAuthenticationService],

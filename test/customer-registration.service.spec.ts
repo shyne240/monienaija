@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
 import { BadRequestException } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 
@@ -47,47 +47,60 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
     auditLogs = [];
     provider = new TestNotificationProvider();
 
+    interface ChallengeQueryBuilder {
+      where: (query: string, params: { phone: string }) => ChallengeQueryBuilder;
+      andWhere: () => ChallengeQueryBuilder;
+      orderBy: () => ChallengeQueryBuilder;
+      setLock: () => ChallengeQueryBuilder;
+      getMany: () => Promise<CustomerRegistrationPhoneChallenge[]>;
+      getOne: () => Promise<CustomerRegistrationPhoneChallenge | null>;
+    }
     const mockManager: Partial<EntityManager> = {
       getRepository: jest.fn().mockImplementation((entityTarget) => {
         if (entityTarget === CustomerRegistrationPhoneChallenge) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<CustomerRegistrationPhoneChallenge>) => ({ ...data }),
+            save: (
+              entity: CustomerRegistrationPhoneChallenge | CustomerRegistrationPhoneChallenge[],
+            ) => {
               if (Array.isArray(entity)) {
                 entity.forEach((e) => challenges.set(e.id || e.normalizedPhone, e));
-                return entity;
+                return Promise.resolve(entity);
               }
               const id = entity.id || `chal-${challenges.size + 1}`;
               entity.id = id;
               challenges.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
-            findOne: async ({ where }: any) => {
+            findOne: ({ where }: { where: Partial<CustomerRegistrationPhoneChallenge> }) => {
               for (const c of challenges.values()) {
-                if (where.normalizedPhone && c.normalizedPhone === where.normalizedPhone) return c;
+                if (where.normalizedPhone && c.normalizedPhone === where.normalizedPhone)
+                  return Promise.resolve(c);
               }
-              return null;
+              return Promise.resolve(null);
             },
             createQueryBuilder: () => {
               let phoneFilter = '';
-              const builder: any = {
-                where: (_query: string, params: any) => {
+              const builder: ChallengeQueryBuilder = {
+                where: (_query: string, params: { phone: string }) => {
                   phoneFilter = params.phone;
                   return builder;
                 },
                 andWhere: () => builder,
                 orderBy: () => builder,
                 setLock: () => builder,
-                getMany: async () => {
-                  return Array.from(challenges.values()).filter(
-                    (c) => c.normalizedPhone === phoneFilter,
+                getMany: () => {
+                  return Promise.resolve(
+                    Array.from(challenges.values()).filter(
+                      (c) => c.normalizedPhone === phoneFilter,
+                    ),
                   );
                 },
-                getOne: async () => {
+                getOne: () => {
                   const matches = Array.from(challenges.values()).filter(
                     (c) => c.normalizedPhone === phoneFilter,
                   );
-                  return matches[matches.length - 1] ?? null;
+                  return Promise.resolve(matches[matches.length - 1] ?? null);
                 },
               };
               return builder;
@@ -96,97 +109,102 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
         }
         if (entityTarget === CustomerContactMethod) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<CustomerContactMethod>) => ({ ...data }),
+            save: (entity: CustomerContactMethod) => {
               const id = entity.id || `contact-${contacts.size + 1}`;
               entity.id = id;
               contacts.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
-            findOne: async ({ where }: any) => {
+            findOne: ({ where }: { where: Partial<CustomerContactMethod> }) => {
               for (const c of contacts.values()) {
-                if (where.normalizedValue && c.normalizedValue === where.normalizedValue && c.deletedAt === null) {
-                  return c;
+                if (
+                  where.normalizedValue &&
+                  c.normalizedValue === where.normalizedValue &&
+                  c.deletedAt === null
+                ) {
+                  return Promise.resolve(c);
                 }
               }
-              return null;
+              return Promise.resolve(null);
             },
           };
         }
         if (entityTarget === Customer) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<Customer>) => ({ ...data }),
+            save: (entity: Customer) => {
               const id = entity.id || `cust-${customers.size + 1}`;
               entity.id = id;
               customers.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
-            findOne: async ({ where }: any) => {
+            findOne: ({ where }: { where: Partial<Customer> }) => {
               for (const c of customers.values()) {
-                if (where.id && c.id === where.id) return c;
-                if (where.reference && c.reference === where.reference) return c;
+                if (where.id && c.id === where.id) return Promise.resolve(c);
+                if (where.reference && c.reference === where.reference) return Promise.resolve(c);
               }
-              return null;
+              return Promise.resolve(null);
             },
           };
         }
         if (entityTarget === CustomerProfile) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<CustomerProfile>) => ({ ...data }),
+            save: (entity: CustomerProfile) => {
               const id = entity.id || `prof-${profiles.size + 1}`;
               entity.id = id;
               profiles.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
           };
         }
         if (entityTarget === CustomerAuthenticationCredential) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<CustomerAuthenticationCredential>) => ({ ...data }),
+            save: (entity: CustomerAuthenticationCredential) => {
               const id = entity.id || `cred-${credentials.size + 1}`;
               entity.id = id;
               credentials.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
           };
         }
         if (entityTarget === LedgerAccount) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<LedgerAccount>) => ({ ...data }),
+            save: (entity: LedgerAccount) => {
               const id = entity.id || `ledger-${ledgerAccounts.size + 1}`;
               entity.id = id;
               ledgerAccounts.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
           };
         }
         if (entityTarget === WalletAccount) {
           return {
-            create: (data: any) => ({ ...data }),
-            save: async (entity: any) => {
+            create: (data: Partial<WalletAccount>) => ({ ...data }),
+            save: (entity: WalletAccount) => {
               const id = entity.id || `wallet-${wallets.size + 1}`;
               entity.id = id;
               wallets.set(id, entity);
-              return entity;
+              return Promise.resolve(entity);
             },
           };
         }
         return {
-          create: (d: any) => d,
-          save: (d: any) => Promise.resolve(d),
+          create: (d: unknown) => d,
+          save: (d: unknown) => Promise.resolve(d),
           findOne: () => Promise.resolve(null),
         };
       }),
     };
 
     const mockDataSource: Partial<DataSource> = {
-      transaction: jest.fn().mockImplementation((...args: any[]) => {
+      transaction: jest.fn().mockImplementation((...args: unknown[]) => {
         const callback = typeof args[0] === 'function' ? args[0] : args[1];
-        return callback(mockManager);
+        if (typeof callback !== 'function') throw new Error('Transaction callback is required');
+        return (callback as (manager: Partial<EntityManager>) => unknown)(mockManager);
       }),
     };
 

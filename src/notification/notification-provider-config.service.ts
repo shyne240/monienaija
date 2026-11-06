@@ -82,11 +82,7 @@ export type ProviderHttpFetchFn = (
 export type SmsProviderChoice = 'console' | 'robase';
 export type EmailProviderChoice = 'none' | 'console' | 'brevo' | 'resend';
 export type CredentialSource = 'NONE' | 'ENCRYPTED_DB' | 'ENV_SECRET';
-export type CredentialAction =
-  | 'KEEP_EXISTING'
-  | 'SET_ENCRYPTED'
-  | 'USE_ENV_SECRET'
-  | 'CLEAR';
+export type CredentialAction = 'KEEP_EXISTING' | 'SET_ENCRYPTED' | 'USE_ENV_SECRET' | 'CLEAR';
 
 export type ProviderLifecycleState =
   | 'NOT_CONFIGURED'
@@ -310,14 +306,32 @@ interface DbProposalRow {
   updated_at: Date | string;
 }
 
-type ProposalFingerprintFields = Pick<DbProposalRow,
-  | 'id' | 'channel' | 'expected_version' | 'proposed_provider' | 'proposed_enabled'
-  | 'proposed_base_url' | 'proposed_request_timeout_ms' | 'proposed_sender_id'
-  | 'proposed_from_email' | 'proposed_from_name' | 'proposed_reply_to_email'
-  | 'credential_action' | 'proposed_encrypted_api_key' | 'proposed_encryption_key_version'
-  | 'proposed_key_fingerprint' | 'proposed_credential_source' | 'credential_binding_scheme'
-  | 'credential_binding_key_version' | 'credential_binding_mac' | 'proposed_spf_configured'
-  | 'proposed_dkim_configured' | 'proposed_dmarc_configured' | 'reason' | 'proposer_principal_id'
+type ProposalFingerprintFields = Pick<
+  DbProposalRow,
+  | 'id'
+  | 'channel'
+  | 'expected_version'
+  | 'proposed_provider'
+  | 'proposed_enabled'
+  | 'proposed_base_url'
+  | 'proposed_request_timeout_ms'
+  | 'proposed_sender_id'
+  | 'proposed_from_email'
+  | 'proposed_from_name'
+  | 'proposed_reply_to_email'
+  | 'credential_action'
+  | 'proposed_encrypted_api_key'
+  | 'proposed_encryption_key_version'
+  | 'proposed_key_fingerprint'
+  | 'proposed_credential_source'
+  | 'credential_binding_scheme'
+  | 'credential_binding_key_version'
+  | 'credential_binding_mac'
+  | 'proposed_spf_configured'
+  | 'proposed_dkim_configured'
+  | 'proposed_dmarc_configured'
+  | 'reason'
+  | 'proposer_principal_id'
 >;
 
 /** Digest high-entropy encrypted envelope plus all governed fields and the keyed commitment. */
@@ -325,37 +339,45 @@ function proposalActionFingerprint(proposal: ProposalFingerprintFields): string 
   const envelopeHash = proposal.proposed_encrypted_api_key
     ? createHash('sha256').update(proposal.proposed_encrypted_api_key, 'utf8').digest('hex')
     : null;
-  return createHash('sha256').update(JSON.stringify({
-    domain: 'monienaija.notification.provider-configuration.action.v2',
-    proposalId: proposal.id,
-    channel: proposal.channel,
-    expectedVersion: proposal.expected_version,
-    provider: proposal.proposed_provider,
-    enabled: proposal.proposed_enabled,
-    baseUrl: proposal.proposed_base_url,
-    requestTimeoutMs: proposal.proposed_request_timeout_ms,
-    senderId: proposal.proposed_sender_id,
-    fromEmail: proposal.proposed_from_email,
-    fromName: proposal.proposed_from_name,
-    replyToEmail: proposal.proposed_reply_to_email,
-    credentialAction: proposal.credential_action,
-    credentialSource: proposal.proposed_credential_source,
-    envelopeHash,
-    encryptionKeyVersion: proposal.proposed_encryption_key_version,
-    keyFingerprint: proposal.proposed_key_fingerprint,
-    bindingScheme: proposal.credential_binding_scheme,
-    bindingKeyVersion: proposal.credential_binding_key_version,
-    bindingMac: proposal.credential_binding_mac,
-    spfConfigured: proposal.proposed_spf_configured,
-    dkimConfigured: proposal.proposed_dkim_configured,
-    dmarcConfigured: proposal.proposed_dmarc_configured,
-    reason: proposal.reason,
-    proposer: proposal.proposer_principal_id,
-  }), 'utf8').digest('hex');
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        domain: 'monienaija.notification.provider-configuration.action.v2',
+        proposalId: proposal.id,
+        channel: proposal.channel,
+        expectedVersion: proposal.expected_version,
+        provider: proposal.proposed_provider,
+        enabled: proposal.proposed_enabled,
+        baseUrl: proposal.proposed_base_url,
+        requestTimeoutMs: proposal.proposed_request_timeout_ms,
+        senderId: proposal.proposed_sender_id,
+        fromEmail: proposal.proposed_from_email,
+        fromName: proposal.proposed_from_name,
+        replyToEmail: proposal.proposed_reply_to_email,
+        credentialAction: proposal.credential_action,
+        credentialSource: proposal.proposed_credential_source,
+        envelopeHash,
+        encryptionKeyVersion: proposal.proposed_encryption_key_version,
+        keyFingerprint: proposal.proposed_key_fingerprint,
+        bindingScheme: proposal.credential_binding_scheme,
+        bindingKeyVersion: proposal.credential_binding_key_version,
+        bindingMac: proposal.credential_binding_mac,
+        spfConfigured: proposal.proposed_spf_configured,
+        dkimConfigured: proposal.proposed_dkim_configured,
+        dmarcConfigured: proposal.proposed_dmarc_configured,
+        reason: proposal.reason,
+        proposer: proposal.proposer_principal_id,
+      }),
+      'utf8',
+    )
+    .digest('hex');
 }
 
 function proposalFingerprintMatches(proposal: DbProposalRow): boolean {
-  if (proposal.action_fingerprint_version !== 2 || !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint)) {
+  if (
+    proposal.action_fingerprint_version !== 2 ||
+    !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint)
+  ) {
     return false;
   }
   const actual = Buffer.from(proposalActionFingerprint(proposal), 'hex');
@@ -368,9 +390,12 @@ function bindingFromRow(row: {
   credential_binding_key_version: string | null;
   credential_binding_mac: string | null;
 }): CredentialBinding | null {
-  if (row.credential_binding_scheme !== CREDENTIAL_BINDING_SCHEME ||
-      typeof row.credential_binding_key_version !== 'string' ||
-      typeof row.credential_binding_mac !== 'string') return null;
+  if (
+    row.credential_binding_scheme !== CREDENTIAL_BINDING_SCHEME ||
+    typeof row.credential_binding_key_version !== 'string' ||
+    typeof row.credential_binding_mac !== 'string'
+  )
+    return null;
   return {
     scheme: CREDENTIAL_BINDING_SCHEME,
     keyVersion: row.credential_binding_key_version,
@@ -380,8 +405,13 @@ function bindingFromRow(row: {
 
 function sameBinding(left: CredentialBinding | null, right: CredentialBinding | null): boolean {
   if (!left || !right) return left === null && right === null;
-  if (left.scheme !== right.scheme || left.keyVersion !== right.keyVersion ||
-      !/^[a-f0-9]{64}$/.test(left.mac) || !/^[a-f0-9]{64}$/.test(right.mac)) return false;
+  if (
+    left.scheme !== right.scheme ||
+    left.keyVersion !== right.keyVersion ||
+    !/^[a-f0-9]{64}$/.test(left.mac) ||
+    !/^[a-f0-9]{64}$/.test(right.mac)
+  )
+    return false;
   return timingSafeEqual(Buffer.from(left.mac, 'hex'), Buffer.from(right.mac, 'hex'));
 }
 
@@ -462,9 +492,7 @@ function validateApiKeyForProvider(provider: string, rawKey: string): string {
   }
   if (provider === 'resend') {
     if (!RESEND_KEY_PATTERN.test(trimmed)) {
-      throw new BadRequestException(
-        'Resend API key must use the live key format (re_ prefix).',
-      );
+      throw new BadRequestException('Resend API key must use the live key format (re_ prefix).');
     }
     return trimmed;
   }
@@ -568,10 +596,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
       let updated = 0;
       for (const row of rows) {
         if (!row.last_test_provider_ref) continue;
-        const safeRef = sanitizeProviderRefForBoundary(
-          row.last_test_provider_ref,
-          row.provider,
-        );
+        const safeRef = sanitizeProviderRefForBoundary(row.last_test_provider_ref, row.provider);
         if (safeRef !== row.last_test_provider_ref) {
           await this.dataSource.query(
             `UPDATE notification_provider_configurations
@@ -596,10 +621,14 @@ export class NotificationProviderConfigService implements OnModuleInit {
     const smsRow = rows.get('SMS');
     const emailRow = rows.get('EMAIL');
     this.cachedSmsProviderName = smsRow
-      ? (smsRow.enabled ? smsRow.provider : 'none')
+      ? smsRow.enabled
+        ? smsRow.provider
+        : 'none'
       : this.resolveEnvSmsProviderName();
     this.cachedEmailProviderName = emailRow
-      ? (emailRow.enabled && emailRow.provider !== 'none' ? emailRow.provider : 'none')
+      ? emailRow.enabled && emailRow.provider !== 'none'
+        ? emailRow.provider
+        : 'none'
       : this.resolveEnvEmailProviderName();
   }
 
@@ -615,9 +644,15 @@ export class NotificationProviderConfigService implements OnModuleInit {
     } catch {
       return { success: false, error: 'SMS_PROVIDER_NOT_CONFIGURED' };
     }
-    if (request.expectedProviderConfigVersion !== undefined &&
-        request.expectedProviderConfigVersion !== (row?.version ?? 0)) {
-      return { success: false, error: 'PROVIDER_CONFIGURATION_CHANGED', failureDisposition: 'RETRYABLE' };
+    if (
+      request.expectedProviderConfigVersion !== undefined &&
+      request.expectedProviderConfigVersion !== (row?.version ?? 0)
+    ) {
+      return {
+        success: false,
+        error: 'PROVIDER_CONFIGURATION_CHANGED',
+        failureDisposition: 'RETRYABLE',
+      };
     }
 
     if (!row) {
@@ -685,9 +720,15 @@ export class NotificationProviderConfigService implements OnModuleInit {
     } catch {
       return { success: false, error: 'EMAIL_PROVIDER_NOT_CONFIGURED' };
     }
-    if (request.expectedProviderConfigVersion !== undefined &&
-        request.expectedProviderConfigVersion !== (row?.version ?? 0)) {
-      return { success: false, error: 'PROVIDER_CONFIGURATION_CHANGED', failureDisposition: 'RETRYABLE' };
+    if (
+      request.expectedProviderConfigVersion !== undefined &&
+      request.expectedProviderConfigVersion !== (row?.version ?? 0)
+    ) {
+      return {
+        success: false,
+        error: 'PROVIDER_CONFIGURATION_CHANGED',
+        failureDisposition: 'RETRYABLE',
+      };
     }
 
     if (!row) {
@@ -807,12 +848,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
     const worker = {
       enabled: workerEnabled,
       pollIntervalMs:
-        this.configService.get('NOTIFICATION_WORKER_POLL_INTERVAL_MS', { infer: true }) ??
-        5_000,
-      batchSize:
-        this.configService.get('NOTIFICATION_WORKER_BATCH_SIZE', { infer: true }) ?? 10,
-      smsRetryMaxAttempts:
-        this.configService.get('SMS_RETRY_MAX_ATTEMPTS', { infer: true }) ?? 3,
+        this.configService.get('NOTIFICATION_WORKER_POLL_INTERVAL_MS', { infer: true }) ?? 5_000,
+      batchSize: this.configService.get('NOTIFICATION_WORKER_BATCH_SIZE', { infer: true }) ?? 10,
+      smsRetryMaxAttempts: this.configService.get('SMS_RETRY_MAX_ATTEMPTS', { infer: true }) ?? 3,
       smsRetryBaseDelaySeconds:
         this.configService.get('SMS_RETRY_BASE_DELAY_SECONDS', { infer: true }) ?? 60,
     };
@@ -1010,16 +1048,14 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
     }
 
-    const requestTimeoutMs = input.requestTimeoutMs ?? (existing?.request_timeout_ms ?? 10_000);
+    const requestTimeoutMs = input.requestTimeoutMs ?? existing?.request_timeout_ms ?? 10_000;
     if (
       typeof requestTimeoutMs !== 'number' ||
       !Number.isInteger(requestTimeoutMs) ||
       requestTimeoutMs < 1_000 ||
       requestTimeoutMs > 60_000
     ) {
-      throw new BadRequestException(
-        'requestTimeoutMs must be an integer between 1000 and 60000.',
-      );
+      throw new BadRequestException('requestTimeoutMs must be an integer between 1000 and 60000.');
     }
 
     const isExternalProvider = isExternalNotificationVendor(provider);
@@ -1152,8 +1188,12 @@ export class NotificationProviderConfigService implements OnModuleInit {
       }
     } else if (credentialAction === 'KEEP_EXISTING') {
       if (isExternalProvider) {
-        if (!existing || existing.provider !== provider ||
-            (existing.credential_source !== 'ENCRYPTED_DB' && existing.credential_source !== 'ENV_SECRET')) {
+        if (
+          !existing ||
+          existing.provider !== provider ||
+          (existing.credential_source !== 'ENCRYPTED_DB' &&
+            existing.credential_source !== 'ENV_SECRET')
+        ) {
           throw new BadRequestException(
             `No matching bound credential is present for ${channel}; choose SET_ENCRYPTED or USE_ENV_SECRET.`,
           );
@@ -1199,8 +1239,12 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
     // Never create an accidental plaintext copy in a reason or sender field. The secret
     // belongs only in the approved existing encrypted envelope or the environment.
-    if (resolvedCredential && [reason, senderId, fromEmail, fromName, replyToEmail]
-      .some((value) => typeof value === 'string' && value.includes(resolvedCredential))) {
+    if (
+      resolvedCredential &&
+      [reason, senderId, fromEmail, fromName, replyToEmail].some(
+        (value) => typeof value === 'string' && value.includes(resolvedCredential),
+      )
+    ) {
       throw new BadRequestException('Provider credential must not appear in non-secret fields.');
     }
 
@@ -1376,9 +1420,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
       );
     }
     if (!principal.scopes.includes(CONFIGURE_FUNCTION)) {
-      throw new ForbiddenException(
-        `Principal lacks required ${CONFIGURE_FUNCTION} capability.`,
-      );
+      throw new ForbiddenException(`Principal lacks required ${CONFIGURE_FUNCTION} capability.`);
     }
     if (principal.assuranceLevel !== 'MFA') {
       throw new ForbiddenException(
@@ -1394,7 +1436,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
           [proposalId],
         );
         const proposal = rows[0];
-        if (!proposal) throw new NotFoundException('Notification provider configuration proposal not found.');
+        if (!proposal)
+          throw new NotFoundException('Notification provider configuration proposal not found.');
         if (proposal.status !== 'REQUESTED') {
           throw new ConflictException(
             `Proposal is already in status ${proposal.status} and cannot be decided again.`,
@@ -1421,12 +1464,16 @@ export class NotificationProviderConfigService implements OnModuleInit {
           );
           existing = currentRows[0] ?? null;
           if ((existing?.version ?? 0) !== proposal.expected_version) {
-            throw new ConflictException('Provider configuration changed; a new proposal is required.');
+            throw new ConflictException(
+              'Provider configuration changed; a new proposal is required.',
+            );
           }
           const checkedCredential = this.assertProposalIntegrity(proposal, existing);
           await this.assertLinkedApproval(manager, proposal);
           if (checkedCredential && comment?.includes(checkedCredential)) {
-            throw new BadRequestException('Provider credential must not appear in approval comments.');
+            throw new BadRequestException(
+              'Provider credential must not appear in approval comments.',
+            );
           }
         }
 
@@ -1456,7 +1503,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
           await this.auditService.record(manager, {
             entityType: 'NOTIFICATION_PROVIDER_CONFIG',
             entityId: proposalId,
-            action: approve ? 'NOTIFICATION_PROVIDER_CONFIG_APPROVED' : 'NOTIFICATION_PROVIDER_CONFIG_REJECTED',
+            action: approve
+              ? 'NOTIFICATION_PROVIDER_CONFIG_APPROVED'
+              : 'NOTIFICATION_PROVIDER_CONFIG_REJECTED',
             actor: principal.principalId,
             correlationId,
             newValues: {
@@ -1472,7 +1521,12 @@ export class NotificationProviderConfigService implements OnModuleInit {
       });
     } catch (error) {
       if (deniedReason) {
-        await this.recordDeniedGovernanceAudit(proposalId, principal.principalId, deniedReason, correlationId);
+        await this.recordDeniedGovernanceAudit(
+          proposalId,
+          principal.principalId,
+          deniedReason,
+          correlationId,
+        );
       }
       throw error;
     }
@@ -1877,7 +1931,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
       } else {
         const check = await verifyBrevoConnection(
           {
-            baseUrl: validatePinnedProviderBaseUrl('brevo', row.base_url ?? 'https://api.brevo.com'),
+            baseUrl: validatePinnedProviderBaseUrl(
+              'brevo',
+              row.base_url ?? 'https://api.brevo.com',
+            ),
             apiKey: secretResolution.apiKey,
             fromEmail: row.from_email,
             fromName: row.from_name,
@@ -1888,7 +1945,9 @@ export class NotificationProviderConfigService implements OnModuleInit {
         );
         verified = check.ok;
         verificationMethod = 'BREVO_ACCOUNT_AND_SENDER_API';
-        errorCode = check.ok ? null : (normalizeProviderErrorCode(check.errorCode) ?? 'VERIFY_FAILED');
+        errorCode = check.ok
+          ? null
+          : (normalizeProviderErrorCode(check.errorCode) ?? 'VERIFY_FAILED');
       }
     } else if (channel === 'SMS' && row.provider === 'robase') {
       try {
@@ -1991,7 +2050,8 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }): Promise<void> {
     if (!this.dataSource || !this.dataSource.isInitialized) return;
     const row = await this.loadDbRow(params.channel);
-    if (!row || row.version !== params.expectedVersion || row.provider !== params.providerName) return;
+    if (!row || row.version !== params.expectedVersion || row.provider !== params.providerName)
+      return;
 
     const isConsole = row.provider === 'console' || params.providerName === 'console';
     const lastTestStatus: 'SENT' | 'FAILED' | 'CONSOLE_SIMULATED' = !params.success
@@ -2053,8 +2113,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
     if (!row) {
       const envProvider = this.configService.get('NOTIFICATION_SMS_PROVIDER', { infer: true });
       const baseUrl =
-        this.configService.get('ROBASE_API_BASE_URL', { infer: true }) ??
-        'https://api.robase.dev';
+        this.configService.get('ROBASE_API_BASE_URL', { infer: true }) ?? 'https://api.robase.dev';
       const timeoutMs =
         this.configService.get('ROBASE_REQUEST_TIMEOUT_MS', { infer: true }) ?? 10_000;
 
@@ -2363,7 +2422,10 @@ export class NotificationProviderConfigService implements OnModuleInit {
           deliveryTested: false,
           productionReady: false,
         },
-        baseUrl: isExternalNotificationVendor(envProvider) && isPinnedProviderBaseUrl(envProvider, baseUrl) ? baseUrl : null,
+        baseUrl:
+          isExternalNotificationVendor(envProvider) && isPinnedProviderBaseUrl(envProvider, baseUrl)
+            ? baseUrl
+            : null,
         requestTimeoutMs: timeoutMs,
         senderId: null,
         senderIdNote: null,
@@ -2419,8 +2481,7 @@ export class NotificationProviderConfigService implements OnModuleInit {
             spfConfigured: row.spf_configured,
             dkimConfigured: row.dkim_configured,
             dmarcConfigured: row.dmarc_configured,
-            allConfigured:
-              row.spf_configured && row.dkim_configured && row.dmarc_configured,
+            allConfigured: row.spf_configured && row.dkim_configured && row.dmarc_configured,
           }
         : null;
 
@@ -2527,15 +2588,21 @@ export class NotificationProviderConfigService implements OnModuleInit {
 
     const secretResolution = this.resolveRowSecret(row);
     const senderValid = row.channel === 'SMS' || isValidStoredEmail(row.from_email);
-    const replyToValid = row.channel === 'SMS' || row.reply_to_email === null ||
+    const replyToValid =
+      row.channel === 'SMS' ||
+      row.reply_to_email === null ||
       isValidStoredEmail(row.reply_to_email);
-    const baseUrlTrusted = isExternalNotificationVendor(row.provider) && row.base_url !== null &&
+    const baseUrlTrusted =
+      isExternalNotificationVendor(row.provider) &&
+      row.base_url !== null &&
       isPinnedProviderBaseUrl(row.provider, row.base_url);
     const hasCred = row.credential_source !== 'NONE';
 
     let misconfigurationCode: string | null = null;
     if (!baseUrlTrusted) {
-      misconfigurationCode = row.base_url ? 'PROVIDER_BASE_URL_UNTRUSTED' : 'PROVIDER_NOT_CONFIGURED';
+      misconfigurationCode = row.base_url
+        ? 'PROVIDER_BASE_URL_UNTRUSTED'
+        : 'PROVIDER_NOT_CONFIGURED';
     } else if (hasCred && !secretResolution.ok) {
       misconfigurationCode =
         normalizeProviderErrorCode(secretResolution.errorCode) ?? 'PROVIDER_FAILURE';
@@ -2545,14 +2612,12 @@ export class NotificationProviderConfigService implements OnModuleInit {
       misconfigurationCode = 'PROVIDER_FAILURE';
     }
 
-    const configured =
-      secretResolution.ok && senderValid && replyToValid && baseUrlTrusted;
+    const configured = secretResolution.ok && senderValid && replyToValid && baseUrlTrusted;
     const verified = configured && Boolean(row.verified_at);
     const enabled = configured && row.enabled;
     const deliveryTested = configured && Boolean(row.delivery_tested_at);
     const domainReady = row.channel === 'SMS' ? true : Boolean(domainAuth?.allConfigured);
-    const productionReady =
-      configured && verified && enabled && deliveryTested && domainReady;
+    const productionReady = configured && verified && enabled && deliveryTested && domainReady;
 
     let lifecycleState: ProviderLifecycleState;
     if (misconfigurationCode) {
@@ -2633,11 +2698,20 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }
 
   /** Lock and compare the independent approval record before the checker or activator acts. */
-  private async assertLinkedApproval(manager: EntityManager, proposal: DbProposalRow): Promise<void> {
+  private async assertLinkedApproval(
+    manager: EntityManager,
+    proposal: DbProposalRow,
+  ): Promise<void> {
     const rows: Array<{
-      action_type: string; resource_type: string; resource_id: string | null;
-      action_fingerprint: string; requester_principal_id: string; reason: string;
-      approval_scope: string; required_assurance: string; is_emergency: boolean;
+      action_type: string;
+      resource_type: string;
+      resource_id: string | null;
+      action_fingerprint: string;
+      requester_principal_id: string;
+      reason: string;
+      approval_scope: string;
+      required_assurance: string;
+      is_emergency: boolean;
     }> = await manager.query(
       `SELECT action_type, resource_type, resource_id, action_fingerprint,
               requester_principal_id, reason, approval_scope, required_assurance, is_emergency
@@ -2645,59 +2719,83 @@ export class NotificationProviderConfigService implements OnModuleInit {
       [proposal.approval_id],
     );
     const approval = rows[0];
-    if (!approval || approval.action_type !== GOVERNANCE_ACTION_TYPE ||
-        approval.resource_type !== GOVERNANCE_RESOURCE_TYPE || approval.resource_id !== proposal.id ||
-        approval.requester_principal_id !== proposal.proposer_principal_id ||
-        approval.reason !== proposal.reason || approval.approval_scope !== CONFIGURE_FUNCTION ||
-        approval.required_assurance !== 'MFA' || approval.is_emergency ||
-        !/^[a-f0-9]{64}$/.test(approval.action_fingerprint) ||
-        !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint) ||
-        !timingSafeEqual(Buffer.from(approval.action_fingerprint, 'hex'),
-          Buffer.from(proposal.action_fingerprint, 'hex'))) {
+    if (
+      !approval ||
+      approval.action_type !== GOVERNANCE_ACTION_TYPE ||
+      approval.resource_type !== GOVERNANCE_RESOURCE_TYPE ||
+      approval.resource_id !== proposal.id ||
+      approval.requester_principal_id !== proposal.proposer_principal_id ||
+      approval.reason !== proposal.reason ||
+      approval.approval_scope !== CONFIGURE_FUNCTION ||
+      approval.required_assurance !== 'MFA' ||
+      approval.is_emergency ||
+      !/^[a-f0-9]{64}$/.test(approval.action_fingerprint) ||
+      !/^[a-f0-9]{64}$/.test(proposal.action_fingerprint) ||
+      !timingSafeEqual(
+        Buffer.from(approval.action_fingerprint, 'hex'),
+        Buffer.from(proposal.action_fingerprint, 'hex'),
+      )
+    ) {
       throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
     }
   }
 
   /** Reconstruct the approved action and validate its exact currently resolved credential. */
-  private assertProposalIntegrity(proposal: DbProposalRow, existing: DbProviderConfigRow | null): string | null {
+  private assertProposalIntegrity(
+    proposal: DbProposalRow,
+    existing: DbProviderConfigRow | null,
+  ): string | null {
     if (!proposalFingerprintMatches(proposal)) {
       throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
     }
     const source = proposal.proposed_credential_source;
     if (source === 'NONE') {
-      if (proposal.credential_binding_scheme !== null ||
-          proposal.credential_binding_key_version !== null || proposal.credential_binding_mac !== null ||
-          (proposal.credential_action !== 'CLEAR' && proposal.credential_action !== 'KEEP_EXISTING') ||
-          (isExternalNotificationVendor(proposal.proposed_provider) && proposal.proposed_enabled) ||
-          (proposal.credential_action === 'KEEP_EXISTING' &&
-            isExternalNotificationVendor(proposal.proposed_provider))) {
+      if (
+        proposal.credential_binding_scheme !== null ||
+        proposal.credential_binding_key_version !== null ||
+        proposal.credential_binding_mac !== null ||
+        (proposal.credential_action !== 'CLEAR' &&
+          proposal.credential_action !== 'KEEP_EXISTING') ||
+        (isExternalNotificationVendor(proposal.proposed_provider) && proposal.proposed_enabled) ||
+        (proposal.credential_action === 'KEEP_EXISTING' &&
+          isExternalNotificationVendor(proposal.proposed_provider))
+      ) {
         throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
       }
       return null;
     }
-    if ((source !== 'ENV_SECRET' && source !== 'ENCRYPTED_DB') ||
-        !isExternalNotificationVendor(proposal.proposed_provider)) {
+    if (
+      (source !== 'ENV_SECRET' && source !== 'ENCRYPTED_DB') ||
+      !isExternalNotificationVendor(proposal.proposed_provider)
+    ) {
       throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
     }
     let resolved: { ok: true; apiKey: string } | { ok: false; errorCode: string };
     if (proposal.credential_action === 'USE_ENV_SECRET' && source === 'ENV_SECRET') {
       const value = this.getEnvSecretForProvider(proposal.proposed_provider);
-      resolved = value ? this.validateResolvedSecret(proposal.proposed_provider, value)
+      resolved = value
+        ? this.validateResolvedSecret(proposal.proposed_provider, value)
         : { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
     } else if (proposal.credential_action === 'SET_ENCRYPTED' && source === 'ENCRYPTED_DB') {
       try {
         if (!proposal.proposed_encrypted_api_key) throw new Error('missing');
         const value = this.encryptionService.decrypt(
-          proposal.proposed_encrypted_api_key, proposal.channel, proposal.proposed_encryption_key_version,
+          proposal.proposed_encrypted_api_key,
+          proposal.channel,
+          proposal.proposed_encryption_key_version,
         );
         resolved = this.validateResolvedSecret(proposal.proposed_provider, value);
       } catch {
         resolved = { ok: false, errorCode: 'PROVIDER_SECRET_DECRYPT_FAILED' };
       }
     } else if (proposal.credential_action === 'KEEP_EXISTING') {
-      if (!existing || existing.channel !== proposal.channel ||
-          existing.provider !== proposal.proposed_provider || existing.credential_source !== source ||
-          existing.version !== proposal.expected_version) {
+      if (
+        !existing ||
+        existing.channel !== proposal.channel ||
+        existing.provider !== proposal.proposed_provider ||
+        existing.credential_source !== source ||
+        existing.version !== proposal.expected_version
+      ) {
         throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
       }
       const oldBinding = bindingFromRow(existing);
@@ -2709,10 +2807,16 @@ export class NotificationProviderConfigService implements OnModuleInit {
     } else {
       throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
     }
-    if (!resolved.ok || !this.bindingService.verify(
-      bindingFromRow(proposal), proposal.channel, proposal.proposed_provider,
-      source as BoundCredentialSource, resolved.apiKey,
-    )) {
+    if (
+      !resolved.ok ||
+      !this.bindingService.verify(
+        bindingFromRow(proposal),
+        proposal.channel,
+        proposal.proposed_provider,
+        source as BoundCredentialSource,
+        resolved.apiKey,
+      )
+    ) {
       throw new ConflictException('PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE');
     }
     return resolved.apiKey;
@@ -2730,22 +2834,36 @@ export class NotificationProviderConfigService implements OnModuleInit {
       if (!secret) return { ok: false, errorCode: 'PROVIDER_ENV_SECRET_MISSING' };
       resolved = this.validateResolvedSecret(row.provider, secret);
     } else {
-      if (!row.encrypted_api_key) return { ok: false, errorCode: 'PROVIDER_SECRET_ENVELOPE_INVALID' };
+      if (!row.encrypted_api_key)
+        return { ok: false, errorCode: 'PROVIDER_SECRET_ENVELOPE_INVALID' };
       try {
         const apiKey = this.encryptionService.decrypt(
-          row.encrypted_api_key, row.channel, row.encryption_key_version,
+          row.encrypted_api_key,
+          row.channel,
+          row.encryption_key_version,
         );
         resolved = this.validateResolvedSecret(row.provider, apiKey);
       } catch (err) {
-        return { ok: false, errorCode: err instanceof NotificationSecretEncryptionError
-          ? err.code : 'PROVIDER_SECRET_DECRYPT_FAILED' };
+        return {
+          ok: false,
+          errorCode:
+            err instanceof NotificationSecretEncryptionError
+              ? err.code
+              : 'PROVIDER_SECRET_DECRYPT_FAILED',
+        };
       }
     }
     if (!resolved.ok) return resolved;
-    if (!this.bindingService.verify(
-      bindingFromRow(row), row.channel, row.provider,
-      row.credential_source as BoundCredentialSource, resolved.apiKey,
-    )) return { ok: false, errorCode: 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' };
+    if (
+      !this.bindingService.verify(
+        bindingFromRow(row),
+        row.channel,
+        row.provider,
+        row.credential_source as BoundCredentialSource,
+        resolved.apiKey,
+      )
+    )
+      return { ok: false, errorCode: 'PROVIDER_CREDENTIAL_INTEGRITY_UNAVAILABLE' };
     // This exact validated string is passed to the provider; do not reread the source.
     return resolved;
   }
@@ -2784,37 +2902,70 @@ export class NotificationProviderConfigService implements OnModuleInit {
     return new ServiceUnavailableException('Notification provider configuration is unavailable.');
   }
 
-  private validDbRow(value: unknown, channel: ManagedNotificationChannel): value is DbProviderConfigRow {
+  private validDbRow(
+    value: unknown,
+    channel: ManagedNotificationChannel,
+  ): value is DbProviderConfigRow {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const row = value as Partial<DbProviderConfigRow>;
-    const providers = channel === 'SMS' ? ['console', 'robase'] : ['none', 'console', 'brevo', 'resend'];
-    if (row.channel !== channel || typeof row.provider !== 'string' || !providers.includes(row.provider) ||
-        typeof row.enabled !== 'boolean' || !Number.isInteger(row.request_timeout_ms) ||
-        row.request_timeout_ms! < 1000 || row.request_timeout_ms! > 60000 ||
-        !Number.isInteger(row.version) || row.version! < 1 ||
-        (row.key_fingerprint !== null && (typeof row.key_fingerprint !== 'string' || !/^\*{4}[A-Za-z0-9_-]{4}$/.test(row.key_fingerprint))) ||
-        !['NONE', 'ENV_SECRET', 'ENCRYPTED_DB'].includes(String(row.credential_source))) return false;
-    for (const field of ['base_url', 'sender_id', 'from_email', 'from_name', 'reply_to_email'] as const) {
+    const providers =
+      channel === 'SMS' ? ['console', 'robase'] : ['none', 'console', 'brevo', 'resend'];
+    if (
+      row.channel !== channel ||
+      typeof row.provider !== 'string' ||
+      !providers.includes(row.provider) ||
+      typeof row.enabled !== 'boolean' ||
+      !Number.isInteger(row.request_timeout_ms) ||
+      row.request_timeout_ms! < 1000 ||
+      row.request_timeout_ms! > 60000 ||
+      !Number.isInteger(row.version) ||
+      row.version! < 1 ||
+      (row.key_fingerprint !== null &&
+        (typeof row.key_fingerprint !== 'string' ||
+          !/^\*{4}[A-Za-z0-9_-]{4}$/.test(row.key_fingerprint))) ||
+      !['NONE', 'ENV_SECRET', 'ENCRYPTED_DB'].includes(String(row.credential_source))
+    )
+      return false;
+    for (const field of [
+      'base_url',
+      'sender_id',
+      'from_email',
+      'from_name',
+      'reply_to_email',
+    ] as const) {
       if (row[field] !== null && typeof row[field] !== 'string') return false;
     }
     for (const field of ['spf_configured', 'dkim_configured', 'dmarc_configured'] as const) {
       if (typeof row[field] !== 'boolean') return false;
     }
     if (row.credential_source === 'ENCRYPTED_DB') {
-      return typeof row.encrypted_api_key === 'string' && row.encrypted_api_key.length > 0 &&
-        typeof row.encryption_key_version === 'string' && row.encryption_key_version.length > 0 &&
-        typeof row.key_fingerprint === 'string' && row.key_fingerprint.length > 0;
+      return (
+        typeof row.encrypted_api_key === 'string' &&
+        row.encrypted_api_key.length > 0 &&
+        typeof row.encryption_key_version === 'string' &&
+        row.encryption_key_version.length > 0 &&
+        typeof row.key_fingerprint === 'string' &&
+        row.key_fingerprint.length > 0
+      );
     }
     return row.encrypted_api_key === null && row.encryption_key_version === null;
   }
 
-  private async loadDbRow(channel: ManagedNotificationChannel): Promise<DbProviderConfigRow | null> {
-    if (!this.dataSource || !this.dataSource.isInitialized) throw this.unavailableProviderConfiguration();
+  private async loadDbRow(
+    channel: ManagedNotificationChannel,
+  ): Promise<DbProviderConfigRow | null> {
+    if (!this.dataSource || !this.dataSource.isInitialized)
+      throw this.unavailableProviderConfiguration();
     try {
       const rows: unknown = await this.dataSource.query(
-        `SELECT * FROM notification_provider_configurations WHERE channel = $1`, [channel],
+        `SELECT * FROM notification_provider_configurations WHERE channel = $1`,
+        [channel],
       );
-      if (!Array.isArray(rows) || rows.length > 1 || (rows.length === 1 && !this.validDbRow(rows[0], channel))) {
+      if (
+        !Array.isArray(rows) ||
+        rows.length > 1 ||
+        (rows.length === 1 && !this.validDbRow(rows[0], channel))
+      ) {
         throw this.unavailableProviderConfiguration();
       }
       return (rows[0] as DbProviderConfigRow | undefined) ?? null;
@@ -2824,14 +2975,21 @@ export class NotificationProviderConfigService implements OnModuleInit {
   }
 
   private async loadAllDbRows(): Promise<Map<ManagedNotificationChannel, DbProviderConfigRow>> {
-    if (!this.dataSource || !this.dataSource.isInitialized) throw this.unavailableProviderConfiguration();
+    if (!this.dataSource || !this.dataSource.isInitialized)
+      throw this.unavailableProviderConfiguration();
     try {
-      const rows: unknown = await this.dataSource.query(`SELECT * FROM notification_provider_configurations`);
+      const rows: unknown = await this.dataSource.query(
+        `SELECT * FROM notification_provider_configurations`,
+      );
       if (!Array.isArray(rows)) throw this.unavailableProviderConfiguration();
       const map = new Map<ManagedNotificationChannel, DbProviderConfigRow>();
       for (const row of rows) {
         const channel = (row as { channel?: unknown } | null)?.channel;
-        if ((channel !== 'SMS' && channel !== 'EMAIL') || !this.validDbRow(row, channel) || map.has(channel)) {
+        if (
+          (channel !== 'SMS' && channel !== 'EMAIL') ||
+          !this.validDbRow(row, channel) ||
+          map.has(channel)
+        ) {
           throw this.unavailableProviderConfiguration();
         }
         map.set(channel, row);

@@ -25,7 +25,9 @@ export class NotificationReliability1785753600101 implements MigrationInterface 
     await queryRunner.query(`CREATE INDEX idx_notification_outbox_receipts_retry
       ON notification_outbox_receipts (consumer_name, status, next_attempt_at)`);
 
-    await queryRunner.query(`ALTER TABLE notification_deliveries DROP CONSTRAINT chk_notification_deliveries_status`);
+    await queryRunner.query(
+      `ALTER TABLE notification_deliveries DROP CONSTRAINT chk_notification_deliveries_status`,
+    );
     await queryRunner.query(`ALTER TABLE notification_deliveries ADD CONSTRAINT chk_notification_deliveries_status
       CHECK (status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD'))`);
     await queryRunner.query(`ALTER TABLE notification_deliveries

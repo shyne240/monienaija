@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { AuditService } from '../operations/audit.service';
@@ -73,7 +78,10 @@ export class LimitReservationRecoveryService {
     const actor = (input.actor ?? '').trim();
     if (!actor) throw new BadRequestException('actor is required');
     const reason = (input.reason ?? '').trim();
-    if (reason.length < 10) throw new BadRequestException('reason is required (minimum 10 characters) for manual reservation release');
+    if (reason.length < 10)
+      throw new BadRequestException(
+        'reason is required (minimum 10 characters) for manual reservation release',
+      );
     if (reason.length > 1000) throw new BadRequestException('reason exceeds 1000 characters');
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -105,7 +113,9 @@ export class LimitReservationRecoveryService {
           if (!row) throw new NotFoundException(`Limit reservation ${reservationId} was not found`);
 
           if (row.status === 'COMMITTED') {
-            throw new ConflictException('COMMITTED reservations are immutable and cannot be released');
+            throw new ConflictException(
+              'COMMITTED reservations are immutable and cannot be released',
+            );
           }
 
           if (row.status === 'RELEASED') {
@@ -115,7 +125,11 @@ export class LimitReservationRecoveryService {
 
           // status === 'RESERVED' — the only releasable state.
           if (row.limit_usage_id) {
-            const usageRows: Array<{ id: string; reserved_amount_minor: string; reserved_count: number }> = await manager.query(
+            const usageRows: Array<{
+              id: string;
+              reserved_amount_minor: string;
+              reserved_count: number;
+            }> = await manager.query(
               `SELECT id, reserved_amount_minor::text AS reserved_amount_minor, reserved_count
                  FROM limit_usages
                 WHERE id = $1
@@ -123,19 +137,28 @@ export class LimitReservationRecoveryService {
               [row.limit_usage_id],
             );
             const usage = usageRows[0];
-            if (!usage) throw new ConflictException(`Limit usage ${row.limit_usage_id} for reservation ${reservationId} was not found`);
+            if (!usage)
+              throw new ConflictException(
+                `Limit usage ${row.limit_usage_id} for reservation ${reservationId} was not found`,
+              );
 
             if (row.amount_minor !== null && row.amount_minor !== undefined) {
               const amt = BigInt(row.amount_minor);
               const reserved = BigInt(usage.reserved_amount_minor);
-              if (reserved < amt) throw new ConflictException('Reserved amount underflow on manual release — refusing to mutate usage');
+              if (reserved < amt)
+                throw new ConflictException(
+                  'Reserved amount underflow on manual release — refusing to mutate usage',
+                );
               await manager.query(
                 `UPDATE limit_usages SET reserved_amount_minor = reserved_amount_minor - $2, updated_at = NOW() WHERE id = $1`,
                 [usage.id, amt.toString()],
               );
             }
             if (row.count !== null && row.count !== undefined) {
-              if (usage.reserved_count < row.count) throw new ConflictException('Reserved count underflow on manual release — refusing to mutate usage');
+              if (usage.reserved_count < row.count)
+                throw new ConflictException(
+                  'Reserved count underflow on manual release — refusing to mutate usage',
+                );
               await manager.query(
                 `UPDATE limit_usages SET reserved_count = reserved_count - $2, updated_at = NOW() WHERE id = $1`,
                 [usage.id, row.count],
@@ -160,13 +183,19 @@ export class LimitReservationRecoveryService {
             newValues: { status: 'RELEASED', reason },
           });
 
-          return this.result({ ...row, released_at: updated[0]?.released_at ?? new Date() }, 'RELEASED', audit.id);
+          return this.result(
+            { ...row, released_at: updated[0]?.released_at ?? new Date() },
+            'RELEASED',
+            audit.id,
+          );
         });
       } catch (e) {
         const code = (e as { code?: string })?.code;
         if (code === '40001' || code === '40P01') {
           if (attempt < 4) {
-            await new Promise((res) => setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)));
+            await new Promise((res) =>
+              setTimeout(res, 20 * (attempt + 1) + Math.floor(Math.random() * 20)),
+            );
             continue;
           }
           // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL

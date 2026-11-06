@@ -44,13 +44,19 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
       );
     }
 
-    return { functions: functionsInserted, roles: rolesInserted, roleFunctions: roleFunctionsInserted };
+    return {
+      functions: functionsInserted,
+      roles: rolesInserted,
+      roleFunctions: roleFunctionsInserted,
+    };
   }
 
   private async seedFunctions(): Promise<number> {
     let inserted = 0;
     for (const item of AUTHORIZATION_FUNCTION_SEED) {
-      const exists = await this.functionRepo.findOne({ where: { functionCode: item.functionCode } as never });
+      const exists = await this.functionRepo.findOne({
+        where: { functionCode: item.functionCode } as never,
+      });
       if (!exists) {
         await this.functionRepo.save(
           this.functionRepo.create({
@@ -109,7 +115,9 @@ export class AuthorizationCatalogueSeedService implements OnApplicationBootstrap
     for (const item of AUTHORIZATION_ROLE_FUNCTION_SEED) {
       const roleId = roleIdByKey.get(item.roleKey);
       if (!roleId) {
-        this.logger.warn(`Authorization catalogue seed: role ${item.roleKey} not found, skipping assignment to ${item.functionCode}`);
+        this.logger.warn(
+          `Authorization catalogue seed: role ${item.roleKey} not found, skipping assignment to ${item.functionCode}`,
+        );
         continue;
       }
       const exists = await this.roleFunctionRepo.findOne({

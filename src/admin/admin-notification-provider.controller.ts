@@ -519,7 +519,9 @@ export class AdminNotificationProviderController {
         operation,
         sqlState: extractSqlState(error),
       });
-      throw new InternalServerErrorException('Notification provider operation could not be completed');
+      throw new InternalServerErrorException(
+        'Notification provider operation could not be completed',
+      );
     }
   }
 }

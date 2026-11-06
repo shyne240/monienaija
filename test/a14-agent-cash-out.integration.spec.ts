@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, no-empty */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -19,7 +19,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { RecipientResolutionService } from '../src/agent/recipient-resolution.service';
@@ -58,7 +62,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     cashOutService = moduleRef.get(AgentCashOutService);
@@ -102,7 +108,11 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     }
   }, 60_000);
 
-  async function createActiveAgentWithServicesAndPin(services: unknown, pin: string | null, isActive = true) {
+  async function createActiveAgentWithServicesAndPin(
+    services: unknown,
+    pin: string | null,
+    isActive = true,
+  ) {
     const cls = await classService.create({
       reference: `cls-a14-${randomUUID().slice(0, 8)}`,
       code: `A14-${randomUUID().slice(0, 6)}`,
@@ -119,7 +129,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       actor: 'applicant-a14',
     });
     await appService.submit(appEntity.id, 'applicant-a14');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -162,14 +175,24 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     };
   }
 
-  async function createCustomerWithPhoneAndPin(phoneCanonical: string, pin: string, displayName = 'Customer A14') {
+  async function createCustomerWithPhoneAndPin(
+    phoneCanonical: string,
+    pin: string,
+    displayName = 'Customer A14',
+  ) {
     const custRows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [`cust-a14-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, displayName]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`, [customerId, phoneCanonical]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, displayName],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$2,true)`,
+      [customerId, phoneCanonical],
+    );
     await customerPinService.setTransactionPin(customerId, {
       pinHash: hashPin(pin),
       hashAlgorithm: 'PBKDF2',
@@ -237,10 +260,12 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const sessionId = randomUUID();
     // Insert session
     const tokenHash = randomBytes(32).toString('hex');
-    await dataSource.query(
-      `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
-      [sessionId, customerId, credentialId, tokenHash],
-    ).catch(() => {});
+    await dataSource
+      .query(
+        `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
+        [sessionId, customerId, credentialId, tokenHash],
+      )
+      .catch(() => {});
     const principal: any = {
       principalType: 'CUSTOMER',
       customerId,
@@ -255,7 +280,14 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       ttlSeconds,
       actor: customerId,
     } as any);
-    return { challengeId: (challenge as any).id ?? (challenge as any).challengeId, otp, enrollmentId, methodId, sessionId, credentialId };
+    return {
+      challengeId: (challenge as any).id ?? (challenge as any).challengeId,
+      otp,
+      enrollmentId,
+      methodId,
+      sessionId,
+      credentialId,
+    };
   }
 
   async function fundCustomer(customerWalletLedgerId: string, amount: string) {
@@ -264,15 +296,26 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: customerWalletLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
+        {
+          accountId: customerWalletLedgerId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
 
   // A. successful Wallet→Cash
   it('A. successful Wallet→Cash', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
@@ -306,7 +349,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('B. Customer balance decreases by principal', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `81${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
@@ -329,7 +375,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('C. Agent balance increases by principal', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `82${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
@@ -352,7 +401,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('D. balanced journal', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `83${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '8000');
@@ -375,8 +427,12 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     expect(journal!.accountingUnit).toBe('CUSTOMER_FUNDS');
     const lines = journal!.lines;
     expect(lines.length).toBe(2);
-    const totalDebit = lines.filter((l) => l.direction === LedgerEntryDirection.DEBIT).reduce((s, l) => s + BigInt(l.amountMinor), 0n);
-    const totalCredit = lines.filter((l) => l.direction === LedgerEntryDirection.CREDIT).reduce((s, l) => s + BigInt(l.amountMinor), 0n);
+    const totalDebit = lines
+      .filter((l) => l.direction === LedgerEntryDirection.DEBIT)
+      .reduce((s, l) => s + BigInt(l.amountMinor), 0n);
+    const totalCredit = lines
+      .filter((l) => l.direction === LedgerEntryDirection.CREDIT)
+      .reduce((s, l) => s + BigInt(l.amountMinor), 0n);
     expect(totalDebit).toBe(totalCredit);
     expect(totalDebit.toString()).toBe('2500');
     const debit = lines.find((l) => l.direction === LedgerEntryDirection.DEBIT)!;
@@ -434,7 +490,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     for (let i = 0; i < 5; i++) {
       try {
-        const { challengeId } = await createMfaChallenge(customerId, `g-otp-${i}-${randomUUID().slice(0, 4)}`);
+        const { challengeId } = await createMfaChallenge(
+          customerId,
+          `g-otp-${i}-${randomUUID().slice(0, 4)}`,
+        );
         await cashOutService.execute({
           agentId: agent.id,
           agentPrincipal: agentPrincipal(agent.id) as any,
@@ -513,7 +572,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     const { challengeId } = await createMfaChallenge(customerId, '888888', 30);
     // Expire it manually
-    await dataSource.query(`UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`, [challengeId]);
+    await dataSource.query(
+      `UPDATE mfa_challenges SET expires_at=NOW() - INTERVAL '1 hour' WHERE id=$1`,
+      [challengeId],
+    );
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -531,7 +593,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('K. consumed/reused OTP denied', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
@@ -569,7 +634,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const phoneA = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const phoneB = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId: custA } = await createCustomerWithPhoneAndPin(phoneA, '1234');
-    const { customerId: custB, wallet: walletB } = await createCustomerWithPhoneAndPin(phoneB, '1234');
+    const { customerId: custB, wallet: walletB } = await createCustomerWithPhoneAndPin(
+      phoneB,
+      '1234',
+    );
     await fundCustomer(walletB.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(custA, '101010');
     await expect(
@@ -610,8 +678,14 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('N. Agent A cannot execute as Agent B', async () => {
-    const { agent: agentA } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
-    const { agent: agentB } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent: agentA } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
+    const { agent: agentB } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     const { challengeId } = await createMfaChallenge(customerId, '303030');
@@ -685,14 +759,21 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       actor: 'test-actor',
     });
     const pendingId = randomUUID();
-    await dataSource.query(`INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'PENDING',$3,1)`, [pendingId, `pend-a14-${randomUUID()}`, cls.id]);
+    await dataSource.query(
+      `INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'PENDING',$3,1)`,
+      [pendingId, `pend-a14-${randomUUID()}`, cls.id],
+    );
     await pinService.setTransactionPin(pendingId, {
       pinHash: hashPin('1234'),
       hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
       pinVersion: 1,
       actor: pendingId,
     });
-    await walletService.createWallet({ customerId: pendingId, currency: 'NGN', idempotencyKey: `pend-wallet-${pendingId}-${randomUUID()}` });
+    await walletService.createWallet({
+      customerId: pendingId,
+      currency: 'NGN',
+      idempotencyKey: `pend-wallet-${pendingId}-${randomUUID()}`,
+    });
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     const { challengeId } = await createMfaChallenge(customerId, '606060');
@@ -713,7 +794,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('R. inactive/missing Agent class denied', async () => {
-    const { agent, cls } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, cls } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
     const { challengeId } = await createMfaChallenge(customerId, '707070');
@@ -735,14 +819,19 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('S. insufficient Customer balance rejected', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     // No funding
     const custBal = await ledgerService.getAccountBalance(custWallet.ledgerAccountId);
     expect(custBal.balanceMinor).toBe('0');
     const { challengeId } = await createMfaChallenge(customerId, '808080');
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     await expect(
       cashOutService.execute({
         agentId: agent.id,
@@ -757,14 +846,19 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         idempotencyKey: `s-${randomUUID()}`,
       }),
     ).rejects.toThrow(/sufficient|insufficient/i);
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(afterJournals[0]!.cnt).toBe(beforeJournals[0]!.cnt);
     const agentBal = await ledgerService.getAccountBalance(agentWallet.ledgerAccountId);
     expect(agentBal.balanceMinor).toBe('0');
   });
 
   it('T. failed execution leaves both balances unchanged', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '1000');
@@ -792,7 +886,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('U. idempotent replay produces no second financial effect', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
@@ -835,7 +932,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     // We will patch the test to directly test financial replay via the underlying financial service, or we will create a new challenge with same OTP but same idempotencyKey should be 409?
     // Instead, we will test that a second call with same key but same OTP and same challengeId is considered replay if we allow VERIFIED challenges to be reused for idempotent replay.
     // For this, we will update the mfa_challenges status back to ACTIVE for the second call, to simulate that the OTP is still valid for replay.
-    await dataSource.query(`UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`, [challengeId]);
+    await dataSource.query(
+      `UPDATE mfa_challenges SET status='ACTIVE', verified_at=NULL WHERE id=$1`,
+      [challengeId],
+    );
     const r2 = await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -861,7 +961,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const wRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN'`, [customerId]);
+    const wRows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1 AND currency='NGN'`,
+      [customerId],
+    );
     const wallet = { ledgerAccountId: wRows[0]!.ledger_account_id } as any;
     await fundCustomer(wallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'v001');
@@ -896,7 +999,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('W. concurrent duplicate requests converge', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
@@ -910,7 +1016,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     // both will be considered same logical operation and converge via A12
     // idempotency (one COMPLETED, one REPLAYED), without triggering OTP REPLAYED
     // at the MFA layer (each challenge is separate and ACTIVE).
-    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const beforeJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     const [r1, r2] = await Promise.all([
       cashOutService.execute({
         agentId: agent.id,
@@ -941,12 +1049,17 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     expect(ids[0]).toBe(ids[1]);
     const statuses = [r1.status, r2.status].sort();
     expect(statuses).toEqual(['COMPLETED', 'REPLAYED']);
-    const afterJournals: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const afterJournals: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     expect(BigInt(afterJournals[0]!.cnt)).toBe(BigInt(beforeJournals[0]!.cnt) + 1n);
   });
 
   it('X. concurrent withdrawals cannot make Customer balance negative', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '10000');
@@ -978,7 +1091,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
         idempotencyKey: `x2-${randomUUID()}`,
       }),
     ]);
-    const fulfilled = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+    const fulfilled = results.filter(
+      (r) => r.status === 'fulfilled',
+    ) as PromiseFulfilledResult<any>[];
     const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
     expect(fulfilled.length).toBe(1);
     expect(rejected.length).toBe(1);
@@ -1024,10 +1139,25 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled').length).toBe(2);
-    const agentBal = await ledgerService.getAccountBalance((await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `y-agent-${agent.id}-${randomUUID()}` }).catch(async () => {
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [agent.id]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
-    })).ledgerAccountId);
+    const agentBal = await ledgerService.getAccountBalance(
+      (
+        await walletService
+          .createWallet({
+            customerId: agent.id,
+            currency: 'NGN',
+            idempotencyKey: `y-agent-${agent.id}-${randomUUID()}`,
+          })
+          .catch(async () => {
+            const w: Array<{ ledger_account_id: string }> = await dataSource.query(
+              `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+              [agent.id],
+            );
+            return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<
+              ReturnType<WalletService['createWallet']>
+            >;
+          })
+      ).ledgerAccountId,
+    );
     expect(BigInt(agentBal.balanceMinor)).toBe(5000n);
   });
 
@@ -1037,7 +1167,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { customerId, wallet: custWallet } = await createCustomerWithPhoneAndPin(phone, '1234');
     await fundCustomer(custWallet.ledgerAccountId, '5000');
     const { challengeId } = await createMfaChallenge(customerId, 'z001');
-    const beforeAccounts: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_accounts`);
+    const beforeAccounts: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_accounts`,
+    );
     await cashOutService.execute({
       agentId: agent.id,
       agentPrincipal: agentPrincipal(agent.id) as any,
@@ -1050,9 +1182,13 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `z-${randomUUID()}`,
     });
-    const afterAccounts: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_accounts`);
+    const afterAccounts: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_accounts`,
+    );
     // Only wallets may have been created, but no cash account
-    const cashAcc: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_accounts WHERE code ILIKE '%CASH%' AND code != 'CASH_TO_CASH-UNCLAIMED-NGN'`);
+    const cashAcc: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_accounts WHERE code ILIKE '%CASH%' AND code != 'CASH_TO_CASH-UNCLAIMED-NGN'`,
+    );
     expect(cashAcc[0]!.cnt).toBe('0');
   });
 
@@ -1060,13 +1196,26 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    const beforeCust: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
+    const beforeCust: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
     const beforeVal = BigInt(beforeCust[0]!.cnt);
     const { challengeId } = await createMfaChallenge(customerId, 'aa001');
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `aa-wallet-${customerId}-${randomUUID()}` }).catch(async () => {
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
-    });
+    const wallet = await walletService
+      .createWallet({
+        customerId,
+        currency: 'NGN',
+        idempotencyKey: `aa-wallet-${customerId}-${randomUUID()}`,
+      })
+      .catch(async () => {
+        const w: Array<{ ledger_account_id: string }> = await dataSource.query(
+          `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+          [customerId],
+        );
+        return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<
+          ReturnType<WalletService['createWallet']>
+        >;
+      });
     await fundCustomer(wallet.ledgerAccountId, '5000');
     await cashOutService.execute({
       agentId: agent.id,
@@ -1080,7 +1229,9 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       idempotencyKey: `aa-${randomUUID()}`,
     });
-    const afterCust: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
+    const afterCust: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
     expect(BigInt(afterCust[0]!.cnt)).toBe(beforeVal);
   });
 
@@ -1104,7 +1255,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     });
     expect(JSON.stringify(res).toLowerCase()).not.toContain('pin');
     expect(JSON.stringify(res).toLowerCase()).not.toContain('otp');
-    const audits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_CASH_OUT'`, [res.journalId]);
+    const audits: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_CASH_OUT'`,
+      [res.journalId],
+    );
     expect(audits.length).toBe(1);
     const serial = JSON.stringify(audits[0]!.new_values).toLowerCase();
     expect(serial).not.toContain('pin');
@@ -1113,7 +1267,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     expect(serial).not.toContain('secret');
     expect(serial).not.toContain('challengehash');
     // Also check financial audit
-    const finAudits: Array<{ new_values: any }> = await dataSource.query(`SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_FINANCIAL_EXECUTION'`, [res.journalId]);
+    const finAudits: Array<{ new_values: any }> = await dataSource.query(
+      `SELECT new_values FROM audit_events WHERE entity_id=$1 AND entity_type='AGENT_FINANCIAL_EXECUTION'`,
+      [res.journalId],
+    );
     expect(finAudits.length).toBe(1);
     expect(JSON.stringify(finAudits[0]!.new_values).toLowerCase()).not.toContain('pin');
   });
@@ -1121,19 +1278,47 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   it('AC. existing Customer Wallet→Wallet flow remains functional', async () => {
     const custId1 = randomUUID();
     const custId2 = randomUUID();
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [custId1, `ac-cust1-${randomUUID().slice(0,6)}`]);
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [custId2, `ac-cust2-${randomUUID().slice(0,6)}`]);
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AC1',true)`, [custId1]);
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AC2',true)`, [custId2]);
-    const wallet1 = await walletService.createWallet({ customerId: custId1, currency: 'NGN', idempotencyKey: `ac1-${randomUUID()}` });
-    const wallet2 = await walletService.createWallet({ customerId: custId2, currency: 'NGN', idempotencyKey: `ac2-${randomUUID()}` });
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [custId1, `ac-cust1-${randomUUID().slice(0, 6)}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [custId2, `ac-cust2-${randomUUID().slice(0, 6)}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AC1',true)`,
+      [custId1],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,'AC2',true)`,
+      [custId2],
+    );
+    const wallet1 = await walletService.createWallet({
+      customerId: custId1,
+      currency: 'NGN',
+      idempotencyKey: `ac1-${randomUUID()}`,
+    });
+    const wallet2 = await walletService.createWallet({
+      customerId: custId2,
+      currency: 'NGN',
+      idempotencyKey: `ac2-${randomUUID()}`,
+    });
     await ledgerService.postJournal({
       idempotencyKey: `ac-fund-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '5000' },
-        { accountId: wallet1.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '5000' },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '5000',
+        },
+        {
+          accountId: wallet1.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '5000',
+        },
       ],
     });
     await ledgerService.postJournal({
@@ -1141,8 +1326,16 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: wallet1.ledgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '2000' },
-        { accountId: wallet2.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '2000' },
+        {
+          accountId: wallet1.ledgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '2000',
+        },
+        {
+          accountId: wallet2.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '2000',
+        },
       ],
     });
     const after1 = await ledgerService.getAccountBalance(wallet1.ledgerAccountId);
@@ -1152,14 +1345,25 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
   });
 
   it('AD. existing Agent Cash→Wallet remains functional', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await ledgerService.postJournal({
       idempotencyKey: `ad-fund-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '5000' },
-        { accountId: agentWallet.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '5000' },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '5000',
+        },
+        {
+          accountId: agentWallet.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '5000',
+        },
       ],
     });
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -1175,17 +1379,40 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       idempotencyKey: `ad-${randomUUID()}`,
     });
     expect(res.status).toBe('COMPLETED');
-    const custWallet = await walletService.createWallet({ customerId: (await dataSource.query(`SELECT id FROM customers WHERE reference LIKE 'cust-a14%' ORDER BY created_at DESC LIMIT 1`))[0].id, currency: 'NGN', idempotencyKey: `ad-cust-wallet-${randomUUID()}` }).catch(async () => {
-      const cid = (await dataSource.query(`SELECT customer_id FROM customer_contact_methods WHERE normalized_value=$1`, [phone]))[0].customer_id;
-      const w = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [cid]);
-      return { ledgerAccountId: w[0].ledger_account_id } as any;
-    });
+    const custWallet = await walletService
+      .createWallet({
+        customerId: (
+          await dataSource.query(
+            `SELECT id FROM customers WHERE reference LIKE 'cust-a14%' ORDER BY created_at DESC LIMIT 1`,
+          )
+        )[0].id,
+        currency: 'NGN',
+        idempotencyKey: `ad-cust-wallet-${randomUUID()}`,
+      })
+      .catch(async () => {
+        const cid = (
+          await dataSource.query(
+            `SELECT customer_id FROM customer_contact_methods WHERE normalized_value=$1`,
+            [phone],
+          )
+        )[0].customer_id;
+        const w: Array<{ ledger_account_id: string }> = await dataSource.query(
+          `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+          [cid],
+        );
+        return { ledgerAccountId: w[0]!.ledger_account_id } as Awaited<
+          ReturnType<WalletService['createWallet']>
+        >;
+      });
     // Just check that cashIn succeeded
     expect(res.journalId).toBeDefined();
   });
 
   it('AE. A8/A9/A10/A11/A12/A13 regression', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const authRes = await authzService.authorize({
       agentId: agent.id,
       service: AgentService.CASH_OUT,
@@ -1213,20 +1440,33 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
     const res = await recipientService.resolve(phone);
     expect(res.ownerType).toBe('CUSTOMER');
     await lifecycleService.suspend(agent.id, 'test-actor');
-    const afterSuspend = await dataSource.query(`SELECT status FROM agents WHERE id=$1`, [agent.id]);
+    const afterSuspend = await dataSource.query(`SELECT status FROM agents WHERE id=$1`, [
+      agent.id,
+    ]);
     expect(afterSuspend[0].status).toBe('SUSPENDED');
     await lifecycleService.reactivate(agent.id, 'test-actor');
     const afterReact = await dataSource.query(`SELECT status FROM agents WHERE id=$1`, [agent.id]);
     expect(afterReact[0].status).toBe('ACTIVE');
     // A13 cashIn still works
-    const { agent: agent2, wallet: w2 } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent: agent2, wallet: w2 } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await ledgerService.postJournal({
       idempotencyKey: `ae-cashin-fund-${randomUUID()}`,
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: '3000' },
-        { accountId: w2.ledgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: '3000' },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: '3000',
+        },
+        {
+          accountId: w2.ledgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: '3000',
+        },
       ],
     });
     const phone2 = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -1280,7 +1520,10 @@ describe('A14 Agent Wallet→Cash (real PostgreSQL)', () => {
       }),
     ).rejects.toThrow(/Customer principal/i);
     // wrong Agent
-    const { agent: agentB } = await createActiveAgentWithServicesAndPin([AgentService.CASH_OUT], '1234');
+    const { agent: agentB } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_OUT],
+      '1234',
+    );
     const { challengeId: ch2 } = await createMfaChallenge(customerId, 'af002');
     await expect(
       cashOutService.execute({

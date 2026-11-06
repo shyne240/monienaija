@@ -162,10 +162,9 @@ const INTERNAL_AUDIT_READ = {
   requiredFunctionsExemptPrincipalTypes: ['SUPPORT'] as const,
 };
 
-
-  // INTEGRATION (integration/main-backend-frontend-20261030) — constructs carried over from
-  // main (39a9e504, phase 16-20 production readiness). Two of main's four registry additions are
-  // deliberately NOT carried over; see docs/integration/20261030 for the recorded rationale.
+// INTEGRATION (integration/main-backend-frontend-20261030) — constructs carried over from
+// main (39a9e504, phase 16-20 production readiness). Two of main's four registry additions are
+// deliberately NOT carried over; see docs/integration/20261030 for the recorded rationale.
 
 /**
  * Customer credential exchange. Matched with an exact route shape so that no other
@@ -186,7 +185,13 @@ function preferencePathCustomerId(path: string): string | undefined {
   if (segments.length < 6 || segments[0] !== '') return undefined;
   try {
     const [api, version, customers, id, preferences] = segments.slice(1, 6).map(decodeURIComponent);
-    if (api === 'api' && version === 'v1' && customers === 'customers' && id && preferences === 'preferences') {
+    if (
+      api === 'api' &&
+      version === 'v1' &&
+      customers === 'customers' &&
+      id &&
+      preferences === 'preferences'
+    ) {
       return id;
     }
   } catch {
@@ -252,7 +257,10 @@ export class RoutePolicyRegistry {
     // (unauthenticated at the HTTP layer, hard-gated on A2_WORKFORCE_ENABLED=true by
     // RuntimeAccessGuard); LocalAdminAuthenticationService then independently refuses outside
     // NODE_ENV=development/test regardless of this route ever being reachable.
-    if (lookedUpMethod === 'POST' && path === '/api/v1/internal/a2/workforce/local-admin-sessions') {
+    if (
+      lookedUpMethod === 'POST' &&
+      path === '/api/v1/internal/a2/workforce/local-admin-sessions'
+    ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_ASSERTION',
@@ -650,9 +658,7 @@ export class RoutePolicyRegistry {
       };
     }
 
-    if (
-      /^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)
-    ) {
+    if (/^\/api\/v1\/internal\/agents\/classes(?:\/[^/]+)?$/.test(path)) {
       const functionCode = lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_classes';
       return {
         public: false,
@@ -674,13 +680,17 @@ export class RoutePolicyRegistry {
     // AGENT_NETWORK_MANAGER/FINANCE_CONTROLLER governance is checked again by the controller
     // and the funding service before any journal can post.
     if (
-      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(path)) ||
+      (lookedUpMethod === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/[^/]+\/(fund|defund|fund-request|defund-request)$/.test(
+          path,
+        )) ||
       (lookedUpMethod === 'POST' &&
         /^\/api\/v1\/internal\/aggregators\/[^/]+\/agents\/[^/]+\/(fund|defund)$/.test(path))
     ) {
-      const functionCode = path.endsWith('/defund') || path.endsWith('/defund-request')
-        ? 'agent.defund'
-        : 'agent.fund';
+      const functionCode =
+        path.endsWith('/defund') || path.endsWith('/defund-request')
+          ? 'agent.defund'
+          : 'agent.fund';
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -704,10 +714,7 @@ export class RoutePolicyRegistry {
     // (assertCheckerPrincipal). Deliberately does NOT require or confer agent.view or any
     // other Agent Network function; the maker's own requests are excluded server-side so
     // maker-checker independence is preserved.
-    if (
-      lookedUpMethod === 'GET' &&
-      path === '/api/v1/internal/agents/funding-requests'
-    ) {
+    if (lookedUpMethod === 'GET' && path === '/api/v1/internal/agents/funding-requests') {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
@@ -782,7 +789,9 @@ export class RoutePolicyRegistry {
             lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
+          requiredFunctions: [
+            lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals',
+          ],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -811,7 +820,9 @@ export class RoutePolicyRegistry {
             lookedUpMethod === 'GET'
               ? ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']
               : ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-          requiredFunctions: [lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals'],
+          requiredFunctions: [
+            lookedUpMethod === 'GET' ? 'agent.view' : 'agent.manage_outlets_terminals',
+          ],
           customerAccess: 'NONE',
           agentAccess: 'NONE',
           aggregatorAccess: 'NONE',
@@ -874,7 +885,9 @@ export class RoutePolicyRegistry {
 
     if (
       lookedUpMethod === 'POST' &&
-      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(?:credentials(?:\/reissue)?|sessions\/revoke)$/.test(path)
+      /^\/api\/v1\/internal\/admin\/agents\/[^/]+\/(?:credentials(?:\/reissue)?|sessions\/revoke)$/.test(
+        path,
+      )
     ) {
       return {
         public: false,
@@ -899,7 +912,9 @@ export class RoutePolicyRegistry {
     // depth alongside AdminSupportCredentialsController's own check).
     if (
       lookedUpMethod === 'POST' &&
-      /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(path)
+      /^\/api\/v1\/internal\/admin\/support\/workforce-users(\/[^/]+\/(disable|enable))?$/.test(
+        path,
+      )
     ) {
       return {
         public: false,
@@ -954,19 +969,24 @@ export class RoutePolicyRegistry {
 
     // Notification template/configuration governance is workforce-session only. Keep the
     // existing delivery-diagnostics route separate; its legacy callers are unaffected.
-    if (path === '/api/v1/internal/notifications/events' ||
-        path === '/api/v1/internal/notifications/templates' ||
-        path.startsWith('/api/v1/internal/notifications/templates/') ||
-        path === '/api/v1/internal/notifications/changes' ||
-        path.startsWith('/api/v1/internal/notifications/changes/')) {
+    if (
+      path === '/api/v1/internal/notifications/events' ||
+      path === '/api/v1/internal/notifications/templates' ||
+      path.startsWith('/api/v1/internal/notifications/templates/') ||
+      path === '/api/v1/internal/notifications/changes' ||
+      path.startsWith('/api/v1/internal/notifications/changes/')
+    ) {
       return {
         public: false,
         authenticationMode: 'WORKFORCE_SESSION',
         resourceType: 'notification-registry',
         policy: {
-          resourceType: 'notification-registry', action: `${method}:${path}`,
+          resourceType: 'notification-registry',
+          action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }
@@ -1216,8 +1236,10 @@ export class RoutePolicyRegistry {
     // Application review is distinct from activation. Public applicant capability routes
     // remain in APPLICATION_ACCESS above; these are the workforce-only review routes.
     if (
-      (lookedUpMethod === 'GET' && /^\/api\/v1\/internal\/agents\/applications(?:\/[^/]+)?$/.test(path)) ||
-      (lookedUpMethod === 'POST' && /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/(review|approve|reject)$/.test(path))
+      (lookedUpMethod === 'GET' &&
+        /^\/api\/v1\/internal\/agents\/applications(?:\/[^/]+)?$/.test(path)) ||
+      (lookedUpMethod === 'POST' &&
+        /^\/api\/v1\/internal\/agents\/applications\/[^/]+\/(review|approve|reject)$/.test(path))
     ) {
       return {
         public: false,
@@ -1229,7 +1251,9 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
           requiredFunctions: ['agent.review_application'],
-          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }
@@ -1251,7 +1275,9 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: ['agent.view'],
-          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }
@@ -1271,7 +1297,9 @@ export class RoutePolicyRegistry {
           action: `${method}:${path}`,
           allowedPrincipalTypes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
           requiredFunctions: ['transaction.view'],
-          customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE',
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
         },
       };
     }
@@ -1354,8 +1382,7 @@ export class RoutePolicyRegistry {
       // as 404→403 drift in v1-007-support-ticket before this guard was added). The only
       // other parameterized non-me surface, /agents/applications/:id, is handled by its
       // own explicit branch above and never reaches here.
-      const addressesAgentById =
-        !!input.params?.id && !path.startsWith('/api/v1/agents/me');
+      const addressesAgentById = !!input.params?.id && !path.startsWith('/api/v1/agents/me');
       return {
         public: false,
         resourceType: 'agent',

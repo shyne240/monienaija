@@ -1,13 +1,17 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { pbkdf2Sync, randomUUID } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 /**
  * V1-W2W-RECOVERY-SECURITY-AUDIT-01 — regression evidence for the audit documented at
@@ -56,28 +60,39 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180000);
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
-    if (dataSource) await destroyIntegrationDataSource(dataSource).catch(() => dataSource.destroy().catch(() => undefined));
+    if (dataSource)
+      await destroyIntegrationDataSource(dataSource).catch(() =>
+        dataSource.destroy().catch(() => undefined),
+      );
   }, 60000);
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
   });
 
-  async function createCustomerWithPin(label: string, displayName: string): Promise<{ customerId: string; token: string }> {
+  async function createCustomerWithPin(
+    label: string,
+    displayName: string,
+  ): Promise<{ customerId: string; token: string }> {
     const reference = `cust-w2wra-${label}-${randomUUID()}`;
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, displayName]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, displayName],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     await dataSource.query(
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
@@ -102,7 +117,11 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     return { customerId, token };
   }
 
-  async function fundWallet(walletId: string, ledgerAccountId: string, amountMinor: string): Promise<void> {
+  async function fundWallet(
+    walletId: string,
+    ledgerAccountId: string,
+    amountMinor: string,
+  ): Promise<void> {
     const { LedgerService } = await import('../src/ledger/ledger.service');
     const ls = app.get(LedgerService);
     const plat = await ls.createAccount({
@@ -131,8 +150,16 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     const customerA = await createCustomerWithPin('a', 'Customer A');
     const amina = await createCustomerWithPin('amina', 'Amina');
 
-    const walletA = await ws.createWallet({ customerId: customerA.customerId, currency: 'NGN', idempotencyKey: `w2wra-wa-${customerA.customerId}` });
-    const walletAmina = await ws.createWallet({ customerId: amina.customerId, currency: 'NGN', idempotencyKey: `w2wra-wb-${amina.customerId}` });
+    const walletA = await ws.createWallet({
+      customerId: customerA.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-wa-${customerA.customerId}`,
+    });
+    const walletAmina = await ws.createWallet({
+      customerId: amina.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-wb-${amina.customerId}`,
+    });
 
     // Customer A has enough for both ₦5,000 transfers (₦15,000 funded).
     await fundWallet(walletA.id, walletA.ledgerAccountId, '1500000');
@@ -188,7 +215,9 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
       .get('/api/v1/customers/me/transactions')
       .set('Authorization', `Bearer ${customerA.token}`)
       .expect(200);
-    const transferRows = (history.body.items as any[]).filter((item) => item.type === 'WALLET_TRANSFER');
+    const transferRows = (history.body.items as Array<{ type: string; id: string }>).filter(
+      (item) => item.type === 'WALLET_TRANSFER',
+    );
     expect(transferRows).toHaveLength(2);
     const ids = transferRows.map((row) => row.id).sort();
     expect(ids).toEqual([transfer1.body.id, transfer2.body.id].sort());
@@ -201,8 +230,16 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     const customerA = await createCustomerWithPin('conc-a', 'Concurrent Customer A');
     const customerB = await createCustomerWithPin('conc-b', 'Concurrent Customer B');
 
-    const walletA = await ws.createWallet({ customerId: customerA.customerId, currency: 'NGN', idempotencyKey: `w2wra-conc-wa-${customerA.customerId}` });
-    const walletB = await ws.createWallet({ customerId: customerB.customerId, currency: 'NGN', idempotencyKey: `w2wra-conc-wb-${customerB.customerId}` });
+    const walletA = await ws.createWallet({
+      customerId: customerA.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-conc-wa-${customerA.customerId}`,
+    });
+    const walletB = await ws.createWallet({
+      customerId: customerB.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-conc-wb-${customerB.customerId}`,
+    });
 
     await fundWallet(walletA.id, walletA.ledgerAccountId, '500000');
 
@@ -241,7 +278,7 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     expect(successes.length).toBeGreaterThanOrEqual(1);
     // Every successful response must report the SAME transfer id — never two different ids for
     // what is, by Idempotency-Key, declared to be one logical operation.
-    const distinctIds = new Set(successes.map((r) => r.body.id));
+    const distinctIds = new Set(successes.map((r) => r.body.id as string));
     expect(distinctIds.size).toBe(1);
 
     // PROOF (the actual financial-safety question): exactly ONE debit happened, not two.
@@ -269,7 +306,9 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
       .get('/api/v1/customers/me/transactions')
       .set('Authorization', `Bearer ${customerA.token}`)
       .expect(200);
-    const transferHistoryRows = (historyA.body.items as any[]).filter((item) => item.type === 'WALLET_TRANSFER');
+    const transferHistoryRows = (historyA.body.items as any[]).filter(
+      (item) => item.type === 'WALLET_TRANSFER',
+    );
     expect(transferHistoryRows).toHaveLength(1);
   });
 
@@ -280,8 +319,16 @@ describe('V1-W2W-RECOVERY-SECURITY-AUDIT-01 — backend transfer identity & idem
     const customerA = await createCustomerWithPin('mismatch-a', 'Mismatch Customer A');
     const customerB = await createCustomerWithPin('mismatch-b', 'Mismatch Customer B');
 
-    const walletA = await ws.createWallet({ customerId: customerA.customerId, currency: 'NGN', idempotencyKey: `w2wra-mismatch-wa-${customerA.customerId}` });
-    const walletB = await ws.createWallet({ customerId: customerB.customerId, currency: 'NGN', idempotencyKey: `w2wra-mismatch-wb-${customerB.customerId}` });
+    const walletA = await ws.createWallet({
+      customerId: customerA.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-mismatch-wa-${customerA.customerId}`,
+    });
+    const walletB = await ws.createWallet({
+      customerId: customerB.customerId,
+      currency: 'NGN',
+      idempotencyKey: `w2wra-mismatch-wb-${customerB.customerId}`,
+    });
 
     await fundWallet(walletA.id, walletA.ledgerAccountId, '1000000');
 

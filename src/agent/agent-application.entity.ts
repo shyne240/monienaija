@@ -37,7 +37,13 @@ export class AgentApplication {
   @Column({ name: 'applicant_reference', type: 'varchar', length: 160 })
   applicantReference!: string;
 
-  @Column({ name: 'applicant_access_token_hash', type: 'char', length: 64, nullable: true, select: false })
+  @Column({
+    name: 'applicant_access_token_hash',
+    type: 'char',
+    length: 64,
+    nullable: true,
+    select: false,
+  })
   applicantAccessTokenHash!: string | null;
 
   /** One-time applicant capability; never persisted or included in audit snapshots. */

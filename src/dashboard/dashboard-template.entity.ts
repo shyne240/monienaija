@@ -1,4 +1,11 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 /**
  * V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-01
@@ -36,7 +43,9 @@ export class DashboardTemplate {
    * no drag-and-drop designer, no pixel-level grid coordinates).
    */
   @Column({ type: 'jsonb' })
-  layout!: { widgets: Array<{ widgetKey: string; order: number; title?: string; filters?: string[] }> };
+  layout!: {
+    widgets: Array<{ widgetKey: string; order: number; title?: string; filters?: string[] }>;
+  };
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;

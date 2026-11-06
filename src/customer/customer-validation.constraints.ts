@@ -58,7 +58,8 @@ export class CustomerFieldPolicyConstraint implements ValidatorConstraintInterfa
       case 'contactValue':
         return !validateContactFields(object.type ?? '', value, object.phoneCountry ?? 'NG').value;
       case 'identityDocumentNumber':
-        return !validateIdentityDocumentFields(object, { requireDocumentNumber: true }).documentNumber;
+        return !validateIdentityDocumentFields(object, { requireDocumentNumber: true })
+          .documentNumber;
       case 'identityDocumentCountry':
         return !validateIdentityDocumentFields(object).issuingCountry;
       case 'identityDocumentDate': {
@@ -117,8 +118,10 @@ export class CustomerFieldPolicyConstraint implements ValidatorConstraintInterfa
       case 'email':
         return `${args.property} must be a valid email address of at most 254 UTF-8 bytes.`;
       case 'phone':
-        return normalizePhoneNumber(args.value, object.phoneCountry ?? 'NG').message ??
-          `${args.property} must be a valid phone number.`;
+        return (
+          normalizePhoneNumber(args.value, object.phoneCountry ?? 'NG').message ??
+          `${args.property} must be a valid phone number.`
+        );
       case 'nigerianPhone':
         return `${args.property} must be a valid Nigerian phone number.`;
       case 'addressField':

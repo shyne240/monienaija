@@ -157,25 +157,30 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
     expect(result.error).toBe('ROBASE_NETWORK:TypeError');
   });
 
-  it('6. destination normalization: '+ '+E.164 preserved, bare digits prefixed, garbage rejected', async () => {
-    const calls: string[] = [];
-    const provider = new RobaseNotificationProvider(
-      { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
-      async (_url, init) => {
-        calls.push((JSON.parse(init.body) as { phone_number: string }).phone_number);
-        return { ok: true, status: 200, json: async () => ({ id: 'ok' }) };
-      },
-    );
+  it(
+    '6. destination normalization: ' + '+E.164 preserved, bare digits prefixed, garbage rejected',
+    async () => {
+      const calls: string[] = [];
+      const provider = new RobaseNotificationProvider(
+        { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
+        async (_url, init) => {
+          calls.push((JSON.parse(init.body) as { phone_number: string }).phone_number);
+          return { ok: true, status: 200, json: async () => ({ id: 'ok' }) };
+        },
+      );
 
-    await provider.send(request({ destination: '+2348012345678' }));
-    await provider.send(request({ destination: '2348012345678' }));
-    expect(calls).toEqual(['+2348012345678', '+2348012345678']);
+      await provider.send(request({ destination: '+2348012345678' }));
+      await provider.send(request({ destination: '2348012345678' }));
+      expect(calls).toEqual(['+2348012345678', '+2348012345678']);
 
-    const skipped = await provider.send(request({ destination: 'SKIPPED:CUSTOMER_PHONE_MISSING' }));
-    expect(skipped.success).toBe(false);
-    expect(skipped.error).toBe('ROBASE_INVALID_DESTINATION');
-    expect(calls.length).toBe(2); // no extra request for invalid destination
-  });
+      const skipped = await provider.send(
+        request({ destination: 'SKIPPED:CUSTOMER_PHONE_MISSING' }),
+      );
+      expect(skipped.success).toBe(false);
+      expect(skipped.error).toBe('ROBASE_INVALID_DESTINATION');
+      expect(calls.length).toBe(2); // no extra request for invalid destination
+    },
+  );
 
   it('7. PUSH channel rejected as unsupported (documented dependency)', async () => {
     const provider = new RobaseNotificationProvider(
@@ -191,23 +196,25 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
 
   it('15. secrets never appear in any returned surface across failure modes', async () => {
     const cases: Array<() => Promise<{ success: boolean; error?: string | null }>> = [];
-    cases.push(async () =>
-      (
+    cases.push(
+      async () =>
         await new RobaseNotificationProvider(
           { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
-          async () => ({ ok: false, status: 401, json: async () => ({ error: { type: 'unauthorized', message: `bad key ${API_KEY}` } }) }),
-        ).send(request())
-      ),
+          async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({ error: { type: 'unauthorized', message: `bad key ${API_KEY}` } }),
+          }),
+        ).send(request()),
     );
-    cases.push(async () =>
-      (
+    cases.push(
+      async () =>
         await new RobaseNotificationProvider(
           { baseUrl: 'https://api.robase.dev', apiKey: API_KEY, requestTimeoutMs: 5000 },
           async () => {
             throw new TypeError(`network error while using ${API_KEY}`);
           },
-        ).send(request())
-      ),
+        ).send(request()),
     );
     for (const run of cases) {
       const result = await run();
@@ -238,7 +245,11 @@ describe('RobaseNotificationProvider (verified contract, mocked transport)', () 
 
     let unpinnedCalls = 0;
     const unpinnedProvider = new RobaseNotificationProvider(
-      { baseUrl: 'https://attacker-controlled.example.test', apiKey: API_KEY, requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://attacker-controlled.example.test',
+        apiKey: API_KEY,
+        requestTimeoutMs: 5000,
+      },
       async () => {
         unpinnedCalls += 1;
         return { ok: true, status: 200, json: async () => ({ id: 'exfil' }) };

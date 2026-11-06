@@ -29,14 +29,22 @@ import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-
 import { CommercialDecisionSnapshotService } from '../src/commercial-decision/commercial-decision-snapshot.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
 import { ProductCatalogService } from '../src/product-catalog/product-catalog.service';
-import { OUT_OF_SCOPE_PRODUCT_CODES, PRODUCT_CATALOG_SEED, V1_PRODUCT_CODES } from '../src/product-catalog/product-catalog.seed';
+import {
+  OUT_OF_SCOPE_PRODUCT_CODES,
+  PRODUCT_CATALOG_SEED,
+  V1_PRODUCT_CODES,
+} from '../src/product-catalog/product-catalog.seed';
 import {
   commissionNone,
   feeNotConfigured,
   limitNotEvaluated,
   rewardNone,
 } from '../src/commercial-decision/commercial-decision.defaults';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   let dataSource: DataSource;
@@ -56,7 +64,9 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     jwksJson: [],
     financeRoles: [],
     makerCheckerRules: [],
-    rateLimits: [{ category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true }],
+    rateLimits: [
+      { category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+    ],
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
 
@@ -71,7 +81,13 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     SERVICE: { roles: [], scopes: ['product.view'] },
     PRIVILEGED: {
       roles: ['FINANCE_CONTROLLER'],
-      scopes: ['product.view', 'product.modify', 'privileged:approve', 'privileged:execute', 'privileged:request'],
+      scopes: [
+        'product.view',
+        'product.modify',
+        'privileged:approve',
+        'privileged:execute',
+        'privileged:request',
+      ],
     },
     SUPPORT: { roles: [], scopes: [] },
     CUSTOMER: { roles: [], scopes: [] },
@@ -81,9 +97,18 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       const authority = TYPE_AUTHORITIES[type] ?? { roles: [], scopes: [] };
       return {
@@ -114,7 +139,9 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     service = app.get(ProductCatalogService);
@@ -133,13 +160,23 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   });
 
   async function rowCount(table: string): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ${table}`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ${table}`,
+    );
     return Number(rows[0]!.cnt);
   }
 
   async function financialTables(): Promise<Record<string, number>> {
     const out: Record<string, number> = {};
-    for (const t of ['ledger_accounts', 'ledger_journals', 'ledger_lines', 'wallet_accounts', 'limit_usages', 'limit_reservations', 'commercial_decision_snapshots']) {
+    for (const t of [
+      'ledger_accounts',
+      'ledger_journals',
+      'ledger_lines',
+      'wallet_accounts',
+      'limit_usages',
+      'limit_reservations',
+      'commercial_decision_snapshots',
+    ]) {
       out[t] = await rowCount(t);
     }
     return out;
@@ -157,28 +194,52 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       `SELECT conname FROM pg_constraint WHERE conrelid='products'::regclass ORDER BY conname`,
     );
     const names = constraints.map((c) => c.conname);
-    for (const expected of ['chk_products_code', 'chk_products_domain', 'chk_products_currency', 'chk_products_scope', 'chk_products_status', 'chk_products_configuration', 'chk_products_version', 'products_pkey']) {
+    for (const expected of [
+      'chk_products_code',
+      'chk_products_domain',
+      'chk_products_currency',
+      'chk_products_scope',
+      'chk_products_status',
+      'chk_products_configuration',
+      'chk_products_version',
+      'products_pkey',
+    ]) {
       expect(names).toContain(expected);
     }
 
-    const indexes: Array<{ indexname: string }> = await dataSource.query(`SELECT indexname FROM pg_indexes WHERE tablename='products'`);
+    const indexes: Array<{ indexname: string }> = await dataSource.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename='products'`,
+    );
     const idx = indexes.map((i) => i.indexname);
-    for (const expected of ['idx_products_domain', 'idx_products_scope', 'idx_products_status', 'idx_products_enabled']) {
+    for (const expected of [
+      'idx_products_domain',
+      'idx_products_scope',
+      'idx_products_status',
+      'idx_products_enabled',
+    ]) {
       expect(idx).toContain(expected);
     }
 
     // DB-layer code validation rejects invalid identities (subset of limit_rules.product pattern)
     await expect(
-      dataSource.query(`INSERT INTO products (code, name, domain, currency, created_by) VALUES ('bad-code!','x','CUSTOMER','NGN','test')`),
+      dataSource.query(
+        `INSERT INTO products (code, name, domain, currency, created_by) VALUES ('bad-code!','x','CUSTOMER','NGN','test')`,
+      ),
     ).rejects.toMatchObject({ code: '23514' });
     await expect(
-      dataSource.query(`INSERT INTO products (code, name, domain, currency, created_by) VALUES ('AB','x','CUSTOMER','NGN','test')`),
+      dataSource.query(
+        `INSERT INTO products (code, name, domain, currency, created_by) VALUES ('AB','x','CUSTOMER','NGN','test')`,
+      ),
     ).rejects.toMatchObject({ code: '23514' }); // too short (<3)
     await expect(
-      dataSource.query(`INSERT INTO products (code, name, domain, currency, created_by) VALUES ('OK_CODE','x','INVENTED','NGN','test')`),
+      dataSource.query(
+        `INSERT INTO products (code, name, domain, currency, created_by) VALUES ('OK_CODE','x','INVENTED','NGN','test')`,
+      ),
     ).rejects.toMatchObject({ code: '23514' }); // invalid domain
     await expect(
-      dataSource.query(`INSERT INTO products (code, name, domain, currency, created_by) VALUES ('OK_CODE','x','CUSTOMER','ngn','test')`),
+      dataSource.query(
+        `INSERT INTO products (code, name, domain, currency, created_by) VALUES ('OK_CODE','x','CUSTOMER','ngn','test')`,
+      ),
     ).rejects.toMatchObject({ code: '23514' }); // currency must be uppercase ISO
 
     // catalogue has NO commercial rate columns — separation is structural
@@ -186,7 +247,16 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       `SELECT column_name FROM information_schema.columns WHERE table_name='products'`,
     );
     const cols = columns.map((c) => c.column_name);
-    for (const forbidden of ['fee', 'commission', 'reward', 'vat', 'tax', 'rate', 'price', 'limit']) {
+    for (const forbidden of [
+      'fee',
+      'commission',
+      'reward',
+      'vat',
+      'tax',
+      'rate',
+      'price',
+      'limit',
+    ]) {
       expect(cols.some((c) => c.includes(forbidden))).toBe(false);
     }
   });
@@ -194,13 +264,21 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   // ── 2. seeding: exactly the 7 established V1 products ──
 
   it('02. seeds exactly the seven established V1 products with honest defaults', async () => {
-    const rows: Array<Record<string, unknown>> = await dataSource.query(`SELECT * FROM products ORDER BY code`);
+    const rows: Array<Record<string, unknown>> = await dataSource.query(
+      `SELECT * FROM products ORDER BY code`,
+    );
     expect(rows).toHaveLength(7);
     const codes = rows.map((r) => r.code);
     expect(codes).toEqual([...V1_PRODUCT_CODES].sort());
-    expect(codes).toEqual(
-      ['AGENT_DEFUNDING', 'AGENT_FUNDING', 'CASH_TO_CASH', 'CASH_TO_WALLET', 'CUSTOMER_FUNDING', 'WALLET_TO_CASH', 'WALLET_TRANSFER'],
-    );
+    expect(codes).toEqual([
+      'AGENT_DEFUNDING',
+      'AGENT_FUNDING',
+      'CASH_TO_CASH',
+      'CASH_TO_WALLET',
+      'CUSTOMER_FUNDING',
+      'WALLET_TO_CASH',
+      'WALLET_TRANSFER',
+    ]);
 
     for (const row of rows) {
       expect(row.currency).toBe('NGN'); // V1 is internal NGN-only
@@ -216,15 +294,21 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     // domain mapping follows audit doc §12
     const byCode = Object.fromEntries(rows.map((r) => [r.code as string, r]));
     expect(byCode['WALLET_TRANSFER']!.domain).toBe('CUSTOMER');
-    for (const c of ['WALLET_TO_CASH', 'CASH_TO_WALLET', 'CASH_TO_CASH']) expect(byCode[c]!.domain).toBe('AGENT');
-    for (const c of ['CUSTOMER_FUNDING', 'AGENT_FUNDING', 'AGENT_DEFUNDING']) expect(byCode[c]!.domain).toBe('FINANCE');
+    for (const c of ['WALLET_TO_CASH', 'CASH_TO_WALLET', 'CASH_TO_CASH'])
+      expect(byCode[c]!.domain).toBe('AGENT');
+    for (const c of ['CUSTOMER_FUNDING', 'AGENT_FUNDING', 'AGENT_DEFUNDING'])
+      expect(byCode[c]!.domain).toBe('FINANCE');
   });
 
   it('03. seed is idempotent and only inserts missing codes (never overwrites operator changes)', async () => {
-    await dataSource.query(`UPDATE products SET name = 'Operator Renamed' WHERE code = 'WALLET_TRANSFER'`);
+    await dataSource.query(
+      `UPDATE products SET name = 'Operator Renamed' WHERE code = 'WALLET_TRANSFER'`,
+    );
     const inserted = await seedService.seedIfEmpty();
     expect(inserted).toBe(0);
-    const rows: Array<{ name: string }> = await dataSource.query(`SELECT name FROM products WHERE code='WALLET_TRANSFER'`);
+    const rows: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM products WHERE code='WALLET_TRANSFER'`,
+    );
     expect(rows[0]!.name).toBe('Operator Renamed');
     expect(await rowCount('products')).toBe(7);
 
@@ -238,7 +322,9 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   // ── 3. uniqueness & V2/out-of-scope guards ──
 
   it('04. product code is unique: duplicate creation conflicts, V2/out-of-scope products never exist', async () => {
-    await expect(service.createProduct({ code: 'WALLET_TRANSFER', name: 'Dup', domain: 'CUSTOMER' }, 'test')).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.createProduct({ code: 'WALLET_TRANSFER', name: 'Dup', domain: 'CUSTOMER' }, 'test'),
+    ).rejects.toMatchObject({ status: 409 });
     // Same identity over HTTP also conflicts — through the P0-A governed flow: the maker request
     // is accepted (no direct write); the duplicate conflicts only when the approved change is
     // executed against the catalogue.
@@ -265,13 +351,16 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       .expect(409);
     expect(await rowCount('products')).toBe(7);
 
-    const all: Array<{ code: string; product_scope: string; enabled: boolean }> = await dataSource.query(`SELECT code, product_scope, enabled FROM products`);
+    const all: Array<{ code: string; product_scope: string; enabled: boolean }> =
+      await dataSource.query(`SELECT code, product_scope, enabled FROM products`);
     for (const forbidden of OUT_OF_SCOPE_PRODUCT_CODES) {
       expect(all.some((r) => r.code === forbidden)).toBe(false);
     }
     expect(all.some((r) => r.product_scope === 'V2')).toBe(false);
     // no non-NGN currency anywhere
-    const currencies: Array<{ currency: string }> = await dataSource.query(`SELECT DISTINCT currency FROM products`);
+    const currencies: Array<{ currency: string }> = await dataSource.query(
+      `SELECT DISTINCT currency FROM products`,
+    );
     expect(currencies.map((c) => c.currency)).toEqual(['NGN']);
 
     // the seed itself never carries out-of-scope codes or non-NGN currencies
@@ -287,7 +376,12 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   it('05. create registers future products safely: validation, normalization, defaults, audit', async () => {
     const before = await financialTables();
     const created = await service.createProduct(
-      { code: 'future_product', name: 'Future Product', description: 'planned, not enabled', domain: 'CUSTOMER' },
+      {
+        code: 'future_product',
+        name: 'Future Product',
+        description: 'planned, not enabled',
+        domain: 'CUSTOMER',
+      },
       'workforce-operator-1',
     );
     expect(created.code).toBe('FUTURE_PRODUCT'); // normalized uppercase
@@ -298,9 +392,10 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     expect(created.configurationStatus).toBe('NOT_CONFIGURED');
     expect(created.version).toBe(1);
 
-    const audits: Array<{ entity_type: string; action: string; actor: string }> = await dataSource.query(
-      `SELECT entity_type, action, actor FROM audit_events WHERE entity_type='PRODUCT' ORDER BY occurred_at`,
-    );
+    const audits: Array<{ entity_type: string; action: string; actor: string }> =
+      await dataSource.query(
+        `SELECT entity_type, action, actor FROM audit_events WHERE entity_type='PRODUCT' ORDER BY occurred_at`,
+      );
     expect(audits.some((a) => a.action === 'CREATED' && a.entity_type === 'PRODUCT')).toBe(true);
     expect(await financialTables()).toEqual(before);
   });
@@ -333,7 +428,12 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
     const updated = await service.updateProduct(
       'WALLET_TRANSFER',
-      { name: 'Wallet Transfer (P2P)', description: 'updated description', status: 'ACTIVE', version: current.version },
+      {
+        name: 'Wallet Transfer (P2P)',
+        description: 'updated description',
+        status: 'ACTIVE',
+        version: current.version,
+      },
       'workforce-operator-1',
     );
     expect(updated.name).toBe('Wallet Transfer (P2P)');
@@ -342,11 +442,23 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
     // replaying the same (now stale) version conflicts
     await expect(
-      service.updateProduct('WALLET_TRANSFER', { enabled: false, version: current.version }, 'test'),
+      service.updateProduct(
+        'WALLET_TRANSFER',
+        { enabled: false, version: current.version },
+        'test',
+      ),
     ).rejects.toMatchObject({ status: 409 });
 
-    await expect(service.updateProduct('NO_SUCH_PRODUCT', { name: 'x', version: 1 }, 'test')).rejects.toMatchObject({ status: 404 });
-    await expect(service.updateProduct('WALLET_TRANSFER', { status: 'INVENTED', version: updated.version }, 'test')).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.updateProduct('NO_SUCH_PRODUCT', { name: 'x', version: 1 }, 'test'),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.updateProduct(
+        'WALLET_TRANSFER',
+        { status: 'INVENTED', version: updated.version },
+        'test',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
 
     const audits: Array<{ action: string }> = await dataSource.query(
       `SELECT action FROM audit_events WHERE entity_type='PRODUCT' ORDER BY occurred_at`,
@@ -357,8 +469,16 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   it('08. concurrent updates: exactly one writer wins per version (optimistic concurrency)', async () => {
     const current = await service.getProduct('CASH_TO_CASH');
     const results = await Promise.allSettled([
-      service.updateProduct('CASH_TO_CASH', { name: 'Writer A', version: current.version }, 'test-a'),
-      service.updateProduct('CASH_TO_CASH', { name: 'Writer B', version: current.version }, 'test-b'),
+      service.updateProduct(
+        'CASH_TO_CASH',
+        { name: 'Writer A', version: current.version },
+        'test-a',
+      ),
+      service.updateProduct(
+        'CASH_TO_CASH',
+        { name: 'Writer B', version: current.version },
+        'test-b',
+      ),
     ]);
     const winners = results.filter((r) => r.status === 'fulfilled');
     const losers = results.filter((r) => r.status === 'rejected');
@@ -371,9 +491,17 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
   });
 
   it('09. status/configuration/enabled behavior: deprecate instead of delete; disabled products list-filterable', async () => {
-    const disabled = await service.updateProduct('WALLET_TO_CASH', { enabled: false, version: 1 }, 'test');
+    const disabled = await service.updateProduct(
+      'WALLET_TO_CASH',
+      { enabled: false, version: 1 },
+      'test',
+    );
     expect(disabled.enabled).toBe(false);
-    const deprecated = await service.updateProduct('WALLET_TO_CASH', { status: 'DEPRECATED', version: 2 }, 'test');
+    const deprecated = await service.updateProduct(
+      'WALLET_TO_CASH',
+      { status: 'DEPRECATED', version: 2 },
+      'test',
+    );
     expect(deprecated.status).toBe('DEPRECATED');
     expect(deprecated.enabled).toBe(false);
 
@@ -396,25 +524,56 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     await request(app.getHttpServer()).post('/api/v1/internal/products').send({}).expect(401);
 
     for (const type of ['CUSTOMER', 'AGENT', 'AGGREGATOR', 'SUPPORT']) {
-      await request(app.getHttpServer()).get('/api/v1/internal/products').set('Authorization', auth(type)).expect(403);
-      await request(app.getHttpServer()).get('/api/v1/internal/products/WALLET_TRANSFER').set('Authorization', auth(type)).expect(403);
-      await request(app.getHttpServer()).post('/api/v1/internal/products').set('Authorization', auth(type)).send({ code: 'X_CODE', name: 'x', domain: 'CUSTOMER' }).expect(403);
-      await request(app.getHttpServer()).patch('/api/v1/internal/products/WALLET_TRANSFER').set('Authorization', auth(type)).send({ version: 1 }).expect(403);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/products')
+        .set('Authorization', auth(type))
+        .expect(403);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/products/WALLET_TRANSFER')
+        .set('Authorization', auth(type))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/v1/internal/products')
+        .set('Authorization', auth(type))
+        .send({ code: 'X_CODE', name: 'x', domain: 'CUSTOMER' })
+        .expect(403);
+      await request(app.getHttpServer())
+        .patch('/api/v1/internal/products/WALLET_TRANSFER')
+        .set('Authorization', auth(type))
+        .send({ version: 1 })
+        .expect(403);
     }
   });
 
   it('11. workforce roles can use the surface; responses are safe projections', async () => {
     for (const type of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
-      const list = await request(app.getHttpServer()).get('/api/v1/internal/products').set('Authorization', auth(type)).expect(200);
+      const list = await request(app.getHttpServer())
+        .get('/api/v1/internal/products')
+        .set('Authorization', auth(type))
+        .expect(200);
       expect(list.body.total).toBe(7);
-      const one = await request(app.getHttpServer()).get('/api/v1/internal/products/WALLET_TRANSFER').set('Authorization', auth(type)).expect(200);
+      const one = await request(app.getHttpServer())
+        .get('/api/v1/internal/products/WALLET_TRANSFER')
+        .set('Authorization', auth(type))
+        .expect(200);
       expect(one.body.code).toBe('WALLET_TRANSFER');
     }
 
-    const one = await request(app.getHttpServer()).get('/api/v1/internal/products/WALLET_TRANSFER').set('Authorization', auth('OPERATOR')).expect(200);
+    const one = await request(app.getHttpServer())
+      .get('/api/v1/internal/products/WALLET_TRANSFER')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     const body = JSON.stringify(one.body);
     // safe projection: only catalogue facts — no secrets, no internal implementation details
-    for (const forbidden of ['password', 'pin', 'otp', 'secret', 'token', 'request_hash', 'requestHash']) {
+    for (const forbidden of [
+      'password',
+      'pin',
+      'otp',
+      'secret',
+      'token',
+      'request_hash',
+      'requestHash',
+    ]) {
       expect(body.toLowerCase()).not.toContain(forbidden);
     }
     expect(one.body.currency).toBe('NGN');
@@ -424,44 +583,80 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
     expect(one.body.configurationStatus).toBe('NOT_CONFIGURED');
     expect(one.body.version).toBe(1);
 
-    await request(app.getHttpServer()).get('/api/v1/internal/products/NO_SUCH_PRODUCT').set('Authorization', auth('OPERATOR')).expect(404);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/products/NO_SUCH_PRODUCT')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(404);
   });
 
   it('12. list filters, deterministic ordering and pagination validation', async () => {
-    const all = await request(app.getHttpServer()).get('/api/v1/internal/products').set('Authorization', auth('OPERATOR')).expect(200);
+    const all = await request(app.getHttpServer())
+      .get('/api/v1/internal/products')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(all.body.total).toBe(7);
     const codes = all.body.data.map((p: any) => p.code);
     expect([...codes].sort()).toEqual(codes); // deterministic code ASC
 
-    const agent = await request(app.getHttpServer()).get('/api/v1/internal/products?domain=AGENT').set('Authorization', auth('OPERATOR')).expect(200);
+    const agent = await request(app.getHttpServer())
+      .get('/api/v1/internal/products?domain=AGENT')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(agent.body.total).toBe(3);
     expect(agent.body.data.every((p: any) => p.domain === 'AGENT')).toBe(true);
 
-    const finance = await request(app.getHttpServer()).get('/api/v1/internal/products?domain=FINANCE').set('Authorization', auth('OPERATOR')).expect(200);
+    const finance = await request(app.getHttpServer())
+      .get('/api/v1/internal/products?domain=FINANCE')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(finance.body.total).toBe(3);
 
-    const enabled = await request(app.getHttpServer()).get('/api/v1/internal/products?enabled=true').set('Authorization', auth('OPERATOR')).expect(200);
+    const enabled = await request(app.getHttpServer())
+      .get('/api/v1/internal/products?enabled=true')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(enabled.body.total).toBe(7);
 
-    const page1 = await request(app.getHttpServer()).get('/api/v1/internal/products?page=1&limit=3').set('Authorization', auth('OPERATOR')).expect(200);
+    const page1 = await request(app.getHttpServer())
+      .get('/api/v1/internal/products?page=1&limit=3')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(page1.body.data).toHaveLength(3);
     expect(page1.body.totalPages).toBe(3);
     expect(page1.body.hasNextPage).toBe(true);
-    const page3 = await request(app.getHttpServer()).get('/api/v1/internal/products?page=3&limit=3').set('Authorization', auth('OPERATOR')).expect(200);
+    const page3 = await request(app.getHttpServer())
+      .get('/api/v1/internal/products?page=3&limit=3')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(page3.body.data).toHaveLength(1);
     expect(page3.body.hasNextPage).toBe(false);
     const ids1 = page1.body.data.map((p: any) => p.code);
     const ids3 = page3.body.data.map((p: any) => p.code);
     expect(ids3.every((c: string) => !ids1.includes(c))).toBe(true);
 
-    await request(app.getHttpServer()).get('/api/v1/internal/products?page=0').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/products?limit=101').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/products?domain=INVENTED').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/products?enabled=maybe').set('Authorization', auth('OPERATOR')).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/products?page=0')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/products?limit=101')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/products?domain=INVENTED')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/products?enabled=maybe')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
   });
 
   it('13. no DELETE route exists — deprecation is a status transition, never erasure', async () => {
-    await request(app.getHttpServer()).delete('/api/v1/internal/products/WALLET_TRANSFER').set('Authorization', auth('PRIVILEGED')).expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/v1/internal/products/WALLET_TRANSFER')
+      .set('Authorization', auth('PRIVILEGED'))
+      .expect(404);
     expect(await rowCount('products')).toBe(7);
   });
 
@@ -469,8 +664,15 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
   it('14. catalogue operations never mutate wallets, ledger, limit usage/reservations or snapshots', async () => {
     const before = await financialTables();
-    await service.createProduct({ code: 'ISOLATION_PROBE', name: 'Probe', domain: 'PLATFORM' }, 'test');
-    await service.updateProduct('ISOLATION_PROBE', { enabled: true, status: 'DISABLED', version: 1 }, 'test');
+    await service.createProduct(
+      { code: 'ISOLATION_PROBE', name: 'Probe', domain: 'PLATFORM' },
+      'test',
+    );
+    await service.updateProduct(
+      'ISOLATION_PROBE',
+      { enabled: true, status: 'DISABLED', version: 1 },
+      'test',
+    );
     const list = await service.listProducts({});
     expect(list.total).toBe(8);
     const after = await financialTables();
@@ -505,29 +707,48 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
 
     // mutate the catalogue: rename, disable, deprecate the product
     await service.updateProduct('WALLET_TRANSFER', { name: 'Renamed Product', version: 1 }, 'test');
-    await service.updateProduct('WALLET_TRANSFER', { enabled: false, status: 'DEPRECATED', version: 2 }, 'test');
+    await service.updateProduct(
+      'WALLET_TRANSFER',
+      { enabled: false, status: 'DEPRECATED', version: 2 },
+      'test',
+    );
 
     // the snapshot is byte-identical: catalogue changes cannot make the old decision ambiguous
-    const rows: Array<Record<string, unknown>> = await dataSource.query(`SELECT * FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId]);
+    const rows: Array<Record<string, unknown>> = await dataSource.query(
+      `SELECT * FROM commercial_decision_snapshots WHERE id=$1`,
+      [snapshotId],
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]!.product).toBe('WALLET_TRANSFER'); // product identity preserved as recorded
     expect(rows[0]!.configuration_version).toBe('CFG-COMM02-1');
     expect((rows[0]!.fee_decision as any).status).toBe('NOT_CONFIGURED');
 
     // snapshots remain immutable at the DB layer (no UPDATE/DELETE behavior was added)
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET product='OTHER' WHERE id=$1`, [snapshotId])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(`UPDATE commercial_decision_snapshots SET product='OTHER' WHERE id=$1`, [
+        snapshotId,
+      ]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
   });
 
   it('16. canonical identity check: catalogue codes are the exact runtime product codes (no competing system)', async () => {
-    const codes: Array<{ code: string }> = await dataSource.query(`SELECT code FROM products ORDER BY code`);
+    const codes: Array<{ code: string }> = await dataSource.query(
+      `SELECT code FROM products ORDER BY code`,
+    );
     const catalogueCodes = codes.map((c) => c.code);
     // identical to the codes flows pass to limit enforcement / commercial snapshots
-    for (const runtime of ['WALLET_TRANSFER', 'WALLET_TO_CASH', 'CASH_TO_WALLET', 'CASH_TO_CASH', 'CUSTOMER_FUNDING', 'AGENT_FUNDING', 'AGENT_DEFUNDING']) {
+    for (const runtime of [
+      'WALLET_TRANSFER',
+      'WALLET_TO_CASH',
+      'CASH_TO_WALLET',
+      'CASH_TO_CASH',
+      'CUSTOMER_FUNDING',
+      'AGENT_FUNDING',
+      'AGENT_DEFUNDING',
+    ]) {
       expect(catalogueCodes).toContain(runtime);
     }
     // code pattern stays compatible with limit_rules.product consumption
@@ -550,7 +771,10 @@ describe('V1-COMMERCIAL-02 Product Catalogue foundation (real PG)', () => {
       createdBy: 'test-suite',
     } as any);
     expect(created.replayed).toBe(false);
-    const lookup = await snapshotService.findByReference(catalogueCodes[0]!, created.snapshot.transaction_reference as string);
+    const lookup = await snapshotService.findByReference(
+      catalogueCodes[0]!,
+      created.snapshot.transaction_reference as string,
+    );
     expect(lookup!.product).toBe(catalogueCodes[0]!);
   });
 });

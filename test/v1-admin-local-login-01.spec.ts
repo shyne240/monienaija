@@ -153,7 +153,10 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
       const rows: Array<{ id: string; email: string; passwordHash: string }> = [];
       const { service } = buildService(rows);
 
-      await service.seedDefaultAdmin({ email: 'Admin@MonieNaija.Local', password: 'MonieNaijaAdmin123!' });
+      await service.seedDefaultAdmin({
+        email: 'Admin@MonieNaija.Local',
+        password: 'MonieNaijaAdmin123!',
+      });
       const second = await service.seedDefaultAdmin({
         email: 'admin@monienaija.local',
         password: 'SomeOtherPassword123!',
@@ -169,7 +172,10 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
       const { service } = buildService(rows);
 
       await expect(
-        service.seedDefaultAdmin({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' }),
+        service.seedDefaultAdmin({
+          email: 'admin@monienaija.local',
+          password: 'MonieNaijaAdmin123!',
+        }),
       ).rejects.toThrow(/refuses to run outside/i);
       expect(rows).toHaveLength(0);
     });
@@ -180,7 +186,10 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
       const { service } = buildService(rows);
 
       await expect(
-        service.seedDefaultAdmin({ email: 'admin@monienaija.local', password: 'MonieNaijaAdmin123!' }),
+        service.seedDefaultAdmin({
+          email: 'admin@monienaija.local',
+          password: 'MonieNaijaAdmin123!',
+        }),
       ).rejects.toThrow(/refuses to run outside/i);
       expect(rows).toHaveLength(0);
     });
@@ -228,7 +237,11 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
     it('C. correct credentials authenticate and return the real workforce session shape, with a principal tied to the credential (not mock-sandbox-subject)', async () => {
       process.env.NODE_ENV = 'test';
       const rows = [
-        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+        {
+          id: 'admin-1',
+          email: 'admin@monienaija.local',
+          passwordHash: hashPassword('MonieNaijaAdmin123!'),
+        },
       ];
       const { service, sessions } = buildService(rows);
 
@@ -245,7 +258,11 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
     it('C2. the same email always produces the same principalId across separate logins (deterministic)', async () => {
       process.env.NODE_ENV = 'test';
       const rows = [
-        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+        {
+          id: 'admin-1',
+          email: 'admin@monienaija.local',
+          passwordHash: hashPassword('MonieNaijaAdmin123!'),
+        },
       ];
       const { service, sessions } = buildService(rows);
 
@@ -260,13 +277,17 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
     it('D. wrong password is rejected with 401 and does not reach session issuance', async () => {
       process.env.NODE_ENV = 'test';
       const rows = [
-        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+        {
+          id: 'admin-1',
+          email: 'admin@monienaija.local',
+          passwordHash: hashPassword('MonieNaijaAdmin123!'),
+        },
       ];
       const { service, sessions, auditService } = buildService(rows);
 
-      await expect(service.login('admin@monienaija.local', 'totally-wrong-password')).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        service.login('admin@monienaija.local', 'totally-wrong-password'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(sessions.establish).not.toHaveBeenCalled();
       expect(auditService.record).toHaveBeenCalledWith(
         expect.anything(),
@@ -279,35 +300,43 @@ describe('V1-ADMIN-LOCAL-LOGIN-01 / V1-ADMIN-UAT-IDENTITY-01 — LocalAdminAuthe
       const rows: Array<{ id: string; email: string; passwordHash: string }> = [];
       const { service, sessions } = buildService(rows);
 
-      await expect(service.login('nobody@monienaija.local', 'whatever12345')).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        service.login('nobody@monienaija.local', 'whatever12345'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(sessions.establish).not.toHaveBeenCalled();
     });
 
     it('F. refuses to authenticate outside NODE_ENV=development/test (hidden as 404, not 401)', async () => {
       process.env.NODE_ENV = 'production';
       const rows = [
-        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+        {
+          id: 'admin-1',
+          email: 'admin@monienaija.local',
+          passwordHash: hashPassword('MonieNaijaAdmin123!'),
+        },
       ];
       const { service, sessions } = buildService(rows);
 
-      await expect(service.login('admin@monienaija.local', 'MonieNaijaAdmin123!')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.login('admin@monienaija.local', 'MonieNaijaAdmin123!'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(sessions.establish).not.toHaveBeenCalled();
     });
 
     it('I3. refuses to authenticate when A2_WORKFORCE_ENABLED=false, even in development/test', async () => {
       process.env.NODE_ENV = 'test';
       const rows = [
-        { id: 'admin-1', email: 'admin@monienaija.local', passwordHash: hashPassword('MonieNaijaAdmin123!') },
+        {
+          id: 'admin-1',
+          email: 'admin@monienaija.local',
+          passwordHash: hashPassword('MonieNaijaAdmin123!'),
+        },
       ];
       const { service, sessions } = buildService(rows, { workforceEnabled: false });
 
-      await expect(service.login('admin@monienaija.local', 'MonieNaijaAdmin123!')).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        service.login('admin@monienaija.local', 'MonieNaijaAdmin123!'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(sessions.establish).not.toHaveBeenCalled();
     });
   });

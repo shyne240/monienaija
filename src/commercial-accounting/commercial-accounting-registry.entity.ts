@@ -1,10 +1,4 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
  * V1-COMMERCIAL-ACCOUNTING-IMPLEMENTATION-01 — DP-31=A (registry-based governance evidence).
@@ -50,7 +44,12 @@ export class CommercialAccountingRegistryEntry {
   purpose!: string;
 
   /** Human-decision identifiers authorizing this family (e.g. DP-01/DP-05 include their answers). */
-  @Column({ name: 'decision_references', type: 'text', array: true, default: () => "ARRAY[]::text[]" })
+  @Column({
+    name: 'decision_references',
+    type: 'text',
+    array: true,
+    default: () => 'ARRAY[]::text[]',
+  })
   decisionReferences!: string[];
 
   /** Where the approval evidence lives (the human-decision task id). */

@@ -35,11 +35,17 @@ export class CreateCapabilityRegistry1785753600066 implements MigrationInterface
     `);
 
     await queryRunner.query(`CREATE INDEX idx_capabilities_domain ON capabilities (domain)`);
-    await queryRunner.query(`CREATE INDEX idx_capabilities_product_scope ON capabilities (product_scope)`);
-    await queryRunner.query(`CREATE INDEX idx_capabilities_backend_status ON capabilities (backend_status)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_capabilities_product_scope ON capabilities (product_scope)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_capabilities_backend_status ON capabilities (backend_status)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_capabilities_enabled ON capabilities (enabled)`);
     await queryRunner.query(`CREATE INDEX idx_capabilities_lifecycle ON capabilities (lifecycle)`);
-    await queryRunner.query(`CREATE INDEX idx_capabilities_blocker_type ON capabilities (blocker_type)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_capabilities_blocker_type ON capabilities (blocker_type)`,
+    );
 
     // Seed via direct insert of all known V1/V2 capabilities — generated from src/capability-registry/capability.seed.ts
     // For durability, also allow service to seed if table empty (idempotent)

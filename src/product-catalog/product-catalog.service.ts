@@ -89,7 +89,11 @@ export class ProductCatalogService {
     const name = this.requireName(input.name);
     const domain = this.assertEnum(input.domain, ProductDomain, 'domain');
     const currency = this.normalizeCurrency(input.currency ?? 'NGN');
-    const productScope = this.assertEnum(input.productScope ?? ProductScope.V1, ProductScope, 'productScope');
+    const productScope = this.assertEnum(
+      input.productScope ?? ProductScope.V1,
+      ProductScope,
+      'productScope',
+    );
     const status = this.assertEnum(input.status ?? ProductStatus.ACTIVE, ProductStatus, 'status');
     const configurationStatus = this.assertEnum(
       input.configurationStatus ?? ProductConfigurationStatus.NOT_CONFIGURED,
@@ -123,7 +127,11 @@ export class ProductCatalogService {
     return this.toSafe(saved);
   }
 
-  async updateProduct(code: string, input: ProductUpdateInput, actor: string): Promise<ProductSafeProjection> {
+  async updateProduct(
+    code: string,
+    input: ProductUpdateInput,
+    actor: string,
+  ): Promise<ProductSafeProjection> {
     const normalizedCode = this.normalizeCode(code);
     // ARENA 3 (PostgreSQL regression triage, V1-COMMERCIAL-02 suite test 08 — verified
     // application defect, not a test defect): TypeORM's @VersionColumn is NOT enforced by
@@ -147,14 +155,21 @@ export class ProductCatalogService {
 
       if (input.name !== undefined) product.name = this.requireName(input.name);
       if (input.description !== undefined) product.description = input.description?.trim() || null;
-      if (input.domain !== undefined) product.domain = this.assertEnum(input.domain, ProductDomain, 'domain');
-      if (input.status !== undefined) product.status = this.assertEnum(input.status, ProductStatus, 'status');
+      if (input.domain !== undefined)
+        product.domain = this.assertEnum(input.domain, ProductDomain, 'domain');
+      if (input.status !== undefined)
+        product.status = this.assertEnum(input.status, ProductStatus, 'status');
       if (input.enabled !== undefined) {
-        if (typeof input.enabled !== 'boolean') throw new BadRequestException('enabled must be a boolean');
+        if (typeof input.enabled !== 'boolean')
+          throw new BadRequestException('enabled must be a boolean');
         product.enabled = input.enabled;
       }
       if (input.configurationStatus !== undefined) {
-        product.configurationStatus = this.assertEnum(input.configurationStatus, ProductConfigurationStatus, 'configurationStatus');
+        product.configurationStatus = this.assertEnum(
+          input.configurationStatus,
+          ProductConfigurationStatus,
+          'configurationStatus',
+        );
       }
       product.updatedBy = actor;
 
@@ -189,7 +204,14 @@ export class ProductCatalogService {
     productScope?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ data: ProductSafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: ProductSafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
@@ -198,9 +220,14 @@ export class ProductCatalogService {
     if (params.status) where['status'] = this.assertEnum(params.status, ProductStatus, 'status');
     if (params.enabled !== undefined) where['enabled'] = params.enabled;
     if (params.configurationStatus) {
-      where['configurationStatus'] = this.assertEnum(params.configurationStatus, ProductConfigurationStatus, 'configurationStatus');
+      where['configurationStatus'] = this.assertEnum(
+        params.configurationStatus,
+        ProductConfigurationStatus,
+        'configurationStatus',
+      );
     }
-    if (params.productScope) where['productScope'] = this.assertEnum(params.productScope, ProductScope, 'productScope');
+    if (params.productScope)
+      where['productScope'] = this.assertEnum(params.productScope, ProductScope, 'productScope');
     const [rows, total] = await this.repo.findAndCount({
       where: where as never,
       order: { code: 'ASC' } as never,
@@ -255,18 +282,22 @@ export class ProductCatalogService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+    return (
+      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+    );
   }
 
   private isVersionConflict(error: unknown): boolean {

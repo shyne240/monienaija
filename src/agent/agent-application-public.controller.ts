@@ -91,7 +91,8 @@ export class AgentApplicationPublicController {
   }
 
   private bearerToken(header: string | string[] | undefined): string {
-    if (typeof header !== 'string') throw new UnauthorizedException('Application access token required');
+    if (typeof header !== 'string')
+      throw new UnauthorizedException('Application access token required');
     const match = /^Bearer\s+(\S+)$/i.exec(header);
     if (!match?.[1]) throw new UnauthorizedException('Application access token required');
     return match[1];

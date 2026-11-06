@@ -40,7 +40,11 @@ import {
   limitNotEvaluated,
   rewardNone,
 } from '../src/commercial-decision/commercial-decision.defaults';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
   let dataSource: DataSource;
@@ -60,7 +64,9 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     jwksJson: [],
     financeRoles: [],
     makerCheckerRules: [],
-    rateLimits: [{ category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true }],
+    rateLimits: [
+      { category: 'privileged-approval', capacity: 1000, refillRatePerSecond: 1000, enabled: true },
+    ],
     trustedProxies: ['127.0.0.1'],
   } as unknown as A2WorkforceConfigurationV1;
 
@@ -92,9 +98,18 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       const authority = TYPE_AUTHORITIES[type] ?? { roles: [], scopes: [] };
       return {
@@ -125,7 +140,9 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     service = app.get(FeeRuleRegistryService);
@@ -162,13 +179,23 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
   }
 
   async function rowCount(table: string): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ${table}`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ${table}`,
+    );
     return Number(rows[0]!.cnt);
   }
 
   async function financialTables(): Promise<Record<string, number>> {
     const out: Record<string, number> = {};
-    for (const t of ['ledger_accounts', 'ledger_journals', 'ledger_lines', 'wallet_accounts', 'limit_usages', 'limit_reservations', 'commercial_decision_snapshots']) {
+    for (const t of [
+      'ledger_accounts',
+      'ledger_journals',
+      'ledger_lines',
+      'wallet_accounts',
+      'limit_usages',
+      'limit_reservations',
+      'commercial_decision_snapshots',
+    ]) {
       out[t] = await rowCount(t);
     }
     return out;
@@ -187,9 +214,16 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     );
     const names = constraints.map((c) => c.conname);
     for (const expected of [
-      'chk_fee_rules_currency', 'chk_fee_rules_flat', 'chk_fee_rules_percentage', 'chk_fee_rules_minimum',
-      'chk_fee_rules_maximum', 'chk_fee_rules_vat', 'chk_fee_rules_effective', 'chk_fee_rules_version',
-      'chk_fee_rules_params', 'chk_fee_rules_min_max',
+      'chk_fee_rules_currency',
+      'chk_fee_rules_flat',
+      'chk_fee_rules_percentage',
+      'chk_fee_rules_minimum',
+      'chk_fee_rules_maximum',
+      'chk_fee_rules_vat',
+      'chk_fee_rules_effective',
+      'chk_fee_rules_version',
+      'chk_fee_rules_params',
+      'chk_fee_rules_min_max',
     ]) {
       expect(names).toContain(expected);
     }
@@ -200,7 +234,9 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     expect(fks).toHaveLength(1);
     expect(fks[0]!.confrelid).toBe('products');
 
-    const indexes: Array<{ indexname: string }> = await dataSource.query(`SELECT indexname FROM pg_indexes WHERE tablename='fee_rules'`);
+    const indexes: Array<{ indexname: string }> = await dataSource.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename='fee_rules'`,
+    );
     const idx = indexes.map((i) => i.indexname);
     expect(idx).toContain('uq_fee_rules_identity');
     expect(idx).toContain('idx_fee_rules_product');
@@ -224,11 +260,16 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     await bad('flat_fee_minor, percentage_bps', [null, null]); // parameter-less rule
     // unknown product → FK violation
     await expect(
-      dataSource.query(`INSERT INTO fee_rules (product_code, currency, flat_fee_minor, created_by) VALUES ('NOT_A_PRODUCT','NGN',0,'test')`),
+      dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, flat_fee_minor, created_by) VALUES ('NOT_A_PRODUCT','NGN',0,'test')`,
+      ),
     ).rejects.toMatchObject({ code: '23503' });
     // lowercase currency rejected
     await expect(
-      dataSource.query(`INSERT INTO fee_rules (product_code, currency, flat_fee_minor, created_by) VALUES ($1,'ngn',0,'test')`, [product]),
+      dataSource.query(
+        `INSERT INTO fee_rules (product_code, currency, flat_fee_minor, created_by) VALUES ($1,'ngn',0,'test')`,
+        [product],
+      ),
     ).rejects.toMatchObject({ code: '23514' });
   });
 
@@ -236,9 +277,10 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
 
   it('02. ZERO production fee rules are seeded and products stay NOT_CONFIGURED', async () => {
     expect(await rowCount('fee_rules')).toBe(0);
-    const products: Array<{ code: string; configuration_status: string; enabled: boolean }> = await dataSource.query(
-      `SELECT code, configuration_status, enabled FROM products ORDER BY code`,
-    );
+    const products: Array<{ code: string; configuration_status: string; enabled: boolean }> =
+      await dataSource.query(
+        `SELECT code, configuration_status, enabled FROM products ORDER BY code`,
+      );
     expect(products).toHaveLength(7);
     for (const p of products) {
       expect(p.configuration_status).toBe('NOT_CONFIGURED'); // fee-rule table existing changes nothing
@@ -266,17 +308,43 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     expect(byProduct.total).toBe(1);
     expect(byProduct.data[0]!.id).toBe(created.id);
 
-    await expect(service.createRule(baseRule({ productCode: 'NOT_A_PRODUCT' }), 'test')).rejects.toMatchObject({ status: 404 });
-    await expect(service.createRule(baseRule({ productCode: '' }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ currency: 'USDOLLAR' }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ flatFeeMinor: null, percentageBps: null }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ flatFeeMinor: '-5' }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ percentageBps: -1 }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ percentageBps: 10001 }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ minimumFeeMinor: '1000', maximumFeeMinor: '500', percentageBps: 10 }), 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.createRule(baseRule({ effectiveFrom: 'not-a-date' }), 'test')).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(baseRule({ productCode: 'NOT_A_PRODUCT' }), 'test'),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(service.createRule(baseRule({ productCode: '' }), 'test')).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      service.createRule(baseRule({ currency: 'USDOLLAR' }), 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(baseRule({ flatFeeMinor: null, percentageBps: null }), 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(baseRule({ flatFeeMinor: '-5' }), 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(service.createRule(baseRule({ percentageBps: -1 }), 'test')).rejects.toMatchObject(
+      { status: 400 },
+    );
+    await expect(
+      service.createRule(baseRule({ percentageBps: 10001 }), 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(
+        baseRule({ minimumFeeMinor: '1000', maximumFeeMinor: '500', percentageBps: 10 }),
+        'test',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(baseRule({ effectiveFrom: 'not-a-date' }), 'test'),
+    ).rejects.toMatchObject({ status: 400 });
     const t0 = new Date('2030-01-02T00:00:00Z');
-    await expect(service.createRule(baseRule({ effectiveFrom: t0, effectiveTo: '2030-01-01T00:00:00Z' }), 'test')).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.createRule(
+        baseRule({ effectiveFrom: t0, effectiveTo: '2030-01-01T00:00:00Z' }),
+        'test',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
     expect(await rowCount('fee_rules')).toBe(1); // only the valid rule persisted
   });
 
@@ -287,9 +355,25 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       { productCode: 'WALLET_TRANSFER', flatFeeMinor: '0' }, // explicit ZERO/FREE
       { productCode: 'WALLET_TO_CASH', flatFeeMinor: '10000' }, // FLAT (synthetic test value)
       { productCode: 'CASH_TO_WALLET', flatFeeMinor: null, percentageBps: 25 }, // PERCENTAGE (synthetic)
-      { productCode: 'CASH_TO_CASH', flatFeeMinor: null, percentageBps: 25, minimumFeeMinor: '5000' }, // PCT+MIN
-      { productCode: 'CUSTOMER_FUNDING', flatFeeMinor: null, percentageBps: 25, maximumFeeMinor: '200000' }, // PCT+MAX
-      { productCode: 'AGENT_FUNDING', flatFeeMinor: null, percentageBps: 25, minimumFeeMinor: '5000', maximumFeeMinor: '200000' }, // PCT+MIN+MAX
+      {
+        productCode: 'CASH_TO_CASH',
+        flatFeeMinor: null,
+        percentageBps: 25,
+        minimumFeeMinor: '5000',
+      }, // PCT+MIN
+      {
+        productCode: 'CUSTOMER_FUNDING',
+        flatFeeMinor: null,
+        percentageBps: 25,
+        maximumFeeMinor: '200000',
+      }, // PCT+MAX
+      {
+        productCode: 'AGENT_FUNDING',
+        flatFeeMinor: null,
+        percentageBps: 25,
+        minimumFeeMinor: '5000',
+        maximumFeeMinor: '200000',
+      }, // PCT+MIN+MAX
       { productCode: 'AGENT_DEFUNDING', flatFeeMinor: '1000', percentageBps: 25 }, // FLAT+PERCENTAGE (FeeEngine sums both)
     ];
     for (const m of models) {
@@ -301,7 +385,14 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
 
   it('05. FeeEngine consumes stored rule parameters unchanged (calculation compatibility, no charging wired)', async () => {
     const created = await service.createRule(
-      baseRule({ productCode: 'CASH_TO_CASH', flatFeeMinor: '1000', percentageBps: 25, minimumFeeMinor: '500', maximumFeeMinor: '50000', vatBps: 0 }),
+      baseRule({
+        productCode: 'CASH_TO_CASH',
+        flatFeeMinor: '1000',
+        percentageBps: 25,
+        minimumFeeMinor: '500',
+        maximumFeeMinor: '50000',
+        vatBps: 0,
+      }),
       'test',
     );
     // synthetic math check only — the engine is invoked directly by the test; no flow calls it
@@ -322,7 +413,9 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
   it('06. identity (product_code, currency, effective_from) is unique; duplicates conflict deterministically', async () => {
     const effectiveFrom = '2031-05-01T00:00:00Z';
     await service.createRule(baseRule({ effectiveFrom }), 'test');
-    await expect(service.createRule(baseRule({ effectiveFrom }), 'test')).rejects.toMatchObject({ status: 409 });
+    await expect(service.createRule(baseRule({ effectiveFrom }), 'test')).rejects.toMatchObject({
+      status: 409,
+    });
     // same identity over HTTP also conflicts — through the P0-A governed flow: the maker request
     // is accepted (no direct write), and the duplicate conflicts only when the approved change
     // is executed against the registry.
@@ -362,9 +455,15 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     const created = await service.createRule(baseRule(), 'test');
     expect(created.version).toBe(1);
 
-    await expect(service.updateRule(created.id, { isActive: false, version: 99 }, 'test')).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.updateRule(created.id, { isActive: false, version: 99 }, 'test'),
+    ).rejects.toMatchObject({ status: 409 });
 
-    const updated = await service.updateRule(created.id, { flatFeeMinor: '250', priority: 5, version: 1 }, 'workforce-operator-1');
+    const updated = await service.updateRule(
+      created.id,
+      { flatFeeMinor: '250', priority: 5, version: 1 },
+      'workforce-operator-1',
+    );
     expect(updated.version).toBe(2);
     expect(updated.flatFeeMinor).toBe('250');
     expect(updated.priority).toBe(5);
@@ -372,17 +471,35 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     // identity fields unchanged
     expect(updated.productCode).toBe('WALLET_TRANSFER');
     expect(updated.currency).toBe('NGN');
-    expect(new Date(updated.effectiveFrom).toISOString()).toBe(new Date(created.effectiveFrom).toISOString());
+    expect(new Date(updated.effectiveFrom).toISOString()).toBe(
+      new Date(created.effectiveFrom).toISOString(),
+    );
 
     // replaying the stale version conflicts
-    await expect(service.updateRule(created.id, { isActive: false, version: 1 }, 'test')).rejects.toMatchObject({ status: 409 });
+    await expect(
+      service.updateRule(created.id, { isActive: false, version: 1 }, 'test'),
+    ).rejects.toMatchObject({ status: 409 });
 
     // invariants still enforced on update
-    await expect(service.updateRule(created.id, { percentageBps: 20000, version: 2 }, 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.updateRule(created.id, { flatFeeMinor: null, percentageBps: null, version: 2 }, 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.updateRule(created.id, { effectiveTo: '2020-01-01T00:00:00Z', version: 2 }, 'test')).rejects.toMatchObject({ status: 400 });
-    await expect(service.updateRule(randomUUID(), { isActive: false, version: 1 }, 'test')).rejects.toMatchObject({ status: 404 });
-    await expect(service.updateRule('not-a-uuid', { isActive: false, version: 1 }, 'test')).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.updateRule(created.id, { percentageBps: 20000, version: 2 }, 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.updateRule(
+        created.id,
+        { flatFeeMinor: null, percentageBps: null, version: 2 },
+        'test',
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.updateRule(created.id, { effectiveTo: '2020-01-01T00:00:00Z', version: 2 }, 'test'),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.updateRule(randomUUID(), { isActive: false, version: 1 }, 'test'),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.updateRule('not-a-uuid', { isActive: false, version: 1 }, 'test'),
+    ).rejects.toMatchObject({ status: 400 });
 
     const audits: Array<{ entity_type: string; action: string }> = await dataSource.query(
       `SELECT entity_type, action FROM audit_events WHERE entity_type='FEE_RULE' ORDER BY occurred_at`,
@@ -414,15 +531,32 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     await request(app.getHttpServer()).post('/api/v1/internal/fee-rules').send({}).expect(401);
 
     for (const type of ['CUSTOMER', 'AGENT', 'AGGREGATOR', 'SUPPORT']) {
-      await request(app.getHttpServer()).get('/api/v1/internal/fee-rules').set('Authorization', auth(type)).expect(403);
-      await request(app.getHttpServer()).post('/api/v1/internal/fee-rules').set('Authorization', auth(type)).send({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '0' }).expect(403);
-      await request(app.getHttpServer()).patch(`/api/v1/internal/fee-rules/${randomUUID()}`).set('Authorization', auth(type)).send({ version: 1 }).expect(403);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/fee-rules')
+        .set('Authorization', auth(type))
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/v1/internal/fee-rules')
+        .set('Authorization', auth(type))
+        .send({ productCode: 'WALLET_TRANSFER', flatFeeMinor: '0' })
+        .expect(403);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/internal/fee-rules/${randomUUID()}`)
+        .set('Authorization', auth(type))
+        .send({ version: 1 })
+        .expect(403);
     }
 
     const created = await service.createRule(baseRule(), 'test');
     for (const type of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
-      await request(app.getHttpServer()).get('/api/v1/internal/fee-rules').set('Authorization', auth(type)).expect(200);
-      await request(app.getHttpServer()).get(`/api/v1/internal/fee-rules/${created.id}`).set('Authorization', auth(type)).expect(200);
+      await request(app.getHttpServer())
+        .get('/api/v1/internal/fee-rules')
+        .set('Authorization', auth(type))
+        .expect(200);
+      await request(app.getHttpServer())
+        .get(`/api/v1/internal/fee-rules/${created.id}`)
+        .set('Authorization', auth(type))
+        .expect(200);
     }
   });
 
@@ -433,42 +567,96 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       .set('Authorization', auth('OPERATOR'))
       .expect(200);
     const body = JSON.stringify(one.body);
-    for (const forbidden of ['password', 'pin', 'otp', 'secret', 'token', 'request_hash', 'requestHash']) {
+    for (const forbidden of [
+      'password',
+      'pin',
+      'otp',
+      'secret',
+      'token',
+      'request_hash',
+      'requestHash',
+    ]) {
       expect(body.toLowerCase()).not.toContain(forbidden);
     }
     expect(one.body.productCode).toBe('WALLET_TRANSFER');
     expect(one.body.percentageBps).toBe(15);
     expect(one.body.version).toBe(1);
 
-    await request(app.getHttpServer()).get(`/api/v1/internal/fee-rules/${randomUUID()}`).set('Authorization', auth('OPERATOR')).expect(404);
-    await request(app.getHttpServer()).get('/api/v1/internal/fee-rules/not-a-uuid').set('Authorization', auth('OPERATOR')).expect(400);
+    await request(app.getHttpServer())
+      .get(`/api/v1/internal/fee-rules/${randomUUID()}`)
+      .set('Authorization', auth('OPERATOR'))
+      .expect(404);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules/not-a-uuid')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
     // no DELETE route — deactivation/ending is via PATCH
-    await request(app.getHttpServer()).delete(`/api/v1/internal/fee-rules/${created.id}`).set('Authorization', auth('PRIVILEGED')).expect(404);
+    await request(app.getHttpServer())
+      .delete(`/api/v1/internal/fee-rules/${created.id}`)
+      .set('Authorization', auth('PRIVILEGED'))
+      .expect(404);
   });
 
   it('11. list filters, deterministic ordering and pagination validation', async () => {
-    await service.createRule(baseRule({ productCode: 'WALLET_TRANSFER', effectiveFrom: '2031-01-01T00:00:00Z' }), 'test');
-    await service.createRule(baseRule({ productCode: 'CASH_TO_CASH', effectiveFrom: '2031-01-01T00:00:00Z' }), 'test');
-    const inactive = await service.createRule(baseRule({ productCode: 'CASH_TO_WALLET', effectiveFrom: '2031-01-01T00:00:00Z', isActive: false }), 'test');
+    await service.createRule(
+      baseRule({ productCode: 'WALLET_TRANSFER', effectiveFrom: '2031-01-01T00:00:00Z' }),
+      'test',
+    );
+    await service.createRule(
+      baseRule({ productCode: 'CASH_TO_CASH', effectiveFrom: '2031-01-01T00:00:00Z' }),
+      'test',
+    );
+    const inactive = await service.createRule(
+      baseRule({
+        productCode: 'CASH_TO_WALLET',
+        effectiveFrom: '2031-01-01T00:00:00Z',
+        isActive: false,
+      }),
+      'test',
+    );
 
-    const all = await request(app.getHttpServer()).get('/api/v1/internal/fee-rules').set('Authorization', auth('OPERATOR')).expect(200);
+    const all = await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(all.body.total).toBe(3);
 
-    const byProduct = await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?productCode=CASH_TO_CASH').set('Authorization', auth('OPERATOR')).expect(200);
+    const byProduct = await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?productCode=CASH_TO_CASH')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(byProduct.body.total).toBe(1);
 
-    const onlyActive = await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?isActive=true').set('Authorization', auth('OPERATOR')).expect(200);
+    const onlyActive = await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?isActive=true')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(onlyActive.body.total).toBe(2);
-    const onlyInactive = await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?isActive=false').set('Authorization', auth('OPERATOR')).expect(200);
+    const onlyInactive = await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?isActive=false')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(onlyInactive.body.total).toBe(1);
     expect(onlyInactive.body.data[0]!.id).toBe(inactive.id);
 
-    const page = await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?page=2&limit=2').set('Authorization', auth('OPERATOR')).expect(200);
+    const page = await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?page=2&limit=2')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(200);
     expect(page.body.data).toHaveLength(1);
     expect(page.body.hasNextPage).toBe(false);
-    await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?page=0').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?limit=101').set('Authorization', auth('OPERATOR')).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/fee-rules?isActive=maybe').set('Authorization', auth('OPERATOR')).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?page=0')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?limit=101')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/fee-rules?isActive=maybe')
+      .set('Authorization', auth('OPERATOR'))
+      .expect(400);
   });
 
   // ── 8. financial isolation & snapshot historical safety ──
@@ -498,7 +686,10 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       journalId: null,
       decisionStatus: 'FINAL',
       // NOT_CONFIGURED decision — but ruleRefs can already reference the registry row for future APPLIED decisions
-      feeDecision: { ...feeNotConfigured('NGN', '50000'), ruleRefs: [{ ruleId: rule.id, ruleVersion: rule.version }] },
+      feeDecision: {
+        ...feeNotConfigured('NGN', '50000'),
+        ruleRefs: [{ ruleId: rule.id, ruleVersion: rule.version }],
+      },
       commissionDecision: commissionNone(),
       rewardDecision: rewardNone(),
       limitDecision: limitNotEvaluated(),
@@ -514,19 +705,24 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
     expect(currentRule.version).toBe(2);
 
     // snapshot untouched: historical decision remains explainable
-    const rows: Array<Record<string, unknown>> = await dataSource.query(`SELECT * FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId]);
+    const rows: Array<Record<string, unknown>> = await dataSource.query(
+      `SELECT * FROM commercial_decision_snapshots WHERE id=$1`,
+      [snapshotId],
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]!.product).toBe('WALLET_TRANSFER');
     expect((rows[0]!.fee_decision as any).ruleRefs).toEqual([{ ruleId: rule.id, ruleVersion: 1 }]);
     expect((rows[0]!.fee_decision as any).status).toBe('NOT_CONFIGURED');
 
     // snapshots still immutable — no UPDATE/DELETE behavior was added by this task
-    await expect(dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [snapshotId])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [
+        snapshotId,
+      ]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshotId]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
   });
 
   it('14. no runtime wiring: no flow service references the fee-rule registry (schema foundation only)', async () => {
@@ -543,7 +739,10 @@ describe('V1-COMMERCIAL-03 Fee Rule Schema foundation (real PG)', () => {
       expect(source).not.toContain('FeeRuleRegistryService');
       expect(source).not.toContain('fee_rules');
     }
-    const registrySource = readFileSync(join(__dirname, '../src/fee-rules/fee-rule-registry.service.ts'), 'utf8');
+    const registrySource = readFileSync(
+      join(__dirname, '../src/fee-rules/fee-rule-registry.service.ts'),
+      'utf8',
+    );
     expect(registrySource).not.toContain('DELETE FROM');
     expect(registrySource).not.toContain('UPDATE fee_rules');
   });

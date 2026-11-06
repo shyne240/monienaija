@@ -28,7 +28,10 @@ interface AuthenticatedRequest {
 
 @Controller('internal')
 export class LimitCatalogController {
-  constructor(private readonly service: LimitCatalogService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly service: LimitCatalogService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   // ── Profiles ──
 
@@ -66,8 +69,10 @@ export class LimitCatalogController {
     else this.requireWorkforce(req);
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let enabledBool: boolean | undefined;
     if (enabled !== undefined && enabled !== '') {
       if (enabled === 'true') enabledBool = true;
@@ -88,35 +93,50 @@ export class LimitCatalogController {
   async getProfile(@Param('code') code: string, @Req() req: AuthenticatedRequest) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.view');
     else this.requireWorkforce(req);
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     return this.service.getProfile(code.trim().toUpperCase());
   }
 
   @Patch('limit-profiles/:code')
-  async updateProfile(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateLimitProfileDto) {
+  async updateProfile(
+    @Param('code') code: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateLimitProfileDto,
+  ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.modify');
     else this.requireWorkforce(req);
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const actor = this.actorOf(req);
-    return this.service.updateProfile(code.trim().toUpperCase(), {
-      name: dto.name,
-      description: dto.description ?? undefined,
-      kind: dto.kind,
-      status: dto.status,
-      enabled: dto.enabled,
-      configurationStatus: dto.configurationStatus,
-      updatedBy: actor,
-      version: dto.version,
-    }, actor);
+    return this.service.updateProfile(
+      code.trim().toUpperCase(),
+      {
+        name: dto.name,
+        description: dto.description ?? undefined,
+        kind: dto.kind,
+        status: dto.status,
+        enabled: dto.enabled,
+        configurationStatus: dto.configurationStatus,
+        updatedBy: actor,
+        version: dto.version,
+      },
+      actor,
+    );
   }
 
   // ── Rules ──
 
   @Post('limit-profiles/:code/rules')
-  async createRule(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Body() dto: CreateLimitRuleDto) {
+  async createRule(
+    @Param('code') code: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateLimitRuleDto,
+  ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.modify');
     else this.requireWorkforce(req);
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const actor = this.actorOf(req);
     return this.service.createRule(
       {
@@ -147,11 +167,14 @@ export class LimitCatalogController {
   ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.view');
     else this.requireWorkforce(req);
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     return this.service.listRulesByProfile(code.trim().toUpperCase(), { page: p, limit: l });
   }
 
@@ -170,8 +193,10 @@ export class LimitCatalogController {
     else this.requireWorkforce(req);
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let isActiveBool: boolean | undefined;
     if (isActive !== undefined && isActive !== '') {
       if (isActive === 'true') isActiveBool = true;
@@ -193,31 +218,41 @@ export class LimitCatalogController {
   async getRule(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.view');
     else this.requireWorkforce(req);
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     return this.service.getRule(id.trim());
   }
 
   @Patch('limit-rules/:id')
-  async updateRule(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateLimitRuleDto) {
+  async updateRule(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateLimitRuleDto,
+  ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'limit.modify');
     else this.requireWorkforce(req);
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     const actor = this.actorOf(req);
-    return this.service.updateRule(id.trim(), {
-      product: dto.product,
-      direction: dto.direction ?? undefined,
-      channel: dto.channel === null ? null : dto.channel ?? undefined,
-      currency: dto.currency,
-      dimension: dto.dimension,
-      limitValueMinor: dto.limitValueMinor ?? undefined,
-      limitValueCount: dto.limitValueCount ?? undefined,
-      effectiveFrom: dto.effectiveFrom ?? undefined,
-      effectiveTo: dto.effectiveTo ?? undefined,
-      isActive: dto.isActive,
-      priority: dto.priority,
-      updatedBy: actor,
-      version: dto.version,
-    }, actor);
+    return this.service.updateRule(
+      id.trim(),
+      {
+        product: dto.product,
+        direction: dto.direction ?? undefined,
+        channel: dto.channel === null ? null : (dto.channel ?? undefined),
+        currency: dto.currency,
+        dimension: dto.dimension,
+        limitValueMinor: dto.limitValueMinor ?? undefined,
+        limitValueCount: dto.limitValueCount ?? undefined,
+        effectiveFrom: dto.effectiveFrom ?? undefined,
+        effectiveTo: dto.effectiveTo ?? undefined,
+        isActive: dto.isActive,
+        priority: dto.priority,
+        updatedBy: actor,
+        version: dto.version,
+      },
+      actor,
+    );
   }
 
   private isWorkforce(req?: AuthenticatedRequest): boolean {
@@ -243,7 +278,9 @@ export class LimitCatalogController {
   }
 
   private actorOf(req: AuthenticatedRequest): string {
-    const p = req.authorizationPrincipal as unknown as { principalId?: string; type?: string } | undefined;
+    const p = req.authorizationPrincipal as unknown as
+      | { principalId?: string; type?: string }
+      | undefined;
     return p?.principalId ?? p?.type ?? 'workforce';
   }
 

@@ -38,10 +38,7 @@ import { AggregatorAgentRelationshipStatus } from './aggregator.enums';
 @Index('idx_aggregator_agent_agent', ['agentId'])
 @Index('idx_aggregator_agent_status', ['status'])
 // Partial unique index is created in migration for ACTIVE assignments; decorator cannot express partial.
-@Check(
-  'chk_aggregator_agent_status',
-  "status IN ('ACTIVE', 'SUSPENDED', 'TERMINATED')",
-)
+@Check('chk_aggregator_agent_status', "status IN ('ACTIVE', 'SUSPENDED', 'TERMINATED')")
 @Check('chk_aggregator_agent_version', 'version > 0')
 export class AggregatorAgentAssignment {
   @PrimaryGeneratedColumn('uuid')

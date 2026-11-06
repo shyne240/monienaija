@@ -55,11 +55,23 @@ export function mapEventToIntents(
 
   // Payment recipients are supplied by the dispatcher only after resolving the committed
   // deposit/withdrawal wallet owner; an outbox payload is not authority for ownership.
-  if (['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].includes(eventType)) {
+  if (
+    ['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].includes(
+      eventType,
+    )
+  ) {
     const customerId = payload.customerId as string | undefined;
     if (!customerId) return [];
-    return [{ recipientType: 'CUSTOMER', recipientId: customerId, channel: 'SMS',
-      templateKey: eventType, correlationId, causationId }];
+    return [
+      {
+        recipientType: 'CUSTOMER',
+        recipientId: customerId,
+        channel: 'SMS',
+        templateKey: eventType,
+        correlationId,
+        causationId,
+      },
+    ];
   }
 
   // Transfer events — internal transfer completed
@@ -93,7 +105,8 @@ export function mapEventToIntents(
 
   if (eventType === 'transfer.failed' || eventType === 'transfer.unknown') {
     const sourceCustomerId =
-      (payload.sourceCustomerId as string | undefined) ?? (payload.customerId as string | undefined);
+      (payload.sourceCustomerId as string | undefined) ??
+      (payload.customerId as string | undefined);
     if (!sourceCustomerId) return [];
     return [
       {
@@ -130,7 +143,8 @@ export function mapEventToIntents(
     // Status mapping: status_changed with status RESOLVED/CLOSED should use resolved/closed template
     let templateKey = eventType;
     if (eventType === 'support.ticket.status_changed') {
-      const status = (payload.status as string | undefined) ?? (payload.newStatus as string | undefined);
+      const status =
+        (payload.status as string | undefined) ?? (payload.newStatus as string | undefined);
       if (status === 'RESOLVED') templateKey = 'support.ticket.resolved';
       else if (status === 'CLOSED') templateKey = 'support.ticket.closed';
     }
@@ -350,21 +364,23 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
   ...['customer.funding.requested', 'transfer.failed', 'transfer.unknown'].map((eventType) => ({
     eventType,
     recipient: 'CUSTOMER (existing event-specific recipient mapping)',
-    channel: 'SMS and/or EMAIL, according to this event\'s independent configuration',
+    channel: "SMS and/or EMAIL, according to this event's independent configuration",
     templateKey: eventType,
     required: false,
     possible: true,
     fallback: 'Verified contact and current recipient preferences are required',
   })),
-  ...['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].map((eventType) => ({
-    eventType,
-    recipient: 'CUSTOMER (resolved from committed payment and wallet)',
-    channel: 'SMS and/or EMAIL, according to this event\'s independent configuration',
-    templateKey: eventType,
-    required: false,
-    possible: true,
-    fallback: 'Unverified ownership or unavailable preferences/contacts fail closed',
-  })),
+  ...['deposit.completed', 'deposit.failed', 'withdrawal.completed', 'withdrawal.failed'].map(
+    (eventType) => ({
+      eventType,
+      recipient: 'CUSTOMER (resolved from committed payment and wallet)',
+      channel: "SMS and/or EMAIL, according to this event's independent configuration",
+      templateKey: eventType,
+      required: false,
+      possible: true,
+      fallback: 'Unverified ownership or unavailable preferences/contacts fail closed',
+    }),
+  ),
   {
     eventType: 'support.ticket.created',
     recipient: 'CUSTOMER and/or AGENT (payload customerId/agentId)',
@@ -494,16 +510,21 @@ export const NOTIFICATION_EVENT_CATALOGUE: Array<{
     templateKey: '*',
     required: false,
     possible: false,
-    fallback: 'SKIPPED PUSH_TOKEN_DEPENDENCY_MISSING until device-token entity exists; notification_push_enabled respected',
+    fallback:
+      'SKIPPED PUSH_TOKEN_DEPENDENCY_MISSING until device-token entity exists; notification_push_enabled respected',
   },
   // EMAIL (ARENA3-NOTIFICATION-EMAIL)
   {
-    eventType: 'customer.funding.* / deposit.* / withdrawal.* / transfer.* / cash_to_cash.claimed|expired / support.ticket.*',
+    eventType:
+      'customer.funding.* / deposit.* / withdrawal.* / transfer.* / cash_to_cash.claimed|expired / support.ticket.*',
     recipient: 'CUSTOMER only (AGENT email is a documented dependency)',
-    channel: 'EMAIL (customer_contact_methods type=EMAIL normalized_value; only generated when NOTIFICATION_EMAIL_PROVIDER is configured)',
-    templateKey: 'same as SMS intent — plain-text body identical (NotificationEmailTemplateLookup seam)',
+    channel:
+      'EMAIL (customer_contact_methods type=EMAIL normalized_value; only generated when NOTIFICATION_EMAIL_PROVIDER is configured)',
+    templateKey:
+      'same as SMS intent — plain-text body identical (NotificationEmailTemplateLookup seam)',
     required: false,
     possible: true,
-    fallback: 'Email dark (provider none): no EMAIL intent generated. Configured: EMAIL_OPT_OUT (notification_email_enabled=false, security-critical events bypass), CUSTOMER_EMAIL_MISSING, AGENT_EMAIL_DEPENDENCY_MISSING → SKIPPED with reason; provider failure → FAILED with bounded retries via worker',
+    fallback:
+      'Email dark (provider none): no EMAIL intent generated. Configured: EMAIL_OPT_OUT (notification_email_enabled=false, security-critical events bypass), CUSTOMER_EMAIL_MISSING, AGENT_EMAIL_DEPENDENCY_MISSING → SKIPPED with reason; provider failure → FAILED with bounded retries via worker',
   },
 ];

@@ -19,8 +19,7 @@ import {
 } from './provider-security';
 import { sanitizeHeader } from './resend-email-provider';
 
-const EMAIL_DESTINATION_PATTERN =
-  /^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/;
+const EMAIL_DESTINATION_PATTERN = /^[^@\s,;"'<>()\\]+@[^@\s,;"'<>()\\]+\.[^@\s,;"'<>()\\]{2,63}$/;
 
 export function normalizeEmailDestination(raw: string): string | null {
   const cleaned = sanitizeHeader(raw).toLowerCase();
@@ -107,7 +106,9 @@ export function parseSenderIdentity(
 
   const angleMatch = /^(.*?)<([^<>]+)>$/.exec(cleaned);
   if (angleMatch) {
-    const parsedName = sanitizeHeader(angleMatch[1] ?? '').replace(/^"|"$/g, '').trim();
+    const parsedName = sanitizeHeader(angleMatch[1] ?? '')
+      .replace(/^"|"$/g, '')
+      .trim();
     const normalizedEmail = normalizeEmailDestination(angleMatch[2] ?? '');
     if (!normalizedEmail) return null;
     const finalName = sanitizeHeader(explicitName ?? '') || parsedName || null;

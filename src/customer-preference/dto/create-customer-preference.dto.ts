@@ -1,5 +1,12 @@
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, ValidateNested, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  ValidateNested,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 import { CustomerLanguage, CustomerTheme } from '../customer-preference.enums';
 import { NotificationPreferenceDto } from './notification-preference.dto';

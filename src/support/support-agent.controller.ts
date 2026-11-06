@@ -33,13 +33,12 @@ export class SupportAgentController {
     @Req() req: AuthenticatedRequest,
   ) {
     const principal = this.requireAgent(req);
-    const idempotencyKey =
-      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
+    const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     const result = await this.supportService.createTicket({
       subject: dto.subject,
-      category: dto.category as any,
+      category: dto.category,
       description: dto.description,
-      priority: dto.priority as any,
+      priority: dto.priority,
       fundingRequestId: dto.fundingRequestId ?? null,
       relatedTransferId: dto.relatedTransferId ?? null,
       idempotencyKey,

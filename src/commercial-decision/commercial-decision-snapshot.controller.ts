@@ -1,4 +1,13 @@
-import { BadRequestException, Controller, ForbiddenException, Get, Param, Query, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 

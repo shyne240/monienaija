@@ -78,9 +78,8 @@ const workforceConfig: A2WorkforceConfigurationV1 = {
 function workforceToken(...roleKeys: string[]): string {
   const roles = [...roleKeys].map((role) => role.toUpperCase()).sort();
   if (roles.length === 1 && roles[0] === 'SUPPORT') return supportToken();
-  const type = roles.includes('SUPER_ADMIN') || roles.includes('ADMINISTRATOR')
-    ? 'PRIVILEGED'
-    : 'OPERATOR';
+  const type =
+    roles.includes('SUPER_ADMIN') || roles.includes('ADMINISTRATOR') ? 'PRIVILEGED' : 'OPERATOR';
   return `workforce-${type}|${roles.join('+')}`;
 }
 
@@ -107,7 +106,8 @@ const mockWorkforceSessions = {
       .sort();
     const scopes = [...new Set(roles.flatMap((role) => FUNCTION_CODES_BY_ROLE.get(role) ?? []))];
     const recognised = roles.map((role) => ROLE_BY_KEY.get(role));
-    const readOnlyPrincipal = recognised.length > 0 && recognised.every((role) => role.readOnly === true);
+    const readOnlyPrincipal =
+      recognised.length > 0 && recognised.every((role) => role.readOnly === true);
     const identity = roles.length ? roles.join('+') : type;
 
     return {
@@ -444,19 +444,38 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
       },
       {
         path: '/api/v1/deposits',
-        body: { walletId: sourceWalletId, amountMinor: '1250', currency: 'NGN', reference: 'valid DTO' },
+        body: {
+          walletId: sourceWalletId,
+          amountMinor: '1250',
+          currency: 'NGN',
+          reference: 'valid DTO',
+        },
       },
       {
         path: '/api/v1/withdrawals',
-        body: { walletId: sourceWalletId, amountMinor: '1250', currency: 'NGN', reference: 'valid DTO' },
+        body: {
+          walletId: sourceWalletId,
+          amountMinor: '1250',
+          currency: 'NGN',
+          reference: 'valid DTO',
+        },
       },
       { path: `/api/v1/deposits/${depositId}/complete`, body: {} },
       { path: `/api/v1/deposits/${depositId}/fail`, body: { reason: 'valid failure reason' } },
-      { path: `/api/v1/deposits/${depositId}/cancel`, body: { reason: 'valid cancellation reason' } },
+      {
+        path: `/api/v1/deposits/${depositId}/cancel`,
+        body: { reason: 'valid cancellation reason' },
+      },
       { path: `/api/v1/withdrawals/${withdrawalId}/process`, body: {} },
       { path: `/api/v1/withdrawals/${withdrawalId}/complete`, body: {} },
-      { path: `/api/v1/withdrawals/${withdrawalId}/fail`, body: { reason: 'valid failure reason' } },
-      { path: `/api/v1/withdrawals/${withdrawalId}/cancel`, body: { reason: 'valid cancellation reason' } },
+      {
+        path: `/api/v1/withdrawals/${withdrawalId}/fail`,
+        body: { reason: 'valid failure reason' },
+      },
+      {
+        path: `/api/v1/withdrawals/${withdrawalId}/cancel`,
+        body: { reason: 'valid cancellation reason' },
+      },
     ];
 
     for (const blocked of blockedRequests) {
@@ -561,11 +580,10 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
 
     // Even a principal that also carries FINANCE_CONTROLLER cannot exercise checker authority
     // when it carries SUPER_ADMIN; Decision 7 expressly excludes SUPER_ADMIN.
-    const superAdminDecision = await decideApproval(
-      pending.approvalId,
-      'approve',
-      ['SUPER_ADMIN', 'FINANCE_CONTROLLER'],
-    ).expect(201);
+    const superAdminDecision = await decideApproval(pending.approvalId, 'approve', [
+      'SUPER_ADMIN',
+      'FINANCE_CONTROLLER',
+    ]).expect(201);
     expect(superAdminDecision.body.reason).toBe('SUPER_ADMIN_NOT_ALLOWED');
     expect((await approvalRow(pending.approvalId)).status).toBe('REQUESTED');
 
@@ -577,20 +595,17 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
       ['AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER'],
       '7100',
     ).expect(201);
-    const selfApproval = await decideApproval(
-      dualRolePending.body.approvalId,
-      'approve',
-      ['AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER'],
-    ).expect(201);
+    const selfApproval = await decideApproval(dualRolePending.body.approvalId, 'approve', [
+      'AGENT_NETWORK_MANAGER',
+      'FINANCE_CONTROLLER',
+    ]).expect(201);
     expect(selfApproval.body.reason).toBe('SELF_APPROVAL_FORBIDDEN');
     expect((await approvalRow(dualRolePending.body.approvalId)).status).toBe('REQUESTED');
     expect(await financialSnapshot()).toEqual(beforeAnyRequest);
 
-    const approvedResponse = await decideApproval(
-      pending.approvalId,
-      'approve',
-      ['FINANCE_CONTROLLER'],
-    ).expect(201);
+    const approvedResponse = await decideApproval(pending.approvalId, 'approve', [
+      'FINANCE_CONTROLLER',
+    ]).expect(201);
     expect(approvedResponse.body.reason).toBe('APPROVED');
     expect(approvedResponse.body.approval.status).toBe('APPROVED');
     expect(await financialSnapshot()).toEqual(beforeAnyRequest);
@@ -630,7 +645,9 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
       { direction: 'CREDIT', amount_minor: '7000' },
     ]);
     const afterFund = await financialSnapshot();
-    expect(afterFund.ledgerAccounts).toHaveLength((beforeAnyRequest.ledgerAccounts as any[]).length + 1);
+    expect(afterFund.ledgerAccounts).toHaveLength(
+      (beforeAnyRequest.ledgerAccounts as any[]).length + 1,
+    );
     expect(afterFund.journals).toHaveLength((beforeAnyRequest.journals as any[]).length + 1);
     expect(afterFund.lines).toHaveLength((beforeAnyRequest.lines as any[]).length + 2);
 
@@ -718,28 +735,23 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
   it('P0-C: payload tampering and execute replay are rejected; approved request is recoverable after restoring the bound payload', async () => {
     const agentId = await createActiveAgent();
     const before = await financialSnapshot();
-    const pending = (await requestFunding(
-      agentId,
-      'FUND',
-      ['AGENT_NETWORK_MANAGER'],
-      '4300',
-    ).expect(201)).body;
+    const pending = (
+      await requestFunding(agentId, 'FUND', ['AGENT_NETWORK_MANAGER'], '4300').expect(201)
+    ).body;
     await decideApproval(pending.approvalId, 'approve', ['FINANCE_CONTROLLER']).expect(201);
     expect(await financialSnapshot()).toEqual(before);
 
-    await dataSource.query(
-      `UPDATE agent_funding_requests SET amount_minor='4301' WHERE id=$1`,
-      [pending.id],
-    );
+    await dataSource.query(`UPDATE agent_funding_requests SET amount_minor='4301' WHERE id=$1`, [
+      pending.id,
+    ]);
     await executeFunding(pending.id).expect(409);
     expect((await fundingRequestRow(pending.id)).status).toBe('PENDING');
     expect((await approvalRow(pending.approvalId)).status).toBe('APPROVED');
     expect(await financialSnapshot()).toEqual(before);
 
-    await dataSource.query(
-      `UPDATE agent_funding_requests SET amount_minor='4300' WHERE id=$1`,
-      [pending.id],
-    );
+    await dataSource.query(`UPDATE agent_funding_requests SET amount_minor='4300' WHERE id=$1`, [
+      pending.id,
+    ]);
     const recovered = await executeFunding(pending.id).expect(201);
     expect(recovered.body.amountMinor).toBe('4300');
     const afterRecovery = await financialSnapshot();
@@ -755,12 +767,9 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
   it('P0-C: failure after the in-transaction journal write rolls back approval consumption, wallet/account, journal, idempotency, and request state; retry succeeds', async () => {
     const agentId = await createActiveAgent();
     const before = await financialSnapshot();
-    const pending = (await requestFunding(
-      agentId,
-      'FUND',
-      ['AGENT_NETWORK_MANAGER'],
-      '5600',
-    ).expect(201)).body;
+    const pending = (
+      await requestFunding(agentId, 'FUND', ['AGENT_NETWORK_MANAGER'], '5600').expect(201)
+    ).body;
     await decideApproval(pending.approvalId, 'approve', ['FINANCE_CONTROLLER']).expect(201);
     expect(await financialSnapshot()).toEqual(before);
 
@@ -862,7 +871,9 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
 
     it('uses the explicit expected P1 grants rather than principal-type access', async () => {
       for (const [functionCode, expectedRoles] of Object.entries(P1_EXPECTED_ROLE_GRANTS)) {
-        const actualRoles = CATALOGUE_ROLES.filter((role) => hasExpectedFunction(role, functionCode)).sort();
+        const actualRoles = CATALOGUE_ROLES.filter((role) =>
+          hasExpectedFunction(role, functionCode),
+        ).sort();
         expect(actualRoles).toEqual([...expectedRoles].sort());
       }
     });
@@ -887,18 +898,24 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
         if (!allowed) {
           expect(created.status).toBe(403);
           expect(await aggregatorRows()).toBe(beforeAggregators);
-          expect(await request(app.getHttpServer())
-            .post(`/api/v1/internal/aggregators/${baseAggregatorId}/suspend`)
-            .set('Authorization', bearer(roleKey))
-            .send({ reason: 'negative role-matrix check' })
-            .then((response: any) => response.status)).toBe(403);
-          expect(await request(app.getHttpServer())
-            .post(`/api/v1/internal/aggregators/${baseAggregatorId}/agents`)
-            .set('Authorization', bearer(roleKey))
-            .send({ agentId })
-            .then((response: any) => response.status)).toBe(403);
+          expect(
+            await request(app.getHttpServer())
+              .post(`/api/v1/internal/aggregators/${baseAggregatorId}/suspend`)
+              .set('Authorization', bearer(roleKey))
+              .send({ reason: 'negative role-matrix check' })
+              .then((response: any) => response.status),
+          ).toBe(403);
+          expect(
+            await request(app.getHttpServer())
+              .post(`/api/v1/internal/aggregators/${baseAggregatorId}/agents`)
+              .set('Authorization', bearer(roleKey))
+              .send({ agentId })
+              .then((response: any) => response.status),
+          ).toBe(403);
           expect(await count('aggregator_agent_assignments')).toBe(beforeAssignments);
-          const base = await dataSource.query(`SELECT status FROM aggregators WHERE id=$1`, [baseAggregatorId]);
+          const base = await dataSource.query(`SELECT status FROM aggregators WHERE id=$1`, [
+            baseAggregatorId,
+          ]);
           expect(base[0].status).toBe('ACTIVE');
           return;
         }
@@ -922,7 +939,9 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
           .set('Authorization', bearer(roleKey))
           .send({ reason: 'positive role-matrix check' })
           .expect(200);
-        const finalRows = await dataSource.query(`SELECT status FROM aggregators WHERE id=$1`, [created.body.id]);
+        const finalRows = await dataSource.query(`SELECT status FROM aggregators WHERE id=$1`, [
+          created.body.id,
+        ]);
         expect(finalRows[0].status).toBe('SUSPENDED');
       });
 
@@ -966,8 +985,13 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
             .send({})
             .expect(403);
           expect(await terminalRows()).toBe(beforeTerminals);
-          const base = await dataSource.query(`SELECT status FROM agent_outlets WHERE id=$1`, [baseOutletId]);
-          const baseTerminal = await dataSource.query(`SELECT status FROM agent_terminals WHERE id=$1`, [baseTerminalId]);
+          const base = await dataSource.query(`SELECT status FROM agent_outlets WHERE id=$1`, [
+            baseOutletId,
+          ]);
+          const baseTerminal = await dataSource.query(
+            `SELECT status FROM agent_terminals WHERE id=$1`,
+            [baseTerminalId],
+          );
           expect(base[0].status).toBe('ACTIVE');
           expect(baseTerminal[0].status).toBe('ACTIVE');
           return;
@@ -1031,7 +1055,9 @@ describe('P0/P1 security remediation (isolated real PostgreSQL)', () => {
             subjectType: 'AGENT',
             subjectId: agentId,
             precedence: 0,
-            effectiveFrom: new Date(Date.now() + CATALOGUE_ROLES.indexOf(roleKey) * 1000).toISOString(),
+            effectiveFrom: new Date(
+              Date.now() + CATALOGUE_ROLES.indexOf(roleKey) * 1000,
+            ).toISOString(),
             isActive: true,
           });
 

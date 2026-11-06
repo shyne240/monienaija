@@ -36,7 +36,9 @@ export class LimitProfileResolverService {
     const principalType = input.principalType.trim().toUpperCase();
     const principalId = input.principalId.trim();
     const agentClassId = input.agentClassId?.trim() ?? null;
-    const segmentCodes = (input.segmentCodes ?? []).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    const segmentCodes = (input.segmentCodes ?? [])
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
 
     // Build candidate condition
     // We query all active assignments effective now, then filter in SQL for matches
@@ -49,7 +51,11 @@ export class LimitProfileResolverService {
     const k = segmentCodes.length;
     const queryParams: unknown[] = [now, now];
     if (k > 0) queryParams.push(...segmentCodes);
-    queryParams.push(principalId, principalType, agentClassId ?? '00000000-0000-0000-0000-000000000000');
+    queryParams.push(
+      principalId,
+      principalType,
+      agentClassId ?? '00000000-0000-0000-0000-000000000000',
+    );
     const pPrincipalId = 3 + k;
     const pPrincipalType = 4 + k;
     const pAgentClassId = 5 + k;
@@ -91,12 +97,22 @@ export class LimitProfileResolverService {
     if (!row) return null;
 
     // Verify profile exists and is enabled/active
-    const profileRows: Array<{ code: string; enabled: boolean; status: string; deleted_at: string | null }> = await manager.query(
+    const profileRows: Array<{
+      code: string;
+      enabled: boolean;
+      status: string;
+      deleted_at: string | null;
+    }> = await manager.query(
       `SELECT code, enabled, status, deleted_at FROM limit_profiles WHERE code = $1 LIMIT 1`,
       [row.limit_profile_code],
     );
     const profile = profileRows[0];
-    if (!profile || profile.deleted_at !== null || !profile.enabled || profile.status !== 'ACTIVE') {
+    if (
+      !profile ||
+      profile.deleted_at !== null ||
+      !profile.enabled ||
+      profile.status !== 'ACTIVE'
+    ) {
       // Treat disabled/missing profile as no limit (permissive) — but for diagnostics we could log.
       // Spec test "Profile disabled" expects within limit (allow), not block.
       return null;

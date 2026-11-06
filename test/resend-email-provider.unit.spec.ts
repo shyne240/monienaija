@@ -55,7 +55,11 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
       },
       async (url, init) => {
         calls.push({ url, init });
-        return { ok: true, status: 200, json: async () => ({ id: '49a3999c-0ce1-4ea6-a689-9f01dcb1a646' }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ id: '49a3999c-0ce1-4ea6-a689-9f01dcb1a646' }),
+        };
       },
     );
 
@@ -87,7 +91,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
   it('2. omits html/reply_to when not provided; destination is trimmed + lowercased', async () => {
     const calls: Array<{ init: MockFetchInit }> = [];
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async (_url, init) => {
         calls.push({ init });
         return { ok: true, status: 200, json: async () => ({ id: 'msg-2' }) };
@@ -107,7 +116,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('3. non-2xx with a stable error name → RESEND_HTTP_<status>:<name> only (no prose)', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => ({
         ok: false,
         status: 422,
@@ -129,7 +143,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('4. non-JSON / unrecognized error envelope → generic bounded code, never throws', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => ({
         ok: false,
         status: 500,
@@ -145,7 +164,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('5. unstable characters in error names are rejected (bounded code only)', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => ({
         ok: false,
         status: 429,
@@ -159,7 +183,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('6. timeout (AbortError) → RESEND_TIMEOUT', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 50 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 50,
+      },
       async () => {
         const abort = new Error('This operation was aborted');
         abort.name = 'AbortError';
@@ -173,7 +202,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('7. network failure → RESEND_NETWORK:<name> (error name only, no message)', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => {
         throw new TypeError('fetch failed resolving host with secret re_key in query');
       },
@@ -187,7 +221,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
   it('8. invalid destinations are rejected locally without any network call', async () => {
     let fetchCalls = 0;
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => {
         fetchCalls += 1;
         return { ok: true, status: 200, json: async () => ({ id: 'x' }) };
@@ -213,14 +252,21 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
   it('9. subjects are header-injection safe; empty-after-sanitize subjects are rejected', async () => {
     const calls: Array<{ init: MockFetchInit }> = [];
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async (_url, init) => {
         calls.push({ init });
         return { ok: true, status: 200, json: async () => ({ id: 'msg-9' }) };
       },
     );
 
-    const injected = await provider.send(request({ subject: 'Transfer\r\nBcc: attacker@evil.com' }));
+    const injected = await provider.send(
+      request({ subject: 'Transfer\r\nBcc: attacker@evil.com' }),
+    );
     expect(injected.success).toBe(true);
     const body = JSON.parse(calls[0]!.init.body) as { subject: string };
     expect(body.subject).not.toContain('\r');
@@ -236,7 +282,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
   it('10. SMS/PUSH channels never route through the email adapter', async () => {
     let fetchCalls = 0;
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => {
         fetchCalls += 1;
         return { ok: true, status: 200, json: async () => ({ id: 'x' }) };
@@ -250,7 +301,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('11. 2xx without a usable id → RESEND_UNRECOGNIZED_SUCCESS_RESPONSE (never claims false SENT)', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => ({ ok: true, status: 200, json: async () => ({}) }),
     );
 
@@ -260,7 +316,12 @@ describe('ResendEmailProvider (documented contract, mocked transport)', () => {
 
   it('12. empty body (no text and no html) is rejected locally', async () => {
     const provider = new ResendEmailProvider(
-      { baseUrl: 'https://api.resend.com', apiKey: API_KEY, from: 'noreply@monienaija.ng', requestTimeoutMs: 5000 },
+      {
+        baseUrl: 'https://api.resend.com',
+        apiKey: API_KEY,
+        from: 'noreply@monienaija.ng',
+        requestTimeoutMs: 5000,
+      },
       async () => ({ ok: true, status: 200, json: async () => ({ id: 'x' }) }),
     );
 
@@ -396,7 +457,13 @@ describe('EMAIL environment configuration validation (validateEnvironment)', () 
     // INTEGRATION NOTE (integration/main-backend-frontend-20261030): baseEnv's DB_PASSWORD is the 'postgres' placeholder, which the
     // integrated production profile rejects (main's phase 16-20 secret hardening), so this
     // production fixture supplies a conforming password. The assertion below is unchanged.
-    const productionBase = { ...baseEnv, NODE_ENV: 'production', DB_PASSWORD: 'resend-spec-production-fixture-pw', NOTIFICATION_SMS_PROVIDER: 'robase', ROBASE_API_KEY: 'robe_' + 'b'.repeat(64) };
+    const productionBase = {
+      ...baseEnv,
+      NODE_ENV: 'production',
+      DB_PASSWORD: 'resend-spec-production-fixture-pw',
+      NOTIFICATION_SMS_PROVIDER: 'robase',
+      ROBASE_API_KEY: 'robe_' + 'b'.repeat(64),
+    };
     expect(() =>
       validateEnvironment({ ...productionBase, NOTIFICATION_EMAIL_PROVIDER: 'console' }),
     ).toThrow(/restricted to development\/test/);
@@ -408,9 +475,7 @@ describe('EMAIL environment configuration validation (validateEnvironment)', () 
     expect(() =>
       validateEnvironment({ ...baseEnv, NOTIFICATION_EMAIL_REPLY_TO: 'not-an-address' }),
     ).toThrow(/NOTIFICATION_EMAIL_REPLY_TO/);
-    expect(() =>
-      validateEnvironment({ ...baseEnv, RESEND_REQUEST_TIMEOUT_MS: '10' }),
-    ).toThrow();
+    expect(() => validateEnvironment({ ...baseEnv, RESEND_REQUEST_TIMEOUT_MS: '10' })).toThrow();
     expect(() =>
       validateEnvironment({ ...baseEnv, NOTIFICATION_EMAIL_PROVIDER: 'unknown' }),
     ).toThrow();

@@ -17,9 +17,7 @@ export class SecureAgentApplicationAccess1785753600095 implements MigrationInter
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      'DROP INDEX uq_agent_applications_applicant_access_token_hash',
-    );
+    await queryRunner.query('DROP INDEX uq_agent_applications_applicant_access_token_hash');
     await queryRunner.query(
       'ALTER TABLE agent_applications DROP COLUMN applicant_access_token_hash',
     );

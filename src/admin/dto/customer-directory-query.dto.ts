@@ -1,7 +1,12 @@
 import { Transform, Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-import { CustomerKycLevel, CustomerKycStatus, CustomerStatus, CustomerType } from '../../customer/customer.enums';
+import {
+  CustomerKycLevel,
+  CustomerKycStatus,
+  CustomerStatus,
+  CustomerType,
+} from '../../customer/customer.enums';
 
 function trim(value: unknown): unknown {
   return typeof value === 'string' ? value.trim() : value;

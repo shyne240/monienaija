@@ -29,9 +29,8 @@ export class AgentFundingGovernanceTestFacade {
   }
 
   private async run(input: FundingInput, direction: 'FUND' | 'DEFUND'): Promise<FundingResult> {
-    const request = direction === 'FUND'
-      ? await this.service.fund(input)
-      : await this.service.defund(input);
+    const request =
+      direction === 'FUND' ? await this.service.fund(input) : await this.service.defund(input);
 
     if (request.status === 'EXECUTED' && request.journalId) {
       return {
@@ -118,12 +117,16 @@ export class AgentFundingGovernanceTestFacade {
       ) {
         return;
       }
-      throw new ConflictException(`Test Finance Controller approval failed: ${result.reason ?? 'UNKNOWN'}`);
+      throw new ConflictException(
+        `Test Finance Controller approval failed: ${result.reason ?? 'UNKNOWN'}`,
+      );
     }
   }
 }
 
-export function agentNetworkManagerPrincipal(principalId = 'test-agent-network-manager'): AuthorizationPrincipal {
+export function agentNetworkManagerPrincipal(
+  principalId = 'test-agent-network-manager',
+): AuthorizationPrincipal {
   return {
     type: 'OPERATOR',
     principalId,
@@ -136,7 +139,9 @@ export function agentNetworkManagerPrincipal(principalId = 'test-agent-network-m
   };
 }
 
-export function financeControllerPrincipal(principalId = 'test-finance-controller'): AuthorizationPrincipal {
+export function financeControllerPrincipal(
+  principalId = 'test-finance-controller',
+): AuthorizationPrincipal {
   return {
     type: 'OPERATOR',
     principalId,

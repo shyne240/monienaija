@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
-import type { NotificationProvider, NotificationSendRequest, NotificationSendResult } from './notification.types';
+import type {
+  NotificationProvider,
+  NotificationSendRequest,
+  NotificationSendResult,
+} from './notification.types';
 
 /**
  * ARENA3-NOTIFICATION-EMAIL — email provider adapters, mirroring the SMS provider posture

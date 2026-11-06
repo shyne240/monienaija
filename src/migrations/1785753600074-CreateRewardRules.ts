@@ -166,7 +166,9 @@ export class CreateRewardRules1785753600074 implements MigrationInterface {
     `);
     await queryRunner.query(`CREATE INDEX idx_reward_rules_product ON reward_rules (product_code)`);
     await queryRunner.query(`CREATE INDEX idx_reward_rules_active ON reward_rules (is_active)`);
-    await queryRunner.query(`CREATE INDEX idx_reward_rules_effective_from ON reward_rules (effective_from)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_reward_rules_effective_from ON reward_rules (effective_from)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

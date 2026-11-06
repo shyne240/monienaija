@@ -18,6 +18,7 @@ import type { AuthorizationPrincipal } from '../authorization/authorization.type
 import { CreateLimitAssignmentDto } from './dto/create-limit-assignment.dto';
 import { UpdateLimitAssignmentDto } from './dto/update-limit-assignment.dto';
 import { LimitAssignmentService } from './limit-assignment.service';
+import { LimitAssignmentSubjectType } from './limit-catalog.enums';
 
 interface AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -34,7 +35,7 @@ export class LimitAssignmentController {
   @Post('limit-assignments')
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateLimitAssignmentDto) {
     let actor: string;
-    if (dto.subjectType === 'AGENT') {
+    if (dto.subjectType === LimitAssignmentSubjectType.AGENT) {
       actor = await this.requireAgentAssignmentFunction(req);
     } else {
       this.requireWorkforce(req);
@@ -72,8 +73,10 @@ export class LimitAssignmentController {
     await this.requireLimitFunction(req, 'limit.view');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     let isActiveBool: boolean | undefined;
     if (isActive !== undefined && isActive !== '') {
       if (isActive === 'true') isActiveBool = true;
@@ -92,76 +95,127 @@ export class LimitAssignmentController {
   }
 
   @Get('limit-assignments/profile/:code')
-  async listByProfile(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async listByProfile(
+    @Param('code') code: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     return this.service.listByProfile(code.trim().toUpperCase(), { page: p, limit: l });
   }
 
   @Get('limit-assignments/customer/:id')
-  async listByCustomer(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async listByCustomer(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     return this.service.listByCustomer(id.trim(), { page: p, limit: l });
   }
 
   @Get('limit-assignments/agent/:id')
-  async listByAgent(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async listByAgent(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     return this.service.listByAgent(id.trim(), { page: p, limit: l });
   }
 
   @Get('limit-assignments/agent-class/:id')
-  async listByAgentClass(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async listByAgentClass(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
     return this.service.listByAgentClass(id.trim(), { page: p, limit: l });
   }
 
   @Get('limit-assignments/segment/:code')
-  async listBySegment(@Param('code') code: string, @Req() req: AuthenticatedRequest, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async listBySegment(
+    @Param('code') code: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase())) throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
+    if (!code || !/^[A-Z0-9_]{3,80}$/.test(code.trim().toUpperCase()))
+      throw new BadRequestException('code must match ^[A-Z0-9_]{3,80}$');
     const p = page ? Number.parseInt(page, 10) : undefined;
     const l = limit ? Number.parseInt(limit, 10) : undefined;
-    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!))) throw new BadRequestException('page must be a positive integer');
-    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!))) throw new BadRequestException('limit must be between 1 and 100');
-    return this.service.listAssignments({ subjectType: 'SEGMENT', segmentCode: code.trim().toUpperCase(), page: p, limit: l });
+    if (page !== undefined && (isNaN(p!) || !Number.isSafeInteger(p!)))
+      throw new BadRequestException('page must be a positive integer');
+    if (limit !== undefined && (isNaN(l!) || !Number.isSafeInteger(l!)))
+      throw new BadRequestException('limit must be between 1 and 100');
+    return this.service.listAssignments({
+      subjectType: 'SEGMENT',
+      segmentCode: code.trim().toUpperCase(),
+      page: p,
+      limit: l,
+    });
   }
 
   @Get('limit-assignments/:id')
   async get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
     await this.requireLimitFunction(req, 'limit.view');
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
     return this.service.getAssignment(id.trim());
   }
 
   @Patch('limit-assignments/:id')
-  async update(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() dto: UpdateLimitAssignmentDto) {
-    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) throw new BadRequestException('id must be UUID');
+  async update(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateLimitAssignmentDto,
+  ) {
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim()))
+      throw new BadRequestException('id must be UUID');
 
     // Do not fetch the assignment to decide whether it is an Agent record. An explicit
     // Agent target, or a caller already holding agent.assign_limit, is authorized before
@@ -170,7 +224,8 @@ export class LimitAssignmentController {
     // a nonexistent identifier have the same non-enumerating 404 response.
     const hasAgentAssignmentFunction =
       req.authorizationPrincipal?.scopes.includes('agent.assign_limit') ?? false;
-    const agentAssignmentAuthorized = dto.subjectType === 'AGENT' || hasAgentAssignmentFunction;
+    const agentAssignmentAuthorized =
+      dto.subjectType === LimitAssignmentSubjectType.AGENT || hasAgentAssignmentFunction;
     let actor: string;
     if (agentAssignmentAuthorized) {
       actor = await this.requireAgentAssignmentFunction(req);
@@ -179,18 +234,23 @@ export class LimitAssignmentController {
       await this.requireLimitFunction(req, 'limit.modify');
       actor = this.actorOf(req);
     }
-    return this.service.updateAssignment(id.trim(), {
-      limitProfileCode: dto.limitProfileCode,
-      subjectType: dto.subjectType,
-      subjectId: dto.subjectId ?? undefined,
-      segmentCode: dto.segmentCode ?? undefined,
-      precedence: dto.precedence,
-      effectiveFrom: dto.effectiveFrom ?? undefined,
-      effectiveTo: dto.effectiveTo ?? undefined,
-      isActive: dto.isActive,
-      updatedBy: actor,
-      version: dto.version,
-    }, actor, { excludeAgent: !agentAssignmentAuthorized });
+    return this.service.updateAssignment(
+      id.trim(),
+      {
+        limitProfileCode: dto.limitProfileCode,
+        subjectType: dto.subjectType,
+        subjectId: dto.subjectId ?? undefined,
+        segmentCode: dto.segmentCode ?? undefined,
+        precedence: dto.precedence,
+        effectiveFrom: dto.effectiveFrom ?? undefined,
+        effectiveTo: dto.effectiveTo ?? undefined,
+        isActive: dto.isActive,
+        updatedBy: actor,
+        version: dto.version,
+      },
+      actor,
+      { excludeAgent: !agentAssignmentAuthorized },
+    );
   }
 
   private async requireAgentAssignmentFunction(req: AuthenticatedRequest): Promise<string> {
@@ -238,7 +298,9 @@ export class LimitAssignmentController {
   }
 
   private actorOf(req: AuthenticatedRequest): string {
-    const p = req.authorizationPrincipal as unknown as { principalId?: string; type?: string } | undefined;
+    const p = req.authorizationPrincipal as unknown as
+      | { principalId?: string; type?: string }
+      | undefined;
     return p?.principalId ?? p?.type ?? 'workforce';
   }
 

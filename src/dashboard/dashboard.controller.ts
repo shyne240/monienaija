@@ -1,8 +1,22 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, Put, Query, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 
 import { AuthorizationService } from '../authorization/authorization.service';
-import type { AuthorizationPrincipal, AuthorizationPrincipalType } from '../authorization/authorization.types';
+import type {
+  AuthorizationPrincipal,
+  AuthorizationPrincipalType,
+} from '../authorization/authorization.types';
 import { CustomerComplianceAccessGuard } from '../customer-compliance/customer-compliance-access.guard';
 import { ComplianceCaseCategory } from '../customer-compliance/customer-compliance.enums';
 import { DashboardService } from './dashboard.service';
@@ -15,7 +29,12 @@ interface R extends FastifyRequest {
   requestContext?: { correlationId: string };
 }
 
-const WORKFORCE_PRINCIPAL_TYPES: readonly AuthorizationPrincipalType[] = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'];
+const WORKFORCE_PRINCIPAL_TYPES: readonly AuthorizationPrincipalType[] = [
+  'SUPPORT',
+  'OPERATOR',
+  'SERVICE',
+  'PRIVILEGED',
+];
 
 @Controller('internal/a2/workforce/dashboard')
 export class DashboardController {
@@ -57,7 +76,11 @@ export class DashboardController {
   }
 
   @Put('assignments/:roleKey')
-  async assignTemplate(@Param('roleKey') roleKey: string, @Body() body: AssignTemplateDto, @Req() req: R) {
+  async assignTemplate(
+    @Param('roleKey') roleKey: string,
+    @Body() body: AssignTemplateDto,
+    @Req() req: R,
+  ) {
     await this.requireFunction(req, 'workforce.dashboard.assign');
     if (!body?.templateKey || typeof body.templateKey !== 'string') {
       throw new BadRequestException('templateKey is required.');
@@ -116,7 +139,10 @@ export class DashboardController {
 
     switch (widgetKey) {
       case 'transaction-summary':
-        return this.widgetDataService.transactionSummary(resolvePeriod(period, from, to), compare === 'true');
+        return this.widgetDataService.transactionSummary(
+          resolvePeriod(period, from, to),
+          compare === 'true',
+        );
       case 'transaction-trend':
         return this.widgetDataService.transactionTrend(resolvePeriod(period, from, to));
       case 'recent-transactions':
@@ -159,7 +185,16 @@ export class DashboardController {
     return req.authorizationPrincipal;
   }
 
-  private requireFunction(req: R, functionCode: string, resourceType = 'dashboard-configuration'): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, resourceType, WORKFORCE_PRINCIPAL_TYPES);
+  private requireFunction(
+    req: R,
+    functionCode: string,
+    resourceType = 'dashboard-configuration',
+  ): Promise<string> {
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      resourceType,
+      WORKFORCE_PRINCIPAL_TYPES,
+    );
   }
 }

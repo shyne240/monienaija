@@ -1,5 +1,14 @@
 import { Transform } from 'class-transformer';
-import { IsEmpty, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength, Matches } from 'class-validator';
+import {
+  IsEmpty,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+  Matches,
+} from 'class-validator';
 import type { AgentCashToCashRedemptionMethod } from '../agent-cash-to-cash-claim.types';
 
 function trimString(value: unknown): unknown {

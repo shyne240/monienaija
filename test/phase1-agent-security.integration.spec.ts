@@ -66,7 +66,8 @@ describe('Phase 1 ordinary Agent security (real PostgreSQL and HTTP)', () => {
       {
         roleKey: 'FINANCE_CONTROLLER',
         displayName: 'Finance Controller test fixture',
-        description: 'Provides the legacy approval scope used by the existing approval workflow tests.',
+        description:
+          'Provides the legacy approval scope used by the existing approval workflow tests.',
         enabled: true,
         scopes: ['privileged:approve'],
         applicableActions: [],
@@ -367,7 +368,11 @@ describe('Phase 1 ordinary Agent security (real PostgreSQL and HTTP)', () => {
     const pending = await request(app.getHttpServer())
       .post(`/api/v1/internal/agents/${a.id}/fund-request`)
       .set(headers(maker.token))
-      .send({ amountMinor: '1000', idempotencyKey: randomUUID(), reason: 'Non-enumeration fixture' })
+      .send({
+        amountMinor: '1000',
+        idempotencyKey: randomUUID(),
+        reason: 'Non-enumeration fixture',
+      })
       .expect(201);
     const existingId = pending.body.id as string;
 
@@ -522,14 +527,12 @@ describe('Phase 1 ordinary Agent security (real PostgreSQL and HTTP)', () => {
     const assignment = await ds
       .getRepository(A2FinanceRoleAssignment)
       .findOneByOrFail({ principalId: checker.id });
-    await ds
-      .getRepository(A2FinanceRoleAssignment)
-      .save({
-        ...assignment,
-        id: randomUUID(),
-        assignmentReference: randomUUID(),
-        principalId: dual.id,
-      });
+    await ds.getRepository(A2FinanceRoleAssignment).save({
+      ...assignment,
+      id: randomUUID(),
+      assignmentReference: randomUUID(),
+      principalId: dual.id,
+    });
     const a = await agent();
     const created = await request(app.getHttpServer())
       .post(`/api/v1/internal/agents/${a.id}/fund-request`)
@@ -819,12 +822,10 @@ describe('Phase 1 ordinary Agent security (real PostgreSQL and HTTP)', () => {
       const rows = (await runner.query('SELECT pg_backend_pid() AS pid')) as unknown as Array<{
         pid: number;
       }>;
-      pending = app
-        .get(PrivilegedActionApprovalService)
-        .cancel({
-          approvalId: created.body.id,
-          principal: await sessions.validate(maker.token, 'workforce-admin'),
-        });
+      pending = app.get(PrivilegedActionApprovalService).cancel({
+        approvalId: created.body.id,
+        principal: await sessions.validate(maker.token, 'workforce-admin'),
+      });
       await waitUntilBlocked(rows[0]!.pid);
       await runner.query(
         `UPDATE privileged_action_approvals SET status='CONSUMED',approved_by=$2,approved_at=NOW(),consumed_at=NOW() WHERE id=$1`,

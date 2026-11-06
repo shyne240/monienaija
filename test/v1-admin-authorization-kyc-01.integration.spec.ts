@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-ADMIN-AUTHORIZATION-KYC-01 — dedicated real-PostgreSQL, real-HTTP proof suite.
  *
@@ -34,7 +34,7 @@ import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DataSource } from 'typeorm';
 import { randomUUID, pbkdf2Sync } from 'node:crypto';
-import request = require('supertest');
+import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { LocalAdminAuthenticationService } from '../src/local-admin-authentication/local-admin-authentication.service';
@@ -72,7 +72,9 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -420,7 +422,9 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
     // Grant ONLY kyc.approve directly on the catalogue, bypassing any role bundle entirely, to
     // prove the controller checks the exact function for the exact request and never the
     // sibling decision function.
-    async function tokenWithOnlyFunction(functionCode: 'kyc.approve' | 'kyc.reject'): Promise<string> {
+    async function tokenWithOnlyFunction(
+      functionCode: 'kyc.approve' | 'kyc.reject',
+    ): Promise<string> {
       const principalId = `kyc01:onlyfn:${functionCode}:${randomUUID()}`.slice(0, 160);
       const now = new Date();
       // A synthetic role scoped to this test only, carrying exactly one of the two catalogue
@@ -574,7 +578,7 @@ describe('V1-ADMIN-AUTHORIZATION-KYC-01 — KYC function authorization proof (re
       expect(res.status).toBe(404);
     });
 
-    it('F2. a real CUSTOMER session reading a DIFFERENT customer\'s /kyc is still denied (pre-existing SELF policy, unaffected)', async () => {
+    it("F2. a real CUSTOMER session reading a DIFFERENT customer's /kyc is still denied (pre-existing SELF policy, unaffected)", async () => {
       const { token } = await createCustomerWithLogin();
       const otherCustomerId = await createActiveCustomer();
       const res = await request(app.getHttpServer())

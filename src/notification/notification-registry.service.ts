@@ -155,11 +155,18 @@ export class NotificationRegistryService {
           }),
         );
         if (!definition.editable) return { ...definition, channels };
-        const event = rows.find((value) => value.event_type === definition.eventType && value.channel === 'EVENT');
+        const event = rows.find(
+          (value) => value.event_type === definition.eventType && value.channel === 'EVENT',
+        );
         if (!event || event.delivery_class !== definition.deliveryClass)
           throw new Error('Notification event control unavailable');
-        return { ...definition, eventEnabled: event.is_enabled, eventLocked: event.is_locked,
-          eventConfigurationVersion: event.version, channels };
+        return {
+          ...definition,
+          eventEnabled: event.is_enabled,
+          eventLocked: event.is_locked,
+          eventConfigurationVersion: event.version,
+          channels,
+        };
       }),
     };
   }
@@ -294,9 +301,10 @@ export class NotificationRegistryService {
               'reason',
             ];
     this.onlyKeys(input, allowed);
-    const identity = type === 'CONFIGURATION'
-      ? this.configurationIdentity(input.eventType, input.channel)
-      : this.templateIdentity(input.eventType, input.channel, input.locale);
+    const identity =
+      type === 'CONFIGURATION'
+        ? this.configurationIdentity(input.eventType, input.channel)
+        : this.templateIdentity(input.eventType, input.channel, input.locale);
     const expectedVersion = this.positiveInteger(input.expectedVersion, 'expectedVersion');
     const reason = this.reason(input.reason);
     const action = type === 'CONFIGURATION' ? configAction : templateAction;
@@ -319,7 +327,8 @@ export class NotificationRegistryService {
           expectedVersion,
         };
       } else {
-        if (identity.channel === 'EVENT') throw new BadRequestException('EVENT is not a template channel');
+        if (identity.channel === 'EVENT')
+          throw new BadRequestException('EVENT is not a template channel');
         const active = await this.activeTemplate(
           manager,
           identity.eventType,
@@ -465,9 +474,10 @@ export class NotificationRegistryService {
       )) as StoredRequest[];
       if (!records[0]) throw new NotFoundException('Notification change not found');
       const change = records[0].payload;
-      const identity = change.type === 'CONFIGURATION'
-        ? this.configurationIdentity(change.eventType, change.channel)
-        : this.templateIdentity(change.eventType, change.channel, change.locale);
+      const identity =
+        change.type === 'CONFIGURATION'
+          ? this.configurationIdentity(change.eventType, change.channel)
+          : this.templateIdentity(change.eventType, change.channel, change.locale);
       const config = await this.config(manager, identity.eventType, identity.channel, true);
       const action = change.type === 'CONFIGURATION' ? configAction : templateAction;
       const fingerprint = governedChangeFingerprint(
@@ -520,7 +530,8 @@ export class NotificationRegistryService {
           version: config.version + 1,
         };
       }
-      if (identity.channel === 'EVENT') throw new BadRequestException('EVENT is not a template channel');
+      if (identity.channel === 'EVENT')
+        throw new BadRequestException('EVENT is not a template channel');
       const current = await this.activeTemplate(
         manager,
         identity.eventType,

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/require-await, @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars, @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument */
 import { seedNotificationDefaultsV1 } from '../src/notification/notification-defaults-v1';
 import { seedNotificationDefaultsV2 } from '../src/notification/notification-defaults-v2';
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
@@ -64,9 +64,18 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -96,7 +105,9 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
@@ -170,7 +181,11 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       [randomUUID(), customerId, phone],
     );
     try {
-      await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` });
+      await walletService.createWallet({
+        customerId,
+        currency: 'NGN',
+        idempotencyKey: `wallet-${customerId}`,
+      });
     } catch {
       // wallet may already exist per helpers
     }
@@ -201,7 +216,10 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     return Number(rows[0]?.c ?? '0');
   }
 
-  async function approveFundingViaHttp(customerId: string, amountMinor: string): Promise<{ fundingId: string; status: string }> {
+  async function approveFundingViaHttp(
+    customerId: string,
+    amountMinor: string,
+  ): Promise<{ fundingId: string; status: string }> {
     const idem = `idem-${randomUUID()}`;
     const createRes = await request(app.getHttpServer())
       .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
@@ -218,7 +236,9 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
   }
 
   async function makeRetryEligible(): Promise<void> {
-    await dataSource.query(`UPDATE notification_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE status='FAILED'`);
+    await dataSource.query(
+      `UPDATE notification_deliveries SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE status='FAILED'`,
+    );
   }
 
   it('10. worker drains pending outbox end-to-end: funding approved → SENT delivery + inbox entry', async () => {
@@ -233,14 +253,23 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     // Worker tick: drain outbox → dispatch → provider (test adapter)
     const tick = await worker.tick();
     expect(tick.outboxProcessed).toBeGreaterThanOrEqual(2);
-    const deliveries: Array<{ event_key: string; status: string; attempts: number; provider_ref: string | null; destination: string }> =
-      await dataSource.query(
-        `SELECT event_key, status, attempts, provider_ref, destination FROM notification_deliveries WHERE recipient_id=$1 ORDER BY event_type`,
-        [customerId],
-      );
+    const deliveries: Array<{
+      event_key: string;
+      status: string;
+      attempts: number;
+      provider_ref: string | null;
+      destination: string;
+    }> = await dataSource.query(
+      `SELECT event_key, status, attempts, provider_ref, destination FROM notification_deliveries WHERE recipient_id=$1 ORDER BY event_type`,
+      [customerId],
+    );
     expect(deliveries.length).toBe(2);
     expect(deliveries.every((d) => d.status === 'SENT')).toBe(true);
-    expect(deliveries.every((d) => d.attempts === 1 && d.provider_ref && d.provider_ref.startsWith('test-'))).toBe(true);
+    expect(
+      deliveries.every(
+        (d) => d.attempts === 1 && d.provider_ref && d.provider_ref.startsWith('test-'),
+      ),
+    ).toBe(true);
     expect(deliveries.every((d) => d.destination === '8022222221')).toBe(true);
     void fundingId;
     // Inbox (customer self-view) shows the notifications
@@ -255,11 +284,15 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     testProvider.shouldFail = true;
     testProvider.failMessage = 'Simulated provider failure';
     await worker.tick(); // dispatch happens with failing provider
-    let rows: Array<{ status: string; attempts: number; last_error: string | null; failed_at: Date | null }> =
-      await dataSource.query(
-        `SELECT status, attempts, last_error, failed_at FROM notification_deliveries WHERE recipient_id=$1 ORDER BY created_at LIMIT 1`,
-        [customerId],
-      );
+    let rows: Array<{
+      status: string;
+      attempts: number;
+      last_error: string | null;
+      failed_at: Date | null;
+    }> = await dataSource.query(
+      `SELECT status, attempts, last_error, failed_at FROM notification_deliveries WHERE recipient_id=$1 ORDER BY created_at LIMIT 1`,
+      [customerId],
+    );
     expect(rows[0]!.status).toBe('FAILED');
     expect(rows[0]!.attempts).toBe(1);
     expect(rows[0]!.last_error).toBe('PROVIDER_REJECTED_RETRYABLE');
@@ -342,7 +375,11 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
         eventKey: `concurrent-fail-${i}`,
         aggregateType: 'CUSTOMER_FUNDING_REQUEST',
         aggregateId: randomUUID(),
-        payload: { customerId: customerIds[i], fundingRequestId: randomUUID(), amountMinor: '1000' },
+        payload: {
+          customerId: customerIds[i],
+          fundingRequestId: randomUUID(),
+          amountMinor: '1000',
+        },
       });
     }
     const failedCount: Array<{ n: string }> = await dataSource.query(
@@ -350,8 +387,18 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     );
     expect(Number(failedCount[0]!.n)).toBe(6);
     // Two independent worker instances racing the same claim window
-    const workerA = new NotificationWorkerService(dataSource, dispatcher, configService, testProvider);
-    const workerB = new NotificationWorkerService(dataSource, dispatcher, configService, testProvider);
+    const workerA = new NotificationWorkerService(
+      dataSource,
+      dispatcher,
+      configService,
+      testProvider,
+    );
+    const workerB = new NotificationWorkerService(
+      dataSource,
+      dispatcher,
+      configService,
+      testProvider,
+    );
     testProvider.shouldFail = false;
     testProvider.clear();
     await makeRetryEligible();
@@ -413,7 +460,12 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       eventKey: `late-optout-${randomUUID()}`,
       aggregateType: 'TRANSFER',
       aggregateId: randomUUID(),
-      payload: { transferId: randomUUID(), sourceCustomerId: customerId, destinationCustomerId: randomUUID(), amountMinor: '500' },
+      payload: {
+        transferId: randomUUID(),
+        sourceCustomerId: customerId,
+        destinationCustomerId: randomUUID(),
+        amountMinor: '500',
+      },
     });
     const failed: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM notification_deliveries WHERE recipient_id=$1`,
@@ -421,7 +473,10 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     );
     expect(failed[0]!.status).toBe('FAILED');
     // Customer opts out after the failure
-    await dataSource.query(`UPDATE customer_preferences SET notification_sms_enabled=false WHERE customer_id=$1`, [customerId]);
+    await dataSource.query(
+      `UPDATE customer_preferences SET notification_sms_enabled=false WHERE customer_id=$1`,
+      [customerId],
+    );
     testProvider.shouldFail = false;
     await makeRetryEligible();
     const tick = await worker.tick();
@@ -444,10 +499,22 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
     const mutable = SECURITY_CRITICAL_NOTIFICATION_EVENT_TYPES as unknown as Set<string>;
     mutable.add('security.test.otp');
     try {
-      const resolved = await resolver.resolve('CUSTOMER', customerId, 'SMS', undefined, 'security.test.otp');
+      const resolved = await resolver.resolve(
+        'CUSTOMER',
+        customerId,
+        'SMS',
+        undefined,
+        'security.test.otp',
+      );
       expect(resolved.destination).toBe('8022222226'); // bypassed opt-out → phone resolved
       // Same event NOT in the registry → opt-out applies
-      const gated = await resolver.resolve('CUSTOMER', customerId, 'SMS', undefined, 'security.test.other');
+      const gated = await resolver.resolve(
+        'CUSTOMER',
+        customerId,
+        'SMS',
+        undefined,
+        'security.test.other',
+      );
       expect(gated.destination).toBeNull();
       expect(gated.reason).toBe('SMS_OPT_OUT');
     } finally {
@@ -478,7 +545,12 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
         eventKey: key,
         aggregateType: 'TRANSFER',
         aggregateId: randomUUID(),
-        payload: { transferId: randomUUID(), sourceCustomerId: cid, destinationCustomerId: randomUUID(), amountMinor: '700' },
+        payload: {
+          transferId: randomUUID(),
+          sourceCustomerId: cid,
+          destinationCustomerId: randomUUID(),
+          amountMinor: '700',
+        },
       });
     }
     const inboxA = await inboxService.listForCustomer(a, 1, 20);
@@ -525,7 +597,9 @@ describe('SMS-V1-01 Production SMS Integration (real PostgreSQL)', () => {
       `SELECT status FROM outbox_events`,
     );
     expect(outboxStates.every((o) => o.status === 'PENDING')).toBe(true); // shared consumer is untouched
-    const receipts: Array<{ status: string }> = await dataSource.query(`SELECT status FROM notification_outbox_receipts WHERE consumer_name='notification.v1'`);
+    const receipts: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM notification_outbox_receipts WHERE consumer_name='notification.v1'`,
+    );
     expect(receipts.every((receipt) => receipt.status === 'MATERIALIZED')).toBe(true);
     // Late recovery: SMS succeeds afterwards; financial state still identical
     testProvider.shouldFail = false;
