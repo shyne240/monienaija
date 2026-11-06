@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { formatMinorUnits } from '../../utils/financial-display';
 
 interface ReconciliationCheck {
   name: string;
@@ -192,12 +193,14 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
     }
     setAccountActivityId(id);
     setActivityError('');
+    setAccountActivityRows(null);
     setActivityLoading(true);
     try {
       const rows = await ApiClient.get<AccountActivitySummary[]>(
         `/internal/reconciliation/accounts/${encodeURIComponent(id)}/activity`,
       );
-      setAccountActivityRows(Array.isArray(rows) ? rows : []);
+      if (!Array.isArray(rows)) throw new Error('Account activity returned an invalid response.');
+      setAccountActivityRows(rows);
     } catch (err: any) {
       setAccountActivityRows(null);
       setActivityError(err?.message || 'Account activity lookup failed.');
@@ -308,7 +311,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
               <div style={styles.breaksCard}>
                 <h4 style={styles.cardTitle}>Binding Breaks & Discrepancies</h4>
                 {report.binding.discrepancies.length === 0 ? (
-                  <p style={styles.emptyText}>🎉 No active ledger or mapping breaks found. Books are balanced.</p>
+                  <p style={styles.emptyText}>No binding discrepancies were returned. This does not establish that the books are balanced; review the reported check statuses and trial balance.</p>
                 ) : (
                   <div style={styles.breaksList}>
                     {report.binding.discrepancies.map((d) => (
@@ -364,11 +367,11 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                     </div>
                     <div style={styles.metaRow}>
                       <span style={styles.metaLabel}>Total Debits:</span>
-                      <span style={styles.metaValue}>₦{(parseFloat(dim.totalDebitsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                      <span style={styles.metaValue}>{formatMinorUnits(dim.totalDebitsMinor, dim.currency)}</span>
                     </div>
                     <div style={styles.metaRow}>
                       <span style={styles.metaLabel}>Total Credits:</span>
-                      <span style={styles.metaValue}>₦{(parseFloat(dim.totalCreditsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                      <span style={styles.metaValue}>{formatMinorUnits(dim.totalCreditsMinor, dim.currency)}</span>
                     </div>
                   </div>
                 ))}
@@ -382,6 +385,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                       <th style={styles.th}>Code</th>
                       <th style={styles.th}>Account Name</th>
                       <th style={styles.th}>Type</th>
+                      <th style={styles.th}>Currency / accounting unit</th>
                       <th style={styles.th}>Total Debits</th>
                       <th style={styles.th}>Total Credits</th>
                       <th style={styles.th}>Closing Balance</th>
@@ -394,10 +398,11 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                         <td style={styles.tdCode}>{r.accountCode}</td>
                         <td style={styles.td}>{r.accountName}</td>
                         <td style={styles.td}>{r.accountType}</td>
-                        <td style={styles.td}>₦{(parseFloat(r.totalDebitsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                        <td style={styles.td}>₦{(parseFloat(r.totalCreditsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                        <td style={styles.td}>{r.currency} / {r.accountingUnit}</td>
+                        <td style={styles.td}>{formatMinorUnits(r.totalDebitsMinor, r.currency)}</td>
+                        <td style={styles.td}>{formatMinorUnits(r.totalCreditsMinor, r.currency)}</td>
                         <td style={{ ...styles.td, fontWeight: 'bold', color: '#0A3D25' }}>
-                          ₦{(parseFloat(r.balanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                          {formatMinorUnits(r.balanceMinor, r.currency)}
                         </td>
                         <td style={styles.td}>
                           <button
@@ -431,7 +436,9 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
             </button>
           </div>
 
-          {financeError && <div style={styles.errorBox} role="alert">{financeError}</div>}
+          {financeError && <div style={styles.errorBox} role="alert">{financeError}{financeReport && ' Previous results are stale; the refresh failed.'}</div>}
+          {financeLoading && financeReport && <p role="status">Refreshing; previous finance verification results may be stale.</p>}
+          {financeReport && <p>Report generated at: {new Date(financeReport.generatedAt).toLocaleString()}</p>}
 
           {financeReport && (
             <div style={styles.resultsGrid} data-testid="finance-verification-summary">
@@ -462,13 +469,13 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                 {financeReport.totalAssets.map((item) => (
                   <div key={`asset:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
                     <span style={styles.metaLabel}>ASSET ({item.currency}/{item.accountingUnit}):</span>
-                    <span style={styles.metaValue}>₦{(parseFloat(item.totalBalanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                    <span style={styles.metaValue}>{formatMinorUnits(item.totalBalanceMinor, item.currency)}</span>
                   </div>
                 ))}
                 {financeReport.totalLiabilities.map((item) => (
                   <div key={`liab:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
                     <span style={styles.metaLabel}>LIABILITY ({item.currency}/{item.accountingUnit}):</span>
-                    <span style={styles.metaValue}>₦{(parseFloat(item.totalBalanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                    <span style={styles.metaValue}>{formatMinorUnits(item.totalBalanceMinor, item.currency)}</span>
                   </div>
                 ))}
               </div>
@@ -480,10 +487,12 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
               <input
                 aria-label="Ledger Account UUID"
+                disabled={activityLoading}
                 placeholder="Ledger Account UUID"
                 value={accountActivityId}
                 onChange={(e) => {
                   setAccountActivityId(e.target.value);
+                  setAccountActivityRows(null);
                   setActivityError('');
                 }}
                 style={{ flex: '1 1 260px', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1' }}
@@ -509,6 +518,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                         <th style={styles.th}>Code</th>
                         <th style={styles.th}>Account</th>
                         <th style={styles.th}>Entries</th>
+                        <th style={styles.th}>Currency / accounting unit</th>
                         <th style={styles.th}>Debits</th>
                         <th style={styles.th}>Credits</th>
                         <th style={styles.th}>Balance</th>
@@ -521,9 +531,10 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                           <td style={styles.tdCode}>{row.accountCode}</td>
                           <td style={styles.td}>{row.accountName}</td>
                           <td style={styles.td}>{row.entryCount}</td>
-                          <td style={styles.td}>₦{(parseFloat(row.totalDebitsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                          <td style={styles.td}>₦{(parseFloat(row.totalCreditsMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
-                          <td style={styles.td}>₦{(parseFloat(row.balanceMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                          <td style={styles.td}>{row.currency} / {row.accountingUnit}</td>
+                          <td style={styles.td}>{formatMinorUnits(row.totalDebitsMinor, row.currency)}</td>
+                          <td style={styles.td}>{formatMinorUnits(row.totalCreditsMinor, row.currency)}</td>
+                          <td style={styles.td}>{formatMinorUnits(row.balanceMinor, row.currency)}</td>
                           <td style={styles.td}>{row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : '—'}</td>
                         </tr>
                       ))}
@@ -585,6 +596,7 @@ const styles = {
     borderBottom: '1px solid #E2E8F0',
     marginBottom: '24px',
     maxWidth: '600px',
+    flexWrap: 'wrap' as const,
   },
   tabBtn: {
     flex: 1,
@@ -647,7 +659,7 @@ const styles = {
   },
   resultsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
     gap: '20px',
   },
   summaryCard: {
@@ -819,7 +831,7 @@ const styles = {
   },
   tbSummary: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
     gap: '16px',
     marginBottom: '24px',
     backgroundColor: '#F8FAFC',
@@ -837,7 +849,7 @@ const styles = {
   },
   dimensionsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
     gap: '16px',
     marginBottom: '28px',
   },

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { formatMinorUnits } from '../../utils/financial-display';
 
 interface TransactionDetail {
   id: string;
@@ -85,12 +86,18 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
     if (historyType) params.set('type', historyType);
     setHistoryLoading(true);
     setHistoryError('');
+    setHistoryItems([]);
+    setHistoryTotal(0);
+    setHistoryTotalPages(0);
     ApiClient.get<CustomerTransactionHistoryResponse>(
       `/internal/customers/${encodeURIComponent(initialCustomerId)}/transactions?${params.toString()}`,
     )
       .then((response) => {
         if (!active) return;
-        setHistoryItems(response?.items ?? []);
+        if (!Array.isArray(response?.items) || !response?.pagination) {
+          throw new Error('Transaction history returned an invalid response.');
+        }
+        setHistoryItems(response.items);
         setHistoryTotal(response?.pagination?.total ?? 0);
         setHistoryTotalPages(response?.pagination?.totalPages ?? 0);
       })
@@ -215,8 +222,8 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               </select>
             </label>
           </div>
-          {historyError && <div style={styles.errorBox}>{historyError}</div>}
-          {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyItems.length === 0 ? (
+          {historyError && <div style={styles.errorBox} role="alert">{historyError}</div>}
+          {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyError ? null : historyItems.length === 0 ? (
             <p style={styles.historyEmpty}>No transactions found for this customer and type filter.</p>
           ) : (
             <div style={styles.historyTableWrap}>
@@ -228,7 +235,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
                       <td>{item.type}</td>
                       <td>{item.status}</td>
                       <td>{item.direction}</td>
-                      <td>{item.currency} {(Number(item.amountMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</td>
+                      <td>{formatMinorUnits(item.amountMinor, item.currency)}</td>
                       <td>{item.reference || '—'}</td>
                       <td>{new Date(item.createdAt).toLocaleString()}</td>
                     </tr>
@@ -237,11 +244,11 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               </table>
             </div>
           )}
-          <div style={styles.historyPager}>
+          {!historyLoading && !historyError && <div style={styles.historyPager}>
             <span>{historyTotal} transaction{historyTotal === 1 ? '' : 's'} · Page {historyPage}{historyTotalPages ? ` of ${historyTotalPages}` : ''}</span>
             <button type="button" style={styles.historyPageButton} disabled={historyPage <= 1 || historyLoading} onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}>Previous</button>
             <button type="button" style={styles.historyPageButton} disabled={historyPage >= historyTotalPages || historyLoading} onClick={() => setHistoryPage((page) => page + 1)}>Next</button>
-          </div>
+          </div>}
         </section>
       )}
 

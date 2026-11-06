@@ -1,0 +1,28 @@
+/* Login inherits the same tokens as the authenticated M1 shell. */
+.mn-login__container { box-sizing: border-box; min-height: 100vh; padding: 24px 16px; display: flex; justify-content: center; align-items: center; background: var(--mn-surface-canvas); color: var(--mn-text-primary); font-family: var(--mn-font-sans); }
+.mn-login__card { box-sizing: border-box; width: 100%; max-width: 460px; padding: clamp(24px, 6vw, 40px); border: 1px solid var(--mn-border-subtle); border-top: 4px solid var(--mn-accent-gold); border-radius: var(--mn-radius-md); background: var(--mn-surface-raised); box-shadow: var(--mn-shadow-1); }
+.mn-login__logo-section { display: flex; flex-direction: column; align-items: center; margin-bottom: 28px; text-align: center; }
+.mn-login__logo-icon { width: 64px; height: 64px; object-fit: contain; margin-bottom: 12px; }
+.mn-login__logo-text { margin: 0 0 4px; color: var(--mn-nav-surface); font-size: 24px; }
+.mn-login__logo-tag { margin: 0; color: var(--mn-text-secondary); font-size: 14px; }
+.mn-login__form, .mn-login__input-group { display: flex; flex-direction: column; }
+.mn-login__input-group { margin-bottom: 16px; min-width: 0; }
+.mn-login__label { margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.mn-login__input, .mn-login__textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--mn-border-control); border-radius: var(--mn-radius-sm); color: var(--mn-text-primary); background: var(--mn-surface-raised); font: inherit; }
+.mn-login__textarea { min-height: 100px; resize: vertical; overflow-wrap: anywhere; }
+.mn-login__submit-btn { min-height: 44px; border: 1px solid var(--mn-action-primary); border-radius: var(--mn-radius-sm); padding: 10px 16px; color: var(--mn-text-on-action); background: var(--mn-action-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.mn-login__submit-btn:hover:not(:disabled) { background: var(--mn-action-primary-hover); }
+.mn-login button:disabled { opacity: .6; cursor: not-allowed; }
+.mn-login button:focus-visible, .mn-login input:focus-visible, .mn-login textarea:focus-visible { outline: 2px solid var(--mn-focus-ring); outline-offset: 2px; }
+.mn-login__dev-banner, .mn-login__error-box, .mn-login__success-box { padding: 12px; margin-bottom: 20px; border: 1px solid; border-radius: var(--mn-radius-sm); font-size: 13px; overflow-wrap: anywhere; }
+.mn-login__dev-banner { color: var(--mn-status-success); border-color: var(--mn-border-strong); background: var(--mn-surface-mint); }
+.mn-login__dev-banner-title { font-weight: 700; }
+.mn-login__dev-banner-text { margin: 4px 0 0; line-height: 1.5; }
+.mn-login__error-box { color: var(--mn-status-danger); border-color: var(--mn-status-danger); background: var(--mn-status-danger-bg); }
+.mn-login__success-box { color: var(--mn-status-success); border-color: var(--mn-status-success); background: var(--mn-status-success-bg); }
+.mn-login__advanced-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--mn-border-subtle); }
+.mn-login__advanced-toggle, .mn-login__tab-btn { border: 0; background: transparent; color: var(--mn-text-secondary); font: inherit; cursor: pointer; }
+.mn-login__advanced-toggle { width: 100%; padding: 6px 0; text-align: left; font-size: 12px; font-weight: 600; }
+.mn-login__tab-header { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--mn-border-subtle); margin: 16px 0; }
+.mn-login__tab-btn { flex: 1 1 120px; padding: 12px 8px; font-size: 13px; }
+.mn-login__tab-btn--active { color: var(--mn-action-primary); border-bottom: 2px solid var(--mn-action-primary); font-weight: 700; }

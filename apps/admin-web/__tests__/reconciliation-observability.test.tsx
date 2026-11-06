@@ -139,7 +139,7 @@ describe('Admin Web Portal W5 Reconciliation & Breaks Desk Tests', () => {
     expect(ApiClient.get).toHaveBeenCalledWith('/internal/reconciliation/trial-balance');
 
     expect(await findByText('BALANCED FACT')).toBeTruthy();
-    expect(await findByText('NGN / CUSTOMER_FUNDS')).toBeTruthy();
+    expect((await getAllByText('NGN / CUSTOMER_FUNDS')).length).toBeGreaterThan(0);
     expect(await findByText('Central Settlement Asset')).toBeTruthy();
     expect(await findByText('1001')).toBeTruthy();
     expect(getAllByText('BALANCED').length).toBeGreaterThan(0);

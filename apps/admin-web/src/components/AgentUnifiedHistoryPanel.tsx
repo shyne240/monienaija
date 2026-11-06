@@ -241,6 +241,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         setData(null);
         setError('');
       } else {
+        setData(null);
         setError(
           err instanceof Error
             ? err.message

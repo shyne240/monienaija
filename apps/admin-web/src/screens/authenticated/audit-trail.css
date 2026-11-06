@@ -1,0 +1,12 @@
+/* Scoped audit surface using the existing M1 tokens. */
+.mn-audit { padding: clamp(16px, 3vw, 32px); max-width: 1200px; min-width: 0; color: var(--mn-text-primary); font-family: var(--mn-font-sans); }
+.mn-audit__panel { background: var(--mn-surface-raised); border: 1px solid var(--mn-border-subtle); border-radius: var(--mn-radius-md); padding: clamp(16px, 2vw, 24px); box-shadow: var(--mn-shadow-1); min-width: 0; }
+.mn-audit__form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.mn-audit__field { flex: 1 1 260px; min-width: 0; }
+.mn-audit__input { box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--mn-border-control); border-radius: var(--mn-radius-sm); color: var(--mn-text-primary); font: inherit; }
+.mn-audit__input:focus-visible { outline: 2px solid var(--mn-focus-ring); outline-offset: 2px; }
+.mn-audit__state, .mn-audit__hint { color: var(--mn-text-secondary); font-size: 14px; line-height: 1.5; }
+.mn-audit__state { margin: 24px 0 0; }
+.mn-audit__table { border-collapse: collapse; min-width: 720px; width: 100%; margin-top: 24px; font-size: 13px; text-align: left; }
+.mn-audit__table th, .mn-audit__table td { padding: 12px; border-bottom: 1px solid var(--mn-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
+.mn-audit__table th { color: var(--mn-text-secondary); background: var(--mn-surface-sunken); }
