@@ -55,9 +55,7 @@ export interface AuditedTransferRecipientIdentity {
   destinationCustomerId: string;
 }
 
-function assertAuditedRecipientIdentity(
-  recipients: AuditedTransferRecipientIdentity,
-): void {
+function assertAuditedRecipientIdentity(recipients: AuditedTransferRecipientIdentity): void {
   if (
     typeof recipients.sourceCustomerId !== 'string' ||
     recipients.sourceCustomerId.trim().length === 0 ||

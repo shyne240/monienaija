@@ -30,7 +30,15 @@ function toLagosWall(date: Date): Date {
  * Create a UTC instant that corresponds to a Lagos wall time at given Y/M/D H:M:S
  * by building a UTC timestamp then subtracting the offset.
  */
-function lagosWallToUtc(year: number, monthIndex0: number, day: number, hour = 0, minute = 0, second = 0, ms = 0): Date {
+function lagosWallToUtc(
+  year: number,
+  monthIndex0: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  ms = 0,
+): Date {
   const utcMs = Date.UTC(year, monthIndex0, day, hour, minute, second, ms) - LAGOS_OFFSET_MS;
   return new Date(utcMs);
 }
@@ -38,7 +46,9 @@ function lagosWallToUtc(year: number, monthIndex0: number, day: number, hour = 0
 function isoWeekForLagosDate(lagosWall: Date): { isoYear: number; isoWeek: number } {
   // lagosWall is wall time represented as UTC date (so its UTC Y/M/D are Lagos Y/M/D)
   // Use UTC-based ISO week calculation
-  const d = new Date(Date.UTC(lagosWall.getUTCFullYear(), lagosWall.getUTCMonth(), lagosWall.getUTCDate()));
+  const d = new Date(
+    Date.UTC(lagosWall.getUTCFullYear(), lagosWall.getUTCMonth(), lagosWall.getUTCDate()),
+  );
   const dayNum = d.getUTCDay() || 7; // Monday 1.. Sunday 7
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -83,7 +93,10 @@ export function getLagosWindow(now: Date, windowType: LimitWindowType | string):
 
   if (wt === LimitWindowType.MONTHLY) {
     const start = lagosWallToUtc(year, month, 1, 0, 0, 0, 0);
-    const nextMonth = month === 11 ? lagosWallToUtc(year + 1, 0, 1, 0, 0, 0, 0) : lagosWallToUtc(year, month + 1, 1, 0, 0, 0, 0);
+    const nextMonth =
+      month === 11
+        ? lagosWallToUtc(year + 1, 0, 1, 0, 0, 0, 0)
+        : lagosWallToUtc(year, month + 1, 1, 0, 0, 0, 0);
     const key = `${year}-${pad(month + 1)}:MONTHLY:Africa/Lagos`;
     return { windowType: wt, windowKey: key, windowStart: start, windowEnd: nextMonth };
   }
@@ -115,7 +128,10 @@ export function isWindowedDimension(dimension: string): boolean {
 }
 
 // For tests: expose helper to create window from explicit Lagos date string YYYY-MM-DD
-export function getLagosWindowForLagosDate(lagosDateStr: string, windowType: LimitWindowType): LagosWindow {
+export function getLagosWindowForLagosDate(
+  lagosDateStr: string,
+  windowType: LimitWindowType,
+): LagosWindow {
   // lagosDateStr expected YYYY-MM-DD interpreted as Lagos wall date
   const [y, m, d] = lagosDateStr.split('-').map(Number);
   const fakeNow = lagosWallToUtc(y!, m! - 1, d!, 12, 0, 0, 0); // noon Lagos ensures same wall date

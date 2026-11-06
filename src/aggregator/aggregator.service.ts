@@ -122,7 +122,9 @@ export class AggregatorService {
   async assertCanOperate(id: string): Promise<Aggregator> {
     const agg = await this.getById(id);
     if (agg.status !== AggregatorStatus.ACTIVE) {
-      throw new ConflictException(`Aggregator ${id} is ${agg.status} and cannot perform restricted operation`);
+      throw new ConflictException(
+        `Aggregator ${id} is ${agg.status} and cannot perform restricted operation`,
+      );
     }
     return agg;
   }
@@ -184,7 +186,8 @@ export class AggregatorService {
   }
 
   private assertUuid(value: string, field: string): void {
-    if (!value || !UUID_PATTERN.test(value)) throw new BadRequestException(`${field} must be a UUID`);
+    if (!value || !UUID_PATTERN.test(value))
+      throw new BadRequestException(`${field} must be a UUID`);
   }
 
   private normalizeActor(actor: string): string {

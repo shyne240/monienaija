@@ -39,7 +39,10 @@ import { CashToCashDto } from '../src/agent/dto/cash-to-cash.dto';
 // replicated by every HTTP integration suite in this repo).
 const pipeOptions = { whitelist: true, transform: true };
 
-async function validateDto<T extends object>(cls: new () => T, payload: unknown): Promise<string[]> {
+async function validateDto<T extends object>(
+  cls: new () => T,
+  payload: unknown,
+): Promise<string[]> {
   const instance = plainToInstance(cls, payload as object);
   const errors = await validate(instance as object, pipeOptions);
   return errors.flatMap((e) => Object.values(e.constraints ?? {}));

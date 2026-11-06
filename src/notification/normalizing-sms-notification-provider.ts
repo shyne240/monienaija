@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { normalizeNigerianPhone } from '../customer-registration/phone-normalization';
 import { ConfigurableSmsNotificationProvider } from './notification-provider-config.service';
-import type { NotificationProvider, NotificationSendRequest, NotificationSendResult } from './notification.types';
+import type {
+  NotificationProvider,
+  NotificationSendRequest,
+  NotificationSendResult,
+} from './notification.types';
 
 /**
  * One boundary for ordinary deliveries, managed test sends and direct security OTPs. The

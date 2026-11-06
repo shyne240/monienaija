@@ -14,10 +14,16 @@ const optionalEnvironmentUrl = z.preprocess(
 );
 const optionalEnvironmentHttpsUrl = z.preprocess(
   (value) => (value === '' ? undefined : value),
-  z.string().trim().url().max(2048).refine((value) => {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' && !parsed.username && !parsed.password;
-  }, 'must be an HTTPS URL without embedded credentials').optional(),
+  z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine((value) => {
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' && !parsed.username && !parsed.password;
+    }, 'must be an HTTPS URL without embedded credentials')
+    .optional(),
 );
 const optionalEnvironmentSecret = z.preprocess(
   (value) => (value === '' ? undefined : value),
@@ -50,9 +56,19 @@ export const environmentSchema = z
     BUILD_TIMESTAMP: z.string().trim().min(1).max(64).default('unknown'),
     SHUTDOWN_DRAIN_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(30),
     CASH_TO_CASH_EXPIRY_WORKER_ENABLED: booleanFromEnvironment.default(false),
-    CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
+    CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(3_600_000)
+      .default(60_000),
     CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
-    CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
+    CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(60_000)
+      .default(10_000),
     CASH_TO_CASH_EXPIRY_SECONDS: z.coerce.number().int().min(60).max(31_536_000).default(604800),
     // Optional public locator URL; included in beneficiary SMS only when configured.
     CASH_TO_CASH_LOCATOR_URL: optionalEnvironmentHttpsUrl,
@@ -61,10 +77,24 @@ export const environmentSchema = z
     POA_UPLOADS_ENABLED: booleanFromEnvironment.default(false),
     POA_MAX_UPLOAD_BYTES: z.coerce.number().int().min(1).max(10_485_760).default(10_485_760),
     POA_STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
-    POA_LOCAL_STORAGE_ROOT: z.string().trim().min(1).max(2048).default('./data/private-poa/objects'),
-    POA_ENCRYPTION_KEY_FILE: z.string().trim().min(1).max(2048).default('./data/private-poa/encryption.key'),
+    POA_LOCAL_STORAGE_ROOT: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2048)
+      .default('./data/private-poa/objects'),
+    POA_ENCRYPTION_KEY_FILE: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2048)
+      .default('./data/private-poa/encryption.key'),
     POA_ENCRYPTION_KEYRING_JSON: optionalEnvironmentJson,
-    POA_ENCRYPTION_ACTIVE_KEY_VERSION: z.string().trim().regex(/^[A-Za-z0-9._-]{1,64}$/).default('v1'),
+    POA_ENCRYPTION_ACTIVE_KEY_VERSION: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .default('v1'),
     POA_CLAMAV_HOST: z.string().trim().min(1).max(255).default('127.0.0.1'),
     POA_CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
     POA_CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
@@ -457,7 +487,10 @@ export const environmentSchema = z
     }
 
     if (config.POA_UPLOADS_ENABLED) {
-      if (config.POA_STORAGE_PROVIDER === 'local' && !['development', 'test'].includes(config.NODE_ENV)) {
+      if (
+        config.POA_STORAGE_PROVIDER === 'local' &&
+        !['development', 'test'].includes(config.NODE_ENV)
+      ) {
         context.addIssue({
           code: 'custom',
           path: ['POA_STORAGE_PROVIDER'],
@@ -491,7 +524,8 @@ export const environmentSchema = z
         context.addIssue({
           code: 'custom',
           path: ['POA_ENCRYPTION_KEYRING_JSON'],
-          message: 'Use the persistent local key file with the development-only local storage adapter',
+          message:
+            'Use the persistent local key file with the development-only local storage adapter',
         });
       }
       if (config.POA_ENCRYPTION_KEYRING_JSON) {
@@ -505,11 +539,13 @@ export const environmentSchema = z
             context.addIssue({
               code: 'custom',
               path: ['POA_ENCRYPTION_ACTIVE_KEY_VERSION'],
-              message: 'The active Proof of Address encryption-key version must exist in the keyring',
+              message:
+                'The active Proof of Address encryption-key version must exist in the keyring',
             });
           }
           for (const [version, encodedKey] of entries) {
-            const decoded = typeof encodedKey === 'string' ? Buffer.from(encodedKey, 'base64') : Buffer.alloc(0);
+            const decoded =
+              typeof encodedKey === 'string' ? Buffer.from(encodedKey, 'base64') : Buffer.alloc(0);
             if (
               !/^[A-Za-z0-9._-]{1,64}$/.test(version) ||
               decoded.length !== 32 ||
@@ -518,7 +554,8 @@ export const environmentSchema = z
               context.addIssue({
                 code: 'custom',
                 path: ['POA_ENCRYPTION_KEYRING_JSON'],
-                message: 'Every Proof of Address keyring entry must be a versioned, 32-byte base64 key',
+                message:
+                  'Every Proof of Address keyring entry must be a versioned, 32-byte base64 key',
               });
               break;
             }

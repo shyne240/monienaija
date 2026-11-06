@@ -23,7 +23,10 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerEntryDirection } from '../ledger/ledger.enums';
 import { parsePositiveMinorUnits, normalizeCurrency } from '../common/money';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
 import { AgentTransactionAuthorizationService } from './agent-transaction-authorization.service';
 import { AgentReceivingNumberService } from './agent-receiving-number.service';
 import { AgentService } from './agent-service.enum';
@@ -62,10 +65,12 @@ const MIN_CASH_TO_CASH_EXPIRY_SECONDS = 60;
 const MAX_CASH_TO_CASH_EXPIRY_SECONDS = 31_536_000;
 
 function stripControlCharacters(value: string): string {
-  return [...value].filter((character) => {
-    const code = character.charCodeAt(0);
-    return code > 0x1f && code !== 0x7f;
-  }).join('');
+  return [...value]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code > 0x1f && code !== 0x7f;
+    })
+    .join('');
 }
 
 @Injectable()
@@ -135,7 +140,9 @@ export class AgentCashToCashService {
 
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 255) {
-      throw new BadRequestException('idempotencyKey is required and must be at most 255 characters');
+      throw new BadRequestException(
+        'idempotencyKey is required and must be at most 255 characters',
+      );
     }
 
     const pin = input.agentPin;
@@ -167,16 +174,31 @@ export class AgentCashToCashService {
       if (reason === 'PIN_LOCKED') {
         throw new UnauthorizedException('Transaction PIN is locked');
       }
-      if (reason === 'PRINCIPAL_MISMATCH' || reason === 'PRINCIPAL_NOT_AGENT' || reason === 'WORKFORCE_NOT_PERMITTED') {
+      if (
+        reason === 'PRINCIPAL_MISMATCH' ||
+        reason === 'PRINCIPAL_NOT_AGENT' ||
+        reason === 'WORKFORCE_NOT_PERMITTED'
+      ) {
         throw new ForbiddenException(`Authorization denied: ${reason}`);
       }
-      if (reason === 'AGENT_PENDING' || reason === 'AGENT_SUSPENDED' || reason === 'AGENT_TERMINATED' || reason === 'AGENT_NOT_FOUND' || reason === 'AGENT_DELETED') {
+      if (
+        reason === 'AGENT_PENDING' ||
+        reason === 'AGENT_SUSPENDED' ||
+        reason === 'AGENT_TERMINATED' ||
+        reason === 'AGENT_NOT_FOUND' ||
+        reason === 'AGENT_DELETED'
+      ) {
         throw new ForbiddenException(`Agent not permitted: ${reason}`);
       }
       if (reason === 'SERVICE_NOT_PERMITTED' || reason === 'UNKNOWN_SERVICE') {
         throw new ForbiddenException('Agent does not have CASH_TO_CASH capability');
       }
-      if (reason === 'AGENT_CLASS_INACTIVE' || reason === 'MISSING_AGENT_CLASS' || reason === 'AGENT_CLASS_NOT_FOUND' || reason === 'AGENT_CLASS_DELETED') {
+      if (
+        reason === 'AGENT_CLASS_INACTIVE' ||
+        reason === 'MISSING_AGENT_CLASS' ||
+        reason === 'AGENT_CLASS_NOT_FOUND' ||
+        reason === 'AGENT_CLASS_DELETED'
+      ) {
         throw new ForbiddenException(`Agent class invalid: ${reason}`);
       }
       throw new ForbiddenException(`Authorization denied: ${reason}`);
@@ -191,21 +213,27 @@ export class AgentCashToCashService {
       [canonicalPhone],
     );
     if (agentReceivingCheck.length > 0) {
-      throw new BadRequestException('Recipient must not be an Agent; Agent recipient is not allowed');
+      throw new BadRequestException(
+        'Recipient must not be an Agent; Agent recipient is not allowed',
+      );
     }
 
     // Ensure wallets (outside SERIALIZABLE, as creation is idempotent via WalletService)
     // But for ledger lock we need wallet account ids, so fetch or create.
     // We will do wallet ensure inside transaction as well for atomicity, but we can prefetch.
 
-    const senderPhone = input.senderPhone === undefined ? undefined
-      : AgentReceivingNumberService.canonicalizeTo10(input.senderPhone.trim());
+    const senderPhone =
+      input.senderPhone === undefined
+        ? undefined
+        : AgentReceivingNumberService.canonicalizeTo10(input.senderPhone.trim());
     if (input.senderPhone !== undefined && !senderPhone) {
       throw new BadRequestException('senderPhone must be a valid Nigerian phone number');
     }
 
     // Compute reference/description/correlation
-    const reference = input.reference?.trim() ? input.reference.trim() : `CASH_TO_CASH-${idempotencyKey}`;
+    const reference = input.reference?.trim()
+      ? input.reference.trim()
+      : `CASH_TO_CASH-${idempotencyKey}`;
     const description = input.description?.trim()
       ? input.description.trim()
       : `Cash→Cash ${amountString} NGN from Agent ${agentId} to ${canonicalPhone}`;
@@ -275,12 +303,20 @@ export class AgentCashToCashService {
             const body = existing.responseBody as unknown as AgentCashToCashResult | null;
             // If we have stored body with transferId/journalId, return it as REPLAYED
             if (body && (body as unknown as { transferId?: string }).transferId) {
-              return { ...body, status: 'REPLAYED' as const, replayed: true, transferCode: undefined } as AgentCashToCashResult;
+              return {
+                ...body,
+                status: 'REPLAYED' as const,
+                replayed: true,
+                transferCode: undefined,
+              } as AgentCashToCashResult;
             }
             if (existing.resourceId) {
               // Try to fetch transfer by journalId
               const transfer = (
-                await manager.query(`SELECT * FROM cash_to_cash_transfers WHERE journal_id = $1 LIMIT 1`, [existing.resourceId])
+                await manager.query(
+                  `SELECT * FROM cash_to_cash_transfers WHERE journal_id = $1 LIMIT 1`,
+                  [existing.resourceId],
+                )
               )[0] as CashToCashTransfer | undefined;
               if (transfer) {
                 const typed = transfer as unknown as {
@@ -294,11 +330,18 @@ export class AgentCashToCashService {
                   reference: string | null;
                   correlation_id: string | null;
                 };
-                const locator: Array<{ sender_phone: string; transfer_number: string }> = await manager.query(
-                  `SELECT sender_phone, transfer_number FROM cash_to_cash_locators WHERE transfer_id=$1`, [typed.id],
-                );
+                const locator: Array<{ sender_phone: string; transfer_number: string }> =
+                  await manager.query(
+                    `SELECT sender_phone, transfer_number FROM cash_to_cash_locators WHERE transfer_id=$1`,
+                    [typed.id],
+                  );
                 return {
-                  ...(locator[0] ? { senderPhone: locator[0].sender_phone, transferNumber: locator[0].transfer_number } : {}),
+                  ...(locator[0]
+                    ? {
+                        senderPhone: locator[0].sender_phone,
+                        transferNumber: locator[0].transfer_number,
+                      }
+                    : {}),
                   status: 'REPLAYED',
                   transferId: typed.id,
                   journalId: existing.resourceId,
@@ -351,7 +394,9 @@ export class AgentCashToCashService {
           }
           const involved = lines.some((l) => l.accountId === walletInTx.ledgerAccountId);
           if (!involved) {
-            throw new BadRequestException('Agent financial execution must involve the Agent wallet ledger account');
+            throw new BadRequestException(
+              'Agent financial execution must involve the Agent wallet ledger account',
+            );
           }
 
           // V1-LIMIT-04: enforce limits for AGENT OUTGOING CASH_TO_CASH
@@ -386,7 +431,11 @@ export class AgentCashToCashService {
               });
             } catch (error) {
               if (error instanceof HttpException) {
-                const resp = error.getResponse() as { error?: string; code?: string; message?: string };
+                const resp = error.getResponse() as {
+                  error?: string;
+                  code?: string;
+                  message?: string;
+                };
                 const code = resp && (resp.error || resp.code);
                 if (code && String(code).startsWith('LIMIT_')) throw error;
               }
@@ -434,7 +483,10 @@ export class AgentCashToCashService {
           } catch (error) {
             if (limitIdempotencyKey && this.limitEnforcementService) {
               try {
-                await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                await this.limitEnforcementService.releaseReservationsWithManager(
+                  manager,
+                  limitIdempotencyKey,
+                );
               } catch {
                 // Preserve the existing best-effort reservation handling.
               }
@@ -443,7 +495,10 @@ export class AgentCashToCashService {
           }
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
-            await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+            await this.limitEnforcementService.commitReservationsWithManager(
+              manager,
+              limitIdempotencyKey,
+            );
           }
 
           // Create cash_to_cash_transfers record atomically with journal
@@ -479,7 +534,8 @@ export class AgentCashToCashService {
           );
 
           const transferNumber = senderPhone
-            ? await this.allocateLocator(manager, idForTransfer, senderPhone) : undefined;
+            ? await this.allocateLocator(manager, idForTransfer, senderPhone)
+            : undefined;
 
           // — V1-COMMERCIAL-DECISION-03C: record the immutable commercial decision snapshot for
           // the INITIATION operation inside this same SERIALIZABLE transaction, after the journal
@@ -699,9 +755,9 @@ export class AgentCashToCashService {
           principalAmountMinor: ctx.amountMinor,
           currency: ctx.currency,
         }),
-      // flow evidence (allowed by the snapshot's jsonb contract) — acting Agent + transfer identity
-      agentId: ctx.agentId,
-      transferId: ctx.transferId,
+        // flow evidence (allowed by the snapshot's jsonb contract) — acting Agent + transfer identity
+        agentId: ctx.agentId,
+        transferId: ctx.transferId,
       };
     } else {
       feeDecision = {
@@ -721,7 +777,10 @@ export class AgentCashToCashService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -762,7 +821,8 @@ export class AgentCashToCashService {
             {
               ...engineDecision,
               allocations: (engineDecision.allocations ?? []).map((a) =>
-                a.beneficiaryType === 'AGENT' && (a.beneficiaryId === null || a.beneficiaryId === undefined)
+                a.beneficiaryType === 'AGENT' &&
+                (a.beneficiaryId === null || a.beneficiaryId === undefined)
                   ? { ...a, beneficiaryId: ctx.agentId }
                   : a,
               ),
@@ -800,9 +860,13 @@ export class AgentCashToCashService {
         commissionDecision,
       });
       feeDecision = annotateFeeDecisionWithPosting(feeDecision, accountingOutcome);
-      commissionDecision = annotateCommissionDecisionWithPosting(commissionDecision, accountingOutcome, {
-        commissionEvent: 'CASH_TO_CASH_INITIATION',
-      });
+      commissionDecision = annotateCommissionDecisionWithPosting(
+        commissionDecision,
+        accountingOutcome,
+        {
+          commissionEvent: 'CASH_TO_CASH_INITIATION',
+        },
+      );
     }
 
     const limitDecision = ctx.limitOutcome
@@ -870,7 +934,11 @@ export class AgentCashToCashService {
       return DEFAULT_CASH_TO_CASH_EXPIRY_SECONDS;
     }
     const parsed = typeof raw === 'string' ? Number(raw) : Number(raw);
-    if (!Number.isSafeInteger(parsed) || parsed < MIN_CASH_TO_CASH_EXPIRY_SECONDS || parsed > MAX_CASH_TO_CASH_EXPIRY_SECONDS) {
+    if (
+      !Number.isSafeInteger(parsed) ||
+      parsed < MIN_CASH_TO_CASH_EXPIRY_SECONDS ||
+      parsed > MAX_CASH_TO_CASH_EXPIRY_SECONDS
+    ) {
       // Fail closed: invalid configuration is rejected per existing conventions (zod would reject at startup,
       // but runtime mutation or test harness with invalid value must not silently fallback to an arbitrary value).
       throw new BadRequestException(
@@ -931,7 +999,11 @@ export class AgentCashToCashService {
     return randomInt(0, 1_000_000).toString().padStart(6, '0');
   }
 
-  private async allocateLocator(manager: EntityManager, transferId: string, senderPhone: string): Promise<string> {
+  private async allocateLocator(
+    manager: EntityManager,
+    transferId: string,
+    senderPhone: string,
+  ): Promise<string> {
     for (let attempt = 0; attempt < 32; attempt++) {
       const number = this.generateTransferNumber();
       const rows: Array<{ transfer_number: string }> = await manager.query(
@@ -941,7 +1013,10 @@ export class AgentCashToCashService {
       );
       if (rows[0]) return rows[0].transfer_number;
     }
-    throw new ConflictException({ code: 'C2C_LOCATOR_UNAVAILABLE', message: 'Unable to allocate transfer number; retry unchanged request' });
+    throw new ConflictException({
+      code: 'C2C_LOCATOR_UNAVAILABLE',
+      message: 'Unable to allocate transfer number; retry unchanged request',
+    });
   }
 
   private computeRequestHash(value: unknown): string {

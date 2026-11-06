@@ -88,7 +88,9 @@ function runFilterWith(
 
 describe('report 19 finding A — attached-fragment provider reference followed by a JWT', () => {
   it('direct redaction removes the complete region (report-19 exact reproduction)', () => {
-    expect(redactSensitiveText(REPORT19_INPUT)).toBe(`Opaque provider reference: ${REDACTED_VALUE}`);
+    expect(redactSensitiveText(REPORT19_INPUT)).toBe(
+      `Opaque provider reference: ${REDACTED_VALUE}`,
+    );
   });
 
   it('direct redaction: newline-separated JWT after an attached fragment is consumed', () => {
@@ -101,13 +103,16 @@ describe('report 19 finding A — attached-fragment provider reference followed 
 
   it('direct redaction: long opaque credential after an attached fragment is consumed', () => {
     const opaque = 'a1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6e7F8a9B0';
-    const out = redactSensitiveText(`ref pvr1:resend:0123456789abcdef0123456789abcdefmeta ${opaque}`);
+    const out = redactSensitiveText(
+      `ref pvr1:resend:0123456789abcdef0123456789abcdefmeta ${opaque}`,
+    );
     expect(out).not.toContain(opaque);
     expect(out).toContain(REDACTED_VALUE);
   });
 
   it('preservation guard: attached fragment plus ordinary prose destroys nothing extra', () => {
-    const input = 'Opaque reference: pvr1:brevo:0123456789abcdef0123456789abcdefsuffix was delivered to the recipient';
+    const input =
+      'Opaque reference: pvr1:brevo:0123456789abcdef0123456789abcdefsuffix was delivered to the recipient';
     expect(redactSensitiveText(input)).toBe(
       `Opaque reference: ${REDACTED_VALUE} was delivered to the recipient`,
     );
@@ -159,7 +164,10 @@ describe('report 19 finding B — custom HTTP error field must pass the sanitiza
 
   it('4xx: a non-string details.error fails closed to the canonical code', () => {
     const { response } = runFilterWith(
-      new BadRequestException({ message: 'failed', error: { nested: 'ERROR_OBJECT_SECRET_SENTINEL' } }),
+      new BadRequestException({
+        message: 'failed',
+        error: { nested: 'ERROR_OBJECT_SECRET_SENTINEL' },
+      }),
     );
     const serialized = JSON.stringify(response.body);
     expect(serialized).not.toContain('ERROR_OBJECT_SECRET_SENTINEL');

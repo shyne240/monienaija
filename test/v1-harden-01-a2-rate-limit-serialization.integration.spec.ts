@@ -65,28 +65,44 @@ describe('V1-HARDEN-01 A2SecurityRateLimitService SERIALIZABLE contention (real 
   });
 
   it('a single consume() call succeeds and decrements the bucket', async () => {
-    const rule = { category: 'harden01-single', capacity: 5, refillRatePerSecond: 1, enabled: true } as any;
+    const rule = {
+      category: 'harden01-single',
+      capacity: 5,
+      refillRatePerSecond: 1,
+      enabled: true,
+    } as any;
     const dims = [`single-${randomUUID()}`];
     await expect(rateLimitService.consume(rule, dims, 'corr-1')).resolves.toBeUndefined();
   });
 
   it('realistic concurrency (2 and 3 simultaneous requests) on the same fresh bucket never produces a spurious 503, an under-capacity 429, or any unapproved rejection, across many trials', async () => {
-    const rule = { category: 'harden01-realistic', capacity: 50, refillRatePerSecond: 1, enabled: true } as any;
+    const rule = {
+      category: 'harden01-realistic',
+      capacity: 50,
+      refillRatePerSecond: 1,
+      enabled: true,
+    } as any;
     for (const n of [2, 3]) {
       for (let trial = 0; trial < 15; trial += 1) {
         const dims = [`realistic-${randomUUID()}`];
         const results = await Promise.allSettled(
-          Array.from({ length: n }).map(() => rateLimitService.consume(rule, dims, 'corr-realistic')),
+          Array.from({ length: n }).map(() =>
+            rateLimitService.consume(rule, dims, 'corr-realistic'),
+          ),
         );
         const unexpected503s = results.filter(
-          (r) => r.status === 'rejected' && (r.reason as ServiceUnavailableException).getStatus?.() === 503,
+          (r) =>
+            r.status === 'rejected' &&
+            (r.reason as ServiceUnavailableException).getStatus?.() === 503,
         );
         expect(unexpected503s).toHaveLength(0);
 
         // The bucket here holds 50 tokens and only 2-3 calls are made, so no request may be
         // refused on capacity grounds: a 429 is a defect in this scenario, not a business outcome.
         const unexpected429s = results.filter(
-          (r) => r.status === 'rejected' && (r.reason as { getStatus?: () => number }).getStatus?.() === 429,
+          (r) =>
+            r.status === 'rejected' &&
+            (r.reason as { getStatus?: () => number }).getStatus?.() === 429,
         );
         expect(unexpected429s).toHaveLength(0);
 
@@ -111,7 +127,12 @@ describe('V1-HARDEN-01 A2SecurityRateLimitService SERIALIZABLE contention (real 
   }, 60000);
 
   it('the intentional 429 rate-limit-exceeded outcome is unaffected by the retry wiring', async () => {
-    const rule = { category: 'harden01-exceeded', capacity: 1, refillRatePerSecond: 0.0001, enabled: true } as any;
+    const rule = {
+      category: 'harden01-exceeded',
+      capacity: 1,
+      refillRatePerSecond: 0.0001,
+      enabled: true,
+    } as any;
     const dims = [`exceeded-${randomUUID()}`];
     await rateLimitService.consume(rule, dims, 'corr-2'); // consumes the single token
     await expect(rateLimitService.consume(rule, dims, 'corr-2')).rejects.toMatchObject({
@@ -120,14 +141,24 @@ describe('V1-HARDEN-01 A2SecurityRateLimitService SERIALIZABLE contention (real 
   });
 
   it('a genuinely invalid rate-limit rule configuration still fails safely with 503 (unchanged pre-existing behaviour)', async () => {
-    const invalidRule = { category: 'harden01-invalid', capacity: 0, refillRatePerSecond: 1, enabled: true } as any;
+    const invalidRule = {
+      category: 'harden01-invalid',
+      capacity: 0,
+      refillRatePerSecond: 1,
+      enabled: true,
+    } as any;
     await expect(
       rateLimitService.consume(invalidRule, [`invalid-${randomUUID()}`], 'corr-3'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('a disabled rule never touches PostgreSQL and always resolves (unchanged pre-existing behaviour)', async () => {
-    const disabledRule = { category: 'harden01-disabled', capacity: 1, refillRatePerSecond: 1, enabled: false } as any;
+    const disabledRule = {
+      category: 'harden01-disabled',
+      capacity: 1,
+      refillRatePerSecond: 1,
+      enabled: false,
+    } as any;
     const dims = [`disabled-${randomUUID()}`];
     await expect(rateLimitService.consume(disabledRule, dims, 'corr-4')).resolves.toBeUndefined();
     await expect(rateLimitService.consume(disabledRule, dims, 'corr-4')).resolves.toBeUndefined();

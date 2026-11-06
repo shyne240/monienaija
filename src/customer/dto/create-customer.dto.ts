@@ -22,5 +22,4 @@ export class CreateCustomerDto {
   @IsEnum(CustomerStatus)
   @IsOptional()
   status?: CustomerStatus;
-
 }

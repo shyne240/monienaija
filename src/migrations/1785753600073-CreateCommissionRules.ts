@@ -133,9 +133,15 @@ export class CreateCommissionRules1785753600073 implements MigrationInterface {
       )
       WHERE deleted_at IS NULL
     `);
-    await queryRunner.query(`CREATE INDEX idx_commission_rules_product ON commission_rules (product_code)`);
-    await queryRunner.query(`CREATE INDEX idx_commission_rules_active ON commission_rules (is_active)`);
-    await queryRunner.query(`CREATE INDEX idx_commission_rules_effective_from ON commission_rules (effective_from)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_commission_rules_product ON commission_rules (product_code)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_commission_rules_active ON commission_rules (is_active)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_commission_rules_effective_from ON commission_rules (effective_from)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

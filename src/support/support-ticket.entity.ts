@@ -9,11 +9,7 @@ import {
   VersionColumn,
 } from 'typeorm';
 
-import {
-  SupportTicketCategory,
-  SupportTicketPriority,
-  SupportTicketStatus,
-} from './support.enums';
+import { SupportTicketCategory, SupportTicketPriority, SupportTicketStatus } from './support.enums';
 
 @Entity({ name: 'support_tickets' })
 @Index('uq_support_tickets_reference', ['reference'], { unique: true })
@@ -23,18 +19,12 @@ import {
 @Index('idx_support_tickets_assigned', ['assignedTo'])
 @Index('idx_support_tickets_funding_request', ['fundingRequestId'])
 @Index('idx_support_tickets_transfer', ['relatedTransferId'])
-@Check(
-  'chk_support_tickets_status',
-  "status IN ('OPEN','IN_PROGRESS','RESOLVED','CLOSED')",
-)
+@Check('chk_support_tickets_status', "status IN ('OPEN','IN_PROGRESS','RESOLVED','CLOSED')")
 @Check(
   'chk_support_tickets_category',
   "category IN ('FUNDING','TRANSFER','WALLET','CASH_IN','CASH_OUT','CASH_TO_CASH','PROFILE','PIN','AUTHENTICATION','AGENT_FUNDING','OUTLET','TERMINAL','OTHER')",
 )
-@Check(
-  'chk_support_tickets_priority',
-  "priority IN ('LOW','MEDIUM','HIGH','CRITICAL')",
-)
+@Check('chk_support_tickets_priority', "priority IN ('LOW','MEDIUM','HIGH','CRITICAL')")
 @Check(
   'chk_support_tickets_created_by_type',
   "created_by_type IN ('CUSTOMER','AGENT','SUPPORT','OPERATOR','SERVICE','PRIVILEGED')",

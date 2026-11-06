@@ -10,10 +10,7 @@ import {
   VersionColumn,
 } from 'typeorm';
 
-import {
-  LimitProfileConfigurationStatus,
-  LimitProfileStatus,
-} from './limit-catalog.enums';
+import { LimitProfileConfigurationStatus, LimitProfileStatus } from './limit-catalog.enums';
 
 @Entity({ name: 'limit_profiles' })
 @Index('uq_limit_profiles_code_active', ['code'], { unique: true, where: 'deleted_at IS NULL' })
@@ -22,7 +19,10 @@ import {
 @Check('chk_limit_profiles_code', "code ~ '^[A-Z0-9_]{3,80}$'")
 @Check('chk_limit_profiles_kind', "kind IN ('CUSTOMER','AGENT','SYSTEM','UNIVERSAL')")
 @Check('chk_limit_profiles_status', "status IN ('ACTIVE','DISABLED','DEPRECATED')")
-@Check('chk_limit_profiles_configuration', "configuration_status IN ('CONFIGURED','NOT_CONFIGURED','DISABLED')")
+@Check(
+  'chk_limit_profiles_configuration',
+  "configuration_status IN ('CONFIGURED','NOT_CONFIGURED','DISABLED')",
+)
 @Check('chk_limit_profiles_version', 'version > 0')
 export class LimitProfile {
   @PrimaryColumn({ type: 'varchar', length: 80 })
@@ -43,7 +43,12 @@ export class LimitProfile {
   @Column({ type: 'boolean', default: true })
   enabled!: boolean;
 
-  @Column({ name: 'configuration_status', type: 'varchar', length: 20, default: LimitProfileConfigurationStatus.NOT_CONFIGURED })
+  @Column({
+    name: 'configuration_status',
+    type: 'varchar',
+    length: 20,
+    default: LimitProfileConfigurationStatus.NOT_CONFIGURED,
+  })
   configurationStatus!: string; // LimitProfileConfigurationStatus
 
   @Column({ name: 'created_by', type: 'varchar', length: 160 })

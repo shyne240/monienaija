@@ -37,7 +37,9 @@ export class CapabilityService {
 
   async create(input: CapabilityCreateInput): Promise<CapabilitySafeProjection> {
     this.validate(input);
-    const existing = await this.repo.findOne({ where: { capabilityCode: input.capabilityCode } as never });
+    const existing = await this.repo.findOne({
+      where: { capabilityCode: input.capabilityCode } as never,
+    });
     if (existing) throw new ConflictException(`Capability ${input.capabilityCode} already exists`);
 
     const entity = this.repo.create({
@@ -65,7 +67,7 @@ export class CapabilityService {
       blockerDescription: input.blockerDescription ?? null,
       notes: input.notes ?? null,
     } as never);
-    const saved = await this.repo.save(entity as never) as unknown as Capability;
+    const saved = (await this.repo.save(entity as never)) as unknown as Capability;
     return this.toSafe(saved);
   }
 
@@ -88,7 +90,14 @@ export class CapabilityService {
     blockerType?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ data: CapabilitySafeProjection[]; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean }> {
+  }): Promise<{
+    data: CapabilitySafeProjection[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  }> {
     const page = this.normalizePage(params.page);
     const limit = this.normalizeLimit(params.limit);
     const skip = (page - 1) * limit;
@@ -117,14 +126,46 @@ export class CapabilityService {
   }
 
   async summary(): Promise<CapabilitySummary> {
-    const all = (await this.repo.find({ order: { capabilityCode: 'ASC' } as never })) as unknown as Capability[];
+    const all = (await this.repo.find({
+      order: { capabilityCode: 'ASC' } as never,
+    })) as unknown as Capability[];
     const total = all.length;
-    const fullyEnabled = all.filter((c) => c.enabled && c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) && c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string)).length;
-    const backendOnly = all.filter((c) => c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string) && c.apiStatus === (CapabilityApiStatus.NOT_EXPOSED as string) && c.adminUiStatus === (CapabilityAdminUiStatus.NOT_EXPOSED as string) && c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) && c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string)).length;
-    const apiReadyButUiMissing = all.filter((c) => c.apiStatus === (CapabilityApiStatus.API_READY as string) && c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) && c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string)).length;
-    const configuredButDisabled = all.filter((c) => c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) && !c.enabled).length;
-    const blocked = all.filter((c) => c.blockerType !== (CapabilityBlockerType.NONE as string) || c.lifecycle === (CapabilityLifecycle.BLOCKED as string) || c.backendStatus === (CapabilityBackendStatus.BLOCKED as string)).length;
-    const planned = all.filter((c) => c.lifecycle === (CapabilityLifecycle.PLANNED as string) || c.backendStatus === (CapabilityBackendStatus.PLANNED as string)).length;
+    const fullyEnabled = all.filter(
+      (c) =>
+        c.enabled &&
+        c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) &&
+        c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string),
+    ).length;
+    const backendOnly = all.filter(
+      (c) =>
+        c.backendStatus === (CapabilityBackendStatus.BACKEND_IMPLEMENTED as string) &&
+        c.apiStatus === (CapabilityApiStatus.NOT_EXPOSED as string) &&
+        c.adminUiStatus === (CapabilityAdminUiStatus.NOT_EXPOSED as string) &&
+        c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) &&
+        c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string),
+    ).length;
+    const apiReadyButUiMissing = all.filter(
+      (c) =>
+        c.apiStatus === (CapabilityApiStatus.API_READY as string) &&
+        c.customerUiStatus === (CapabilityCustomerUiStatus.NOT_EXPOSED as string) &&
+        c.agentUiStatus === (CapabilityAgentUiStatus.NOT_EXPOSED as string),
+    ).length;
+    const configuredButDisabled = all.filter(
+      (c) =>
+        c.configurationStatus === (CapabilityConfigurationStatus.CONFIGURED as string) &&
+        !c.enabled,
+    ).length;
+    const blocked = all.filter(
+      (c) =>
+        c.blockerType !== (CapabilityBlockerType.NONE as string) ||
+        c.lifecycle === (CapabilityLifecycle.BLOCKED as string) ||
+        c.backendStatus === (CapabilityBackendStatus.BLOCKED as string),
+    ).length;
+    const planned = all.filter(
+      (c) =>
+        c.lifecycle === (CapabilityLifecycle.PLANNED as string) ||
+        c.backendStatus === (CapabilityBackendStatus.PLANNED as string),
+    ).length;
     const v1 = all.filter((c) => c.productScope === (CapabilityProductScope.V1 as string)).length;
     const v2 = all.filter((c) => c.productScope === (CapabilityProductScope.V2 as string)).length;
     const byDomain: Record<string, number> = {};
@@ -133,7 +174,19 @@ export class CapabilityService {
       byDomain[c.domain] = (byDomain[c.domain] ?? 0) + 1;
       byBackendStatus[c.backendStatus] = (byBackendStatus[c.backendStatus] ?? 0) + 1;
     }
-    return { total, fullyEnabled, backendOnly, apiReadyButUiMissing, configuredButDisabled, blocked, planned, v1, v2, byDomain, byBackendStatus };
+    return {
+      total,
+      fullyEnabled,
+      backendOnly,
+      apiReadyButUiMissing,
+      configuredButDisabled,
+      blocked,
+      planned,
+      v1,
+      v2,
+      byDomain,
+      byBackendStatus,
+    };
   }
 
   async count(): Promise<number> {
@@ -152,11 +205,18 @@ export class CapabilityService {
     this.assertEnum(input.adminUiStatus, CapabilityAdminUiStatus, 'adminUiStatus');
     this.assertEnum(input.customerUiStatus, CapabilityCustomerUiStatus, 'customerUiStatus');
     this.assertEnum(input.agentUiStatus, CapabilityAgentUiStatus, 'agentUiStatus');
-    this.assertEnum(input.configurationStatus, CapabilityConfigurationStatus, 'configurationStatus');
+    this.assertEnum(
+      input.configurationStatus,
+      CapabilityConfigurationStatus,
+      'configurationStatus',
+    );
     if (input.blockerType) this.assertEnum(input.blockerType, CapabilityBlockerType, 'blockerType');
-    if (!input.name || input.name.trim().length === 0) throw new BadRequestException('name is required');
-    if (!input.description || input.description.trim().length === 0) throw new BadRequestException('description is required');
-    if (input.version !== undefined && (!Number.isSafeInteger(input.version) || input.version < 1)) throw new BadRequestException('version must be >=1');
+    if (!input.name || input.name.trim().length === 0)
+      throw new BadRequestException('name is required');
+    if (!input.description || input.description.trim().length === 0)
+      throw new BadRequestException('description is required');
+    if (input.version !== undefined && (!Number.isSafeInteger(input.version) || input.version < 1))
+      throw new BadRequestException('version must be >=1');
   }
 
   private assertEnum(value: string, enumObj: Record<string, string>, field: string): void {
@@ -167,13 +227,15 @@ export class CapabilityService {
 
   private normalizePage(page?: number): number {
     const p = page ?? 1;
-    if (!Number.isSafeInteger(p) || p < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(p) || p < 1)
+      throw new BadRequestException('page must be a positive integer');
     return p;
   }
 
   private normalizeLimit(limit?: number): number {
     const l = limit ?? 20;
-    if (!Number.isSafeInteger(l) || l < 1 || l > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(l) || l < 1 || l > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return l;
   }
 

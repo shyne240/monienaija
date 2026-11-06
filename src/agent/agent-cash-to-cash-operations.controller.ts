@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';

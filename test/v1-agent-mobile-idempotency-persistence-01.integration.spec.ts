@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/await-thenable, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -18,7 +18,11 @@ import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-au
 import { AgentStatus } from '../src/agent/agent.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
@@ -75,7 +79,9 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     cashInService = moduleRef.get(AgentCashInService);
@@ -171,10 +177,10 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       [`cust-v1aip-${randomUUID().slice(0, 8)}`],
     );
     const customerId = custRows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [
-      customerId,
-      displayName,
-    ]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, displayName],
+    );
     // verified_at is required: V1-SYSTEM-01's claimant phone-binding check (reused for
     // Scenario C) reads this column (mirrors test/a16-agent-cash-to-cash-claim.integration.
     // spec.ts's createBeneficiaryCustomer fixture).
@@ -264,14 +270,24 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
-        { accountId: walletLedgerAccountId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
+        {
+          accountId: walletLedgerAccountId,
+          direction: LedgerEntryDirection.CREDIT,
+          amountMinor: amount,
+        },
       ],
     });
   }
 
   async function journalCount(): Promise<bigint> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     return BigInt(rows[0]!.cnt);
   }
 
@@ -280,7 +296,10 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
   // This is the behavior the mobile pending-operation persistence RELIES ON.
   // ───────────────────────────────────────────────────────────────────────
   it('A. Cash-In: resubmitting the SAME Idempotency-Key after success replays — no second financial effect', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await fundAgent(agent.id, agentWallet.ledgerAccountId, '20000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhone(phone);
@@ -330,7 +349,10 @@ describe('V1-AGENT-MOBILE-IDEMPOTENCY-PERSISTENCE-01 (real PostgreSQL)', () => {
   // record of the original key (pre-fix behavior, or if persistence were ever bypassed).
   // ───────────────────────────────────────────────────────────────────────
   it('B. Cash-In: a DIFFERENT Idempotency-Key for "the same" operation produces a genuine second debit/credit', async () => {
-    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent, wallet: agentWallet } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await fundAgent(agent.id, agentWallet.ledgerAccountId, '20000');
     const phone = `80${Math.floor(10000000 + Math.random() * 89999999)}`;
     const { customerId, wallet: custWallet } = await createCustomerWithPhone(phone);

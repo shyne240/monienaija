@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-require-imports */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -89,10 +89,7 @@ describe('V1-CUSTOMER-01 Customer Self-Service Lifecycle (Real PostgreSQL)', () 
     const displayName = 'Chinedu Eze';
 
     // 1. Request OTP
-    const otpRes = await request(app.getHttpServer())
-      .post(OTP_PATH)
-      .send({ phone })
-      .expect(200);
+    const otpRes = await request(app.getHttpServer()).post(OTP_PATH).send({ phone }).expect(200);
     expect(otpRes.body.status).toBe('OTP_REQUEST_ACCEPTED');
 
     const canonicalPhone = phone.slice(1);
@@ -131,26 +128,43 @@ describe('V1-CUSTOMER-01 Customer Self-Service Lifecycle (Real PostgreSQL)', () 
     expect(registerRes.body.wallet.status).toBe('ACTIVE');
 
     // 4. Verify Database Integrity
-    const custRow = (await dataSource.query(`SELECT * FROM customers WHERE id = $1`, [customerId]))[0];
+    const custRow = (
+      await dataSource.query(`SELECT * FROM customers WHERE id = $1`, [customerId])
+    )[0];
     expect(custRow.status).toBe('ACTIVE');
     expect(custRow.reference).toBe(customerRef);
 
-    const contactRow = (await dataSource.query(`SELECT * FROM customer_contact_methods WHERE customer_id = $1`, [customerId]))[0];
+    const contactRow = (
+      await dataSource.query(`SELECT * FROM customer_contact_methods WHERE customer_id = $1`, [
+        customerId,
+      ])
+    )[0];
     expect(contactRow.normalized_value).toBe(canonicalPhone);
     expect(contactRow.is_primary).toBe(true);
     expect(contactRow.verified_at).not.toBeNull();
 
-    const credRow = (await dataSource.query(`SELECT * FROM customer_authentication_credentials WHERE customer_id = $1`, [customerId]))[0];
+    const credRow = (
+      await dataSource.query(
+        `SELECT * FROM customer_authentication_credentials WHERE customer_id = $1`,
+        [customerId],
+      )
+    )[0];
     expect(credRow.hash_algorithm).toBe('PBKDF2');
     expect(credRow.password_hash).toContain('PBKDF2$sha256$10000$');
     expect(credRow.rotation_required).toBe(false);
     expect(credRow.status).toBe('ACTIVE');
 
-    const walletRow = (await dataSource.query(`SELECT * FROM wallet_accounts WHERE customer_id = $1`, [customerId]))[0];
+    const walletRow = (
+      await dataSource.query(`SELECT * FROM wallet_accounts WHERE customer_id = $1`, [customerId])
+    )[0];
     expect(walletRow.currency).toBe('NGN');
     expect(walletRow.status).toBe('ACTIVE');
 
-    const ledgerRow = (await dataSource.query(`SELECT * FROM ledger_accounts WHERE id = $1`, [walletRow.ledger_account_id]))[0];
+    const ledgerRow = (
+      await dataSource.query(`SELECT * FROM ledger_accounts WHERE id = $1`, [
+        walletRow.ledger_account_id,
+      ])
+    )[0];
     expect(ledgerRow.code).toBe(`WALLET-${walletRow.id}`);
     expect(ledgerRow.account_type).toBe('LIABILITY');
     expect(ledgerRow.accounting_unit).toBe('CUSTOMER_FUNDS');

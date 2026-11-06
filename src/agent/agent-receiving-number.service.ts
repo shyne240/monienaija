@@ -12,10 +12,7 @@ import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm
 import { AuditService } from '../operations/audit.service';
 import { Agent } from './agent.entity';
 import { AgentStatus } from './agent.enums';
-import {
-  AgentReceivingNumber,
-  AgentReceivingNumberStatus,
-} from './agent-receiving-number.entity';
+import { AgentReceivingNumber, AgentReceivingNumberStatus } from './agent-receiving-number.entity';
 import type { AgentReceivingNumberView } from './agent-receiving-number.types';
 
 /**
@@ -92,7 +89,8 @@ export class AgentReceivingNumberService {
       const agentRepo = manager.getRepository(Agent);
       const recvRepo = manager.getRepository(AgentReceivingNumber);
       const agent = await agentRepo.findOne({ where: { id: agentId } });
-      if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
+      if (!agent || agent.deletedAt !== null)
+        throw new NotFoundException(`Agent ${agentId} not found`);
       // Lifecycle guard
       if (agent.status === AgentStatus.PENDING) {
         // PENDING agents must not have active receiving number (test G)
@@ -119,7 +117,9 @@ export class AgentReceivingNumberService {
         throw new ConflictException('SUSPENDED Agent has no receiving number to retain');
       }
       if (agent.status !== AgentStatus.ACTIVE) {
-        throw new ConflictException(`Cannot allocate receiving number for agent status ${agent.status as string}`);
+        throw new ConflictException(
+          `Cannot allocate receiving number for agent status ${agent.status as string}`,
+        );
       }
 
       // Lock agent row to serialize concurrent ensures for same agent
@@ -164,15 +164,31 @@ export class AgentReceivingNumberService {
             version: 1,
           });
           const saved = await recvRepo.save(record);
-          await this.audit(manager, 'AGENT_RECEIVING_NUMBER', saved.id, 'ALLOCATED', normalizedActor, undefined, {
-            agentId: saved.agentId,
-            receivingNumber: saved.receivingNumber,
-            status: saved.status,
-          });
+          await this.audit(
+            manager,
+            'AGENT_RECEIVING_NUMBER',
+            saved.id,
+            'ALLOCATED',
+            normalizedActor,
+            undefined,
+            {
+              agentId: saved.agentId,
+              receivingNumber: saved.receivingNumber,
+              status: saved.status,
+            },
+          );
           // Also audit Agent for traceability
-          await this.audit(manager, 'AGENT', agentId, 'RECEIVING_NUMBER_ALLOCATED', normalizedActor, undefined, {
-            receivingNumber: saved.receivingNumber,
-          });
+          await this.audit(
+            manager,
+            'AGENT',
+            agentId,
+            'RECEIVING_NUMBER_ALLOCATED',
+            normalizedActor,
+            undefined,
+            {
+              receivingNumber: saved.receivingNumber,
+            },
+          );
           return this.toView(saved);
         } catch (error) {
           if (this.isUniqueViolation(error)) {
@@ -190,12 +206,17 @@ export class AgentReceivingNumberService {
   }
 
   /** Called within lifecycle transaction after Agent status set to ACTIVE — allocates if needed. */
-  async ensureForAgentInManager(manager: EntityManager, agentId: string, actor: string): Promise<AgentReceivingNumberView | null> {
+  async ensureForAgentInManager(
+    manager: EntityManager,
+    agentId: string,
+    actor: string,
+  ): Promise<AgentReceivingNumberView | null> {
     const normalizedActor = this.normalizeActor(actor);
     const agentRepo = manager.getRepository(Agent);
     const recvRepo = manager.getRepository(AgentReceivingNumber);
     const agent = await agentRepo.findOne({ where: { id: agentId } });
-    if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
+    if (!agent || agent.deletedAt !== null)
+      throw new NotFoundException(`Agent ${agentId} not found`);
     if (agent.status !== AgentStatus.ACTIVE) return null;
     const existing = await recvRepo.findOne({ where: { agentId } });
     if (existing && existing.deletedAt === null) {
@@ -235,14 +256,30 @@ export class AgentReceivingNumberService {
           version: 1,
         });
         const saved = await recvRepo.save(record);
-        await this.audit(manager, 'AGENT_RECEIVING_NUMBER', saved.id, 'ALLOCATED', normalizedActor, undefined, {
-          agentId: saved.agentId,
-          receivingNumber: saved.receivingNumber,
-          status: saved.status,
-        });
-        await this.audit(manager, 'AGENT', agentId, 'RECEIVING_NUMBER_ALLOCATED', normalizedActor, undefined, {
-          receivingNumber: saved.receivingNumber,
-        });
+        await this.audit(
+          manager,
+          'AGENT_RECEIVING_NUMBER',
+          saved.id,
+          'ALLOCATED',
+          normalizedActor,
+          undefined,
+          {
+            agentId: saved.agentId,
+            receivingNumber: saved.receivingNumber,
+            status: saved.status,
+          },
+        );
+        await this.audit(
+          manager,
+          'AGENT',
+          agentId,
+          'RECEIVING_NUMBER_ALLOCATED',
+          normalizedActor,
+          undefined,
+          {
+            receivingNumber: saved.receivingNumber,
+          },
+        );
         return this.toView(saved);
       } catch (error) {
         if (this.isUniqueViolation(error)) {
@@ -266,13 +303,29 @@ export class AgentReceivingNumberService {
     existing.status = AgentReceivingNumberStatus.REVOKED;
     existing.revokedAt = new Date();
     const saved = await recvRepo.save(existing);
-    await this.audit(manager, 'AGENT_RECEIVING_NUMBER', saved.id, 'REVOKED', normalizedActor, previous, {
-      status: saved.status,
-      revokedAt: saved.revokedAt,
-    });
-    await this.audit(manager, 'AGENT', agentId, 'RECEIVING_NUMBER_REVOKED', normalizedActor, previous, {
-      status: saved.status,
-    });
+    await this.audit(
+      manager,
+      'AGENT_RECEIVING_NUMBER',
+      saved.id,
+      'REVOKED',
+      normalizedActor,
+      previous,
+      {
+        status: saved.status,
+        revokedAt: saved.revokedAt,
+      },
+    );
+    await this.audit(
+      manager,
+      'AGENT',
+      agentId,
+      'RECEIVING_NUMBER_REVOKED',
+      normalizedActor,
+      previous,
+      {
+        status: saved.status,
+      },
+    );
   }
 
   async getByAgentId(agentId: string): Promise<AgentReceivingNumberView | null> {
@@ -294,7 +347,9 @@ export class AgentReceivingNumberService {
   async getByReceivingNumber(receivingNumber: string): Promise<AgentReceivingNumberView | null> {
     const canonical = AgentReceivingNumberService.canonicalizeTo10(receivingNumber);
     if (!canonical) return null;
-    const record = await this.receivingRepository.findOne({ where: { receivingNumber: canonical } });
+    const record = await this.receivingRepository.findOne({
+      where: { receivingNumber: canonical },
+    });
     if (!record || record.deletedAt !== null) return null;
     if (record.status !== AgentReceivingNumberStatus.ACTIVE) return null;
     return this.toView(record);
@@ -314,7 +369,10 @@ export class AgentReceivingNumberService {
     return `${first}${rest}`;
   }
 
-  private async hasCustomerCollision(manager: EntityManager, candidate10: string): Promise<boolean> {
+  private async hasCustomerCollision(
+    manager: EntityManager,
+    candidate10: string,
+  ): Promise<boolean> {
     // Check against customer_contact_methods PHONE normalized values.
     // Canonicalize each normalized_value to 10-digit and compare.
     // For efficiency, check raw matches: normalized_value = candidate OR +234candidate OR 234candidate OR 0candidate
@@ -374,7 +432,8 @@ export class AgentReceivingNumberService {
 
   private normalizeActor(actor: string): string {
     const v = actor?.trim();
-    if (!v || v.length < 1 || v.length > 160) throw new BadRequestException('actor must be 1-160 chars');
+    if (!v || v.length < 1 || v.length > 160)
+      throw new BadRequestException('actor must be 1-160 chars');
     return v;
   }
 

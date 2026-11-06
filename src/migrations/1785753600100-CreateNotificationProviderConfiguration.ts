@@ -15,9 +15,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Financial tables, outbox, and `notification_deliveries` are untouched.
  */
-export class CreateNotificationProviderConfiguration1785753600100
-  implements MigrationInterface
-{
+export class CreateNotificationProviderConfiguration1785753600100 implements MigrationInterface {
   name = 'CreateNotificationProviderConfiguration1785753600100';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

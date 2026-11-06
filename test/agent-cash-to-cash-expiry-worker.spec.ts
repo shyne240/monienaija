@@ -3,10 +3,17 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentCashToCashExpiryWorker } from '../src/agent/agent-cash-to-cash-expiry-worker.service';
-import type { AgentCashToCashExpiryService, CashToCashExpiryResult } from '../src/agent/agent-cash-to-cash-expiry.service';
+import type {
+  AgentCashToCashExpiryService,
+  CashToCashExpiryResult,
+} from '../src/agent/agent-cash-to-cash-expiry.service';
 import { validateEnvironment } from '../src/config/environment';
 
-const completed = (): CashToCashExpiryResult => ({ expiredCount: 0, expiredIds: [], executedAt: new Date() });
+const completed = (): CashToCashExpiryResult => ({
+  expiredCount: 0,
+  expiredIds: [],
+  executedAt: new Date(),
+});
 
 describe('Cash-to-Cash expiry execution lifecycle', () => {
   let errorSpy: jest.SpyInstance;
@@ -15,13 +22,21 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
-  afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
 
   function fixture(enabled = true) {
-    const expireDueTransfers = jest.fn<Promise<CashToCashExpiryResult>, [unknown]>().mockResolvedValue(completed());
+    const expireDueTransfers = jest
+      .fn<Promise<CashToCashExpiryResult>, [unknown]>()
+      .mockResolvedValue(completed());
     const worker = new AgentCashToCashExpiryWorker(
       { expireDueTransfers } as unknown as AgentCashToCashExpiryService,
-      new ConfigService({ CASH_TO_CASH_EXPIRY_WORKER_ENABLED: enabled, CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: 1000 }),
+      new ConfigService({
+        CASH_TO_CASH_EXPIRY_WORKER_ENABLED: enabled,
+        CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: 1000,
+      }),
     );
     return { worker, expireDueTransfers };
   }
@@ -42,8 +57,16 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
     worker.onModuleInit();
     await jest.advanceTimersByTimeAsync(1000);
     expect(expireDueTransfers).toHaveBeenCalledTimes(2);
-    expect(expireDueTransfers).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 100, statementTimeoutMs: 10000, actor: 'system-c2c-expiry-worker' }));
-    expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: 'c2c_expiry_tick_failed' }));
+    expect(expireDueTransfers).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        limit: 100,
+        statementTimeoutMs: 10000,
+        actor: 'system-c2c-expiry-worker',
+      }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'c2c_expiry_tick_failed' }),
+    );
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('sensitive driver parameters');
     await worker.onModuleDestroy();
     await jest.advanceTimersByTimeAsync(5000);
@@ -53,11 +76,18 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
   it('skips overlap and waits for active transaction on shutdown', async () => {
     const { worker, expireDueTransfers } = fixture();
     let finish!: (result: CashToCashExpiryResult) => void;
-    expireDueTransfers.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    expireDueTransfers.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     const active = worker.tick();
     expect((await worker.tick()).status).toBe('SKIPPED');
     let stopped = false;
-    const shutdown = worker.onModuleDestroy().then(() => { stopped = true; });
+    const shutdown = worker.onModuleDestroy().then(() => {
+      stopped = true;
+    });
     await Promise.resolve();
     expect(stopped).toBe(false);
     finish(completed());
@@ -68,7 +98,13 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
   });
 
   it('validates bounded worker configuration', () => {
-    const env = { NODE_ENV: 'test', DB_HOST: '127.0.0.1', DB_NAME: 'test', DB_USER: 'test', DB_PASSWORD: 'test-password' };
+    const env = {
+      NODE_ENV: 'test',
+      DB_HOST: '127.0.0.1',
+      DB_NAME: 'test',
+      DB_USER: 'test',
+      DB_PASSWORD: 'test-password',
+    };
     expect(validateEnvironment(env).CASH_TO_CASH_EXPIRY_WORKER_ENABLED).toBe(false);
     for (const setting of [
       { CASH_TO_CASH_EXPIRY_WORKER_BATCH_SIZE: '0' },
@@ -76,12 +112,16 @@ describe('Cash-to-Cash expiry execution lifecycle', () => {
       { CASH_TO_CASH_EXPIRY_WORKER_POLL_INTERVAL_MS: '0' },
       { CASH_TO_CASH_EXPIRY_WORKER_STATEMENT_TIMEOUT_MS: '60001' },
       { CASH_TO_CASH_EXPIRY_WORKER_ENABLED: 'yes' },
-    ]) expect(() => validateEnvironment({ ...env, ...setting })).toThrow();
+    ])
+      expect(() => validateEnvironment({ ...env, ...setting })).toThrow();
   });
   it('describes expiry as an opt-in backend worker, not a refund or an HTTP API', () => {
-    const entry = CAPABILITY_SEED.find(item => item.capabilityCode === 'CASH_TO_CASH_EXPIRY');
-    expect(entry).toMatchObject({ lifecycle: 'BACKEND_IMPLEMENTED', apiStatus: 'NOT_EXPOSED', configurationStatus: 'NOT_CONFIGURED' });
+    const entry = CAPABILITY_SEED.find((item) => item.capabilityCode === 'CASH_TO_CASH_EXPIRY');
+    expect(entry).toMatchObject({
+      lifecycle: 'BACKEND_IMPLEMENTED',
+      apiStatus: 'NOT_EXPOSED',
+      configurationStatus: 'NOT_CONFIGURED',
+    });
     expect(entry?.description).toContain('no refund or journal');
   });
-
 });

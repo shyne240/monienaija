@@ -47,48 +47,49 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-'))
-        throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic
-        // `scopes` set (catalogue function codes) now that the relevant controllers call
-        // AuthorizationService.requireFunction() rather than a bare principal-type check.
-        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? [
-              'agent.suspend',
-              'agent.terminate',
-              'agent.reactivate',
-              'agent.activate',
-              'agent.review_application',
-              'agent.manage_credentials',
-              'workforce.user.create',
-              'workforce.user.suspend',
-              'customer.suspend',
-              'customer.activate',
-              'customer.close',
-            ]
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          // V1-ADMIN-AUTHORIZATION-HARDENING-01: OPERATOR/SERVICE/PRIVILEGED need a realistic
+          // `scopes` set (catalogue function codes) now that the relevant controllers call
+          // AuthorizationService.requireFunction() rather than a bare principal-type check.
+          scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? [
+                'agent.suspend',
+                'agent.terminate',
+                'agent.reactivate',
+                'agent.activate',
+                'agent.review_application',
+                'agent.manage_credentials',
+                'workforce.user.create',
+                'workforce.user.suspend',
+                'customer.suspend',
+                'customer.activate',
+                'customer.close',
+              ]
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   const OP = { Authorization: 'Bearer workforce-OPERATOR' };
@@ -273,8 +274,10 @@ describe('V1-CUSTOMER-CREDENTIALS-01 (real PG) — customer first-credential lif
     const audits = auditRecords.map((r) => r.action);
     expect(audits).toContain('CREDENTIALS_ISSUED');
     expect(audits).toContain('TEMPORARY_CREDENTIAL_DELIVERED');
-    expect(auditRecords.find((r) => r.action === 'TEMPORARY_CREDENTIAL_DELIVERED').new_values.deliveryStatus)
-      .toBe('SIMULATED');
+    expect(
+      auditRecords.find((r) => r.action === 'TEMPORARY_CREDENTIAL_DELIVERED').new_values
+        .deliveryStatus,
+    ).toBe('SIMULATED');
   });
 
   it('B: unactivated (DRAFT) and SUSPENDED customers cannot receive a production credential', async () => {

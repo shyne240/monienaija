@@ -136,11 +136,12 @@ export class ProductGovernanceController {
   }
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'product_governance', [
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'product_governance',
+      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 
   private buildCreateCommand(dto: CreateProductGovernanceDto) {

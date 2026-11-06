@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -22,11 +16,23 @@ interface AuthenticatedRequest {
 }
 
 const VALID_STATUSES = new Set(['PENDING', 'SENT', 'FAILED', 'SKIPPED', 'UNKNOWN', 'DEAD']);
-const VALID_RECEIPT_STATUSES = new Set(['MATERIALIZED', 'SUPPRESSED', 'UNSUPPORTED', 'QUARANTINED', 'FAILED']);
+const VALID_RECEIPT_STATUSES = new Set([
+  'MATERIALIZED',
+  'SUPPRESSED',
+  'UNSUPPORTED',
+  'QUARANTINED',
+  'FAILED',
+]);
 const SAFE_RECEIPT_REASONS = new Set([
-  'EVENT_TYPE_UNSUPPORTED', 'UNSUPPORTED_SCHEMA_VERSION', 'SECURITY_DIRECT_ONLY',
-  'INTERNAL_SUPPORT_MESSAGE', 'SUPPORT_VISIBILITY_UNKNOWN', 'NO_NOTIFICATION_INTENTS',
-  'MATERIALIZATION_FAILED', 'MATERIALIZATION_EXHAUSTED', 'LEGACY_PUBLISHED_UNVERIFIED',
+  'EVENT_TYPE_UNSUPPORTED',
+  'UNSUPPORTED_SCHEMA_VERSION',
+  'SECURITY_DIRECT_ONLY',
+  'INTERNAL_SUPPORT_MESSAGE',
+  'SUPPORT_VISIBILITY_UNKNOWN',
+  'NO_NOTIFICATION_INTENTS',
+  'MATERIALIZATION_FAILED',
+  'MATERIALIZATION_EXHAUSTED',
+  'LEGACY_PUBLISHED_UNVERIFIED',
 ]);
 
 const VALID_RECIPIENT_TYPES = new Set(['CUSTOMER', 'AGENT', 'PHONE']);
@@ -188,12 +194,20 @@ export class AdminNotificationController {
     const filter = status ? ' AND status=$2' : '';
     if (status) params.push(status);
     const count = await this.dataSource.query<Array<{ count: string }>>(
-      `SELECT count(*)::text AS count FROM notification_outbox_receipts WHERE consumer_name=$1${filter}`, params,
+      `SELECT count(*)::text AS count FROM notification_outbox_receipts WHERE consumer_name=$1${filter}`,
+      params,
     );
-    const rows = await this.dataSource.query<Array<{
-      outbox_event_id: string; status: string; reason: string | null; attempts: number;
-      next_attempt_at: Date | null; created_at: Date; updated_at: Date;
-    }>>(
+    const rows = await this.dataSource.query<
+      Array<{
+        outbox_event_id: string;
+        status: string;
+        reason: string | null;
+        attempts: number;
+        next_attempt_at: Date | null;
+        created_at: Date;
+        updated_at: Date;
+      }>
+    >(
       `SELECT outbox_event_id,status,reason,attempts,next_attempt_at,created_at,updated_at
        FROM notification_outbox_receipts WHERE consumer_name=$1${filter}
        ORDER BY created_at DESC, outbox_event_id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -205,13 +219,22 @@ export class AdminNotificationController {
       data: rows.map((row) => ({
         outboxEventId: row.outbox_event_id,
         status: row.status,
-        reason: row.reason === null ? null : SAFE_RECEIPT_REASONS.has(row.reason) ? row.reason : 'UNCLASSIFIED',
+        reason:
+          row.reason === null
+            ? null
+            : SAFE_RECEIPT_REASONS.has(row.reason)
+              ? row.reason
+              : 'UNCLASSIFIED',
         attempts: row.attempts,
         nextAttemptAt: row.next_attempt_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })),
-      total, page, limit, totalPages, hasNextPage: page < totalPages,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNextPage: page < totalPages,
     };
   }
 
@@ -228,23 +251,30 @@ export class AdminNotificationController {
   private parsePage(raw?: string): number {
     if (raw === undefined || raw === null || raw === '') return 1;
     const v = Number(raw);
-    if (!Number.isSafeInteger(v) || v < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(v) || v < 1)
+      throw new BadRequestException('page must be a positive integer');
     return v;
   }
 
   private parseLimit(raw?: string): number {
     if (raw === undefined || raw === null || raw === '') return 20;
     const v = Number(raw);
-    if (!Number.isSafeInteger(v) || v < 1 || v > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(v) || v < 1 || v > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return v;
   }
 
-  private parseEnum(raw: string | undefined, allowed: Set<string>, field: string): string | undefined {
+  private parseEnum(
+    raw: string | undefined,
+    allowed: Set<string>,
+    field: string,
+  ): string | undefined {
     if (raw === undefined || raw === null || raw === '') return undefined;
     const trimmed = raw.trim();
     if (!trimmed) return undefined;
     const upper = trimmed.toUpperCase();
-    if (!allowed.has(upper)) throw new BadRequestException(`${field} must be one of ${Array.from(allowed).join(', ')}`);
+    if (!allowed.has(upper))
+      throw new BadRequestException(`${field} must be one of ${Array.from(allowed).join(', ')}`);
     return upper;
   }
 
@@ -252,7 +282,8 @@ export class AdminNotificationController {
     if (raw === undefined || raw === null || raw === '') return undefined;
     const trimmed = raw.trim();
     if (!trimmed) return undefined;
-    if (trimmed.length > maxLen) throw new BadRequestException(`${field} must be at most ${maxLen} characters`);
+    if (trimmed.length > maxLen)
+      throw new BadRequestException(`${field} must be at most ${maxLen} characters`);
     return trimmed;
   }
 

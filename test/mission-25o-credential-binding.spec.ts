@@ -18,13 +18,17 @@ describe('M25O independent credential binding', () => {
   const originalEncryptionKey = process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEY;
 
   afterEach(() => {
-    if (originalKeyring === undefined) delete process.env.NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON;
+    if (originalKeyring === undefined)
+      delete process.env.NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON;
     else process.env.NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON = originalKeyring;
-    if (originalActive === undefined) delete process.env.NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION;
+    if (originalActive === undefined)
+      delete process.env.NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION;
     else process.env.NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION = originalActive;
-    if (originalEncryptionRing === undefined) delete process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON;
+    if (originalEncryptionRing === undefined)
+      delete process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON;
     else process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON = originalEncryptionRing;
-    if (originalEncryptionKey === undefined) delete process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEY;
+    if (originalEncryptionKey === undefined)
+      delete process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEY;
     else process.env.NOTIFICATION_PROVIDER_ENCRYPTION_KEY = originalEncryptionKey;
   });
 
@@ -57,12 +61,16 @@ describe('M25O independent credential binding', () => {
       binding.verify(a, 'SMS', 'robase', 'ENCRYPTED_DB', secret),
       binding.verify({ ...a, mac: '0'.repeat(64) }, 'SMS', 'robase', 'ENV_SECRET', secret),
       binding.verify(null, 'SMS', 'robase', 'ENV_SECRET', secret),
-    ]) expect(matches).toBe(false);
+    ])
+      expect(matches).toBe(false);
   });
 
   it('retains a previous verification version until it is explicitly removed', () => {
     const old = binding.create('SMS', 'robase', 'ENV_SECRET', secret);
-    config.set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', JSON.stringify({ v1: first, v2: second }));
+    config.set(
+      'NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON',
+      JSON.stringify({ v1: first, v2: second }),
+    );
     config.set('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION', 'v2');
     expect(binding.verify(old, 'SMS', 'robase', 'ENV_SECRET', secret)).toBe(true);
     const next = binding.create('SMS', 'robase', 'ENV_SECRET', secret);
@@ -76,10 +84,15 @@ describe('M25O independent credential binding', () => {
   it('rejects reuse of any encryption key from either supported configuration form', () => {
     const old = binding.create('SMS', 'robase', 'ENV_SECRET', secret);
     config.set('NOTIFICATION_PROVIDER_ENCRYPTION_KEY', first);
-    expect(() => binding.create('SMS', 'robase', 'ENV_SECRET', secret)).toThrow(CredentialBindingError);
+    expect(() => binding.create('SMS', 'robase', 'ENV_SECRET', secret)).toThrow(
+      CredentialBindingError,
+    );
     expect(binding.verify(old, 'SMS', 'robase', 'ENV_SECRET', secret)).toBe(false);
     config.set('NOTIFICATION_PROVIDER_ENCRYPTION_KEY', '');
-    config.set('NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON', JSON.stringify({ retired: first, v2: second }));
+    config.set(
+      'NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON',
+      JSON.stringify({ retired: first, v2: second }),
+    );
     expect(binding.verify(old, 'SMS', 'robase', 'ENV_SECRET', secret)).toBe(false);
     config.set('NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON', JSON.stringify({ v2: second }));
     expect(binding.verify(old, 'SMS', 'robase', 'ENV_SECRET', secret)).toBe(true);
@@ -101,7 +114,9 @@ describe('M25O independent credential binding', () => {
     const good = binding.create('SMS', 'robase', 'ENV_SECRET', secret);
     config.set('NOTIFICATION_PROVIDER_BINDING_KEYRING_JSON', keyring);
     config.set('NOTIFICATION_PROVIDER_BINDING_ACTIVE_KEY_VERSION', active);
-    expect(() => binding.create('SMS', 'robase', 'ENV_SECRET', secret)).toThrow(CredentialBindingError);
+    expect(() => binding.create('SMS', 'robase', 'ENV_SECRET', secret)).toThrow(
+      CredentialBindingError,
+    );
     expect(binding.verify(good, 'SMS', 'robase', 'ENV_SECRET', secret)).toBe(false);
   });
 });

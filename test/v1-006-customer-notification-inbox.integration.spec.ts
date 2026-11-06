@@ -67,24 +67,34 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     'customer.close',
   ];
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   beforeAll(async () => {
@@ -102,7 +112,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
@@ -114,7 +126,15 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(()=>undefined);} catch { void 0; } }
+      try {
+        await destroyIntegrationDataSource(dataSource);
+      } catch {
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
+      }
     }
   }, 60000);
 
@@ -129,7 +149,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     }
     await seedNotificationDefaultsV1(dataSource.manager);
     await seedNotificationDefaultsV2(dataSource.manager);
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       await dataSource.query(`
         INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
@@ -144,14 +166,36 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     }
   });
 
-  function workforceToken(type: string): string { return `workforce-${type}`; }
+  function workforceToken(type: string): string {
+    return `workforce-${type}`;
+  }
 
-  async function createCustomerWithPhone(phone10: string, customerIdOverride?: string): Promise<string> {
+  async function createCustomerWithPhone(
+    phone10: string,
+    customerIdOverride?: string,
+  ): Promise<string> {
     const customerId = customerIdOverride ?? randomUUID();
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-${randomUUID()}`]);
-    await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0,4)}`]);
-    await dataSource.query(`INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`, [randomUUID(), customerId, phone10]);
-    try { await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-${customerId}` }); } catch { /* The test permits an already-provisioned wallet. */ }
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customerId, `cust-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`,
+      [randomUUID(), customerId, `Cust ${customerId.slice(0, 4)}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (id, customer_id, type, value, normalized_value, is_primary, verified_at) VALUES ($1,$2,'PHONE',$3,$3,true,NOW())`,
+      [randomUUID(), customerId, phone10],
+    );
+    try {
+      await walletService.createWallet({
+        customerId,
+        currency: 'NGN',
+        idempotencyKey: `wallet-${customerId}`,
+      });
+    } catch {
+      /* The test permits an already-provisioned wallet. */
+    }
     await dataSource.query(
       `INSERT INTO customer_preferences (id, customer_id, language_code, theme_code, notification_email_enabled, notification_sms_enabled, notification_push_enabled, notification_in_app_enabled, security_login_alerts, security_transaction_alerts, security_device_registration_alerts, security_biometric_allowed, version)
        VALUES ($1,$2,'EN','SYSTEM',true,true,true,true,true,true,true,false,1) ON CONFLICT DO NOTHING`,
@@ -160,12 +204,20 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     return customerId;
   }
 
-  async function createCustomerWithCredentials(phone10: string): Promise<{ customerId: string; token: string }> {
+  async function createCustomerWithCredentials(
+    phone10: string,
+  ): Promise<{ customerId: string; token: string }> {
     const customerId = await createCustomerWithPhone(phone10);
-    const pwd = `Pw-${randomUUID().slice(0,8)}aA1!`;
-    const hash = encodePbkdf2(pwd, `salt-${customerId.slice(0,4)}`);
-    await dataSource.query(`INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`, [customerId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password: pwd }).expect(200);
+    const pwd = `Pw-${randomUUID().slice(0, 8)}aA1!`;
+    const hash = encodePbkdf2(pwd, `salt-${customerId.slice(0, 4)}`);
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
+      [customerId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password: pwd })
+      .expect(200);
     const token = login.body.accessToken as string;
     return { customerId, token };
   }
@@ -173,7 +225,10 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   // 1. Empty inbox returns 200 with pagination
   it('1. empty inbox returns 200 with empty items and pagination', async () => {
     const { token } = await createCustomerWithCredentials('8030000001');
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(Array.isArray(res.body.items)).toBe(true);
     expect(res.body.items.length).toBe(0);
     expect(res.body.pagination).toBeDefined();
@@ -189,16 +244,37 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '60000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '60000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
     // Dispatch
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
     expect(outbox.length).toBe(1);
-    const result = await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
+    const result = await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
     expect(result.dispatched).toBe(1);
     // Inbox
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(1);
     const item = inbox.body.items[0];
     expect(item.type).toBe('customer.funding.approved');
@@ -234,12 +310,33 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('PRIVILEGED');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '30000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '30000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/reject`).set('Authorization', `Bearer ${checkerToken}`).send({ reason: 'Docs missing' }).expect(201);
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.rejected' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.rejected', eventKey: `customer.funding.rejected:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/reject`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({ reason: 'Docs missing' })
+      .expect(201);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.rejected' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.rejected',
+      eventKey: `customer.funding.rejected:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(1);
     expect(inbox.body.items[0].type).toBe('customer.funding.rejected');
     expect(inbox.body.items[0].title).toBe('Funding Rejected');
@@ -249,8 +346,14 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   it('4. transfer.completed notifies source and destination via inbox', async () => {
     const src = await createCustomerWithCredentials('8030000004');
     const dst = await createCustomerWithCredentials('8030000005');
-    const srcWalletRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [src.customerId]);
-    const dstWalletRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [dst.customerId]);
+    const srcWalletRows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+      [src.customerId],
+    );
+    const dstWalletRows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+      [dst.customerId],
+    );
     const transferId = randomUUID();
     const payload = {
       transferId,
@@ -263,14 +366,31 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       destinationLedgerAccountId: dstWalletRows[0]!.ledger_account_id,
       amountMinor: '10000',
       currency: 'NGN',
-      reference: `TRF-${randomUUID().slice(0,8)}`,
+      reference: `TRF-${randomUUID().slice(0, 8)}`,
     };
     const eventKey = `transfer.completed:${transferId}`;
-    await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey, aggregateType: 'TRANSFER', aggregateId: transferId, payload, correlationId: randomUUID() });
-    const srcInbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${src.token}`).expect(200);
-    const dstInbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${dst.token}`).expect(200);
-    expect(srcInbox.body.items.some((i: { type: string }) => i.type === 'transfer.completed')).toBe(true);
-    expect(dstInbox.body.items.some((i: { type: string }) => i.type === 'transfer.completed')).toBe(true);
+    await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey,
+      aggregateType: 'TRANSFER',
+      aggregateId: transferId,
+      payload,
+      correlationId: randomUUID(),
+    });
+    const srcInbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${src.token}`)
+      .expect(200);
+    const dstInbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${dst.token}`)
+      .expect(200);
+    expect(srcInbox.body.items.some((i: { type: string }) => i.type === 'transfer.completed')).toBe(
+      true,
+    );
+    expect(dstInbox.body.items.some((i: { type: string }) => i.type === 'transfer.completed')).toBe(
+      true,
+    );
     expect(srcInbox.body.items[0].title).toBe('Transfer Completed');
     expect(srcInbox.body.items[0].message).toContain('NGN');
   });
@@ -279,26 +399,74 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   it('5. support ticket created notifies customer via inbox', async () => {
     const { token } = await createCustomerWithCredentials('8030000006');
     // Create ticket via customer API? Use direct support service? We'll use HTTP customer ticket creation
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'Issue', category: 'OTHER', description: 'Help needed valid', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        subject: 'Issue',
+        category: 'OTHER',
+        description: 'Help needed valid',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     const ticketId = ticketRes.body.id as string;
     // Outbox event for support.ticket.created
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string; event_key: string }> = await dataSource.query(`SELECT payload, correlation_id, event_key FROM outbox_events WHERE event_type='support.ticket.created' ORDER BY created_at DESC LIMIT 1`);
+    const outbox: Array<{
+      payload: Record<string, unknown>;
+      correlation_id: string;
+      event_key: string;
+    }> = await dataSource.query(
+      `SELECT payload, correlation_id, event_key FROM outbox_events WHERE event_type='support.ticket.created' ORDER BY created_at DESC LIMIT 1`,
+    );
     expect(outbox.length).toBe(1);
-    await dispatcher.dispatch({ eventType: 'support.ticket.created', eventKey: (outbox[0]!.event_key as string | null) ?? `support.ticket.created:${ticketId}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
-    expect(inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.created')).toBe(true);
+    await dispatcher.dispatch({
+      eventType: 'support.ticket.created',
+      eventKey: (outbox[0]!.event_key as string | null) ?? `support.ticket.created:${ticketId}`,
+      aggregateType: 'SUPPORT_TICKET',
+      aggregateId: ticketId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(
+      inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.created'),
+    ).toBe(true);
   });
 
   // 6. support resolved visible
   it('6. support ticket resolved appears in inbox', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000007');
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'Issue2', category: 'OTHER', description: 'Help needed valid2', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        subject: 'Issue2',
+        category: 'OTHER',
+        description: 'Help needed valid2',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     const ticketId = ticketRes.body.id as string;
     // Simulate status_changed to RESOLVED via direct payload
     const payload = { ticketId, customerId, status: 'RESOLVED', previousStatus: 'OPEN' };
-    await dispatcher.dispatch({ eventType: 'support.ticket.resolved', eventKey: `support.ticket.resolved:${ticketId}:${Date.now()}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload, correlationId: randomUUID() });
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
-    expect(inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.resolved')).toBe(true);
+    await dispatcher.dispatch({
+      eventType: 'support.ticket.resolved',
+      eventKey: `support.ticket.resolved:${ticketId}:${Date.now()}`,
+      aggregateType: 'SUPPORT_TICKET',
+      aggregateId: ticketId,
+      payload,
+      correlationId: randomUUID(),
+    });
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(
+      inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.resolved'),
+    ).toBe(true);
     expect(inbox.body.items[0].category).toBe('SUPPORT');
   });
 
@@ -310,13 +478,37 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${a.customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '70000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${a.customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '70000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const aInbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${a.token}`).expect(200);
-    const bInbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${b.token}`).expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const aInbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${a.token}`)
+      .expect(200);
+    const bInbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${b.token}`)
+      .expect(200);
     expect(aInbox.body.items.length).toBe(1);
     expect(bInbox.body.items.length).toBe(0);
     expect(bInbox.body.pagination.total).toBe(0);
@@ -329,60 +521,139 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${a.customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '80000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${a.customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '80000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
     // b tries to fetch with forged query param pointing to a
-    const bInboxForged = await request(app.getHttpServer()).get(`/api/v1/customers/me/notifications?customerId=${a.customerId}`).set('Authorization', `Bearer ${b.token}`).expect(200);
+    const bInboxForged = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/notifications?customerId=${a.customerId}`)
+      .set('Authorization', `Bearer ${b.token}`)
+      .expect(200);
     expect(bInboxForged.body.items.length).toBe(0);
-    const aInbox = await request(app.getHttpServer()).get(`/api/v1/customers/me/notifications?customerId=${b.customerId}`).set('Authorization', `Bearer ${a.token}`).expect(200);
+    const aInbox = await request(app.getHttpServer())
+      .get(`/api/v1/customers/me/notifications?customerId=${b.customerId}`)
+      .set('Authorization', `Bearer ${a.token}`)
+      .expect(200);
     expect(aInbox.body.items.length).toBe(1);
   });
 
   // 9. agent forbidden
   it('9. agent cannot access customer inbox — 403 (or 401)', async () => {
     const agentToken = workforceToken('AGENT');
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${agentToken}`);
-    expect([401,403].includes(res.status)).toBe(true);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${agentToken}`);
+    expect([401, 403].includes(res.status)).toBe(true);
   });
 
   // 10. unauthenticated 401
   it('10. unauthenticated request returns 401', async () => {
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').expect(401);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .expect(401);
     expect(res.body.message).toBeDefined();
   });
 
   // 11. internal support message never exposed
   it('11. internal support.ticket.message_added never appears in inbox', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000014');
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'Internal test', category: 'OTHER', description: 'Help valid internal', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        subject: 'Internal test',
+        category: 'OTHER',
+        description: 'Help valid internal',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     const ticketId = ticketRes.body.id as string;
     const internalPayload = { ticketId, customerId, message: 'internal note', isInternal: true };
-    const result = await dispatcher.dispatch({ eventType: 'support.ticket.message_added', eventKey: `support.ticket.message_added:${ticketId}:internal:${Date.now()}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload: internalPayload, correlationId: randomUUID() });
+    const result = await dispatcher.dispatch({
+      eventType: 'support.ticket.message_added',
+      eventKey: `support.ticket.message_added:${ticketId}:internal:${Date.now()}`,
+      aggregateType: 'SUPPORT_TICKET',
+      aggregateId: ticketId,
+      payload: internalPayload,
+      correlationId: randomUUID(),
+    });
     expect(result.generated).toBe(0);
     expect(result.dispatched).toBe(0);
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(0);
-    const deliveries: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM notification_deliveries WHERE event_type='support.ticket.message_added' AND recipient_id=$1`, [customerId]);
+    const deliveries: Array<{ event_type: string }> = await dataSource.query(
+      `SELECT event_type FROM notification_deliveries WHERE event_type='support.ticket.message_added' AND recipient_id=$1`,
+      [customerId],
+    );
     expect(deliveries.length).toBe(0);
   });
 
   // 12. non-internal message appears
   it('12. non-internal support.ticket.message_added appears', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000015');
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'External', category: 'OTHER', description: 'Help external valid', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        subject: 'External',
+        category: 'OTHER',
+        description: 'Help external valid',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     const ticketId = ticketRes.body.id as string;
     const messageRes = await request(app.getHttpServer())
       .post(`/api/v1/customers/me/support/tickets/${ticketId}/messages`)
-      .set('Authorization', `Bearer ${token}`).send({ body: 'public update' }).expect(201);
-    const payload = { ticketId, messageId: messageRes.body.id, customerId, authorType: 'CUSTOMER',
-      authorId: messageRes.body.authorId, isInternal: false };
-    const result = await dispatcher.dispatch({ eventType: 'support.ticket.message_added', eventKey: `support.ticket.message_added:${ticketId}:public:${Date.now()}`, aggregateType: 'SUPPORT_TICKET', aggregateId: ticketId, payload, correlationId: randomUUID() });
+      .set('Authorization', `Bearer ${token}`)
+      .send({ body: 'public update' })
+      .expect(201);
+    const payload = {
+      ticketId,
+      messageId: messageRes.body.id,
+      customerId,
+      authorType: 'CUSTOMER',
+      authorId: messageRes.body.authorId,
+      isInternal: false,
+    };
+    const result = await dispatcher.dispatch({
+      eventType: 'support.ticket.message_added',
+      eventKey: `support.ticket.message_added:${ticketId}:public:${Date.now()}`,
+      aggregateType: 'SUPPORT_TICKET',
+      aggregateId: ticketId,
+      payload,
+      correlationId: randomUUID(),
+    });
     expect(result.dispatched).toBe(1);
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
-    expect(inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.message_added')).toBe(true);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(
+      inbox.body.items.some((i: { type: string }) => i.type === 'support.ticket.message_added'),
+    ).toBe(true);
   });
 
   // 13. FAILED still available in inbox (provider failure isolated)
@@ -391,7 +662,10 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     testProvider.shouldFail = true;
     testProvider.failMessage = 'Simulated SMS failure';
     const transferId = randomUUID();
-    const srcWallet: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
+    const srcWallet: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+      [customerId],
+    );
     const payload = {
       transferId,
       commandId: `cmd-${randomUUID()}`,
@@ -403,12 +677,22 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       destinationLedgerAccountId: srcWallet[0]!.ledger_account_id,
       amountMinor: '5000',
       currency: 'NGN',
-      reference: `TRF-${randomUUID().slice(0,8)}`,
+      reference: `TRF-${randomUUID().slice(0, 8)}`,
     };
     const eventKey = `transfer.completed:${transferId}`;
-    const result = await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey, aggregateType: 'TRANSFER', aggregateId: transferId, payload, correlationId: randomUUID() });
-    expect(result.deliveries.some(d => d.status === 'FAILED')).toBe(true);
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const result = await dispatcher.dispatch({
+      eventType: 'transfer.completed',
+      eventKey,
+      aggregateType: 'TRANSFER',
+      aggregateId: transferId,
+      payload,
+      correlationId: randomUUID(),
+    });
+    expect(result.deliveries.some((d) => d.status === 'FAILED')).toBe(true);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBeGreaterThanOrEqual(1);
     const item = inbox.body.items.find((i: { type: string }) => i.type === 'transfer.completed');
     expect(item).toBeDefined();
@@ -417,7 +701,10 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     expect(bodyStr).not.toContain('FAILED');
     expect(bodyStr).not.toContain('Simulated');
     // Direct DB shows FAILED
-    const db: Array<{ status: string }> = await dataSource.query(`SELECT status FROM notification_deliveries WHERE event_key=$1`, [eventKey]);
+    const db: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM notification_deliveries WHERE event_key=$1`,
+      [eventKey],
+    );
     expect(db[0]!.status).toBe('FAILED');
   });
 
@@ -428,9 +715,21 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     await dataSource.query(
       `INSERT INTO notification_deliveries (id, event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id, channel, destination, payload, message, status, attempts, provider_ref, correlation_id, causation_id, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,'CUSTOMER',$6,'PUSH','SKIPPED:PUSH_TOKEN_DEPENDENCY_MISSING',$7,$8,'SKIPPED',0,null,null,null,now(),now())`,
-      [randomUUID(), 'support.ticket.assigned', `skipped-test:${randomUUID()}`, 'SUPPORT_TICKET', randomUUID(), customerId, JSON.stringify({ customerId, _templateKey: 'support.ticket.assigned' }), 'Ticket assigned',],
+      [
+        randomUUID(),
+        'support.ticket.assigned',
+        `skipped-test:${randomUUID()}`,
+        'SUPPORT_TICKET',
+        randomUUID(),
+        customerId,
+        JSON.stringify({ customerId, _templateKey: 'support.ticket.assigned' }),
+        'Ticket assigned',
+      ],
     );
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(0);
     const bodyStr = JSON.stringify(inbox.body);
     expect(bodyStr).not.toContain('SKIPPED');
@@ -440,7 +739,10 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   // 15. pagination and ordering
   it('15. pagination and deterministic ordering createdAt DESC id DESC', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000018');
-    const srcWallet: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
+    const srcWallet: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+      [customerId],
+    );
     // Create 5 notifications with distinct created_at via sequential dispatch with delays
     for (let i = 0; i < 5; i++) {
       const transferId = randomUUID();
@@ -455,29 +757,50 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
         destinationLedgerAccountId: srcWallet[0]!.ledger_account_id,
         amountMinor: `${1000 + i * 100}`,
         currency: 'NGN',
-        reference: `TRF-${i}-${randomUUID().slice(0,4)}`,
+        reference: `TRF-${i}-${randomUUID().slice(0, 4)}`,
       };
-      await dispatcher.dispatch({ eventType: 'transfer.completed', eventKey: `transfer.completed:${transferId}`, aggregateType: 'TRANSFER', aggregateId: transferId, payload, correlationId: randomUUID() });
+      await dispatcher.dispatch({
+        eventType: 'transfer.completed',
+        eventKey: `transfer.completed:${transferId}`,
+        aggregateType: 'TRANSFER',
+        aggregateId: transferId,
+        payload,
+        correlationId: randomUUID(),
+      });
       // slight delay to ensure distinct created_at
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 10));
     }
-    const p1 = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=1&limit=2').set('Authorization', `Bearer ${token}`).expect(200);
+    const p1 = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=1&limit=2')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(p1.body.items.length).toBe(2);
     expect(p1.body.pagination.total).toBe(5);
     expect(p1.body.pagination.totalPages).toBe(3);
     expect(p1.body.pagination.hasNextPage).toBe(true);
     expect(p1.body.pagination.page).toBe(1);
     expect(p1.body.pagination.limit).toBe(2);
-    const p2 = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=2&limit=2').set('Authorization', `Bearer ${token}`).expect(200);
+    const p2 = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=2&limit=2')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(p2.body.items.length).toBe(2);
     expect(p2.body.pagination.hasNextPage).toBe(true);
-    const p3 = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=3&limit=2').set('Authorization', `Bearer ${token}`).expect(200);
+    const p3 = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=3&limit=2')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(p3.body.items.length).toBe(1);
     expect(p3.body.pagination.hasNextPage).toBe(false);
     // Ordering: p1 first item should be newest
-    const all = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=1&limit=20').set('Authorization', `Bearer ${token}`).expect(200);
-    const dates = (all.body.items as Array<{ createdAt: string }>).map((i) => new Date(i.createdAt).getTime());
-    for (let i = 1; i < dates.length; i++) expect(dates[i-1]!).toBeGreaterThanOrEqual(dates[i]!);
+    const all = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=1&limit=20')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const dates = (all.body.items as Array<{ createdAt: string }>).map((i) =>
+      new Date(i.createdAt).getTime(),
+    );
+    for (let i = 1; i < dates.length; i++) expect(dates[i - 1]!).toBeGreaterThanOrEqual(dates[i]!);
     // Verify no duplicate across pages
     const idsP1 = (p1.body.items as Array<{ id: string }>).map((i) => i.id);
     const idsP2 = (p2.body.items as Array<{ id: string }>).map((i) => i.id);
@@ -487,10 +810,22 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   // 16. invalid pagination 400
   it('16. invalid pagination returns 400', async () => {
     const { token } = await createCustomerWithCredentials('8030000019');
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=0').set('Authorization', `Bearer ${token}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?limit=0').set('Authorization', `Bearer ${token}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?limit=101').set('Authorization', `Bearer ${token}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=abc').set('Authorization', `Bearer ${token}`).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=0')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?limit=0')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?limit=101')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=abc')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
   });
 
   // 17. safe projection hides sensitive fields
@@ -499,12 +834,33 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '90000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '90000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     const item = inbox.body.items[0];
     const flat = JSON.stringify(inbox.body).toLowerCase();
     expect(flat).not.toContain('providerref');
@@ -530,33 +886,81 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
     await dataSource.query(
       `INSERT INTO notification_deliveries (id, event_type, event_key, aggregate_type, aggregate_id, recipient_type, recipient_id, channel, destination, payload, message, status, attempts, provider_ref, correlation_id, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,'AGENT',$6,'SMS','8012345678',$7,$8,'SENT',1,'ref-123',null,now(),now())`,
-      [randomUUID(), 'agent.lifecycle.terminated', `agent-test:${randomUUID()}`, 'AGENT', randomUUID(), customerId, JSON.stringify({ _templateKey: 'agent.terminated' }), 'Agent terminated'],
+      [
+        randomUUID(),
+        'agent.lifecycle.terminated',
+        `agent-test:${randomUUID()}`,
+        'AGENT',
+        randomUUID(),
+        customerId,
+        JSON.stringify({ _templateKey: 'agent.terminated' }),
+        'Agent terminated',
+      ],
     );
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(0);
   });
 
   // 19. financial isolation — inbox read does not mutate wallets/ledgers
   it('19. inbox read does not mutate financial state', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000022');
-    const beforeLedgers: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const beforeLines: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_lines`);
+    const beforeLedgers: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
+    const beforeLines: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_lines`,
+    );
     // Create a funding and inbox read
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '120000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '120000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const afterFundingLedgers: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const afterFundingLines: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_lines`);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const afterFundingLedgers: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
+    const afterFundingLines: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_lines`,
+    );
     // Read inbox multiple times
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app.getHttpServer()).get('/api/v1/customers/me/notifications?page=1&limit=1').set('Authorization', `Bearer ${token}`).expect(200);
-    const afterInboxLedgers: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
-    const afterInboxLines: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_lines`);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications?page=1&limit=1')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const afterInboxLedgers: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
+    const afterInboxLines: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_lines`,
+    );
     expect(afterInboxLedgers[0]!.count).toBe(afterFundingLedgers[0]!.count);
     expect(afterInboxLines[0]!.count).toBe(afterFundingLines[0]!.count);
     expect(Number(afterInboxLedgers[0]!.count)).toBeGreaterThan(Number(beforeLedgers[0]!.count));
@@ -565,7 +969,9 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
 
   // 20. migration count is 66, reuse notification_deliveries
   it('20. migration count 66, no customer_notifications table, notification_deliveries exists', async () => {
-    const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
     // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
@@ -579,9 +985,13 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
       [...configuredMigrations].sort(),
     );
     expect(await dataSource.showMigrations()).toBe(false);
-    const notifExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='notification_deliveries') as exists`);
+    const notifExists: Array<{ exists: boolean }> = await dataSource.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='notification_deliveries') as exists`,
+    );
     expect(notifExists[0]!.exists).toBe(true);
-    const inboxExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='customer_notifications') as exists`);
+    const inboxExists: Array<{ exists: boolean }> = await dataSource.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='customer_notifications') as exists`,
+    );
     expect(inboxExists[0]!.exists).toBe(false);
   });
 
@@ -589,40 +999,90 @@ describe('V1-006 Customer Notification Inbox (real PostgreSQL)', () => {
   it('21. V1-001 funding flow still credits ledger after inbox', async () => {
     const { customerId, token } = await createCustomerWithCredentials('8030000023');
     // Get ledger account for balance check via ledger_lines
-    const walletRows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`, [customerId]);
+    const walletRows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`,
+      [customerId],
+    );
     const ledgerAccountId = walletRows[0]!.ledger_account_id;
-    const beforeBalRows: Array<{ balance: string }> = await dataSource.query(`SELECT COALESCE(SUM(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END),0)::text AS balance FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.ledger_account_id=$1`, [ledgerAccountId]);
+    const beforeBalRows: Array<{ balance: string }> = await dataSource.query(
+      `SELECT COALESCE(SUM(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END),0)::text AS balance FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.ledger_account_id=$1`,
+      [ledgerAccountId],
+    );
     expect(beforeBalRows[0]!.balance).toBe('0');
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
     const idem = `idem-${randomUUID()}`;
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '150000', currency: 'NGN', idempotencyKey: idem }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({ amountMinor: '150000', currency: 'NGN', idempotencyKey: idem })
+      .expect(201);
     const fundingId = createRes.body.id as string;
-    await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
-    const afterBalRows: Array<{ balance: string }> = await dataSource.query(`SELECT COALESCE(SUM(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END),0)::text AS balance FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.ledger_account_id=$1`, [ledgerAccountId]);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${fundingId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
+    const afterBalRows: Array<{ balance: string }> = await dataSource.query(
+      `SELECT COALESCE(SUM(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END),0)::text AS balance FROM ledger_lines l JOIN ledger_accounts a ON a.id=l.ledger_account_id WHERE l.ledger_account_id=$1`,
+      [ledgerAccountId],
+    );
     expect(afterBalRows[0]!.balance).toBe('150000');
     // Inbox should have notification
-    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> = await dataSource.query(`SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`);
-    await dispatcher.dispatch({ eventType: 'customer.funding.approved', eventKey: `customer.funding.approved:${fundingId}`, aggregateType: 'CUSTOMER_FUNDING_REQUEST', aggregateId: fundingId, payload: outbox[0]!.payload, correlationId: outbox[0]!.correlation_id });
-    const inbox = await request(app.getHttpServer()).get('/api/v1/customers/me/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    const outbox: Array<{ payload: Record<string, unknown>; correlation_id: string }> =
+      await dataSource.query(
+        `SELECT payload, correlation_id FROM outbox_events WHERE event_type='customer.funding.approved' ORDER BY created_at DESC LIMIT 1`,
+      );
+    await dispatcher.dispatch({
+      eventType: 'customer.funding.approved',
+      eventKey: `customer.funding.approved:${fundingId}`,
+      aggregateType: 'CUSTOMER_FUNDING_REQUEST',
+      aggregateId: fundingId,
+      payload: outbox[0]!.payload,
+      correlationId: outbox[0]!.correlation_id,
+    });
+    const inbox = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(inbox.body.items.length).toBe(1);
   });
 
   // 22. V1-003 admin lifecycle still works
   it('22. V1-003 admin lifecycle still works', async () => {
-    const agentRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO agents (reference, status) VALUES ($1,'ACTIVE') RETURNING id`, [`ref-${randomUUID()}`]);
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status) VALUES ($1,'ACTIVE') RETURNING id`,
+      [`ref-${randomUUID()}`],
+    );
     const agentId = agentRows[0]!.id;
     const token = workforceToken('OPERATOR');
-    const suspendRes = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
+    const suspendRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
     expect(suspendRes.body.status).toBe('SUSPENDED');
-    const terminateRes = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
+    const terminateRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
     expect(terminateRes.body.status).toBe('TERMINATED');
   });
 
   // 23. V1-007 support flow still works
   it('23. V1-007 support ticket flow still works after inbox', async () => {
     const { token } = await createCustomerWithCredentials('8030000024');
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${token}`).send({ subject: 'Support after inbox', category: 'OTHER', description: 'Support after inbox valid', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        subject: 'Support after inbox',
+        category: 'OTHER',
+        description: 'Support after inbox valid',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     expect(ticketRes.body.id).toBeDefined();
     expect(ticketRes.body.status).toBeDefined();
   });

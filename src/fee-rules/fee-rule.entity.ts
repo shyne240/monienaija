@@ -35,17 +35,26 @@ const nullableBigintTransformer: ValueTransformer = {
 @Index('idx_fee_rules_currency', ['currency'])
 @Index('idx_fee_rules_active', ['isActive'])
 @Index('idx_fee_rules_effective_from', ['effectiveFrom'])
-@Index('uq_fee_rules_identity', ['productCode', 'currency', 'effectiveFrom'], { unique: true, where: 'deleted_at IS NULL' })
+@Index('uq_fee_rules_identity', ['productCode', 'currency', 'effectiveFrom'], {
+  unique: true,
+  where: 'deleted_at IS NULL',
+})
 @Check('chk_fee_rules_currency', "currency ~ '^[A-Z]{3}$'")
 @Check('chk_fee_rules_flat', 'flat_fee_minor IS NULL OR flat_fee_minor >= 0')
-@Check('chk_fee_rules_percentage', 'percentage_bps IS NULL OR (percentage_bps >= 0 AND percentage_bps <= 10000)')
+@Check(
+  'chk_fee_rules_percentage',
+  'percentage_bps IS NULL OR (percentage_bps >= 0 AND percentage_bps <= 10000)',
+)
 @Check('chk_fee_rules_minimum', 'minimum_fee_minor IS NULL OR minimum_fee_minor >= 0')
 @Check('chk_fee_rules_maximum', 'maximum_fee_minor IS NULL OR maximum_fee_minor >= 0')
 @Check('chk_fee_rules_vat', 'vat_bps IS NULL OR (vat_bps >= 0 AND vat_bps <= 10000)')
 @Check('chk_fee_rules_effective', 'effective_to IS NULL OR effective_to > effective_from')
 @Check('chk_fee_rules_version', 'version > 0')
 @Check('chk_fee_rules_params', 'flat_fee_minor IS NOT NULL OR percentage_bps IS NOT NULL')
-@Check('chk_fee_rules_min_max', 'minimum_fee_minor IS NULL OR maximum_fee_minor IS NULL OR minimum_fee_minor <= maximum_fee_minor')
+@Check(
+  'chk_fee_rules_min_max',
+  'minimum_fee_minor IS NULL OR maximum_fee_minor IS NULL OR minimum_fee_minor <= maximum_fee_minor',
+)
 export class FeeRuleDefinition {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -56,16 +65,31 @@ export class FeeRuleDefinition {
   @Column({ type: 'varchar', length: 3 })
   currency!: string;
 
-  @Column({ name: 'flat_fee_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'flat_fee_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   flatFeeMinor!: string | null;
 
   @Column({ name: 'percentage_bps', type: 'integer', nullable: true })
   percentageBps!: number | null;
 
-  @Column({ name: 'minimum_fee_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'minimum_fee_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   minimumFeeMinor!: string | null;
 
-  @Column({ name: 'maximum_fee_minor', type: 'bigint', transformer: nullableBigintTransformer, nullable: true })
+  @Column({
+    name: 'maximum_fee_minor',
+    type: 'bigint',
+    transformer: nullableBigintTransformer,
+    nullable: true,
+  })
   maximumFeeMinor!: string | null;
 
   @Column({ name: 'vat_bps', type: 'integer', nullable: true })

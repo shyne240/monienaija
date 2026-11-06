@@ -25,7 +25,10 @@ interface AuthenticatedRequest {
 
 @Controller('deposits')
 export class DepositController {
-  constructor(private readonly depositService: DepositService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly depositService: DepositService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -37,9 +40,11 @@ export class DepositController {
     void dto;
     void idempotencyKey;
     void req;
-    return Promise.reject(new ForbiddenException(
-      'Generic deposit commands are disabled; this endpoint cannot create or assert external settlement',
-    ));
+    return Promise.reject(
+      new ForbiddenException(
+        'Generic deposit commands are disabled; this endpoint cannot create or assert external settlement',
+      ),
+    );
   }
 
   @Get()
@@ -56,17 +61,26 @@ export class DepositController {
 
   @Post(':depositId/complete')
   @HttpCode(HttpStatus.OK)
-  completeDeposit(@Param('depositId') depositId: string, @Req() req: AuthenticatedRequest): Promise<never> {
+  completeDeposit(
+    @Param('depositId') depositId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void req;
-    return Promise.reject(new ForbiddenException(
-      'Manual sandbox completion is disabled; this endpoint is not evidence of external settlement',
-    ));
+    return Promise.reject(
+      new ForbiddenException(
+        'Manual sandbox completion is disabled; this endpoint is not evidence of external settlement',
+      ),
+    );
   }
 
   @Post(':depositId/fail')
   @HttpCode(HttpStatus.OK)
-  failDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
+  failDeposit(
+    @Param('depositId') depositId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void dto;
     void req;
@@ -75,7 +89,11 @@ export class DepositController {
 
   @Post(':depositId/cancel')
   @HttpCode(HttpStatus.OK)
-  cancelDeposit(@Param('depositId') depositId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
+  cancelDeposit(
+    @Param('depositId') depositId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void depositId;
     void dto;
     void req;

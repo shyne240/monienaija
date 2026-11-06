@@ -4,7 +4,10 @@ import { DataSource } from 'typeorm';
 
 import { sanitizeDiagnosticIdentifier } from '../common/sensitive-data-redaction';
 import { AuditService } from '../operations/audit.service';
-import { isRetryableTransactionError, MAX_SERIALIZABLE_ATTEMPTS } from '../common/serializable-transaction';
+import {
+  isRetryableTransactionError,
+  MAX_SERIALIZABLE_ATTEMPTS,
+} from '../common/serializable-transaction';
 
 export interface CashToCashExpiryInput {
   limit?: number;
@@ -55,7 +58,12 @@ export class AgentCashToCashExpiryService {
     if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1)) {
       throw new BadRequestException('limit must be a positive integer');
     }
-    if (input.statementTimeoutMs !== undefined && (!Number.isSafeInteger(input.statementTimeoutMs) || input.statementTimeoutMs < 100 || input.statementTimeoutMs > 60_000)) {
+    if (
+      input.statementTimeoutMs !== undefined &&
+      (!Number.isSafeInteger(input.statementTimeoutMs) ||
+        input.statementTimeoutMs < 100 ||
+        input.statementTimeoutMs > 60_000)
+    ) {
       throw new BadRequestException('statementTimeoutMs must be an integer between 100 and 60000');
     }
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -68,12 +76,19 @@ export class AgentCashToCashExpiryService {
       try {
         return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
           if (input.statementTimeoutMs !== undefined) {
-            await manager.query(`SELECT set_config('statement_timeout', $1, true)`, [String(input.statementTimeoutMs)]);
-            await manager.query(`SELECT set_config('idle_in_transaction_session_timeout', $1, true)`, [String(input.statementTimeoutMs)]);
+            await manager.query(`SELECT set_config('statement_timeout', $1, true)`, [
+              String(input.statementTimeoutMs),
+            ]);
+            await manager.query(
+              `SELECT set_config('idle_in_transaction_session_timeout', $1, true)`,
+              [String(input.statementTimeoutMs)],
+            );
           }
           // Production sweeps use database time, not the host clock. Explicit test/operator
           // time remains backward compatible and is never supplied by the worker.
-          const clockRows: Array<{ now: Date }> = input.now ? [] : await manager.query(`SELECT clock_timestamp() AS now`);
+          const clockRows: Array<{ now: Date }> = input.now
+            ? []
+            : await manager.query(`SELECT clock_timestamp() AS now`);
           const now = input.now ?? clockRows[0]!.now;
           // Select only UNCLAIMED and already due (expires_at <= now), ordered deterministically.
           // SKIP LOCKED allows concurrent workers to not block each other.
@@ -166,7 +181,12 @@ export class AgentCashToCashExpiryService {
    * Expire a single transfer by id if eligible. Used for focused tests and to demonstrate per-transfer idempotency.
    * Returns true if transitioned, false if already EXPIRED/CLAIMED or not yet due.
    */
-  async expireOne(transferId: string, now = new Date(), correlationId?: string, actor = 'system-expiry'): Promise<boolean> {
+  async expireOne(
+    transferId: string,
+    now = new Date(),
+    correlationId?: string,
+    actor = 'system-expiry',
+  ): Promise<boolean> {
     const id = transferId.trim().toLowerCase();
     const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!UUID_PATTERN.test(id)) throw new BadRequestException('transferId must be a UUID');
@@ -181,7 +201,10 @@ export class AgentCashToCashExpiryService {
             principal_minor: string;
             currency: string;
             reference: string | null;
-          }> = await manager.query(`SELECT id, status, expires_at, beneficiary_phone, principal_minor, currency, reference FROM cash_to_cash_transfers WHERE id=$1 FOR UPDATE`, [id]);
+          }> = await manager.query(
+            `SELECT id, status, expires_at, beneficiary_phone, principal_minor, currency, reference FROM cash_to_cash_transfers WHERE id=$1 FOR UPDATE`,
+            [id],
+          );
           const transfer = rows[0];
           if (!transfer) throw new BadRequestException(`Transfer ${id} not found`);
           if (transfer.status === 'EXPIRED') {
@@ -196,7 +219,10 @@ export class AgentCashToCashExpiryService {
           if (new Date(transfer.expires_at).getTime() > now.getTime()) {
             return false; // not yet due
           }
-          await manager.query(`UPDATE cash_to_cash_transfers SET status='EXPIRED', expired_at=$1, updated_at=NOW() WHERE id=$2`, [now.toISOString(), id]);
+          await manager.query(
+            `UPDATE cash_to_cash_transfers SET status='EXPIRED', expired_at=$1, updated_at=NOW() WHERE id=$2`,
+            [now.toISOString(), id],
+          );
           await this.auditService.record(manager, {
             entityType: 'AGENT_CASH_TO_CASH',
             entityId: id,

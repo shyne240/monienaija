@@ -22,7 +22,11 @@ import { FeeRuleResolverService } from './fee-rule-resolver.service';
  * separate and unwired.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([FeeRuleDefinition]), OperationsModule, forwardRef(() => AuthorizationModule)],
+  imports: [
+    TypeOrmModule.forFeature([FeeRuleDefinition]),
+    OperationsModule,
+    forwardRef(() => AuthorizationModule),
+  ],
   controllers: [FeeRuleRegistryController, FeeRuleResolverController],
   providers: [FeeRuleRegistryService, FeeRuleResolverService, FeeRuleCalculatorService],
   exports: [FeeRuleRegistryService, FeeRuleResolverService, FeeRuleCalculatorService],

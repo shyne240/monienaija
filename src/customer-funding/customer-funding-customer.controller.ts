@@ -1,4 +1,11 @@
-import { Controller, Get, Query, Req, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Req,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 import { CustomerFundingService } from './customer-funding.service';
@@ -40,7 +47,8 @@ export class CustomerFundingCustomerController {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type !== 'CUSTOMER') throw new ForbiddenException('Customer access required');
-    if (!principal.customerId) throw new ForbiddenException('Customer principal missing customerId');
+    if (!principal.customerId)
+      throw new ForbiddenException('Customer principal missing customerId');
     return principal;
   }
 }

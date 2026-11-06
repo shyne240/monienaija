@@ -20,7 +20,11 @@ import { LedgerReversalGovernanceService } from './ledger-reversal-governance.se
     TypeOrmModule.forFeature([LedgerAccount, LedgerJournal, LedgerLine]),
   ],
   controllers: [LedgerController],
-  providers: [LedgerService, LedgerReversalGovernanceService, A5ArControlAccountProvisioningService],
+  providers: [
+    LedgerService,
+    LedgerReversalGovernanceService,
+    A5ArControlAccountProvisioningService,
+  ],
   exports: [LedgerService, A5ArControlAccountProvisioningService, TypeOrmModule],
 })
 export class LedgerModule {}

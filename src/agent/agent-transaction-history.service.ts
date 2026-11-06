@@ -82,8 +82,14 @@ export class AgentTransactionHistoryService {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId)) {
       throw new BadRequestException('agentId must be a UUID');
     }
-    const p = typeof (query.page ?? '1') === 'string' ? parseInt(String(query.page ?? '1'), 10) : Number(query.page);
-    const l = typeof (query.limit ?? '20') === 'string' ? parseInt(String(query.limit ?? '20'), 10) : Number(query.limit);
+    const p =
+      typeof (query.page ?? '1') === 'string'
+        ? parseInt(String(query.page ?? '1'), 10)
+        : Number(query.page);
+    const l =
+      typeof (query.limit ?? '20') === 'string'
+        ? parseInt(String(query.limit ?? '20'), 10)
+        : Number(query.limit);
     const normalizedPage = Number.isSafeInteger(p) && p >= 1 ? p : 1;
     const normalizedLimit = Number.isSafeInteger(l) && l >= 1 && l <= 100 ? l : 20;
     if (query.type !== undefined && query.type !== null && String(query.type).trim() !== '') {
@@ -96,10 +102,11 @@ export class AgentTransactionHistoryService {
     const shouldInclude = (t: string) => !typeFilter || typeFilter === t;
 
     // Agent wallet ledger accounts (wallet.customerId === agent.id — the established binding).
-    const walletRows: Array<{ id: string; ledger_account_id: string }> = await this.dataSource.query(
-      `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
-      [agentId],
-    );
+    const walletRows: Array<{ id: string; ledger_account_id: string }> =
+      await this.dataSource.query(
+        `SELECT id, ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+        [agentId],
+      );
     const ledgerAccountIds = walletRows.map((r) => r.ledger_account_id).filter(Boolean);
 
     const includeCashLedger = shouldInclude('CASH_IN') || shouldInclude('CASH_OUT');
@@ -164,7 +171,13 @@ export class AgentTransactionHistoryService {
     if (total === 0 || offset >= total) {
       return {
         items: [],
-        pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages, hasNextPage: false },
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total,
+          totalPages,
+          hasNextPage: false,
+        },
       };
     }
 
@@ -274,28 +287,36 @@ export class AgentTransactionHistoryService {
 
     // ————— batch commission evidence for the page (no N+1; query-boundary filtered by agent) —————
     const journalIds = paginated.map((r) => r.id).filter(Boolean);
-    const snapshotByJournal = new Map<string, {
-      journal_id: string;
-      commission_decision: {
-        status: string;
-        allocations?: Array<{ beneficiaryId?: string; amountMinor?: string | number | bigint | null } | null>;
-        payable?: boolean;
-        posting?: { treatment?: string } | null;
-      } | null;
-    }>();
+    const snapshotByJournal = new Map<
+      string,
+      {
+        journal_id: string;
+        commission_decision: {
+          status: string;
+          allocations?: Array<{
+            beneficiaryId?: string;
+            amountMinor?: string | number | bigint | null;
+          } | null>;
+          payable?: boolean;
+          posting?: { treatment?: string } | null;
+        } | null;
+      }
+    >();
     if (journalIds.length > 0) {
       // Linkage is by journal_id ALONE: every page item's journal was selected from THIS agent's
       // own wallet/agent_id rows above, so the journal set is already agent-isolated. The snapshot
       // principal is the transaction's subject (CUSTOMER for W2C/CTW, AGENT for C2C/funding) and
       // must not be used as a filter.
-      const snaps: Array<NonNullable<ReturnType<typeof snapshotByJournal.get>>> = await this.dataSource.query(
-        `SELECT journal_id::text AS journal_id, commission_decision
+      const snaps: Array<NonNullable<ReturnType<typeof snapshotByJournal.get>>> =
+        await this.dataSource.query(
+          `SELECT journal_id::text AS journal_id, commission_decision
          FROM commercial_decision_snapshots
          WHERE journal_id IS NOT NULL AND journal_id = ANY($1::uuid[])`,
-        [journalIds],
-      );
+          [journalIds],
+        );
       for (const s of snaps) {
-        if (s.journal_id && !snapshotByJournal.has(s.journal_id)) snapshotByJournal.set(s.journal_id, s);
+        if (s.journal_id && !snapshotByJournal.has(s.journal_id))
+          snapshotByJournal.set(s.journal_id, s);
       }
     }
 
@@ -314,14 +335,16 @@ export class AgentTransactionHistoryService {
         counterparty = { type: 'CUSTOMER' };
       } else if (r.type === 'AGENT_FUNDING') {
         direction = 'CREDIT';
-        counterparty = r.is_aggregator_funding === 'true'
-          ? { type: 'AGGREGATOR', aggregatorId: r.aggregator_id ?? null }
-          : { type: 'WORKFORCE' };
+        counterparty =
+          r.is_aggregator_funding === 'true'
+            ? { type: 'AGGREGATOR', aggregatorId: r.aggregator_id ?? null }
+            : { type: 'WORKFORCE' };
       } else if (r.type === 'AGENT_DEFUNDING') {
         direction = 'DEBIT';
-        counterparty = r.is_aggregator_funding === 'true'
-          ? { type: 'AGGREGATOR', aggregatorId: r.aggregator_id ?? null }
-          : { type: 'WORKFORCE' };
+        counterparty =
+          r.is_aggregator_funding === 'true'
+            ? { type: 'AGGREGATOR', aggregatorId: r.aggregator_id ?? null }
+            : { type: 'WORKFORCE' };
       } else if (r.type === 'CASH_TO_CASH') {
         // One row per initiated transfer; the authoritative status carries the lifecycle.
         direction = 'DEBIT';
@@ -339,7 +362,10 @@ export class AgentTransactionHistoryService {
       let commission: AgentHistoryCommission | null = null;
       const snap = snapshotByJournal.get(r.id);
       if (snap && snap.commission_decision && snap.commission_decision.status === 'ALLOCATED') {
-        const allocations: Array<{ beneficiaryId?: string; amountMinor?: string | number | bigint | null } | null> = Array.isArray(snap.commission_decision.allocations)
+        const allocations: Array<{
+          beneficiaryId?: string;
+          amountMinor?: string | number | bigint | null;
+        } | null> = Array.isArray(snap.commission_decision.allocations)
           ? snap.commission_decision.allocations
           : [];
         const own = allocations
@@ -355,7 +381,8 @@ export class AgentTransactionHistoryService {
           commissionMinor: own.toString(),
           payable: snap.commission_decision.payable === true,
           treatment:
-            snap.commission_decision.posting && typeof snap.commission_decision.posting.treatment === 'string'
+            snap.commission_decision.posting &&
+            typeof snap.commission_decision.posting.treatment === 'string'
               ? snap.commission_decision.posting.treatment
               : null,
         };
@@ -367,7 +394,8 @@ export class AgentTransactionHistoryService {
         id: String(r.id),
         type: String(r.type),
         status: String(r.status),
-        amountMinor: (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
+        amountMinor:
+          (r.amount_minor as string | number | bigint | null | undefined)?.toString() ?? '0',
         currency: String(r.currency ?? 'NGN'),
         direction,
         createdAt: new Date(r.created_at),
@@ -384,7 +412,13 @@ export class AgentTransactionHistoryService {
 
     return {
       items,
-      pagination: { page: normalizedPage, limit: normalizedLimit, total, totalPages, hasNextPage: normalizedPage < totalPages },
+      pagination: {
+        page: normalizedPage,
+        limit: normalizedLimit,
+        total,
+        totalPages,
+        hasNextPage: normalizedPage < totalPages,
+      },
     };
   }
 }

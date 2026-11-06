@@ -88,11 +88,10 @@ export class CustomerOnboardingController {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'CUSTOMER') return;
-    await this.auth.requireFunction(
-      principal,
-      'customer.view',
-      'customer',
-      ['OPERATOR', 'SERVICE', 'PRIVILEGED'],
-    );
+    await this.auth.requireFunction(principal, 'customer.view', 'customer', [
+      'OPERATOR',
+      'SERVICE',
+      'PRIVILEGED',
+    ]);
   }
 }

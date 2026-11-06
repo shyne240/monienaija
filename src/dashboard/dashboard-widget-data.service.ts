@@ -32,17 +32,59 @@ const TRANSACTION_TABLES: Array<{
    */
   completedAtColumn: string;
 }> = [
-  { type: 'W2W', table: 'transfers', completedStatus: 'COMPLETED', failedStatuses: ['FAILED', 'CANCELLED'], pendingStatuses: ['PENDING', 'PROCESSING', 'PENDING_RECOVERY', 'UNKNOWN'], amountColumn: 'amount_minor', feeColumn: 'fee_minor', completedAtColumn: 'completed_at' },
-  { type: 'C2W', table: 'deposits', completedStatus: 'COMPLETED', failedStatuses: ['FAILED', 'CANCELLED'], pendingStatuses: ['PENDING'], amountColumn: 'amount_minor', feeColumn: null, completedAtColumn: 'completed_at' },
-  { type: 'W2C', table: 'withdrawals', completedStatus: 'COMPLETED', failedStatuses: ['FAILED', 'CANCELLED'], pendingStatuses: ['PENDING', 'PROCESSING'], amountColumn: 'amount_minor', feeColumn: null, completedAtColumn: 'completed_at' },
-  { type: 'C2C', table: 'cash_to_cash_transfers', completedStatus: 'CLAIMED', failedStatuses: ['EXPIRED'], pendingStatuses: ['UNCLAIMED'], amountColumn: 'principal_minor', feeColumn: 'fee_minor', completedAtColumn: 'claimed_at' },
+  {
+    type: 'W2W',
+    table: 'transfers',
+    completedStatus: 'COMPLETED',
+    failedStatuses: ['FAILED', 'CANCELLED'],
+    pendingStatuses: ['PENDING', 'PROCESSING', 'PENDING_RECOVERY', 'UNKNOWN'],
+    amountColumn: 'amount_minor',
+    feeColumn: 'fee_minor',
+    completedAtColumn: 'completed_at',
+  },
+  {
+    type: 'C2W',
+    table: 'deposits',
+    completedStatus: 'COMPLETED',
+    failedStatuses: ['FAILED', 'CANCELLED'],
+    pendingStatuses: ['PENDING'],
+    amountColumn: 'amount_minor',
+    feeColumn: null,
+    completedAtColumn: 'completed_at',
+  },
+  {
+    type: 'W2C',
+    table: 'withdrawals',
+    completedStatus: 'COMPLETED',
+    failedStatuses: ['FAILED', 'CANCELLED'],
+    pendingStatuses: ['PENDING', 'PROCESSING'],
+    amountColumn: 'amount_minor',
+    feeColumn: null,
+    completedAtColumn: 'completed_at',
+  },
+  {
+    type: 'C2C',
+    table: 'cash_to_cash_transfers',
+    completedStatus: 'CLAIMED',
+    failedStatuses: ['EXPIRED'],
+    pendingStatuses: ['UNCLAIMED'],
+    amountColumn: 'principal_minor',
+    feeColumn: 'fee_minor',
+    completedAtColumn: 'claimed_at',
+  },
 ];
 
-export function resolvePeriod(period: string | undefined, from: string | undefined, to: string | undefined): PeriodRange {
+export function resolvePeriod(
+  period: string | undefined,
+  from: string | undefined,
+  to: string | undefined,
+): PeriodRange {
   const now = new Date();
   if (period === 'custom') {
     if (!from || !to) {
-      throw new BadRequestException('period=custom requires both from and to query parameters (ISO dates).');
+      throw new BadRequestException(
+        'period=custom requires both from and to query parameters (ISO dates).',
+      );
     }
     const fromDate = new Date(from);
     const toDate = new Date(to);
@@ -138,8 +180,14 @@ export class DashboardWidgetDataService {
       comparison: {
         definition:
           'Percent change vs. the immediately preceding period of equal length (e.g. for period=7d, the 7 days before the current 7-day window). Null when the prior period has no comparable baseline (zero).',
-        completedCountChangePercent: percentChange(previous.totalCompletedCount, current.totalCompletedCount),
-        completedValueChangePercent: percentChange(BigInt(previous.totalCompletedValueMinor), BigInt(current.totalCompletedValueMinor)),
+        completedCountChangePercent: percentChange(
+          previous.totalCompletedCount,
+          current.totalCompletedCount,
+        ),
+        completedValueChangePercent: percentChange(
+          BigInt(previous.totalCompletedValueMinor),
+          BigInt(current.totalCompletedValueMinor),
+        ),
       },
     };
   }
@@ -175,7 +223,9 @@ export class DashboardWidgetDataService {
           completedValueMinor: String((completed?.value_minor as string | null | undefined) ?? '0'),
           failedCount,
           pendingCount,
-          feeRevenueMinor: t.feeColumn ? String((completed?.fee_minor as string | null | undefined) ?? '0') : null,
+          feeRevenueMinor: t.feeColumn
+            ? String((completed?.fee_minor as string | null | undefined) ?? '0')
+            : null,
         };
       }),
     );
@@ -183,13 +233,16 @@ export class DashboardWidgetDataService {
     const totalCompleted = byType.reduce((s, t) => s + t.completedCount, 0);
     const totalFailed = byType.reduce((s, t) => s + t.failedCount, 0);
     const totalPending = byType.reduce((s, t) => s + t.pendingCount, 0);
-    const totalValueMinor = byType.reduce((s, t) => s + BigInt(t.completedValueMinor), BigInt(0)).toString();
+    const totalValueMinor = byType
+      .reduce((s, t) => s + BigInt(t.completedValueMinor), BigInt(0))
+      .toString();
     const totalFeeRevenueMinor = byType
       .filter((t) => t.feeRevenueMinor !== null)
       .reduce((s, t) => s + BigInt(t.feeRevenueMinor as string), BigInt(0))
       .toString();
     const denom = totalCompleted + totalFailed;
-    const successRatePercent = denom > 0 ? Math.round((totalCompleted / denom) * 10000) / 100 : null;
+    const successRatePercent =
+      denom > 0 ? Math.round((totalCompleted / denom) * 10000) / 100 : null;
 
     return {
       period: range.period,
@@ -209,7 +262,8 @@ export class DashboardWidgetDataService {
       // transaction fee_minor columns above; no such source was verified for this task, so
       // commission is intentionally omitted rather than invented (see implementation report §4).
       commission: null,
-      commissionNote: 'No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated.',
+      commissionNote:
+        'No verified commission accounting source exists for this metric in V1 — intentionally omitted rather than estimated.',
     };
   }
 
@@ -284,7 +338,9 @@ export class DashboardWidgetDataService {
                 ORDER BY created_at DESC
                 LIMIT ${safeLimit})`;
     });
-    const rows = await this.rows(`${queries.join(' UNION ALL ')} ORDER BY created_at DESC LIMIT ${safeLimit}`);
+    const rows = await this.rows(
+      `${queries.join(' UNION ALL ')} ORDER BY created_at DESC LIMIT ${safeLimit}`,
+    );
     return rows.map((r) => ({
       type: r.type,
       reference: r.id,
@@ -326,9 +382,15 @@ export class DashboardWidgetDataService {
 
   async workforceOverview() {
     const [headcount, byRole, activeSessions] = await Promise.all([
-      this.rows(`SELECT COUNT(DISTINCT principal_id)::text AS count FROM a2_finance_role_assignments WHERE status = 'ACTIVE' AND effective_to > NOW()`),
-      this.rows(`SELECT role_key, COUNT(*)::text AS count FROM a2_finance_role_assignments WHERE status = 'ACTIVE' AND effective_to > NOW() GROUP BY role_key ORDER BY role_key`),
-      this.rows(`SELECT COUNT(*)::text AS count FROM a2_workforce_sessions WHERE status = 'ACTIVE' AND expires_at > NOW()`),
+      this.rows(
+        `SELECT COUNT(DISTINCT principal_id)::text AS count FROM a2_finance_role_assignments WHERE status = 'ACTIVE' AND effective_to > NOW()`,
+      ),
+      this.rows(
+        `SELECT role_key, COUNT(*)::text AS count FROM a2_finance_role_assignments WHERE status = 'ACTIVE' AND effective_to > NOW() GROUP BY role_key ORDER BY role_key`,
+      ),
+      this.rows(
+        `SELECT COUNT(*)::text AS count FROM a2_workforce_sessions WHERE status = 'ACTIVE' AND expires_at > NOW()`,
+      ),
     ]);
     return {
       activeWorkforceHeadcount: Number(headcount[0]?.count ?? 0),
@@ -339,8 +401,12 @@ export class DashboardWidgetDataService {
 
   async agentLifecycleSummary() {
     const [byStatus, pendingApplications] = await Promise.all([
-      this.rows(`SELECT status, COUNT(*)::text AS count FROM agents WHERE deleted_at IS NULL GROUP BY status ORDER BY status`),
-      this.rows(`SELECT COUNT(*)::text AS count FROM agent_applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW') AND deleted_at IS NULL`),
+      this.rows(
+        `SELECT status, COUNT(*)::text AS count FROM agents WHERE deleted_at IS NULL GROUP BY status ORDER BY status`,
+      ),
+      this.rows(
+        `SELECT COUNT(*)::text AS count FROM agent_applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW') AND deleted_at IS NULL`,
+      ),
     ]);
     return {
       byStatus: byStatus.map((r) => ({ status: r.status, count: Number(r.count ?? 0) })),
@@ -360,15 +426,22 @@ export class DashboardWidgetDataService {
   }
 
   async complianceCaseSummary() {
-    const rows = await this.rows(`
+    const rows = await this.rows(
+      `
       SELECT category, status, COUNT(*)::text AS count
         FROM customer_compliance_cases
        WHERE category = ANY($1::varchar[]) AND deleted_at IS NULL
        GROUP BY category, status
        ORDER BY category, status
-    `, [NON_FRAUD_CASE_CATEGORIES]);
+    `,
+      [NON_FRAUD_CASE_CATEGORIES],
+    );
     return {
-      byCategoryStatus: rows.map((r) => ({ category: r.category, status: r.status, count: Number(r.count ?? 0) })),
+      byCategoryStatus: rows.map((r) => ({
+        category: r.category,
+        status: r.status,
+        count: Number(r.count ?? 0),
+      })),
     };
   }
 
@@ -385,6 +458,8 @@ export class DashboardWidgetDataService {
 
   private async rows(sql: string, parameters: unknown[] = []): Promise<Row[]> {
     const result: unknown = await this.dataSource.query(sql, parameters);
-    return Array.isArray(result) ? (result as unknown[]).filter((v): v is Row => typeof v === 'object' && v !== null) : [];
+    return Array.isArray(result)
+      ? (result as unknown[]).filter((v): v is Row => typeof v === 'object' && v !== null)
+      : [];
   }
 }

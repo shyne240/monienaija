@@ -400,9 +400,7 @@ export function workforceConfiguration(
     ? requiredText(env, 'A2_RECOVERY_AUDIENCE', 255)
     : (env.A2_RECOVERY_AUDIENCE?.trim() ?? '');
   if (recoveryEnabled && !recoveryKeys.length)
-    throw invalid(
-      'A2_RECOVERY_JWKS_JSON: at least one trusted key required when recovery enabled',
-    );
+    throw invalid('A2_RECOVERY_JWKS_JSON: at least one trusted key required when recovery enabled');
   const ttl = Number(env.A2_WORKFORCE_SESSION_TTL_SECONDS ?? 900);
   if (!Number.isSafeInteger(ttl) || ttl < 60 || ttl > 3600)
     throw invalid('A2_WORKFORCE_SESSION_TTL_SECONDS: must be an integer from 60 through 3600');

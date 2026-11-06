@@ -419,10 +419,10 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
   ): Promise<{ success: boolean; error?: any; view?: any }> {
     try {
       const view = await transferService.createTransfer({
-// INTEGRATION (integration/main-backend-frontend-20261030): main's required
-                                                        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
-                                                        // directly with no HTTP principal, so an INTERNAL binding is used — which
-                                                        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+        // INTEGRATION (integration/main-backend-frontend-20261030): main's required
+        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+        // directly with no HTTP principal, so an INTERNAL binding is used — which
+        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
         ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
         sourceWalletId: sourceId,
         destinationWalletId: destId,
@@ -470,7 +470,14 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
          VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [randomUUID(), code, product, dimension, value, new Date(Date.now() - 86400000).toISOString()],
+        [
+          randomUUID(),
+          code,
+          product,
+          dimension,
+          value,
+          new Date(Date.now() - 86400000).toISOString(),
+        ],
       );
     }
   }
@@ -1120,7 +1127,9 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     await fundWallet(wA.ledgerAccountId, '100000');
     const tx = await tryTransfer(wA.id, wB.id, '21000', `c02-13t-${randomUUID()}`);
     expect(tx.success).toBe(true);
-    expect((await snapshotsFor(`journal_id = $1`, [tx.view.journalId]))[0].commission_decision).toEqual(NONE_SHAPE);
+    expect(
+      (await snapshotsFor(`journal_id = $1`, [tx.view.journalId]))[0].commission_decision,
+    ).toEqual(NONE_SHAPE);
 
     // CUSTOMER_FUNDING: no rule → NONE (decision evidence still recorded atomically)
     const customerId = await createBasicCustomer();
@@ -1147,7 +1156,10 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     ).toEqual(NONE_SHAPE);
 
     // AGENT_FUNDING: no rule → NONE even though this service KNOWS the funded agent
-    const { agent } = await createActiveAgentWithPin(['AGENT_FUNDING', 'AGENT_DEFUNDING'] as any, null);
+    const { agent } = await createActiveAgentWithPin(
+      ['AGENT_FUNDING', 'AGENT_DEFUNDING'] as any,
+      null,
+    );
     await seedLimitProfile(
       `PC02_${randomUUID().slice(0, 6).toUpperCase()}`,
       'AGENT',
@@ -1227,10 +1239,18 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
         currency: 'NGN',
         idempotencyKey: `c02-15-${randomUUID()}`,
       }),
-    ).rejects.toMatchObject({ status: 409, message: expect.stringContaining('COMMISSION_RULE_AMBIGUOUS') });
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('COMMISSION_RULE_AMBIGUOUS'),
+    });
     // NOTHING committed: money, journal, snapshot all absent (SERIALIZABLE rollback)
-    expect((await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0].cnt).toBe('0');
-    expect((await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`))[0].cnt).toBe('1'); // only the float-fund fixture journal
+    expect(
+      (await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0]
+        .cnt,
+    ).toBe('0');
+    expect(
+      (await dataSource.query(`SELECT count(*)::text AS cnt FROM ledger_journals`))[0].cnt,
+    ).toBe('1'); // only the float-fund fixture journal
     expect(await walletBalance(agentWallet.ledgerAccountId)).toBe(balanceBefore);
     expect(cls).toBeDefined();
   });
@@ -1277,8 +1297,14 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
         currency: 'NGN',
         idempotencyKey: `c02-16-${randomUUID()}`,
       }),
-    ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('COMMISSION_BASE_UNAVAILABLE') });
-    expect((await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0].cnt).toBe('0');
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('COMMISSION_BASE_UNAVAILABLE'),
+    });
+    expect(
+      (await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0]
+        .cnt,
+    ).toBe('0');
     expect(await walletBalance(agentWallet.ledgerAccountId)).toBe(balanceBefore);
   });
 
@@ -1453,7 +1479,8 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       }),
     ).rejects.toMatchObject({ status: 409 });
     expect(
-      (await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0].cnt,
+      (await dataSource.query(`SELECT count(*)::text AS cnt FROM commercial_decision_snapshots`))[0]
+        .cnt,
     ).toBe('0');
 
     // fix configuration → the SAME agent flow now succeeds with the surviving 20% (2000bps) rule
@@ -1461,7 +1488,11 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
       `SELECT version FROM commission_rules WHERE id=$1`,
       [loserId],
     );
-    await commissionRegistry.updateRule(loserId, { priority: 4, version: rows[0]!.version } as any, 'test');
+    await commissionRegistry.updateRule(
+      loserId,
+      { priority: 4, version: rows[0]!.version } as any,
+      'test',
+    );
     const recovery = await cashInService.execute({
       agentId: agent.id,
       principal: agentPrincipal(agent.id) as any,
@@ -1521,8 +1552,9 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     expect(result.status).toBe('COMPLETED');
 
     const page = await historyService.listUnified({ customerId, page: 1, limit: 20 });
-    const item = page.items.find((i: any) => i.type === 'CASH_IN' && i.id === result.journalId)
-      ?? page.items.find((i: any) => i.type === 'CASH_IN');
+    const item =
+      page.items.find((i: any) => i.type === 'CASH_IN' && i.id === result.journalId) ??
+      page.items.find((i: any) => i.type === 'CASH_IN');
     expect(item).toBeDefined();
     expect(item.amountMinor).toBe('30000'); // principal only
     expect(item.currency).toBe('NGN');
@@ -1591,9 +1623,7 @@ describe('V1-COMMERCIAL-IMPLEMENTATION-02 Commission runtime wiring (real PG)', 
     const nonWallet = (rows: Array<{ code: string }>) =>
       rows.map((a) => a.code).filter((c) => !c.startsWith('WALLET-'));
     expect(nonWallet(accountsAfter)).toEqual(nonWallet(accountsBefore));
-    expect(
-      accountsAfter.filter((a) => /COMMISSION|FEE[-_]REVENUE/i.test(a.code)),
-    ).toHaveLength(0);
+    expect(accountsAfter.filter((a) => /COMMISSION|FEE[-_]REVENUE/i.test(a.code))).toHaveLength(0);
     // every flow journal has exactly 2 legs, both at the PRINCIPAL amount
     for (const journalId of journalIds) {
       const lines = await journalLines(journalId);

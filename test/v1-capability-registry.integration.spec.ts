@@ -11,7 +11,10 @@ import { A2WorkforceSessionService } from '../src/authorization/workforce-sessio
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { CapabilityService } from '../src/capability-registry/capability.service';
-import type { CapabilityCreateInput, CapabilitySafeProjection } from '../src/capability-registry/capability.types';
+import type {
+  CapabilityCreateInput,
+  CapabilitySafeProjection,
+} from '../src/capability-registry/capability.types';
 import { CAPABILITY_SEED } from '../src/capability-registry/capability.seed';
 import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
@@ -36,22 +39,34 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR', 'FINANCE_PREPARER', 'FINANCE_CONTROLLER'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+          'FINANCE_PREPARER',
+          'FINANCE_CONTROLLER',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          scopes: [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   function workforceToken(type: string): string {
@@ -70,14 +85,17 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     capabilityService = moduleRef.get(CapabilityService);
     // ensure seed
     const count = await capabilityService.count();
     if (count === 0) {
-      for (const item of CAPABILITY_SEED) await capabilityService.create(item as never).catch(() => undefined);
+      for (const item of CAPABILITY_SEED)
+        await capabilityService.create(item as never).catch(() => undefined);
     }
   }, 180000);
 
@@ -87,7 +105,11 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
       try {
         await destroyIntegrationDataSource(dataSource);
       } catch {
-        try { if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined); } catch { void 0; }
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
       }
     }
   }, 60000);
@@ -101,7 +123,9 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
       const list = rows.map((r) => `"${r.tablename}"`).join(', ');
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       await dataSource.query(`
         INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
@@ -117,18 +141,25 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     // re-seed capabilities if empty (truncate cascading may have cleared? capabilities not truncated so should persist)
     const cnt = await capabilityService.count();
     if (cnt === 0) {
-      for (const item of CAPABILITY_SEED) await capabilityService.create(item as never).catch(() => undefined);
+      for (const item of CAPABILITY_SEED)
+        await capabilityService.create(item as never).catch(() => undefined);
     } else if (cnt < CAPABILITY_SEED.length) {
       // upsert missing
       for (const item of CAPABILITY_SEED) {
-        try { await capabilityService.findByCode(item.capabilityCode); } catch { await capabilityService.create(item as never).catch(() => undefined); }
+        try {
+          await capabilityService.findByCode(item.capabilityCode);
+        } catch {
+          await capabilityService.create(item as never).catch(() => undefined);
+        }
       }
     }
   });
 
   // helpers
   async function countJournals(): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
     return Number(rows[0]!.cnt);
   }
 
@@ -138,9 +169,13 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     // migrations 0091-0095 (chain head SecureAgentApplicationAccess1785753600095, present
     // since before the verified baseline). Compare against the configured chain instead.
     const configuredMigrations = dataSource.migrations.map((migration) => migration.name!);
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM typeorm_migrations`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.cnt)).toBe(configuredMigrations.length);
-    const files: Array<{ name: string }> = await dataSource.query(`SELECT name FROM typeorm_migrations ORDER BY name`);
+    const files: Array<{ name: string }> = await dataSource.query(
+      `SELECT name FROM typeorm_migrations ORDER BY name`,
+    );
     expect(files.length).toBe(configuredMigrations.length);
     expect(files.map((file) => file.name).sort()).toEqual([...configuredMigrations].sort());
     expect(await dataSource.showMigrations()).toBe(false);
@@ -168,7 +203,10 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     const v2 = CAPABILITY_SEED.filter((c) => c.productScope === 'V2').length;
     expect(v1 + v2).toBe(total);
     // live DB via API summary
-    const summary = await request(app.getHttpServer()).get('/api/v1/internal/capabilities/summary').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const summary = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/summary')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     expect(summary.body.total).toBe(total);
     expect(summary.body.v1).toBe(v1);
     expect(summary.body.v2).toBe(v2);
@@ -176,7 +214,7 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
 
   // ── Creation / unique / status ──
   it('03. Service create validates and unique constraint', async () => {
-    const code = `TEST_CAP_${randomUUID().slice(0,8).toUpperCase().replace(/-/g,'A')}`;
+    const code = `TEST_CAP_${randomUUID().slice(0, 8).toUpperCase().replace(/-/g, 'A')}`;
     const input = {
       capabilityCode: code,
       domain: 'PLATFORM',
@@ -207,13 +245,23 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     expect(created.enabled).toBe(false);
     await expect(capabilityService.create(input)).rejects.toThrow(/already exists/);
     // invalid code pattern
-    await expect(capabilityService.create({ ...input, capabilityCode: 'ab' })).rejects.toThrow(/capabilityCode/);
-    await expect(capabilityService.create({ ...input, capabilityCode: 'lowercase' })).rejects.toThrow(/capabilityCode/);
+    await expect(capabilityService.create({ ...input, capabilityCode: 'ab' })).rejects.toThrow(
+      /capabilityCode/,
+    );
+    await expect(
+      capabilityService.create({ ...input, capabilityCode: 'lowercase' }),
+    ).rejects.toThrow(/capabilityCode/);
     // invalid enum
-    await expect(capabilityService.create({ ...input, capabilityCode: `${code}B`, domain: 'INVALID' })).rejects.toThrow(/domain/);
-    await expect(capabilityService.create({ ...input, capabilityCode: `${code}C`, productScope: 'V3' })).rejects.toThrow(/productScope/);
+    await expect(
+      capabilityService.create({ ...input, capabilityCode: `${code}B`, domain: 'INVALID' }),
+    ).rejects.toThrow(/domain/);
+    await expect(
+      capabilityService.create({ ...input, capabilityCode: `${code}C`, productScope: 'V3' }),
+    ).rejects.toThrow(/productScope/);
     // version <1
-    await expect(capabilityService.create({ ...input, capabilityCode: `${code}D`, version: 0 })).rejects.toThrow(/version/);
+    await expect(
+      capabilityService.create({ ...input, capabilityCode: `${code}D`, version: 0 }),
+    ).rejects.toThrow(/version/);
     // cleanup
     await dataSource.query(`DELETE FROM capabilities WHERE capability_code=$1`, [code]);
   });
@@ -300,66 +348,132 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   it('09. GET /internal/capabilities unauthenticated 401', async () => {
     await request(app.getHttpServer()).get('/api/v1/internal/capabilities').expect(401);
     await request(app.getHttpServer()).get('/api/v1/internal/capabilities/summary').expect(401);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/WALLET_TO_WALLET').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/WALLET_TO_WALLET')
+      .expect(401);
   });
 
   it('10. GET /internal/capabilities CUSTOMER and AGENT denied 401', async () => {
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('CUSTOMER')}`).expect(401);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('AGENT')}`).expect(401);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('AGGREGATOR')}`).expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('CUSTOMER')}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('AGENT')}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('AGGREGATOR')}`)
+      .expect(401);
   });
 
   it('11. GET /internal/capabilities WORKFORCE allowed SUPPORT/OPERATOR/SERVICE/PRIVILEGED', async () => {
-    for (const role of ['SUPPORT','OPERATOR','SERVICE','PRIVILEGED']) {
-      const res = await request(app.getHttpServer()).get('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken(role)}`).expect(200);
+    for (const role of ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']) {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/internal/capabilities')
+        .set('Authorization', `Bearer ${workforceToken(role)}`)
+        .expect(200);
       expect(res.body.data.length).toBeGreaterThan(0);
       expect(res.body.total).toBeGreaterThan(0);
     }
   });
 
   it('12. GET /internal/capabilities pagination deterministic page1 limit20 max100', async () => {
-    const r1 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?page=1&limit=5').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const r1 = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?page=1&limit=5')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     expect(r1.body.data.length).toBe(5);
     expect(r1.body.page).toBe(1);
     expect(r1.body.limit).toBe(5);
     expect(r1.body.total).toBe(CAPABILITY_SEED.length);
-    expect(r1.body.totalPages).toBe(Math.ceil(CAPABILITY_SEED.length/5));
+    expect(r1.body.totalPages).toBe(Math.ceil(CAPABILITY_SEED.length / 5));
     expect(typeof r1.body.hasNextPage).toBe('boolean');
-    const r2 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?page=2&limit=5').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const r2 = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?page=2&limit=5')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     expect(r2.body.data[0].capabilityCode).not.toBe(r1.body.data[0].capabilityCode);
     // deterministic ASC
-    const all = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?page=1&limit=100').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    const codes = all.body.data.map((c: CapabilitySafeProjection)=>c.capabilityCode);
+    const all = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?page=1&limit=100')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    const codes = all.body.data.map((c: CapabilitySafeProjection) => c.capabilityCode);
     const sorted = [...codes].sort();
     expect(codes).toEqual(sorted);
   });
 
   it('13. GET /internal/capabilities filtering', async () => {
-    const v1 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V1').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(v1.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V1')).toBe(true);
-    const v2 = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(v2.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V2')).toBe(true);
+    const v1 = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?productScope=V1')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(v1.body.data.every((c: CapabilitySafeProjection) => c.productScope === 'V1')).toBe(true);
+    const v2 = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?productScope=V2')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(v2.body.data.every((c: CapabilitySafeProjection) => c.productScope === 'V2')).toBe(true);
     expect(v1.body.total + v2.body.total).toBe(CAPABILITY_SEED.length);
-    const commercial = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?domain=COMMERCIAL').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const commercial = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?domain=COMMERCIAL')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     expect(commercial.body.total).toBeGreaterThanOrEqual(27);
-    expect(commercial.body.data.every((c: CapabilitySafeProjection)=>c.domain==='COMMERCIAL')).toBe(true);
-    const enabledTrue = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?enabled=true').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(enabledTrue.body.data.every((c: CapabilitySafeProjection)=>c.enabled===true)).toBe(true);
-    const enabledFalse = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?enabled=false').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(enabledFalse.body.data.every((c: CapabilitySafeProjection)=>c.enabled===false)).toBe(true);
+    expect(
+      commercial.body.data.every((c: CapabilitySafeProjection) => c.domain === 'COMMERCIAL'),
+    ).toBe(true);
+    const enabledTrue = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?enabled=true')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(enabledTrue.body.data.every((c: CapabilitySafeProjection) => c.enabled === true)).toBe(
+      true,
+    );
+    const enabledFalse = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?enabled=false')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(enabledFalse.body.data.every((c: CapabilitySafeProjection) => c.enabled === false)).toBe(
+      true,
+    );
     expect(enabledTrue.body.total + enabledFalse.body.total).toBe(CAPABILITY_SEED.length);
-    const blocked = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?blockerType=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(blocked.body.data.every((c: CapabilitySafeProjection)=>c.blockerType==='V2')).toBe(true);
+    const blocked = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?blockerType=V2')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(blocked.body.data.every((c: CapabilitySafeProjection) => c.blockerType === 'V2')).toBe(
+      true,
+    );
     expect(blocked.body.total).toBeGreaterThan(0);
-    const backendPlanned = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?backendStatus=PLANNED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(backendPlanned.body.data.every((c: CapabilitySafeProjection)=>c.backendStatus==='PLANNED')).toBe(true);
+    const backendPlanned = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?backendStatus=PLANNED')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(
+      backendPlanned.body.data.every(
+        (c: CapabilitySafeProjection) => c.backendStatus === 'PLANNED',
+      ),
+    ).toBe(true);
     // combined filter
-    const combined = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?productScope=V2&blockerType=V2').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(combined.body.data.every((c: CapabilitySafeProjection)=>c.productScope==='V2' && c.blockerType==='V2')).toBe(true);
+    const combined = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?productScope=V2&blockerType=V2')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(
+      combined.body.data.every(
+        (c: CapabilitySafeProjection) => c.productScope === 'V2' && c.blockerType === 'V2',
+      ),
+    ).toBe(true);
   });
 
   it('14. GET /internal/capabilities/:code success', async () => {
-    const res = await request(app.getHttpServer()).get('/api/v1/internal/capabilities/WALLET_TO_WALLET').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/WALLET_TO_WALLET')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     expect(res.body.capabilityCode).toBe('WALLET_TO_WALLET');
     expect(res.body.domain).toBe('WALLET');
     expect(res.body.name).toBeTruthy();
@@ -371,13 +485,25 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   });
 
   it('15. GET /internal/capabilities/:code 404 not found and 400 invalid code', async () => {
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/NOT_EXIST_123').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(404);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/ab').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/lowercase').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/NOT_EXIST_123')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/ab')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/lowercase')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
   });
 
   it('16. GET /internal/capabilities safe projection — no leak', async () => {
-    const res = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?limit=5').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?limit=5')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     const str = JSON.stringify(res.body).toLowerCase();
     expect(str).not.toContain('password');
     expect(str).not.toContain('pinhash');
@@ -404,14 +530,29 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
   });
 
   it('17. GET /internal/capabilities pagination validation', async () => {
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities?page=0').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities?limit=0').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities?limit=101').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities?enabled=maybe').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?page=0')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?limit=0')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?limit=101')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?enabled=maybe')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(400);
   });
 
   it('18. GET /internal/capabilities/summary derived correctly', async () => {
-    const res = await request(app.getHttpServer()).get('/api/v1/internal/capabilities/summary').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/summary')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     // derive manually via service
     const expected = await capabilityService.summary();
     expect(res.body).toEqual(expected);
@@ -425,38 +566,74 @@ describe('V1-CAPABILITY-REGISTRY-01 — Capability Registry (real PostgreSQL)', 
     // check specific derived semantics
     // fullyEnabled = enabled && configured && backendImplemented
     const all = CAPABILITY_SEED;
-    const manualFully = all.filter((c) => c.enabled && c.configurationStatus==='CONFIGURED' && c.backendStatus==='BACKEND_IMPLEMENTED').length;
+    const manualFully = all.filter(
+      (c) =>
+        c.enabled &&
+        c.configurationStatus === 'CONFIGURED' &&
+        c.backendStatus === 'BACKEND_IMPLEMENTED',
+    ).length;
     expect(res.body.fullyEnabled).toBe(manualFully);
     // V2 count manual
-    const manualV2 = all.filter((c)=>c.productScope==='V2').length;
+    const manualV2 = all.filter((c) => c.productScope === 'V2').length;
     expect(res.body.v2).toBe(manualV2);
   });
 
   it('19. GET /internal/capabilities filtering by lifecycle and domain', async () => {
-    const planned = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?lifecycle=PLANNED').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(planned.body.data.every((c: CapabilitySafeProjection)=>c.lifecycle==='PLANNED')).toBe(true);
-    const agent = await request(app.getHttpServer()).get('/api/v1/internal/capabilities?domain=AGENT').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    expect(agent.body.data.every((c: CapabilitySafeProjection)=>c.domain==='AGENT')).toBe(true);
+    const planned = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?lifecycle=PLANNED')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(
+      planned.body.data.every((c: CapabilitySafeProjection) => c.lifecycle === 'PLANNED'),
+    ).toBe(true);
+    const agent = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities?domain=AGENT')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    expect(agent.body.data.every((c: CapabilitySafeProjection) => c.domain === 'AGENT')).toBe(true);
     expect(agent.body.total).toBe(8); // AGENT domain strictly 8 (others under WALLET/IDENTITY)
   });
 
   it('20. No POST/DELETE on /internal/capabilities (read-only)', async () => {
-    await request(app.getHttpServer()).post('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).send({}).expect(404);
-    await request(app.getHttpServer()).delete('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(404);
-    await request(app.getHttpServer()).patch('/api/v1/internal/capabilities/WALLET_TO_WALLET').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).send({}).expect(404);
+    await request(app.getHttpServer())
+      .post('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .send({})
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch('/api/v1/internal/capabilities/WALLET_TO_WALLET')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .send({})
+      .expect(404);
   });
 
   it('21. Financial safety — capability reads do not touch ledger', async () => {
     const before = await countJournals();
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/summary').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
-    await request(app.getHttpServer()).get('/api/v1/internal/capabilities/WALLET_TO_WALLET').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/summary')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/WALLET_TO_WALLET')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     const after = await countJournals();
     expect(after).toBe(before);
   });
 
   it('22. Capability 16 questions answered — WALLET_TO_WALLET spot check', async () => {
-    const r = await request(app.getHttpServer()).get('/api/v1/internal/capabilities/WALLET_TO_WALLET').set('Authorization', `Bearer ${workforceToken('SUPPORT')}`).expect(200);
+    const r = await request(app.getHttpServer())
+      .get('/api/v1/internal/capabilities/WALLET_TO_WALLET')
+      .set('Authorization', `Bearer ${workforceToken('SUPPORT')}`)
+      .expect(200);
     // 1 name/description
     expect(r.body.name).toBeTruthy();
     expect(r.body.description).toBeTruthy();

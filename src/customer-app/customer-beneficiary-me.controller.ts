@@ -19,7 +19,10 @@ import { randomBytes } from 'node:crypto';
 import { CustomerBeneficiaryService } from '../customer-beneficiary/customer-beneficiary.service';
 import type { CustomerBeneficiaryView } from '../customer-beneficiary/customer-beneficiary.types';
 import type { RecipientResolution } from '../agent/agent-receiving-number.types';
-import { CustomerBeneficiaryStatus, CustomerBeneficiaryType } from '../customer-beneficiary/customer-beneficiary.enums';
+import {
+  CustomerBeneficiaryStatus,
+  CustomerBeneficiaryType,
+} from '../customer-beneficiary/customer-beneficiary.enums';
 import { RecipientResolutionService } from '../agent/recipient-resolution.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
 
@@ -46,7 +49,9 @@ function normalizePageLimit(pageRaw?: string, limitRaw?: string): { page: number
 }
 
 // Some older projections can include this optional field; retain the existing fallback.
-type BeneficiaryView = CustomerBeneficiaryView & { normalizedDestinationIdentifier?: string | null };
+type BeneficiaryView = CustomerBeneficiaryView & {
+  normalizedDestinationIdentifier?: string | null;
+};
 
 function toSafeProjection(view: BeneficiaryView, beneficiaryCustomerId: string | null) {
   return {
@@ -145,7 +150,14 @@ export class CustomerBeneficiaryMeController {
   @HttpCode(201)
   async create(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: { nickname?: string; beneficiaryIdentifier?: string; displayName?: string; identifier?: string; receivingNumber?: string },
+    @Body()
+    dto: {
+      nickname?: string;
+      beneficiaryIdentifier?: string;
+      displayName?: string;
+      identifier?: string;
+      receivingNumber?: string;
+    },
   ) {
     const principal = requireCustomerPrincipal(req);
     const nicknameRaw = dto?.nickname;
@@ -156,10 +168,12 @@ export class CustomerBeneficiaryMeController {
     const beneficiaryIdentifier = String(identifierRaw).trim();
     let nickname: string | undefined = undefined;
     if (nicknameRaw !== undefined && nicknameRaw !== null) {
-      if (typeof nicknameRaw !== 'string') throw new BadRequestException('nickname must be a string');
+      if (typeof nicknameRaw !== 'string')
+        throw new BadRequestException('nickname must be a string');
       const trimmed = nicknameRaw.trim();
       if (trimmed.length === 0) throw new BadRequestException('nickname must not be empty');
-      if (trimmed.length > 120) throw new BadRequestException('nickname must be at most 120 characters');
+      if (trimmed.length > 120)
+        throw new BadRequestException('nickname must be at most 120 characters');
       nickname = trimmed;
     }
 
@@ -169,11 +183,14 @@ export class CustomerBeneficiaryMeController {
       resolution = await this.recipientService.resolve(beneficiaryIdentifier);
     } catch (e: unknown) {
       // Convert NotFound/BadRequest from resolution to 400 invalid
-      const msg = (e as { message?: string } | null | undefined)?.message ?? 'Invalid beneficiaryIdentifier';
+      const msg =
+        (e as { message?: string } | null | undefined)?.message ?? 'Invalid beneficiaryIdentifier';
       throw new BadRequestException(msg);
     }
     if (!resolution || resolution.ownerType !== 'CUSTOMER') {
-      throw new BadRequestException('beneficiaryIdentifier must resolve to an internal wallet customer');
+      throw new BadRequestException(
+        'beneficiaryIdentifier must resolve to an internal wallet customer',
+      );
     }
     if (resolution.ownerId === principal.customerId) {
       throw new BadRequestException('Cannot add self as beneficiary');
@@ -246,7 +263,11 @@ export class CustomerBeneficiaryMeController {
   @Get(':beneficiaryId')
   async getOne(@Req() req: AuthenticatedRequest, @Param('beneficiaryId') beneficiaryId: string) {
     const principal = requireCustomerPrincipal(req);
-    if (!beneficiaryId || typeof beneficiaryId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())) {
+    if (
+      !beneficiaryId ||
+      typeof beneficiaryId !== 'string' ||
+      !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())
+    ) {
       throw new BadRequestException('Invalid beneficiaryId');
     }
     let view: BeneficiaryView;
@@ -279,7 +300,11 @@ export class CustomerBeneficiaryMeController {
     @Body() dto: Record<string, unknown>,
   ) {
     const principal = requireCustomerPrincipal(req);
-    if (!beneficiaryId || typeof beneficiaryId !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())) {
+    if (
+      !beneficiaryId ||
+      typeof beneficiaryId !== 'string' ||
+      !/^[0-9a-fA-F-]{36}$/.test(beneficiaryId.trim())
+    ) {
       throw new BadRequestException('Invalid beneficiaryId');
     }
     const allowed = new Set(['nickname', 'isActive', 'status', 'is_active']);
@@ -307,7 +332,8 @@ export class CustomerBeneficiaryMeController {
       if (typeof raw !== 'string') throw new BadRequestException('nickname must be a string');
       const trimmed = raw.trim();
       if (trimmed.length === 0) throw new BadRequestException('nickname must not be empty');
-      if (trimmed.length > 120) throw new BadRequestException('nickname must be at most 120 characters');
+      if (trimmed.length > 120)
+        throw new BadRequestException('nickname must be at most 120 characters');
       if (trimmed !== current.nickname) {
         // Direct update via DataSource with ownership check, no ledger, audit via service? We'll do direct save and manual audit is inside service? For nickname, service does not support, so we do direct repository update
         // Reuse DataSource transaction with single scoped query
@@ -329,8 +355,13 @@ export class CustomerBeneficiaryMeController {
     let desiredStatus: CustomerBeneficiaryStatus | undefined = undefined;
     if (dto.status !== undefined) {
       // Preserve the existing string conversion before checking the allowed statuses.
-      const rawStatus = String(dto.status as string).trim().toUpperCase();
-      if (rawStatus !== (CustomerBeneficiaryStatus.ACTIVE as string) && rawStatus !== (CustomerBeneficiaryStatus.SUSPENDED as string)) {
+      const rawStatus = String(dto.status as string)
+        .trim()
+        .toUpperCase();
+      if (
+        rawStatus !== (CustomerBeneficiaryStatus.ACTIVE as string) &&
+        rawStatus !== (CustomerBeneficiaryStatus.SUSPENDED as string)
+      ) {
         throw new BadRequestException('status must be ACTIVE or SUSPENDED');
       }
       desiredStatus = rawStatus as CustomerBeneficiaryStatus;
@@ -342,13 +373,20 @@ export class CustomerBeneficiaryMeController {
 
     if (desiredStatus && desiredStatus !== current.status) {
       // If nickname was updated, need fresh version
-      const fresh = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
+      const fresh = await this.beneficiaryService.getBeneficiary(
+        principal.customerId!,
+        beneficiaryId,
+      );
       try {
-        updatedView = await this.beneficiaryService.updateBeneficiary(principal.customerId!, beneficiaryId, {
-          status: desiredStatus,
-          actor: principal.customerId!,
-          version: fresh.version,
-        });
+        updatedView = await this.beneficiaryService.updateBeneficiary(
+          principal.customerId!,
+          beneficiaryId,
+          {
+            status: desiredStatus,
+            actor: principal.customerId!,
+            version: fresh.version,
+          },
+        );
         didUpdate = true;
       } catch (e: unknown) {
         if (e instanceof ConflictException || e instanceof BadRequestException) throw e;
@@ -356,7 +394,10 @@ export class CustomerBeneficiaryMeController {
         throw e;
       }
     } else if (didUpdate) {
-      updatedView = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
+      updatedView = await this.beneficiaryService.getBeneficiary(
+        principal.customerId!,
+        beneficiaryId,
+      );
     }
 
     // If no field changed, return current safe projection

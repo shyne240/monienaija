@@ -30,10 +30,18 @@ export class CreateLimitUsages1785753600069 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_limit_usages_principal ON limit_usages (principal_type, principal_id)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_usages_window_key ON limit_usages (window_key)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_usages_window_start ON limit_usages (window_start)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_usages_profile_product ON limit_usages (limit_profile_code, product)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_usages_principal ON limit_usages (principal_type, principal_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_usages_window_key ON limit_usages (window_key)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_usages_window_start ON limit_usages (window_start)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_usages_profile_product ON limit_usages (limit_profile_code, product)`,
+    );
     await queryRunner.query(`CREATE INDEX idx_limit_usages_dimension ON limit_usages (dimension)`);
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_limit_usages_window
@@ -72,11 +80,21 @@ export class CreateLimitUsages1785753600069 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX idx_limit_reservations_idempotency ON limit_reservations (idempotency_key)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_reservations_principal ON limit_reservations (principal_type, principal_id)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_reservations_usage ON limit_reservations (limit_usage_id)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_reservations_status ON limit_reservations (status)`);
-    await queryRunner.query(`CREATE INDEX idx_limit_reservations_window ON limit_reservations (window_key)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_reservations_idempotency ON limit_reservations (idempotency_key)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_reservations_principal ON limit_reservations (principal_type, principal_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_reservations_usage ON limit_reservations (limit_usage_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_reservations_status ON limit_reservations (status)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_limit_reservations_window ON limit_reservations (window_key)`,
+    );
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_limit_reservations_idempotent
       ON limit_reservations (idempotency_key, limit_usage_id)

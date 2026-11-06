@@ -9,7 +9,10 @@ import type {
 } from '../commercial-decision/commercial-decision-snapshot.entity';
 
 import type { RewardBaseEvidence } from './reward.calculator';
-import { RewardRuleResolverService, type RewardResolveContext } from './reward-rule-resolver.service';
+import {
+  RewardRuleResolverService,
+  type RewardResolveContext,
+} from './reward-rule-resolver.service';
 
 /**
  * V1-REWARD-01 — Reward Engine facade.
@@ -69,7 +72,10 @@ export class RewardEngine {
   }
 
   /** Non-transactional evaluation (workforce diagnostics/tests). Identical mechanics. */
-  async decide(context: RewardResolveContext, baseEvidence: RewardBaseEvidence): Promise<RewardDecisionSnapshot> {
+  async decide(
+    context: RewardResolveContext,
+    baseEvidence: RewardBaseEvidence,
+  ): Promise<RewardDecisionSnapshot> {
     return this.decideWithManager(this.dataSource.manager, context, baseEvidence);
   }
 }

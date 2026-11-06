@@ -55,34 +55,39 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
     'allows authorized workforce role %s (%s) holding notification.view_deliveries and audits ALLOWED',
     async (roleKey, principalType) => {
       const { controller, query, auditRecord } = setup();
-      query
-        .mockResolvedValueOnce([{ count: '1' }])
-        .mockResolvedValueOnce([
-          {
-            id: '44444444-4444-4444-8444-444444444444',
-            event_type: 'customer.funding.approved',
-            event_key: 'customer.funding.approved:req-1',
-            aggregate_type: 'CUSTOMER_FUNDING',
-            aggregate_id: 'req-1',
-            recipient_type: 'CUSTOMER',
-            recipient_id: CUSTOMER_UUID,
-            channel: 'SMS',
-            status: 'SENT',
-            attempts: 1,
-            provider_ref: 'test-ref-1',
-            correlation_id: 'corr-1',
-            causation_id: null,
-            message: 'Your funding of NGN 100.00 was approved.',
-            last_error: null,
-            created_at: new Date('2026-10-28T08:00:00.000Z'),
-            updated_at: new Date('2026-10-28T08:00:00.000Z'),
-            sent_at: new Date('2026-10-28T08:00:00.000Z'),
-            failed_at: null,
-          },
-        ]);
+      query.mockResolvedValueOnce([{ count: '1' }]).mockResolvedValueOnce([
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          event_type: 'customer.funding.approved',
+          event_key: 'customer.funding.approved:req-1',
+          aggregate_type: 'CUSTOMER_FUNDING',
+          aggregate_id: 'req-1',
+          recipient_type: 'CUSTOMER',
+          recipient_id: CUSTOMER_UUID,
+          channel: 'SMS',
+          status: 'SENT',
+          attempts: 1,
+          provider_ref: 'test-ref-1',
+          correlation_id: 'corr-1',
+          causation_id: null,
+          message: 'Your funding of NGN 100.00 was approved.',
+          last_error: null,
+          created_at: new Date('2026-10-28T08:00:00.000Z'),
+          updated_at: new Date('2026-10-28T08:00:00.000Z'),
+          sent_at: new Date('2026-10-28T08:00:00.000Z'),
+          failed_at: null,
+        },
+      ]);
 
-      const principal = workforcePrincipal(roleKey, ['notification.view_deliveries'], principalType);
-      const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+      const principal = workforcePrincipal(
+        roleKey,
+        ['notification.view_deliveries'],
+        principalType,
+      );
+      const result = await controller.listDeliveries({
+        headers: {},
+        authorizationPrincipal: principal,
+      });
 
       expect(result.total).toBe(1);
       expect(result.data).toHaveLength(1);
@@ -319,8 +324,15 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
       },
     ]);
 
-    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
-    const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+    const principal = workforcePrincipal(
+      'OPERATIONS',
+      ['notification.view_deliveries'],
+      'OPERATOR',
+    );
+    const result = await controller.listDeliveries({
+      headers: {},
+      authorizationPrincipal: principal,
+    });
 
     expect(result.data[0]?.recipientId).toBe(CUSTOMER_UUID);
     expect(result.data[1]?.recipientId).toBe(AGENT_UUID);
@@ -366,19 +378,28 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
       sent_at: null,
       failed_at: status === 'FAILED' ? new Date('2026-10-28T08:00:00.000Z') : null,
     });
-    query.mockResolvedValueOnce([{ count: '4' }]).mockResolvedValueOnce([
-      row('20000000-0000-4000-8000-000000000001', 'EVENT_DISABLED', 'SKIPPED'),
-      row('20000000-0000-4000-8000-000000000002', 'PUSH_TOKEN_DEPENDENCY_MISSING', 'SKIPPED'),
-      row(
-        '20000000-0000-4000-8000-000000000003',
-        'Provider HTTP 500: upstream said api_key=SUPER-SECRET-PROVIDER-KEY-9999 invalid',
-        'FAILED',
-      ),
-      row('20000000-0000-4000-8000-000000000004', null, 'SENT'),
-    ]);
+    query
+      .mockResolvedValueOnce([{ count: '4' }])
+      .mockResolvedValueOnce([
+        row('20000000-0000-4000-8000-000000000001', 'EVENT_DISABLED', 'SKIPPED'),
+        row('20000000-0000-4000-8000-000000000002', 'PUSH_TOKEN_DEPENDENCY_MISSING', 'SKIPPED'),
+        row(
+          '20000000-0000-4000-8000-000000000003',
+          'Provider HTTP 500: upstream said api_key=SUPER-SECRET-PROVIDER-KEY-9999 invalid',
+          'FAILED',
+        ),
+        row('20000000-0000-4000-8000-000000000004', null, 'SENT'),
+      ]);
 
-    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
-    const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+    const principal = workforcePrincipal(
+      'OPERATIONS',
+      ['notification.view_deliveries'],
+      'OPERATOR',
+    );
+    const result = await controller.listDeliveries({
+      headers: {},
+      authorizationPrincipal: principal,
+    });
 
     // Allowlisted first-party codes pass through unchanged.
     expect(result.data[0]?.errorCode).toBe('EVENT_DISABLED');
@@ -398,7 +419,11 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
   it('SPRINT1-P0-02: the diagnostics SQL projection never selects the rendered message column', async () => {
     const { controller, query } = setup();
     query.mockResolvedValueOnce([{ count: '0' }]).mockResolvedValueOnce([]);
-    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
+    const principal = workforcePrincipal(
+      'OPERATIONS',
+      ['notification.view_deliveries'],
+      'OPERATOR',
+    );
     await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
     const dataSql = String(query.mock.calls[1]?.[0] ?? '');
     expect(dataSql).not.toMatch(/\bmessage\b/);
@@ -437,19 +462,28 @@ describe('AdminNotificationController — notification.view_deliveries enforceme
     const rawResend = 're_HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890';
     const rawUnknown = 'unknown_sms_gateway:sk_live_HISTORICAL_UNKNOWN_TX_NGN_999999';
 
-    query.mockResolvedValueOnce([{ count: '8' }]).mockResolvedValueOnce([
-      makeRow('30000000-0000-4000-8000-000000000001', 'SMS', rawRobase),
-      makeRow('30000000-0000-4000-8000-000000000002', 'EMAIL', rawBrevo),
-      makeRow('30000000-0000-4000-8000-000000000003', 'EMAIL', rawResend),
-      makeRow('30000000-0000-4000-8000-000000000004', 'SMS', rawUnknown),
-      makeRow('30000000-0000-4000-8000-000000000005', 'SMS', safeRobase),
-      makeRow('30000000-0000-4000-8000-000000000006', 'EMAIL', safeBrevo),
-      makeRow('30000000-0000-4000-8000-000000000007', 'EMAIL', safeResend),
-      makeRow('30000000-0000-4000-8000-000000000008', 'SMS', safeExternal),
-    ]);
+    query
+      .mockResolvedValueOnce([{ count: '8' }])
+      .mockResolvedValueOnce([
+        makeRow('30000000-0000-4000-8000-000000000001', 'SMS', rawRobase),
+        makeRow('30000000-0000-4000-8000-000000000002', 'EMAIL', rawBrevo),
+        makeRow('30000000-0000-4000-8000-000000000003', 'EMAIL', rawResend),
+        makeRow('30000000-0000-4000-8000-000000000004', 'SMS', rawUnknown),
+        makeRow('30000000-0000-4000-8000-000000000005', 'SMS', safeRobase),
+        makeRow('30000000-0000-4000-8000-000000000006', 'EMAIL', safeBrevo),
+        makeRow('30000000-0000-4000-8000-000000000007', 'EMAIL', safeResend),
+        makeRow('30000000-0000-4000-8000-000000000008', 'SMS', safeExternal),
+      ]);
 
-    const principal = workforcePrincipal('OPERATIONS', ['notification.view_deliveries'], 'OPERATOR');
-    const result = await controller.listDeliveries({ headers: {}, authorizationPrincipal: principal });
+    const principal = workforcePrincipal(
+      'OPERATIONS',
+      ['notification.view_deliveries'],
+      'OPERATOR',
+    );
+    const result = await controller.listDeliveries({
+      headers: {},
+      authorizationPrincipal: principal,
+    });
 
     for (const item of result.data.slice(0, 4)) {
       expect(item.providerRef).toMatch(SAFE_PROVIDER_REF_PATTERN);

@@ -5,7 +5,6 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { DataSource } from 'typeorm';
 import * as request from 'supertest';
 
-
 import { AppModule } from '../src/app.module';
 import { SupportService } from '../src/support/support.service';
 import { A2WorkforceSessionService } from '../src/authorization/workforce-session.service';
@@ -71,30 +70,39 @@ describe('V1-CUSTOMER-09 Part C — /internal/support workforce permission bound
   // real RuntimeAccessGuard / route-policy chain. Mirrors the established pattern in
   // test/v1-003-admin-operational-writes.integration.spec.ts.
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-')) {
-        throw new UnauthorizedException('invalid workforce token');
-      }
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the /internal/support/* surface requires the
-        // catalogue function `customer.manage_support_case` (SupportInternalController). Part C
-        // asserts SUPPORT/OPERATOR/SERVICE/PRIVILEGED may manage the support queue and
-        // CUSTOMER/AGENT/AGGREGATOR may not, so only the four workforce types get the code.
-        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? ['customer.manage_support_case']
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-')) {
+          throw new UnauthorizedException('invalid workforce token');
+        }
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          // V1-ADMIN-AUTHORIZATION-HARDENING-01: the /internal/support/* surface requires the
+          // catalogue function `customer.manage_support_case` (SupportInternalController). Part C
+          // asserts SUPPORT/OPERATOR/SERVICE/PRIVILEGED may manage the support queue and
+          // CUSTOMER/AGENT/AGGREGATOR may not, so only the four workforce types get the code.
+          scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? ['customer.manage_support_case']
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   function workforceToken(type: string): string {
@@ -113,7 +121,9 @@ describe('V1-CUSTOMER-09 Part C — /internal/support workforce permission bound
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     supportService = moduleRef.get(SupportService);

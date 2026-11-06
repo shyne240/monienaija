@@ -38,11 +38,12 @@ import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-
 import { A2FinanceRoleAssignment } from '../src/authorization/workforce-authentication.entity';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import {
-  createIntegrationDataSource,
-  destroyIntegrationDataSource,
-} from './support/pg-harness';
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 function encodePbkdf2(password: string, saltPhrase: string): string {
   const salt = Buffer.from(saltPhrase);
@@ -182,10 +183,34 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
         ],
       });
 
-    await post(LedgerEntryDirection.CREDIT, 250_000, { direction: 'FUND', agentId }, 'S3-FUND', 'Sprint 3 agent funding');
-    await post(LedgerEntryDirection.DEBIT, 10_000, { canonicalService: 'CASH_IN' }, 'S3-CASHIN', 'Sprint 3 cash-in');
-    await post(LedgerEntryDirection.CREDIT, 4_000, { canonicalService: 'CASH_OUT' }, 'S3-CASHOUT', 'Sprint 3 cash-out');
-    await post(LedgerEntryDirection.DEBIT, 50_000, { direction: 'DEFUND', agentId }, 'S3-DEFUND', 'Sprint 3 agent defunding');
+    await post(
+      LedgerEntryDirection.CREDIT,
+      250_000,
+      { direction: 'FUND', agentId },
+      'S3-FUND',
+      'Sprint 3 agent funding',
+    );
+    await post(
+      LedgerEntryDirection.DEBIT,
+      10_000,
+      { canonicalService: 'CASH_IN' },
+      'S3-CASHIN',
+      'Sprint 3 cash-in',
+    );
+    await post(
+      LedgerEntryDirection.CREDIT,
+      4_000,
+      { canonicalService: 'CASH_OUT' },
+      'S3-CASHOUT',
+      'Sprint 3 cash-out',
+    );
+    await post(
+      LedgerEntryDirection.DEBIT,
+      50_000,
+      { direction: 'DEFUND', agentId },
+      'S3-DEFUND',
+      'Sprint 3 agent defunding',
+    );
 
     // CASH_TO_CASH: a real initiated (UNCLAIMED) transfer row bound to a posted journal.
     const startJournal = await post(
@@ -288,9 +313,22 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
       });
       expect(res.statusCode).toBe(200);
       const body = res.json() as any;
-      expect(body.pagination).toEqual({ page: 1, limit: 20, total: 6, totalPages: 1, hasNextPage: false });
+      expect(body.pagination).toEqual({
+        page: 1,
+        limit: 20,
+        total: 6,
+        totalPages: 1,
+        hasNextPage: false,
+      });
       expect(body.items.map((i: any) => i.type).sort()).toEqual(
-        ['AGENT_DEFUNDING', 'AGENT_FUNDING', 'CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'CASH_TO_CASH_CLAIM'].sort(),
+        [
+          'AGENT_DEFUNDING',
+          'AGENT_FUNDING',
+          'CASH_IN',
+          'CASH_OUT',
+          'CASH_TO_CASH',
+          'CASH_TO_CASH_CLAIM',
+        ].sort(),
       );
 
       const cashIn = body.items.find((i: any) => i.type === 'CASH_IN');
@@ -312,10 +350,19 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
       expect(cashIn.completedAt).toBeTruthy();
 
       const funding = body.items.find((i: any) => i.type === 'AGENT_FUNDING');
-      expect(funding).toMatchObject({ amountMinor: '250000', direction: 'CREDIT', reference: 'S3-FUND', status: 'COMPLETED' });
+      expect(funding).toMatchObject({
+        amountMinor: '250000',
+        direction: 'CREDIT',
+        reference: 'S3-FUND',
+        status: 'COMPLETED',
+      });
       expect(funding.counterparty).toEqual({ type: 'WORKFORCE' });
       const defunding = body.items.find((i: any) => i.type === 'AGENT_DEFUNDING');
-      expect(defunding).toMatchObject({ amountMinor: '50000', direction: 'DEBIT', reference: 'S3-DEFUND' });
+      expect(defunding).toMatchObject({
+        amountMinor: '50000',
+        direction: 'DEBIT',
+        reference: 'S3-DEFUND',
+      });
 
       const c2c = body.items.find((i: any) => i.type === 'CASH_TO_CASH');
       expect(c2c).toMatchObject({
@@ -403,21 +450,34 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
         expect(res.statusCode).toBe(200);
         pages.push(res.json());
       }
-      expect(pages[0].pagination).toEqual({ page: 1, limit: 2, total: 6, totalPages: 3, hasNextPage: true });
+      expect(pages[0].pagination).toEqual({
+        page: 1,
+        limit: 2,
+        total: 6,
+        totalPages: 3,
+        hasNextPage: true,
+      });
       expect(pages[1].pagination.hasNextPage).toBe(true);
       expect(pages[2].pagination).toMatchObject({ page: 3, hasNextPage: false });
       expect(pages[3].items).toHaveLength(0);
-      const allIds = [...pages[0].items, ...pages[1].items, ...pages[2].items].map((i: any) => i.id);
+      const allIds = [...pages[0].items, ...pages[1].items, ...pages[2].items].map(
+        (i: any) => i.id,
+      );
       expect(new Set(allIds).size).toBe(6);
       // Global deterministic ordering: created_at DESC (stable across pages).
-      const times = [...pages[0].items, ...pages[1].items, ...pages[2].items].map(
-        (i: any) => new Date(i.createdAt).getTime(),
+      const times = [...pages[0].items, ...pages[1].items, ...pages[2].items].map((i: any) =>
+        new Date(i.createdAt).getTime(),
       );
       expect(times).toEqual([...times].sort((a, b) => b - a));
     });
 
     it('enforces the agent.view workforce matrix (catalogue holders 200, others 403)', async () => {
-      for (const role of ['AGENT_NETWORK_MANAGER', 'FINANCE_AUDITOR', 'ADMINISTRATOR', 'SUPER_ADMIN']) {
+      for (const role of [
+        'AGENT_NETWORK_MANAGER',
+        'FINANCE_AUDITOR',
+        'ADMINISTRATOR',
+        'SUPER_ADMIN',
+      ]) {
         const token = await workforceToken(role);
         const res = await app.inject({
           method: 'GET',
@@ -573,7 +633,9 @@ describe('V1 Sprint 3 — unified agent history API + workforce declared-gate en
         payload: { name: `S3 Denied ${randomUUID().slice(0, 8)}` },
       });
       expect(res.statusCode).toBe(403);
-      expect((res.json() as any).message).toBe('Read-only principal may not perform this operation');
+      expect((res.json() as any).message).toBe(
+        'Read-only principal may not perform this operation',
+      );
     });
 
     it('V1-SPRINT3-SEC-SWEEP-01: gates Agent-scoped limit-assignment reads with limit.view and non-Agent writes with limit.modify', async () => {

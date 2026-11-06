@@ -121,7 +121,9 @@ describe('V1-HARDEN-01 Part D — RuntimeAccessGuard WORKFORCE_SESSION boundary 
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180000);
@@ -189,9 +191,6 @@ describe('V1-HARDEN-01 Part D — RuntimeAccessGuard WORKFORCE_SESSION boundary 
       .get('/api/v1/internal/limit-profiles')
       .set(OPERATOR)
       .expect(200);
-    await request(app.getHttpServer())
-      .get('/api/v1/internal/products')
-      .set(OPERATOR)
-      .expect(200);
+    await request(app.getHttpServer()).get('/api/v1/internal/products').set(OPERATOR).expect(200);
   });
 });

@@ -63,7 +63,7 @@ export class CashToCashTransfer {
   @Column({ name: 'lock_reason', type: 'varchar', length: 500, nullable: true })
   lockReason!: string | null;
 
-    @Column({ name: 'journal_id', type: 'uuid' })
+  @Column({ name: 'journal_id', type: 'uuid' })
   journalId!: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })

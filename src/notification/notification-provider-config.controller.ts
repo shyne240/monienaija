@@ -24,8 +24,7 @@ interface WorkforceRequest {
   requestContext?: { correlationId?: string };
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const PROPOSE_ALLOWED_KEYS = new Set([
   'channel',
@@ -316,10 +315,7 @@ export class NotificationProviderConfigController {
 
   @Post(':channel/verify')
   @HttpCode(200)
-  async verifyChannel(
-    @Req() request: WorkforceRequest,
-    @Param('channel') channel: string,
-  ) {
+  async verifyChannel(@Req() request: WorkforceRequest, @Param('channel') channel: string) {
     await this.authorizationService.requireFunction(
       request.authorizationPrincipal,
       'notification.test_send',

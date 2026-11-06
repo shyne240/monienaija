@@ -14,11 +14,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateLedgerAccountDto } from './dto/create-ledger-account.dto';
-import {
-  PostJournalDto,
-  RequestReversalDto,
-  ReverseJournalDto,
-} from './dto/post-journal.dto';
+import { PostJournalDto, RequestReversalDto, ReverseJournalDto } from './dto/post-journal.dto';
 import { LedgerService } from './ledger.service';
 import { LedgerReversalGovernanceService } from './ledger-reversal-governance.service';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -43,10 +39,17 @@ export class LedgerController {
    */
   @Post('accounts')
   @HttpCode(HttpStatus.CREATED)
-  createAccount(@Body() dto: CreateLedgerAccountDto, @Req() req: AuthenticatedRequest): Promise<never> {
+  createAccount(
+    @Body() dto: CreateLedgerAccountDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void dto;
     void req;
-    return Promise.reject(new ForbiddenException('Generic ledger account creation is disabled pending approved governance'));
+    return Promise.reject(
+      new ForbiddenException(
+        'Generic ledger account creation is disabled pending approved governance',
+      ),
+    );
   }
 
   @Get('accounts')
@@ -77,7 +80,11 @@ export class LedgerController {
     void req;
     void dto;
     void headerIdempotencyKey;
-    return Promise.reject(new ForbiddenException('Generic ledger journal posting is disabled pending approved governance'));
+    return Promise.reject(
+      new ForbiddenException(
+        'Generic ledger journal posting is disabled pending approved governance',
+      ),
+    );
   }
 
   @Get('journals/:journalId')

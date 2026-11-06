@@ -113,9 +113,7 @@ export function isValidEmailAddress(input: unknown): input is string {
   if (
     labels.some(
       (label) =>
-        label.length < 1 ||
-        label.length > 63 ||
-        !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
+        label.length < 1 || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
     )
   ) {
     return false;
@@ -141,8 +139,11 @@ export function countryCodesMatch(left: unknown, right: unknown): boolean {
   const normalizedLeft = normalizeIsoCountryCode(left);
   const normalizedRight = normalizeIsoCountryCode(right);
   if (normalizedLeft && normalizedRight) return normalizedLeft === normalizedRight;
-  return typeof left === 'string' && typeof right === 'string' &&
-    normalizeCustomerText(left).toUpperCase() === normalizeCustomerText(right).toUpperCase();
+  return (
+    typeof left === 'string' &&
+    typeof right === 'string' &&
+    normalizeCustomerText(left).toUpperCase() === normalizeCustomerText(right).toUpperCase()
+  );
 }
 
 export interface CountryOption {
@@ -151,9 +152,10 @@ export interface CountryOption {
   callingCode: string | null;
 }
 
-const regionNames = typeof Intl.DisplayNames === 'function'
-  ? new Intl.DisplayNames(['en'], { type: 'region' })
-  : null;
+const regionNames =
+  typeof Intl.DisplayNames === 'function'
+    ? new Intl.DisplayNames(['en'], { type: 'region' })
+    : null;
 
 export const ISO_COUNTRY_OPTIONS: CountryOption[] = Object.keys(ISO_ALPHA2_CODES)
   .map((code) => {
@@ -164,7 +166,9 @@ export const ISO_COUNTRY_OPTIONS: CountryOption[] = Object.keys(ISO_ALPHA2_CODES
       callingCode: isSupportedCountry(code) ? `+${getCountryCallingCode(countryCode)}` : null,
     };
   })
-  .sort((left, right) => left.name.localeCompare(right.name) || left.code.localeCompare(right.code));
+  .sort(
+    (left, right) => left.name.localeCompare(right.name) || left.code.localeCompare(right.code),
+  );
 
 export function getCountryName(value: unknown): string | null {
   const alpha2 = normalizeIsoCountryCode(value);
@@ -204,7 +208,10 @@ export function getCustomerCalendarDate(now = new Date()): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-export function isNonFutureCalendarDate(value: unknown, today = getCustomerCalendarDate()): boolean {
+export function isNonFutureCalendarDate(
+  value: unknown,
+  today = getCustomerCalendarDate(),
+): boolean {
   return isValidCalendarDate(value) && isValidCalendarDate(today) && value <= today;
 }
 
@@ -220,7 +227,10 @@ export function isValidDocumentDate(value: unknown): boolean {
   return isValidCalendarDate(datePart) && Number.isFinite(Date.parse(value));
 }
 
-export function isFutureDocumentIssueDate(value: string, today = getCustomerCalendarDate()): boolean {
+export function isFutureDocumentIssueDate(
+  value: string,
+  today = getCustomerCalendarDate(),
+): boolean {
   const datePart = value.slice(0, 10);
   return isValidCalendarDate(datePart) && datePart > today;
 }
@@ -255,7 +265,9 @@ export function normalizePhoneNumber(value: unknown, country = 'NG'): PhoneNumbe
 
 export function getPhoneCountry(value: string, fallback = 'NG'): string {
   const parsed = normalizePhoneNumber(value, fallback);
-  return parsed.valid && parsed.country ? parsed.country : normalizeIsoCountryCode(fallback, false) ?? 'NG';
+  return parsed.valid && parsed.country
+    ? parsed.country
+    : (normalizeIsoCountryCode(fallback, false) ?? 'NG');
 }
 
 export function isValidNigerianOtpPhone(value: unknown): boolean {
@@ -264,7 +276,8 @@ export function isValidNigerianOtpPhone(value: unknown): boolean {
 }
 
 export function validatePostalCode(value: unknown, country: unknown): PostalCodeResult {
-  if (value === null || value === undefined || value === '') return { valid: true, supported: true };
+  if (value === null || value === undefined || value === '')
+    return { valid: true, supported: true };
   if (typeof value !== 'string') return { valid: false, supported: true };
   const postalCode = normalizeCustomerText(value);
   if (!postalCode) return { valid: true, supported: true };
@@ -328,8 +341,10 @@ export function validateProfileFields(
     }
   }
 
-  const hasIndividualData = personalValues.some(([, value]) => Boolean(normalizeCustomerText(value ?? ''))) ||
-    Boolean(input.dateOfBirth) || Boolean(input.nationality);
+  const hasIndividualData =
+    personalValues.some(([, value]) => Boolean(normalizeCustomerText(value ?? ''))) ||
+    Boolean(input.dateOfBirth) ||
+    Boolean(input.nationality);
   if (customerType === 'BUSINESS' && hasIndividualData) {
     errors.dateOfBirth = 'Individual-only personal fields cannot be entered on a business profile.';
     if (personalValues.some(([, value]) => Boolean(normalizeCustomerText(value ?? '')))) {
@@ -339,7 +354,8 @@ export function validateProfileFields(
     }
     if (input.nationality) errors.nationality = errors.dateOfBirth;
   } else if (input.dateOfBirth && !isValidDateOfBirth(input.dateOfBirth)) {
-    errors.dateOfBirth = 'Enter a real calendar date with a four-digit year that is not in the future.';
+    errors.dateOfBirth =
+      'Enter a real calendar date with a four-digit year that is not in the future.';
   }
 
   if (input.nationality && !isIsoCountryCode(input.nationality)) {
@@ -395,20 +411,25 @@ export function validateContactFields(
     return errors;
   }
   if (contactType === 'EMAIL') {
-    if (!isValidEmailAddress(value)) errors.value = 'Enter a valid email address of at most 254 UTF-8 bytes.';
+    if (!isValidEmailAddress(value))
+      errors.value = 'Enter a valid email address of at most 254 UTF-8 bytes.';
   } else if (!normalizePhoneNumber(value, phoneCountry).valid) {
-    errors.value = normalizePhoneNumber(value, phoneCountry).message ?? 'Enter a valid phone number.';
+    errors.value =
+      normalizePhoneNumber(value, phoneCountry).message ?? 'Enter a valid phone number.';
   }
   return errors;
 }
 
-export function validateIdentityDocumentFields(input: {
-  type?: string;
-  documentNumber?: string | null;
-  issuingCountry?: string | null;
-  issuedAt?: string | null;
-  expiresAt?: string | null;
-}, options: { requireDocumentNumber?: boolean; requireIssuingCountry?: boolean } = {}): CustomerFieldErrors {
+export function validateIdentityDocumentFields(
+  input: {
+    type?: string;
+    documentNumber?: string | null;
+    issuingCountry?: string | null;
+    issuedAt?: string | null;
+    expiresAt?: string | null;
+  },
+  options: { requireDocumentNumber?: boolean; requireIssuingCountry?: boolean } = {},
+): CustomerFieldErrors {
   const errors: CustomerFieldErrors = {};
   const type = input.type;
   const validTypes: readonly string[] = Object.values(IdentityDocumentType);
@@ -417,9 +438,10 @@ export function validateIdentityDocumentFields(input: {
     return errors;
   }
 
-  const documentNumber = input.documentNumber === null || input.documentNumber === undefined
-    ? ''
-    : normalizeCustomerText(input.documentNumber);
+  const documentNumber =
+    input.documentNumber === null || input.documentNumber === undefined
+      ? ''
+      : normalizeCustomerText(input.documentNumber);
   if (!documentNumber && options.requireDocumentNumber) {
     errors.documentNumber = 'Document number is required.';
   } else if (documentNumber) {
@@ -437,10 +459,7 @@ export function validateIdentityDocumentFields(input: {
     if (input.issuingCountry || options.requireIssuingCountry !== false) {
       errors.issuingCountry = 'Choose a valid ISO 3166-1 country code.';
     }
-  } else if (
-    (type === 'BVN' || type === 'NIN') &&
-    alpha2 !== 'NG'
-  ) {
+  } else if ((type === 'BVN' || type === 'NIN') && alpha2 !== 'NG') {
     errors.issuingCountry = `${type} must have Nigeria as the issuing country.`;
   }
 
@@ -472,7 +491,9 @@ export function validateIdentityDocumentFields(input: {
   return errors;
 }
 
-export function getIdentityDocumentTypes(customerType: CustomerType | string): IdentityDocumentType[] {
+export function getIdentityDocumentTypes(
+  customerType: CustomerType | string,
+): IdentityDocumentType[] {
   const isBusiness = String(customerType) === 'BUSINESS';
   return Object.values(IdentityDocumentType).filter((type) =>
     isBusiness
@@ -491,7 +512,9 @@ export function addressSignature(input: {
   postalCode?: string | null;
 }): string {
   const normalizePart = (value: string | null | undefined) =>
-    normalizeCustomerText(value ?? '').replace(/\s+/gu, ' ').toLowerCase();
+    normalizeCustomerText(value ?? '')
+      .replace(/\s+/gu, ' ')
+      .toLowerCase();
   const country = normalizeIsoCountryCode(input.country) ?? normalizePart(input.country);
   return [
     normalizePart(input.type),

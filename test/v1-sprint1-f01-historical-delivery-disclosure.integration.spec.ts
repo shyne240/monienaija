@@ -61,7 +61,8 @@ const RAW_SENTINELS = {
   robase: 'robe_HISTORICAL_ROBASE_SENTINEL_TX_NGN_750000_ACCT_1234567890',
   brevo: 'xkeysib-HISTORICAL_SENTINEL_TX_NGN_750000_ACCT_1234567890',
   resend: 're_HISTORICAL_RESEND_SENTINEL_TX_NGN_825000_ACCT_9876543210',
-  unknownGateway: 'unknown_sms_gateway:sk_live_HISTORICAL_UNKNOWN_SENTINEL_TX_NGN_950000_ACCT_5555555555',
+  unknownGateway:
+    'unknown_sms_gateway:sk_live_HISTORICAL_UNKNOWN_SENTINEL_TX_NGN_950000_ACCT_5555555555',
   unknownHarnessLookalike:
     'termii_legacy:test-1793267152798-abc123:HISTORICAL_TERMII_SENTINEL_ACCT_4444333322',
   liveRobaseProcessor: 'robe_LIVE_PROCESSOR_SENTINEL_TX_NGN_310000_ACCT_1020304050',
@@ -355,11 +356,15 @@ describe('SPRINT-1 F-01 Historical Delivery Disclosure Remediation (disposable P
     origStdoutWrite = process.stdout.write.bind(process.stdout);
     origStderrWrite = process.stderr.write.bind(process.stderr);
     (process.stdout as any).write = (chunk: any, ...rest: any[]) => {
-      capturedLogChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      capturedLogChunks.push(
+        typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'),
+      );
       return origStdoutWrite(chunk, ...rest);
     };
     (process.stderr as any).write = (chunk: any, ...rest: any[]) => {
-      capturedLogChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      capturedLogChunks.push(
+        typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'),
+      );
       return origStderrWrite(chunk, ...rest);
     };
 
@@ -670,10 +675,7 @@ describe('SPRINT-1 F-01 Historical Delivery Disclosure Remediation (disposable P
       'acme_unknown_v0',
       RAW_SENTINELS.liveUnknownProcessor,
     );
-    const resendEmail = new SyntheticSentinelProvider(
-      'resend',
-      RAW_SENTINELS.liveResendProcessor,
-    );
+    const resendEmail = new SyntheticSentinelProvider('resend', RAW_SENTINELS.liveResendProcessor);
     const inst = await bootAppInstance({ smsProvider: unknownSms, emailProvider: resendEmail });
     try {
       await dataSource.query(

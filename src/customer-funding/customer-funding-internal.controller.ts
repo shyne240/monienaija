@@ -109,10 +109,7 @@ export class CustomerFundingInternalController {
   }
 
   @Get('customers/:customerId/funding-requests')
-  async listForCustomer(
-    @Param('customerId') customerId: string,
-    @Req() req: AuthenticatedRequest,
-  ) {
+  async listForCustomer(@Param('customerId') customerId: string, @Req() req: AuthenticatedRequest) {
     this.requireWorkforce(req);
     return this.fundingService.listInternal(customerId);
   }
@@ -126,7 +123,11 @@ export class CustomerFundingInternalController {
   private requireWorkforce(req: AuthenticatedRequest): AuthorizationPrincipal {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'CUSTOMER' || principal.type === 'AGENT' || (principal.type as string) === 'AGGREGATOR') {
+    if (
+      principal.type === 'CUSTOMER' ||
+      principal.type === 'AGENT' ||
+      (principal.type as string) === 'AGGREGATOR'
+    ) {
       throw new ForbiddenException('Customer/Agent not allowed on workforce route');
     }
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {

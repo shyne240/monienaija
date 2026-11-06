@@ -142,7 +142,9 @@ describe('RoutePolicyRegistry', () => {
         policy: get.policy && { ...get.policy, action: 'x' },
       });
       // The real request method is still recorded for audit purposes.
-      expect(head.policy?.action ?? `HEAD:${path}`).toBe(get.policy ? `HEAD:${path}` : `HEAD:${path}`);
+      expect(head.policy?.action ?? `HEAD:${path}`).toBe(
+        get.policy ? `HEAD:${path}` : `HEAD:${path}`,
+      );
     }
   });
 
@@ -208,7 +210,9 @@ describe('RuntimeAccessGuard', () => {
     const sessionService = { validate: jest.fn() };
     const authorizationService = { authorize: jest.fn(), evaluate: jest.fn() };
     const workforceSessions = { validate: jest.fn() };
-    const agentSessionService = { validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }) };
+    const agentSessionService = {
+      validate: jest.fn().mockResolvedValue({ valid: false, reason: 'NOT_FOUND' }),
+    };
     const supportAuthenticationService = {
       validate: jest.fn().mockRejectedValue(new UnauthorizedException('Invalid support session')),
     };
@@ -302,9 +306,13 @@ describe('RuntimeAccessGuard', () => {
           `/api/v1/internal/agents/${CUSTOMER_ID}/financial-position`,
         ]) {
           await expect(
-            testFixture.guard.canActivate(context({
-              method, url, headers: { authorization: 'Bearer synthetic-token' },
-            }) as never),
+            testFixture.guard.canActivate(
+              context({
+                method,
+                url,
+                headers: { authorization: 'Bearer synthetic-token' },
+              }) as never,
+            ),
           ).rejects.toMatchObject({ status: 401, message: 'Privileged access required' });
         }
       }
@@ -316,17 +324,33 @@ describe('RuntimeAccessGuard', () => {
   it('still applies and audits the agent.view gate for a workforce principal without the function', async () => {
     const testFixture = fixture();
     testFixture.workforceSessions.validate.mockResolvedValue({
-      type: 'OPERATOR', principalId: 'workforce-no-agent-view', roles: [], scopes: [], customerAccess: 'NONE',
+      type: 'OPERATOR',
+      principalId: 'workforce-no-agent-view',
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE',
     });
-    testFixture.authorizationService.evaluate.mockReturnValue({ allowed: false, reason: 'FUNCTION_MISSING' });
-    testFixture.authorizationService.authorize.mockResolvedValue({ allowed: false, reason: 'FUNCTION_MISSING' });
+    testFixture.authorizationService.evaluate.mockReturnValue({
+      allowed: false,
+      reason: 'FUNCTION_MISSING',
+    });
+    testFixture.authorizationService.authorize.mockResolvedValue({
+      allowed: false,
+      reason: 'FUNCTION_MISSING',
+    });
     await expect(
-      testFixture.guard.canActivate(context({
-        method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer workforce-token' },
-      }) as never),
+      testFixture.guard.canActivate(
+        context({
+          method: 'GET',
+          url: '/api/v1/internal/agents',
+          headers: { authorization: 'Bearer workforce-token' },
+        }) as never,
+      ),
     ).rejects.toMatchObject({ status: 403, message: 'Authorization denied: FUNCTION_MISSING' });
     expect(testFixture.authorizationService.evaluate).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ requiredFunctions: ['agent.view'] }), expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ requiredFunctions: ['agent.view'] }),
+      expect.anything(),
     );
     expect(testFixture.authorizationService.authorize).toHaveBeenCalledTimes(1);
   });
@@ -334,16 +358,22 @@ describe('RuntimeAccessGuard', () => {
   it('keeps real non-workforce session fallback at 403 instead of applying the synthetic-principal 401', async () => {
     for (const principalType of ['agent', 'customer']) {
       const testFixture = fixture();
-      testFixture.workforceSessions.validate.mockRejectedValue(new UnauthorizedException('Invalid workforce session'));
+      testFixture.workforceSessions.validate.mockRejectedValue(
+        new UnauthorizedException('Invalid workforce session'),
+      );
       if (principalType === 'agent') {
         testFixture.agentSessionService.validate.mockResolvedValue({ valid: true, principal: {} });
       } else {
         testFixture.sessionService.validate.mockResolvedValue({ valid: true, principal: {} });
       }
       await expect(
-        testFixture.guard.canActivate(context({
-          method: 'GET', url: '/api/v1/internal/agents', headers: { authorization: 'Bearer real-session-token' },
-        }) as never),
+        testFixture.guard.canActivate(
+          context({
+            method: 'GET',
+            url: '/api/v1/internal/agents',
+            headers: { authorization: 'Bearer real-session-token' },
+          }) as never,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
     }
   });

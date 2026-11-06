@@ -6,10 +6,17 @@ import { DataSource } from 'typeorm';
 import { createHash, pbkdf2Sync, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
-import type { CustomerLimitProductView, CustomerLimitWindowView } from '../src/limit-catalog/customer-limit-view.service';
+import type {
+  CustomerLimitProductView,
+  CustomerLimitWindowView,
+} from '../src/limit-catalog/customer-limit-view.service';
 import { AppModule } from '../src/app.module';
 import { LimitEnforcementService } from '../src/limit-catalog/limit-enforcement.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 function encodePbkdf2(password: string, saltStr = 'v1c08-test-salt'): string {
   const salt = Buffer.from(saltStr);
@@ -39,14 +46,19 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180000);
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
-    if (dataSource) await destroyIntegrationDataSource(dataSource).catch(() => dataSource.destroy().catch(() => undefined));
+    if (dataSource)
+      await destroyIntegrationDataSource(dataSource).catch(() =>
+        dataSource.destroy().catch(() => undefined),
+      );
   }, 60000);
 
   beforeEach(async () => {
@@ -59,10 +71,18 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
     const reference = `cust-v1c08-${randomUUID()}`;
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL',$2,$3,$4) RETURNING id`,
-      [reference, opts.custStatus ?? 'ACTIVE', opts.kycLevel ?? 'LEVEL_1', opts.kycStatus ?? 'APPROVED'],
+      [
+        reference,
+        opts.custStatus ?? 'ACTIVE',
+        opts.kycLevel ?? 'LEVEL_1',
+        opts.kycStatus ?? 'APPROVED',
+      ],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'V1C08 Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'V1C08 Customer'],
+    );
     const password = 'correct-password-v1c08';
     const hash = encodePbkdf2(password);
     await dataSource.query(
@@ -74,12 +94,21 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       // customer logs in first, then flips status afterwards (see suspension test below).
       return { customerId, token: '' };
     }
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(200);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(200);
     return { customerId, token: login.body.accessToken as string };
   }
 
   async function createGlobalProfileWithRules(
-    rules: Array<{ product: string; direction?: string | null; dimension: string; limitValueMinor?: string | null; limitValueCount?: number | null }>,
+    rules: Array<{
+      product: string;
+      direction?: string | null;
+      dimension: string;
+      limitValueMinor?: string | null;
+      limitValueCount?: number | null;
+    }>,
   ): Promise<string> {
     const code = `PROF_${randomUUID().slice(0, 8).toUpperCase().replace(/-/g, '_')}`;
     await dataSource.query(
@@ -94,7 +123,15 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, is_active, created_by)
          VALUES ($1,$2,$3,$4,NULL,'NGN',$5,$6,$7,NOW(),true,'test')`,
-        [randomUUID(), code, r.product, r.direction ?? null, r.dimension, r.limitValueMinor ?? null, r.limitValueCount ?? null],
+        [
+          randomUUID(),
+          code,
+          r.product,
+          r.direction ?? null,
+          r.dimension,
+          r.limitValueMinor ?? null,
+          r.limitValueCount ?? null,
+        ],
       );
     }
     return code;
@@ -109,7 +146,10 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
 
   it('2. No limit profile/assignment configured — returns all known customer products as unconfigured, never fabricates a limit', async () => {
     const { token } = await createCustomerWithCredential();
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(Array.isArray(res.body.products)).toBe(true);
     expect(res.body.products.length).toBe(5);
     for (const p of res.body.products) {
@@ -118,17 +158,40 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       expect(p.perTransactionMinMinor).toBeNull();
       expect(p.perTransactionMaxMinor).toBeNull();
     }
-    const names = (res.body.products as CustomerLimitProductView[]).map((p: CustomerLimitProductView) => p.product).sort();
-    expect(names).toEqual(['CASH_TO_CASH', 'CASH_TO_WALLET', 'CUSTOMER_FUNDING', 'WALLET_TO_CASH', 'WALLET_TRANSFER'].sort());
+    const names = (res.body.products as CustomerLimitProductView[])
+      .map((p: CustomerLimitProductView) => p.product)
+      .sort();
+    expect(names).toEqual(
+      [
+        'CASH_TO_CASH',
+        'CASH_TO_WALLET',
+        'CUSTOMER_FUNDING',
+        'WALLET_TO_CASH',
+        'WALLET_TRANSFER',
+      ].sort(),
+    );
   });
 
   it('3. Response never leaks internal policy identifiers (profile code, assignment id, rule id, channel, created_by)', async () => {
     const { token } = await createCustomerWithCredential();
     await createGlobalProfileWithRules([
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'MAX_AMOUNT_PER_TX', limitValueMinor: '500000' },
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000000' },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'MAX_AMOUNT_PER_TX',
+        limitValueMinor: '500000',
+      },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000000',
+      },
     ]);
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     const serial = JSON.stringify(res.body).toLowerCase();
     expect(serial).not.toContain('prof_'); // limitProfileCode format used in this test
     expect(serial).not.toContain('assignmentid');
@@ -144,27 +207,58 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
   it('4. Configured per-transaction MAX and windowed DAILY_AMOUNT match exactly what was configured', async () => {
     const { token } = await createCustomerWithCredential();
     await createGlobalProfileWithRules([
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'MAX_AMOUNT_PER_TX', limitValueMinor: '500000' },
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'MIN_AMOUNT_PER_TX', limitValueMinor: '1000' },
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000000' },
-      { product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_COUNT', limitValueCount: 10 },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'MAX_AMOUNT_PER_TX',
+        limitValueMinor: '500000',
+      },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'MIN_AMOUNT_PER_TX',
+        limitValueMinor: '1000',
+      },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000000',
+      },
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'DAILY_COUNT',
+        limitValueCount: 10,
+      },
     ]);
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wt = (res.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER',
+    )!;
     expect(wt.configured).toBe(true);
     expect(wt.perTransactionMaxMinor).toBe('500000');
     expect(wt.perTransactionMinMinor).toBe('1000');
-    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
+    const dailyAmount = wt.windows.find(
+      (w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT',
+    )!;
     expect(dailyAmount.limitMinor).toBe('1000000');
     expect(dailyAmount.usedMinor).toBe('0');
     expect(dailyAmount.remainingMinor).toBe('1000000');
     expect(dailyAmount.period).toBe('DAILY');
     expect(new Date(dailyAmount.windowResetsAt).getTime()).toBeGreaterThan(Date.now());
-    const dailyCount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_COUNT')!;
+    const dailyCount = wt.windows.find(
+      (w: CustomerLimitWindowView) => w.dimension === 'DAILY_COUNT',
+    )!;
     expect(dailyCount.limitCount).toBe(10);
     expect(dailyCount.remainingCount).toBe(10);
     // Other products remain unconfigured — buckets are isolated (Part G)
-    const cashIn = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'CASH_TO_WALLET')!;
+    const cashIn = (res.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'CASH_TO_WALLET',
+    )!;
     expect(cashIn.configured).toBe(false);
   });
 
@@ -173,7 +267,14 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
   // ──────────────────────────────────────────────
   it('5. After a real enforceWithManager reservation + commit, used/remaining reflect the committed amount exactly (same engine as transfer.service.ts)', async () => {
     const { customerId, token } = await createCustomerWithCredential();
-    await createGlobalProfileWithRules([{ product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000000' }]);
+    await createGlobalProfileWithRules([
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000000',
+      },
+    ]);
 
     const enforcement = app.get(LimitEnforcementService);
     const idempotencyKey = `v1c08-${randomUUID()}`;
@@ -193,16 +294,30 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       await enforcement.commitReservationsWithManager(manager, idempotencyKey);
     });
 
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
-    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wt = (res.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER',
+    )!;
+    const dailyAmount = wt.windows.find(
+      (w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT',
+    )!;
     expect(dailyAmount.usedMinor).toBe('300000');
     expect(dailyAmount.remainingMinor).toBe('700000');
   });
 
   it('5b. A RESERVED (not yet committed) amount still reduces displayed remaining (pending holds capacity) — matches enforcement semantics', async () => {
     const { customerId, token } = await createCustomerWithCredential();
-    await createGlobalProfileWithRules([{ product: 'WALLET_TRANSFER', direction: 'OUTGOING', dimension: 'DAILY_AMOUNT', limitValueMinor: '1000000' }]);
+    await createGlobalProfileWithRules([
+      {
+        product: 'WALLET_TRANSFER',
+        direction: 'OUTGOING',
+        dimension: 'DAILY_AMOUNT',
+        limitValueMinor: '1000000',
+      },
+    ]);
     const enforcement = app.get(LimitEnforcementService);
     const idempotencyKey = `v1c08-${randomUUID()}`;
     await dataSource.transaction(async (manager) => {
@@ -220,9 +335,16 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       expect(result.allowed).toBe(true);
       // Deliberately do NOT commit — simulates an in-flight financial operation.
     });
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(200);
-    const wt = (res.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
-    const dailyAmount = wt.windows.find((w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT')!;
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wt = (res.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER',
+    )!;
+    const dailyAmount = wt.windows.find(
+      (w: CustomerLimitWindowView) => w.dimension === 'DAILY_AMOUNT',
+    )!;
     expect(dailyAmount.usedMinor).toBe('0');
     expect(dailyAmount.remainingMinor).toBe('800000'); // 1,000,000 - 0 used - 200,000 reserved
   });
@@ -230,7 +352,7 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
   // ──────────────────────────────────────────────
   // Part H(2)/Part I — customer cannot retrieve another customer's limits (no :id param; SELF-only)
   // ──────────────────────────────────────────────
-  it('6. Each customer sees only their own CUSTOMER-scoped assignment, never another customer\'s', async () => {
+  it("6. Each customer sees only their own CUSTOMER-scoped assignment, never another customer's", async () => {
     const a = await createCustomerWithCredential();
     const b = await createCustomerWithCredential();
     // Customer-specific profile for A only, stricter than any default.
@@ -249,11 +371,21 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       [randomUUID(), code],
     );
 
-    const resA = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${a.token}`).expect(200);
-    const resB = await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${b.token}`).expect(200);
+    const resA = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${a.token}`)
+      .expect(200);
+    const resB = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${b.token}`)
+      .expect(200);
 
-    const wtA = (resA.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
-    const wtB = (resB.body.products as CustomerLimitProductView[]).find((p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER')!;
+    const wtA = (resA.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER',
+    )!;
+    const wtB = (resB.body.products as CustomerLimitProductView[]).find(
+      (p: CustomerLimitProductView) => p.product === 'WALLET_TRANSFER',
+    )!;
     expect(wtA.configured).toBe(true);
     expect(wtA.perTransactionMaxMinor).toBe('50000');
     expect(wtB.configured).toBe(false); // B has no assignment and no GLOBAL default — unaffected by A's profile
@@ -264,7 +396,10 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
   // ──────────────────────────────────────────────
   it('7. GET /customers/me/status reflects the true backend status (ACTIVE)', async () => {
     const { customerId, token } = await createCustomerWithCredential();
-    const res = await request(app.getHttpServer()).get('/api/v1/customers/me/status').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(res.body.id).toBe(customerId);
     expect(res.body.status).toBe('ACTIVE');
   });
@@ -272,14 +407,26 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
   it('8. A SUSPENDED customer loses session access immediately — never served a stale "ACTIVE" view (session re-checks live status on every request)', async () => {
     const { customerId, token } = await createCustomerWithCredential();
     // Confirm the session works while ACTIVE.
-    await request(app.getHttpServer()).get('/api/v1/customers/me/status').set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     // Flip status directly at the authoritative source (as an admin lifecycle transition would).
     await dataSource.query(`UPDATE customers SET status = 'SUSPENDED' WHERE id = $1`, [customerId]);
     // The same, still cryptographically valid bearer token must now be rejected —
     // proves status is re-checked live, not cached/trusted from issuance time.
-    await request(app.getHttpServer()).get('/api/v1/customers/me/status').set('Authorization', `Bearer ${token}`).expect(401);
-    await request(app.getHttpServer()).get('/api/v1/customers/me/limits').set('Authorization', `Bearer ${token}`).expect(401);
-    await request(app.getHttpServer()).get('/api/v1/customers/me').set('Authorization', `Bearer ${token}`).expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/limits')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
   });
 
   it('9. Login for a SUSPENDED customer fails with a generic error (no account-status leakage to an unauthenticated caller)', async () => {
@@ -295,7 +442,10 @@ describe('V1-CUSTOMER-08 Customer Limits & Account Status (real PostgreSQL)', ()
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-    const res = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(401);
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(401);
     expect(String(res.body.message || '').toLowerCase()).toContain('invalid credentials');
     expect(String(res.body.message || '').toLowerCase()).not.toContain('suspend');
   });

@@ -1,16 +1,6 @@
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
-import {
-  SupportTicketCategory,
-  SupportTicketPriority,
-} from '../support.enums';
+import { SupportTicketCategory, SupportTicketPriority } from '../support.enums';
 
 export class CreateSupportTicketDto {
   @IsString()

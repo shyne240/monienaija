@@ -282,8 +282,7 @@ export function sanitizeDeliveryErrorCode(lastError: unknown): string | null {
   return SAFE_DELIVERY_ERROR_CODES.has(lastError) ? lastError : 'UNCLASSIFIED';
 }
 
-const DELIVERY_UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DELIVERY_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function redactDeliveryRecipientId(recipientType: string, recipientId: string): string {
   if (recipientType !== 'PHONE' && DELIVERY_UUID_PATTERN.test(recipientId)) {
@@ -309,8 +308,7 @@ export function redactDeliveryRecipientId(recipientType: string, recipientId: st
  * Raw upstream vendor identifiers (`id`, `messageId`, `messageIds[0]`) are untrusted external
  * payload fields and are NEVER persisted, logged, audited, or projected in HTTP responses.
  */
-export const SAFE_PROVIDER_REF_PATTERN =
-  /^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/;
+export const SAFE_PROVIDER_REF_PATTERN = /^pvr1:(robase|brevo|resend|external):[0-9a-f]{32}$/;
 
 /**
  * First-party local non-network synthetic harness/console references generated inside
@@ -557,9 +555,7 @@ export function sanitizeProviderRefForBoundary(
   }
 
   const normalizedProvider =
-    typeof providerName === 'string'
-      ? providerName.trim().toLowerCase().slice(0, 128)
-      : '';
+    typeof providerName === 'string' ? providerName.trim().toLowerCase().slice(0, 128) : '';
   const isExternalVendor = isExternalNotificationVendor(normalizedProvider);
   const isFirstPartyLocalProvider = FIRST_PARTY_LOCAL_PROVIDER_NAMES.has(normalizedProvider);
 
@@ -573,9 +569,7 @@ export function sanitizeProviderRefForBoundary(
 
   const scope: SafeProviderRefScope = isExternalVendor ? normalizedProvider : 'external';
   const domainScopeOverride =
-    !isExternalVendor && !isFirstPartyLocalProvider
-      ? `external:${normalizedProvider}`
-      : undefined;
+    !isExternalVendor && !isFirstPartyLocalProvider ? `external:${normalizedProvider}` : undefined;
   const boundedCanonical = trimmed.length > 4096 ? trimmed.slice(0, 4096) : trimmed;
   return computeOpaqueProviderRefDigest(
     scope,
@@ -748,10 +742,7 @@ function expandIpv6Hextets(rawIp: string): number[] | null {
   const left = halves[0] ? halves[0].split(':').filter(Boolean) : [];
   const right = halves.length === 2 && halves[1] ? halves[1].split(':').filter(Boolean) : [];
   const missing = halves.length === 2 ? 8 - (left.length + right.length) : 0;
-  if (
-    (halves.length === 1 && left.length !== 8) ||
-    (halves.length === 2 && missing < 1)
-  ) {
+  if ((halves.length === 1 && left.length !== 8) || (halves.length === 2 && missing < 1)) {
     return null;
   }
 

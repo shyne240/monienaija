@@ -177,7 +177,9 @@ export class CustomerFundingService {
     const principal = this.assertWorkforcePrincipal(input.principal);
     // Create allowed for SUPPORT, OPERATOR, SERVICE, PRIVILEGED
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
-      throw new ForbiddenException(`Principal type ${principal.type} cannot create funding requests`);
+      throw new ForbiddenException(
+        `Principal type ${principal.type} cannot create funding requests`,
+      );
     }
     const makerId = principal.principalId;
     const makerType = principal.type;
@@ -187,7 +189,8 @@ export class CustomerFundingService {
       `SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,
       [customerId],
     );
-    if (customerRows.length === 0) throw new NotFoundException(`Customer ${customerId} was not found`);
+    if (customerRows.length === 0)
+      throw new NotFoundException(`Customer ${customerId} was not found`);
 
     const requestHash = this.computeRequestHash({
       customerId,
@@ -211,7 +214,9 @@ export class CustomerFundingService {
           const found = existing[0];
           if (found) {
             if (found.request_hash !== requestHash) {
-              throw new ConflictException('The idempotency key was already used for another funding request');
+              throw new ConflictException(
+                'The idempotency key was already used for another funding request',
+              );
             }
             const rows: Array<CustomerFundingRow> = await manager.query(
               `SELECT * FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
@@ -292,7 +297,9 @@ export class CustomerFundingService {
           // V1-INFRA-03: bounded retry budget exhausted with a genuine PostgreSQL
           // serialization failure/deadlock still occurring. Surface the structured,
           // client-retryable conflict below instead of the raw QueryFailedError.
-          throw this.transactionContentionExhaustedException('The funding request could not be created after concurrent retries');
+          throw this.transactionContentionExhaustedException(
+            'The funding request could not be created after concurrent retries',
+          );
         }
         if (this.isConstraintViolation(error, 'uq_customer_funding_requests_idempotency_key')) {
           // Concurrent insert race — fetch existing and compare hash
@@ -308,12 +315,16 @@ export class CustomerFundingService {
             );
             return this.toView(foundRows[0]!);
           }
-          throw new ConflictException('The idempotency key was already used for another funding request');
+          throw new ConflictException(
+            'The idempotency key was already used for another funding request',
+          );
         }
         throw error;
       }
     }
-    throw this.transactionContentionExhaustedException('The funding request could not be created after concurrent retries');
+    throw this.transactionContentionExhaustedException(
+      'The funding request could not be created after concurrent retries',
+    );
   }
 
   async approve(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
@@ -334,17 +345,22 @@ export class CustomerFundingService {
             [fundingRequestId],
           );
           const request = rows[0];
-          if (!request) throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
+          if (!request)
+            throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
           const status: CustomerFundingStatus = request.status;
           if (status !== CustomerFundingStatus.PENDING) {
             throw new ConflictException(`Funding request ${fundingRequestId} is already ${status}`);
           }
           const makerId: string = request.maker_id;
           if (makerId === checkerId) {
-            throw new ForbiddenException('Maker cannot approve own funding request (maker!=checker)');
+            throw new ForbiddenException(
+              'Maker cannot approve own funding request (maker!=checker)',
+            );
           }
           if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(checkerType)) {
-            throw new ForbiddenException(`Principal type ${checkerType} cannot approve funding requests`);
+            throw new ForbiddenException(
+              `Principal type ${checkerType} cannot approve funding requests`,
+            );
           }
 
           const customerId: string = request.customer_id;
@@ -358,8 +374,12 @@ export class CustomerFundingService {
               [customerId, currency],
             );
           const wallet = walletRows[0];
-          if (!wallet) throw new NotFoundException(`Wallet for customer ${customerId} ${currency} was not found`);
-          if (wallet.status !== 'ACTIVE') throw new ConflictException(`Wallet ${wallet.id} is ${wallet.status}`);
+          if (!wallet)
+            throw new NotFoundException(
+              `Wallet for customer ${customerId} ${currency} was not found`,
+            );
+          if (wallet.status !== 'ACTIVE')
+            throw new ConflictException(`Wallet ${wallet.id} is ${wallet.status}`);
 
           // V1-SYSTEM-01: WalletAccount.status is never transitioned away from ACTIVE when a
           // customer is later SUSPENDED/CLOSED, so it alone cannot gate funding approval. The
@@ -372,7 +392,11 @@ export class CustomerFundingService {
               customerId,
             ]);
           const customerStatusRow = customerStatusRows[0];
-          if (!customerStatusRow || customerStatusRow.deleted_at !== null || customerStatusRow.status !== 'ACTIVE') {
+          if (
+            !customerStatusRow ||
+            customerStatusRow.deleted_at !== null ||
+            customerStatusRow.status !== 'ACTIVE'
+          ) {
             throw new ConflictException(`Customer ${customerId} is not active`);
           }
 
@@ -489,7 +513,10 @@ export class CustomerFundingService {
                 journalId = existing.id;
                 if (limitIdempotencyKey && this.limitEnforcementService) {
                   try {
-                    await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+                    await this.limitEnforcementService.commitReservationsWithManager(
+                      manager,
+                      limitIdempotencyKey,
+                    );
                   } catch {
                     // Preserve the existing best-effort reservation handling.
                   }
@@ -497,7 +524,10 @@ export class CustomerFundingService {
               } else {
                 if (limitIdempotencyKey && this.limitEnforcementService) {
                   try {
-                    await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                    await this.limitEnforcementService.releaseReservationsWithManager(
+                      manager,
+                      limitIdempotencyKey,
+                    );
                   } catch {
                     // Preserve the existing best-effort reservation handling.
                   }
@@ -507,10 +537,13 @@ export class CustomerFundingService {
             } else {
               if (limitIdempotencyKey && this.limitEnforcementService) {
                 try {
-                  await this.limitEnforcementService.releaseReservationsWithManager(manager, limitIdempotencyKey);
+                  await this.limitEnforcementService.releaseReservationsWithManager(
+                    manager,
+                    limitIdempotencyKey,
+                  );
                 } catch {
-                    // Preserve the existing best-effort reservation handling.
-                  }
+                  // Preserve the existing best-effort reservation handling.
+                }
               }
               throw error;
             }
@@ -518,10 +551,13 @@ export class CustomerFundingService {
 
           if (limitIdempotencyKey && this.limitEnforcementService) {
             try {
-              await this.limitEnforcementService.commitReservationsWithManager(manager, limitIdempotencyKey);
+              await this.limitEnforcementService.commitReservationsWithManager(
+                manager,
+                limitIdempotencyKey,
+              );
             } catch {
-                    // Preserve the existing best-effort reservation handling.
-                  }
+              // Preserve the existing best-effort reservation handling.
+            }
           }
 
           const now = new Date();
@@ -594,12 +630,16 @@ export class CustomerFundingService {
       } catch (error) {
         if (this.isRetryableTransactionError(error)) {
           if (attempt < 2) continue;
-          throw this.transactionContentionExhaustedException('The funding request could not be approved after concurrent retries');
+          throw this.transactionContentionExhaustedException(
+            'The funding request could not be approved after concurrent retries',
+          );
         }
         throw error;
       }
     }
-    throw this.transactionContentionExhaustedException('The funding request could not be approved after concurrent retries');
+    throw this.transactionContentionExhaustedException(
+      'The funding request could not be approved after concurrent retries',
+    );
   }
 
   async reject(input: ReviewFundingRequestInput): Promise<CustomerFundingView> {
@@ -623,17 +663,22 @@ export class CustomerFundingService {
             [fundingRequestId],
           );
           const request = rows[0];
-          if (!request) throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
+          if (!request)
+            throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
           const status: CustomerFundingStatus = request.status;
           if (status !== CustomerFundingStatus.PENDING) {
             throw new ConflictException(`Funding request ${fundingRequestId} is already ${status}`);
           }
           const makerId: string = request.maker_id;
           if (makerId === checkerId) {
-            throw new ForbiddenException('Maker cannot reject own funding request (maker!=checker)');
+            throw new ForbiddenException(
+              'Maker cannot reject own funding request (maker!=checker)',
+            );
           }
           if (!['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(checkerType)) {
-            throw new ForbiddenException(`Principal type ${checkerType} cannot reject funding requests`);
+            throw new ForbiddenException(
+              `Principal type ${checkerType} cannot reject funding requests`,
+            );
           }
 
           const now = new Date();
@@ -680,12 +725,16 @@ export class CustomerFundingService {
       } catch (error) {
         if (this.isRetryableTransactionError(error)) {
           if (attempt < 2) continue;
-          throw this.transactionContentionExhaustedException('The funding request could not be rejected after concurrent retries');
+          throw this.transactionContentionExhaustedException(
+            'The funding request could not be rejected after concurrent retries',
+          );
         }
         throw error;
       }
     }
-    throw this.transactionContentionExhaustedException('The funding request could not be rejected after concurrent retries');
+    throw this.transactionContentionExhaustedException(
+      'The funding request could not be rejected after concurrent retries',
+    );
   }
 
   async getById(fundingRequestId: string): Promise<CustomerFundingView> {
@@ -799,11 +848,11 @@ export class CustomerFundingService {
           principalAmountMinor: ctx.amountMinor,
           currency: ctx.currency,
         }),
-      // flow evidence (allowed by the snapshot's jsonb contract): request identity + the
-      // maker/checker separation that authorized the financial decision
-      fundingRequestId: ctx.fundingRequestId,
-      makerId: ctx.makerId,
-      checkerId: ctx.checkerId,
+        // flow evidence (allowed by the snapshot's jsonb contract): request identity + the
+        // maker/checker separation that authorized the financial decision
+        fundingRequestId: ctx.fundingRequestId,
+        makerId: ctx.makerId,
+        checkerId: ctx.checkerId,
       };
     } else {
       feeDecision = {
@@ -825,7 +874,10 @@ export class CustomerFundingService {
             maximumFeeMinor: resolution.rule.maximumFeeMinor,
             vatBps: resolution.rule.vatBps,
             effectiveFrom: resolution.rule.effectiveFrom.toISOString(),
-            effectiveTo: resolution.rule.effectiveTo === null ? null : resolution.rule.effectiveTo.toISOString(),
+            effectiveTo:
+              resolution.rule.effectiveTo === null
+                ? null
+                : resolution.rule.effectiveTo.toISOString(),
             priority: resolution.rule.priority,
           },
         ];
@@ -956,9 +1008,7 @@ export class CustomerFundingService {
     externalReference: string | null;
     channel: string | null;
   }): string {
-    return createHash('sha256')
-      .update(this.canonicalJson(params))
-      .digest('hex');
+    return createHash('sha256').update(this.canonicalJson(params)).digest('hex');
   }
 
   private canonicalJson(value: unknown): string {
@@ -979,29 +1029,41 @@ export class CustomerFundingService {
 
   private assertIdempotencyKey(value: string): string {
     const v = value?.trim();
-    if (!v || v.length > 255) throw new BadRequestException('Idempotency-Key header is required and must be at most 255 characters');
+    if (!v || v.length > 255)
+      throw new BadRequestException(
+        'Idempotency-Key header is required and must be at most 255 characters',
+      );
     return v;
   }
 
-  private optionalText(value: string | undefined | null, fieldName: string, maxLen: number): string | undefined {
+  private optionalText(
+    value: string | undefined | null,
+    fieldName: string,
+    maxLen: number,
+  ): string | undefined {
     if (value === undefined || value === null) return undefined;
     const v = value.trim();
     if (v.length === 0) return undefined;
-    if (v.length > maxLen) throw new BadRequestException(`${fieldName} must be at most ${maxLen} characters`);
+    if (v.length > maxLen)
+      throw new BadRequestException(`${fieldName} must be at most ${maxLen} characters`);
     return v;
   }
 
   private normalizePage(page: number): number {
-    if (!Number.isSafeInteger(page) || page < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(page) || page < 1)
+      throw new BadRequestException('page must be a positive integer');
     return page;
   }
 
   private normalizeLimit(limit: number): number {
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return limit;
   }
 
-  private assertWorkforcePrincipal(principal: AuthorizationPrincipal | undefined): AuthorizationPrincipal {
+  private assertWorkforcePrincipal(
+    principal: AuthorizationPrincipal | undefined,
+  ): AuthorizationPrincipal {
     if (!principal || !principal.type) throw new UnauthorizedException('Authentication required');
     if (!principal.principalId) throw new UnauthorizedException('Principal is invalid');
     return principal;

@@ -1135,7 +1135,11 @@ export function sanitizeDiagnosticIdentifier(value: unknown): string | undefined
   // UUIDs remain intact (even their digit-only segments); inspect everything else for
   // sensitive shapes, including one layer of URL encoding, before the general redactor.
   let decoded = trimmed;
-  try { decoded = decodeURIComponent(trimmed); } catch { /* retain the original */ }
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    /* retain the original */
+  }
   const withoutUuids = decoded.replace(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
     'UUID',
@@ -1145,7 +1149,10 @@ export function sanitizeDiagnosticIdentifier(value: unknown): string | undefined
     /(?:^|[^0-9])[0-9]{10,15}(?:$|[^0-9])/.test(withoutUuids) ||
     /(?:^|[^0-9])(?:\+?234[\s.()-]*|0)[789](?:[\s.()-]*[0-9]){9}(?:$|[^0-9])/.test(withoutUuids) ||
     /\b(?:nin|bvn|account[ _-]?number)[\s:=_-]+(?:[0-9][\s.-]*){10,}/i.test(withoutUuids) ||
-    /\b(?:otp|pin|passcode|one[ _-]?time[ _-]?code|verification[ _-]?code|recovery[ _-]?code)[\s:=_-]+[0-9]{4,}/i.test(withoutUuids)
-  ) return REDACTED_VALUE;
+    /\b(?:otp|pin|passcode|one[ _-]?time[ _-]?code|verification[ _-]?code|recovery[ _-]?code)[\s:=_-]+[0-9]{4,}/i.test(
+      withoutUuids,
+    )
+  )
+    return REDACTED_VALUE;
   return redactSensitiveText(trimmed);
 }

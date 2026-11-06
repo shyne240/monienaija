@@ -74,10 +74,11 @@ export class SupportAuthenticationService {
     private readonly auditService: AuditService,
   ) {}
 
-  async provision(input: {
-    username: string;
-    actor: string;
-  }): Promise<{ user: SupportWorkforceUserView; temporaryPassword: string; passwordExpiresAt: Date }> {
+  async provision(input: { username: string; actor: string }): Promise<{
+    user: SupportWorkforceUserView;
+    temporaryPassword: string;
+    passwordExpiresAt: Date;
+  }> {
     const username = this.normalizeUsername(input.username);
     const existing = await this.userRepo.findOne({ where: { username } as never });
     if (existing) throw new ConflictException(`Support user '${username}' already exists`);
@@ -317,7 +318,9 @@ export class SupportAuthenticationService {
     if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
       throw new UnauthorizedException('Invalid support session');
     }
-    const session = await this.sessionRepo.findOne({ where: { tokenHash: hashToken(token) } as never });
+    const session = await this.sessionRepo.findOne({
+      where: { tokenHash: hashToken(token) } as never,
+    });
     if (!session) throw new UnauthorizedException('Invalid support session');
     if (session.status !== SupportWorkforceSessionStatus.ACTIVE) {
       throw new UnauthorizedException('Support session is no longer active');
@@ -437,7 +440,9 @@ export class SupportAuthenticationService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505';
+    return (
+      error instanceof QueryFailedError && (error as unknown as { code?: string }).code === '23505'
+    );
   }
 
   private toUserView(row: SupportWorkforceUser): SupportWorkforceUserView {

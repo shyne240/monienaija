@@ -35,7 +35,10 @@ export function approvedAgentFunding(
     assuranceLevel: 'MFA',
   };
 
-  async function execute(input: FundingInput, direction: 'FUND' | 'DEFUND'): Promise<FundingResult> {
+  async function execute(
+    input: FundingInput,
+    direction: 'FUND' | 'DEFUND',
+  ): Promise<FundingResult> {
     const method = direction === 'FUND' ? 'fund' : 'defund';
     if (input.principal !== trusted) {
       return service[method](input).then(() => {

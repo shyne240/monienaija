@@ -104,7 +104,9 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     walletService = moduleRef.get(WalletService);
@@ -119,16 +121,25 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
     await truncateAllTables(dataSource);
   });
 
-  async function provisionSupportUser(username: string): Promise<{ username: string; temporaryPassword: string; supportUserId: string }> {
+  async function provisionSupportUser(
+    username: string,
+  ): Promise<{ username: string; temporaryPassword: string; supportUserId: string }> {
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/admin/support/workforce-users')
       .set(OPERATOR)
       .send({ username })
       .expect(201);
-    return { username, temporaryPassword: res.body.temporaryPassword, supportUserId: res.body.supportUserId };
+    return {
+      username,
+      temporaryPassword: res.body.temporaryPassword,
+      supportUserId: res.body.supportUserId,
+    };
   }
 
-  async function loginSupport(username: string, password: string): Promise<{ accessToken: string; sessionId: string }> {
+  async function loginSupport(
+    username: string,
+    password: string,
+  ): Promise<{ accessToken: string; sessionId: string }> {
     const res = await request(app.getHttpServer())
       .post('/api/v1/internal/support/workforce-sessions')
       .send({ username, password })
@@ -144,17 +155,34 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Harden01 Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'Harden01 Customer'],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`, [customerId, `0${canonical10.slice(1)}`, canonical10]);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      [customerId, `0${canonical10.slice(1)}`, canonical10],
+    );
     const hash = encodePbkdf2(password);
     await dataSource.query(
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `harden01-wallet-${customerId}` });
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(200);
-    return { customerId, token: login.body.accessToken as string, walletId: (wallet as any).id } as any;
+    const wallet = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `harden01-wallet-${customerId}`,
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(200);
+    return {
+      customerId,
+      token: login.body.accessToken as string,
+      walletId: (wallet as any).id,
+    } as any;
   }
 
   // ── Part B: brute force / login abuse ──
@@ -216,7 +244,9 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
           request(app.getHttpServer()).post('/api/v1/internal/support/workforce-sessions').send(p),
         ),
       );
-      const messages = new Set(results.map((r) => (r.status === 401 ? r.body.message : `non-401:${r.status}`)));
+      const messages = new Set(
+        results.map((r) => (r.status === 401 ? r.body.message : `non-401:${r.status}`)),
+      );
       expect(results.every((r) => r.status === 401)).toBe(true);
       expect(messages.size).toBe(1); // every probe returns the exact same body message
     });
@@ -232,7 +262,9 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
 
       const [disableRes, ...ticketResponses] = await Promise.all([
         request(app.getHttpServer())
-          .post(`/api/v1/internal/admin/support/workforce-users/${provisioned.supportUserId}/disable`)
+          .post(
+            `/api/v1/internal/admin/support/workforce-users/${provisioned.supportUserId}/disable`,
+          )
           .set(OPERATOR)
           .send({ reason: 'race probe' }),
         ...Array.from({ length: 5 }).map(() =>
@@ -268,7 +300,7 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
 
   // ── Part E/G: cross-account IDOR / self-escalation on workforce admin actions ──
   describe('Part E/G — cross-account IDOR and self-escalation', () => {
-    it('SUPPORT user A cannot revoke SUPPORT user B\'s session (cross-account session revocation denied)', async () => {
+    it("SUPPORT user A cannot revoke SUPPORT user B's session (cross-account session revocation denied)", async () => {
       const userA = await provisionSupportUser(`idor.a.${randomUUID().slice(0, 8)}`);
       const userB = await provisionSupportUser(`idor.b.${randomUUID().slice(0, 8)}`);
       const sessionA = await loginSupport(userA.username, userA.temporaryPassword);
@@ -323,7 +355,12 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
           'X-Principal-Type': 'OPERATOR',
           'X-Role': 'PRIVILEGED',
         })
-        .send({ username: `${username}.peer`, type: 'OPERATOR', role: 'PRIVILEGED', principalType: 'PRIVILEGED' })
+        .send({
+          username: `${username}.peer`,
+          type: 'OPERATOR',
+          role: 'PRIVILEGED',
+          principalType: 'PRIVILEGED',
+        })
         .expect(403);
 
       await request(app.getHttpServer())
@@ -370,11 +407,15 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
         .send({ reason: 'self logout' })
         .expect(200);
 
-      const userAudits: Array<{ action: string; actor: string; entity_id: string; occurred_at: Date }> =
-        await dataSource.query(
-          `SELECT action, actor, entity_id, occurred_at FROM audit_events WHERE entity_type = 'SUPPORT_WORKFORCE_USER' AND entity_id = $1 ORDER BY occurred_at`,
-          [provisioned.supportUserId],
-        );
+      const userAudits: Array<{
+        action: string;
+        actor: string;
+        entity_id: string;
+        occurred_at: Date;
+      }> = await dataSource.query(
+        `SELECT action, actor, entity_id, occurred_at FROM audit_events WHERE entity_type = 'SUPPORT_WORKFORCE_USER' AND entity_id = $1 ORDER BY occurred_at`,
+        [provisioned.supportUserId],
+      );
       const actions = userAudits.map((a) => a.action);
       expect(actions).toContain('SUPPORT_WORKFORCE_USER_PROVISIONED');
       expect(actions).toContain('SUPPORT_WORKFORCE_LOGIN_FAILED');
@@ -452,7 +493,12 @@ describe('V1-HARDEN-01 adversarial SUPPORT authentication probes (real PostgreSQ
       await request(app.getHttpServer())
         .post('/api/v1/transfers')
         .set(SUPPORT_AUTH)
-        .send({ fromWalletId: randomUUID(), toWalletId: randomUUID(), amountMinor: '1000', currency: 'NGN' })
+        .send({
+          fromWalletId: randomUUID(),
+          toWalletId: randomUUID(),
+          amountMinor: '1000',
+          currency: 'NGN',
+        })
         .expect((res) => expect([401, 403, 400]).toContain(res.status));
     });
   });

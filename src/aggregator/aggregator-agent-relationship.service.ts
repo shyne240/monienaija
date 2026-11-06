@@ -46,7 +46,11 @@ export class AggregatorAgentRelationshipService {
     private readonly aggregatorService: AggregatorService,
   ) {}
 
-  async assign(input: { aggregatorId: string; agentId: string; actor: string }): Promise<AggregatorAgentAssignment> {
+  async assign(input: {
+    aggregatorId: string;
+    agentId: string;
+    actor: string;
+  }): Promise<AggregatorAgentAssignment> {
     const aggregatorId = input.aggregatorId?.trim().toLowerCase();
     const agentId = input.agentId?.trim().toLowerCase();
     this.assertUuid(aggregatorId, 'aggregatorId');
@@ -59,13 +63,17 @@ export class AggregatorAgentRelationshipService {
       const assignRepo = manager.getRepository(AggregatorAgentAssignment);
 
       const aggregator = await aggRepo.findOne({ where: { id: aggregatorId } });
-      if (!aggregator || aggregator.deletedAt !== null) throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
+      if (!aggregator || aggregator.deletedAt !== null)
+        throw new NotFoundException(`Aggregator ${aggregatorId} not found`);
       if (aggregator.status !== AggregatorStatus.ACTIVE) {
-        throw new ConflictException(`Aggregator ${aggregatorId} is ${aggregator.status} and cannot be assigned`);
+        throw new ConflictException(
+          `Aggregator ${aggregatorId} is ${aggregator.status} and cannot be assigned`,
+        );
       }
 
       const agent = await agentRepo.findOne({ where: { id: agentId } });
-      if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
+      if (!agent || agent.deletedAt !== null)
+        throw new NotFoundException(`Agent ${agentId} not found`);
       // Agent remains independent; we don't check agent status per spec (could be PENDING/ACTIVE etc.)
       // But we ensure agent not already actively assigned elsewhere
       const existingActive = await assignRepo.findOne({
@@ -73,9 +81,13 @@ export class AggregatorAgentRelationshipService {
       });
       if (existingActive) {
         if (existingActive.aggregatorId === aggregatorId) {
-          throw new ConflictException(`Agent ${agentId} already actively assigned to Aggregator ${aggregatorId}`);
+          throw new ConflictException(
+            `Agent ${agentId} already actively assigned to Aggregator ${aggregatorId}`,
+          );
         }
-        throw new ConflictException(`Agent ${agentId} already actively assigned to another Aggregator ${existingActive.aggregatorId}`);
+        throw new ConflictException(
+          `Agent ${agentId} already actively assigned to another Aggregator ${existingActive.aggregatorId}`,
+        );
       }
 
       // Also prevent duplicate regardless of status? We enforce unique active only via partial index, but also check exact duplicate
@@ -85,7 +97,9 @@ export class AggregatorAgentRelationshipService {
         // So we allow new row if previous is TERMINATED, but need to ensure no active duplicate.
         // If exact is SUSPENDED/ACTIVE, we already handled active; for SUSPENDED we should not allow duplicate assign without resuming
         if (exact.status !== AggregatorAgentRelationshipStatus.TERMINATED) {
-          throw new ConflictException(`Relationship already exists between Aggregator ${aggregatorId} and Agent ${agentId} with status ${exact.status}`);
+          throw new ConflictException(
+            `Relationship already exists between Aggregator ${aggregatorId} and Agent ${agentId} with status ${exact.status}`,
+          );
         }
       }
 
@@ -121,23 +135,55 @@ export class AggregatorAgentRelationshipService {
       } catch (error: unknown) {
         // Unique constraint violation for active assignment
         if (this.isUniqueViolation(error)) {
-          throw new ConflictException(`Agent ${agentId} already has an active Aggregator assignment`);
+          throw new ConflictException(
+            `Agent ${agentId} already has an active Aggregator assignment`,
+          );
         }
         throw error;
       }
     });
   }
 
-  async unassign(input: { aggregatorId: string; agentId: string; actor: string }): Promise<AggregatorAgentAssignment> {
-    return this.transition(input.aggregatorId, input.agentId, AggregatorAgentRelationshipStatus.TERMINATED, input.actor, 'AGGREGATOR_AGENT_UNASSIGNED');
+  async unassign(input: {
+    aggregatorId: string;
+    agentId: string;
+    actor: string;
+  }): Promise<AggregatorAgentAssignment> {
+    return this.transition(
+      input.aggregatorId,
+      input.agentId,
+      AggregatorAgentRelationshipStatus.TERMINATED,
+      input.actor,
+      'AGGREGATOR_AGENT_UNASSIGNED',
+    );
   }
 
-  async suspend(input: { aggregatorId: string; agentId: string; actor: string }): Promise<AggregatorAgentAssignment> {
-    return this.transition(input.aggregatorId, input.agentId, AggregatorAgentRelationshipStatus.SUSPENDED, input.actor, 'AGGREGATOR_AGENT_SUSPENDED');
+  async suspend(input: {
+    aggregatorId: string;
+    agentId: string;
+    actor: string;
+  }): Promise<AggregatorAgentAssignment> {
+    return this.transition(
+      input.aggregatorId,
+      input.agentId,
+      AggregatorAgentRelationshipStatus.SUSPENDED,
+      input.actor,
+      'AGGREGATOR_AGENT_SUSPENDED',
+    );
   }
 
-  async reactivate(input: { aggregatorId: string; agentId: string; actor: string }): Promise<AggregatorAgentAssignment> {
-    return this.transition(input.aggregatorId, input.agentId, AggregatorAgentRelationshipStatus.ACTIVE, input.actor, 'AGGREGATOR_AGENT_REACTIVATED');
+  async reactivate(input: {
+    aggregatorId: string;
+    agentId: string;
+    actor: string;
+  }): Promise<AggregatorAgentAssignment> {
+    return this.transition(
+      input.aggregatorId,
+      input.agentId,
+      AggregatorAgentRelationshipStatus.ACTIVE,
+      input.actor,
+      'AGGREGATOR_AGENT_REACTIVATED',
+    );
   }
 
   async getForAgent(agentId: string): Promise<AggregatorAgentAssignment | null> {
@@ -150,7 +196,10 @@ export class AggregatorAgentRelationshipService {
 
   async listForAggregator(aggregatorId: string): Promise<AggregatorAgentAssignment[]> {
     this.assertUuid(aggregatorId, 'aggregatorId');
-    return this.assignmentRepository.find({ where: { aggregatorId }, order: { assignedAt: 'ASC' } });
+    return this.assignmentRepository.find({
+      where: { aggregatorId },
+      order: { assignedAt: 'ASC' },
+    });
   }
 
   async assertAggregatorCanOperateViaAssignment(aggregatorId: string): Promise<void> {
@@ -173,8 +222,13 @@ export class AggregatorAgentRelationshipService {
 
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AggregatorAgentAssignment);
-      const assignment = await repo.findOne({ where: { aggregatorId: aggregatorIdNorm, agentId: agentIdNorm } });
-      if (!assignment) throw new NotFoundException(`Assignment between Aggregator ${aggregatorIdNorm} and Agent ${agentIdNorm} not found`);
+      const assignment = await repo.findOne({
+        where: { aggregatorId: aggregatorIdNorm, agentId: agentIdNorm },
+      });
+      if (!assignment)
+        throw new NotFoundException(
+          `Assignment between Aggregator ${aggregatorIdNorm} and Agent ${agentIdNorm} not found`,
+        );
       const allowed = ALLOWED_RELATIONSHIP_TRANSITIONS[assignment.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${assignment.status} → ${target} is not allowed`);
@@ -205,14 +259,20 @@ export class AggregatorAgentRelationshipService {
         action,
         actor,
         previousValues: previous,
-        newValues: { status: saved.status, aggregatorId: saved.aggregatorId, agentId: saved.agentId, unassignedAt: saved.unassignedAt },
+        newValues: {
+          status: saved.status,
+          aggregatorId: saved.aggregatorId,
+          agentId: saved.agentId,
+          unassignedAt: saved.unassignedAt,
+        },
       });
       return saved;
     });
   }
 
   private assertUuid(value: string, field: string): void {
-    if (!value || !UUID_PATTERN.test(value)) throw new BadRequestException(`${field} must be a UUID`);
+    if (!value || !UUID_PATTERN.test(value))
+      throw new BadRequestException(`${field} must be a UUID`);
   }
 
   private normalizeActor(actor: string): string {
@@ -227,6 +287,12 @@ export class AggregatorAgentRelationshipService {
     const msg = String(e?.message ?? '').toLowerCase();
     const detail = String(e?.detail ?? '').toLowerCase();
     const code = String(e?.code ?? '');
-    return code === '23505' || msg.includes('duplicate') || msg.includes('unique') || detail.includes('duplicate') || detail.includes('already exists');
+    return (
+      code === '23505' ||
+      msg.includes('duplicate') ||
+      msg.includes('unique') ||
+      detail.includes('duplicate') ||
+      detail.includes('already exists')
+    );
   }
 }

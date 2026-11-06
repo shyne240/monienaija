@@ -18,9 +18,10 @@ const ALLOW_NOTIFICATION_PROVIDER_AUDIT = Symbol('ALLOW_NOTIFICATION_PROVIDER_AU
 // request path. Fastify accepts percent-encoded static segments, so match either spelling when
 // hiding those legacy preference decisions; an encoded slash is not a router path separator.
 const encodedSegmentPattern = (segment: string): string =>
-  [...segment].map((character) => `(?:${character}|%${character.charCodeAt(0).toString(16)})`).join('');
-const PREFERENCE_AUDIT_ACTION_PATTERN =
-  `/${encodedSegmentPattern('customers')}/[^/]+/${encodedSegmentPattern('preferences')}(?:/|$)`;
+  [...segment]
+    .map((character) => `(?:${character}|%${character.charCodeAt(0).toString(16)})`)
+    .join('');
+const PREFERENCE_AUDIT_ACTION_PATTERN = `/${encodedSegmentPattern('customers')}/[^/]+/${encodedSegmentPattern('preferences')}(?:/|$)`;
 
 @Injectable()
 export class AuditService {
@@ -317,8 +318,7 @@ function sanitizeNotificationProviderAuditPayload(
     return payload;
   }
   const normalizeProviderErrors =
-    entityType === 'NOTIFICATION_TEST_SEND' ||
-    entityType === 'NOTIFICATION_PROVIDER_CONFIG';
+    entityType === 'NOTIFICATION_TEST_SEND' || entityType === 'NOTIFICATION_PROVIDER_CONFIG';
   return sanitizeAuditValueTree(
     payload,
     normalizeProviderErrors,

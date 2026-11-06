@@ -33,8 +33,7 @@ export class SupportCustomerController {
     @Req() req: AuthenticatedRequest,
   ) {
     const principal = this.requireCustomer(req);
-    const idempotencyKey =
-      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
+    const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     const result = await this.supportService.createTicket({
       subject: dto.subject,
       category: dto.category,
@@ -93,8 +92,7 @@ export class SupportCustomerController {
   ) {
     const principal = this.requireCustomer(req);
     if (dto.isInternal) throw new ForbiddenException('Customer cannot create internal messages');
-    const idempotencyKey =
-      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
+    const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     return this.supportService.addMessage({
       ticketId: id,
       body: dto.body,
@@ -114,7 +112,8 @@ export class SupportCustomerController {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type !== 'CUSTOMER') throw new ForbiddenException('Customer access required');
-    if (!principal.customerId) throw new ForbiddenException('Customer principal missing customerId');
+    if (!principal.customerId)
+      throw new ForbiddenException('Customer principal missing customerId');
     return principal;
   }
 }

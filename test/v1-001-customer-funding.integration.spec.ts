@@ -38,8 +38,6 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   let fundingService: CustomerFundingService;
   let walletService: WalletService;
 
-
-
   const supportMaker: any = {
     type: 'SUPPORT',
     principalId: 'support-maker-1',
@@ -94,7 +92,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     fundingService = moduleRef.get(CustomerFundingService);
@@ -106,7 +106,15 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(()=>undefined);} catch { void 0; } }
+      try {
+        await destroyIntegrationDataSource(dataSource);
+      } catch {
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
+      }
     }
   }, 60000);
 
@@ -122,7 +130,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
     // Ensure ledger_accounts seed still present (in case data was not yet migrated due to previous truncate)
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       // Re-run the specific seed from migration 0002/0061 without re-running all migrations
       await dataSource.query(`
@@ -146,7 +156,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     }
   });
 
-  async function createCustomerWithCredential(opts: { reference?: string; password?: string } = {}): Promise<{ customerId: string; token: string; walletId: string; ledgerAccountId: string }> {
+  async function createCustomerWithCredential(
+    opts: { reference?: string; password?: string } = {},
+  ): Promise<{ customerId: string; token: string; walletId: string; ledgerAccountId: string }> {
     const reference = opts.reference ?? `cust-fund-${randomUUID()}`;
     const password = opts.password ?? 'correct-password-fund';
     const rows: Array<{ id: string }> = await dataSource.query(
@@ -154,16 +166,29 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, 'Fund Customer']);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, 'Fund Customer'],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
-    await dataSource.query(`INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`, [customerId, `0${canonical10.slice(1)}`, canonical10]);
+    await dataSource.query(
+      `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
+      [customerId, `0${canonical10.slice(1)}`, canonical10],
+    );
     const hash = encodePbkdf2(password);
     await dataSource.query(
       `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
       [customerId, hash],
     );
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `fund-wallet-${customerId}-${randomUUID()}` });
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password }).expect(200);
+    const wallet = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `fund-wallet-${customerId}-${randomUUID()}`,
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password })
+      .expect(200);
     const token = login.body.accessToken as string;
     return { customerId, token, walletId: wallet.id, ledgerAccountId: wallet.ledgerAccountId };
   }
@@ -177,7 +202,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   }
 
   async function getSettlementAssetId(): Promise<string> {
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (rows.length === 0) throw new Error('Settlement asset not found');
     return rows[0]!.id;
   }
@@ -200,7 +227,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(res.reference).toMatch(/^CF-/);
     expect(res.makerId).toBe(supportMaker.principalId);
     expect(res.journalId).toBeNull();
-    const rows: Array<any> = await dataSource.query(`SELECT * FROM customer_funding_requests WHERE id=$1`, [res.id]);
+    const rows: Array<any> = await dataSource.query(
+      `SELECT * FROM customer_funding_requests WHERE id=$1`,
+      [res.id],
+    );
     expect(rows[0].status).toBe('PENDING');
   });
 
@@ -228,7 +258,14 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .expect((r) => expect([401, 403].includes(r.status)).toBe(true));
 
     // via service with CUSTOMER principal should also be forbidden
-    const custPrincipal: any = { type: 'CUSTOMER', principalId: customerId, customerId, roles: [], scopes: [], customerAccess: 'SELF' };
+    const custPrincipal: any = {
+      type: 'CUSTOMER',
+      principalId: customerId,
+      customerId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF',
+    };
     await expect(
       fundingService.createRequest({
         customerId,
@@ -242,7 +279,15 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
 
   it('4. pending status persisted, agent cannot create', async () => {
     const { customerId } = await createCustomerWithCredential();
-    const agentPrincipal: any = { type: 'AGENT', principalId: randomUUID(), agentId: randomUUID(), roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'SELF' };
+    const agentPrincipal: any = {
+      type: 'AGENT',
+      principalId: randomUUID(),
+      agentId: randomUUID(),
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE',
+      agentAccess: 'SELF',
+    };
     await expect(
       fundingService.createRequest({
         customerId,
@@ -289,7 +334,11 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       fundingService.approve({ fundingRequestId: created.id, principal: supportMaker }),
     ).rejects.toThrow(/Maker cannot approve own/i);
     await expect(
-      fundingService.reject({ fundingRequestId: created.id, principal: supportMaker, rejectionReason: 'try self reject' }),
+      fundingService.reject({
+        fundingRequestId: created.id,
+        principal: supportMaker,
+        rejectionReason: 'try self reject',
+      }),
     ).rejects.toThrow(/Maker cannot/i);
   });
 
@@ -307,7 +356,11 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     ).rejects.toThrow(/cannot approve/i);
     // SUPPORT also cannot reject? Our implementation requires OPERATOR for reject, so same
     await expect(
-      fundingService.reject({ fundingRequestId: created.id, principal: supportChecker, rejectionReason: 'no' }),
+      fundingService.reject({
+        fundingRequestId: created.id,
+        principal: supportChecker,
+        rejectionReason: 'no',
+      }),
     ).rejects.toThrow(/cannot reject/i);
   });
 
@@ -327,7 +380,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     // via WalletService balance also
     await walletService.getWalletBalance((await createCustomerWithCredential()).walletId); // dummy to keep, but we check earlier
     // Ensure ledger-derived
-    const walletBal = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`, [customerId]);
+    const walletBal = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE customer_id=$1`,
+      [customerId],
+    );
     const ledgerBal = await getBalance(walletBal[0].ledger_account_id);
     expect(ledgerBal).toBe(after);
   });
@@ -342,11 +398,15 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-balanced-${randomUUID()}`,
       principal: supportMaker,
     });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
-    const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> = await dataSource.query(
-      `SELECT ledger_account_id, direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1 ORDER BY line_number`,
-      [approved.journalId],
-    );
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
+    const lines: Array<{ ledger_account_id: string; direction: string; amount_minor: string }> =
+      await dataSource.query(
+        `SELECT ledger_account_id, direction, amount_minor::text AS amount_minor FROM ledger_lines WHERE journal_id=$1 ORDER BY line_number`,
+        [approved.journalId],
+      );
     expect(lines.length).toBe(2);
     const debit = lines.find((l) => l.direction === 'DEBIT')!;
     const credit = lines.find((l) => l.direction === 'CREDIT')!;
@@ -355,7 +415,11 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(debit.ledger_account_id).toBe(settlementId);
     expect(credit.ledger_account_id).toBe(ledgerAccountId);
     // journal total
-    const journals: Array<{ total_minor: string; currency: string; accounting_unit: string }> = await dataSource.query(`SELECT total_minor::text AS total_minor, currency, accounting_unit FROM ledger_journals WHERE id=$1`, [approved.journalId]);
+    const journals: Array<{ total_minor: string; currency: string; accounting_unit: string }> =
+      await dataSource.query(
+        `SELECT total_minor::text AS total_minor, currency, accounting_unit FROM ledger_journals WHERE id=$1`,
+        [approved.journalId],
+      );
     expect(journals[0]!.total_minor).toBe('9999');
     expect(journals[0]!.currency).toBe('NGN');
     expect(journals[0]!.accounting_unit).toBe('CUSTOMER_FUNDS');
@@ -364,7 +428,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   it('10. correct funding/control account is used (PAYMENT-SETTLEMENT_ASSET-NGN, not AGENT pool, not invented)', async () => {
     const { customerId } = await createCustomerWithCredential();
     const settlementId = await getSettlementAssetId();
-    const poolRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN' LIMIT 1`);
+    const poolRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN' LIMIT 1`,
+    );
     const poolId = poolRows[0]?.id;
     const created = await fundingService.createRequest({
       customerId,
@@ -373,15 +439,25 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-correct-acct-${randomUUID()}`,
       principal: supportMaker,
     });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
-    const lines: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM ledger_lines WHERE journal_id=$1`, [approved.journalId]);
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
+    const lines: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM ledger_lines WHERE journal_id=$1`,
+      [approved.journalId],
+    );
     const ids = lines.map((l) => l.ledger_account_id);
     expect(ids).toContain(settlementId);
     if (poolId) expect(ids).not.toContain(poolId); // should not use agent pool
     // ensure not using invented AR_CONTROL that doesn't exist as customer funding pool
-    const arRows: Array<any> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='FINANCE-ACCOUNTS_RECEIVABLE-NGN'`);
+    const arRows: Array<any> = await dataSource.query(
+      `SELECT code FROM ledger_accounts WHERE code='FINANCE-ACCOUNTS_RECEIVABLE-NGN'`,
+    );
     if (arRows.length > 0) {
-      const arIdRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='FINANCE-ACCOUNTS_RECEIVABLE-NGN' LIMIT 1`);
+      const arIdRows: Array<{ id: string }> = await dataSource.query(
+        `SELECT id FROM ledger_accounts WHERE code='FINANCE-ACCOUNTS_RECEIVABLE-NGN' LIMIT 1`,
+      );
       expect(ids).not.toContain(arIdRows[0]!.id);
     }
   });
@@ -395,7 +471,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-audit-${randomUUID()}`,
       principal: supportMaker,
     });
-    const approved = await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
+    const approved = await fundingService.approve({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+    });
     expect(approved.status).toBe('APPROVED');
     const audits: Array<{ action: string; new_values: any }> = await dataSource.query(
       `SELECT action, new_values FROM audit_events WHERE entity_id=$1 AND entity_type='CUSTOMER_FUNDING_REQUEST' ORDER BY occurred_at`,
@@ -424,11 +503,16 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     });
     await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
     const before = await getBalance(ledgerAccountId);
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: privilegedChecker })).rejects.toThrow(/already APPROVED/i);
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: privilegedChecker }),
+    ).rejects.toThrow(/already APPROVED/i);
     const after = await getBalance(ledgerAccountId);
     expect(after).toBe(before);
     // also check only one journal for funding
-    const journals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals WHERE idempotency_key=$1`, [`customer-funding:${created.id}`]);
+    const journals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM ledger_journals WHERE idempotency_key=$1`,
+      [`customer-funding:${created.id}`],
+    );
     expect(journals[0]!.count).toBe('1');
   });
 
@@ -442,8 +526,24 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       principal: supportMaker,
     });
     const before = await getBalance(ledgerAccountId);
-    const checkerA: any = { type: 'OPERATOR', principalId: `operator-conc-A-${randomUUID()}`, roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
-    const checkerB: any = { type: 'OPERATOR', principalId: `operator-conc-B-${randomUUID()}`, roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE', aggregatorAccess: 'NONE' };
+    const checkerA: any = {
+      type: 'OPERATOR',
+      principalId: `operator-conc-A-${randomUUID()}`,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE',
+      agentAccess: 'NONE',
+      aggregatorAccess: 'NONE',
+    };
+    const checkerB: any = {
+      type: 'OPERATOR',
+      principalId: `operator-conc-B-${randomUUID()}`,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE',
+      agentAccess: 'NONE',
+      aggregatorAccess: 'NONE',
+    };
     const results = await Promise.allSettled([
       fundingService.approve({ fundingRequestId: created.id, principal: checkerA }),
       fundingService.approve({ fundingRequestId: created.id, principal: checkerB }),
@@ -454,9 +554,15 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(rejected.length).toBe(1);
     const after = await getBalance(ledgerAccountId);
     expect(after).toBe(before + 30000n);
-    await dataSource.query(`SELECT count(*)::text AS count FROM ledger_lines WHERE journal_id IN (SELECT journal_id FROM customer_funding_requests WHERE id=$1)`, [created.id]);
+    await dataSource.query(
+      `SELECT count(*)::text AS count FROM ledger_lines WHERE journal_id IN (SELECT journal_id FROM customer_funding_requests WHERE id=$1)`,
+      [created.id],
+    );
     // 2 lines per journal, but only one journal
-    const journals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM ledger_journals WHERE idempotency_key=$1`, [`customer-funding:${created.id}`]);
+    const journals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM ledger_journals WHERE idempotency_key=$1`,
+      [`customer-funding:${created.id}`],
+    );
     expect(journals[0]!.count).toBe('1');
   });
 
@@ -480,9 +586,15 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(rejected.journalId).toBeNull();
     const after = await getBalance(ledgerAccountId);
     expect(after).toBe(before);
-    const audits: Array<{ action: string }> = await dataSource.query(`SELECT action FROM audit_events WHERE entity_id=$1 AND entity_type='CUSTOMER_FUNDING_REQUEST'`, [created.id]);
-    expect(audits.map((a)=>a.action)).toContain('FUNDING_REQUEST_REJECTED');
-    const rejectedRows: Array<any> = await dataSource.query(`SELECT status FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    const audits: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_id=$1 AND entity_type='CUSTOMER_FUNDING_REQUEST'`,
+      [created.id],
+    );
+    expect(audits.map((a) => a.action)).toContain('FUNDING_REQUEST_REJECTED');
+    const rejectedRows: Array<any> = await dataSource.query(
+      `SELECT status FROM customer_funding_requests WHERE id=$1`,
+      [created.id],
+    );
     expect(rejectedRows[0].status).toBe('REJECTED');
   });
 
@@ -495,9 +607,21 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-state-${randomUUID()}`,
       principal: supportMaker,
     });
-    await fundingService.reject({ fundingRequestId: created.id, principal: operatorChecker, rejectionReason: 'no' });
-    await expect(fundingService.approve({ fundingRequestId: created.id, principal: privilegedChecker })).rejects.toThrow(/already REJECTED/i);
-    await expect(fundingService.reject({ fundingRequestId: created.id, principal: privilegedChecker, rejectionReason: 'again' })).rejects.toThrow(/already REJECTED/i);
+    await fundingService.reject({
+      fundingRequestId: created.id,
+      principal: operatorChecker,
+      rejectionReason: 'no',
+    });
+    await expect(
+      fundingService.approve({ fundingRequestId: created.id, principal: privilegedChecker }),
+    ).rejects.toThrow(/already REJECTED/i);
+    await expect(
+      fundingService.reject({
+        fundingRequestId: created.id,
+        principal: privilegedChecker,
+        rejectionReason: 'again',
+      }),
+    ).rejects.toThrow(/already REJECTED/i);
 
     const created2 = await fundingService.createRequest({
       customerId,
@@ -507,8 +631,16 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       principal: supportMaker,
     });
     await fundingService.approve({ fundingRequestId: created2.id, principal: operatorChecker });
-    await expect(fundingService.approve({ fundingRequestId: created2.id, principal: privilegedChecker })).rejects.toThrow(/already APPROVED/i);
-    await expect(fundingService.reject({ fundingRequestId: created2.id, principal: privilegedChecker, rejectionReason: 'too late' })).rejects.toThrow(/already APPROVED/i);
+    await expect(
+      fundingService.approve({ fundingRequestId: created2.id, principal: privilegedChecker }),
+    ).rejects.toThrow(/already APPROVED/i);
+    await expect(
+      fundingService.reject({
+        fundingRequestId: created2.id,
+        principal: privilegedChecker,
+        rejectionReason: 'too late',
+      }),
+    ).rejects.toThrow(/already APPROVED/i);
   });
 
   it('18. customer funding history returns safe projection (no journalId etc)', async () => {
@@ -529,7 +661,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(hist.body.items).toBeDefined();
-    const item = (hist.body.items as FundingHistoryFixture[]).find((i: FundingHistoryFixture) => i.id === created.id)!;
+    const item = (hist.body.items as FundingHistoryFixture[]).find(
+      (i: FundingHistoryFixture) => i.id === created.id,
+    )!;
     expect(item).toBeDefined();
     expect(item.reference).toMatch(/^CF-/);
     expect(item.amountMinor).toBe('25000');
@@ -561,12 +695,18 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       idempotencyKey: `idem-hist-rej-${randomUUID()}`,
       principal: supportMaker,
     });
-    await fundingService.reject({ fundingRequestId: createdRej.id, principal: operatorChecker, rejectionReason: 'docs missing' });
+    await fundingService.reject({
+      fundingRequestId: createdRej.id,
+      principal: operatorChecker,
+      rejectionReason: 'docs missing',
+    });
     const hist3 = await request(app.getHttpServer())
       .get('/api/v1/customers/me/funding-history')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const rejItem = (hist3.body.items as FundingHistoryFixture[]).find((i: FundingHistoryFixture) => i.id === createdRej.id)!;
+    const rejItem = (hist3.body.items as FundingHistoryFixture[]).find(
+      (i: FundingHistoryFixture) => i.id === createdRej.id,
+    )!;
     expect(rejItem.status).toBe('REJECTED');
     expect(rejItem.rejectionReason).toBe('docs missing');
   });
@@ -590,25 +730,68 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       principal: supportMaker,
     });
     await fundingService.approve({ fundingRequestId: createdB.id, principal: operatorChecker });
-    const histA = await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${custA.token}`).expect(200);
-    const histB = await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${custB.token}`).expect(200);
-    expect((histA.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdA.id)).toBe(true);
-    expect((histA.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdB.id)).toBe(false);
-    expect((histB.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdB.id)).toBe(true);
-    expect((histB.body.items as FundingHistoryFixture[]).some((i: FundingHistoryFixture) => i.id === createdA.id)).toBe(false);
+    const histA = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/funding-history')
+      .set('Authorization', `Bearer ${custA.token}`)
+      .expect(200);
+    const histB = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/funding-history')
+      .set('Authorization', `Bearer ${custB.token}`)
+      .expect(200);
+    expect(
+      (histA.body.items as FundingHistoryFixture[]).some(
+        (i: FundingHistoryFixture) => i.id === createdA.id,
+      ),
+    ).toBe(true);
+    expect(
+      (histA.body.items as FundingHistoryFixture[]).some(
+        (i: FundingHistoryFixture) => i.id === createdB.id,
+      ),
+    ).toBe(false);
+    expect(
+      (histB.body.items as FundingHistoryFixture[]).some(
+        (i: FundingHistoryFixture) => i.id === createdB.id,
+      ),
+    ).toBe(true);
+    expect(
+      (histB.body.items as FundingHistoryFixture[]).some(
+        (i: FundingHistoryFixture) => i.id === createdA.id,
+      ),
+    ).toBe(false);
     // unauthenticated 401
     await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').expect(401);
     // agent cannot access
-    const agentRows: Array<{ id: string }> = await dataSource.query(`INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits) VALUES ($1,$2,$3,true,$4,$5) RETURNING id`, [`cls-fund-${randomUUID().slice(0,8)}`, `FND-${randomUUID().slice(0,6)}`, 'Fund Class', JSON.stringify(['CASH_IN']), JSON.stringify({})]);
+    const agentRows: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agent_classes (reference, code, name, is_active, applicable_services, applicable_limits) VALUES ($1,$2,$3,true,$4,$5) RETURNING id`,
+      [
+        `cls-fund-${randomUUID().slice(0, 8)}`,
+        `FND-${randomUUID().slice(0, 6)}`,
+        'Fund Class',
+        JSON.stringify(['CASH_IN']),
+        JSON.stringify({}),
+      ],
+    );
     const classId = agentRows[0]!.id;
     const ref = `agent-fund-${randomUUID()}`;
-    const agentRows2: Array<{ id: string }> = await dataSource.query(`INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`, [ref, classId]);
+    const agentRows2: Array<{ id: string }> = await dataSource.query(
+      `INSERT INTO agents (reference, status, agent_class_id) VALUES ($1,'ACTIVE',$2) RETURNING id`,
+      [ref, classId],
+    );
     const agentId = agentRows2[0]!.id;
     const hash = encodePbkdf2('agent-pass-fund', 'agent-salt-fund');
-    await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`, [agentId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: 'agent-pass-fund' }).expect(200);
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: 'agent-pass-fund' })
+      .expect(200);
     const agentToken = login.body.accessToken;
-    await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${agentToken}`).expect((r)=>expect([401,403].includes(r.status)).toBe(true));
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me/funding-history')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect((r) => expect([401, 403].includes(r.status)).toBe(true));
   });
 
   it('20. idempotency/replay behavior (same key same hash replay, different amount conflict)', async () => {
@@ -659,7 +842,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       principal: supportMaker,
     });
     await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
-    const internal = await dataSource.query(`SELECT * FROM customer_funding_requests WHERE id=$1`, [created.id]);
+    const internal = await dataSource.query(`SELECT * FROM customer_funding_requests WHERE id=$1`, [
+      created.id,
+    ]);
     const serialInternal = JSON.stringify(internal).toLowerCase();
     expect(serialInternal).not.toContain('password');
     expect(serialInternal).not.toContain('pin');
@@ -669,7 +854,10 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     expect(JSON.stringify(view).toLowerCase()).not.toContain('password');
     expect(JSON.stringify(view).toLowerCase()).not.toContain('pin');
     // funding history via customer also safe (checked)
-    const hist = await request(app.getHttpServer()).get('/api/v1/customers/me/funding-history').set('Authorization', `Bearer ${token}`).expect(200);
+    const hist = await request(app.getHttpServer())
+      .get('/api/v1/customers/me/funding-history')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(JSON.stringify(hist.body).toLowerCase()).not.toContain('password');
     expect(JSON.stringify(hist.body).toLowerCase()).not.toContain('pinhash');
     expect(JSON.stringify(hist.body).toLowerCase()).not.toContain('tokenhash');
@@ -679,24 +867,58 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     const { customerId: custAId, token: tokenA } = await createCustomerWithCredential();
     const { customerId: custBId } = await createCustomerWithCredential();
     // create wallets already done via helper, but need to get wallet ids from WalletService list?
-    const walletsA: Array<{ id: string }> = await dataSource.query(`SELECT id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`, [custAId]);
-    const walletsB: Array<{ id: string }> = await dataSource.query(`SELECT id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`, [custBId]);
+    const walletsA: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`,
+      [custAId],
+    );
+    const walletsB: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM wallet_accounts WHERE customer_id=$1 LIMIT 1`,
+      [custBId],
+    );
     const walletAId = walletsA[0]!.id;
     const walletBId = walletsB[0]!.id;
     // fund A via funding flow
-    const fund = await fundingService.createRequest({ customerId: custAId, amountMinor: '100000', currency: 'NGN', idempotencyKey: `idem-w2w-fund-${randomUUID()}`, principal: supportMaker });
+    const fund = await fundingService.createRequest({
+      customerId: custAId,
+      amountMinor: '100000',
+      currency: 'NGN',
+      idempotencyKey: `idem-w2w-fund-${randomUUID()}`,
+      principal: supportMaker,
+    });
     await fundingService.approve({ fundingRequestId: fund.id, principal: operatorChecker });
     // set PIN for A
-    await request(app.getHttpServer()).post('/api/v1/customers/me/transaction-pin').set('Authorization', `Bearer ${tokenA}`).send({ pin: '1234' }).expect(200);
-    const beforeB: bigint = await getBalance((await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [walletBId]))[0].ledger_account_id);
+    await request(app.getHttpServer())
+      .post('/api/v1/customers/me/transaction-pin')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ pin: '1234' })
+      .expect(200);
+    const beforeB: bigint = await getBalance(
+      (
+        await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [
+          walletBId,
+        ])
+      )[0].ledger_account_id,
+    );
     const tr = await request(app.getHttpServer())
       .post('/api/v1/customers/me/transfers')
       .set('Authorization', `Bearer ${tokenA}`)
       .set('Idempotency-Key', `w2w-${randomUUID()}`)
-      .send({ sourceWalletId: walletAId, destinationWalletId: walletBId, amountMinor: '25000', currency: 'NGN', pin: '1234' })
+      .send({
+        sourceWalletId: walletAId,
+        destinationWalletId: walletBId,
+        amountMinor: '25000',
+        currency: 'NGN',
+        pin: '1234',
+      })
       .expect(201);
     expect(tr.body.status).toBe('COMPLETED');
-    const afterB: bigint = await getBalance((await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [walletBId]))[0].ledger_account_id);
+    const afterB: bigint = await getBalance(
+      (
+        await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [
+          walletBId,
+        ])
+      )[0].ledger_account_id,
+    );
     expect(afterB).toBe(beforeB + 25000n);
   });
 
@@ -714,27 +936,40 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
     const appService = app.get(AgentApplicationService);
     const lifecycleService = app.get(AgentLifecycleService);
     const cls = await classService.create({
-      reference: `cls-fund23-${randomUUID().slice(0,8)}`,
-      code: `F23-${randomUUID().slice(0,6)}`,
+      reference: `cls-fund23-${randomUUID().slice(0, 8)}`,
+      code: `F23-${randomUUID().slice(0, 6)}`,
       name: 'Fund23 Class',
       isActive: true,
-      applicableServices: ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'] as any,
+      applicableServices: [
+        'CASH_IN',
+        'CASH_OUT',
+        'CASH_TO_CASH',
+        'AGENT_FUNDING',
+        'AGENT_DEFUNDING',
+      ] as any,
       applicableLimits: {} as any,
       actor: 'test-actor',
     });
     const application = await appService.create({
       agentClassId: cls.id,
       applicantReference: `h-fund23-${randomUUID()}`,
-      businessName: `Biz Fund23 ${randomUUID().slice(0,4)}`,
-      contactEmail: `fund23-${randomUUID().slice(0,6)}@test.com`,
+      businessName: `Biz Fund23 ${randomUUID().slice(0, 4)}`,
+      contactEmail: `fund23-${randomUUID().slice(0, 6)}@test.com`,
       actor: 'applicant-fund23',
     });
     await appService.submit(application.id, 'applicant-fund23');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [application.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [application.id],
+    );
     const { AgentStatus } = await import('../src/agent/agent.enums');
     const agent = await lifecycleService.activateFromApplication(application.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
-    const wallet = await walletService.createWallet({ customerId: agent.id, currency: 'NGN', idempotencyKey: `agent-wallet-f23-${agent.id}-${randomUUID()}` });
+    const wallet = await walletService.createWallet({
+      customerId: agent.id,
+      currency: 'NGN',
+      idempotencyKey: `agent-wallet-f23-${agent.id}-${randomUUID()}`,
+    });
     const before = await getBalance(wallet.ledgerAccountId);
     const res = await fundingServiceAgent.fund({
       agentId: agent.id,
@@ -749,7 +984,7 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
         customerAccess: 'NONE',
         agentAccess: 'NONE',
         aggregatorAccess: 'NONE',
-        assuranceLevel: 'MFA' // Decision 7: agent funding requires an MFA-assured maker,
+        assuranceLevel: 'MFA', // Decision 7: agent funding requires an MFA-assured maker,
       },
       actor: 'test-actor',
     });
@@ -759,7 +994,9 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
   });
 
   it('migration count is 65 and settlement account exists', async () => {
-    const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text AS count FROM typeorm_migrations`);
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text AS count FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
     // ARENA 3 (PostgreSQL regression triage): compare the applied chain against the actual
     // configured migrations instead of a stale hard-coded ceiling at 0090. The chain
@@ -773,28 +1010,58 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       [...configuredMigrations].sort(),
     );
     expect(await dataSource.showMigrations()).toBe(false);
-    const settlement: Array<{ code: string }> = await dataSource.query(`SELECT code FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN'`);
+    const settlement: Array<{ code: string }> = await dataSource.query(
+      `SELECT code FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN'`,
+    );
     expect(settlement.length).toBe(1);
-    const fundingTable: Array<{ tablename: string }> = await dataSource.query(`SELECT tablename FROM pg_tables WHERE tablename='customer_funding_requests'`);
+    const fundingTable: Array<{ tablename: string }> = await dataSource.query(
+      `SELECT tablename FROM pg_tables WHERE tablename='customer_funding_requests'`,
+    );
     expect(fundingTable.length).toBe(1);
   });
 
   it('no balance column (ledger-derived)', async () => {
-    const cols: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='wallet_accounts' AND column_name='balance_minor'`);
+    const cols: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='wallet_accounts' AND column_name='balance_minor'`,
+    );
     expect(cols.length).toBe(0);
-    const cols2: Array<{ column_name: string }> = await dataSource.query(`SELECT column_name FROM information_schema.columns WHERE table_name='customer_funding_requests' AND column_name='balance_minor'`);
+    const cols2: Array<{ column_name: string }> = await dataSource.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='customer_funding_requests' AND column_name='balance_minor'`,
+    );
     expect(cols2.length).toBe(0);
   });
 
   it('outbox events exist for funding approved/rejected', async () => {
     const { customerId } = await createCustomerWithCredential();
-    const created = await fundingService.createRequest({ customerId, amountMinor: '12000', currency: 'NGN', idempotencyKey: `idem-outbox-${randomUUID()}`, principal: supportMaker });
+    const created = await fundingService.createRequest({
+      customerId,
+      amountMinor: '12000',
+      currency: 'NGN',
+      idempotencyKey: `idem-outbox-${randomUUID()}`,
+      principal: supportMaker,
+    });
     await fundingService.approve({ fundingRequestId: created.id, principal: operatorChecker });
-    const outboxApproved: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='customer.funding.approved'`, [created.id]);
+    const outboxApproved: Array<{ event_type: string }> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='customer.funding.approved'`,
+      [created.id],
+    );
     expect(outboxApproved.length).toBe(1);
-    const created2 = await fundingService.createRequest({ customerId, amountMinor: '13000', currency: 'NGN', idempotencyKey: `idem-outbox2-${randomUUID()}`, principal: supportMaker });
-    await fundingService.reject({ fundingRequestId: created2.id, principal: operatorChecker, rejectionReason: 'test' });
-    const outboxRejected: Array<{ event_type: string }> = await dataSource.query(`SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='customer.funding.rejected'`, [created2.id]);
+    const created2 = await fundingService.createRequest({
+      customerId,
+      amountMinor: '13000',
+      currency: 'NGN',
+      idempotencyKey: `idem-outbox2-${randomUUID()}`,
+      principal: supportMaker,
+    });
+    await fundingService.reject({
+      fundingRequestId: created2.id,
+      principal: operatorChecker,
+      rejectionReason: 'test',
+    });
+    const outboxRejected: Array<{ event_type: string }> = await dataSource.query(
+      `SELECT event_type FROM outbox_events WHERE aggregate_id=$1 AND event_type='customer.funding.rejected'`,
+      [created2.id],
+    );
     expect(outboxRejected.length).toBe(1);
   });
 
@@ -806,7 +1073,13 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
       .send({ amountMinor: '1000', currency: 'NGN' })
       .expect(401);
     const { customerId: cid } = await createCustomerWithCredential();
-    const created = await fundingService.createRequest({ customerId: cid, amountMinor: '5000', currency: 'NGN', idempotencyKey: `idem-unauth-approve-${randomUUID()}`, principal: supportMaker });
+    const created = await fundingService.createRequest({
+      customerId: cid,
+      amountMinor: '5000',
+      currency: 'NGN',
+      idempotencyKey: `idem-unauth-approve-${randomUUID()}`,
+      principal: supportMaker,
+    });
     await request(app.getHttpServer())
       .post(`/api/v1/internal/customer-funding-requests/${created.id}/approve`)
       .send({})
@@ -815,7 +1088,13 @@ describe('V1-001 Operations Customer Funding maker/checker (real PostgreSQL)', (
 
   it('customer cannot approve funding (403) and internal list is workforce-only', async () => {
     const { customerId, token } = await createCustomerWithCredential();
-    const created = await fundingService.createRequest({ customerId, amountMinor: '6000', currency: 'NGN', idempotencyKey: `idem-cust-approve-${randomUUID()}`, principal: supportMaker });
+    const created = await fundingService.createRequest({
+      customerId,
+      amountMinor: '6000',
+      currency: 'NGN',
+      idempotencyKey: `idem-cust-approve-${randomUUID()}`,
+      principal: supportMaker,
+    });
     await request(app.getHttpServer())
       .post(`/api/v1/internal/customer-funding-requests/${created.id}/approve`)
       .set('Authorization', `Bearer ${token}`)

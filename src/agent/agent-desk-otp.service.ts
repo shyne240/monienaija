@@ -101,7 +101,8 @@ export class AgentDeskOtpService {
     // 1. Customer must exist and not be deleted (money flows re-check status/lifecycle).
     const customers = await this.dataSource.query<Array<{ id: string; status: string }>>(
       `SELECT id, status FROM customers WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [customerId],);
+      [customerId],
+    );
     if (!customers[0]) {
       throw new NotFoundException('Customer not found');
     }
@@ -116,7 +117,8 @@ export class AgentDeskOtpService {
         WHERE customer_id = $1 AND type = 'PHONE' AND is_primary = true
           AND verified_at IS NOT NULL AND deleted_at IS NULL
         LIMIT 1`,
-      [customerId],);
+      [customerId],
+    );
     const destinationPhone = contacts[0]?.value;
     if (!destinationPhone) {
       // Fail closed: issuing without a deliverable OTP would strand the desk flow.
@@ -130,7 +132,8 @@ export class AgentDeskOtpService {
       `SELECT id FROM customer_authentication_credentials
         WHERE customer_id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL
         ORDER BY created_at DESC LIMIT 1`,
-      [customerId],);
+      [customerId],
+    );
     const credentialId = credRows[0]?.id;
     if (!credentialId) {
       throw new BadRequestException('Customer OTP verification unavailable');
@@ -140,13 +143,15 @@ export class AgentDeskOtpService {
     //    customer (canonical issuance requires both; established idempotent semantic).
     const enrollmentSelect = await this.dataSource.query<Array<{ id: string }>>(
       `SELECT id FROM mfa_enrollments WHERE customer_id = $1 AND status = 'ENABLED' AND deleted_at IS NULL LIMIT 1`,
-      [customerId],);
+      [customerId],
+    );
     let enrollmentId: string | undefined = enrollmentSelect[0]?.id;
     if (!enrollmentId) {
       const enrollmentInsert = await this.dataSource.query<Array<{ id: string }>>(
         `INSERT INTO mfa_enrollments (id, customer_id, reference, status, enabled_at)
            VALUES ($1, $2, $3, 'ENABLED', NOW()) RETURNING id`,
-        [randomUUID(), customerId, `desk-otp-enroll-${randomUUID().slice(0, 6)}`],);
+        [randomUUID(), customerId, `desk-otp-enroll-${randomUUID().slice(0, 6)}`],
+      );
       enrollmentId = enrollmentInsert[0]!.id;
     }
     const identifierHash = createHash('sha256').update(destinationPhone).digest('hex');
@@ -155,14 +160,16 @@ export class AgentDeskOtpService {
         WHERE customer_id = $1 AND enrollment_id = $2 AND method_type = 'SMS'
           AND status = 'ENABLED' AND deleted_at IS NULL
         LIMIT 1`,
-      [customerId, enrollmentId],);
+      [customerId, enrollmentId],
+    );
     let methodId: string | undefined = methodSelect[0]?.id;
     if (!methodId) {
       const methodInsert = await this.dataSource.query<Array<{ id: string }>>(
         `INSERT INTO mfa_methods
            (id, customer_id, enrollment_id, method_type, label, identifier_hash, is_primary, status)
            VALUES ($1, $2, $3, 'SMS', 'agent-desk-otp', $4, true, 'ENABLED') RETURNING id`,
-        [randomUUID(), customerId, enrollmentId, identifierHash],);
+        [randomUUID(), customerId, enrollmentId, identifierHash],
+      );
       methodId = methodInsert[0]!.id;
     }
 
@@ -209,7 +216,10 @@ export class AgentDeskOtpService {
 
     // 8. Delivery — DIRECT provider-neutral SMS (never dispatcher/outbox; failure is
     //    isolated and audited, matching registration/temporary-credential conventions).
-    const minutes = Math.max(1, Math.round(challenge.expiresAt.getTime() - challenge.issuedAt.getTime()) / 60000);
+    const minutes = Math.max(
+      1,
+      Math.round(challenge.expiresAt.getTime() - challenge.issuedAt.getTime()) / 60000,
+    );
     let delivered = false;
     try {
       const result = await this.provider.send({

@@ -78,7 +78,12 @@ export class Capability {
   @Column({ type: 'varchar', length: 80, nullable: true })
   owner!: string | null;
 
-  @Column({ name: 'blocker_type', type: 'varchar', length: 40, default: CapabilityBlockerType.NONE })
+  @Column({
+    name: 'blocker_type',
+    type: 'varchar',
+    length: 40,
+    default: CapabilityBlockerType.NONE,
+  })
   blockerType!: string;
 
   @Column({ name: 'blocker_description', type: 'varchar', length: 800, nullable: true })

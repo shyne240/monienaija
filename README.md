@@ -97,7 +97,7 @@ are OOM-killed mid-run (observed as batches exiting with a null code), which cor
 ## Deploy / bootstrap / pilot
 
 - Deployment inputs & production gate: [`docs/deployment/DEPLOYMENT.md`](docs/deployment/DEPLOYMENT.md)
-  + [`docs/deployment/PRODUCTION-CHECKLIST.md`](docs/deployment/PRODUCTION-CHECKLIST.md)
+  - [`docs/deployment/PRODUCTION-CHECKLIST.md`](docs/deployment/PRODUCTION-CHECKLIST.md)
 - **Workforce bootstrap** (OIDC + MFA + one-time anchor-admin ceremony):
   [`docs/deployment/V1-WORKFORCE-BOOTSTRAP-RUNBOOK-01.md`](docs/deployment/V1-WORKFORCE-BOOTSTRAP-RUNBOOK-01.md)
   with [`docs/deployment/config/v1-workforce-bootstrap.env.template`](docs/deployment/config/v1-workforce-bootstrap.env.template)
@@ -120,7 +120,7 @@ configuration checks + 5 real-SIM/physical lane cards + 6 human usability lanes.
 Per the UAT catalogue §13/§19 exclusion register: push notifications; rewards crediting; external
 bank/NIBSS settlement rails and bank integration surface (partner rail inert —
 `A6_PARTNER_ENABLED=false`); external commission payout rails; QR/card/PoS/marketplace; multi-currency.
-Decision-pending for V2 (explicitly *not* silent V1 defects): aggregator self-service login/portal,
+Decision-pending for V2 (explicitly _not_ silent V1 defects): aggregator self-service login/portal,
 reconciliation-break resolver workflow, reversal UI workflow, settle-later release rail, KYC
 hard-gating beyond verified phone, DRAFT cleanup TTL (see
 [`docs/V1/V1-SCOPE-CHALLENGE-01.md`](docs/V1/V1-SCOPE-CHALLENGE-01.md)).

@@ -26,7 +26,10 @@ interface AuthenticatedRequest {
 
 @Controller('internal/support')
 export class SupportInternalController {
-  constructor(private readonly supportService: SupportService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly supportService: SupportService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Get('tickets')
   async list(
@@ -132,8 +135,7 @@ export class SupportInternalController {
   ) {
     const principal = this.requireWorkforce(req);
     await this.requireFunction(req, 'customer.manage_support_case');
-    const idempotencyKey =
-      idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
+    const idempotencyKey = idempotencyKeyHeader?.trim() || idempotencyKeyHeader2?.trim() || null;
     return this.supportService.addMessage({
       ticketId: id,
       body: dto.body,
@@ -153,7 +155,11 @@ export class SupportInternalController {
   private requireWorkforce(req: AuthenticatedRequest): AuthorizationPrincipal {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
-    if (principal.type === 'CUSTOMER' || principal.type === 'AGENT' || (principal.type as string) === 'AGGREGATOR') {
+    if (
+      principal.type === 'CUSTOMER' ||
+      principal.type === 'AGENT' ||
+      (principal.type as string) === 'AGGREGATOR'
+    ) {
       throw new ForbiddenException('Customer/Agent not allowed on workforce route');
     }
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
 
 import { ValidationPipe, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -51,42 +51,43 @@ describe('V1-HARDENING-06 Admin Customer Investigation (real PostgreSQL)', () =>
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-'))
-        throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = [
-        'SUPPORT',
-        'OPERATOR',
-        'SERVICE',
-        'PRIVILEGED',
-        'AGENT',
-        'CUSTOMER',
-        'AGGREGATOR',
-      ];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        // V1-ADMIN-AUTHORIZATION-HARDENING-01: the investigation read surface requires the
-        // catalogue functions its controllers call via requireFunction() —
-        // customer.view_transactions / customer.view_wallets / customer.manage_support_case.
-        // Tests 1-4 assert SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed and
-        // CUSTOMER/AGENT/unauth denied, so only the four workforce types receive the codes.
-        scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? [
-              'customer.view_transactions',
-              'customer.view_wallets',
-              'customer.manage_support_case',
-            ]
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          // V1-ADMIN-AUTHORIZATION-HARDENING-01: the investigation read surface requires the
+          // catalogue functions its controllers call via requireFunction() —
+          // customer.view_transactions / customer.view_wallets / customer.manage_support_case.
+          // Tests 1-4 assert SUPPORT/OPERATOR/SERVICE/PRIVILEGED allowed and
+          // CUSTOMER/AGENT/unauth denied, so only the four workforce types receive the codes.
+          scopes: ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? [
+                'customer.view_transactions',
+                'customer.view_wallets',
+                'customer.manage_support_case',
+              ]
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   beforeAll(async () => {

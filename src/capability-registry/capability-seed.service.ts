@@ -24,13 +24,18 @@ export class CapabilitySeedService implements OnApplicationBootstrap {
       // Ensure any new seed codes are inserted (idempotent upsert for new capabilities added in later code)
       let inserted = 0;
       for (const item of CAPABILITY_SEED) {
-        const exists = await this.repo.findOne({ where: { capabilityCode: item.capabilityCode } as never });
+        const exists = await this.repo.findOne({
+          where: { capabilityCode: item.capabilityCode } as never,
+        });
         if (!exists) {
           await this.repo.save(this.repo.create(item as never) as never);
           inserted++;
         }
       }
-      if (inserted > 0) this.logger.log(`Capability registry: inserted ${inserted} new capabilities (total ${count + inserted})`);
+      if (inserted > 0)
+        this.logger.log(
+          `Capability registry: inserted ${inserted} new capabilities (total ${count + inserted})`,
+        );
       return inserted;
     }
     // Empty — full seed

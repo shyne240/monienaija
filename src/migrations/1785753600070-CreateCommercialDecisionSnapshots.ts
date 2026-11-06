@@ -67,16 +67,26 @@ export class CreateCommercialDecisionSnapshots1785753600070 implements Migration
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_commercial_decision_idempotency ON commercial_decision_snapshots (idempotency_key)`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_commercial_decision_idempotency ON commercial_decision_snapshots (idempotency_key)`,
+    );
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_commercial_decision_reference
       ON commercial_decision_snapshots (product, transaction_reference)
       WHERE supersedes_snapshot_id IS NULL
     `);
-    await queryRunner.query(`CREATE INDEX idx_commercial_decision_principal ON commercial_decision_snapshots (principal_type, principal_id)`);
-    await queryRunner.query(`CREATE INDEX idx_commercial_decision_product_decided ON commercial_decision_snapshots (product, decided_at DESC)`);
-    await queryRunner.query(`CREATE INDEX idx_commercial_decision_status ON commercial_decision_snapshots (decision_status)`);
-    await queryRunner.query(`CREATE INDEX idx_commercial_decision_journal ON commercial_decision_snapshots (journal_id)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_commercial_decision_principal ON commercial_decision_snapshots (principal_type, principal_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_commercial_decision_product_decided ON commercial_decision_snapshots (product, decided_at DESC)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_commercial_decision_status ON commercial_decision_snapshots (decision_status)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_commercial_decision_journal ON commercial_decision_snapshots (journal_id)`,
+    );
 
     // Immutability: snapshots cannot be modified or deleted through any path. Corrections are
     // expressed ONLY as new compensating rows (supersedes_snapshot_id). TRUNCATE is deliberately
@@ -99,7 +109,9 @@ export class CreateCommercialDecisionSnapshots1785753600070 implements Migration
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TRIGGER IF EXISTS trg_commercial_decision_snapshots_immutable ON commercial_decision_snapshots`);
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS trg_commercial_decision_snapshots_immutable ON commercial_decision_snapshots`,
+    );
     await queryRunner.query(`DROP FUNCTION IF EXISTS commercial_decision_snapshots_immutable()`);
     await queryRunner.query(`DROP TABLE commercial_decision_snapshots`);
   }

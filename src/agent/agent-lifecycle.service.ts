@@ -66,7 +66,10 @@ export class AgentLifecycleService {
    */
   async activateCompatibleTarget(id: string, actor: string): Promise<Agent> {
     this.assertUuid(id, 'id');
-    const application = await this.applicationRepository.findOne({ where: { id }, withDeleted: true });
+    const application = await this.applicationRepository.findOne({
+      where: { id },
+      withDeleted: true,
+    });
     return application ? this.activateFromApplication(id, actor) : this.activate(id, actor);
   }
 
@@ -84,14 +87,16 @@ export class AgentLifecycleService {
       const appRepo = manager.getRepository(AgentApplication);
       const agentRepo = manager.getRepository(Agent);
       const app = await appRepo.findOne({ where: { id: applicationId } });
-      if (!app || app.deletedAt !== null) throw new NotFoundException(`AgentApplication ${applicationId} not found`);
+      if (!app || app.deletedAt !== null)
+        throw new NotFoundException(`AgentApplication ${applicationId} not found`);
       if (app.status !== AgentApplicationStatus.APPROVED) {
         throw new ConflictException('Only APPROVED applications can be activated');
       }
       let agent: Agent | null = null;
       if (app.agentId) {
         agent = await agentRepo.findOne({ where: { id: app.agentId } });
-        if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${app.agentId} not found`);
+        if (!agent || agent.deletedAt !== null)
+          throw new NotFoundException(`Agent ${app.agentId} not found`);
       } else {
         // Check for existing Agent with same reference to avoid duplicate (H)
         const existing = await agentRepo.findOne({ where: { reference: app.applicantReference } });
@@ -112,7 +117,15 @@ export class AgentLifecycleService {
           );
           app.agentId = agent.id;
           await appRepo.save(app);
-          await this.audit(manager, 'AGENT', agent.id, 'CREATED_PENDING', normalizedActor, undefined, this.agentValues(agent));
+          await this.audit(
+            manager,
+            'AGENT',
+            agent.id,
+            'CREATED_PENDING',
+            normalizedActor,
+            undefined,
+            this.agentValues(agent),
+          );
         }
       }
       // Now transition to ACTIVE if PENDING
@@ -121,15 +134,39 @@ export class AgentLifecycleService {
         agent.status = AgentStatus.ACTIVE;
         const saved = await agentRepo.save(agent);
         // A9: allocate canonical receiving number within same transaction (identity/ routing only, no wallet/ledger)
-        await this.receivingNumberService.ensureForAgentInManager(manager, saved.id, normalizedActor);
-        await this.audit(manager, 'AGENT', saved.id, 'ACTIVATED', normalizedActor, previous, this.agentValues(saved));
+        await this.receivingNumberService.ensureForAgentInManager(
+          manager,
+          saved.id,
+          normalizedActor,
+        );
+        await this.audit(
+          manager,
+          'AGENT',
+          saved.id,
+          'ACTIVATED',
+          normalizedActor,
+          previous,
+          this.agentValues(saved),
+        );
         // Also audit application activation
-        await this.audit(manager, 'AGENT_APPLICATION', app.id, 'AGENT_ACTIVATED', normalizedActor, { status: app.status }, { agentId: saved.id, agentStatus: saved.status });
+        await this.audit(
+          manager,
+          'AGENT_APPLICATION',
+          app.id,
+          'AGENT_ACTIVATED',
+          normalizedActor,
+          { status: app.status },
+          { agentId: saved.id, agentStatus: saved.status },
+        );
         return saved;
       }
       if (agent.status === AgentStatus.ACTIVE) {
         // Idempotent: ensure receiving number exists (in case earlier allocation failed)
-        await this.receivingNumberService.ensureForAgentInManager(manager, agent.id, normalizedActor);
+        await this.receivingNumberService.ensureForAgentInManager(
+          manager,
+          agent.id,
+          normalizedActor,
+        );
         return agent; // already active, idempotent
       }
       throw new ConflictException(`Agent cannot be activated from status ${agent.status}`);
@@ -148,8 +185,12 @@ export class AgentLifecycleService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(Agent);
       // This lock is also taken before issuing or administratively revoking sessions.
-      const agent = await repo.findOne({ where: { id: agentId }, lock: { mode: 'pessimistic_write' } });
-      if (!agent || agent.deletedAt !== null) throw new NotFoundException(`Agent ${agentId} not found`);
+      const agent = await repo.findOne({
+        where: { id: agentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!agent || agent.deletedAt !== null)
+        throw new NotFoundException(`Agent ${agentId} not found`);
       const allowed = ALLOWED_TRANSITIONS[agent.status] ?? [];
       if (!allowed.includes(target)) {
         throw new ConflictException(`Transition ${agent.status} → ${target} is not allowed`);
@@ -170,7 +211,11 @@ export class AgentLifecycleService {
       }
       // A9 lifecycle hooks: ACTIVE allocation, SUSPENDED retains, TERMINATED revokes
       if (target === AgentStatus.ACTIVE) {
-        await this.receivingNumberService.ensureForAgentInManager(manager, saved.id, normalizedActor);
+        await this.receivingNumberService.ensureForAgentInManager(
+          manager,
+          saved.id,
+          normalizedActor,
+        );
       } else if (target === AgentStatus.TERMINATED) {
         await this.receivingNumberService.revokeForTerminated(manager, saved.id, normalizedActor);
       } // SUSPENDED retains identity — no change
@@ -213,7 +258,8 @@ export class AgentLifecycleService {
 
   private normalizeActor(actor: string): string {
     const v = actor?.trim();
-    if (!v || v.length < 1 || v.length > 160) throw new BadRequestException('actor must be 1-160 chars');
+    if (!v || v.length < 1 || v.length > 160)
+      throw new BadRequestException('actor must be 1-160 chars');
     return v;
   }
 

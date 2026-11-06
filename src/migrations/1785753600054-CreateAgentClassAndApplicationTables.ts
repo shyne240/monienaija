@@ -24,7 +24,9 @@ export class CreateAgentClassAndApplicationTables1785753600054 implements Migrat
         CONSTRAINT chk_agent_classes_version CHECK (version > 0)
       )
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_classes_reference ON agent_classes (reference)`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_classes_reference ON agent_classes (reference)`,
+    );
     await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_classes_code ON agent_classes (code)`);
     await queryRunner.query(`CREATE INDEX idx_agent_classes_active ON agent_classes (is_active)`);
 
@@ -56,21 +58,37 @@ export class CreateAgentClassAndApplicationTables1785753600054 implements Migrat
         CONSTRAINT chk_agent_applications_version CHECK (version > 0)
       )
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX uq_agent_applications_reference ON agent_applications (reference)`);
-    await queryRunner.query(`CREATE INDEX idx_agent_applications_class_status ON agent_applications (agent_class_id, status)`);
-    await queryRunner.query(`CREATE INDEX idx_agent_applications_agent ON agent_applications (agent_id)`);
-    await queryRunner.query(`CREATE INDEX idx_agent_applications_applicant ON agent_applications (applicant_reference)`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX uq_agent_applications_reference ON agent_applications (reference)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_applications_class_status ON agent_applications (agent_class_id, status)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_applications_agent ON agent_applications (agent_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX idx_agent_applications_applicant ON agent_applications (applicant_reference)`,
+    );
 
     await queryRunner.query(`ALTER TABLE agents ADD COLUMN agent_class_id UUID`);
     await queryRunner.query(`ALTER TABLE agents ADD COLUMN origin_application_id UUID`);
-    await queryRunner.query(`ALTER TABLE agents ADD CONSTRAINT fk_agents_class FOREIGN KEY (agent_class_id) REFERENCES agent_classes(id) ON DELETE RESTRICT`);
-    await queryRunner.query(`ALTER TABLE agents ADD CONSTRAINT fk_agents_origin_application FOREIGN KEY (origin_application_id) REFERENCES agent_applications(id) ON DELETE RESTRICT`);
+    await queryRunner.query(
+      `ALTER TABLE agents ADD CONSTRAINT fk_agents_class FOREIGN KEY (agent_class_id) REFERENCES agent_classes(id) ON DELETE RESTRICT`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE agents ADD CONSTRAINT fk_agents_origin_application FOREIGN KEY (origin_application_id) REFERENCES agent_applications(id) ON DELETE RESTRICT`,
+    );
     await queryRunner.query(`CREATE INDEX idx_agents_class ON agents (agent_class_id)`);
-    await queryRunner.query(`CREATE INDEX idx_agents_origin_application ON agents (origin_application_id)`);
+    await queryRunner.query(
+      `CREATE INDEX idx_agents_origin_application ON agents (origin_application_id)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE agents DROP CONSTRAINT IF EXISTS fk_agents_origin_application`);
+    await queryRunner.query(
+      `ALTER TABLE agents DROP CONSTRAINT IF EXISTS fk_agents_origin_application`,
+    );
     await queryRunner.query(`ALTER TABLE agents DROP CONSTRAINT IF EXISTS fk_agents_class`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_agents_origin_application`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_agents_class`);

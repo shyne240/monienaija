@@ -1,4 +1,11 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export interface RoleDefinitionFunctionGrant {
   functionCode: string;
@@ -84,7 +91,14 @@ export class RoleDefinitionProposal {
   reason!: string;
 
   @Column({ type: 'varchar', length: 20 })
-  status!: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED' | 'APPLIED' | 'APPLY_FAILED';
+  status!:
+    | 'REQUESTED'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'EXPIRED'
+    | 'CANCELLED'
+    | 'APPLIED'
+    | 'APPLY_FAILED';
 
   @Column({ name: 'decided_by', type: 'varchar', length: 160, nullable: true })
   decidedBy!: string | null;

@@ -25,7 +25,10 @@ import {
 import { PrivilegedActionApprovalService } from './privileged-action-approval.service';
 import { A2SecurityRateLimitService } from './security-rate-limit.service';
 import { A2_WORKFORCE_CONFIG, A2WorkforceOidcService } from './workforce-oidc.service';
-import type { A2WorkforceConfigurationV1, A2MakerCheckerRuleV1 } from './workforce-authentication.types';
+import type {
+  A2WorkforceConfigurationV1,
+  A2MakerCheckerRuleV1,
+} from './workforce-authentication.types';
 import { A2WorkforceSessionService } from './workforce-session.service';
 import { AGENT_FUNDING_ACTIONS, governedAction } from './governed-action.registry';
 import { ApprovalRejectionDto } from './approval-decision.dto';
@@ -90,10 +93,12 @@ export class A2WorkforceAdministrationController {
     // Finance roles and ADMINISTRATOR's own (SUPER_ADMIN-only) assignment. Direct-EXECUTE catalogue
     // function check only; the service layer re-validates role membership independently.
     if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(b.roleKey)) {
-      await this.auth.requireFunction(p, 'workforce.role.assign_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
-        'OPERATOR',
-        'PRIVILEGED',
-      ]);
+      await this.auth.requireFunction(
+        p,
+        'workforce.role.assign_operational',
+        'A2_FINANCE_ROLE_ASSIGNMENT',
+        ['OPERATOR', 'PRIVILEGED'],
+      );
     } else {
       await this.authorize(p, 'FINANCE_ROLE_ASSIGN', 'A2_FINANCE_ROLE_ASSIGNMENT');
     }
@@ -116,10 +121,12 @@ export class A2WorkforceAdministrationController {
   ) {
     const p = this.principal(r);
     if (ADMINISTRATOR_OPERATIONAL_ROLE_KEYS.has(roleKey)) {
-      await this.auth.requireFunction(p, 'workforce.role.revoke_operational', 'A2_FINANCE_ROLE_ASSIGNMENT', [
-        'OPERATOR',
-        'PRIVILEGED',
-      ]);
+      await this.auth.requireFunction(
+        p,
+        'workforce.role.revoke_operational',
+        'A2_FINANCE_ROLE_ASSIGNMENT',
+        ['OPERATOR', 'PRIVILEGED'],
+      );
     } else {
       await this.authorize(p, 'FINANCE_ROLE_REVOKE', 'A2_FINANCE_ROLE_ASSIGNMENT');
     }
@@ -211,7 +218,9 @@ export class A2WorkforceAdministrationController {
     const principal = this.principal(r),
       approval = await this.approvals.getApproval(approvalId);
     if (!approval) throw new ForbiddenException('Approval not found');
-    if (Object.values(AGENT_FUNDING_ACTIONS).some((action) => action.action === approval.actionType)) {
+    if (
+      Object.values(AGENT_FUNDING_ACTIONS).some((action) => action.action === approval.actionType)
+    ) {
       throw new ForbiddenException(
         'Reject agent funding requests through the dedicated funding-request rejection endpoint so approval and request state change atomically',
       );

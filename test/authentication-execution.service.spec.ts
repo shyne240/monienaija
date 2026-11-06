@@ -57,39 +57,43 @@ function credential(overrides: Partial<CustomerAuthenticationCredential> = {}) {
 // S-FIX-01: authenticate() binds session issuance to the customer's CURRENT lifecycle status
 function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
   const customerRepository = {
-    findOne: jest.fn().mockImplementation(({ where }: { where: { id?: string; reference?: string } }) => {
-      if (where.id === CUSTOMER_ID) {
-        return Promise.resolve({
-          id: CUSTOMER_ID,
-          reference: CUSTOMER_REF,
-          status: customerStatus,
-          deletedAt: null,
-        });
-      }
-      if (where.reference === CUSTOMER_REF) {
-        return Promise.resolve({
-          id: CUSTOMER_ID,
-          reference: CUSTOMER_REF,
-          status: customerStatus,
-          deletedAt: null,
-        });
-      }
-      return Promise.resolve(null);
-    }),
+    findOne: jest
+      .fn()
+      .mockImplementation(({ where }: { where: { id?: string; reference?: string } }) => {
+        if (where.id === CUSTOMER_ID) {
+          return Promise.resolve({
+            id: CUSTOMER_ID,
+            reference: CUSTOMER_REF,
+            status: customerStatus,
+            deletedAt: null,
+          });
+        }
+        if (where.reference === CUSTOMER_REF) {
+          return Promise.resolve({
+            id: CUSTOMER_ID,
+            reference: CUSTOMER_REF,
+            status: customerStatus,
+            deletedAt: null,
+          });
+        }
+        return Promise.resolve(null);
+      }),
   };
   const contactRepository = {
-    findOne: jest.fn().mockImplementation(({ where }: { where: { normalizedValue?: string; type?: string } }) => {
-      if (where.normalizedValue === CANONICAL_PHONE && where.type === 'PHONE') {
-        return Promise.resolve({
-          id: 'contact-01',
-          customerId: CUSTOMER_ID,
-          normalizedValue: CANONICAL_PHONE,
-          type: 'PHONE',
-          deletedAt: null,
-        });
-      }
-      return Promise.resolve(null);
-    }),
+    findOne: jest
+      .fn()
+      .mockImplementation(({ where }: { where: { normalizedValue?: string; type?: string } }) => {
+        if (where.normalizedValue === CANONICAL_PHONE && where.type === 'PHONE') {
+          return Promise.resolve({
+            id: 'contact-01',
+            customerId: CUSTOMER_ID,
+            normalizedValue: CANONICAL_PHONE,
+            type: 'PHONE',
+            deletedAt: null,
+          });
+        }
+        return Promise.resolve(null);
+      }),
   };
   const credentialRepository = {
     findOne: jest.fn().mockResolvedValue(credentialValue),
@@ -118,7 +122,13 @@ function fixture(credentialValue = credential(), customerStatus = 'ACTIVE') {
     new PasswordHashVerificationService(),
     contactRepository as unknown as Repository<CustomerContactMethod>,
   );
-  return { service, auditService, customerAuthenticationService, customerRepository, contactRepository };
+  return {
+    service,
+    auditService,
+    customerAuthenticationService,
+    customerRepository,
+    contactRepository,
+  };
 }
 
 describe('PasswordHashVerificationService', () => {

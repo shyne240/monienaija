@@ -78,7 +78,8 @@ export class LimitEnforcementService {
   async enforceWithManager(manager: EntityManager, input: EnforceInput): Promise<EnforceResult> {
     const now = input.now ?? new Date();
     const amountMinor = input.amountMinor.trim();
-    if (!/^\d+$/.test(amountMinor)) throw new BadRequestException('amountMinor must be numeric string');
+    if (!/^\d+$/.test(amountMinor))
+      throw new BadRequestException('amountMinor must be numeric string');
     const amount = BigInt(amountMinor);
     const currency = input.currency.trim().toUpperCase();
     const product = input.product.trim().toUpperCase();
@@ -143,7 +144,13 @@ export class LimitEnforcementService {
     });
 
     if (applicable.length === 0) {
-      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions: [], assignmentId: resolved.assignmentId, ruleRefs: [] };
+      return {
+        allowed: true,
+        limitProfileCode: profileCode,
+        evaluatedDimensions: [],
+        assignmentId: resolved.assignmentId,
+        ruleRefs: [],
+      };
     }
 
     // V1-COMMERCIAL-DECISION-02: evidence of the rules this enforcement evaluates (additive).
@@ -163,18 +170,26 @@ export class LimitEnforcementService {
       if (dim === 'MIN_AMOUNT_PER_TX') {
         const limit = rule.limit_value_minor ? BigInt(rule.limit_value_minor) : null;
         if (limit !== null && amount < limit) {
-          throw this.limitException(LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET, `Amount ${amountMinor} below minimum ${limit.toString()} for ${product}`);
+          throw this.limitException(
+            LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET,
+            `Amount ${amountMinor} below minimum ${limit.toString()} for ${product}`,
+          );
         }
       } else if (dim === 'MAX_AMOUNT_PER_TX') {
         const limit = rule.limit_value_minor ? BigInt(rule.limit_value_minor) : null;
         if (limit !== null && amount > limit) {
-          throw this.limitException(LimitFailureCode.LIMIT_MAX_AMOUNT_EXCEEDED, `Amount ${amountMinor} exceeds maximum ${limit.toString()} for ${product}`);
+          throw this.limitException(
+            LimitFailureCode.LIMIT_MAX_AMOUNT_EXCEEDED,
+            `Amount ${amountMinor} exceeds maximum ${limit.toString()} for ${product}`,
+          );
         }
       }
     }
 
     // 3b) WALLET_BALANCE_MAX — authoritative wallet balance, not window — only for INCOMING (credit) flows; OUTGOING reduces balance so not enforced
-    const walletMaxRules = applicable.filter((r) => r.dimension.trim().toUpperCase() === 'WALLET_BALANCE_MAX');
+    const walletMaxRules = applicable.filter(
+      (r) => r.dimension.trim().toUpperCase() === 'WALLET_BALANCE_MAX',
+    );
     for (const rule of walletMaxRules) {
       if (direction === 'OUTGOING') continue;
       const limitStr = rule.limit_value_minor;
@@ -187,25 +202,30 @@ export class LimitEnforcementService {
         // Try to find wallet by principal
         // principalWalletCustomerId may be same as principalId for customers/agents (WalletAccount.customerId = principalId)
         const walletCustomerId = input.principalWalletCustomerId ?? principalId;
-        const walletRows: Array<{ ledger_account_id: string; status: string }> = await manager.query(
-          `SELECT ledger_account_id, status FROM wallet_accounts WHERE customer_id = $1 AND currency = $2 LIMIT 1`,
-          [walletCustomerId, currency],
-        );
+        const walletRows: Array<{ ledger_account_id: string; status: string }> =
+          await manager.query(
+            `SELECT ledger_account_id, status FROM wallet_accounts WHERE customer_id = $1 AND currency = $2 LIMIT 1`,
+            [walletCustomerId, currency],
+          );
         if (walletRows[0]) ledgerAccountId = walletRows[0].ledger_account_id;
       }
       if (!ledgerAccountId) {
         // No wallet yet — projected balance is amount (new wallet will have amount)
         if (direction === 'INCOMING' && amount > limit) {
-          throw this.limitException(LimitFailureCode.LIMIT_WALLET_BALANCE_EXCEEDED, `Projected wallet balance ${amountMinor} exceeds maximum ${limit.toString()}`);
+          throw this.limitException(
+            LimitFailureCode.LIMIT_WALLET_BALANCE_EXCEEDED,
+            `Projected wallet balance ${amountMinor} exceeds maximum ${limit.toString()}`,
+          );
         }
         continue;
       }
       // Fetch ledger balance with manager (handles SERIALIZABLE)
       // Need LedgerAccount to know normalBalance; fetch it
-      const ledgerAccRows: Array<{ id: string; normal_balance: string; currency: string }> = await manager.query(
-        `SELECT id, normal_balance, currency FROM ledger_accounts WHERE id = $1 LIMIT 1`,
-        [ledgerAccountId],
-      );
+      const ledgerAccRows: Array<{ id: string; normal_balance: string; currency: string }> =
+        await manager.query(
+          `SELECT id, normal_balance, currency FROM ledger_accounts WHERE id = $1 LIMIT 1`,
+          [ledgerAccountId],
+        );
       const ledgerAcc = ledgerAccRows[0];
       if (!ledgerAcc) continue;
       // Calculate balance: sum lines with direction vs normalBalance
@@ -247,11 +267,26 @@ export class LimitEnforcementService {
     // 3c) Windowed dimensions DAILY/WEEKLY/MONTHLY/YEARLY amount+count — must be evaluated simultaneously via reservation
     const windowed = applicable.filter((r) => {
       const d = r.dimension.trim().toUpperCase();
-      return ['DAILY_AMOUNT','WEEKLY_AMOUNT','MONTHLY_AMOUNT','YEARLY_AMOUNT','DAILY_COUNT','WEEKLY_COUNT','MONTHLY_COUNT','YEARLY_COUNT'].includes(d);
+      return [
+        'DAILY_AMOUNT',
+        'WEEKLY_AMOUNT',
+        'MONTHLY_AMOUNT',
+        'YEARLY_AMOUNT',
+        'DAILY_COUNT',
+        'WEEKLY_COUNT',
+        'MONTHLY_COUNT',
+        'YEARLY_COUNT',
+      ].includes(d);
     });
 
     if (windowed.length === 0) {
-      return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, assignmentId: resolved.assignmentId, ruleRefs };
+      return {
+        allowed: true,
+        limitProfileCode: profileCode,
+        evaluatedDimensions,
+        assignmentId: resolved.assignmentId,
+        ruleRefs,
+      };
     }
 
     // Prepare reservations with limit enforcement: we will check used+reserved+delta > limit before increment inside same manager loop
@@ -270,7 +305,9 @@ export class LimitEnforcementService {
 
     // Validate that we have idempotencyKey/requestHash
     if (!input.idempotencyKey || !input.requestHash) {
-      throw new BadRequestException('idempotencyKey and requestHash required for limit enforcement');
+      throw new BadRequestException(
+        'idempotencyKey and requestHash required for limit enforcement',
+      );
     }
 
     // Try to implement windowed enforcement atomically with idempotency check + usage lock + limit check + increment
@@ -291,16 +328,25 @@ export class LimitEnforcementService {
       // Replay — treat as allowed without double increment; caller will handle idempotent replay via outer financial idempotency
       {
         const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
-        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
+        return {
+          allowed: true,
+          limitProfileCode: profileCode,
+          evaluatedDimensions,
+          reserved: { kind: 'REPLAY' },
+          assignmentId: resolved.assignmentId,
+          ruleRefs,
+          ...replayEvidence,
+        };
       }
     }
 
     // Also check idempotency_records for scope limit:usage:reserve if exists
     // To mimic usageService behavior, check that table
-    const idemRows: Array<{ id: string; request_hash: string; status: string }> = await manager.query(
-      `SELECT id, request_hash, status FROM idempotency_records WHERE scope = 'limit:usage:reserve' AND idempotency_key = $1 LIMIT 1`,
-      [input.idempotencyKey],
-    );
+    const idemRows: Array<{ id: string; request_hash: string; status: string }> =
+      await manager.query(
+        `SELECT id, request_hash, status FROM idempotency_records WHERE scope = 'limit:usage:reserve' AND idempotency_key = $1 LIMIT 1`,
+        [input.idempotencyKey],
+      );
     let idemId: string | null = null;
     if (idemRows.length > 0) {
       const row = idemRows[0]!;
@@ -310,17 +356,33 @@ export class LimitEnforcementService {
       if (row.status === 'COMPLETED') {
         // Already completed — replay
         {
-        const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
-        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
-      }
+          const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
+          return {
+            allowed: true,
+            limitProfileCode: profileCode,
+            evaluatedDimensions,
+            reserved: { kind: 'REPLAY' },
+            assignmentId: resolved.assignmentId,
+            ruleRefs,
+            ...replayEvidence,
+          };
+        }
       }
       if (row.status === 'IN_PROGRESS') {
         // Someone else is in progress — concurrent duplicate? Treat as replay? But we should let usageService handle.
         // For simplicity, return replay (outer financial idempotency will handle)
         {
-        const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
-        return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'REPLAY' }, assignmentId: resolved.assignmentId, ruleRefs, ...replayEvidence };
-      }
+          const replayEvidence = await this.replayEvidence(manager, input.idempotencyKey);
+          return {
+            allowed: true,
+            limitProfileCode: profileCode,
+            evaluatedDimensions,
+            reserved: { kind: 'REPLAY' },
+            assignmentId: resolved.assignmentId,
+            ruleRefs,
+            ...replayEvidence,
+          };
+        }
       }
       idemId = row.id;
     } else {
@@ -343,7 +405,15 @@ export class LimitEnforcementService {
     }
 
     // For each windowed rule, ensure usage row exists, lock, validate, then increment reserved
-    const reservations: Array<{ dimension: string; product: string; currency: string; windowKey: string; amountMinor: string | null; count: number | null; ruleId: string }> = [];
+    const reservations: Array<{
+      dimension: string;
+      product: string;
+      currency: string;
+      windowKey: string;
+      amountMinor: string | null;
+      count: number | null;
+      ruleId: string;
+    }> = [];
     const usageIds: string[] = [];
     const newReservationIds: string[] = [];
 
@@ -394,7 +464,17 @@ export class LimitEnforcementService {
            FROM limit_usages
           WHERE principal_type = $1 AND principal_id = $2 AND limit_profile_code = $3 AND product = $4 AND COALESCE(direction,'') = COALESCE($5,'') AND COALESCE(channel,'') = COALESCE($6,'') AND dimension = $7 AND currency = $8 AND window_key = $9
           FOR UPDATE`,
-        [principalType, principalId, profileCode, productForRule, dirForUsage, channelForUsage, dim, currencyForRule, window.windowKey],
+        [
+          principalType,
+          principalId,
+          profileCode,
+          productForRule,
+          dirForUsage,
+          channelForUsage,
+          dim,
+          currencyForRule,
+          window.windowKey,
+        ],
       );
       const usage = usageRows[0];
       if (!usage) throw new BadRequestException(`Limit usage row not found for ${dim}`);
@@ -407,12 +487,18 @@ export class LimitEnforcementService {
           const reserved = BigInt(usage.reserved_amount_minor);
           const total = used + reserved + BigInt(deltaAmt!);
           if (total > limit) {
-            throw this.limitException(dimensionToFailureCode(dim, true), `Limit ${dim} amount ${total.toString()} exceeds ${limit.toString()} for window ${window.windowKey}`);
+            throw this.limitException(
+              dimensionToFailureCode(dim, true),
+              `Limit ${dim} amount ${total.toString()} exceeds ${limit.toString()} for window ${window.windowKey}`,
+            );
           }
         }
         // Increment reserved
         const newReserved = (BigInt(usage.reserved_amount_minor) + BigInt(deltaAmt!)).toString();
-        await manager.query(`UPDATE limit_usages SET reserved_amount_minor = $1, updated_at = NOW() WHERE id = $2`, [newReserved, usage.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_amount_minor = $1, updated_at = NOW() WHERE id = $2`,
+          [newReserved, usage.id],
+        );
       } else {
         const limit = rule.limit_value_count;
         if (limit !== null && limit !== undefined) {
@@ -420,11 +506,17 @@ export class LimitEnforcementService {
           const reserved = usage.reserved_count;
           const total = used + reserved + (deltaCnt as number);
           if (total > limit) {
-            throw this.limitException(dimensionToFailureCode(dim, true), `Limit ${dim} count ${total} exceeds ${limit} for window ${window.windowKey}`);
+            throw this.limitException(
+              dimensionToFailureCode(dim, true),
+              `Limit ${dim} count ${total} exceeds ${limit} for window ${window.windowKey}`,
+            );
           }
         }
         const newReserved = usage.reserved_count + (deltaCnt as number);
-        await manager.query(`UPDATE limit_usages SET reserved_count = $1, updated_at = NOW() WHERE id = $2`, [newReserved, usage.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_count = $1, updated_at = NOW() WHERE id = $2`,
+          [newReserved, usage.id],
+        );
       }
 
       // Insert reservation row
@@ -464,7 +556,15 @@ export class LimitEnforcementService {
         } else throw e;
       }
 
-      reservations.push({ dimension: dim, product: productForRule, currency: currencyForRule, windowKey: window.windowKey, amountMinor: deltaAmt, count: deltaCnt, ruleId: rule.id });
+      reservations.push({
+        dimension: dim,
+        product: productForRule,
+        currency: currencyForRule,
+        windowKey: window.windowKey,
+        amountMinor: deltaAmt,
+        count: deltaCnt,
+        ruleId: rule.id,
+      });
       usageIds.push(usage.id);
     }
 
@@ -472,7 +572,11 @@ export class LimitEnforcementService {
     if (idemId) {
       await manager.query(
         `UPDATE idempotency_records SET status='COMPLETED', response_status_code=200, response_body=$2::jsonb, resource_type='LIMIT_RESERVATION', resource_id=$3, last_seen_at=NOW(), updated_at=NOW() WHERE id=$1`,
-        [idemId, JSON.stringify({ reserved: reservations.length }), reservations[0] ? reservations[0].ruleId : null],
+        [
+          idemId,
+          JSON.stringify({ reserved: reservations.length }),
+          reservations[0] ? reservations[0].ruleId : null,
+        ],
       );
     }
 
@@ -486,11 +590,23 @@ export class LimitEnforcementService {
     // But for convenience, if outer already includes ledger success in same manager, we could move reserved→used now.
     // We'll let outer handle.
 
-    return { allowed: true, limitProfileCode: profileCode, evaluatedDimensions, reserved: { kind: 'NEW' }, assignmentId: resolved.assignmentId, ruleRefs, reservationIds: newReservationIds, usageIds };
+    return {
+      allowed: true,
+      limitProfileCode: profileCode,
+      evaluatedDimensions,
+      reserved: { kind: 'NEW' },
+      assignmentId: resolved.assignmentId,
+      ruleRefs,
+      reservationIds: newReservationIds,
+      usageIds,
+    };
   }
 
   /** V1-COMMERCIAL-DECISION-02 (additive): authoritative reservation evidence for replays. */
-  private async replayEvidence(manager: EntityManager, idempotencyKey: string): Promise<{ reservationIds: string[]; usageIds: string[] }> {
+  private async replayEvidence(
+    manager: EntityManager,
+    idempotencyKey: string,
+  ): Promise<{ reservationIds: string[]; usageIds: string[] }> {
     const rows: Array<{ id: string; limit_usage_id: string | null }> = await manager.query(
       `SELECT id, limit_usage_id FROM limit_reservations WHERE idempotency_key = $1 ORDER BY created_at ASC, id ASC`,
       [idempotencyKey],
@@ -503,21 +619,38 @@ export class LimitEnforcementService {
 
   private limitException(code: LimitFailureCode, message: string): HttpException {
     // Map to 422 for exceeded, 400 for min? Spec says stable codes, use 422 for most, 400 for min not met
-    const status = code === LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET ? HttpStatus.BAD_REQUEST : HttpStatus.UNPROCESSABLE_ENTITY;
-    const err = new HttpException({ message, error: code, code }, status) as HttpException & { code: LimitFailureCode };
+    const status =
+      code === LimitFailureCode.LIMIT_MIN_AMOUNT_NOT_MET
+        ? HttpStatus.BAD_REQUEST
+        : HttpStatus.UNPROCESSABLE_ENTITY;
+    const err = new HttpException({ message, error: code, code }, status) as HttpException & {
+      code: LimitFailureCode;
+    };
     err.code = code;
     return err;
   }
 
-  async releaseReservationsWithManager(manager: EntityManager, idempotencyKey: string): Promise<void> {
-    const reservations: Array<{ id: string; limit_usage_id: string | null; amount_minor: string | null; count: number | null }> = await manager.query(
+  async releaseReservationsWithManager(
+    manager: EntityManager,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const reservations: Array<{
+      id: string;
+      limit_usage_id: string | null;
+      amount_minor: string | null;
+      count: number | null;
+    }> = await manager.query(
       `SELECT id, limit_usage_id, amount_minor::text AS amount_minor, count FROM limit_reservations WHERE idempotency_key=$1 AND status='RESERVED'`,
       [idempotencyKey],
     );
     if (reservations.length === 0) return;
     for (const r of reservations) {
       if (!r.limit_usage_id) continue;
-      const usageRows: Array<{ id: string; reserved_amount_minor: string; reserved_count: number }> = await manager.query(
+      const usageRows: Array<{
+        id: string;
+        reserved_amount_minor: string;
+        reserved_count: number;
+      }> = await manager.query(
         `SELECT id, reserved_amount_minor::text AS reserved_amount_minor, reserved_count FROM limit_usages WHERE id=$1 FOR UPDATE`,
         [r.limit_usage_id],
       );
@@ -527,20 +660,37 @@ export class LimitEnforcementService {
         const amt = BigInt(r.amount_minor);
         const reserved = BigInt(u.reserved_amount_minor);
         const newReserved = (reserved - amt).toString();
-        await manager.query(`UPDATE limit_usages SET reserved_amount_minor=$1, updated_at=NOW() WHERE id=$2`, [newReserved, u.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_amount_minor=$1, updated_at=NOW() WHERE id=$2`,
+          [newReserved, u.id],
+        );
       }
       if (r.count !== null) {
         const newReserved = u.reserved_count - r.count;
-        await manager.query(`UPDATE limit_usages SET reserved_count=$1, updated_at=NOW() WHERE id=$2`, [newReserved, u.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_count=$1, updated_at=NOW() WHERE id=$2`,
+          [newReserved, u.id],
+        );
       }
-      await manager.query(`UPDATE limit_reservations SET status='RELEASED', released_at=NOW(), updated_at=NOW() WHERE id=$1`, [r.id]);
+      await manager.query(
+        `UPDATE limit_reservations SET status='RELEASED', released_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [r.id],
+      );
     }
     // also mark idempotency as completed with release? keep as is
   }
 
   // Helper to commit reservations after successful ledger within same manager
-  async commitReservationsWithManager(manager: EntityManager, idempotencyKey: string): Promise<void> {
-    const reservations: Array<{ id: string; limit_usage_id: string | null; amount_minor: string | null; count: number | null }> = await manager.query(
+  async commitReservationsWithManager(
+    manager: EntityManager,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const reservations: Array<{
+      id: string;
+      limit_usage_id: string | null;
+      amount_minor: string | null;
+      count: number | null;
+    }> = await manager.query(
       `SELECT id, limit_usage_id, amount_minor::text AS amount_minor, count FROM limit_reservations WHERE idempotency_key=$1 AND status='RESERVED'`,
       [idempotencyKey],
     );
@@ -555,7 +705,13 @@ export class LimitEnforcementService {
     }
     for (const r of reservations) {
       if (!r.limit_usage_id) continue;
-      const usageRows: Array<{ id: string; used_amount_minor: string; reserved_amount_minor: string; used_count: number; reserved_count: number }> = await manager.query(
+      const usageRows: Array<{
+        id: string;
+        used_amount_minor: string;
+        reserved_amount_minor: string;
+        used_count: number;
+        reserved_count: number;
+      }> = await manager.query(
         `SELECT id, used_amount_minor::text AS used_amount_minor, reserved_amount_minor::text AS reserved_amount_minor, used_count, reserved_count FROM limit_usages WHERE id=$1 FOR UPDATE`,
         [r.limit_usage_id],
       );
@@ -566,14 +722,23 @@ export class LimitEnforcementService {
         const reserved = BigInt(u.reserved_amount_minor);
         const newReserved = (reserved - amt).toString();
         const newUsed = (BigInt(u.used_amount_minor) + amt).toString();
-        await manager.query(`UPDATE limit_usages SET reserved_amount_minor=$1, used_amount_minor=$2, updated_at=NOW() WHERE id=$3`, [newReserved, newUsed, u.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_amount_minor=$1, used_amount_minor=$2, updated_at=NOW() WHERE id=$3`,
+          [newReserved, newUsed, u.id],
+        );
       }
       if (r.count !== null) {
         const newReserved = u.reserved_count - r.count;
         const newUsed = u.used_count + r.count;
-        await manager.query(`UPDATE limit_usages SET reserved_count=$1, used_count=$2, updated_at=NOW() WHERE id=$3`, [newReserved, newUsed, u.id]);
+        await manager.query(
+          `UPDATE limit_usages SET reserved_count=$1, used_count=$2, updated_at=NOW() WHERE id=$3`,
+          [newReserved, newUsed, u.id],
+        );
       }
-      await manager.query(`UPDATE limit_reservations SET status='COMMITTED', committed_at=NOW(), updated_at=NOW() WHERE id=$1`, [r.id]);
+      await manager.query(
+        `UPDATE limit_reservations SET status='COMMITTED', committed_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [r.id],
+      );
     }
   }
 }

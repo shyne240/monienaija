@@ -345,7 +345,11 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
   }
 
   /** Direct (tool-bypassing) signer for negative fixtures — same wire format, any payload/key. */
-  function signStatementDirect(payload: A2RecoveryStatementV1, key: KeyObject, kid: string): string {
+  function signStatementDirect(
+    payload: A2RecoveryStatementV1,
+    key: KeyObject,
+    kid: string,
+  ): string {
     const head = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid })).toString(
       'base64url',
     );
@@ -369,11 +373,16 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     expect(view.consumedBy).toBe(administratorPrincipal.principalId);
     expect(view.recoveryReference).toMatch(/^a2-recovery-/);
 
-    const assignmentRows: Array<{ role_key: string; status: string; revoked_by: string }> = await dataSource.query(
-      `SELECT role_key, status, revoked_by FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
-    );
+    const assignmentRows: Array<{ role_key: string; status: string; revoked_by: string }> =
+      await dataSource.query(
+        `SELECT role_key, status, revoked_by FROM a2_finance_role_assignments WHERE role_key = 'SUPER_ADMIN'`,
+      );
     expect(assignmentRows).toEqual([
-      { role_key: 'SUPER_ADMIN', status: 'REVOKED', revoked_by: `recovery:${administratorPrincipal.principalId}` },
+      {
+        role_key: 'SUPER_ADMIN',
+        status: 'REVOKED',
+        revoked_by: `recovery:${administratorPrincipal.principalId}`,
+      },
     ]);
 
     const session = await dataSource
@@ -386,7 +395,11 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     );
     expect(auditRows).toHaveLength(1);
 
-    const consumptionRows: Array<{ operation: string; target_principal_id: string; consumed_by: string }> = await dataSource.query(
+    const consumptionRows: Array<{
+      operation: string;
+      target_principal_id: string;
+      consumed_by: string;
+    }> = await dataSource.query(
       `SELECT operation, target_principal_id, consumed_by FROM a2_super_admin_recovery_consumptions`,
     );
     expect(consumptionRows).toEqual([
@@ -476,9 +489,9 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
 
   it('4. malformed statement fails safely', async () => {
     await bootstrapSuperAdmin();
-    await expect(
-      recovery.consumeRevocation('not-a-jws', administratorPrincipal),
-    ).rejects.toThrow(/Malformed|compact|JWS/i);
+    await expect(recovery.consumeRevocation('not-a-jws', administratorPrincipal)).rejects.toThrow(
+      /Malformed|compact|JWS/i,
+    );
     await expect(recovery.consumeRevocation('a.b.c', administratorPrincipal)).rejects.toThrow();
     await expect(recovery.consumeRevocation('', administratorPrincipal)).rejects.toThrow();
   });
@@ -505,9 +518,9 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
       signingKeyReference: RECOVERY_KID,
     } as unknown as A2RecoveryStatementV1;
     const wrongPurpose = signStatementDirect(payload, recoveryPrivateKey, RECOVERY_KID);
-    await expect(
-      recovery.consumeRevocation(wrongPurpose, administratorPrincipal),
-    ).rejects.toThrow(/mismatch/i);
+    await expect(recovery.consumeRevocation(wrongPurpose, administratorPrincipal)).rejects.toThrow(
+      /mismatch/i,
+    );
   });
 
   it('6. wrong-target statement (names a principal/reference that is not the active SUPER_ADMIN) is rejected without mutating anything', async () => {
@@ -608,7 +621,12 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
     await bootstrapSuperAdmin();
     const { statement } = generateRevocationStatement(baseRecoveryInput());
     const disabledConfig: A2WorkforceConfigurationV1 = { ...config, recoveryEnabled: false };
-    const disabledRecovery = new SuperAdminRecoveryService(dataSource, audit, sessions, disabledConfig);
+    const disabledRecovery = new SuperAdminRecoveryService(
+      dataSource,
+      audit,
+      sessions,
+      disabledConfig,
+    );
     await expect(
       disabledRecovery.consumeRevocation(statement, administratorPrincipal),
     ).rejects.toThrow(/Recovery disabled/i);
@@ -626,7 +644,10 @@ describe('V1-SECURITY-SUPER-ADMIN-RECOVERY-01 — Protected CEO Recovery (real P
 
   it('14. statement is environment-bound: a statement minted for another environment is rejected', async () => {
     await bootstrapSuperAdmin();
-    const { statement } = generateRevocationStatement({ ...baseRecoveryInput(), environment: 'staging' });
+    const { statement } = generateRevocationStatement({
+      ...baseRecoveryInput(),
+      environment: 'staging',
+    });
     await expect(recovery.consumeRevocation(statement, administratorPrincipal)).rejects.toThrow(
       /Unknown recovery signing key|mismatch/i,
     );

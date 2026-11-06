@@ -12,10 +12,7 @@ import {
   DASHBOARD_TEMPLATE_SEED,
   ROLE_DASHBOARD_ASSIGNMENT_SEED,
 } from '../../src/dashboard/dashboard-templates.seed';
-import {
-  assertOwnRunDatabaseName,
-  resolveRunIdentifier,
-} from './pg-run-namespace';
+import { assertOwnRunDatabaseName, resolveRunIdentifier } from './pg-run-namespace';
 
 /**
  * Real-PostgreSQL integration harness.
@@ -397,7 +394,14 @@ async function reseedDashboardPlatform(dataSource: DataSource): Promise<void> {
          (template_key, display_name, description, operational_area, layout, is_active, metadata, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,true,NULL,$6,$6)
        ON CONFLICT (template_key) DO NOTHING`,
-      [item.templateKey, item.displayName, item.description, item.operationalArea, JSON.stringify({ widgets: item.widgets }), now],
+      [
+        item.templateKey,
+        item.displayName,
+        item.description,
+        item.operationalArea,
+        JSON.stringify({ widgets: item.widgets }),
+        now,
+      ],
     );
   }
   for (const item of ROLE_DASHBOARD_ASSIGNMENT_SEED) {

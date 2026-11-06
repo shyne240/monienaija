@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
@@ -101,7 +110,10 @@ export class CustomerWalletController {
     return this.customerWalletService.getOwnership(id, walletId);
   }
 
-  private async requireWalletCreate(req: AuthenticatedRequest, customerId: string): Promise<string> {
+  private async requireWalletCreate(
+    req: AuthenticatedRequest,
+    customerId: string,
+  ): Promise<string> {
     const principal = req.authorizationPrincipal;
     if (!principal) throw new UnauthorizedException('Authentication required');
     if (principal.type === 'CUSTOMER') {
@@ -157,7 +169,6 @@ export class CustomerWalletController {
         throw new UnauthorizedException('Privileged access required');
       }
       return Promise.resolve(principal.principalId);
-
     } catch (error) {
       return Promise.reject(error as Error);
     }

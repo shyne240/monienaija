@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable, no-empty */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/no-unsafe-argument */
 /**
  * V1-AGENT-MFA-API-01 — agent-desk customer OTP challenge issuance (real PostgreSQL).
  *
@@ -22,15 +22,16 @@ import { AgentAuthenticationService } from '../src/agent-authentication/agent-au
 import { AgentPasswordHashAlgorithm } from '../src/agent-authentication/agent-authentication.enums';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import { LedgerAccountType, LedgerEntryDirection, LedgerNormalBalance } from '../src/ledger/ledger.enums';
+import {
+  LedgerAccountType,
+  LedgerEntryDirection,
+  LedgerNormalBalance,
+} from '../src/ledger/ledger.enums';
 import { CustomerTransactionPinService } from '../src/customer/customer-transaction-pin.service';
 import { MfaExecutionService } from '../src/customer-authentication/mfa-execution.service';
 import { NOTIFICATION_PROVIDER_TOKEN } from '../src/notification/notification.constants';
 import { TestNotificationProvider } from '../src/notification/notification-provider.interface';
-import {
-  createIntegrationDataSource,
-  destroyIntegrationDataSource,
-} from './support/pg-harness';
+import { createIntegrationDataSource, destroyIntegrationDataSource } from './support/pg-harness';
 
 function hashSecret(secret: string): string {
   const salt = randomBytes(16);
@@ -186,7 +187,11 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       currency: 'NGN',
       accountingUnit: 'CUSTOMER_FUNDS',
       lines: [
-        { accountId: systemLedgerAccountId, direction: LedgerEntryDirection.DEBIT, amountMinor: amount },
+        {
+          accountId: systemLedgerAccountId,
+          direction: LedgerEntryDirection.DEBIT,
+          amountMinor: amount,
+        },
         { accountId: accountLedgerId, direction: LedgerEntryDirection.CREDIT, amountMinor: amount },
       ],
     });
@@ -223,10 +228,16 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     // response must never contain the OTP
     expect(JSON.stringify(body)).not.toMatch(/\b\d{6}\b/);
     // challenge row: purpose bound, hashed comparand (never plaintext)
-    const rows: Array<{ purpose: string | null; challenge_hash: string; status: string; customer_id: string; session_id: string }> =
-      await dataSource.query(`SELECT purpose, challenge_hash, status, customer_id, session_id FROM mfa_challenges WHERE id=$1`, [
-        body.challengeId,
-      ]);
+    const rows: Array<{
+      purpose: string | null;
+      challenge_hash: string;
+      status: string;
+      customer_id: string;
+      session_id: string;
+    }> = await dataSource.query(
+      `SELECT purpose, challenge_hash, status, customer_id, session_id FROM mfa_challenges WHERE id=$1`,
+      [body.challengeId],
+    );
     expect(rows[0]!.purpose).toBe('WALLET_TO_CASH');
     expect(rows[0]!.status).toBe('ACTIVE');
     expect(rows[0]!.customer_id).toBe(customerId);
@@ -296,11 +307,16 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     await fund(wallet.ledgerAccountId, '100000');
     const { customerId, wallet: cw } = await createCustomer('+2348000000004', { pin: '1111' });
     await fund(cw.ledgerAccountId, '100000');
-    const issued = await issueDeskOtp(token, { customerId, purpose: 'WALLET_TO_CASH', ttlSeconds: 60 }, 201);
+    const issued = await issueDeskOtp(
+      token,
+      { customerId, purpose: 'WALLET_TO_CASH', ttlSeconds: 60 },
+      201,
+    );
     const otp = capturedOtp();
-    await dataSource.query(`UPDATE mfa_challenges SET expires_at = NOW() - INTERVAL '1 second' WHERE id=$1`, [
-      issued.body.challengeId,
-    ]);
+    await dataSource.query(
+      `UPDATE mfa_challenges SET expires_at = NOW() - INTERVAL '1 second' WHERE id=$1`,
+      [issued.body.challengeId],
+    );
     await request(app.getHttpServer())
       .post('/api/v1/agents/cash-out')
       .set('Authorization', `Bearer ${token}`)
@@ -340,7 +356,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
           agentPin: '4321',
         })
         .expect(400);
-      const st = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.body.challengeId]);
+      const st = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [
+        issued.body.challengeId,
+      ]);
       expect(st[0].status).toBe('ACTIVE'); // no lockout/deliberate state change on wrong code
     }
     const ok = await request(app.getHttpServer())
@@ -423,7 +441,11 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     expect(transferCode).toBeTruthy();
     // issue a W2C-purpose challenge for the beneficiary, capture the code, use at CLAIM → denied
     const issuer = await createAgent([AgentService.CASH_OUT], null);
-    const cross = await issueDeskOtp(issuer.token, { customerId: beneficiaryId, purpose: 'WALLET_TO_CASH' }, 201);
+    const cross = await issueDeskOtp(
+      issuer.token,
+      { customerId: beneficiaryId, purpose: 'WALLET_TO_CASH' },
+      201,
+    );
     const crossOtp = capturedOtp();
     const denied = await request(app.getHttpServer())
       .post('/api/v1/agents/cash-to-cash/claim')
@@ -438,20 +460,45 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         idempotencyKey: `claim-g1-${randomUUID()}`,
       })
       .expect(400);
-    const tr = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const tr = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
+      transferId,
+    ]);
     expect(tr[0].status).toBe('UNCLAIMED');
     // legacy purpose-NULL challenge (pre-feature convention) remains generic and claims fine
     let enrollmentId: string;
     let methodId: string;
-    const enrollRows = await dataSource.query(`SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' LIMIT 1`, [beneficiaryId]);
+    const enrollRows = await dataSource.query(
+      `SELECT id FROM mfa_enrollments WHERE customer_id=$1 AND status='ENABLED' LIMIT 1`,
+      [beneficiaryId],
+    );
     if (enrollRows[0]) {
       enrollmentId = enrollRows[0].id;
-      methodId = (await dataSource.query(`SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND status='ENABLED' LIMIT 1`, [enrollmentId]))[0].id;
+      methodId = (
+        await dataSource.query(
+          `SELECT id FROM mfa_methods WHERE enrollment_id=$1 AND status='ENABLED' LIMIT 1`,
+          [enrollmentId],
+        )
+      )[0].id;
     } else {
-      enrollmentId = (await dataSource.query(`INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`, [randomUUID(), beneficiaryId, `legacy-enroll-${randomUUID().slice(0,4)}`]))[0].id;
-      methodId = (await dataSource.query(`INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP','legacy','ENABLED') RETURNING id`, [randomUUID(), beneficiaryId, enrollmentId]))[0].id;
+      enrollmentId = (
+        await dataSource.query(
+          `INSERT INTO mfa_enrollments (id, customer_id, reference, status) VALUES ($1,$2,$3,'ENABLED') RETURNING id`,
+          [randomUUID(), beneficiaryId, `legacy-enroll-${randomUUID().slice(0, 4)}`],
+        )
+      )[0].id;
+      methodId = (
+        await dataSource.query(
+          `INSERT INTO mfa_methods (id, customer_id, enrollment_id, method_type, label, status) VALUES ($1,$2,$3,'TOTP','legacy','ENABLED') RETURNING id`,
+          [randomUUID(), beneficiaryId, enrollmentId],
+        )
+      )[0].id;
     }
-    const credentialId = (await dataSource.query(`SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 AND status='ACTIVE' LIMIT 1`, [beneficiaryId]))[0].id;
+    const credentialId = (
+      await dataSource.query(
+        `SELECT id FROM customer_authentication_credentials WHERE customer_id=$1 AND status='ACTIVE' LIMIT 1`,
+        [beneficiaryId],
+      )
+    )[0].id;
     const sessionId = randomUUID();
     await dataSource.query(
       `INSERT INTO authentication_sessions (id, customer_id, credential_id, token_hash, audience, status, issued_at, expires_at, last_seen_at) VALUES ($1,$2,$3,$4,'customer-api','ACTIVE',NOW(),NOW() + INTERVAL '1 hour',NOW())`,
@@ -478,7 +525,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       })
       .expect(200);
     expect(claimed.body.status).toBe('COMPLETED'); // established claim result status
-    const tr2 = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const tr2 = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
+      transferId,
+    ]);
     expect(tr2[0].status).toBe('CLAIMED');
   });
 
@@ -507,7 +556,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     expect(res.body.journalId).toBeTruthy();
     expect(res.body.agentId).toBe(agentId);
     expect(res.body.customerId).toBe(customerId);
-    const ch = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.body.challengeId]);
+    const ch = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [
+      issued.body.challengeId,
+    ]);
     expect(ch[0].status).toBe('VERIFIED');
   });
 
@@ -551,7 +602,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
       })
       .expect(200);
     expect(claimed.body.status).toBe('COMPLETED'); // established claim result status
-    const tr2 = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [transferId]);
+    const tr2 = await dataSource.query(`SELECT status FROM cash_to_cash_transfers WHERE id=$1`, [
+      transferId,
+    ]);
     expect(tr2[0].status).toBe('CLAIMED');
     // duplicate claim attempt (new key) must fail (transfer already CLAIMED / replay denied)
     await request(app.getHttpServer())
@@ -604,7 +657,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     );
     const otp = capturedOtp();
     const beforeAgentFloat = await ledgerService.getAccountBalance(claimant.wallet.ledgerAccountId);
-    const beforeCustomerWallet = await ledgerService.getAccountBalance(customerWallet.ledgerAccountId);
+    const beforeCustomerWallet = await ledgerService.getAccountBalance(
+      customerWallet.ledgerAccountId,
+    );
 
     const claimed = await request(app.getHttpServer())
       .post('/api/v1/agents/cash-to-cash/claim')
@@ -626,10 +681,12 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
     expect(claimed.body.redemptionMethod).toBe('AGENT_CASH');
     expect(claimed.body.journalId).toBeTruthy();
     expect(JSON.stringify(claimed.body)).not.toContain('5678');
-    expect((await ledgerService.getAccountBalance(claimant.wallet.ledgerAccountId)).balanceMinor)
-      .toBe((BigInt(beforeAgentFloat.balanceMinor) + 3200n).toString());
-    expect((await ledgerService.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor)
-      .toBe(beforeCustomerWallet.balanceMinor);
+    expect(
+      (await ledgerService.getAccountBalance(claimant.wallet.ledgerAccountId)).balanceMinor,
+    ).toBe((BigInt(beforeAgentFloat.balanceMinor) + 3200n).toString());
+    expect(
+      (await ledgerService.getAccountBalance(customerWallet.ledgerAccountId)).balanceMinor,
+    ).toBe(beforeCustomerWallet.balanceMinor);
     const transferRows: Array<{ status: string }> = await dataSource.query(
       `SELECT status FROM cash_to_cash_transfers WHERE id=$1`,
       [initiated.body.transferId],
@@ -659,7 +716,9 @@ describe('V1-AGENT-MFA-API-01 — agent desk OTP challenge issuance (real Postgr
         agentPin: '4321',
       })
       .expect(400);
-    const st = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [issued.body.challengeId]);
+    const st = await dataSource.query(`SELECT status FROM mfa_challenges WHERE id=$1`, [
+      issued.body.challengeId,
+    ]);
     expect(st[0].status).toBe('ACTIVE');
   });
 

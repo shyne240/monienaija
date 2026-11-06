@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -41,7 +41,9 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     authzService = moduleRef.get(AgentTransactionAuthorizationService);
@@ -88,7 +90,10 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
       actor: 'applicant-a11',
     });
     await appService.submit(appEntity.id, 'applicant-a11');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
     const agent = await lifecycleService.activateFromApplication(appEntity.id, 'test-actor');
     expect(agent.status).toBe(AgentStatus.ACTIVE);
     if (pin !== null) {
@@ -103,7 +108,15 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   }
 
   function agentPrincipal(agentId: string) {
-    return { type: 'AGENT', agentId, principalId: agentId, roles: [], scopes: [], customerAccess: 'NONE' as const, agentAccess: 'SELF' as const };
+    return {
+      type: 'AGENT',
+      agentId,
+      principalId: agentId,
+      roles: [],
+      scopes: [],
+      customerAccess: 'NONE' as const,
+      agentAccess: 'SELF' as const,
+    };
   }
 
   // A. valid authenticated Agent + permitted service + valid PIN → AUTHORIZED
@@ -149,11 +162,21 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
     const principal = agentPrincipal(agent.id);
     // 5 failed attempts to lock
     for (let i = 0; i < 5; i++) {
-      const r = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '9999', principal });
+      const r = await authzService.authorize({
+        agentId: agent.id,
+        service: AgentService.CASH_IN,
+        pin: '9999',
+        principal,
+      });
       expect(r.allowed).toBe(false);
     }
     // now even correct PIN should be locked
-    const locked = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    const locked = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(locked.allowed).toBe(false);
     expect(locked.reason).toBe('PIN_LOCKED');
   });
@@ -182,7 +205,10 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
       actor: 'test-actor',
     });
     const pendingId = randomUUID();
-    await dataSource.query(`INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'PENDING',$3,1)`, [pendingId, `pend-a11-${randomUUID()}`, cls.id]);
+    await dataSource.query(
+      `INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'PENDING',$3,1)`,
+      [pendingId, `pend-a11-${randomUUID()}`, cls.id],
+    );
     // set PIN directly via DB hash (need credential-like but we can use service after inserting agent)
     await pinService.setTransactionPin(pendingId, {
       pinHash: hashPin('1234'),
@@ -244,8 +270,14 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
 
   // I. wrong Agent principal ID → DENIED
   it('I. wrong Agent principal ID → DENIED (PRINCIPAL_MISMATCH)', async () => {
-    const { agent: agentA } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
-    const { agent: agentB } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent: agentA } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
+    const { agent: agentB } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     const res = await authzService.authorize({
       agentId: agentB.id,
       service: AgentService.CASH_IN,
@@ -259,7 +291,14 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   // J. CUSTOMER principal → DENIED
   it('J. CUSTOMER principal → DENIED', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
-    const custPrincipal: any = { type: 'CUSTOMER', customerId: randomUUID(), principalId: randomUUID(), roles: [], scopes: [], customerAccess: 'SELF' };
+    const custPrincipal: any = {
+      type: 'CUSTOMER',
+      customerId: randomUUID(),
+      principalId: randomUUID(),
+      roles: [],
+      scopes: [],
+      customerAccess: 'SELF',
+    };
     const res = await authzService.authorize({
       agentId: agent.id,
       service: AgentService.CASH_IN,
@@ -274,7 +313,14 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   it('K. workforce principal → DENIED', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
     for (const type of ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED']) {
-      const workforcePrincipal: any = { type, principalId: 'workforce-1', roles: [], scopes: [], customerAccess: 'NONE', agentAccess: 'NONE' };
+      const workforcePrincipal: any = {
+        type,
+        principalId: 'workforce-1',
+        roles: [],
+        scopes: [],
+        customerAccess: 'NONE',
+        agentAccess: 'NONE',
+      };
       const res = await authzService.authorize({
         agentId: agent.id,
         service: AgentService.CASH_IN,
@@ -322,7 +368,10 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
 
   // N. inactive AgentClass → DENIED
   it('N. inactive AgentClass → DENIED', async () => {
-    const { agent, cls } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent, cls } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     await classService.update(cls.id, { isActive: false, actor: 'test-actor' });
     const res = await authzService.authorize({
       agentId: agent.id,
@@ -337,7 +386,10 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   // O. missing AgentClass → DENIED
   it('O. missing AgentClass → DENIED', async () => {
     const agentId = randomUUID();
-    await dataSource.query(`INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'ACTIVE',NULL,1)`, [agentId, `o-a11-${randomUUID()}`]);
+    await dataSource.query(
+      `INSERT INTO agents (id, reference, status, agent_class_id, version) VALUES ($1,$2,'ACTIVE',NULL,1)`,
+      [agentId, `o-a11-${randomUUID()}`],
+    );
     await pinService.setTransactionPin(agentId, {
       pinHash: hashPin('1234'),
       hashAlgorithm: AgentPasswordHashAlgorithm.PBKDF2,
@@ -356,18 +408,41 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
 
   // P. repeated valid authorization is deterministic
   it('P. repeated valid authorization is deterministic', async () => {
-    const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN, AgentService.AGENT_FUNDING], '1234');
+    const { agent } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN, AgentService.AGENT_FUNDING],
+      '1234',
+    );
     const principal = agentPrincipal(agent.id);
-    const r1 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
-    const r2 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    const r1 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
+    const r2 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(r1.allowed).toBe(true);
     expect(r2.allowed).toBe(true);
     expect(r1.decision).toBe(r2.decision);
     expect(r1.reason).toBe(r2.reason);
     expect(r1.canonicalService).toBe(r2.canonicalService);
     // also deterministic for denied
-    const d1 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_OUT, pin: '1234', principal });
-    const d2 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_OUT, pin: '1234', principal });
+    const d1 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_OUT,
+      pin: '1234',
+      principal,
+    });
+    const d2 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_OUT,
+      pin: '1234',
+      principal,
+    });
     expect(d1.allowed).toBe(false);
     expect(d2.allowed).toBe(false);
     expect(d1.reason).toBe(d2.reason);
@@ -376,15 +451,36 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   // Q. failed PIN does not create any financial side effect
   it('Q. failed PIN does not create any financial side effect', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
-    const walletBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
-    const journalBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const lineBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_lines`);
-    const customerBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
-    await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '9999', principal: agentPrincipal(agent.id) });
-    const walletAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
-    const journalAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const lineAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_lines`);
-    const customerAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
+    const walletBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
+    const journalBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const lineBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_lines`,
+    );
+    const customerBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
+    await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '9999',
+      principal: agentPrincipal(agent.id),
+    });
+    const walletAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
+    const journalAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const lineAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_lines`,
+    );
+    const customerAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
     expect(walletAfter[0]!.cnt).toBe(walletBefore[0]!.cnt);
     expect(journalAfter[0]!.cnt).toBe(journalBefore[0]!.cnt);
     expect(lineAfter[0]!.cnt).toBe(lineBefore[0]!.cnt);
@@ -394,28 +490,58 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   // R. successful authorization does not create wallet/ledger/customer/balance
   it('R. successful authorization does not create wallet/ledger/customer/balance', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
-    const walletBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
-    const journalBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const lineBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_lines`);
-    const custBefore: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
-    await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal: agentPrincipal(agent.id) });
-    const walletAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM wallet_accounts`);
-    const journalAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_journals`);
-    const lineAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM ledger_lines`);
-    const custAfter: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text as cnt FROM customers`);
+    const walletBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
+    const journalBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const lineBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_lines`,
+    );
+    const custBefore: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
+    await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal: agentPrincipal(agent.id),
+    });
+    const walletAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM wallet_accounts`,
+    );
+    const journalAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_journals`,
+    );
+    const lineAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM ledger_lines`,
+    );
+    const custAfter: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text as cnt FROM customers`,
+    );
     expect(walletAfter[0]!.cnt).toBe(walletBefore[0]!.cnt);
     expect(journalAfter[0]!.cnt).toBe(journalBefore[0]!.cnt);
     expect(lineAfter[0]!.cnt).toBe(lineBefore[0]!.cnt);
     expect(custAfter[0]!.cnt).toBe(custBefore[0]!.cnt);
     // also check no balance column side effect (just ensure no wallet created for agent reference)
-    const custRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM customers WHERE reference=$1`, [agent.reference]);
+    const custRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM customers WHERE reference=$1`,
+      [agent.reference],
+    );
     expect(custRows.length).toBe(0);
   });
 
   // S. Agent A cannot authorize a transaction for Agent B
   it('S. Agent A cannot authorize a transaction for Agent B', async () => {
-    const { agent: agentA } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
-    const { agent: agentB } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent: agentA } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
+    const { agent: agentB } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     const res = await authzService.authorize({
       agentId: agentB.id,
       service: AgentService.CASH_IN,
@@ -436,20 +562,49 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
 
   // T. capability configuration change is respected
   it('T. capability configuration change is respected', async () => {
-    const { agent, cls } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
+    const { agent, cls } = await createActiveAgentWithServicesAndPin(
+      [AgentService.CASH_IN],
+      '1234',
+    );
     const principal = agentPrincipal(agent.id);
-    const r1 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    const r1 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(r1.allowed).toBe(true);
-    const r2 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_OUT, pin: '1234', principal });
+    const r2 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_OUT,
+      pin: '1234',
+      principal,
+    });
     expect(r2.allowed).toBe(false);
     expect(r2.reason).toBe('SERVICE_NOT_PERMITTED');
 
-    await classService.update(cls.id, { applicableServices: [AgentService.CASH_IN, AgentService.CASH_OUT], actor: 'test-actor' });
-    const r3 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_OUT, pin: '1234', principal });
+    await classService.update(cls.id, {
+      applicableServices: [AgentService.CASH_IN, AgentService.CASH_OUT],
+      actor: 'test-actor',
+    });
+    const r3 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_OUT,
+      pin: '1234',
+      principal,
+    });
     expect(r3.allowed).toBe(true);
 
-    await classService.update(cls.id, { applicableServices: [AgentService.CASH_OUT], actor: 'test-actor' });
-    const r4 = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    await classService.update(cls.id, {
+      applicableServices: [AgentService.CASH_OUT],
+      actor: 'test-actor',
+    });
+    const r4 = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(r4.allowed).toBe(false);
     expect(r4.reason).toBe('SERVICE_NOT_PERMITTED');
   });
@@ -459,15 +614,30 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
     const principal = agentPrincipal(agent.id);
     // Ensure initially valid
-    const ok = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    const ok = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(ok.allowed).toBe(true);
 
     // 5 consecutive invalid → lock
     for (let i = 0; i < 5; i++) {
-      const fail = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '0000', principal });
+      const fail = await authzService.authorize({
+        agentId: agent.id,
+        service: AgentService.CASH_IN,
+        pin: '0000',
+        principal,
+      });
       expect(fail.allowed).toBe(false);
     }
-    const locked = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal });
+    const locked = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal,
+    });
     expect(locked.allowed).toBe(false);
     expect(locked.reason).toBe('PIN_LOCKED');
 
@@ -484,18 +654,33 @@ describe('A11 Agent transaction authorization (real PostgreSQL)', () => {
   it('security: unauthenticated, unknown service, terminated, suspended, inactive, invalid PIN all denied', async () => {
     const { agent } = await createActiveAgentWithServicesAndPin([AgentService.CASH_IN], '1234');
     // unauthenticated
-    const unauth = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal: undefined });
+    const unauth = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal: undefined,
+    });
     expect(unauth.allowed).toBe(false);
     expect(unauth.reason).toBe('UNAUTHENTICATED');
 
     // unknown service
-    const unk = await authzService.authorize({ agentId: agent.id, service: 'BILLS_PAYMENT', pin: '1234', principal: agentPrincipal(agent.id) });
+    const unk = await authzService.authorize({
+      agentId: agent.id,
+      service: 'BILLS_PAYMENT',
+      pin: '1234',
+      principal: agentPrincipal(agent.id),
+    });
     expect(unk.allowed).toBe(false);
     expect(unk.reason).toBe('UNKNOWN_SERVICE');
 
     // terminated
     await lifecycleService.terminate(agent.id, 'test-actor');
-    const term = await authzService.authorize({ agentId: agent.id, service: AgentService.CASH_IN, pin: '1234', principal: agentPrincipal(agent.id) });
+    const term = await authzService.authorize({
+      agentId: agent.id,
+      service: AgentService.CASH_IN,
+      pin: '1234',
+      principal: agentPrincipal(agent.id),
+    });
     expect(term.allowed).toBe(false);
     expect(term.reason).toBe('AGENT_TERMINATED');
   });

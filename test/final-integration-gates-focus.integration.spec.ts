@@ -221,7 +221,9 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
       .expect(200);
 
     const transfersBefore = await dataSource.query(`SELECT count(*)::text AS c FROM transfers`);
-    const journalsBefore = await dataSource.query(`SELECT count(*)::text AS c FROM ledger_journals`);
+    const journalsBefore = await dataSource.query(
+      `SELECT count(*)::text AS c FROM ledger_journals`,
+    );
 
     const wrongPin = await request(app.getHttpServer())
       .post('/api/v1/customers/me/transfers')
@@ -285,7 +287,9 @@ describe('Final integration gates — focused real-HTTP checks (real PostgreSQL)
       })
       .expect(404);
 
-    const transfersAfterDenial = await dataSource.query(`SELECT count(*)::text AS c FROM transfers`);
+    const transfersAfterDenial = await dataSource.query(
+      `SELECT count(*)::text AS c FROM transfers`,
+    );
     expect(transfersAfterDenial[0].c).toBe(transfersBefore[0].c);
 
     // The legitimate owner still transfers from that same wallet.

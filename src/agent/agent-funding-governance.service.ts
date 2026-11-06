@@ -65,54 +65,72 @@ export class AgentFundingGovernanceService {
       throw new BadRequestException('currency must be NGN');
     const definition = governedAction(`AGENT_${direction}`)!;
     const fingerprint = fundingFingerprint(input, direction);
-    await this.auth.requireFunction(principal, direction === 'FUND' ? 'agent.fund' : 'agent.defund', 'AGENT', ['OPERATOR', 'PRIVILEGED']);
+    await this.auth.requireFunction(
+      principal,
+      direction === 'FUND' ? 'agent.fund' : 'agent.defund',
+      'AGENT',
+      ['OPERATOR', 'PRIVILEGED'],
+    );
     if (!principal.roles.includes('AGENT_NETWORK_MANAGER') || principal.assuranceLevel !== 'MFA')
       throw new ForbiddenException('Funding initiation requires AGENT_NETWORK_MANAGER with MFA');
-    return this.dataSource.transaction(async manager => {
-    await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-      `agent-funding-request:${principal.principalId}:${input.agentId}:${direction}:${input.idempotencyKey.trim()}`,
-    ]);
-    const repository = manager.getRepository(PrivilegedActionApproval);
-    const existing = await repository.createQueryBuilder('approval')
-      .where('approval.resourceType = :type AND approval.resourceId = :id AND approval.actionType = :action AND approval.requesterPrincipalId = :principal',
-        { type: 'AGENT', id: input.agentId.trim(), action: `AGENT_${direction}`, principal: principal.principalId })
-      .andWhere("approval.policy->'requestDetails'->>'idempotencyKey' = :key", { key: input.idempotencyKey.trim() })
-      .getOne();
-    if (existing) {
-      if (existing.actionFingerprint !== fingerprint) throw new BadRequestException('Idempotency key belongs to a different funding instruction');
-      return this.approvals.toView(existing);
-    }
-    const decision = await this.approvals.requestInTransaction(manager, {
-      principal,
-      policy: {
-        resourceType: 'AGENT',
-        action: definition.action,
-        allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
-        requiredRoles: definition.initiatingRoles,
-        requiredFunctions: definition.initiatingFunctionCodes,
-        minimumAssurance: 'MFA',
-        customerAccess: 'NONE',
-      },
-      resource: { type: 'AGENT', id: input.agentId.trim() },
-      actionFingerprint: fingerprint,
-      reason,
-      requestDetails: {
-        direction,
-        agentId: input.agentId.trim(),
-        aggregatorId: input.aggregatorId?.trim() || null,
-        amountMinor: parsePositiveMinorUnits(input.amountMinor, 'amountMinor').toString(),
-        currency: normalizeCurrency(input.currency ?? 'NGN'),
-        idempotencyKey: input.idempotencyKey.trim(),
-        reference: input.reference?.trim() || `${direction}-${input.idempotencyKey.trim()}`,
-        correlationId: sanitizeDiagnosticIdentifier(input.correlationId) ?? null,
-        description: input.description?.trim() || null,
-        metadata: input.metadata ?? {},
-      },
-      approvalScope: definition.approvalScope,
-    });
-    if (!decision.approval)
-      throw new ForbiddenException(`Funding request denied: ${decision.reason}`);
-    return decision.approval;
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `agent-funding-request:${principal.principalId}:${input.agentId}:${direction}:${input.idempotencyKey.trim()}`,
+      ]);
+      const repository = manager.getRepository(PrivilegedActionApproval);
+      const existing = await repository
+        .createQueryBuilder('approval')
+        .where(
+          'approval.resourceType = :type AND approval.resourceId = :id AND approval.actionType = :action AND approval.requesterPrincipalId = :principal',
+          {
+            type: 'AGENT',
+            id: input.agentId.trim(),
+            action: `AGENT_${direction}`,
+            principal: principal.principalId,
+          },
+        )
+        .andWhere("approval.policy->'requestDetails'->>'idempotencyKey' = :key", {
+          key: input.idempotencyKey.trim(),
+        })
+        .getOne();
+      if (existing) {
+        if (existing.actionFingerprint !== fingerprint)
+          throw new BadRequestException(
+            'Idempotency key belongs to a different funding instruction',
+          );
+        return this.approvals.toView(existing);
+      }
+      const decision = await this.approvals.requestInTransaction(manager, {
+        principal,
+        policy: {
+          resourceType: 'AGENT',
+          action: definition.action,
+          allowedPrincipalTypes: ['OPERATOR', 'PRIVILEGED'],
+          requiredRoles: definition.initiatingRoles,
+          requiredFunctions: definition.initiatingFunctionCodes,
+          minimumAssurance: 'MFA',
+          customerAccess: 'NONE',
+        },
+        resource: { type: 'AGENT', id: input.agentId.trim() },
+        actionFingerprint: fingerprint,
+        reason,
+        requestDetails: {
+          direction,
+          agentId: input.agentId.trim(),
+          aggregatorId: input.aggregatorId?.trim() || null,
+          amountMinor: parsePositiveMinorUnits(input.amountMinor, 'amountMinor').toString(),
+          currency: normalizeCurrency(input.currency ?? 'NGN'),
+          idempotencyKey: input.idempotencyKey.trim(),
+          reference: input.reference?.trim() || `${direction}-${input.idempotencyKey.trim()}`,
+          correlationId: sanitizeDiagnosticIdentifier(input.correlationId) ?? null,
+          description: input.description?.trim() || null,
+          metadata: input.metadata ?? {},
+        },
+        approvalScope: definition.approvalScope,
+      });
+      if (!decision.approval)
+        throw new ForbiddenException(`Funding request denied: ${decision.reason}`);
+      return decision.approval;
     });
   }
 
@@ -134,11 +152,20 @@ export class AgentFundingGovernanceService {
   }
 
   async list(agentId: string, principal: AuthorizationPrincipal, key?: string) {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId) || (key && key.length > 255))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId) ||
+      (key && key.length > 255)
+    )
       throw new BadRequestException('Valid Agent ID and instruction key required');
-    if (principal.assuranceLevel !== 'MFA' ||
-      !principal.roles.some(role => ['AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER'].includes(role)))
-      throw new ForbiddenException('Funding request access requires an entitled maker/checker with MFA');
+    if (
+      principal.assuranceLevel !== 'MFA' ||
+      !principal.roles.some((role) =>
+        ['AGENT_NETWORK_MANAGER', 'FINANCE_CONTROLLER'].includes(role),
+      )
+    )
+      throw new ForbiddenException(
+        'Funding request access requires an entitled maker/checker with MFA',
+      );
     const actions: string[] = [];
     for (const direction of ['FUND', 'DEFUND'] as const) {
       const code = direction === 'FUND' ? 'agent.fund' : 'agent.defund';
@@ -148,19 +175,37 @@ export class AgentFundingGovernanceService {
       }
     }
     if (!actions.length) throw new ForbiddenException('Funding function required');
-    const query = this.dataSource.getRepository(PrivilegedActionApproval).createQueryBuilder('approval')
-      .where('approval.resourceType = :type AND approval.resourceId = :id', { type: 'AGENT', id: agentId })
+    const query = this.dataSource
+      .getRepository(PrivilegedActionApproval)
+      .createQueryBuilder('approval')
+      .where('approval.resourceType = :type AND approval.resourceId = :id', {
+        type: 'AGENT',
+        id: agentId,
+      })
       .andWhere('approval.actionType IN (:...actions)', { actions });
     if (principal.roles.includes('FINANCE_CONTROLLER')) {
-      query.andWhere('(approval.requesterPrincipalId = :principal OR approval.approvedBy = :principal OR approval.status IN (:...reviewable))', {
-        principal: principal.principalId, reviewable: ['REQUESTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+      query.andWhere(
+        '(approval.requesterPrincipalId = :principal OR approval.approvedBy = :principal OR approval.status IN (:...reviewable))',
+        {
+          principal: principal.principalId,
+          reviewable: ['REQUESTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+        },
+      );
+    } else
+      query.andWhere('approval.requesterPrincipalId = :principal', {
+        principal: principal.principalId,
       });
-    } else query.andWhere('approval.requesterPrincipalId = :principal', { principal: principal.principalId });
     if (key) query.andWhere("approval.policy->'requestDetails'->>'idempotencyKey' = :key", { key });
     const rows = await query.orderBy('approval.requestedAt', 'DESC').take(50).getMany();
-    return rows.map(row => {
+    return rows.map((row) => {
       const view = this.approvals.toView(row);
-      if ([PrivilegedActionApprovalStatus.REQUESTED, PrivilegedActionApprovalStatus.APPROVED].includes(row.status) && row.expiresAt <= new Date())
+      if (
+        [
+          PrivilegedActionApprovalStatus.REQUESTED,
+          PrivilegedActionApprovalStatus.APPROVED,
+        ].includes(row.status) &&
+        row.expiresAt <= new Date()
+      )
         view.status = PrivilegedActionApprovalStatus.EXPIRED;
       return view;
     });
@@ -208,7 +253,10 @@ export class AgentFundingGovernanceService {
     principal: AuthorizationPrincipal,
     approvalId?: string,
   ): Promise<void> {
-    if (!approvalId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(approvalId))
+    if (
+      !approvalId ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(approvalId)
+    )
       throw new ForbiddenException('Valid funding approvalId is required');
     const approval = await manager.getRepository(PrivilegedActionApproval).findOne({
       where: { id: approvalId },

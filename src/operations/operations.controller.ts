@@ -111,11 +111,11 @@ export class OperationsController {
   }
 
   private requireFunction(req: AuthenticatedRequest, functionCode: string): Promise<string> {
-    return this.auth.requireFunction(req.authorizationPrincipal, functionCode, 'internal-operations', [
-      'SUPPORT',
-      'OPERATOR',
-      'SERVICE',
-      'PRIVILEGED',
-    ]);
+    return this.auth.requireFunction(
+      req.authorizationPrincipal,
+      functionCode,
+      'internal-operations',
+      ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'],
+    );
   }
 }

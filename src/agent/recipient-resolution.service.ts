@@ -58,10 +58,15 @@ export class RecipientResolutionService {
     // Use raw query to canonicalize normalized_value and match
     const customerId = await this.findCustomerIdByCanonical(canonical);
     if (customerId) {
-      const custRows: Array<{ id: string; status: string; reference: string; deleted_at: string | null }> =
-        await this.dataSource.query(`SELECT id, status, reference, deleted_at FROM customers WHERE id = $1 LIMIT 1`, [
-          customerId,
-        ]);
+      const custRows: Array<{
+        id: string;
+        status: string;
+        reference: string;
+        deleted_at: string | null;
+      }> = await this.dataSource.query(
+        `SELECT id, status, reference, deleted_at FROM customers WHERE id = $1 LIMIT 1`,
+        [customerId],
+      );
       const customer = custRows[0];
       if (customer && customer.deleted_at === null) {
         const status = customer.status;
@@ -129,11 +134,14 @@ export class RecipientResolutionService {
 
   private async customerDisplay(customerId: string): Promise<string> {
     try {
-      const profileRows: Array<{ display_name: string; deleted_at: string | null; is_active: boolean }> =
-        await this.dataSource.query(
-          `SELECT display_name, deleted_at, is_active FROM customer_profiles WHERE customer_id = $1 ORDER BY is_active DESC, created_at ASC LIMIT 1`,
-          [customerId],
-        );
+      const profileRows: Array<{
+        display_name: string;
+        deleted_at: string | null;
+        is_active: boolean;
+      }> = await this.dataSource.query(
+        `SELECT display_name, deleted_at, is_active FROM customer_profiles WHERE customer_id = $1 ORDER BY is_active DESC, created_at ASC LIMIT 1`,
+        [customerId],
+      );
       const p = profileRows[0];
       if (profileRows.length > 0 && p) {
         if (p.deleted_at === null && p.display_name) return p.display_name;

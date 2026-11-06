@@ -28,7 +28,10 @@ import { WalletAccount } from '../wallet/wallet-account.entity';
 import { WalletService } from '../wallet/wallet.service';
 import { Transfer } from '../transfer/transfer.entity';
 import { TransferService } from '../transfer/transfer.service';
-import { AuthenticationSessionService, DEFAULT_SESSION_AUDIENCE } from '../customer-authentication/authentication-session.service';
+import {
+  AuthenticationSessionService,
+  DEFAULT_SESSION_AUDIENCE,
+} from '../customer-authentication/authentication-session.service';
 import { AuthenticationExecutionService } from '../customer-authentication/authentication-execution.service';
 import { CustomerAuthenticationService } from '../customer-authentication/customer-authentication.service';
 import { PasswordHashVerificationService } from '../customer-authentication/password-hash-verification.service';
@@ -298,11 +301,54 @@ export class CustomerAppController {
     const principal = this.requireCustomerPrincipal(req);
     // Whitelist: only displayName is mutable via normal profile PATCH
     const allowed = new Set(['displayName']);
-    const immutable = ['id', 'customerId', 'reference', 'status', 'type', 'kycLevel', 'kycStatus', 'legalName', 'nationality', 'dateOfBirth', 'isActive', 'createdAt', 'updatedAt', 'deletedAt', 'walletId', 'ledgerAccountId', 'balanceMinor', 'passwordHash', 'pinHash', 'kyc_approval', 'agentStatus', 'roles'];
+    const immutable = [
+      'id',
+      'customerId',
+      'reference',
+      'status',
+      'type',
+      'kycLevel',
+      'kycStatus',
+      'legalName',
+      'nationality',
+      'dateOfBirth',
+      'isActive',
+      'createdAt',
+      'updatedAt',
+      'deletedAt',
+      'walletId',
+      'ledgerAccountId',
+      'balanceMinor',
+      'passwordHash',
+      'pinHash',
+      'kyc_approval',
+      'agentStatus',
+      'roles',
+    ];
     for (const key of Object.keys(dto ?? {})) {
       if (!allowed.has(key)) {
         // If they try to set an immutable/security-sensitive field, fail closed
-        if (immutable.includes(key) || ['kycLevel', 'kycStatus', 'status', 'reference', 'type', 'legalName', 'nationality', 'dateOfBirth', 'isActive', 'customerId', 'id', 'passwordHash', 'pinHash', 'wallet', 'ledger', 'audit'].includes(key)) {
+        if (
+          immutable.includes(key) ||
+          [
+            'kycLevel',
+            'kycStatus',
+            'status',
+            'reference',
+            'type',
+            'legalName',
+            'nationality',
+            'dateOfBirth',
+            'isActive',
+            'customerId',
+            'id',
+            'passwordHash',
+            'pinHash',
+            'wallet',
+            'ledger',
+            'audit',
+          ].includes(key)
+        ) {
           throw new BadRequestException(`Field '${key}' is not mutable via profile update`);
         }
         // Unknown field also rejected (prevent mass assignment)
@@ -312,9 +358,11 @@ export class CustomerAppController {
     const raw = dto?.displayName;
     if (typeof raw !== 'string') throw new BadRequestException('displayName must be a string');
     const displayName = raw.trim();
-    if (displayName.length === 0 || displayName.length > 200) throw new BadRequestException('displayName must be 1 to 200 characters');
+    if (displayName.length === 0 || displayName.length > 200)
+      throw new BadRequestException('displayName must be 1 to 200 characters');
     // Basic hygiene: disallow control chars
-    if ([...displayName].some((character) => character.charCodeAt(0) <= 0x1f)) throw new BadRequestException('displayName contains invalid characters');
+    if ([...displayName].some((character) => character.charCodeAt(0) <= 0x1f))
+      throw new BadRequestException('displayName contains invalid characters');
     const customer = await this.customerRepository.findOne({ where: { id: principal.customerId } });
     if (!customer || customer.deletedAt !== null) throw new NotFoundException('Customer not found');
     let profile: CustomerProfile | null = null;
@@ -323,7 +371,8 @@ export class CustomerAppController {
     } catch {
       throw new NotFoundException('Profile not found');
     }
-    if (!profile || profile.deletedAt !== null || !profile.isActive) throw new NotFoundException('Profile not found');
+    if (!profile || profile.deletedAt !== null || !profile.isActive)
+      throw new NotFoundException('Profile not found');
     if (profile.displayName === displayName) {
       // No change — return safe projection
       return {
@@ -350,7 +399,9 @@ export class CustomerAppController {
     // Reuse existing transaction/audit pattern — keep controller thin, no hashing/policy here
     const updated = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(CustomerProfile);
-      const locked = await repo.findOne({ where: { id: profile.id, customerId: principal.customerId } });
+      const locked = await repo.findOne({
+        where: { id: profile.id, customerId: principal.customerId },
+      });
       if (!locked || locked.deletedAt !== null) throw new NotFoundException('Profile not found');
       const previousValues = { displayName: locked.displayName };
       locked.displayName = displayName;
@@ -397,11 +448,16 @@ export class CustomerAppController {
     const principal = this.requireCustomerPrincipal(req);
     const currentPassword = dto?.currentPassword;
     const newPassword = dto?.newPassword;
-    if (typeof currentPassword !== 'string' || currentPassword.length === 0) throw new BadRequestException('currentPassword is required');
-    if (typeof newPassword !== 'string' || newPassword.length === 0) throw new BadRequestException('newPassword is required');
-    if (currentPassword.length > 1024 || newPassword.length > 128) throw new BadRequestException('Password length is invalid');
-    if (newPassword.length < 8) throw new BadRequestException('newPassword must be at least 8 characters');
-    if (currentPassword === newPassword) throw new BadRequestException('newPassword must be different from currentPassword');
+    if (typeof currentPassword !== 'string' || currentPassword.length === 0)
+      throw new BadRequestException('currentPassword is required');
+    if (typeof newPassword !== 'string' || newPassword.length === 0)
+      throw new BadRequestException('newPassword is required');
+    if (currentPassword.length > 1024 || newPassword.length > 128)
+      throw new BadRequestException('Password length is invalid');
+    if (newPassword.length < 8)
+      throw new BadRequestException('newPassword must be at least 8 characters');
+    if (currentPassword === newPassword)
+      throw new BadRequestException('newPassword must be different from currentPassword');
     // Basic policy: at least 8, not trivially same, no leading/trailing spaces? preserve as-is
     // Verify current credential via existing execution service (PBKDF2/lockout, audit, timingSafeEqual)
     const authResult = await this.executionService.authenticate({
@@ -419,7 +475,10 @@ export class CustomerAppController {
     const credentialId = authResult.credentialId!;
     // Ensure new password not same as old via verification (defense even if same string already checked)
     // Fetch credential view for version
-    const credentialView = await this.customerAuthService.getCredential(principal.customerId!, credentialId);
+    const credentialView = await this.customerAuthService.getCredential(
+      principal.customerId!,
+      credentialId,
+    );
     const newHash = (() => {
       const salt = randomBytes(16);
       const iterations = 10000;
@@ -446,7 +505,15 @@ export class CustomerAppController {
     const principal = this.requireCustomerPrincipal(req);
     // Safe read via DataSource query, never expose tokenHash/refresh secrets
     // Use AuthenticationSession entity via DataSource
-    const rows: Array<{ id: string; audience: string; status: string; issued_at: Date; expires_at: Date; last_seen_at: Date | null; revoked_at: Date | null }> = await this.dataSource.query(
+    const rows: Array<{
+      id: string;
+      audience: string;
+      status: string;
+      issued_at: Date;
+      expires_at: Date;
+      last_seen_at: Date | null;
+      revoked_at: Date | null;
+    }> = await this.dataSource.query(
       `SELECT id, audience, status, issued_at, expires_at, last_seen_at, revoked_at FROM authentication_sessions WHERE customer_id = $1 ORDER BY issued_at DESC, id DESC`,
       [principal.customerId],
     );
@@ -556,8 +623,13 @@ export class CustomerAppController {
   @Get('customers/me/receiving-identity')
   async getReceivingIdentity(@Req() req: AuthenticatedRequest) {
     const principal = this.requireCustomerPrincipal(req);
-    const contacts = await this.contactRepository.find({ where: { customerId: principal.customerId } });
-    const primaryPhone = contacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ?? contacts.find((c) => c.type === ContactMethodType.PHONE) ?? null;
+    const contacts = await this.contactRepository.find({
+      where: { customerId: principal.customerId },
+    });
+    const primaryPhone =
+      contacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ??
+      contacts.find((c) => c.type === ContactMethodType.PHONE) ??
+      null;
     if (!primaryPhone) {
       return { customerId: principal.customerId, receivingIdentity: null, status: 'NONE' };
     }
@@ -619,14 +691,21 @@ export class CustomerAppController {
   ) {
     const principal = this.requireCustomerPrincipal(req);
     const rawHeaders = req.headers as Record<string, unknown>;
-    const idempotencyKey = (rawHeaders['idempotency-key'] as string | undefined) ?? (rawHeaders['Idempotency-Key'] as string | undefined);
+    const idempotencyKey =
+      (rawHeaders['idempotency-key'] as string | undefined) ??
+      (rawHeaders['Idempotency-Key'] as string | undefined);
     const key = (idempotencyKey ?? '').trim();
     if (!key) throw new BadRequestException('Idempotency-Key header is required');
     // Mutually exclusive destination: exactly one of destinationWalletId OR beneficiaryId
-    const hasDestWallet = typeof dto.destinationWalletId === 'string' && String(dto.destinationWalletId).trim().length > 0;
-    const hasBeneficiary = typeof dto.beneficiaryId === 'string' && String(dto.beneficiaryId).trim().length > 0;
+    const hasDestWallet =
+      typeof dto.destinationWalletId === 'string' &&
+      String(dto.destinationWalletId).trim().length > 0;
+    const hasBeneficiary =
+      typeof dto.beneficiaryId === 'string' && String(dto.beneficiaryId).trim().length > 0;
     if (hasDestWallet && hasBeneficiary) {
-      throw new BadRequestException('Provide exactly one of destinationWalletId or beneficiaryId, not both');
+      throw new BadRequestException(
+        'Provide exactly one of destinationWalletId or beneficiaryId, not both',
+      );
     }
     if (!hasDestWallet && !hasBeneficiary) {
       throw new BadRequestException('Either destinationWalletId or beneficiaryId is required');
@@ -635,9 +714,14 @@ export class CustomerAppController {
     if (hasBeneficiary) {
       const beneficiaryId = String(dto.beneficiaryId).trim();
       // Ownership enforced: scoped query WHERE id=$1 AND customer_id=$2, also require ACTIVE+verified
-      let beneficiary: CustomerBeneficiaryView & { normalizedDestinationIdentifier?: string | null };
+      let beneficiary: CustomerBeneficiaryView & {
+        normalizedDestinationIdentifier?: string | null;
+      };
       try {
-        beneficiary = await this.beneficiaryService.getBeneficiary(principal.customerId!, beneficiaryId);
+        beneficiary = await this.beneficiaryService.getBeneficiary(
+          principal.customerId!,
+          beneficiaryId,
+        );
       } catch {
         // Do not leak existence — generic not-found for foreign or missing
         throw new NotFoundException('Beneficiary not found');
@@ -648,7 +732,8 @@ export class CustomerAppController {
       if (!beneficiary.verified) {
         throw new BadRequestException('Beneficiary is not verified');
       }
-      const destIdentifier = beneficiary.destinationIdentifier ?? beneficiary.normalizedDestinationIdentifier;
+      const destIdentifier =
+        beneficiary.destinationIdentifier ?? beneficiary.normalizedDestinationIdentifier;
       if (!destIdentifier) throw new BadRequestException('Beneficiary has no destination');
       let resolution: RecipientResolution;
       try {
@@ -665,7 +750,9 @@ export class CustomerAppController {
         throw new NotFoundException('Destination wallet not found for beneficiary');
       }
       // Prefer wallet matching requested currency, else first
-      const currency = String(dto.currency ?? 'NGN').trim().toUpperCase();
+      const currency = String(dto.currency ?? 'NGN')
+        .trim()
+        .toUpperCase();
       const matched = wallets.find((w) => String(w.currency).toUpperCase() === currency);
       const chosen = matched ?? wallets[0];
       if (!chosen) throw new NotFoundException('Destination wallet not found for beneficiary');
@@ -681,12 +768,17 @@ export class CustomerAppController {
       throw new BadRequestException('sourceWalletId is required');
     }
     const source = await this.walletService.getWallet(String(rawSource).trim());
-    if (source.customerId !== principal.customerId) throw new NotFoundException('Source wallet not found');
+    if (source.customerId !== principal.customerId)
+      throw new NotFoundException('Source wallet not found');
     // ── A24 Customer Transaction PIN authorization (reuse PBKDF2 service, keep controller thin) ──
     // PIN is bound to authenticated CUSTOMER principal (do not trust body customerId), verified immediately before financial execution.
     // PIN is never persisted in requestHash/transfer metadata/journal/audit/response/logs (pinoHttp redacts req.body.pin, requestHash is business params only).
     const rawPin = dto.pin;
-    if (rawPin === undefined || rawPin === null || (typeof rawPin === 'string' && rawPin.trim().length === 0)) {
+    if (
+      rawPin === undefined ||
+      rawPin === null ||
+      (typeof rawPin === 'string' && rawPin.trim().length === 0)
+    ) {
       throw new UnauthorizedException('Transaction PIN required');
     }
     if (typeof rawPin !== 'string' || !/^\d{4,12}$/.test(rawPin.trim())) {
@@ -697,12 +789,14 @@ export class CustomerAppController {
       verify: (candidate: string, _alg: string, hash: string) => {
         try {
           const parts = hash.split('$');
-          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2') return { verified: false };
+          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2')
+            return { verified: false };
           const digest = (parts[1]?.toLowerCase() as 'sha256' | 'sha512') ?? 'sha256';
           const iter = Number(parts[2]);
           const salt = Buffer.from(parts[3] ?? '', 'base64url');
           const expected = Buffer.from(parts[4] ?? '', 'base64url');
-          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0) return { verified: false };
+          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0)
+            return { verified: false };
           const derived = pbkdf2Sync(candidate, salt, iter, expected.length, digest);
           if (derived.length !== expected.length) return { verified: false };
           return { verified: timingSafeEqual(derived, expected) };
@@ -758,10 +852,15 @@ export class CustomerAppController {
     @Query('limit') limit?: string,
   ) {
     const principal = this.requireCustomerPrincipal(req);
-    const wallets = await this.walletRepository.find({ where: { customerId: principal.customerId } });
+    const wallets = await this.walletRepository.find({
+      where: { customerId: principal.customerId },
+    });
     const walletIds = wallets.map((w) => w.id);
     if (walletIds.length === 0) {
-      return { items: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false } };
+      return {
+        items: [],
+        pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false },
+      };
     }
     const p = page ? parseInt(page, 10) : 1;
     const l = limit ? parseInt(limit, 10) : 20;
@@ -769,7 +868,9 @@ export class CustomerAppController {
     const normalizedLimit = Number.isSafeInteger(l) && l >= 1 && l <= 100 ? l : 20;
     const qb = this.transferRepository
       .createQueryBuilder('transfer')
-      .where('transfer.sourceWalletId IN (:...ids) OR transfer.destinationWalletId IN (:...ids)', { ids: walletIds })
+      .where('transfer.sourceWalletId IN (:...ids) OR transfer.destinationWalletId IN (:...ids)', {
+        ids: walletIds,
+      })
       .orderBy('transfer.createdAt', 'DESC')
       .addOrderBy('transfer.id', 'DESC')
       .skip((normalizedPage - 1) * normalizedLimit)
@@ -793,18 +894,24 @@ export class CustomerAppController {
     ];
     const walletMap = new Map<string, WalletAccount>();
     if (counterpartyWalletIds.length > 0) {
-      const cpWallets = await this.walletRepository.find({ where: { id: In(counterpartyWalletIds) } });
+      const cpWallets = await this.walletRepository.find({
+        where: { id: In(counterpartyWalletIds) },
+      });
       for (const w of cpWallets) walletMap.set(w.id, w);
     }
     const customerIds = [...new Set([...walletMap.values()].map((w) => w.customerId))];
     const profileMap = new Map<string, CustomerProfile>();
     const contactMap = new Map<string, CustomerContactMethod>();
     if (customerIds.length > 0) {
-      const profiles = await this.profileRepository.find({ where: { customerId: In(customerIds) } });
+      const profiles = await this.profileRepository.find({
+        where: { customerId: In(customerIds) },
+      });
       for (const p of profiles) {
         if (p.isActive && p.deletedAt === null) profileMap.set(p.customerId, p);
       }
-      const contacts = await this.contactRepository.find({ where: { customerId: In(customerIds) } });
+      const contacts = await this.contactRepository.find({
+        where: { customerId: In(customerIds) },
+      });
       for (const c of contacts) {
         if (c.type === ContactMethodType.PHONE && !contactMap.has(c.customerId)) {
           // prefer primary, else first
@@ -834,10 +941,10 @@ export class CustomerAppController {
         direction = 'INTERNAL';
         counterpartyWalletId = t.destinationWalletId;
       }
-      const cpWallet = counterpartyWalletId ? walletMap.get(counterpartyWalletId) ?? null : null;
+      const cpWallet = counterpartyWalletId ? (walletMap.get(counterpartyWalletId) ?? null) : null;
       const cpCustomerId = cpWallet?.customerId ?? null;
-      const cpProfile = cpCustomerId ? profileMap.get(cpCustomerId) ?? null : null;
-      const cpContact = cpCustomerId ? contactMap.get(cpCustomerId) ?? null : null;
+      const cpProfile = cpCustomerId ? (profileMap.get(cpCustomerId) ?? null) : null;
+      const cpContact = cpCustomerId ? (contactMap.get(cpCustomerId) ?? null) : null;
       const counterparty = counterpartyWalletId
         ? {
             walletId: counterpartyWalletId,
@@ -901,9 +1008,14 @@ export class CustomerAppController {
   }
 
   @Get('customers/me/transfers/:transferId')
-  async getTransferDetail(@Param('transferId') transferId: string, @Req() req: AuthenticatedRequest) {
+  async getTransferDetail(
+    @Param('transferId') transferId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const principal = this.requireCustomerPrincipal(req);
-    const wallets = await this.walletRepository.find({ where: { customerId: principal.customerId } });
+    const wallets = await this.walletRepository.find({
+      where: { customerId: principal.customerId },
+    });
     const walletIds = new Set(wallets.map((w) => w.id));
     const transfer = await this.transferService.getTransfer(transferId);
     // SELF check: transfer must involve one of customer's wallets, otherwise 404 (no leakage, generic not-found)
@@ -925,14 +1037,26 @@ export class CustomerAppController {
       counterpartyWalletId = transfer.destinationWalletId;
     }
     // batch counterparty (single) — reuse same logic as list, but single query path for determinism
-    let counterparty: { walletId: string; customerId: string | null; displayName: string | null; receivingNumber: string | null } | null = null;
+    let counterparty: {
+      walletId: string;
+      customerId: string | null;
+      displayName: string | null;
+      receivingNumber: string | null;
+    } | null = null;
     if (counterpartyWalletId) {
       const cpWallet = await this.walletRepository.findOne({ where: { id: counterpartyWalletId } });
       if (cpWallet) {
         const cpCustomerId = cpWallet.customerId;
-        const cpProfile = await this.profileRepository.findOne({ where: { customerId: cpCustomerId, isActive: true } });
-        const cpContacts = await this.contactRepository.find({ where: { customerId: cpCustomerId } });
-        const primary = cpContacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ?? cpContacts.find((c) => c.type === ContactMethodType.PHONE) ?? null;
+        const cpProfile = await this.profileRepository.findOne({
+          where: { customerId: cpCustomerId, isActive: true },
+        });
+        const cpContacts = await this.contactRepository.find({
+          where: { customerId: cpCustomerId },
+        });
+        const primary =
+          cpContacts.find((c) => c.type === ContactMethodType.PHONE && c.isPrimary) ??
+          cpContacts.find((c) => c.type === ContactMethodType.PHONE) ??
+          null;
         counterparty = {
           walletId: counterpartyWalletId,
           customerId: cpCustomerId,
@@ -940,7 +1064,12 @@ export class CustomerAppController {
           receivingNumber: primary?.normalizedValue ?? primary?.value ?? null,
         };
       } else {
-        counterparty = { walletId: counterpartyWalletId, customerId: null, displayName: null, receivingNumber: null };
+        counterparty = {
+          walletId: counterpartyWalletId,
+          customerId: null,
+          displayName: null,
+          receivingNumber: null,
+        };
       }
     }
     // Return safe projection — consistent with history, hide ledger internals (journalId, ledgerAccountId, audit, requestHash, idempotency, PIN/OTP)
@@ -969,7 +1098,10 @@ export class CustomerAppController {
   }
 
   @Get('customers/me/transactions/:transferId')
-  async getTransactionDetailAlias(@Param('transferId') transferId: string, @Req() req: AuthenticatedRequest) {
+  async getTransactionDetailAlias(
+    @Param('transferId') transferId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.getTransferDetail(transferId, req);
   }
 
@@ -991,7 +1123,10 @@ export class CustomerAppController {
     const wallets = await this.walletService.listWallets(principal.customerId);
     const receiving = await this.getReceivingIdentity(req);
     // Recent transactions: last 5
-    let recent: Awaited<ReturnType<CustomerAppController['listTransfers']>> = { items: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0, hasNextPage: false } };
+    let recent: Awaited<ReturnType<CustomerAppController['listTransfers']>> = {
+      items: [],
+      pagination: { page: 1, limit: 5, total: 0, totalPages: 0, hasNextPage: false },
+    };
     if (wallets.length > 0) {
       recent = await this.listTransfers(req, '1', '5');
     }
@@ -1109,7 +1244,10 @@ export class CustomerAppController {
   // not a silent gap (see docs/V1/V1-CUSTOMER-05-TRANSACTION-PIN-SECURITY-01.md).
   @Post('customers/me/transaction-pin/change')
   @HttpCode(200)
-  async changeTransactionPin(@Req() req: AuthenticatedRequest, @Body() dto: { currentPin: string; newPin: string }) {
+  async changeTransactionPin(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: { currentPin: string; newPin: string },
+  ) {
     const principal = this.requireCustomerPrincipal(req);
     const currentPin = dto?.currentPin;
     const newPin = dto?.newPin;
@@ -1124,22 +1262,28 @@ export class CustomerAppController {
     }
     const existing = await this.pinService.getTransactionPin(principal.customerId!);
     if (!existing) {
-      throw new BadRequestException('No Transaction PIN is set for this account. Use customers/me/transaction-pin to create one.');
+      throw new BadRequestException(
+        'No Transaction PIN is set for this account. Use customers/me/transaction-pin to create one.',
+      );
     }
     if (existing.accountLocked) {
       // Cannot bypass lockout via the change flow — recovery requires support (no in-app bypass).
-      throw new UnauthorizedException('Transaction PIN is locked due to too many failed attempts. Contact support to proceed.');
+      throw new UnauthorizedException(
+        'Transaction PIN is locked due to too many failed attempts. Contact support to proceed.',
+      );
     }
     const verifier = {
       verify: (candidate: string, _alg: string, hash: string) => {
         try {
           const parts = hash.split('$');
-          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2') return { verified: false };
+          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2')
+            return { verified: false };
           const digest = (parts[1]?.toLowerCase() as 'sha256' | 'sha512') ?? 'sha256';
           const iter = Number(parts[2]);
           const salt = Buffer.from(parts[3] ?? '', 'base64url');
           const expected = Buffer.from(parts[4] ?? '', 'base64url');
-          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0) return { verified: false };
+          if (!salt.length || !expected.length || !Number.isSafeInteger(iter) || iter <= 0)
+            return { verified: false };
           const derived = pbkdf2Sync(candidate, salt, iter, expected.length, digest);
           if (derived.length !== expected.length) return { verified: false };
           return { verified: timingSafeEqual(derived, expected) };
@@ -1158,7 +1302,9 @@ export class CustomerAppController {
     );
     if (!outcome.verified) {
       if (outcome.locked || outcome.failureReason === 'PIN_LOCKED') {
-        throw new UnauthorizedException('Transaction PIN is now locked due to too many failed attempts. Contact support to proceed.');
+        throw new UnauthorizedException(
+          'Transaction PIN is now locked due to too many failed attempts. Contact support to proceed.',
+        );
       }
       throw new UnauthorizedException('Current PIN is incorrect');
     }
@@ -1194,7 +1340,8 @@ export class CustomerAppController {
       verify: (pin: string, _alg: string, hash: string) => {
         try {
           const parts = hash.split('$');
-          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2') return { verified: false };
+          if (parts.length !== 5 || parts[0]?.toUpperCase() !== 'PBKDF2')
+            return { verified: false };
           const digest = parts[1]?.toLowerCase() as 'sha256' | 'sha512';
           const iter = Number(parts[2]);
           const salt = Buffer.from(parts[3] ?? '', 'base64url');
@@ -1214,7 +1361,11 @@ export class CustomerAppController {
       verifier,
     );
     if (outcome.verified) return { verified: true };
-    return { verified: false, reason: outcome.failureReason ?? 'MISMATCH', locked: outcome.locked ?? false };
+    return {
+      verified: false,
+      reason: outcome.failureReason ?? 'MISMATCH',
+      locked: outcome.locked ?? false,
+    };
   }
 
   // ──────────────────────────────────────────────

@@ -25,13 +25,23 @@ import type { NotificationProvider } from '../notification/notification.types';
 import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { IdempotencyRecord } from '../operations/idempotency-record.entity';
-import { ContactMethodType, CustomerStatus, CustomerType, CustomerKycLevel, CustomerKycStatus } from '../customer/customer.enums';
+import {
+  ContactMethodType,
+  CustomerStatus,
+  CustomerType,
+  CustomerKycLevel,
+  CustomerKycStatus,
+} from '../customer/customer.enums';
 import { maskCustomerReference } from '../customer/customer-privacy';
 import { Customer } from '../customer/customer.entity';
 import { CustomerContactMethod } from '../customer/customer-contact-method.entity';
 import { CustomerProfile } from '../customer/customer-profile.entity';
 import { CustomerAuthenticationCredential } from '../customer-authentication/customer-authentication-credential.entity';
-import { AuthenticationCredentialStatus, AuthenticationCredentialType, PasswordHashAlgorithm } from '../customer-authentication/customer-authentication.enums';
+import {
+  AuthenticationCredentialStatus,
+  AuthenticationCredentialType,
+  PasswordHashAlgorithm,
+} from '../customer-authentication/customer-authentication.enums';
 import { LedgerAccount } from '../ledger/ledger-account.entity';
 import { LedgerAccountType, LedgerNormalBalance } from '../ledger/ledger.enums';
 import { WalletAccount } from '../wallet/wallet-account.entity';
@@ -163,77 +173,88 @@ export class CustomerRegistrationService {
     );
 
     const now = new Date();
-    const issued = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_OTP_REQUEST', async (manager) => {
-      const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
-      const existing = await repository
-        .createQueryBuilder('challenge')
-        .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
-        .andWhere("challenge.status IN ('ACTIVE','VERIFIED')")
-        .andWhere('challenge.consumed_at IS NULL')
-        .orderBy('challenge.created_at', 'DESC')
-        .setLock('pessimistic_write')
-        .getMany();
+    const issued = await runSerializableWithRetry(
+      this.dataSource,
+      'CUSTOMER_REGISTRATION_OTP_REQUEST',
+      async (manager) => {
+        const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
+        const existing = await repository
+          .createQueryBuilder('challenge')
+          .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
+          .andWhere("challenge.status IN ('ACTIVE','VERIFIED')")
+          .andWhere('challenge.consumed_at IS NULL')
+          .orderBy('challenge.created_at', 'DESC')
+          .setLock('pessimistic_write')
+          .getMany();
 
-      // Already registered to a customer → enumeration-safe no-op (no OTP, same response).
-      const bound = await manager.getRepository(CustomerContactMethod).findOne({
-        where: {
-          type: ContactMethodType.PHONE,
-          normalizedValue: In([phone.canonical, phone.e164]),
-          deletedAt: IsNull(),
-        },
-      });
-      // A verified number remains an enumeration-safe no-op. An unverified Admin-created
-      // contact may receive an OTP so a workforce operator can complete its phone proof.
-      if (bound?.verifiedAt) return null;
+        // Already registered to a customer → enumeration-safe no-op (no OTP, same response).
+        const bound = await manager.getRepository(CustomerContactMethod).findOne({
+          where: {
+            type: ContactMethodType.PHONE,
+            normalizedValue: In([phone.canonical, phone.e164]),
+            deletedAt: IsNull(),
+          },
+        });
+        // A verified number remains an enumeration-safe no-op. An unverified Admin-created
+        // contact may receive an OTP so a workforce operator can complete its phone proof.
+        if (bound?.verifiedAt) return null;
 
-      const active = existing.find((challenge) => challenge.status === 'ACTIVE');
-      if (
-        active &&
-        now <= active.expiresAt &&
-        now.getTime() - active.issuedAt.getTime() < REGISTRATION_OTP_RESEND_COOLDOWN_SECONDS * 1000
-      ) {
-        // Resend cooldown → enumeration-safe no-op (no new OTP, same response).
-        return null;
-      }
-
-      // Supersede outstanding challenges/tokens: at most one ACTIVE and one
-      // VERIFIED-unconsumed challenge exist per phone (partial unique indexes enforce).
-      for (const challenge of existing) {
-        if (challenge.status === 'ACTIVE' && now > challenge.expiresAt) {
-          challenge.status = 'EXPIRED';
-        } else {
-          challenge.status = 'REVOKED';
-          challenge.revokedAt = now; // also invalidates any outstanding verification token
+        const active = existing.find((challenge) => challenge.status === 'ACTIVE');
+        if (
+          active &&
+          now <= active.expiresAt &&
+          now.getTime() - active.issuedAt.getTime() <
+            REGISTRATION_OTP_RESEND_COOLDOWN_SECONDS * 1000
+        ) {
+          // Resend cooldown → enumeration-safe no-op (no new OTP, same response).
+          return null;
         }
-      }
-      if (existing.length > 0) await repository.save(existing);
 
-      const code = this.generateOtpCode();
-      const codeSalt = randomBytes(16).toString('base64url');
-      const challenge = await repository.save(
-        repository.create({
-          id: randomUUID(),
-          normalizedPhone: phone.canonical,
-          destinationPhone: phone.e164,
-          codeSalt,
-          codeHash: this.hashOtp(code, codeSalt),
-          verificationTokenHash: null,
-          status: 'ACTIVE',
-          attemptCount: 0,
-          issuedAt: now,
-          expiresAt: new Date(now.getTime() + REGISTRATION_OTP_TTL_SECONDS * 1000),
-          verifiedAt: null,
-          consumedAt: null,
-          revokedAt: null,
-          version: 1,
-        }),
-      );
-      await this.audit(manager, 'CUSTOMER_REGISTRATION_CHALLENGE', challenge.id, 'OTP_REQUESTED', {
-        normalizedPhoneSuffix: phone.canonical.slice(-4),
-        expiresAt: challenge.expiresAt,
-      });
-      return { challenge, code };
-    });
+        // Supersede outstanding challenges/tokens: at most one ACTIVE and one
+        // VERIFIED-unconsumed challenge exist per phone (partial unique indexes enforce).
+        for (const challenge of existing) {
+          if (challenge.status === 'ACTIVE' && now > challenge.expiresAt) {
+            challenge.status = 'EXPIRED';
+          } else {
+            challenge.status = 'REVOKED';
+            challenge.revokedAt = now; // also invalidates any outstanding verification token
+          }
+        }
+        if (existing.length > 0) await repository.save(existing);
+
+        const code = this.generateOtpCode();
+        const codeSalt = randomBytes(16).toString('base64url');
+        const challenge = await repository.save(
+          repository.create({
+            id: randomUUID(),
+            normalizedPhone: phone.canonical,
+            destinationPhone: phone.e164,
+            codeSalt,
+            codeHash: this.hashOtp(code, codeSalt),
+            verificationTokenHash: null,
+            status: 'ACTIVE',
+            attemptCount: 0,
+            issuedAt: now,
+            expiresAt: new Date(now.getTime() + REGISTRATION_OTP_TTL_SECONDS * 1000),
+            verifiedAt: null,
+            consumedAt: null,
+            revokedAt: null,
+            version: 1,
+          }),
+        );
+        await this.audit(
+          manager,
+          'CUSTOMER_REGISTRATION_CHALLENGE',
+          challenge.id,
+          'OTP_REQUESTED',
+          {
+            normalizedPhoneSuffix: phone.canonical.slice(-4),
+            expiresAt: challenge.expiresAt,
+          },
+        );
+        return { challenge, code };
+      },
+    );
 
     if (issued) {
       await this.deliverOtpSms(issued.challenge, issued.code, correlationId);
@@ -255,89 +276,93 @@ export class CustomerRegistrationService {
     // Failure bookkeeping (attempt counters, EXPIRED flips, OTP_VERIFY_FAILED audits) must
     // SURVIVE the rejection, so the transaction returns an outcome and commits; the HTTP
     // rejection is raised OUTSIDE the transaction.
-    const outcome = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_OTP_VERIFY', async (manager) => {
-      const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
-      const challenge = await repository
-        .createQueryBuilder('challenge')
-        .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
-        .andWhere('challenge.consumed_at IS NULL')
-        .orderBy('challenge.created_at', 'DESC')
-        .setLock('pessimistic_write')
-        .getOne();
-      const now = new Date();
+    const outcome = await runSerializableWithRetry(
+      this.dataSource,
+      'CUSTOMER_REGISTRATION_OTP_VERIFY',
+      async (manager) => {
+        const repository = manager.getRepository(CustomerRegistrationPhoneChallenge);
+        const challenge = await repository
+          .createQueryBuilder('challenge')
+          .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
+          .andWhere('challenge.consumed_at IS NULL')
+          .orderBy('challenge.created_at', 'DESC')
+          .setLock('pessimistic_write')
+          .getOne();
+        const now = new Date();
 
-      const fail = async (reason: VerifyFailureReason): Promise<VerifyOutcome> => {
-        if (challenge) {
-          // Only a genuine wrong-code guess against a still-live, in-budget challenge
-          // consumes part of the REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS budget. Rejections
-          // caused by the challenge already being dead — missing, already verified,
-          // inactive/revoked, time-expired, or already locked out — must NOT inflate
-          // attempt_count: no comparison against the stored OTP hash was even made, so no
-          // attempt was actually consumed. Without this guard, re-probing an
-          // already-exhausted challenge (e.g. the inevitable request immediately after the
-          // 5th wrong attempt) pushed the persisted counter past the cap (observed: 6, 7, ...
-          // with every further call) — the original lockout off-by-one.
-          const isGenuineAttempt = reason === 'MISMATCH';
-          const flipsToExpired = reason === 'EXPIRED';
-          if (isGenuineAttempt) {
-            challenge.attemptCount += 1;
+        const fail = async (reason: VerifyFailureReason): Promise<VerifyOutcome> => {
+          if (challenge) {
+            // Only a genuine wrong-code guess against a still-live, in-budget challenge
+            // consumes part of the REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS budget. Rejections
+            // caused by the challenge already being dead — missing, already verified,
+            // inactive/revoked, time-expired, or already locked out — must NOT inflate
+            // attempt_count: no comparison against the stored OTP hash was even made, so no
+            // attempt was actually consumed. Without this guard, re-probing an
+            // already-exhausted challenge (e.g. the inevitable request immediately after the
+            // 5th wrong attempt) pushed the persisted counter past the cap (observed: 6, 7, ...
+            // with every further call) — the original lockout off-by-one.
+            const isGenuineAttempt = reason === 'MISMATCH';
+            const flipsToExpired = reason === 'EXPIRED';
+            if (isGenuineAttempt) {
+              challenge.attemptCount += 1;
+            }
+            if (flipsToExpired) {
+              // Lazy expiry: the first request to observe a time-expired ACTIVE challenge
+              // flips it to EXPIRED so persisted state matches reality. This is a status
+              // transition independent of the attempt budget — it must not, by itself,
+              // count as a failed verification attempt.
+              challenge.status = 'EXPIRED';
+            }
+            // Note: exhausting the attempt budget (attemptCount reaching the cap) is
+            // represented purely by attempt_count >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS
+            // while status stays ACTIVE — it does NOT transition status to REVOKED.
+            // REVOKED is reserved for supersession by a fresh OTP request (see requestOtp);
+            // conflating "attempts exhausted" with "superseded" would make a locked-but-live
+            // challenge indistinguishable from a resend-superseded one.
+            if (isGenuineAttempt || flipsToExpired) {
+              await repository.save(challenge);
+            }
+            await this.audit(
+              manager,
+              'CUSTOMER_REGISTRATION_CHALLENGE',
+              challenge.id,
+              'OTP_VERIFY_FAILED',
+              {
+                attemptCount: challenge.attemptCount,
+                status: challenge.status,
+                reason,
+                normalizedPhoneSuffix: phone.canonical.slice(-4),
+              },
+            );
           }
-          if (flipsToExpired) {
-            // Lazy expiry: the first request to observe a time-expired ACTIVE challenge
-            // flips it to EXPIRED so persisted state matches reality. This is a status
-            // transition independent of the attempt budget — it must not, by itself,
-            // count as a failed verification attempt.
-            challenge.status = 'EXPIRED';
-          }
-          // Note: exhausting the attempt budget (attemptCount reaching the cap) is
-          // represented purely by attempt_count >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS
-          // while status stays ACTIVE — it does NOT transition status to REVOKED.
-          // REVOKED is reserved for supersession by a fresh OTP request (see requestOtp);
-          // conflating "attempts exhausted" with "superseded" would make a locked-but-live
-          // challenge indistinguishable from a resend-superseded one.
-          if (isGenuineAttempt || flipsToExpired) {
-            await repository.save(challenge);
-          }
-          await this.audit(
-            manager,
-            'CUSTOMER_REGISTRATION_CHALLENGE',
-            challenge.id,
-            'OTP_VERIFY_FAILED',
-            {
-              attemptCount: challenge.attemptCount,
-              status: challenge.status,
-              reason,
-              normalizedPhoneSuffix: phone.canonical.slice(-4),
-            },
-          );
-        }
-        return { ok: false };
-      };
+          return { ok: false };
+        };
 
-      if (!challenge) return fail('NO_CHALLENGE');
-      if (challenge.status === 'VERIFIED') return fail('ALREADY_VERIFIED');
-      if (challenge.status !== 'ACTIVE') return fail('CHALLENGE_INACTIVE');
-      if (now > challenge.expiresAt) return fail('EXPIRED');
-      if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) return fail('LOCKED');
+        if (!challenge) return fail('NO_CHALLENGE');
+        if (challenge.status === 'VERIFIED') return fail('ALREADY_VERIFIED');
+        if (challenge.status !== 'ACTIVE') return fail('CHALLENGE_INACTIVE');
+        if (now > challenge.expiresAt) return fail('EXPIRED');
+        if (challenge.attemptCount >= REGISTRATION_OTP_MAX_VERIFY_ATTEMPTS) return fail('LOCKED');
 
-      const matches = this.verifyOtpCode(code, challenge.codeSalt, challenge.codeHash);
-      if (!matches) return fail('MISMATCH');
+        const matches = this.verifyOtpCode(code, challenge.codeSalt, challenge.codeHash);
+        if (!matches) return fail('MISMATCH');
 
-      const tokenBytes = randomBytes(32);
-      const verificationToken = tokenBytes.toString('base64url');
-      const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
+        const tokenBytes = randomBytes(32);
+        const verificationToken = tokenBytes.toString('base64url');
+        const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
 
-      challenge.status = 'VERIFIED';
-      challenge.verifiedAt = now;
-      challenge.verificationTokenHash = tokenHash;
-      await repository.save(challenge);
+        challenge.status = 'VERIFIED';
+        challenge.verifiedAt = now;
+        challenge.verificationTokenHash = tokenHash;
+        await repository.save(challenge);
 
-      await this.audit(manager, 'CUSTOMER_REGISTRATION_CHALLENGE', challenge.id, 'OTP_VERIFIED', {
-        normalizedPhoneSuffix: phone.canonical.slice(-4),
-      });
+        await this.audit(manager, 'CUSTOMER_REGISTRATION_CHALLENGE', challenge.id, 'OTP_VERIFIED', {
+          normalizedPhoneSuffix: phone.canonical.slice(-4),
+        });
 
-      return { ok: true, verificationToken };
-    });
+        return { ok: true, verificationToken };
+      },
+    );
 
     if (!outcome.ok) throw new BadRequestException(GENERIC_VERIFY_FAILURE);
     return {
@@ -362,285 +387,291 @@ export class CustomerRegistrationService {
     const phone = this.normalizeNigerianPhone(phoneRaw);
     const tokenHash = createHash('sha256').update(verificationToken).digest('hex');
 
-    const outcome = await runSerializableWithRetry(this.dataSource, 'CUSTOMER_REGISTRATION_COMPLETE', async (manager) => {
-      // Idempotency check if idempotencyKey is supplied
-      if (idempotencyKey && this.idempotencyService) {
-        const reqHash = createHash('sha256')
-          .update(JSON.stringify({ phone: phone.canonical, verificationToken, displayName }))
-          .digest('hex');
-        const reservation = await this.idempotencyService.reserve(manager, {
-          scope: 'CUSTOMER_REGISTRATION',
-          key: idempotencyKey,
-          requestHash: reqHash,
-          retentionSeconds: 86400,
-        });
-        if (reservation.kind === 'REPLAY') {
-          return { ok: true, view: reservation.record.responseBody as unknown as CompleteRegistrationView };
+    const outcome = await runSerializableWithRetry(
+      this.dataSource,
+      'CUSTOMER_REGISTRATION_COMPLETE',
+      async (manager) => {
+        // Idempotency check if idempotencyKey is supplied
+        if (idempotencyKey && this.idempotencyService) {
+          const reqHash = createHash('sha256')
+            .update(JSON.stringify({ phone: phone.canonical, verificationToken, displayName }))
+            .digest('hex');
+          const reservation = await this.idempotencyService.reserve(manager, {
+            scope: 'CUSTOMER_REGISTRATION',
+            key: idempotencyKey,
+            requestHash: reqHash,
+            retentionSeconds: 86400,
+          });
+          if (reservation.kind === 'REPLAY') {
+            return {
+              ok: true,
+              view: reservation.record.responseBody as unknown as CompleteRegistrationView,
+            };
+          }
         }
-      }
 
-      const challengeRepository = manager.getRepository(CustomerRegistrationPhoneChallenge);
-      const challenge = await challengeRepository
-        .createQueryBuilder('challenge')
-        .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
-        .orderBy('challenge.created_at', 'DESC')
-        .setLock('pessimistic_write')
-        .getOne();
-      const now = new Date();
+        const challengeRepository = manager.getRepository(CustomerRegistrationPhoneChallenge);
+        const challenge = await challengeRepository
+          .createQueryBuilder('challenge')
+          .where('challenge.normalized_phone = :phone', { phone: phone.canonical })
+          .orderBy('challenge.created_at', 'DESC')
+          .setLock('pessimistic_write')
+          .getOne();
+        const now = new Date();
 
-      const failVerification = async (
-        reason: RegistrationFailureReason,
-      ): Promise<RegisterOutcome> => {
+        const failVerification = async (
+          reason: RegistrationFailureReason,
+        ): Promise<RegisterOutcome> => {
+          await this.audit(
+            manager,
+            'CUSTOMER_REGISTRATION_CHALLENGE',
+            challenge?.id ?? randomUUID(),
+            'REGISTRATION_FAILED',
+            { reason, normalizedPhoneSuffix: phone.canonical.slice(-4) },
+          );
+          return { ok: false };
+        };
+
+        if (!challenge) return failVerification('NO_CHALLENGE');
+        if (challenge.consumedAt !== null) return failVerification('TOKEN_CONSUMED');
+        if (challenge.status !== 'VERIFIED') return failVerification('NOT_VERIFIED');
+        const verificationStale =
+          now.getTime() - challenge.verifiedAt!.getTime() >
+          REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS * 1000;
+        if (verificationStale) return failVerification('VERIFICATION_STALE');
+        if (
+          challenge.verificationTokenHash === null ||
+          !this.safeEqualHex(challenge.verificationTokenHash, tokenHash)
+        ) {
+          return failVerification('TOKEN_MISMATCH');
+        }
+
+        // Consume BEFORE any customer insert so a later failure rolls the token back cleanly.
+        challenge.consumedAt = now;
+        await challengeRepository.save(challenge);
+
+        const bound = await manager.getRepository(CustomerContactMethod).findOne({
+          where: {
+            type: ContactMethodType.PHONE,
+            normalizedValue: In([phone.canonical, phone.e164]),
+            deletedAt: IsNull(),
+          },
+        });
+        if (bound) {
+          throw new ConflictException(GENERIC_REGISTRATION_CONFLICT);
+        }
+
         await this.audit(
           manager,
           'CUSTOMER_REGISTRATION_CHALLENGE',
-          challenge?.id ?? randomUUID(),
-          'REGISTRATION_FAILED',
-          { reason, normalizedPhoneSuffix: phone.canonical.slice(-4) },
+          challenge.id,
+          'REGISTRATION_INITIATED',
+          { normalizedPhoneSuffix: phone.canonical.slice(-4) },
         );
-        return { ok: false };
-      };
 
-      if (!challenge) return failVerification('NO_CHALLENGE');
-      if (challenge.consumedAt !== null) return failVerification('TOKEN_CONSUMED');
-      if (challenge.status !== 'VERIFIED') return failVerification('NOT_VERIFIED');
-      const verificationStale =
-        now.getTime() - challenge.verifiedAt!.getTime() >
-        REGISTRATION_VERIFICATION_TOKEN_TTL_SECONDS * 1000;
-      if (verificationStale) return failVerification('VERIFICATION_STALE');
-      if (
-        challenge.verificationTokenHash === null ||
-        !this.safeEqualHex(challenge.verificationTokenHash, tokenHash)
-      ) {
-        return failVerification('TOKEN_MISMATCH');
-      }
+        // Determine customer lifecycle status:
+        // If password is provided (customer self-service onboarding), customer activates immediately
+        // upon satisfying the verified primary phone prerequisite.
+        // If password is not provided, maintains backward compatibility (DRAFT status for workforce review).
+        const hasPassword = typeof password === 'string' && password.length >= 8;
+        const initialStatus = hasPassword ? CustomerStatus.ACTIVE : CustomerStatus.DRAFT;
 
-      // Consume BEFORE any customer insert so a later failure rolls the token back cleanly.
-      challenge.consumedAt = now;
-      await challengeRepository.save(challenge);
-
-      const bound = await manager.getRepository(CustomerContactMethod).findOne({
-        where: {
-          type: ContactMethodType.PHONE,
-          normalizedValue: In([phone.canonical, phone.e164]),
-          deletedAt: IsNull(),
-        },
-      });
-      if (bound) {
-        throw new ConflictException(GENERIC_REGISTRATION_CONFLICT);
-      }
-
-      await this.audit(
-        manager,
-        'CUSTOMER_REGISTRATION_CHALLENGE',
-        challenge.id,
-        'REGISTRATION_INITIATED',
-        { normalizedPhoneSuffix: phone.canonical.slice(-4) },
-      );
-
-      // Determine customer lifecycle status:
-      // If password is provided (customer self-service onboarding), customer activates immediately
-      // upon satisfying the verified primary phone prerequisite.
-      // If password is not provided, maintains backward compatibility (DRAFT status for workforce review).
-      const hasPassword = typeof password === 'string' && password.length >= 8;
-      const initialStatus = hasPassword ? CustomerStatus.ACTIVE : CustomerStatus.DRAFT;
-
-      const customerRepository = manager.getRepository(Customer);
-      const customerDraft = customerRepository.create({
-        id: randomUUID(),
-        reference: `mn-${phone.canonical}`,
-        type: CustomerType.INDIVIDUAL,
-        status: initialStatus,
-        kycLevel: CustomerKycLevel.NONE,
-        kycStatus: CustomerKycStatus.NOT_STARTED,
-        version: 1,
-        deletedAt: null,
-      });
-      const customer = await customerRepository.save(customerDraft);
-      await this.audit(manager, 'CUSTOMER', customer.id, 'CREATED', {
-        reference: maskCustomerReference(customer.reference),
-        type: customer.type,
-        status: customer.status,
-        kycLevel: customer.kycLevel,
-        kycStatus: customer.kycStatus,
-        registeredVia: 'customer-self-service',
-      });
-
-      if (initialStatus === CustomerStatus.ACTIVE) {
-        await this.audit(manager, 'CUSTOMER', customer.id, 'STATUS_UPDATED', {
-          previousStatus: 'DRAFT',
-          status: 'ACTIVE',
-          reason: 'SELF_SERVICE_REGISTRATION_ACTIVATED',
-        });
-      }
-
-      const contactRepository = manager.getRepository(CustomerContactMethod);
-      const contactDraft = contactRepository.create({
-        id: randomUUID(),
-        customerId: customer.id,
-        type: ContactMethodType.PHONE,
-        value: phone.e164,
-        normalizedValue: phone.canonical,
-        isPrimary: true,
-        verifiedAt: challenge.verifiedAt,
-        deletedAt: null,
-      });
-      const contact = await contactRepository.save(contactDraft);
-      await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'CREATED', {
-        customerId: customer.id,
-        type: contact.type,
-        isPrimary: contact.isPrimary,
-      });
-      await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'PHONE_VERIFIED', {
-        customerId: customer.id,
-        normalizedPhoneSuffix: phone.canonical.slice(-4),
-        verifiedAt: contact.verifiedAt,
-      });
-
-      // Optional profile creation if displayName is provided
-      if (displayName && displayName.trim().length > 0) {
-        const profileRepository = manager.getRepository(CustomerProfile);
-        const profileDraft = profileRepository.create({
+        const customerRepository = manager.getRepository(Customer);
+        const customerDraft = customerRepository.create({
           id: randomUUID(),
-          customerId: customer.id,
-          displayName: displayName.trim(),
-          legalName: displayName.trim(),
-          isActive: true,
-          deletedAt: null,
-        });
-        const profile = await profileRepository.save(profileDraft);
-        await this.audit(manager, 'CUSTOMER_PROFILE', profile.id, 'CREATED', {
-          customerId: customer.id,
-          displayName: profile.displayName,
-        });
-      }
-
-      // Provision Password Credential & Primary NGN Wallet if self-service password provided
-      let provisionedWallet: WalletAccount | null = null;
-      if (hasPassword) {
-        const passwordHash = this.pbkdf2PasswordHash(password);
-        const credentialRepository = manager.getRepository(CustomerAuthenticationCredential);
-        const credentialDraft = credentialRepository.create({
-          id: randomUUID(),
-          customerId: customer.id,
-          type: AuthenticationCredentialType.PASSWORD,
-          passwordHash,
-          hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
-          passwordVersion: 1,
-          passwordChangedAt: now,
-          status: AuthenticationCredentialStatus.ACTIVE,
-          failedAuthenticationCount: 0,
-          accountLocked: false,
-          lockedAt: null,
-          lockReason: null,
-          rotationRequired: false,
+          reference: `mn-${phone.canonical}`,
+          type: CustomerType.INDIVIDUAL,
+          status: initialStatus,
+          kycLevel: CustomerKycLevel.NONE,
+          kycStatus: CustomerKycStatus.NOT_STARTED,
           version: 1,
           deletedAt: null,
         });
-        const credential = await credentialRepository.save(credentialDraft);
-        await this.audit(manager, 'CUSTOMER_AUTHENTICATION_CREDENTIAL', credential.id, 'CREATED', {
-          customerId: customer.id,
-          credentialId: credential.id,
-          hashAlgorithm: credential.hashAlgorithm,
-          passwordVersion: credential.passwordVersion,
-          status: credential.status,
-          rotationRequired: false,
+        const customer = await customerRepository.save(customerDraft);
+        await this.audit(manager, 'CUSTOMER', customer.id, 'CREATED', {
+          reference: maskCustomerReference(customer.reference),
+          type: customer.type,
+          status: customer.status,
+          kycLevel: customer.kycLevel,
+          kycStatus: customer.kycStatus,
+          registeredVia: 'customer-self-service',
         });
 
-        // Atomic Primary NGN Wallet Provisioning
-        const walletCreationIdempotencyKey =
-          idempotencyKey ?? `wallet-provision-${customer.id}`;
-        if (this.walletService) {
-          provisionedWallet = await this.walletService.createWalletInTransaction(manager, {
-            customerId: customer.id,
-            currency: 'NGN',
-            idempotencyKey: walletCreationIdempotencyKey,
+        if (initialStatus === CustomerStatus.ACTIVE) {
+          await this.audit(manager, 'CUSTOMER', customer.id, 'STATUS_UPDATED', {
+            previousStatus: 'DRAFT',
+            status: 'ACTIVE',
+            reason: 'SELF_SERVICE_REGISTRATION_ACTIVATED',
           });
-        } else {
-          // Direct fallback if WalletService is not injected
-          const walletId = randomUUID();
-          const ledgerAccountRepository = manager.getRepository(LedgerAccount);
-          const ledgerAccount = await ledgerAccountRepository.save(
-            ledgerAccountRepository.create({
-              id: randomUUID(),
-              code: `WALLET-${walletId}`,
-              name: `Customer wallet ${walletId}`,
-              accountType: LedgerAccountType.LIABILITY,
-              normalBalance: LedgerNormalBalance.CREDIT,
-              currency: 'NGN',
-              accountingUnit: 'CUSTOMER_FUNDS',
-              allowNegativeBalance: false,
-              isActive: true,
-            }),
-          );
-          const walletRepository = manager.getRepository(WalletAccount);
-          provisionedWallet = await walletRepository.save(
-            walletRepository.create({
-              id: walletId,
-              customerId: customer.id,
-              currency: 'NGN',
-              status: WalletStatus.ACTIVE,
-              ledgerAccountId: ledgerAccount.id,
-              creationIdempotencyKey: walletCreationIdempotencyKey,
-            }),
-          );
         }
 
-        await this.audit(
-          manager,
-          'CUSTOMER_WALLET',
-          provisionedWallet.id,
-          'PROVISIONED',
-          {
+        const contactRepository = manager.getRepository(CustomerContactMethod);
+        const contactDraft = contactRepository.create({
+          id: randomUUID(),
+          customerId: customer.id,
+          type: ContactMethodType.PHONE,
+          value: phone.e164,
+          normalizedValue: phone.canonical,
+          isPrimary: true,
+          verifiedAt: challenge.verifiedAt,
+          deletedAt: null,
+        });
+        const contact = await contactRepository.save(contactDraft);
+        await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'CREATED', {
+          customerId: customer.id,
+          type: contact.type,
+          isPrimary: contact.isPrimary,
+        });
+        await this.audit(manager, 'CUSTOMER_CONTACT_METHOD', contact.id, 'PHONE_VERIFIED', {
+          customerId: customer.id,
+          normalizedPhoneSuffix: phone.canonical.slice(-4),
+          verifiedAt: contact.verifiedAt,
+        });
+
+        // Optional profile creation if displayName is provided
+        if (displayName && displayName.trim().length > 0) {
+          const profileRepository = manager.getRepository(CustomerProfile);
+          const profileDraft = profileRepository.create({
+            id: randomUUID(),
+            customerId: customer.id,
+            displayName: displayName.trim(),
+            legalName: displayName.trim(),
+            isActive: true,
+            deletedAt: null,
+          });
+          const profile = await profileRepository.save(profileDraft);
+          await this.audit(manager, 'CUSTOMER_PROFILE', profile.id, 'CREATED', {
+            customerId: customer.id,
+            displayName: profile.displayName,
+          });
+        }
+
+        // Provision Password Credential & Primary NGN Wallet if self-service password provided
+        let provisionedWallet: WalletAccount | null = null;
+        if (hasPassword) {
+          const passwordHash = this.pbkdf2PasswordHash(password);
+          const credentialRepository = manager.getRepository(CustomerAuthenticationCredential);
+          const credentialDraft = credentialRepository.create({
+            id: randomUUID(),
+            customerId: customer.id,
+            type: AuthenticationCredentialType.PASSWORD,
+            passwordHash,
+            hashAlgorithm: PasswordHashAlgorithm.PBKDF2,
+            passwordVersion: 1,
+            passwordChangedAt: now,
+            status: AuthenticationCredentialStatus.ACTIVE,
+            failedAuthenticationCount: 0,
+            accountLocked: false,
+            lockedAt: null,
+            lockReason: null,
+            rotationRequired: false,
+            version: 1,
+            deletedAt: null,
+          });
+          const credential = await credentialRepository.save(credentialDraft);
+          await this.audit(
+            manager,
+            'CUSTOMER_AUTHENTICATION_CREDENTIAL',
+            credential.id,
+            'CREATED',
+            {
+              customerId: customer.id,
+              credentialId: credential.id,
+              hashAlgorithm: credential.hashAlgorithm,
+              passwordVersion: credential.passwordVersion,
+              status: credential.status,
+              rotationRequired: false,
+            },
+          );
+
+          // Atomic Primary NGN Wallet Provisioning
+          const walletCreationIdempotencyKey = idempotencyKey ?? `wallet-provision-${customer.id}`;
+          if (this.walletService) {
+            provisionedWallet = await this.walletService.createWalletInTransaction(manager, {
+              customerId: customer.id,
+              currency: 'NGN',
+              idempotencyKey: walletCreationIdempotencyKey,
+            });
+          } else {
+            // Direct fallback if WalletService is not injected
+            const walletId = randomUUID();
+            const ledgerAccountRepository = manager.getRepository(LedgerAccount);
+            const ledgerAccount = await ledgerAccountRepository.save(
+              ledgerAccountRepository.create({
+                id: randomUUID(),
+                code: `WALLET-${walletId}`,
+                name: `Customer wallet ${walletId}`,
+                accountType: LedgerAccountType.LIABILITY,
+                normalBalance: LedgerNormalBalance.CREDIT,
+                currency: 'NGN',
+                accountingUnit: 'CUSTOMER_FUNDS',
+                allowNegativeBalance: false,
+                isActive: true,
+              }),
+            );
+            const walletRepository = manager.getRepository(WalletAccount);
+            provisionedWallet = await walletRepository.save(
+              walletRepository.create({
+                id: walletId,
+                customerId: customer.id,
+                currency: 'NGN',
+                status: WalletStatus.ACTIVE,
+                ledgerAccountId: ledgerAccount.id,
+                creationIdempotencyKey: walletCreationIdempotencyKey,
+              }),
+            );
+          }
+
+          await this.audit(manager, 'CUSTOMER_WALLET', provisionedWallet.id, 'PROVISIONED', {
             customerId: customer.id,
             walletId: provisionedWallet.id,
             currency: provisionedWallet.currency,
             status: provisionedWallet.status,
             ledgerAccountId: provisionedWallet.ledgerAccountId,
-          },
-        );
-      }
-
-      const view: CompleteRegistrationView = {
-        id: customer.id,
-        reference: customer.reference,
-        status: customer.status,
-        phone: this.maskPhone(phone),
-        phoneVerifiedAt: contact.verifiedAt!.toISOString(),
-        ...(provisionedWallet
-          ? {
-              wallet: {
-                id: provisionedWallet.id,
-                currency: provisionedWallet.currency,
-                status: provisionedWallet.status,
-              },
-            }
-          : {}),
-      };
-
-      if (idempotencyKey && this.idempotencyService) {
-        // Complete the reservation
-        const existingRecord = await manager
-          .getRepository(IdempotencyRecord)
-          .createQueryBuilder('rec')
-          .where('rec.scope = :s AND rec.idempotency_key = :k', {
-            s: 'CUSTOMER_REGISTRATION',
-            k: idempotencyKey,
-          })
-          .getOne()
-          .catch(() => null);
-        if (existingRecord) {
-          await this.idempotencyService.complete(manager, existingRecord.id, {
-            responseBody: view as unknown as Record<string, unknown>,
-            statusCode: 201,
-            resourceType: 'CUSTOMER',
-            resourceId: customer.id,
           });
         }
-      }
 
-      return { ok: true, view };
-    });
+        const view: CompleteRegistrationView = {
+          id: customer.id,
+          reference: customer.reference,
+          status: customer.status,
+          phone: this.maskPhone(phone),
+          phoneVerifiedAt: contact.verifiedAt!.toISOString(),
+          ...(provisionedWallet
+            ? {
+                wallet: {
+                  id: provisionedWallet.id,
+                  currency: provisionedWallet.currency,
+                  status: provisionedWallet.status,
+                },
+              }
+            : {}),
+        };
+
+        if (idempotencyKey && this.idempotencyService) {
+          // Complete the reservation
+          const existingRecord = await manager
+            .getRepository(IdempotencyRecord)
+            .createQueryBuilder('rec')
+            .where('rec.scope = :s AND rec.idempotency_key = :k', {
+              s: 'CUSTOMER_REGISTRATION',
+              k: idempotencyKey,
+            })
+            .getOne()
+            .catch(() => null);
+          if (existingRecord) {
+            await this.idempotencyService.complete(manager, existingRecord.id, {
+              responseBody: view as unknown as Record<string, unknown>,
+              statusCode: 201,
+              resourceType: 'CUSTOMER',
+              resourceId: customer.id,
+            });
+          }
+        }
+
+        return { ok: true, view };
+      },
+    );
 
     if (!outcome.ok) throw new BadRequestException(GENERIC_REGISTRATION_VERIFY_FAILURE);
     return outcome.view;

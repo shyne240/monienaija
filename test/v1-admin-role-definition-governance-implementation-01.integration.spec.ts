@@ -150,7 +150,9 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
   }
 
   /** A single principal holding multiple roles at once (two distinct assignment rows). */
-  async function provisionMultiRole(roleKeys: string[]): Promise<{ principalId: string; token: string }> {
+  async function provisionMultiRole(
+    roleKeys: string[],
+  ): Promise<{ principalId: string; token: string }> {
     const principalId = `roledefgov01:multi:${randomUUID()}`.slice(0, 160);
     const now = new Date();
     for (const roleKey of roleKeys) {
@@ -216,7 +218,8 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
         proposalType: 'CREATE',
         roleKey,
         displayName: overrides.displayName ?? 'Test Configurable Role',
-        description: overrides.description ?? 'A role created through the governed workflow for testing.',
+        description:
+          overrides.description ?? 'A role created through the governed workflow for testing.',
         readOnly: overrides.readOnly ?? false,
         functionGrants: overrides.functionGrants ?? [
           { functionCode: 'customer.view', accessType: 'VIEW' },
@@ -271,11 +274,16 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
   }
 
   async function roleRow(roleKey: string): Promise<RoleRow | undefined> {
-    const rows: RoleRow[] = await dataSource.query(`SELECT * FROM authorization_roles WHERE role_key = $1`, [roleKey]);
+    const rows: RoleRow[] = await dataSource.query(
+      `SELECT * FROM authorization_roles WHERE role_key = $1`,
+      [roleKey],
+    );
     return rows[0];
   }
 
-  async function roleFunctionRows(roleId: string): Promise<Array<{ function_code: string; access_type: string; is_active: boolean }>> {
+  async function roleFunctionRows(
+    roleId: string,
+  ): Promise<Array<{ function_code: string; access_type: string; is_active: boolean }>> {
     return dataSource.query(
       `SELECT function_code, access_type, is_active FROM authorization_role_functions WHERE role_id = $1 ORDER BY function_code`,
       [roleId],
@@ -306,7 +314,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
     it('2a. self-approval is forbidden and the proposal remains REQUESTED', async () => {
       const superAdmin = await loginSuperAdmin();
       const submitted = await submitCreate(superAdmin);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
 
       const res = await approve(superAdmin, id);
       expect(res.status).toBe(403);
@@ -324,7 +332,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const submitted = await submitCreate(superAdmin);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
 
       const res = await approve(controller.token, id);
       expect(res.status).toBe(201);
@@ -337,7 +345,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const submitted = await submitCreate(superAdmin);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
 
       const res = await reject(controller.token, id, 'Not needed');
       expect(res.status).toBe(201);
@@ -360,7 +368,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const administrator = await provisionRole('ADMINISTRATOR');
       const submitted = await submitCreate(superAdmin);
-      const res = await approve(administrator.token, (submitted.body.proposal.id as string));
+      const res = await approve(administrator.token, submitted.body.proposal.id as string);
       expect([401, 403]).toContain(res.status);
     });
   });
@@ -374,7 +382,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('NOT_YET');
       const submitted = await submitCreate(superAdmin, { roleKey });
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       expect(await roleRow(roleKey)).toBeUndefined();
 
       await approve(controller.token, id);
@@ -397,7 +405,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
           { functionCode: 'customer.manage_support_case', accessType: 'EXECUTE' },
         ],
       });
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       await approve(controller.token, id);
       const applied = await apply(superAdmin, id);
       expect(applied.status).toBe(201);
@@ -412,7 +420,10 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       expect(role.definition_version).toBe(1);
 
       const grants = await roleFunctionRows(role.id);
-      expect(grants.map((g) => g.function_code)).toEqual(['customer.manage_support_case', 'customer.view']);
+      expect(grants.map((g) => g.function_code)).toEqual([
+        'customer.manage_support_case',
+        'customer.view',
+      ]);
       expect(grants.every((g) => g.is_active)).toBe(true);
 
       // Live authorization proof: the catalogue runtime service — the ONLY place the live
@@ -438,8 +449,8 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
         roleKey,
         functionGrants: [{ functionCode: 'customer.view', accessType: 'VIEW' }],
       });
-      await approve(controller.token, (createRes.body.proposal.id as string));
-      await apply(superAdmin, (createRes.body.proposal.id as string));
+      await approve(controller.token, createRes.body.proposal.id as string);
+      await apply(superAdmin, createRes.body.proposal.id as string);
       const createdRole = (await roleRow(roleKey))!;
       expect(createdRole.definition_version).toBe(1);
 
@@ -460,7 +471,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
           reason: 'Integration test modify',
         });
       expect(modifyRes.status).toBe(201);
-      const modifyId = (modifyRes.body.proposal.id as string);
+      const modifyId = modifyRes.body.proposal.id as string;
       await approve(controller.token, modifyId);
       const appliedModify = await apply(superAdmin, modifyId);
       expect(appliedModify.status).toBe(201);
@@ -531,8 +542,8 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('DIRECT_SQL');
       const createRes = await submitCreate(superAdmin, { roleKey });
-      await approve(controller.token, (createRes.body.proposal.id as string));
-      await apply(superAdmin, (createRes.body.proposal.id as string));
+      await approve(controller.token, createRes.body.proposal.id as string);
+      await apply(superAdmin, createRes.body.proposal.id as string);
       const role = (await roleRow(roleKey))!;
       expect(role.finance_role_class).toBe(false);
 
@@ -549,30 +560,43 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('NO_ELEVATE');
       const createRes = await submitCreate(superAdmin, { roleKey });
-      await approve(controller.token, (createRes.body.proposal.id as string));
-      await apply(superAdmin, (createRes.body.proposal.id as string));
+      await approve(controller.token, createRes.body.proposal.id as string);
+      await apply(superAdmin, createRes.body.proposal.id as string);
 
       await expect(
-        dataSource.query(`UPDATE authorization_roles SET administrative_capability = true WHERE role_key = $1`, [
-          roleKey,
-        ]),
+        dataSource.query(
+          `UPDATE authorization_roles SET administrative_capability = true WHERE role_key = $1`,
+          [roleKey],
+        ),
       ).rejects.toThrow();
       await expect(
-        dataSource.query(`UPDATE authorization_roles SET finance_role_class = true WHERE role_key = $1`, [roleKey]),
+        dataSource.query(
+          `UPDATE authorization_roles SET finance_role_class = true WHERE role_key = $1`,
+          [roleKey],
+        ),
       ).rejects.toThrow();
 
       // P0-CH actor-column widening: the three authorization actor columns must be VARCHAR(160)
       // (principal-ID convention) and must accept a 160-character principal identifier.
-      const cols: Array<{ table_name: string; column_name: string; character_maximum_length: number }> =
-        await dataSource.query(
-          `SELECT table_name, column_name, character_maximum_length FROM information_schema.columns
+      const cols: Array<{
+        table_name: string;
+        column_name: string;
+        character_maximum_length: number;
+      }> = await dataSource.query(
+        `SELECT table_name, column_name, character_maximum_length FROM information_schema.columns
            WHERE table_name IN ('authorization_roles','authorization_role_functions')
              AND column_name IN ('created_by','updated_by','assigned_by')
            ORDER BY table_name, column_name`,
-        );
-      const createdBy = cols.find((c) => c.table_name === 'authorization_roles' && c.column_name === 'created_by');
-      const updatedBy = cols.find((c) => c.table_name === 'authorization_roles' && c.column_name === 'updated_by');
-      const assignedBy = cols.find((c) => c.table_name === 'authorization_role_functions' && c.column_name === 'assigned_by');
+      );
+      const createdBy = cols.find(
+        (c) => c.table_name === 'authorization_roles' && c.column_name === 'created_by',
+      );
+      const updatedBy = cols.find(
+        (c) => c.table_name === 'authorization_roles' && c.column_name === 'updated_by',
+      );
+      const assignedBy = cols.find(
+        (c) => c.table_name === 'authorization_role_functions' && c.column_name === 'assigned_by',
+      );
       expect(createdBy?.character_maximum_length).toBe(160);
       expect(updatedBy?.character_maximum_length).toBe(160);
       expect(assignedBy?.character_maximum_length).toBe(160);
@@ -584,13 +608,16 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
           roleKey,
         ]),
       ).resolves.toBeDefined();
-      const row = await dataSource.query(`SELECT updated_by FROM authorization_roles WHERE role_key = $1`, [roleKey]);
+      const row = await dataSource.query(
+        `SELECT updated_by FROM authorization_roles WHERE role_key = $1`,
+        [roleKey],
+      );
       expect(row[0].updated_by).toBe(longPrincipal);
       await expect(
-        dataSource.query(`UPDATE authorization_role_functions SET assigned_by = $1 WHERE role_id = $2`, [
-          longPrincipal,
-          (await roleRow(roleKey))!.id,
-        ]),
+        dataSource.query(
+          `UPDATE authorization_role_functions SET assigned_by = $1 WHERE role_id = $2`,
+          [longPrincipal, (await roleRow(roleKey))!.id],
+        ),
       ).resolves.toBeDefined();
     });
   });
@@ -608,8 +635,8 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
         administrativeCapability: true,
         financeRoleClass: true,
       });
-      await approve(controller.token, (createRes.body.proposal.id as string));
-      await apply(superAdmin, (createRes.body.proposal.id as string));
+      await approve(controller.token, createRes.body.proposal.id as string);
+      await apply(superAdmin, createRes.body.proposal.id as string);
       const role = (await roleRow(roleKey))!;
       expect(role.administrative_capability).toBe(false);
       expect(role.finance_role_class).toBe(false);
@@ -653,7 +680,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
 
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const legit = await submitCreate(superAdmin);
-      const id = (legit.body.proposal.id as string);
+      const id = legit.body.proposal.id as string;
 
       const approveAttempt = await approve(auditor.token, id);
       expect([401, 403]).toContain(approveAttempt.status);
@@ -686,7 +713,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const submitted = await submitCreate(superAdmin);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       await approve(controller.token, id);
 
       const [a, b] = await Promise.all([apply(superAdmin, id), apply(superAdmin, id)]);
@@ -700,7 +727,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const submitted = await submitCreate(superAdmin);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       await approve(controller.token, id);
       const first = await apply(superAdmin, id);
       expect(first.status).toBe(201);
@@ -712,15 +739,18 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const superAdmin = await loginSuperAdmin();
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const submitted = await submitCreate(superAdmin, { expiresInSeconds: 60 });
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       const approvalId = submitted.body.proposal.approvalId;
 
       const past = new Date(Date.now() - 60_000);
-      await dataSource.query(`UPDATE role_definition_proposals SET expires_at = $1 WHERE id = $2`, [past, id]);
-      await dataSource.query(`UPDATE privileged_action_approvals SET expires_at = $1 WHERE id = $2`, [
+      await dataSource.query(`UPDATE role_definition_proposals SET expires_at = $1 WHERE id = $2`, [
         past,
-        approvalId,
+        id,
       ]);
+      await dataSource.query(
+        `UPDATE privileged_action_approvals SET expires_at = $1 WHERE id = $2`,
+        [past, approvalId],
+      );
 
       const res = await approve(controller.token, id);
       expect(res.status).toBe(201);
@@ -736,8 +766,8 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('STALE_MODIFY');
       const createRes = await submitCreate(superAdmin, { roleKey });
-      await approve(controller.token, (createRes.body.proposal.id as string));
-      await apply(superAdmin, (createRes.body.proposal.id as string));
+      await approve(controller.token, createRes.body.proposal.id as string);
+      await apply(superAdmin, createRes.body.proposal.id as string);
 
       const modifyRes = await request(app.getHttpServer())
         .post(BASE_PATH)
@@ -752,12 +782,15 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
           reason: 'Stale modify test',
         });
       expect(modifyRes.status).toBe(201);
-      const modifyId = (modifyRes.body.proposal.id as string);
+      const modifyId = modifyRes.body.proposal.id as string;
       await approve(controller.token, modifyId);
 
       // Simulate the role having changed since the proposal was built, without going through a
       // second governed proposal (blocked by the in-flight unique index while this one exists).
-      await dataSource.query(`UPDATE authorization_roles SET definition_version = 2 WHERE role_key = $1`, [roleKey]);
+      await dataSource.query(
+        `UPDATE authorization_roles SET definition_version = 2 WHERE role_key = $1`,
+        [roleKey],
+      );
 
       const applyRes = await apply(superAdmin, modifyId);
       expect(applyRes.status).toBe(201);
@@ -778,7 +811,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('REJECTED');
       const submitted = await submitCreate(superAdmin, { roleKey });
-      await reject(controller.token, (submitted.body.proposal.id as string), 'denied');
+      await reject(controller.token, submitted.body.proposal.id as string, 'denied');
       expect(await roleRow(roleKey)).toBeUndefined();
     });
   });
@@ -792,7 +825,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       const controller = await provisionRole('FINANCE_CONTROLLER');
       const roleKey = randomRoleKey('AUDITED');
       const submitted = await submitCreate(superAdmin, { roleKey });
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       await approve(controller.token, id, 'looks fine');
       await apply(superAdmin, id);
 
@@ -801,10 +834,11 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       // (e.g. the privileged-action-approval request's own authorize() call) — a separate,
       // pre-existing audit mechanism this task does not change, not part of what is being proven
       // here (that OUR proposal lifecycle is fully audited).
-      const events: Array<{ action: string; actor: string; entity_type: string }> = await dataSource.query(
-        `SELECT action, actor, entity_type FROM audit_events WHERE entity_id = $1 AND entity_type = 'ROLE_DEFINITION_PROPOSAL' ORDER BY occurred_at ASC`,
-        [id],
-      );
+      const events: Array<{ action: string; actor: string; entity_type: string }> =
+        await dataSource.query(
+          `SELECT action, actor, entity_type FROM audit_events WHERE entity_id = $1 AND entity_type = 'ROLE_DEFINITION_PROPOSAL' ORDER BY occurred_at ASC`,
+          [id],
+        );
       const actions = events.map((e) => e.action);
       expect(actions).toContain('ROLE_DEFINITION_PROPOSAL_SUBMITTED');
       expect(actions).toContain('ROLE_DEFINITION_PROPOSAL_APPROVED');
@@ -826,7 +860,7 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
       // test 2a) is for the exact same principalId to hold the approver role too.
       const dual = await provisionMultiRole(['SUPER_ADMIN', 'FINANCE_CONTROLLER']);
       const submitted = await submitCreate(dual.token);
-      const id = (submitted.body.proposal.id as string);
+      const id = submitted.body.proposal.id as string;
       const res = await approve(dual.token, id);
       expect(res.status).toBe(403);
 
@@ -866,8 +900,12 @@ describe('V1-ADMIN-ROLE-DEFINITION-GOVERNANCE-IMPLEMENTATION-01 — real Postgre
         JOIN authorization_functions f ON f.function_code = rf.function_code
         WHERE r.role_key = 'ADMINISTRATOR' AND rf.is_active = true
       `);
-      expect(administratorGrants.some((g) => g.function_code === 'workforce.role.create')).toBe(false);
-      expect(administratorGrants.some((g) => g.function_code === 'workforce.role.modify')).toBe(false);
+      expect(administratorGrants.some((g) => g.function_code === 'workforce.role.create')).toBe(
+        false,
+      );
+      expect(administratorGrants.some((g) => g.function_code === 'workforce.role.modify')).toBe(
+        false,
+      );
     });
 
     it('14b. SUPER_ADMIN and FINANCE_CONTROLLER hold exactly INITIATE/APPROVE on workforce.role.create and .modify', async () => {

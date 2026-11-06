@@ -14,11 +14,7 @@ import { AuditService } from '../operations/audit.service';
 import { IdempotencyService } from '../operations/idempotency.service';
 import { OutboxService } from '../operations/outbox.service';
 import type { AuthorizationPrincipal } from '../authorization/authorization.types';
-import {
-  SupportTicketCategory,
-  SupportTicketPriority,
-  SupportTicketStatus,
-} from './support.enums';
+import { SupportTicketCategory, SupportTicketPriority, SupportTicketStatus } from './support.enums';
 import type { SupportTicket } from './support-ticket.entity';
 import type { SupportTicketMessage } from './support-ticket-message.entity';
 
@@ -56,8 +52,7 @@ interface SupportTicketMessageRow {
   updated_at: SupportTicketMessage['updatedAt'];
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface CreateSupportTicketInput {
   subject: string;
@@ -172,14 +167,8 @@ export class SupportService {
     const category = this.assertCategory(input.category);
     const description = this.assertDescription(input.description);
     const priority = this.assertPriority(input.priority);
-    const fundingRequestId = this.optionalUuid(
-      input.fundingRequestId,
-      'fundingRequestId',
-    );
-    const relatedTransferId = this.optionalUuid(
-      input.relatedTransferId,
-      'relatedTransferId',
-    );
+    const fundingRequestId = this.optionalUuid(input.fundingRequestId, 'fundingRequestId');
+    const relatedTransferId = this.optionalUuid(input.relatedTransferId, 'relatedTransferId');
     const idempotencyKey = this.optionalIdempotencyKey(input.idempotencyKey);
     const principal = this.assertPrincipal(input.principal);
 
@@ -191,7 +180,8 @@ export class SupportService {
     const createdById = principal.principalId;
 
     if (principal.type === 'CUSTOMER') {
-      if (!principal.customerId) throw new ForbiddenException('Customer principal missing customerId');
+      if (!principal.customerId)
+        throw new ForbiddenException('Customer principal missing customerId');
       customerId = principal.customerId;
       // workforce target overrides not allowed for customer
       if (input.targetCustomerId || input.targetAgentId) {
@@ -205,10 +195,13 @@ export class SupportService {
       }
     } else if (['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       // Workforce: if target supplied, bind it; else leave null (operational ticket)
-      if (input.targetCustomerId) customerId = this.assertUuid(input.targetCustomerId, 'targetCustomerId');
+      if (input.targetCustomerId)
+        customerId = this.assertUuid(input.targetCustomerId, 'targetCustomerId');
       if (input.targetAgentId) agentId = this.assertUuid(input.targetAgentId, 'targetAgentId');
     } else {
-      throw new ForbiddenException(`Principal type ${principal.type} cannot create support tickets`);
+      throw new ForbiddenException(
+        `Principal type ${principal.type} cannot create support tickets`,
+      );
     }
 
     // Validate linked entities existence if provided (stable FKs)
@@ -217,14 +210,16 @@ export class SupportService {
         `SELECT id FROM customer_funding_requests WHERE id=$1 LIMIT 1`,
         [fundingRequestId],
       );
-      if (rows.length === 0) throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
+      if (rows.length === 0)
+        throw new NotFoundException(`Funding request ${fundingRequestId} was not found`);
     }
     if (relatedTransferId) {
       const rows: Array<{ id: string }> = await this.dataSource.query(
         `SELECT id FROM transfers WHERE id=$1 LIMIT 1`,
         [relatedTransferId],
       );
-      if (rows.length === 0) throw new NotFoundException(`Transfer ${relatedTransferId} was not found`);
+      if (rows.length === 0)
+        throw new NotFoundException(`Transfer ${relatedTransferId} was not found`);
     }
 
     // Validate customer/agent existence where bound
@@ -370,7 +365,9 @@ export class SupportService {
           throw error;
         }
       }
-      throw new ConflictException('The support ticket could not be created after concurrent retries');
+      throw new ConflictException(
+        'The support ticket could not be created after concurrent retries',
+      );
     }
 
     // No idempotency — direct create
@@ -629,7 +626,10 @@ export class SupportService {
           if (rows.length === 0) throw new NotFoundException('Support ticket not found');
           const ticket = rows[0]!;
           const currentStatus: SupportTicketStatus = ticket.status;
-          if (currentStatus === SupportTicketStatus.CLOSED || currentStatus === SupportTicketStatus.RESOLVED) {
+          if (
+            currentStatus === SupportTicketStatus.CLOSED ||
+            currentStatus === SupportTicketStatus.RESOLVED
+          ) {
             throw new ConflictException(`Cannot assign ticket in ${currentStatus} status`);
           }
           if (expectedVersion !== undefined && ticket.version !== expectedVersion) {
@@ -682,7 +682,12 @@ export class SupportService {
               aggregateType: 'SUPPORT_TICKET',
               aggregateId: ticketId,
               correlationId: `support-ticket:${ticketId}`,
-              payload: { ticketId, from: currentStatus, to: SupportTicketStatus.IN_PROGRESS, actor },
+              payload: {
+                ticketId,
+                from: currentStatus,
+                to: SupportTicketStatus.IN_PROGRESS,
+                actor,
+              },
             });
           }
 
@@ -801,8 +806,10 @@ export class SupportService {
     // Determine authorType/authorId
     const authorType = principal.type;
     const authorId = principal.principalId;
-    if (principal.type === 'CUSTOMER' && !principal.customerId) throw new ForbiddenException('Customer principal missing');
-    if (principal.type === 'AGENT' && !principal.agentId) throw new ForbiddenException('Agent principal missing');
+    if (principal.type === 'CUSTOMER' && !principal.customerId)
+      throw new ForbiddenException('Customer principal missing');
+    if (principal.type === 'AGENT' && !principal.agentId)
+      throw new ForbiddenException('Agent principal missing');
 
     // Validate isInternal permission: only workforce can create internal notes
     if (isInternal && !['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
@@ -855,13 +862,15 @@ export class SupportService {
 
       // Ownership check
       if (principal.type === 'CUSTOMER') {
-        if (ticket.customer_id !== principal.customerId) throw new NotFoundException('Support ticket not found');
+        if (ticket.customer_id !== principal.customerId)
+          throw new NotFoundException('Support ticket not found');
         if (status === SupportTicketStatus.CLOSED || status === SupportTicketStatus.RESOLVED) {
           throw new ConflictException('Cannot add message to resolved/closed ticket');
         }
         if (isInternal) throw new ForbiddenException('Customer cannot create internal messages');
       } else if (principal.type === 'AGENT') {
-        if (ticket.agent_id !== principal.agentId) throw new NotFoundException('Support ticket not found');
+        if (ticket.agent_id !== principal.agentId)
+          throw new NotFoundException('Support ticket not found');
         if (status === SupportTicketStatus.CLOSED || status === SupportTicketStatus.RESOLVED) {
           throw new ConflictException('Cannot add message to resolved/closed ticket');
         }
@@ -937,9 +946,11 @@ export class SupportService {
 
     // Ownership check for customer/agent
     if (principal.type === 'CUSTOMER') {
-      if (ticket.customer_id !== principal.customerId) throw new NotFoundException('Support ticket not found');
+      if (ticket.customer_id !== principal.customerId)
+        throw new NotFoundException('Support ticket not found');
     } else if (principal.type === 'AGENT') {
-      if (ticket.agent_id !== principal.agentId) throw new NotFoundException('Support ticket not found');
+      if (ticket.agent_id !== principal.agentId)
+        throw new NotFoundException('Support ticket not found');
     } else if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(principal.type)) {
       throw new ForbiddenException('Principal not allowed to list messages');
     }
@@ -1024,20 +1035,25 @@ export class SupportService {
 
   private assertSubject(value: string): string {
     const v = value?.trim();
-    if (!v || v.length < 3 || v.length > 200) throw new BadRequestException('subject must be 3 to 200 characters');
-    if ([...v].some((character) => character.charCodeAt(0) <= 0x1f)) throw new BadRequestException('subject contains invalid characters');
+    if (!v || v.length < 3 || v.length > 200)
+      throw new BadRequestException('subject must be 3 to 200 characters');
+    if ([...v].some((character) => character.charCodeAt(0) <= 0x1f))
+      throw new BadRequestException('subject contains invalid characters');
     return v;
   }
 
   private assertDescription(value: string): string {
     const v = value?.trim();
-    if (!v || v.length < 3 || v.length > 4000) throw new BadRequestException('description must be 3 to 4000 characters');
+    if (!v || v.length < 3 || v.length > 4000)
+      throw new BadRequestException('description must be 3 to 4000 characters');
     return v;
   }
 
   private assertCategory(value: string): SupportTicketCategory {
     if (!Object.values(SupportTicketCategory).includes(value as SupportTicketCategory)) {
-      throw new BadRequestException(`category must be one of ${Object.values(SupportTicketCategory).join(', ')}`);
+      throw new BadRequestException(
+        `category must be one of ${Object.values(SupportTicketCategory).join(', ')}`,
+      );
     }
     return value as SupportTicketCategory;
   }
@@ -1045,14 +1061,18 @@ export class SupportService {
   private assertPriority(value?: string): SupportTicketPriority {
     if (value === undefined || value === null) return SupportTicketPriority.MEDIUM;
     if (!Object.values(SupportTicketPriority).includes(value as SupportTicketPriority)) {
-      throw new BadRequestException(`priority must be one of ${Object.values(SupportTicketPriority).join(', ')}`);
+      throw new BadRequestException(
+        `priority must be one of ${Object.values(SupportTicketPriority).join(', ')}`,
+      );
     }
     return value as SupportTicketPriority;
   }
 
   private assertStatus(value: string): SupportTicketStatus {
     if (!Object.values(SupportTicketStatus).includes(value as SupportTicketStatus)) {
-      throw new BadRequestException(`status must be one of ${Object.values(SupportTicketStatus).join(', ')}`);
+      throw new BadRequestException(
+        `status must be one of ${Object.values(SupportTicketStatus).join(', ')}`,
+      );
     }
     return value as SupportTicketStatus;
   }
@@ -1089,7 +1109,8 @@ export class SupportService {
 
   private assertText(value: string, fieldName: string, min: number, max: number): string {
     const v = value?.trim();
-    if (!v || v.length < min || v.length > max) throw new BadRequestException(`${fieldName} must be ${min} to ${max} characters`);
+    if (!v || v.length < min || v.length > max)
+      throw new BadRequestException(`${fieldName} must be ${min} to ${max} characters`);
     return v;
   }
 
@@ -1097,17 +1118,20 @@ export class SupportService {
     if (value === undefined || value === null) return null;
     const v = value.trim();
     if (v.length === 0) return null;
-    if (v.length > 255) throw new BadRequestException('Idempotency-Key must be at most 255 characters');
+    if (v.length > 255)
+      throw new BadRequestException('Idempotency-Key must be at most 255 characters');
     return v;
   }
 
   private normalizePage(page: number): number {
-    if (!Number.isSafeInteger(page) || page < 1) throw new BadRequestException('page must be a positive integer');
+    if (!Number.isSafeInteger(page) || page < 1)
+      throw new BadRequestException('page must be a positive integer');
     return page;
   }
 
   private normalizeLimit(limit: number): number {
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('limit must be between 1 and 100');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new BadRequestException('limit must be between 1 and 100');
     return limit;
   }
 
@@ -1117,7 +1141,9 @@ export class SupportService {
     return principal;
   }
 
-  private assertWorkforcePrincipal(principal: AuthorizationPrincipal | undefined): AuthorizationPrincipal {
+  private assertWorkforcePrincipal(
+    principal: AuthorizationPrincipal | undefined,
+  ): AuthorizationPrincipal {
     const p = this.assertPrincipal(principal);
     if (!['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(p.type)) {
       throw new ForbiddenException(`Principal type ${p.type} not allowed for workforce operation`);

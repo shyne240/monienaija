@@ -22,10 +22,7 @@ import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { WalletService } from '../src/wallet/wallet.service';
 import { LedgerService } from '../src/ledger/ledger.service';
-import {
-  LedgerAccountType,
-  LedgerNormalBalance,
-} from '../src/ledger/ledger.enums';
+import { LedgerAccountType, LedgerNormalBalance } from '../src/ledger/ledger.enums';
 import { CommissionRuleRegistryService } from '../src/commission/commission-rule-registry.service';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
@@ -107,7 +104,15 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
         throw new UnauthorizedException('invalid workforce token');
       }
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -141,7 +146,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     walletService = app.get(WalletService);
@@ -197,7 +204,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
        VALUES (gen_random_uuid(),'AGENT_FUNDING_POOL-NGN','Agent Funding Pool NGN','LIABILITY','CREDIT','NGN','CUSTOMER_FUNDS',FALSE,TRUE)
        ON CONFLICT (code) DO NOTHING`,
     );
-    const pool: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`);
+    const pool: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='AGENT_FUNDING_POOL-NGN'`,
+    );
     await dataSource.transaction(async (manager) => {
       await ledgerService.postJournalInTransaction(manager, {
         idempotencyKey: `ah01-pool-${randomUUID()}`,
@@ -218,7 +227,12 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     return `80${Math.floor(10000000 + Math.random() * 89999999)}`;
   }
 
-  async function seedLimitProfile(code: string, subjectType: 'AGENT' | 'CUSTOMER', subjectId: string, product: string) {
+  async function seedLimitProfile(
+    code: string,
+    subjectType: 'AGENT' | 'CUSTOMER',
+    subjectId: string,
+    product: string,
+  ) {
     await dataSource.query(
       `INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by) VALUES ($1,$2,$3,'ACTIVE',true,'CONFIGURED','test')`,
       [code, `Profile ${code}`, subjectType],
@@ -235,7 +249,14 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       await dataSource.query(
         `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
          VALUES ($1,$2,$3,NULL,NULL,'NGN',$4,$5,NULL,$6,NULL,true,'test')`,
-        [randomUUID(), code, product, dimension, value, new Date(Date.now() - 86400000).toISOString()],
+        [
+          randomUUID(),
+          code,
+          product,
+          dimension,
+          value,
+          new Date(Date.now() - 86400000).toISOString(),
+        ],
       );
     }
   }
@@ -295,7 +316,8 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .send({ agentId, password })
       .expect(200);
     const [session] = await dataSource.query(
-      `SELECT id FROM agent_authentication_sessions WHERE agent_id=$1 ORDER BY issued_at DESC LIMIT 1`, [agentId],
+      `SELECT id FROM agent_authentication_sessions WHERE agent_id=$1 ORDER BY issued_at DESC LIMIT 1`,
+      [agentId],
     );
     agentSessions.set(agentId, session.id);
     return login.body.accessToken as string;
@@ -401,12 +423,17 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   /** Full service-enabled agent with a funded float. */
   async function agentBundle(opts: { floatMinor?: string } = {}) {
     const bundle = await createActiveAgentWithPin(
-      ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'], '1234',
+      ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING', 'AGENT_DEFUNDING'],
+      '1234',
     );
     if (opts.floatMinor && opts.floatMinor !== '0') {
       const fund = await fundingService.fund({
-        agentId: bundle.agent.id, amountMinor: opts.floatMinor, currency: 'NGN',
-        idempotencyKey: `ah01-f-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+        agentId: bundle.agent.id,
+        amountMinor: opts.floatMinor,
+        currency: 'NGN',
+        idempotencyKey: `ah01-f-${randomUUID()}`,
+        principal: privilegedPrincipal,
+        actor: 'test-actor',
       });
       expect(fund.status).toBe('COMPLETED');
     }
@@ -423,7 +450,13 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(res.body.items).toEqual([]);
-    expect(res.body.pagination).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0, hasNextPage: false });
+    expect(res.body.pagination).toEqual({
+      page: 1,
+      limit: 20,
+      total: 0,
+      totalPages: 0,
+      hasNextPage: false,
+    });
     void agent;
   });
 
@@ -445,8 +478,12 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('3. AGENT_DEFUNDING appears as DEBIT', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '5000' });
     const defund = await fundingService.defund({
-      agentId: agent.id, amountMinor: '2000', currency: 'NGN',
-      idempotencyKey: `ah01-d-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: agent.id,
+      amountMinor: '2000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-d-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     expect(defund.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
@@ -462,14 +499,29 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('4. Wallet→Cash executed by the agent appears as CASH_OUT (CREDIT)', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '0' });
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWalletDirect(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const challengeId = await createMfaChallenge(customerId, 'ah01-otp');
     const out = await cashOutService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      customerId, customerPin: '1234', mfaChallengeId: challengeId, otp: 'ah01-otp',
-      amountMinor: '30000', currency: 'NGN', idempotencyKey: `ah01-out-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      customerId,
+      customerPin: '1234',
+      mfaChallengeId: challengeId,
+      otp: 'ah01-otp',
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-out-${randomUUID()}`,
     });
     expect(out.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
@@ -487,12 +539,27 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     const { agent, token } = await agentBundle({ floatMinor: '100000' });
     const phone = newPhone();
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_WALLET');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_WALLET');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_WALLET',
+    );
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_WALLET',
+    );
     const result = await cashInService.execute({
-      agentId: agent.id, principal: agentPrincipal(agent.id) as any, pin: '1234',
-      recipientIdentifier: phone, amountMinor: '30000', currency: 'NGN',
-      idempotencyKey: `ah01-in-${randomUUID()}`, reference: `ref-${randomUUID().slice(0, 6)}`,
+      agentId: agent.id,
+      principal: agentPrincipal(agent.id) as any,
+      pin: '1234',
+      recipientIdentifier: phone,
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-in-${randomUUID()}`,
+      reference: `ref-${randomUUID().slice(0, 6)}`,
     });
     expect(result.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
@@ -506,10 +573,19 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   it('6. CASH_TO_CASH initiation appears; status is the source-of-truth lifecycle (UNCLAIMED)', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '500000' });
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     const init = await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '30000', currency: 'NGN',
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '30000',
+      currency: 'NGN',
       idempotencyKey: `ah01-c2c-${randomUUID()}`,
     });
     expect(init.status).toBe('COMPLETED');
@@ -523,11 +599,20 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     expect(res.body.items[0].direction).toBe('DEBIT');
     // claim then appears on the SAME history item (lifecycle projection, not a second row):
     const { customerId } = await createCustomerWithPhoneAndPin(init.beneficiaryPhone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_CASH',
+    );
     const challengeId = await createMfaChallenge(customerId, 'ah01-claim');
     const claim = await claimService.execute({
-      transferId: init.transferId, beneficiaryPhone: init.beneficiaryPhone, transferCode: init.transferCode,
-      customerId, mfaChallengeId: challengeId, otp: 'ah01-claim',
+      transferId: init.transferId,
+      beneficiaryPhone: init.beneficiaryPhone,
+      transferCode: init.transferCode,
+      customerId,
+      mfaChallengeId: challengeId,
+      otp: 'ah01-claim',
       idempotencyKey: `ah01-claim-${randomUUID()}`,
       claimantPrincipal: agentPrincipal(agent.id) as any,
     });
@@ -567,26 +652,54 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('7. mixed real flows produce ONE unified chronological history (newest first)', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '500000' });
     // C2C initiation
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '11000', currency: 'NGN',
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '11000',
+      currency: 'NGN',
       idempotencyKey: `ah01-m1-${randomUUID()}`,
     });
     // Defunding
     await fundingService.defund({
-      agentId: agent.id, amountMinor: '4000', currency: 'NGN',
-      idempotencyKey: `ah01-m2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: agent.id,
+      amountMinor: '4000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-m2-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     // C2W
     const phone = newPhone();
     const { customerId } = await createCustomerWithPhoneAndPin(phone, '1234');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_WALLET');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'CASH_TO_WALLET');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_WALLET',
+    );
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'CASH_TO_WALLET',
+    );
     await cashInService.execute({
-      agentId: agent.id, principal: agentPrincipal(agent.id) as any, pin: '1234',
-      recipientIdentifier: phone, amountMinor: '22000', currency: 'NGN',
-      idempotencyKey: `ah01-m3-${randomUUID()}`, reference: `ref-${randomUUID().slice(0, 6)}`,
+      agentId: agent.id,
+      principal: agentPrincipal(agent.id) as any,
+      pin: '1234',
+      recipientIdentifier: phone,
+      amountMinor: '22000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-m3-${randomUUID()}`,
+      reference: `ref-${randomUUID().slice(0, 6)}`,
     });
     const res = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
@@ -606,20 +719,40 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   it('8. pagination: limit=1 pages through the unified history with correct totals', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '500000' });
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '11000', currency: 'NGN', idempotencyKey: `ah01-p1-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '11000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-p1-${randomUUID()}`,
     });
     await fundingService.defund({
-      agentId: agent.id, amountMinor: '1000', currency: 'NGN',
-      idempotencyKey: `ah01-p2-${randomUUID()}`, principal: privilegedPrincipal, actor: 'test-actor',
+      agentId: agent.id,
+      amountMinor: '1000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-p2-${randomUUID()}`,
+      principal: privilegedPrincipal,
+      actor: 'test-actor',
     });
     const page1 = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions?page=1&limit=1')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(page1.body.pagination).toEqual({ page: 1, limit: 1, total: 3, totalPages: 3, hasNextPage: true });
+    expect(page1.body.pagination).toEqual({
+      page: 1,
+      limit: 1,
+      total: 3,
+      totalPages: 3,
+      hasNextPage: true,
+    });
     expect(page1.body.items).toHaveLength(1);
     const page2 = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions?page=2&limit=1')
@@ -637,21 +770,36 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   it('9. deterministic tie-break: equal created_at orders by id DESC (stable across repeated reads)', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '500000' });
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '9000', currency: 'NGN', idempotencyKey: `ah01-t1-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '9000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-t1-${randomUUID()}`,
     });
     await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '7000', currency: 'NGN', idempotencyKey: `ah01-t2-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '7000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-t2-${randomUUID()}`,
     });
     // Force a timestamp collision between the two (business-table rows; ledger immutable by design).
     const fixed = '2026-09-30T10:00:00.000Z';
-    await dataSource.query(
-      `UPDATE cash_to_cash_transfers SET created_at=$1 WHERE agent_id=$2`,
-      [fixed, agent.id],
-    );
+    await dataSource.query(`UPDATE cash_to_cash_transfers SET created_at=$1 WHERE agent_id=$2`, [
+      fixed,
+      agent.id,
+    ]);
     const read1 = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions?type=CASH_TO_CASH')
       .set('Authorization', `Bearer ${token}`)
@@ -663,17 +811,29 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
     expect(read1.body.items).toHaveLength(2);
     expect(read1.body.items.map((i: any) => i.id)).toEqual(read2.body.items.map((i: any) => i.id));
     const collided = read1.body.items;
-    expect(new Date(collided[0].createdAt).getTime()).toBe(new Date(collided[1].createdAt).getTime());
+    expect(new Date(collided[0].createdAt).getTime()).toBe(
+      new Date(collided[1].createdAt).getTime(),
+    );
     expect(collided[0].id > collided[1].id).toBe(true); // id DESC
   });
 
   it('10. cross-agent isolation: agent A never sees agent B activity', async () => {
     const a = await agentBundle({ floatMinor: '5000' });
     const b = await agentBundle({ floatMinor: '50000' });
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', b.agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      b.agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
-      agentId: b.agent.id, agentPrincipal: agentPrincipal(b.agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '9000', currency: 'NGN', idempotencyKey: `ah01-x-${randomUUID()}`,
+      agentId: b.agent.id,
+      agentPrincipal: agentPrincipal(b.agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '9000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-x-${randomUUID()}`,
     });
     const resA = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
@@ -720,7 +880,10 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .get('/api/v1/agents/me/transactions')
       .set('Authorization', `Bearer ${a.token}`)
       .expect(401);
-    const sessions = await dataSource.query(`SELECT status FROM agent_authentication_sessions WHERE agent_id=$1`, [a.agent.id]);
+    const sessions = await dataSource.query(
+      `SELECT status FROM agent_authentication_sessions WHERE agent_id=$1`,
+      [a.agent.id],
+    );
     expect(sessions.map((row: { status: string }) => row.status)).toEqual(['REVOKED']);
     const res = await request(app.getHttpServer())
       .get(`/api/v1/internal/agents/${a.agent.id}/transactions`)
@@ -736,10 +899,17 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       lines: (await dataSource.query(`SELECT count(*)::text AS n FROM ledger_lines`))[0].n,
       journals: (await dataSource.query(`SELECT count(*)::text AS n FROM ledger_journals`))[0].n,
       wallets: (await dataSource.query(`SELECT count(*)::text AS n FROM wallet_accounts`))[0].n,
-      snaps: (await dataSource.query(`SELECT count(*)::text AS n FROM commercial_decision_snapshots`))[0].n,
+      snaps: (
+        await dataSource.query(`SELECT count(*)::text AS n FROM commercial_decision_snapshots`)
+      )[0].n,
       audits: (await dataSource.query(`SELECT count(*)::text AS n FROM audit_events`))[0].n,
-      idempotency: (await dataSource.query(`SELECT count(*)::text AS n FROM idempotency_records`))[0].n,
-      agentRow: await dataSource.query(`SELECT status::text AS s, updated_at FROM agents WHERE id=$1`, [a.agent.id]),
+      idempotency: (
+        await dataSource.query(`SELECT count(*)::text AS n FROM idempotency_records`)
+      )[0].n,
+      agentRow: await dataSource.query(
+        `SELECT status::text AS s, updated_at FROM agents WHERE id=$1`,
+        [a.agent.id],
+      ),
     };
     await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
@@ -753,10 +923,17 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       lines: (await dataSource.query(`SELECT count(*)::text AS n FROM ledger_lines`))[0].n,
       journals: (await dataSource.query(`SELECT count(*)::text AS n FROM ledger_journals`))[0].n,
       wallets: (await dataSource.query(`SELECT count(*)::text AS n FROM wallet_accounts`))[0].n,
-      snaps: (await dataSource.query(`SELECT count(*)::text AS n FROM commercial_decision_snapshots`))[0].n,
+      snaps: (
+        await dataSource.query(`SELECT count(*)::text AS n FROM commercial_decision_snapshots`)
+      )[0].n,
       audits: (await dataSource.query(`SELECT count(*)::text AS n FROM audit_events`))[0].n,
-      idempotency: (await dataSource.query(`SELECT count(*)::text AS n FROM idempotency_records`))[0].n,
-      agentRow: await dataSource.query(`SELECT status::text AS s, updated_at FROM agents WHERE id=$1`, [a.agent.id]),
+      idempotency: (
+        await dataSource.query(`SELECT count(*)::text AS n FROM idempotency_records`)
+      )[0].n,
+      agentRow: await dataSource.query(
+        `SELECT status::text AS s, updated_at FROM agents WHERE id=$1`,
+        [a.agent.id],
+      ),
     };
     // Financial state identical: no ledger/wallet/journal/snapshot/idempotency/agent mutation.
     const financialKeys = ['lines', 'journals', 'wallets', 'snaps', 'idempotency', 'agentRow'];
@@ -777,33 +954,66 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
   it('15. commission evidence: the agent sees its OWN allocation on a commission-bearing flow', async () => {
     await feeRuleRegistry.createRule(
       {
-        productCode: 'WALLET_TO_CASH', currency: 'NGN',
-        flatFeeMinor: '1000', percentageBps: null, minimumFeeMinor: null, maximumFeeMinor: null,
-        vatBps: 0, effectiveFrom: new Date(Date.now() - 86400000), priority: 0, isActive: true,
+        productCode: 'WALLET_TO_CASH',
+        currency: 'NGN',
+        flatFeeMinor: '1000',
+        percentageBps: null,
+        minimumFeeMinor: null,
+        maximumFeeMinor: null,
+        vatBps: 0,
+        effectiveFrom: new Date(Date.now() - 86400000),
+        priority: 0,
+        isActive: true,
       },
       'test',
     );
     await commissionRegistry.createRule(
       {
-        productCode: 'WALLET_TO_CASH', currency: 'NGN', recipientType: 'AGENT',
-        calculationModel: 'PERCENTAGE', calculationBasis: 'FEE',
-        flatCommissionMinor: null, percentageBps: 1000,
-        minimumCommissionMinor: null, maximumCommissionMinor: null, tiers: null,
-        agentClassId: null, agentId: null, aggregatorId: null,
-        effectiveFrom: new Date(Date.now() - 86400000), effectiveTo: null, priority: 0, isActive: true,
+        productCode: 'WALLET_TO_CASH',
+        currency: 'NGN',
+        recipientType: 'AGENT',
+        calculationModel: 'PERCENTAGE',
+        calculationBasis: 'FEE',
+        flatCommissionMinor: null,
+        percentageBps: 1000,
+        minimumCommissionMinor: null,
+        maximumCommissionMinor: null,
+        tiers: null,
+        agentClassId: null,
+        agentId: null,
+        aggregatorId: null,
+        effectiveFrom: new Date(Date.now() - 86400000),
+        effectiveTo: null,
+        priority: 0,
+        isActive: true,
       } as any,
       'test',
     );
     const { agent, token } = await agentBundle({ floatMinor: '0' });
     const phone = newPhone();
-    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(phone, '1234');
+    const { customerId, walletLedgerAccountId } = await createCustomerWithPhoneAndPin(
+      phone,
+      '1234',
+    );
     await fundWalletDirect(walletLedgerAccountId, '500000');
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'CUSTOMER', customerId, 'WALLET_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'CUSTOMER',
+      customerId,
+      'WALLET_TO_CASH',
+    );
     const challengeId = await createMfaChallenge(customerId, 'ah01-c15');
     const out = await cashOutService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      customerId, customerPin: '1234', mfaChallengeId: challengeId, otp: 'ah01-c15',
-      amountMinor: '30000', currency: 'NGN', idempotencyKey: `ah01-c15-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      customerId,
+      customerPin: '1234',
+      mfaChallengeId: challengeId,
+      otp: 'ah01-c15',
+      amountMinor: '30000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-c15-${randomUUID()}`,
     });
     expect(out.status).toBe('COMPLETED');
     const res = await request(app.getHttpServer())
@@ -832,10 +1042,20 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
 
   it('17. safe projection: no journal/ledger-account/request-hash/secret internals exposed', async () => {
     const { agent, token } = await agentBundle({ floatMinor: '500000' });
-    await seedLimitProfile(`PCA_${randomUUID().slice(0, 6).toUpperCase()}`, 'AGENT', agent.id, 'CASH_TO_CASH');
+    await seedLimitProfile(
+      `PCA_${randomUUID().slice(0, 6).toUpperCase()}`,
+      'AGENT',
+      agent.id,
+      'CASH_TO_CASH',
+    );
     await cashToCashService.execute({
-      agentId: agent.id, agentPrincipal: agentPrincipal(agent.id) as any, agentPin: '1234',
-      beneficiaryPhone: newPhone(), amountMinor: '8000', currency: 'NGN', idempotencyKey: `ah01-s17-${randomUUID()}`,
+      agentId: agent.id,
+      agentPrincipal: agentPrincipal(agent.id) as any,
+      agentPin: '1234',
+      beneficiaryPhone: newPhone(),
+      amountMinor: '8000',
+      currency: 'NGN',
+      idempotencyKey: `ah01-s17-${randomUUID()}`,
     });
     const res = await request(app.getHttpServer())
       .get('/api/v1/agents/me/transactions')
@@ -843,7 +1063,9 @@ describe('V1-AGENT-HISTORY-01 (real PG)', () => {
       .expect(200);
     for (const item of res.body.items) {
       const blob = JSON.stringify(item);
-      expect(blob).not.toMatch(/requestHash|request_hash|ledgerAccountId|ledger_account_id|transfer_code|pinHash|password/);
+      expect(blob).not.toMatch(
+        /requestHash|request_hash|ledgerAccountId|ledger_account_id|transfer_code|pinHash|password/,
+      );
       expect(item).not.toHaveProperty('metadata');
       expect(item).not.toHaveProperty('journalId');
       expect(item).not.toHaveProperty('walletId');

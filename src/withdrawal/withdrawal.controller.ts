@@ -25,7 +25,10 @@ interface AuthenticatedRequest {
 
 @Controller('withdrawals')
 export class WithdrawalController {
-  constructor(private readonly withdrawalService: WithdrawalService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly withdrawalService: WithdrawalService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -47,14 +50,20 @@ export class WithdrawalController {
   }
 
   @Get(':withdrawalId')
-  async getWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest) {
+  async getWithdrawal(
+    @Param('withdrawalId') withdrawalId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     if (this.isWorkforce(req)) await this.requireFunction(req, 'transaction.view');
     return this.withdrawalService.getWithdrawal(withdrawalId);
   }
 
   @Post(':withdrawalId/process')
   @HttpCode(HttpStatus.OK)
-  processWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest): Promise<never> {
+  processWithdrawal(
+    @Param('withdrawalId') withdrawalId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void withdrawalId;
     void req;
     return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
@@ -62,7 +71,10 @@ export class WithdrawalController {
 
   @Post(':withdrawalId/complete')
   @HttpCode(HttpStatus.OK)
-  completeWithdrawal(@Param('withdrawalId') withdrawalId: string, @Req() req: AuthenticatedRequest): Promise<never> {
+  completeWithdrawal(
+    @Param('withdrawalId') withdrawalId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void withdrawalId;
     void req;
     return Promise.reject(new ForbiddenException('Generic withdrawal state changes are disabled'));
@@ -70,7 +82,11 @@ export class WithdrawalController {
 
   @Post(':withdrawalId/fail')
   @HttpCode(HttpStatus.OK)
-  failWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
+  failWithdrawal(
+    @Param('withdrawalId') withdrawalId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void withdrawalId;
     void dto;
     void req;
@@ -79,7 +95,11 @@ export class WithdrawalController {
 
   @Post(':withdrawalId/cancel')
   @HttpCode(HttpStatus.OK)
-  cancelWithdrawal(@Param('withdrawalId') withdrawalId: string, @Body() dto: PaymentReasonDto, @Req() req: AuthenticatedRequest): Promise<never> {
+  cancelWithdrawal(
+    @Param('withdrawalId') withdrawalId: string,
+    @Body() dto: PaymentReasonDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<never> {
     void withdrawalId;
     void dto;
     void req;

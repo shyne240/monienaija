@@ -74,24 +74,34 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
 
   const mockWorkforceSessions = {
     // Synthetic: Bearer workforce-OPERATOR etc -> valid workforce principal of that type
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
-          ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
-          : [],
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const type = token.replace('workforce-', '').toUpperCase();
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          scopes: ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? PRIVILEGED_WORKFORCE_FUNCTION_SCOPES
+            : [],
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   beforeAll(async () => {
@@ -106,7 +116,9 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     classService = moduleRef.get(AgentClassService);
@@ -118,7 +130,15 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
     if (dataSource) {
-      try { await destroyIntegrationDataSource(dataSource); } catch { try { if (dataSource.isInitialized) await dataSource.destroy().catch(()=>undefined);} catch { void 0; } }
+      try {
+        await destroyIntegrationDataSource(dataSource);
+      } catch {
+        try {
+          if (dataSource.isInitialized) await dataSource.destroy().catch(() => undefined);
+        } catch {
+          void 0;
+        }
+      }
     }
   }, 60000);
 
@@ -131,7 +151,9 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
       await dataSource.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
     }
     // Ensure settlement accounts exist for funding checks
-    const settlement: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlement: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     if (settlement.length === 0) {
       await dataSource.query(`
         INSERT INTO ledger_accounts (id, code, name, account_type, normal_balance, currency, accounting_unit, allow_negative_balance, is_active)
@@ -148,27 +170,33 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
 
   async function createActiveAgentViaService(): Promise<string> {
     const cls = await classService.create({
-      reference: `CLS-${randomUUID().slice(0,8)}`,
-      code: `CODE-${randomUUID().slice(0,8)}`,
-      name: `Test Class ${randomUUID().slice(0,6)}`,
+      reference: `CLS-${randomUUID().slice(0, 8)}`,
+      code: `CODE-${randomUUID().slice(0, 8)}`,
+      name: `Test Class ${randomUUID().slice(0, 6)}`,
       description: 'v1-003 test class',
       isActive: true,
-      requirements: { requiredInformation: ['businessName','contactEmail'] },
+      requirements: { requiredInformation: ['businessName', 'contactEmail'] },
       requiredDocumentCategories: ['IDENTITY'],
-      applicableServices: ['CASH_IN','CASH_OUT','CASH_TO_CASH','AGENT_FUNDING'],
+      applicableServices: ['CASH_IN', 'CASH_OUT', 'CASH_TO_CASH', 'AGENT_FUNDING'],
       applicableLimits: {},
       actor: 'test-admin',
     });
     const appEntity = await appService.create({
       agentClassId: cls.id,
       applicantReference: `v1-003-${randomUUID()}`,
-      businessName: `Biz ${randomUUID().slice(0,4)}`,
-      contactEmail: `v1-003-${randomUUID().slice(0,6)}@test.com`,
+      businessName: `Biz ${randomUUID().slice(0, 4)}`,
+      contactEmail: `v1-003-${randomUUID().slice(0, 6)}@test.com`,
       actor: 'applicant',
     });
     await appService.submit(appEntity.id, 'applicant');
-    await dataSource.query(`UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`, [appEntity.id]);
-    const agent = await lifecycleService.activateFromApplication(appEntity.id, 'workforce-privileged-1');
+    await dataSource.query(
+      `UPDATE agent_applications SET status='APPROVED', reviewed_at=NOW(), approved_at=NOW() WHERE id=$1`,
+      [appEntity.id],
+    );
+    const agent = await lifecycleService.activateFromApplication(
+      appEntity.id,
+      'workforce-privileged-1',
+    );
     return agent.id;
   }
 
@@ -180,27 +208,45 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     return rows[0]!.id;
   }
 
-  function workforceToken(type: string): string { return `workforce-${type}`; }
+  function workforceToken(type: string): string {
+    return `workforce-${type}`;
+  }
 
   async function createCustomerAndToken(): Promise<{ customerId: string; token: string }> {
     const customerId = randomUUID();
     const reference = `cust-${randomUUID()}`;
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, reference]);
-    await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, `Cust ${customerId.slice(0,4)}`]);
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customerId, reference],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`,
+      [randomUUID(), customerId, `Cust ${customerId.slice(0, 4)}`],
+    );
     const pwd = 'Password1!';
     const hash = encodePbkdf2(pwd, 'cust-salt');
-    await dataSource.query(`INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`, [customerId, hash]);
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
+      [customerId, hash],
+    );
     // Use workforce-CUSTOMER synthetic token which maps to principal.type CUSTOMER and will be denied by our guard (requires OPERATOR)
     return { customerId, token: workforceToken('CUSTOMER') };
   }
 
-  async function createAgentAndToken(status: AgentStatus = AgentStatus.ACTIVE): Promise<{ agentId: string; token: string }> {
+  async function createAgentAndToken(
+    status: AgentStatus = AgentStatus.ACTIVE,
+  ): Promise<{ agentId: string; token: string }> {
     const agentId = await createAgentDirect(status);
     // create credential for real AGENT login
     const pwd = 'AgentPass1!';
     const hash = encodePbkdf2(pwd, 'agent-salt');
-    await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`, [agentId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: pwd });
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: pwd });
     if (login.status === 200 && login.body.accessToken) {
       return { agentId, token: login.body.accessToken as string };
     }
@@ -211,86 +257,150 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
   it('1. authorized Admin (OPERATOR) can suspend Agent via legacy /internal/agents/:id/suspend', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
-    const res = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'risk review' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'risk review' })
+      .expect(200);
     expect(res.body.status).toBe(AgentStatus.SUSPENDED);
     expect(res.body.id).toBe(agentId);
     const str = JSON.stringify(res.body).toLowerCase();
-    expect(str).not.toContain('password'); expect(str).not.toContain('pinhash'); expect(str).not.toContain('tokenhash'); expect(str).not.toContain('secret');
+    expect(str).not.toContain('password');
+    expect(str).not.toContain('pinhash');
+    expect(str).not.toContain('tokenhash');
+    expect(str).not.toContain('secret');
   });
 
   it('2. authorized Admin (PRIVILEGED) can suspend via new /internal/admin/agents/:id/suspend alias', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('PRIVILEGED');
-    const res = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'admin alias' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'admin alias' })
+      .expect(200);
     expect(res.body.status).toBe(AgentStatus.SUSPENDED);
   });
 
   it('3. authorized Admin can terminate via legacy route', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('SERVICE');
-    const res = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({ reason: 'closure' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'closure' })
+      .expect(200);
     expect(res.body.status).toBe(AgentStatus.TERMINATED);
   });
 
   it('4. authorized Admin can terminate via new admin alias', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
-    const res = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({ reason: 'admin term' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'admin term' })
+      .expect(200);
     expect(res.body.status).toBe(AgentStatus.TERMINATED);
   });
 
   it('5. customer rejected (CUSTOMER)', async () => {
     const agentId = await createActiveAgentViaService();
     const { token } = await createCustomerAndToken();
-    const r1 = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
-    expect([401,403].includes(r1.status)).toBe(true);
-    const r2 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
-    expect([401,403].includes(r2.status)).toBe(true);
+    const r1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'x' });
+    expect([401, 403].includes(r1.status)).toBe(true);
+    const r2 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'x' });
+    expect([401, 403].includes(r2.status)).toBe(true);
     // also try without token
-    await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).send({ reason: 'x' }).expect(401);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .send({ reason: 'x' })
+      .expect(401);
   });
 
   it('6. Agent SELF rejected', async () => {
     const agentId = await createActiveAgentViaService();
     const { token } = await createAgentAndToken();
-    const r1 = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({});
-    expect([401,403].includes(r1.status)).toBe(true);
-    const r2 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({});
-    expect([401,403].includes(r2.status)).toBe(true);
+    const r1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect([401, 403].includes(r1.status)).toBe(true);
+    const r2 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect([401, 403].includes(r2.status)).toBe(true);
   });
 
   it('7. unauthorized workforce SUPPORT rejected (both routes)', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('SUPPORT');
-    const r1 = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
+    const r1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'x' });
     expect([401, 403].includes(r1.status)).toBe(true);
-    const r2 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
+    const r2 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'x' });
     expect([401, 403].includes(r2.status)).toBe(true);
-    const r3 = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({});
+    const r3 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
     expect([401, 403].includes(r3.status)).toBe(true);
   });
 
   it('8. audit generated for suspension', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({ reason: 'audit test' }).expect(200);
-    const rows: Array<{ action: string; actor: string; new_values: Record<string, unknown> | string }> = await dataSource.query(`SELECT action, actor, new_values FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1 ORDER BY occurred_at`, [agentId]);
-    const actions = rows.map(r => r.action);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'audit test' })
+      .expect(200);
+    const rows: Array<{
+      action: string;
+      actor: string;
+      new_values: Record<string, unknown> | string;
+    }> = await dataSource.query(
+      `SELECT action, actor, new_values FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1 ORDER BY occurred_at`,
+      [agentId],
+    );
+    const actions = rows.map((r) => r.action);
     expect(actions).toContain('SUSPENDED');
-    const last = rows[rows.length-1]!;
+    const last = rows[rows.length - 1]!;
     expect(last.actor).toBe('workforce-operator-1');
-    const newVals = typeof last.new_values === 'string' ? JSON.parse(last.new_values) : last.new_values;
+    const newVals =
+      typeof last.new_values === 'string' ? JSON.parse(last.new_values) : last.new_values;
     expect(newVals.status).toBe('SUSPENDED');
     const str = JSON.stringify(rows).toLowerCase();
-    expect(str).not.toContain('password'); expect(str).not.toContain('pin'); expect(str).not.toContain('tokenhash');
+    expect(str).not.toContain('password');
+    expect(str).not.toContain('pin');
+    expect(str).not.toContain('tokenhash');
   });
 
   it('9. audit generated for termination', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('PRIVILEGED');
-    await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({ reason: 'term audit' }).expect(200);
-    const rows: Array<{ action: string }> = await dataSource.query(`SELECT action FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1`, [agentId]);
-    expect(rows.map(r=>r.action)).toContain('TERMINATED');
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'term audit' })
+      .expect(200);
+    const rows: Array<{ action: string }> = await dataSource.query(
+      `SELECT action FROM audit_events WHERE entity_type='AGENT' AND entity_id=$1`,
+      [agentId],
+    );
+    expect(rows.map((r) => r.action)).toContain('TERMINATED');
   });
 
   it('10. valid lifecycle transitions preserved (PENDING->ACTIVE->SUSPENDED->ACTIVE->TERMINATED)', async () => {
@@ -298,47 +408,90 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     const tokenOp = workforceToken('OPERATOR');
     const tokenPriv = workforceToken('PRIVILEGED');
     // PENDING -> ACTIVE
-    const a1 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/activate`).set('Authorization', `Bearer ${tokenPriv}`).expect(200);
+    const a1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/activate`)
+      .set('Authorization', `Bearer ${tokenPriv}`)
+      .expect(200);
     expect(a1.body.status).toBe(AgentStatus.ACTIVE);
     // ACTIVE -> SUSPENDED
-    const s1 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${tokenOp}`).send({}).expect(200);
+    const s1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${tokenOp}`)
+      .send({})
+      .expect(200);
     expect(s1.body.status).toBe(AgentStatus.SUSPENDED);
     // SUSPENDED -> ACTIVE (reactivate)
-    const r1 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/reactivate`).set('Authorization', `Bearer ${tokenPriv}`).expect(200);
+    const r1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/reactivate`)
+      .set('Authorization', `Bearer ${tokenPriv}`)
+      .expect(200);
     expect(r1.body.status).toBe(AgentStatus.ACTIVE);
     // ACTIVE -> TERMINATED
-    const t1 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/terminate`).set('Authorization', `Bearer ${tokenPriv}`).send({}).expect(200);
+    const t1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${tokenPriv}`)
+      .send({})
+      .expect(200);
     expect(t1.body.status).toBe(AgentStatus.TERMINATED);
   });
 
   it('11. invalid lifecycle transitions rejected (TERMINATED->ACTIVE, TERMINATED->SUSPENDED)', async () => {
     const agentId = await createAgentDirect(AgentStatus.TERMINATED);
     const token = workforceToken('OPERATOR');
-    const r1 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/activate`).set('Authorization', `Bearer ${token}`);
-    expect([400,409].includes(r1.status)).toBe(true);
-    const r2 = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({});
-    expect([400,409].includes(r2.status)).toBe(true);
-    const r3 = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/reactivate`).set('Authorization', `Bearer ${token}`);
-    expect([400,409].includes(r3.status)).toBe(true);
+    const r1 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/activate`)
+      .set('Authorization', `Bearer ${token}`);
+    expect([400, 409].includes(r1.status)).toBe(true);
+    const r2 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect([400, 409].includes(r2.status)).toBe(true);
+    const r3 = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/reactivate`)
+      .set('Authorization', `Bearer ${token}`);
+    expect([400, 409].includes(r3.status)).toBe(true);
   });
 
   it('12. repeated terminal operation safely rejected/idempotent according to existing semantics (TERMINATED->TERMINATED)', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('PRIVILEGED');
-    await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
-    const dup = await request(app.getHttpServer()).post(`/api/v1/internal/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({});
-    expect([400,409].includes(dup.status)).toBe(true);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    const dup = await request(app.getHttpServer())
+      .post(`/api/v1/internal/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect([400, 409].includes(dup.status)).toBe(true);
     expect(dup.body.message ?? dup.body.error ?? '').toMatch(/not allowed|Transition/i);
   });
 
   it('13. no ledger journal created by lifecycle operation', async () => {
     const agentId = await createActiveAgentViaService();
-    const before: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    const before: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
     const token = workforceToken('OPERATOR');
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/reactivate`).set('Authorization', `Bearer ${token}`).expect(200);
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/terminate`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
-    const after: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/reactivate`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/terminate`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    const after: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
     expect(Number(after[0]!.count)).toBe(Number(before[0]!.count));
   });
 
@@ -351,10 +504,18 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     // Use ledger getAccountBalance via query
     await dataSource.query(`SELECT id FROM ledger_accounts WHERE code LIKE 'AGENT%' LIMIT 1`);
     // Instead, check all wallet balances sum unchanged
-    await dataSource.query(`SELECT COALESCE(SUM(balance),0)::text as sum FROM (SELECT 0 as balance) t`); // dummy to avoid error if no ledger
+    await dataSource.query(
+      `SELECT COALESCE(SUM(balance),0)::text as sum FROM (SELECT 0 as balance) t`,
+    ); // dummy to avoid error if no ledger
     const token = workforceToken('OPERATOR');
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
-    const afterSum: Array<{ sum: string }> = await dataSource.query(`SELECT count(*)::text as sum FROM ledger_journals`); // reuse journal count as proxy for no financial mutation
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    const afterSum: Array<{ sum: string }> = await dataSource.query(
+      `SELECT count(*)::text as sum FROM ledger_journals`,
+    ); // reuse journal count as proxy for no financial mutation
     expect(Number(afterSum[0]!.sum)).toBeGreaterThanOrEqual(0);
     // Alternative: directly ensure no wallet row changed - we check ledger_journals not increased already in 13, so pass
   });
@@ -368,24 +529,39 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     const freshId = await createAgentDirect(AgentStatus.ACTIVE);
     const pwd = 'PosTest!';
     const hash = encodePbkdf2(pwd, 'pos-salt');
-    await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`, [freshId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId: freshId, password: pwd });
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE')`,
+      [freshId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId: freshId, password: pwd });
     const freshAgentToken = login.body.accessToken as string;
-    const before = await request(app.getHttpServer()).get('/api/v1/agents/me/financial-position').set('Authorization', `Bearer ${freshAgentToken}`).expect(200);
+    const before = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/financial-position')
+      .set('Authorization', `Bearer ${freshAgentToken}`)
+      .expect(200);
     // suspend via admin (different agent, but we need to suspend the same freshId to check its position)
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${freshId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
-    const afterSuspend = await request(app.getHttpServer()).get('/api/v1/agents/me/financial-position').set('Authorization', `Bearer ${freshAgentToken}`);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${freshId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+    const afterSuspend = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/financial-position')
+      .set('Authorization', `Bearer ${freshAgentToken}`);
     // After suspend, agent should not be able to use financial-position? Check existing behavior: suspended agents maybe blocked from financial operations
     // For this test we just ensure no ledger delta and response is either 200 with same balances or 401/403 due to lifecycle gating (both acceptable if no mutation)
     if (afterSuspend.status === 200) {
       expect(afterSuspend.body).toBeDefined();
       // Balance should be same as before (no mutation)
       // Compare stringified without secrets
-      const b = JSON.stringify(before.body); JSON.stringify(afterSuspend.body);
+      const b = JSON.stringify(before.body);
+      JSON.stringify(afterSuspend.body);
       // If suspension doesn't affect position read, they should be equal; if it blocks, we accept blocked
       expect(b.length).toBeGreaterThan(0);
     } else {
-      expect([401,403].includes(afterSuspend.status)).toBe(true);
+      expect([401, 403].includes(afterSuspend.status)).toBe(true);
     }
   });
 
@@ -393,78 +569,196 @@ describe('V1-003 Admin Operational Writes / Control Plane Consolidation (real Po
     const agentId = await createActiveAgentViaService();
     const tokenOp = workforceToken('OPERATOR');
     // Ensure agent is ACTIVE then suspend
-    await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${tokenOp}`).send({}).expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${tokenOp}`)
+      .send({})
+      .expect(200);
     // Try to create agent class data and attempt cash-in via agent token (should be blocked by service capability/lifecycle check)
     const pwd = 'CapGate!';
     const hash = encodePbkdf2(pwd, 'cap-salt');
-    await dataSource.query(`INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE') ON CONFLICT DO NOTHING`, [agentId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/agents/sessions').send({ agentId, password: pwd });
+    await dataSource.query(
+      `INSERT INTO agent_authentication_credentials (agent_id, password_hash, hash_algorithm, password_version, password_changed_at, status) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE') ON CONFLICT DO NOTHING`,
+      [agentId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/agents/sessions')
+      .send({ agentId, password: pwd });
     const agentToken = login.body.accessToken as string;
     // Attempt cash-in (should fail due to suspended status - expect 403/409/422 or 404 if customerIdentifier route not found)
-    const cashRes = await request(app.getHttpServer()).post('/api/v1/agents/me/cash-in').set('Authorization', `Bearer ${agentToken}`).send({ amountMinor: '1000', currency: 'NGN', customerIdentifier: '08000000001' });
+    const cashRes = await request(app.getHttpServer())
+      .post('/api/v1/agents/me/cash-in')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ amountMinor: '1000', currency: 'NGN', customerIdentifier: '08000000001' });
     // We don't assert exact body, just that suspended agent cannot succeed with 201
     expect(cashRes.status).not.toBe(201);
-    expect([400,401,403,404,409,422].includes(cashRes.status)).toBe(true);
+    expect([400, 401, 403, 404, 409, 422].includes(cashRes.status)).toBe(true);
   });
 
   it('17. existing A21 Agent App routes remain functional (AGENT SELF can get profile)', async () => {
     const { agentId, token } = await createAgentAndToken();
-    const res = await request(app.getHttpServer()).get('/api/v1/agents/me/profile').set('Authorization', `Bearer ${token}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/agents/me/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
     expect(res.body.id).toBe(agentId);
   });
 
   it('18. existing V1-001 funding remains functional (maker creates, checker approves, ledger credited)', async () => {
     // Create customer and wallet via WalletService (correct liability ledger account)
     const customerId = randomUUID();
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-fund-${randomUUID()}`]);
-    await dataSource.query(`INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`, [randomUUID(), customerId, 'Fund Cust']);
-    const wallet = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `wallet-fund-${randomUUID()}` });
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customerId, `cust-fund-${randomUUID()}`],
+    );
+    await dataSource.query(
+      `INSERT INTO customer_profiles (id, customer_id, display_name, is_active) VALUES ($1,$2,$3,true)`,
+      [randomUUID(), customerId, 'Fund Cust'],
+    );
+    const wallet = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `wallet-fund-${randomUUID()}`,
+    });
     expect(wallet.id).toBeDefined();
     const makerToken = workforceToken('SUPPORT');
     const checkerToken = workforceToken('OPERATOR');
-    const createRes = await request(app.getHttpServer()).post(`/api/v1/internal/customers/${customerId}/funding-requests`).set('Authorization', `Bearer ${makerToken}`).send({ amountMinor: '50000', currency: 'NGN', reference: `FUND-${randomUUID().slice(0,8)}`, description: 'v1-003 funding test', idempotencyKey: `idem-${randomUUID()}` }).expect(201);
+    const createRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customers/${customerId}/funding-requests`)
+      .set('Authorization', `Bearer ${makerToken}`)
+      .send({
+        amountMinor: '50000',
+        currency: 'NGN',
+        reference: `FUND-${randomUUID().slice(0, 8)}`,
+        description: 'v1-003 funding test',
+        idempotencyKey: `idem-${randomUUID()}`,
+      })
+      .expect(201);
     const requestId = createRes.body.id as string;
     expect(requestId).toBeDefined();
-    const approveRes = await request(app.getHttpServer()).post(`/api/v1/internal/customer-funding-requests/${requestId}/approve`).set('Authorization', `Bearer ${checkerToken}`).send({}).expect(201);
+    const approveRes = await request(app.getHttpServer())
+      .post(`/api/v1/internal/customer-funding-requests/${requestId}/approve`)
+      .set('Authorization', `Bearer ${checkerToken}`)
+      .send({})
+      .expect(201);
     expect(approveRes.body.status).toBe('APPROVED');
     // Verify ledger journal created
-    await dataSource.query(`SELECT id FROM ledger_journals WHERE reference LIKE $1`, [`%${requestId.slice(0,8)}%`]);
+    await dataSource.query(`SELECT id FROM ledger_journals WHERE reference LIKE $1`, [
+      `%${requestId.slice(0, 8)}%`,
+    ]);
     // At least one journal should exist (funding creates journal)
-    const allJournals: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM ledger_journals`);
+    const allJournals: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM ledger_journals`,
+    );
     expect(Number(allJournals[0]!.count)).toBeGreaterThan(0);
   });
 
   it('19. existing V1-007 support remains functional (customer can create ticket, workforce can list)', async () => {
     const customerId = randomUUID();
-    await dataSource.query(`INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`, [customerId, `cust-sup-${randomUUID()}`]);
+    await dataSource.query(
+      `INSERT INTO customers (id, reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,$2,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED')`,
+      [customerId, `cust-sup-${randomUUID()}`],
+    );
     const pwd = 'SupCust1!';
     const hash = encodePbkdf2(pwd, 'sup-cust-salt');
-    await dataSource.query(`INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`, [customerId, hash]);
-    const login = await request(app.getHttpServer()).post('/api/v1/customers/sessions').send({ customerId, password: pwd });
+    await dataSource.query(
+      `INSERT INTO customer_authentication_credentials (customer_id, password_hash, hash_algorithm, password_version, password_changed_at, status, account_locked, failed_authentication_count, version) VALUES ($1,$2,'PBKDF2',1,now(),'ACTIVE',false,0,1)`,
+      [customerId, hash],
+    );
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/customers/sessions')
+      .send({ customerId, password: pwd });
     const custToken = login.body.accessToken as string;
-    const ticketRes = await request(app.getHttpServer()).post('/api/v1/customers/me/support/tickets').set('Authorization', `Bearer ${custToken}`).send({ subject: 'Issue', category: 'OTHER', description: 'Need help valid description', priority: 'MEDIUM' }).expect(201);
+    const ticketRes = await request(app.getHttpServer())
+      .post('/api/v1/customers/me/support/tickets')
+      .set('Authorization', `Bearer ${custToken}`)
+      .send({
+        subject: 'Issue',
+        category: 'OTHER',
+        description: 'Need help valid description',
+        priority: 'MEDIUM',
+      })
+      .expect(201);
     expect(ticketRes.body.id).toBeDefined();
     const workforceTokenPriv = workforceToken('OPERATOR');
-    const listRes = await request(app.getHttpServer()).get('/api/v1/internal/support/tickets').set('Authorization', `Bearer ${workforceTokenPriv}`).expect(200);
+    const listRes = await request(app.getHttpServer())
+      .get('/api/v1/internal/support/tickets')
+      .set('Authorization', `Bearer ${workforceTokenPriv}`)
+      .expect(200);
     const listData = (listRes.body.items ?? listRes.body.data) as unknown[];
     expect(Array.isArray(listData)).toBe(true);
   });
 
   it('20. migration count is 65 and support tables exist, no new migration added for V1-003', async () => {
-    const rows: Array<{ count: string }> = await dataSource.query(`SELECT count(*)::text as count FROM typeorm_migrations`);
+    const rows: Array<{ count: string }> = await dataSource.query(
+      `SELECT count(*)::text as count FROM typeorm_migrations`,
+    );
     expect(Number(rows[0]!.count)).toBeGreaterThanOrEqual(67);
-    const latest: Array<{ name: string; timestamp: string }> = await dataSource.query(`SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`);
-    expect(['1785753600066', '1785753600067', '1785753600068', '1785753600069', '1785753600070', '1785753600071', '1785753600072', '1785753600073', '1785753600074', '1785753600075', '1785753600076', '1785753600077', '1785753600078', '1785753600079', '1785753600080', '1785753600081', '1785753600082', '1785753600083', '1785753600084', '1785753600085', '1785753600086', '1785753600087', '1785753600088', '1785753600089', '1785753600090', '1785753600091', '1785753600092', '1785753600093', '1785753600094', '1785753600095', '1785753600096', '1785753600097', '1785753600098', '1785753600099', '1785753600100', '1785753600101', '1785753600102', '1785753600103']).toContain(latest[0]!.timestamp);
-    expect(latest[0]!.name).toMatch(/^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddCustomerProfileNameParts1785753600091|AllowMultipleCustomerIdentityDocuments1785753600092|CreateCustomerProofOfAddressWorkflows1785753600093|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/);
-    const supportExists: Array<{ exists: boolean }> = await dataSource.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets') as exists`);
+    const latest: Array<{ name: string; timestamp: string }> = await dataSource.query(
+      `SELECT name, timestamp::text as timestamp FROM typeorm_migrations ORDER BY timestamp DESC LIMIT 1`,
+    );
+    expect([
+      '1785753600066',
+      '1785753600067',
+      '1785753600068',
+      '1785753600069',
+      '1785753600070',
+      '1785753600071',
+      '1785753600072',
+      '1785753600073',
+      '1785753600074',
+      '1785753600075',
+      '1785753600076',
+      '1785753600077',
+      '1785753600078',
+      '1785753600079',
+      '1785753600080',
+      '1785753600081',
+      '1785753600082',
+      '1785753600083',
+      '1785753600084',
+      '1785753600085',
+      '1785753600086',
+      '1785753600087',
+      '1785753600088',
+      '1785753600089',
+      '1785753600090',
+      '1785753600091',
+      '1785753600092',
+      '1785753600093',
+      '1785753600094',
+      '1785753600095',
+      '1785753600096',
+      '1785753600097',
+      '1785753600098',
+      '1785753600099',
+      '1785753600100',
+      '1785753600101',
+      '1785753600102',
+      '1785753600103',
+    ]).toContain(latest[0]!.timestamp);
+    expect(latest[0]!.name).toMatch(
+      /^(Create(CapabilityRegistry|LimitProfileCatalogue|LimitAssignments|LimitUsages)178575360006[6-9]|CreateCommercialDecisionSnapshots1785753600070|CreateProductCatalogue1785753600071|CreateFeeRules1785753600072|CreateCommissionRules1785753600073|CreateRewardRules1785753600074|AddTransferFeeColumns1785753600075|ProvisionV1CommercialAccountingFamilies1785753600076|AddAgentCredentialRotation1785753600077|CreateCustomerRegistrationPhoneChallenges1785753600078|AddCustomerCredentialRotation1785753600079|AddMfaChallengePurpose1785753600080|CreateSupportWorkforceAuthentication1785753600081|CreateLocalAdminAuthentication1785753600082|CreateAuthorizationCatalogue1785753600083|RenameWorkforceBootstrapRoleToSuperAdmin1785753600084|AddAdministratorRoleAssignmentScope1785753600085|CreateRoleDefinitionGovernance1785753600086|CreateDashboardPlatform1785753600087|CreateSuperAdminRecoveryConsumptions1785753600088|WidenAuthorizationActorColumns1785753600089|CreateAgentFundingRequests1785753600090|AddCustomerProfileNameParts1785753600091|AllowMultipleCustomerIdentityDocuments1785753600092|CreateCustomerProofOfAddressWorkflows1785753600093|AddSecureCustomerProofOfAddressUploads1785753600094|SecureAgentApplicationAccess1785753600095|CreateCashToCashLocators1785753600096|AddEmailNotificationChannel1785753600097|CreateNotificationTemplateRegistry1785753600098|AllowPhoneNotificationRecipients1785753600099|CreateNotificationProviderConfiguration1785753600100|NotificationReliability1785753600101|AddNotificationCredentialBinding1785753600102|ConfigureTransactionNotificationEvents1785753600103)$/,
+    );
+    const supportExists: Array<{ exists: boolean }> = await dataSource.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets') as exists`,
+    );
     expect(supportExists[0]!.exists).toBe(true);
   });
 
   it('21. safe projection: no password/PIN/secret leakage on lifecycle response', async () => {
     const agentId = await createActiveAgentViaService();
     const token = workforceToken('OPERATOR');
-    const res = await request(app.getHttpServer()).post(`/api/v1/internal/admin/agents/${agentId}/suspend`).set('Authorization', `Bearer ${token}`).send({}).expect(200);
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/internal/admin/agents/${agentId}/suspend`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
     const str = JSON.stringify(res.body).toLowerCase();
-    expect(str).not.toContain('password'); expect(str).not.toContain('pin'); expect(str).not.toContain('secret'); expect(str).not.toContain('tokenhash'); expect(str).not.toContain('hash');
+    expect(str).not.toContain('password');
+    expect(str).not.toContain('pin');
+    expect(str).not.toContain('secret');
+    expect(str).not.toContain('tokenhash');
+    expect(str).not.toContain('hash');
   });
 });

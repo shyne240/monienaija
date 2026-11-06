@@ -9,7 +9,12 @@ import { DepositController } from './deposit.controller';
 import { DepositService } from './deposit.service';
 
 @Module({
-  imports: [forwardRef(() => AuthorizationModule), LedgerModule, PaymentModule, TypeOrmModule.forFeature([Deposit])],
+  imports: [
+    forwardRef(() => AuthorizationModule),
+    LedgerModule,
+    PaymentModule,
+    TypeOrmModule.forFeature([Deposit]),
+  ],
   controllers: [DepositController],
   providers: [DepositService],
   exports: [DepositService],

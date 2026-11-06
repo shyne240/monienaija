@@ -35,7 +35,11 @@ import { TransferService } from '../src/transfer/transfer.service';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { FeeRuleRegistryService } from '../src/fee-rules/fee-rule-registry.service';
 import { ProductCatalogSeedService } from '../src/product-catalog/product-catalog-seed.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (real PG)', () => {
   let dataSource: DataSource;
@@ -66,9 +70,18 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
 
   const mockWorkforceSessions = {
     validate: async (token: string, audience: string) => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
+      if (!token || !token.startsWith('workforce-'))
+        throw new UnauthorizedException('invalid workforce token');
       const type = token.replace('workforce-', '').toUpperCase();
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
+      const allowed = [
+        'SUPPORT',
+        'OPERATOR',
+        'SERVICE',
+        'PRIVILEGED',
+        'AGENT',
+        'CUSTOMER',
+        'AGGREGATOR',
+      ];
       if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
       return {
         type,
@@ -114,7 +127,9 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     walletService = app.get(WalletService);
@@ -143,35 +158,70 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     );
   }
 
-  async function seedAssignment(profileCode: string, subjectType: string, subjectId: string | null): Promise<void> {
+  async function seedAssignment(
+    profileCode: string,
+    subjectType: string,
+    subjectId: string | null,
+  ): Promise<void> {
     await dataSource.query(
       `INSERT INTO limit_assignments (id, limit_profile_code, subject_type, subject_id, segment_code, precedence, effective_from, effective_to, is_active, created_by)
        VALUES ($1,$2,$3,$4,NULL,0,$5,NULL,true,'test')`,
-      [randomUUID(), profileCode, subjectType, subjectId, new Date(Date.now() - 86400000).toISOString()],
+      [
+        randomUUID(),
+        profileCode,
+        subjectType,
+        subjectId,
+        new Date(Date.now() - 86400000).toISOString(),
+      ],
     );
   }
 
-  async function seedLimitRule(profileCode: string, dimension: string, limitMinor: string | null, limitCount: number | null): Promise<string> {
+  async function seedLimitRule(
+    profileCode: string,
+    dimension: string,
+    limitMinor: string | null,
+    limitCount: number | null,
+  ): Promise<string> {
     const id = randomUUID();
     await dataSource.query(
       `INSERT INTO limit_rules (id, limit_profile_code, product, direction, channel, currency, dimension, limit_value_minor, limit_value_count, effective_from, effective_to, is_active, created_by)
        VALUES ($1,$2,'WALLET_TRANSFER',NULL,NULL,'NGN',$3,$4,$5,$6,NULL,true,'test')`,
-      [id, profileCode, dimension, limitMinor, limitCount, new Date(Date.now() - 86400000).toISOString()],
+      [
+        id,
+        profileCode,
+        dimension,
+        limitMinor,
+        limitCount,
+        new Date(Date.now() - 86400000).toISOString(),
+      ],
     );
     return id;
   }
 
-  async function createWallet(customerId: string): Promise<{ id: string; ledgerAccountId: string }> {
-    const view = await walletService.createWallet({ customerId, currency: 'NGN', idempotencyKey: `test-${customerId}-${randomUUID()}` });
-    const rows: Array<{ ledger_account_id: string }> = await dataSource.query(`SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`, [view.id]);
+  async function createWallet(
+    customerId: string,
+  ): Promise<{ id: string; ledgerAccountId: string }> {
+    const view = await walletService.createWallet({
+      customerId,
+      currency: 'NGN',
+      idempotencyKey: `test-${customerId}-${randomUUID()}`,
+    });
+    const rows: Array<{ ledger_account_id: string }> = await dataSource.query(
+      `SELECT ledger_account_id FROM wallet_accounts WHERE id=$1`,
+      [view.id],
+    );
     return { id: view.id, ledgerAccountId: rows[0].ledger_account_id };
   }
 
   async function fundWallet(walletLedgerAccountId: string, amountMinor: string): Promise<void> {
-    const settlementRows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`);
+    const settlementRows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM ledger_accounts WHERE code='PAYMENT-SETTLEMENT_ASSET-NGN' LIMIT 1`,
+    );
     let settlementId = settlementRows[0]?.id;
     if (!settlementId) {
-      const any: Array<{ id: string }> = await dataSource.query(`SELECT id FROM ledger_accounts WHERE account_type='ASSET' LIMIT 1`);
+      const any: Array<{ id: string }> = await dataSource.query(
+        `SELECT id FROM ledger_accounts WHERE account_type='ASSET' LIMIT 1`,
+      );
       settlementId = any[0]?.id;
     }
     if (!settlementId) {
@@ -201,23 +251,37 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
       [ledgerAccountId],
     );
     let balance = 0n;
-    for (const r of rows) balance += r.direction === 'CREDIT' ? BigInt(r.amount_minor) : -BigInt(r.amount_minor);
+    for (const r of rows)
+      balance += r.direction === 'CREDIT' ? BigInt(r.amount_minor) : -BigInt(r.amount_minor);
     return balance;
   }
 
   async function rowCount(table: string): Promise<number> {
-    const rows: Array<{ cnt: string }> = await dataSource.query(`SELECT count(*)::text AS cnt FROM ${table}`);
+    const rows: Array<{ cnt: string }> = await dataSource.query(
+      `SELECT count(*)::text AS cnt FROM ${table}`,
+    );
     return Number(rows[0].cnt);
   }
 
-  async function tryTransfer(sourceId: string, destId: string, amount: string, idempotencyKey: string): Promise<{ success: boolean; error?: any; view?: any }> {
+  async function tryTransfer(
+    sourceId: string,
+    destId: string,
+    amount: string,
+    idempotencyKey: string,
+  ): Promise<{ success: boolean; error?: any; view?: any }> {
     try {
       const view = await transferService.createTransfer({
-// INTEGRATION (integration/main-backend-frontend-20261030): main's required
-                                                        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
-                                                        // directly with no HTTP principal, so an INTERNAL binding is used — which
-                                                        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
-      ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' }, sourceWalletId: sourceId, destinationWalletId: destId, amountMinor: amount, currency: 'NGN', idempotencyKey });
+        // INTEGRATION (integration/main-backend-frontend-20261030): main's required
+        // `ownership` binding (src/wallet/wallet-ownership.ts). This suite drives the service
+        // directly with no HTTP principal, so an INTERNAL binding is used — which
+        // `assertWalletOwnership` deliberately does not restrict — leaving behaviour unchanged.
+        ownership: { kind: 'INTERNAL', principalId: 'integration-spec', principalType: 'SERVICE' },
+        sourceWalletId: sourceId,
+        destinationWalletId: destId,
+        amountMinor: amount,
+        currency: 'NGN',
+        idempotencyKey,
+      });
       return { success: true, view };
     } catch (e: any) {
       return { success: false, error: e };
@@ -245,7 +309,9 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     expect(res.success).toBe(true);
     expect(res.view.status).toBe('COMPLETED');
 
-    const snapshots: Array<any> = await dataSource.query(`SELECT * FROM commercial_decision_snapshots`);
+    const snapshots: Array<any> = await dataSource.query(
+      `SELECT * FROM commercial_decision_snapshots`,
+    );
     expect(snapshots).toHaveLength(1);
     const snap = snapshots[0];
     expect(snap.product).toBe('WALLET_TRANSFER');
@@ -284,12 +350,20 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     const dailyRef = snap.limit_decision.ruleRefs.find((r: any) => r.dimension === 'DAILY_AMOUNT');
     expect(dailyRef.limitValueMinor).toBe('1000000');
     // evidence ids point at the real reservation/usage rows created by THIS transfer
-    const reservations: Array<any> = await dataSource.query(`SELECT id, limit_usage_id, status FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`, [idem]);
+    const reservations: Array<any> = await dataSource.query(
+      `SELECT id, limit_usage_id, status FROM limit_reservations WHERE idempotency_key=$1 ORDER BY id`,
+      [idem],
+    );
     expect(reservations.length).toBe(2); // DAILY_AMOUNT + DAILY_COUNT
     expect(snap.limit_decision.reservationIds.sort()).toEqual(reservations.map((r) => r.id).sort());
-    expect(snap.limit_decision.usageIds.sort()).toEqual(reservations.map((r) => r.limit_usage_id).sort());
+    expect(snap.limit_decision.usageIds.sort()).toEqual(
+      reservations.map((r) => r.limit_usage_id).sort(),
+    );
     // terminal limit state: committed usage, zero residual reservation
-    const usages: Array<any> = await dataSource.query(`SELECT dimension, used_amount_minor::text AS amt, used_count, reserved_amount_minor::text AS ramt, reserved_count FROM limit_usages WHERE principal_id=$1`, [customerA]);
+    const usages: Array<any> = await dataSource.query(
+      `SELECT dimension, used_amount_minor::text AS amt, used_count, reserved_amount_minor::text AS ramt, reserved_count FROM limit_usages WHERE principal_id=$1`,
+      [customerA],
+    );
     const daily = usages.find((u) => u.dimension === 'DAILY_AMOUNT');
     expect(daily.amt).toBe('50000');
     expect(daily.ramt).toBe('0');
@@ -352,7 +426,10 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
 
     expect(await rowCount('commercial_decision_snapshots')).toBe(1);
     expect(await rowCount('transfers')).toBe(1);
-    const usages: Array<any> = await dataSource.query(`SELECT used_amount_minor::text AS amt FROM limit_usages WHERE principal_id=$1 AND dimension='DAILY_AMOUNT'`, [customerA]);
+    const usages: Array<any> = await dataSource.query(
+      `SELECT used_amount_minor::text AS amt FROM limit_usages WHERE principal_id=$1 AND dimension='DAILY_AMOUNT'`,
+      [customerA],
+    );
     expect(usages[0].amt).toBe('40000'); // NOT 80000
     expect(await walletBalance(wA.ledgerAccountId)).toBe(2000000n - 40000n); // debited once
   });
@@ -438,7 +515,9 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     const res = await tryTransfer(wA.id, wB.id, '90000', `pilot-06-${randomUUID()}`);
     expect(res.success).toBe(true);
 
-    const snapshots: Array<any> = await dataSource.query(`SELECT fee_decision FROM commercial_decision_snapshots`);
+    const snapshots: Array<any> = await dataSource.query(
+      `SELECT fee_decision FROM commercial_decision_snapshots`,
+    );
     expect(snapshots).toHaveLength(1);
     const fee = snapshots[0].fee_decision;
     // V1-COMMERCIAL-IMPLEMENTATION-01 — RESOLVED rule is now COMPUTED authoritatively:
@@ -487,14 +566,18 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     const res = await tryTransfer(wA.id, wB.id, '25000', `pilot-07-${randomUUID()}`);
     expect(res.success).toBe(true);
 
-    const snapshots: Array<any> = await dataSource.query(`SELECT id FROM commercial_decision_snapshots`);
+    const snapshots: Array<any> = await dataSource.query(
+      `SELECT id FROM commercial_decision_snapshots`,
+    );
     expect(snapshots).toHaveLength(1);
     await expect(
-      dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [snapshots[0].id]),
+      dataSource.query(`UPDATE commercial_decision_snapshots SET product='X' WHERE id=$1`, [
+        snapshots[0].id,
+      ]),
     ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
-    await expect(dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id])).rejects.toThrow(
-      /commercial_decision_snapshots is immutable/,
-    );
+    await expect(
+      dataSource.query(`DELETE FROM commercial_decision_snapshots WHERE id=$1`, [snapshots[0].id]),
+    ).rejects.toThrow(/commercial_decision_snapshots is immutable/);
     expect(await rowCount('commercial_decision_snapshots')).toBe(1);
   });
 
@@ -511,7 +594,9 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
     expect(res.view.completedAt).toBeTruthy();
     expect(res.view.paymentReference).toBeTruthy();
 
-    const snapshots: Array<any> = await dataSource.query(`SELECT limit_decision, fee_decision FROM commercial_decision_snapshots`);
+    const snapshots: Array<any> = await dataSource.query(
+      `SELECT limit_decision, fee_decision FROM commercial_decision_snapshots`,
+    );
     expect(snapshots).toHaveLength(1);
     // enforcement ran (authoritative), found no applicable profile/rules → approved with empty evidence
     expect(snapshots[0].limit_decision.status).toBe('APPROVED');
@@ -567,9 +652,11 @@ describe('V1-COMMERCIAL-DECISION-02 Pilot snapshot wiring — WALLET_TRANSFER (r
       .set('Authorization', 'Bearer workforce-operator')
       .expect(200);
     const body = list.body;
-    const items = Array.isArray(body) ? body : body.data ?? body.items ?? [];
+    const items = Array.isArray(body) ? body : (body.data ?? body.items ?? []);
     expect(items.length).toBeGreaterThanOrEqual(1);
-    const found = items.find((s: any) => s.transactionReference === res.view.id || s.transaction_reference === res.view.id);
+    const found = items.find(
+      (s: any) => s.transactionReference === res.view.id || s.transaction_reference === res.view.id,
+    );
     expect(found).toBeDefined();
   });
 });

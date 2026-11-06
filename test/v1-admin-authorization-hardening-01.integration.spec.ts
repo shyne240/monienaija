@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-ADMIN-AUTHORIZATION-HARDENING-01 — dedicated real-PostgreSQL, real-HTTP authorization
  * hardening proof suite.
@@ -82,7 +82,9 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -354,7 +356,10 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
         .send({ reason: 'should be denied' });
       expect(res.status).toBe(403);
       // Prove no mutation occurred despite the attempt.
-      const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM agents WHERE id = $1`, [agentId]);
+      const rows: Array<{ status: string }> = await dataSource.query(
+        `SELECT status FROM agents WHERE id = $1`,
+        [agentId],
+      );
       expect(rows[0]!.status).toBe('ACTIVE');
     });
 
@@ -398,7 +403,10 @@ describe('V1-ADMIN-AUTHORIZATION-HARDENING-01 — function-based authorization p
           .send({ status, actor: 'should-be-denied' });
         expect(res.status).toBe(403);
       }
-      const rows: Array<{ status: string }> = await dataSource.query(`SELECT status FROM customers WHERE id = $1`, [customerId]);
+      const rows: Array<{ status: string }> = await dataSource.query(
+        `SELECT status FROM customers WHERE id = $1`,
+        [customerId],
+      );
       expect(rows[0]!.status).toBe('ACTIVE');
     });
 

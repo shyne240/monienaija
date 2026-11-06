@@ -65,8 +65,12 @@ export class RoleDefinitionGovernanceController {
     @Req() r: R,
   ) {
     const p = this.principal(r);
-    const functionCode = b?.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
-    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    const functionCode =
+      b?.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
+    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [p.principalId, p.sessionId ?? 'none', 'ROLE_DEFINITION_PROPOSAL_SUBMIT'],
@@ -84,8 +88,12 @@ export class RoleDefinitionGovernanceController {
     const p = this.principal(r);
     const proposal = await this.governance.getProposal(id);
     if (!proposal) throw new NotFoundException('Role definition proposal not found');
-    const functionCode = proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
-    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    const functionCode =
+      proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
+    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [p.principalId, p.sessionId ?? 'none', 'ROLE_DEFINITION_PROPOSAL_APPROVE'],
@@ -104,8 +112,12 @@ export class RoleDefinitionGovernanceController {
     const p = this.principal(r);
     const proposal = await this.governance.getProposal(id);
     if (!proposal) throw new NotFoundException('Role definition proposal not found');
-    const functionCode = proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
-    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    const functionCode =
+      proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
+    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [p.principalId, p.sessionId ?? 'none', 'ROLE_DEFINITION_PROPOSAL_REJECT'],
@@ -124,8 +136,12 @@ export class RoleDefinitionGovernanceController {
     const p = this.principal(r);
     const proposal = await this.governance.getProposal(id);
     if (!proposal) throw new NotFoundException('Role definition proposal not found');
-    const functionCode = proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
-    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    const functionCode =
+      proposal.proposalType === 'MODIFY' ? 'workforce.role.modify' : 'workforce.role.create';
+    await this.auth.requireFunction(p, functionCode, 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     await this.limits.consume(
       this.rateRule('privileged-approval'),
       [p.principalId, p.sessionId ?? 'none', 'ROLE_DEFINITION_PROPOSAL_APPLY'],
@@ -141,16 +157,26 @@ export class RoleDefinitionGovernanceController {
   @Get('proposals/:id')
   async getOne(@Param('id') id: string, @Req() r: R) {
     const p = this.principal(r);
-    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     const proposal = await this.governance.getProposal(id);
     if (!proposal) throw new NotFoundException('Role definition proposal not found');
     return proposal;
   }
 
   @Get('proposals')
-  async list(@Query('status') status: string | undefined, @Query('roleKey') roleKey: string | undefined, @Req() r: R) {
+  async list(
+    @Query('status') status: string | undefined,
+    @Query('roleKey') roleKey: string | undefined,
+    @Req() r: R,
+  ) {
     const p = this.principal(r);
-    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_PROPOSAL', ['OPERATOR', 'PRIVILEGED']);
+    await this.auth.requireFunction(p, 'workforce.role.view', 'ROLE_DEFINITION_PROPOSAL', [
+      'OPERATOR',
+      'PRIVILEGED',
+    ]);
     return this.governance.listProposals({ status, roleKey });
   }
 

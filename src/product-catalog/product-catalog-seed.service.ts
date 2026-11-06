@@ -34,7 +34,10 @@ export class ProductCatalogSeedService implements OnApplicationBootstrap {
           inserted += 1;
         }
       }
-      if (inserted > 0) this.logger.log(`Product catalogue: inserted ${inserted} new products (total ${count + inserted})`);
+      if (inserted > 0)
+        this.logger.log(
+          `Product catalogue: inserted ${inserted} new products (total ${count + inserted})`,
+        );
       return inserted;
     }
     for (const item of PRODUCT_CATALOG_SEED) {

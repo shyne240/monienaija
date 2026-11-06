@@ -27,24 +27,74 @@ describe('controller Promise contracts', () => {
     const req = { headers: {} };
     const reason = {} as PaymentReasonDto;
     const cases: Array<{ prototype: object; method: string; call: () => Promise<never> }> = [
-      { prototype: DepositController.prototype as object, method: 'createDeposit', call: () => deposit.createDeposit({} as CreateDepositDto) },
-      { prototype: DepositController.prototype as object, method: 'completeDeposit', call: () => deposit.completeDeposit('id', req) },
-      { prototype: DepositController.prototype as object, method: 'failDeposit', call: () => deposit.failDeposit('id', reason, req) },
-      { prototype: DepositController.prototype as object, method: 'cancelDeposit', call: () => deposit.cancelDeposit('id', reason, req) },
-      { prototype: WithdrawalController.prototype as object, method: 'createWithdrawal', call: () => withdrawal.createWithdrawal({} as CreateWithdrawalDto) },
-      { prototype: WithdrawalController.prototype as object, method: 'processWithdrawal', call: () => withdrawal.processWithdrawal('id', req) },
-      { prototype: WithdrawalController.prototype as object, method: 'completeWithdrawal', call: () => withdrawal.completeWithdrawal('id', req) },
-      { prototype: WithdrawalController.prototype as object, method: 'failWithdrawal', call: () => withdrawal.failWithdrawal('id', reason, req) },
-      { prototype: WithdrawalController.prototype as object, method: 'cancelWithdrawal', call: () => withdrawal.cancelWithdrawal('id', reason, req) },
-      { prototype: TransferController.prototype as object, method: 'createTransfer', call: () => transfer.createTransfer({} as CreateTransferDto) },
-      { prototype: LedgerController.prototype as object, method: 'createAccount', call: () => ledger.createAccount({} as CreateLedgerAccountDto, req) },
-      { prototype: LedgerController.prototype as object, method: 'postJournal', call: () => ledger.postJournal(req, {} as PostJournalDto) },
+      {
+        prototype: DepositController.prototype as object,
+        method: 'createDeposit',
+        call: () => deposit.createDeposit({} as CreateDepositDto),
+      },
+      {
+        prototype: DepositController.prototype as object,
+        method: 'completeDeposit',
+        call: () => deposit.completeDeposit('id', req),
+      },
+      {
+        prototype: DepositController.prototype as object,
+        method: 'failDeposit',
+        call: () => deposit.failDeposit('id', reason, req),
+      },
+      {
+        prototype: DepositController.prototype as object,
+        method: 'cancelDeposit',
+        call: () => deposit.cancelDeposit('id', reason, req),
+      },
+      {
+        prototype: WithdrawalController.prototype as object,
+        method: 'createWithdrawal',
+        call: () => withdrawal.createWithdrawal({} as CreateWithdrawalDto),
+      },
+      {
+        prototype: WithdrawalController.prototype as object,
+        method: 'processWithdrawal',
+        call: () => withdrawal.processWithdrawal('id', req),
+      },
+      {
+        prototype: WithdrawalController.prototype as object,
+        method: 'completeWithdrawal',
+        call: () => withdrawal.completeWithdrawal('id', req),
+      },
+      {
+        prototype: WithdrawalController.prototype as object,
+        method: 'failWithdrawal',
+        call: () => withdrawal.failWithdrawal('id', reason, req),
+      },
+      {
+        prototype: WithdrawalController.prototype as object,
+        method: 'cancelWithdrawal',
+        call: () => withdrawal.cancelWithdrawal('id', reason, req),
+      },
+      {
+        prototype: TransferController.prototype as object,
+        method: 'createTransfer',
+        call: () => transfer.createTransfer({} as CreateTransferDto),
+      },
+      {
+        prototype: LedgerController.prototype as object,
+        method: 'createAccount',
+        call: () => ledger.createAccount({} as CreateLedgerAccountDto, req),
+      },
+      {
+        prototype: LedgerController.prototype as object,
+        method: 'postJournal',
+        call: () => ledger.postJournal(req, {} as PostJournalDto),
+      },
     ];
 
     for (const entry of cases) {
       expect(Reflect.getMetadata('design:returntype', entry.prototype, entry.method)).toBe(Promise);
       let result: Promise<never> | undefined;
-      expect(() => { result = entry.call(); }).not.toThrow();
+      expect(() => {
+        result = entry.call();
+      }).not.toThrow();
       expect(result).toBeInstanceOf(Promise);
       await expect(result).rejects.toBeInstanceOf(ForbiddenException);
     }
@@ -52,14 +102,30 @@ describe('controller Promise contracts', () => {
 
   it('converts synchronous fee and limit engine errors to Promise rejections', async () => {
     const error = new Error('synthetic engine failure');
-    const fee = new FeeController({ calculate: () => { throw error; } } as unknown as FeeEngine);
-    const limit = new LimitController({ evaluate: () => { throw error; } } as unknown as LimitEngine);
-    expect(Reflect.getMetadata('design:returntype', FeeController.prototype, 'calculate')).toBe(Promise);
-    expect(Reflect.getMetadata('design:returntype', LimitController.prototype, 'evaluate')).toBe(Promise);
+    const fee = new FeeController({
+      calculate: () => {
+        throw error;
+      },
+    } as unknown as FeeEngine);
+    const limit = new LimitController({
+      evaluate: () => {
+        throw error;
+      },
+    } as unknown as LimitEngine);
+    expect(Reflect.getMetadata('design:returntype', FeeController.prototype, 'calculate')).toBe(
+      Promise,
+    );
+    expect(Reflect.getMetadata('design:returntype', LimitController.prototype, 'evaluate')).toBe(
+      Promise,
+    );
     let feeResult: Promise<unknown> | undefined;
     let limitResult: Promise<unknown> | undefined;
-    expect(() => { feeResult = fee.calculate({} as CalculateFeeDto); }).not.toThrow();
-    expect(() => { limitResult = limit.evaluate({} as EvaluateLimitDto); }).not.toThrow();
+    expect(() => {
+      feeResult = fee.calculate({} as CalculateFeeDto);
+    }).not.toThrow();
+    expect(() => {
+      limitResult = limit.evaluate({} as EvaluateLimitDto);
+    }).not.toThrow();
     await expect(feeResult).rejects.toBe(error);
     await expect(limitResult).rejects.toBe(error);
   });

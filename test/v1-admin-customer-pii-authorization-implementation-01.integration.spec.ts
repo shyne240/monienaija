@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 /**
  * V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — dedicated real-PostgreSQL, real-HTTP
  * proof suite.
@@ -71,7 +71,9 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -219,7 +221,11 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
   }
 
   const PII_ROUTES: Array<{ name: string; functionCode: string; path: (id: string) => string }> = [
-    { name: 'addresses', functionCode: 'customer.view_address', path: (id) => `/api/v1/customers/${id}/addresses` },
+    {
+      name: 'addresses',
+      functionCode: 'customer.view_address',
+      path: (id) => `/api/v1/customers/${id}/addresses`,
+    },
     {
       name: 'contact-methods',
       functionCode: 'customer.view_contact_methods',
@@ -235,7 +241,13 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
   const ADDRESS_CONTACT_ROUTES = PII_ROUTES.filter((r) => r.name !== 'identity-documents');
   const IDENTITY_DOCUMENTS_ROUTE = PII_ROUTES.find((r) => r.name === 'identity-documents')!;
 
-  const ADDRESS_CONTACT_ALLOW_ROLES = ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'OPERATIONS', 'COMPLIANCE', 'CUSTOMER_SERVICE'];
+  const ADDRESS_CONTACT_ALLOW_ROLES = [
+    'SUPER_ADMIN',
+    'FINANCE_AUDITOR',
+    'OPERATIONS',
+    'COMPLIANCE',
+    'CUSTOMER_SERVICE',
+  ];
   const ADDRESS_CONTACT_DENY_ROLES = [
     'FINANCE_PREPARER',
     'FINANCE_CONTROLLER',
@@ -270,7 +282,9 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
         async (roleKey) => {
           const token = await tokenFor(roleKey);
           const customerId = await createActiveCustomer();
-          const res = await request(app.getHttpServer()).get(route.path(customerId)).set(auth(token));
+          const res = await request(app.getHttpServer())
+            .get(route.path(customerId))
+            .set(auth(token));
           expect(res.status).toBe(200);
           expect(Array.isArray(res.body)).toBe(true);
         },
@@ -281,7 +295,9 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
         async (roleKey) => {
           const token = await tokenForRole(roleKey);
           const customerId = await createActiveCustomer();
-          const res = await request(app.getHttpServer()).get(route.path(customerId)).set(auth(token));
+          const res = await request(app.getHttpServer())
+            .get(route.path(customerId))
+            .set(auth(token));
           expect(res.status).toBe(403);
         },
       );
@@ -318,14 +334,19 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
   // =====================================================================================
 
   describe('B. SUPER_ADMIN and COMPLIANCE access all three PII endpoints', () => {
-    it.each(['SUPER_ADMIN', 'COMPLIANCE'])('B1. %s succeeds on all three PII endpoints', async (roleKey) => {
-      const token = await tokenFor(roleKey);
-      const customerId = await createActiveCustomer();
-      for (const route of PII_ROUTES) {
-        const res = await request(app.getHttpServer()).get(route.path(customerId)).set(auth(token));
-        expect(res.status).toBe(200);
-      }
-    });
+    it.each(['SUPER_ADMIN', 'COMPLIANCE'])(
+      'B1. %s succeeds on all three PII endpoints',
+      async (roleKey) => {
+        const token = await tokenFor(roleKey);
+        const customerId = await createActiveCustomer();
+        for (const route of PII_ROUTES) {
+          const res = await request(app.getHttpServer())
+            .get(route.path(customerId))
+            .set(auth(token));
+          expect(res.status).toBe(200);
+        }
+      },
+    );
 
     it('B2. FINANCE_AUDITOR succeeds on addresses/contact-methods but is denied identity-documents (narrower matrix proof)', async () => {
       const token = await tokenForRole('FINANCE_AUDITOR');
@@ -374,15 +395,18 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
   // =====================================================================================
 
   describe('C. CUSTOMER self-service is unaffected by this task', () => {
-    it.each(PII_ROUTES)('C1. $name: a real CUSTOMER session can still read its own sub-resource', async ({ path }) => {
-      const { customerId, token } = await createCustomerWithLogin();
-      const res = await request(app.getHttpServer()).get(path(customerId)).set(auth(token));
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-    });
+    it.each(PII_ROUTES)(
+      'C1. $name: a real CUSTOMER session can still read its own sub-resource',
+      async ({ path }) => {
+        const { customerId, token } = await createCustomerWithLogin();
+        const res = await request(app.getHttpServer()).get(path(customerId)).set(auth(token));
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body)).toBe(true);
+      },
+    );
 
     it.each(PII_ROUTES)(
-      'C2. $name: a CUSTOMER session cannot read a DIFFERENT customer\'s sub-resource (pre-existing SELF scope, unaffected)',
+      "C2. $name: a CUSTOMER session cannot read a DIFFERENT customer's sub-resource (pre-existing SELF scope, unaffected)",
       async ({ path }) => {
         const { token } = await createCustomerWithLogin();
         const otherCustomerId = await createActiveCustomer();
@@ -420,7 +444,9 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
     it('E1. GET /customers/:id and /customers/:id/profile still require customer.view (unaffected by the new PII functions)', async () => {
       const token = await tokenForRole('TREASURY');
       const customerId = await createActiveCustomer();
-      const getRes = await request(app.getHttpServer()).get(`/api/v1/customers/${customerId}`).set(auth(token));
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/v1/customers/${customerId}`)
+        .set(auth(token));
       expect(getRes.status).toBe(403);
       const profileRes = await request(app.getHttpServer())
         .get(`/api/v1/customers/${customerId}/profile`)
@@ -431,14 +457,18 @@ describe('V1-ADMIN-CUSTOMER-PII-AUTHORIZATION-IMPLEMENTATION-01 — customer PII
     it('E2. GET /customers/:id/kyc still requires kyc.view (unaffected by the new PII functions)', async () => {
       const token = await tokenForRole('TREASURY');
       const customerId = await createActiveCustomer();
-      const res = await request(app.getHttpServer()).get(`/api/v1/customers/${customerId}/kyc`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/customers/${customerId}/kyc`)
+        .set(auth(token));
       expect(res.status).toBe(403);
     });
 
     it('E3. COMPLIANCE (holds kyc.view) still passes authorization on GET /customers/:id/kyc (not 401/403; a fresh customer has no KYC assessment yet, so 404 is the correct business-logic outcome, not an authorization denial)', async () => {
       const token = await tokenForRole('COMPLIANCE');
       const customerId = await createActiveCustomer();
-      const res = await request(app.getHttpServer()).get(`/api/v1/customers/${customerId}/kyc`).set(auth(token));
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/customers/${customerId}/kyc`)
+        .set(auth(token));
       expect([200, 404]).toContain(res.status);
     });
   });

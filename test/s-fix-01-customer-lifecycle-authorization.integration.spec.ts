@@ -61,7 +61,11 @@ describe('S-FIX-01 customer lifecycle authorization + session/status binding (re
   // session/status-binding business behavior under an assumed-privileged workforce identity, so
   // OPERATOR/SERVICE/PRIVILEGED need a realistic `scopes` set to keep representing "a
   // legitimately-privileged workforce user".
-  const CUSTOMER_LIFECYCLE_FUNCTION_SCOPES = ['customer.suspend', 'customer.activate', 'customer.close'];
+  const CUSTOMER_LIFECYCLE_FUNCTION_SCOPES = [
+    'customer.suspend',
+    'customer.activate',
+    'customer.close',
+  ];
   const mockWorkforceSessions = {
     validate: (token: string, audience: string): Promise<any> => {
       if (!token || !token.startsWith('workforce-')) {

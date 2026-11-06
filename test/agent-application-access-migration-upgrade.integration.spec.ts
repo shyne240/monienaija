@@ -35,7 +35,9 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
     // the dedicated locator coverage in a15/a16/a17 — scoping keeps this test a faithful
     // point-in-time upgrade reproduction and stable as the chain keeps growing.
     const scopedChain = fullChain.filter(
-      (migration) => Number(String(migration.name ?? '').slice(-13)) <= Number(EXPECTED_ACCESS_MIGRATION.slice(-13)),
+      (migration) =>
+        Number(String(migration.name ?? '').slice(-13)) <=
+        Number(EXPECTED_ACCESS_MIGRATION.slice(-13)),
     );
     expect(
       Math.max(...scopedChain.map((migration) => Number(String(migration.name ?? '').slice(-13)))),
@@ -90,7 +92,8 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
         ],
       );
       const applicationId = applicationRows[0]?.id;
-      if (!applicationId) throw new Error(`Pre-upgrade Agent application fixture ${suffix} was not created`);
+      if (!applicationId)
+        throw new Error(`Pre-upgrade Agent application fixture ${suffix} was not created`);
       existingApplicationIds.push(applicationId);
     }
 
@@ -128,10 +131,10 @@ describe('Agent application access migration upgrade (real PostgreSQL)', () => {
       [uniqueTokenHash, existingApplicationIds[0]],
     );
     await expect(
-      dataSource.query(
-        `UPDATE agent_applications SET applicant_access_token_hash=$1 WHERE id=$2`,
-        [uniqueTokenHash, existingApplicationIds[1]],
-      ),
+      dataSource.query(`UPDATE agent_applications SET applicant_access_token_hash=$1 WHERE id=$2`, [
+        uniqueTokenHash,
+        existingApplicationIds[1],
+      ]),
     ).rejects.toThrow();
   }, 120_000);
 });

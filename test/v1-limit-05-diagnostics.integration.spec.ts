@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
 
 /**
  * V1-LIMIT-05 — PART 2: workforce-only operational diagnostics.
@@ -30,7 +30,11 @@ import { A2WorkforceSessionService } from '../src/authorization/workforce-sessio
 import { A2_WORKFORCE_CONFIG } from '../src/authorization/workforce-oidc.service';
 import type { A2WorkforceConfigurationV1 } from '../src/authorization/workforce-authentication.types';
 import { LimitUsageService } from '../src/limit-catalog/limit-usage.service';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   let dataSource: DataSource;
@@ -53,31 +57,44 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   } as unknown as A2WorkforceConfigurationV1;
 
   const mockWorkforceSessions = {
-    validate: (token: string, audience: string) => Promise.resolve().then(() => {
-      if (!token || !token.startsWith('workforce-')) throw new UnauthorizedException('invalid workforce token');
-      const raw = token.replace('workforce-', '').toUpperCase();
-      // '-NOFN' suffix: type-permitted workforce principal that holds NO catalogue function —
-      // the audit F-03/P0-03 negative case (previously admitted by the type-only check).
-      const withoutFunction = raw.endsWith('-NOFN');
-      const type = withoutFunction ? raw.slice(0, -'-NOFN'.length) : raw;
-      const allowed = ['SUPPORT', 'OPERATOR', 'SERVICE', 'PRIVILEGED', 'AGENT', 'CUSTOMER', 'AGGREGATOR'];
-      if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
-      // Workforce types represent roles granted `limit.view` in the catalogue (SUPER_ADMIN,
-      // FINANCE_*, AGENT_NETWORK_MANAGER resolve to OPERATOR/PRIVILEGED); SERVICE is the legacy
-      // workforce type kept in the allowlist. Non-workforce types keep scopes [] exactly as
-      // before so their denial semantics are unchanged.
-      const scopes = !withoutFunction && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type) ? ['limit.view'] : [];
-      return {
-        type,
-        principalId: `workforce-${type.toLowerCase()}-1`,
-        audience,
-        roles: [],
-        scopes,
-        customerAccess: 'NONE',
-        agentAccess: 'NONE',
-        aggregatorAccess: 'NONE',
-      } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
-    }),
+    validate: (token: string, audience: string) =>
+      Promise.resolve().then(() => {
+        if (!token || !token.startsWith('workforce-'))
+          throw new UnauthorizedException('invalid workforce token');
+        const raw = token.replace('workforce-', '').toUpperCase();
+        // '-NOFN' suffix: type-permitted workforce principal that holds NO catalogue function —
+        // the audit F-03/P0-03 negative case (previously admitted by the type-only check).
+        const withoutFunction = raw.endsWith('-NOFN');
+        const type = withoutFunction ? raw.slice(0, -'-NOFN'.length) : raw;
+        const allowed = [
+          'SUPPORT',
+          'OPERATOR',
+          'SERVICE',
+          'PRIVILEGED',
+          'AGENT',
+          'CUSTOMER',
+          'AGGREGATOR',
+        ];
+        if (!allowed.includes(type)) throw new UnauthorizedException('invalid type');
+        // Workforce types represent roles granted `limit.view` in the catalogue (SUPER_ADMIN,
+        // FINANCE_*, AGENT_NETWORK_MANAGER resolve to OPERATOR/PRIVILEGED); SERVICE is the legacy
+        // workforce type kept in the allowlist. Non-workforce types keep scopes [] exactly as
+        // before so their denial semantics are unchanged.
+        const scopes =
+          !withoutFunction && ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(type)
+            ? ['limit.view']
+            : [];
+        return {
+          type,
+          principalId: `workforce-${type.toLowerCase()}-1`,
+          audience,
+          roles: [],
+          scopes,
+          customerAccess: 'NONE',
+          agentAccess: 'NONE',
+          aggregatorAccess: 'NONE',
+        } as Awaited<ReturnType<A2WorkforceSessionService['validate']>>;
+      }),
   };
 
   const auth = (type: string) => `Bearer workforce-${type.toLowerCase()}`;
@@ -94,7 +111,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await (app.getHttpAdapter().getInstance() as any).ready();
     limitUsageService = app.get(LimitUsageService);
@@ -107,7 +126,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
-    await dataSource.query(`INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by) VALUES ('DIAG_PROFILE', 'Diagnostics Profile', 'CUSTOMER', 'ACTIVE', true, 'CONFIGURED', 'test')`);
+    await dataSource.query(
+      `INSERT INTO limit_profiles (code, name, kind, status, enabled, configuration_status, created_by) VALUES ('DIAG_PROFILE', 'Diagnostics Profile', 'CUSTOMER', 'ACTIVE', true, 'CONFIGURED', 'test')`,
+    );
   });
 
   async function reserve(input: {
@@ -137,8 +158,8 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
           dimension,
           product: input.product ?? 'WALLET_TRANSFER',
           currency: 'NGN',
-          amountMinor: isCount ? null : input.amountMinor ?? '10000',
-          count: isCount ? input.count ?? 1 : null,
+          amountMinor: isCount ? null : (input.amountMinor ?? '10000'),
+          count: isCount ? (input.count ?? 1) : null,
           direction: input.direction ?? 'OUTGOING',
         },
       ],
@@ -153,15 +174,23 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
   it('01 GET /internal/limit-usages — limit.view-holding OPERATOR/SERVICE/PRIVILEGED allowed; SUPPORT/CUSTOMER/AGENT blocked; no auth 401', async () => {
     for (const role of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
-      const res = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages').set('Authorization', auth(role));
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/internal/limit-usages')
+        .set('Authorization', auth(role));
       expect(res.status).toBe(200);
       expect(res.body.data).toBeDefined();
     }
-    const support = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages').set('Authorization', auth('SUPPORT'));
+    const support = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-usages')
+      .set('Authorization', auth('SUPPORT'));
     expect(support.status).toBe(403);
-    const customer = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages').set('Authorization', auth('CUSTOMER'));
+    const customer = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-usages')
+      .set('Authorization', auth('CUSTOMER'));
     expect([401, 403]).toContain(customer.status);
-    const agent = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages').set('Authorization', auth('AGENT'));
+    const agent = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-usages')
+      .set('Authorization', auth('AGENT'));
     expect([401, 403]).toContain(agent.status);
     const noAuth = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages');
     expect(noAuth.status).toBe(401);
@@ -169,10 +198,14 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
 
   it('02 GET /internal/limit-reservations — same workforce-only authorization', async () => {
     for (const role of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
-      const res = await request(app.getHttpServer()).get('/api/v1/internal/limit-reservations').set('Authorization', auth(role));
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/internal/limit-reservations')
+        .set('Authorization', auth(role));
       expect(res.status).toBe(200);
     }
-    const support = await request(app.getHttpServer()).get('/api/v1/internal/limit-reservations').set('Authorization', auth('SUPPORT'));
+    const support = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-reservations')
+      .set('Authorization', auth('SUPPORT'));
     expect(support.status).toBe(403);
     const noAuth = await request(app.getHttpServer()).get('/api/v1/internal/limit-reservations');
     expect(noAuth.status).toBe(401);
@@ -181,7 +214,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   it('02b type-permitted workforce principals WITHOUT limit.view are denied 403 FUNCTION_MISSING on both diagnostics routes (audit F-03 correction)', async () => {
     for (const type of ['OPERATOR', 'SERVICE', 'PRIVILEGED']) {
       for (const path of ['/api/v1/internal/limit-usages', '/api/v1/internal/limit-reservations']) {
-        const res = await request(app.getHttpServer()).get(path).set('Authorization', auth(`${type}-NOFN`));
+        const res = await request(app.getHttpServer())
+          .get(path)
+          .set('Authorization', auth(`${type}-NOFN`));
         expect(res.status).toBe(403);
         expect(JSON.stringify(res.body)).toMatch(/FUNCTION_MISSING/);
         expect(res.body.data).toBeUndefined();
@@ -205,7 +240,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     }
     // Route-variant probes (trailing slash) may 404 at the router or 403 at the gate — either is
     // safe; what must never happen is a 200 with diagnostics data for a function-less principal.
-    const slash = await request(app.getHttpServer()).get('/api/v1/internal/limit-usages/').set('Authorization', noFn);
+    const slash = await request(app.getHttpServer())
+      .get('/api/v1/internal/limit-usages/')
+      .set('Authorization', noFn);
     expect([403, 404]).toContain(slash.status);
     expect(slash.body?.data).toBeUndefined();
     // An authorized (limit.view-holding) principal is unaffected by the same query variants.
@@ -221,9 +258,25 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   it('03 limit-usages filtering by principal/product/dimension/currency/windowKey/profile', async () => {
     const pA = randomUUID();
     const pB = randomUUID();
-    await reserve({ principalId: pA, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', amountMinor: '1111' });
-    await reserve({ principalId: pA, product: 'CASH_TO_WALLET', dimension: 'DAILY_COUNT', count: 2, direction: 'INCOMING' });
-    await reserve({ principalId: pB, product: 'WALLET_TRANSFER', dimension: 'DAILY_AMOUNT', amountMinor: '2222' });
+    await reserve({
+      principalId: pA,
+      product: 'WALLET_TRANSFER',
+      dimension: 'DAILY_AMOUNT',
+      amountMinor: '1111',
+    });
+    await reserve({
+      principalId: pA,
+      product: 'CASH_TO_WALLET',
+      dimension: 'DAILY_COUNT',
+      count: 2,
+      direction: 'INCOMING',
+    });
+    await reserve({
+      principalId: pB,
+      product: 'WALLET_TRANSFER',
+      dimension: 'DAILY_AMOUNT',
+      amountMinor: '2222',
+    });
 
     const byPrincipal = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?principalId=${pA}`)
@@ -246,18 +299,23 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(byDimension.body.data[0].reservedCount).toBe(2);
 
     const byProfile = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-usages?limitProfileCode=DIAG_PROFILE&principalType=CUSTOMER&currency=NGN`)
+      .get(
+        `/api/v1/internal/limit-usages?limitProfileCode=DIAG_PROFILE&principalType=CUSTOMER&currency=NGN`,
+      )
       .set('Authorization', auth('SERVICE'));
     expect(byProfile.status).toBe(200);
     expect(byProfile.body.total).toBe(3);
 
     // both pA rows share the same DAILY window key (amount + count dimensions) → 2 rows
     const byWindowKey = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-usages?principalId=${pA}&windowKey=${encodeURIComponent(byProduct.body.data[0].windowKey as string)}`)
+      .get(
+        `/api/v1/internal/limit-usages?principalId=${pA}&windowKey=${encodeURIComponent(byProduct.body.data[0].windowKey as string)}`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(byWindowKey.status).toBe(200);
     expect(byWindowKey.body.total).toBe(2);
-    for (const item of byWindowKey.body.data) expect(item.windowKey).toBe(byProduct.body.data[0].windowKey);
+    for (const item of byWindowKey.body.data)
+      expect(item.windowKey).toBe(byProduct.body.data[0].windowKey);
 
     const none = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?principalId=${randomUUID()}`)
@@ -271,11 +329,15 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const past = new Date(Date.now() - 2 * 86400000).toISOString();
     const future = new Date(Date.now() + 2 * 86400000).toISOString();
     const inRange = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-usages?principalId=${pA}&windowFrom=${encodeURIComponent(past)}&windowTo=${encodeURIComponent(future)}`)
+      .get(
+        `/api/v1/internal/limit-usages?principalId=${pA}&windowFrom=${encodeURIComponent(past)}&windowTo=${encodeURIComponent(future)}`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(inRange.body.total).toBe(1);
     const outRange = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-usages?principalId=${pA}&windowFrom=${encodeURIComponent(future)}`)
+      .get(
+        `/api/v1/internal/limit-usages?principalId=${pA}&windowFrom=${encodeURIComponent(future)}`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(outRange.body.total).toBe(0);
     const badDate = await request(app.getHttpServer())
@@ -289,8 +351,15 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   it('05 limit-reservations filtering by status/idempotencyKey/correlationId/principal/product/dimension/windowKey', async () => {
     const pA = randomUUID();
     const r1 = await reserve({ principalId: pA, correlationId: 'corr-alpha-1' });
-    const r2 = await reserve({ principalId: pA, dimension: 'DAILY_COUNT', count: 3, correlationId: 'corr-beta-2' });
-    await dataSource.transaction('SERIALIZABLE', (m) => limitUsageService.commitWithManager(m, { idempotencyKey: r2.key }));
+    const r2 = await reserve({
+      principalId: pA,
+      dimension: 'DAILY_COUNT',
+      count: 3,
+      correlationId: 'corr-beta-2',
+    });
+    await dataSource.transaction('SERIALIZABLE', (m) =>
+      limitUsageService.commitWithManager(m, { idempotencyKey: r2.key }),
+    );
 
     const all = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}`)
@@ -327,7 +396,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(byDimension.body.data[0].count).toBe(3);
 
     const byProduct = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-reservations?principalId=${pA}&product=WALLET_TRANSFER&currency=NGN&limitProfileCode=DIAG_PROFILE`)
+      .get(
+        `/api/v1/internal/limit-reservations?principalId=${pA}&product=WALLET_TRANSFER&currency=NGN&limitProfileCode=DIAG_PROFILE`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(byProduct.body.total).toBe(2);
 
@@ -343,11 +414,15 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const past = new Date(Date.now() - 86400000).toISOString();
     const future = new Date(Date.now() + 86400000).toISOString();
     const inRange = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-reservations?principalId=${pA}&reservedFrom=${encodeURIComponent(past)}&reservedTo=${encodeURIComponent(future)}`)
+      .get(
+        `/api/v1/internal/limit-reservations?principalId=${pA}&reservedFrom=${encodeURIComponent(past)}&reservedTo=${encodeURIComponent(future)}`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(inRange.body.total).toBe(1);
     const outRange = await request(app.getHttpServer())
-      .get(`/api/v1/internal/limit-reservations?principalId=${pA}&reservedFrom=${encodeURIComponent(future)}`)
+      .get(
+        `/api/v1/internal/limit-reservations?principalId=${pA}&reservedFrom=${encodeURIComponent(future)}`,
+      )
       .set('Authorization', auth('OPERATOR'));
     expect(outRange.body.total).toBe(0);
   });
@@ -374,21 +449,28 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(page1.body.data.length).toBe(3);
     expect(page2.body.data.length).toBe(3);
     expect(page3.body.data.length).toBe(1);
-    const ids = [...page1.body.data, ...page2.body.data, ...page3.body.data].map((d: { id: string }) => d.id);
+    const ids = [...page1.body.data, ...page2.body.data, ...page3.body.data].map(
+      (d: { id: string }) => d.id,
+    );
     expect(new Set(ids).size).toBe(7); // no overlap, no gaps
     // deterministic re-fetch
     const again = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?principalId=${pA}&page=1&limit=3`)
       .set('Authorization', auth('OPERATOR'));
-    expect(again.body.data.map((d: { id: string }) => d.id)).toEqual(page1.body.data.map((d: { id: string }) => d.id));
+    expect(again.body.data.map((d: { id: string }) => d.id)).toEqual(
+      page1.body.data.map((d: { id: string }) => d.id),
+    );
 
     const resPage = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}&page=1&limit=4`)
       .set('Authorization', auth('OPERATOR'));
     expect(resPage.body.total).toBe(7);
     expect(resPage.body.data.length).toBe(4);
-    const stamps = (resPage.body.data as Array<{ reservedAt: string }>).map((d) => new Date(d.reservedAt).getTime());
-    for (let i = 1; i < stamps.length; i += 1) expect(stamps[i]!).toBeLessThanOrEqual(stamps[i - 1]!);
+    const stamps = (resPage.body.data as Array<{ reservedAt: string }>).map((d) =>
+      new Date(d.reservedAt).getTime(),
+    );
+    for (let i = 1; i < stamps.length; i += 1)
+      expect(stamps[i]!).toBeLessThanOrEqual(stamps[i - 1]!);
 
     const badLimit = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-usages?limit=5000`)
@@ -439,9 +521,15 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
          (SELECT COALESCE(sum(reserved_amount_minor),0)::text FROM limit_usages) AS ra`,
     );
     for (let i = 0; i < 5; i += 1) {
-      await request(app.getHttpServer()).get(`/api/v1/internal/limit-usages?principalId=${pA}`).set('Authorization', auth('OPERATOR'));
-      await request(app.getHttpServer()).get(`/api/v1/internal/limit-reservations?principalId=${pA}&stale=true`).set('Authorization', auth('OPERATOR'));
-      await request(app.getHttpServer()).get(`/api/v1/internal/limit-reservations?status=RESERVED`).set('Authorization', auth('SERVICE'));
+      await request(app.getHttpServer())
+        .get(`/api/v1/internal/limit-usages?principalId=${pA}`)
+        .set('Authorization', auth('OPERATOR'));
+      await request(app.getHttpServer())
+        .get(`/api/v1/internal/limit-reservations?principalId=${pA}&stale=true`)
+        .set('Authorization', auth('OPERATOR'));
+      await request(app.getHttpServer())
+        .get(`/api/v1/internal/limit-reservations?status=RESERVED`)
+        .set('Authorization', auth('SERVICE'));
     }
     const after = await dataSource.query(
       `SELECT
@@ -460,10 +548,19 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const pA = randomUUID();
     const fresh = await reserve({ principalId: pA });
     const aged = await reserve({ principalId: pA, dimension: 'WEEKLY_AMOUNT', amountMinor: '777' });
-    const committed = await reserve({ principalId: pA, dimension: 'MONTHLY_AMOUNT', amountMinor: '888' });
-    await dataSource.transaction('SERIALIZABLE', (m) => limitUsageService.commitWithManager(m, { idempotencyKey: committed.key }));
+    const committed = await reserve({
+      principalId: pA,
+      dimension: 'MONTHLY_AMOUNT',
+      amountMinor: '888',
+    });
+    await dataSource.transaction('SERIALIZABLE', (m) =>
+      limitUsageService.commitWithManager(m, { idempotencyKey: committed.key }),
+    );
     // backdate the aged reservation and the committed one
-    await dataSource.query(`UPDATE limit_reservations SET reserved_at = NOW() - INTERVAL '120 minutes' WHERE idempotency_key IN ($1,$2)`, [aged.key, committed.key]);
+    await dataSource.query(
+      `UPDATE limit_reservations SET reserved_at = NOW() - INTERVAL '120 minutes' WHERE idempotency_key IN ($1,$2)`,
+      [aged.key, committed.key],
+    );
 
     const stale = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}&stale=true`)
@@ -477,7 +574,9 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     const all = await request(app.getHttpServer())
       .get(`/api/v1/internal/limit-reservations?principalId=${pA}`)
       .set('Authorization', auth('OPERATOR'));
-    const freshItem = all.body.data.find((d: { idempotencyKey: string }) => d.idempotencyKey === fresh.key);
+    const freshItem = all.body.data.find(
+      (d: { idempotencyKey: string }) => d.idempotencyKey === fresh.key,
+    );
     expect(freshItem.stale).toBe(false);
 
     // configurable threshold — diagnostic flag only, never triggers release
@@ -500,7 +599,10 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
   it('11 POST /internal/limit-reservation-recovery/release — PRIVILEGED only; OPERATOR/SERVICE/SUPPORT denied', async () => {
     const pA = randomUUID();
     const { key } = await reserve({ principalId: pA });
-    const rows: Array<{ id: string }> = await dataSource.query(`SELECT id FROM limit_reservations WHERE idempotency_key=$1`, [key]);
+    const rows: Array<{ id: string }> = await dataSource.query(
+      `SELECT id FROM limit_reservations WHERE idempotency_key=$1`,
+      [key],
+    );
     const reservationId = rows[0]!.id;
 
     for (const role of ['OPERATOR', 'SERVICE', 'SUPPORT']) {
@@ -516,7 +618,10 @@ describe('V1-LIMIT-05 Limit Diagnostics (real PG)', () => {
     expect(noAuth.status).toBe(401);
 
     // still RESERVED after all denied attempts
-    const after: Array<{ status: string }> = await dataSource.query(`SELECT status FROM limit_reservations WHERE id=$1`, [reservationId]);
+    const after: Array<{ status: string }> = await dataSource.query(
+      `SELECT status FROM limit_reservations WHERE id=$1`,
+      [reservationId],
+    );
     expect(after[0]!.status).toBe('RESERVED');
   });
 });

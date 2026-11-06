@@ -81,7 +81,9 @@ describe('M8 production readiness', () => {
     expect(repositoryHeads.length).toBeGreaterThan(1);
     expect(migrationHead).toEqual(repositoryHeads[repositoryHeads.length - 1]);
     expect(previousMigrationHead).toEqual(repositoryHeads[repositoryHeads.length - 2]!);
-    expect(new Set(repositoryHeads.map((entry) => entry.timestamp)).size).toBe(repositoryHeads.length);
+    expect(new Set(repositoryHeads.map((entry) => entry.timestamp)).size).toBe(
+      repositoryHeads.length,
+    );
     expect(
       repositoryHeads.every(
         (entry, index) => index === 0 || repositoryHeads[index - 1]!.timestamp < entry.timestamp,

@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { findWidgetDefinition } from './dashboard-widget-registry';
-import { DASHBOARD_TEMPLATE_SEED, ROLE_DASHBOARD_ASSIGNMENT_SEED } from './dashboard-templates.seed';
+import {
+  DASHBOARD_TEMPLATE_SEED,
+  ROLE_DASHBOARD_ASSIGNMENT_SEED,
+} from './dashboard-templates.seed';
 import { DashboardTemplate } from './dashboard-template.entity';
 import { RoleDashboardAssignment } from './role-dashboard-assignment.entity';
 
@@ -33,7 +36,9 @@ export class DashboardSeedService implements OnApplicationBootstrap {
     const templates = await this.seedTemplates();
     const assignments = await this.seedAssignments();
     if (templates + assignments > 0) {
-      this.logger.log(`Dashboard platform: inserted ${templates} template(s), ${assignments} assignment(s)`);
+      this.logger.log(
+        `Dashboard platform: inserted ${templates} template(s), ${assignments} assignment(s)`,
+      );
     }
     return { templates, assignments };
   }
@@ -48,7 +53,9 @@ export class DashboardSeedService implements OnApplicationBootstrap {
           );
         }
       }
-      const exists = await this.templateRepo.findOne({ where: { templateKey: item.templateKey } as never });
+      const exists = await this.templateRepo.findOne({
+        where: { templateKey: item.templateKey } as never,
+      });
       if (!exists) {
         await this.templateRepo.save(
           this.templateRepo.create({
@@ -70,7 +77,9 @@ export class DashboardSeedService implements OnApplicationBootstrap {
   private async seedAssignments(): Promise<number> {
     let inserted = 0;
     for (const item of ROLE_DASHBOARD_ASSIGNMENT_SEED) {
-      const exists = await this.assignmentRepo.findOne({ where: { roleKey: item.roleKey } as never });
+      const exists = await this.assignmentRepo.findOne({
+        where: { roleKey: item.roleKey } as never,
+      });
       if (!exists) {
         await this.assignmentRepo.save(
           this.assignmentRepo.create({

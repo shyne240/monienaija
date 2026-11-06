@@ -11,8 +11,12 @@ export class WidenAuthorizationActorColumns1785753600089 implements MigrationInt
   name = 'WidenAuthorizationActorColumns1785753600089';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE authorization_roles ALTER COLUMN created_by TYPE VARCHAR(160)`);
-    await queryRunner.query(`ALTER TABLE authorization_roles ALTER COLUMN updated_by TYPE VARCHAR(160)`);
+    await queryRunner.query(
+      `ALTER TABLE authorization_roles ALTER COLUMN created_by TYPE VARCHAR(160)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE authorization_roles ALTER COLUMN updated_by TYPE VARCHAR(160)`,
+    );
     await queryRunner.query(
       `ALTER TABLE authorization_role_functions ALTER COLUMN assigned_by TYPE VARCHAR(160)`,
     );
@@ -34,8 +38,12 @@ export class WidenAuthorizationActorColumns1785753600089 implements MigrationInt
         END IF;
       END $$;
     `);
-    await queryRunner.query(`ALTER TABLE authorization_roles ALTER COLUMN created_by TYPE VARCHAR(100)`);
-    await queryRunner.query(`ALTER TABLE authorization_roles ALTER COLUMN updated_by TYPE VARCHAR(100)`);
+    await queryRunner.query(
+      `ALTER TABLE authorization_roles ALTER COLUMN created_by TYPE VARCHAR(100)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE authorization_roles ALTER COLUMN updated_by TYPE VARCHAR(100)`,
+    );
     await queryRunner.query(
       `ALTER TABLE authorization_role_functions ALTER COLUMN assigned_by TYPE VARCHAR(100)`,
     );

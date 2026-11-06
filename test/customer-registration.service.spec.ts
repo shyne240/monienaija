@@ -60,7 +60,9 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
         if (entityTarget === CustomerRegistrationPhoneChallenge) {
           return {
             create: (data: Partial<CustomerRegistrationPhoneChallenge>) => ({ ...data }),
-            save: (entity: CustomerRegistrationPhoneChallenge | CustomerRegistrationPhoneChallenge[]) => {
+            save: (
+              entity: CustomerRegistrationPhoneChallenge | CustomerRegistrationPhoneChallenge[],
+            ) => {
               if (Array.isArray(entity)) {
                 entity.forEach((e) => challenges.set(e.id || e.normalizedPhone, e));
                 return Promise.resolve(entity);
@@ -72,7 +74,8 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
             },
             findOne: ({ where }: { where: Partial<CustomerRegistrationPhoneChallenge> }) => {
               for (const c of challenges.values()) {
-                if (where.normalizedPhone && c.normalizedPhone === where.normalizedPhone) return Promise.resolve(c);
+                if (where.normalizedPhone && c.normalizedPhone === where.normalizedPhone)
+                  return Promise.resolve(c);
               }
               return Promise.resolve(null);
             },
@@ -87,9 +90,11 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
                 orderBy: () => builder,
                 setLock: () => builder,
                 getMany: () => {
-                  return Promise.resolve(Array.from(challenges.values()).filter(
-                    (c) => c.normalizedPhone === phoneFilter,
-                  ));
+                  return Promise.resolve(
+                    Array.from(challenges.values()).filter(
+                      (c) => c.normalizedPhone === phoneFilter,
+                    ),
+                  );
                 },
                 getOne: () => {
                   const matches = Array.from(challenges.values()).filter(
@@ -113,7 +118,11 @@ describe('CustomerRegistrationService (Unit Tests)', () => {
             },
             findOne: ({ where }: { where: Partial<CustomerContactMethod> }) => {
               for (const c of contacts.values()) {
-                if (where.normalizedValue && c.normalizedValue === where.normalizedValue && c.deletedAt === null) {
+                if (
+                  where.normalizedValue &&
+                  c.normalizedValue === where.normalizedValue &&
+                  c.deletedAt === null
+                ) {
                   return Promise.resolve(c);
                 }
               }

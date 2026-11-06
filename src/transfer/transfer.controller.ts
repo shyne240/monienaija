@@ -1,4 +1,15 @@
-import { Body, Controller, ForbiddenException, Get, Headers, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+} from '@nestjs/common';
 
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { TransferService } from './transfer.service';
@@ -12,7 +23,10 @@ interface AuthenticatedRequest {
 
 @Controller('transfers')
 export class TransferController {
-  constructor(private readonly transferService: TransferService, private readonly auth: AuthorizationService) {}
+  constructor(
+    private readonly transferService: TransferService,
+    private readonly auth: AuthorizationService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -24,9 +38,11 @@ export class TransferController {
     void dto;
     void idempotencyKey;
     void req;
-    return Promise.reject(new ForbiddenException(
-      'Generic transfer commands are disabled; use the authenticated customer transfer flow',
-    ));
+    return Promise.reject(
+      new ForbiddenException(
+        'Generic transfer commands are disabled; use the authenticated customer transfer flow',
+      ),
+    );
   }
 
   @Get(':transferId')

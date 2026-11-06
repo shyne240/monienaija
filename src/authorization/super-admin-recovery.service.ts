@@ -98,7 +98,9 @@ export class SuperAdminRecoveryService {
       s.audience !== this.config.recoveryAudience ||
       s.signingKeyReference !== kid
     )
-      throw new UnauthorizedException('Recovery statement identity, purpose, or environment mismatch');
+      throw new UnauthorizedException(
+        'Recovery statement identity, purpose, or environment mismatch',
+      );
 
     const expectedRef = financeRoleAssignmentReference(
       s.targetPrincipalId,
@@ -118,12 +120,18 @@ export class SuperAdminRecoveryService {
         existing = await cr.findOne({ where: { nonce: s.nonce } });
       if (existing)
         throw new ConflictException(
-          existing.statementHash === statementHash ? 'Recovery replayed' : 'Recovery nonce conflict',
+          existing.statementHash === statementHash
+            ? 'Recovery replayed'
+            : 'Recovery nonce conflict',
         );
 
       const ar = m.getRepository(A2FinanceRoleAssignment),
         row = await ar.findOne({ where: { roleKey: 'SUPER_ADMIN', status: 'ACTIVE' } });
-      if (!row || row.assignmentReference !== expectedRef || row.principalId !== s.targetPrincipalId)
+      if (
+        !row ||
+        row.assignmentReference !== expectedRef ||
+        row.principalId !== s.targetPrincipalId
+      )
         throw new ConflictException('No matching active SUPER_ADMIN assignment to revoke');
 
       row.status = 'REVOKED';

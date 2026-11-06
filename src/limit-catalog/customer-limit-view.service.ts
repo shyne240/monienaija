@@ -24,7 +24,15 @@ import { getWindowForDimension } from './limit-window.util';
  */
 
 export interface CustomerLimitWindowView {
-  dimension: 'DAILY_AMOUNT' | 'WEEKLY_AMOUNT' | 'MONTHLY_AMOUNT' | 'YEARLY_AMOUNT' | 'DAILY_COUNT' | 'WEEKLY_COUNT' | 'MONTHLY_COUNT' | 'YEARLY_COUNT';
+  dimension:
+    | 'DAILY_AMOUNT'
+    | 'WEEKLY_AMOUNT'
+    | 'MONTHLY_AMOUNT'
+    | 'YEARLY_AMOUNT'
+    | 'DAILY_COUNT'
+    | 'WEEKLY_COUNT'
+    | 'MONTHLY_COUNT'
+    | 'YEARLY_COUNT';
   period: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   kind: 'AMOUNT' | 'COUNT';
   limitMinor: string | null;
@@ -86,7 +94,11 @@ export class CustomerLimitViewService {
     private readonly profileResolver: LimitProfileResolverService,
   ) {}
 
-  async getMyLimits(customerId: string, currency = 'NGN', now: Date = new Date()): Promise<CustomerLimitsView> {
+  async getMyLimits(
+    customerId: string,
+    currency = 'NGN',
+    now: Date = new Date(),
+  ): Promise<CustomerLimitsView> {
     const upperCurrency = currency.trim().toUpperCase();
     const resolved = await this.profileResolver.resolve(this.dataSource.manager, {
       principalType: 'CUSTOMER',
@@ -99,7 +111,9 @@ export class CustomerLimitViewService {
         customerId,
         currency: upperCurrency,
         asOf: now.toISOString(),
-        products: CUSTOMER_PRODUCTS.map((p) => this.unconfigured(p.product, p.direction, upperCurrency)),
+        products: CUSTOMER_PRODUCTS.map((p) =>
+          this.unconfigured(p.product, p.direction, upperCurrency),
+        ),
       };
     }
 
@@ -131,14 +145,26 @@ export class CustomerLimitViewService {
         continue;
       }
       products.push(
-        await this.buildProductView(entry.product, entry.direction, upperCurrency, matching, profileCode, customerId, now),
+        await this.buildProductView(
+          entry.product,
+          entry.direction,
+          upperCurrency,
+          matching,
+          profileCode,
+          customerId,
+          now,
+        ),
       );
     }
 
     return { customerId, currency: upperCurrency, asOf: now.toISOString(), products };
   }
 
-  private unconfigured(product: string, direction: 'INCOMING' | 'OUTGOING', currency: string): CustomerLimitProductView {
+  private unconfigured(
+    product: string,
+    direction: 'INCOMING' | 'OUTGOING',
+    currency: string,
+  ): CustomerLimitProductView {
     return {
       product,
       direction,
@@ -172,34 +198,56 @@ export class CustomerLimitViewService {
           const v = BigInt(rule.limit_value_minor);
           // Most restrictive MIN is the HIGHEST floor (matches enforcement: any
           // matching MIN rule can reject, so the binding one is the largest).
-          perTransactionMinMinor = perTransactionMinMinor === null || v > perTransactionMinMinor ? v : perTransactionMinMinor;
+          perTransactionMinMinor =
+            perTransactionMinMinor === null || v > perTransactionMinMinor
+              ? v
+              : perTransactionMinMinor;
         }
       } else if (dim === 'MAX_AMOUNT_PER_TX') {
         if (rule.limit_value_minor !== null) {
           const v = BigInt(rule.limit_value_minor);
           // Most restrictive MAX is the LOWEST ceiling.
-          perTransactionMaxMinor = perTransactionMaxMinor === null || v < perTransactionMaxMinor ? v : perTransactionMaxMinor;
+          perTransactionMaxMinor =
+            perTransactionMaxMinor === null || v < perTransactionMaxMinor
+              ? v
+              : perTransactionMaxMinor;
         }
       } else if (dim === 'WALLET_BALANCE_MAX') {
         // Mirrors LimitEnforcementService: WALLET_BALANCE_MAX is never enforced on
         // OUTGOING (balance only decreases), so it is not meaningful to display there.
         if (direction === 'INCOMING' && rule.limit_value_minor !== null) {
           const v = BigInt(rule.limit_value_minor);
-          walletBalanceMaxMinor = walletBalanceMaxMinor === null || v < walletBalanceMaxMinor ? v : walletBalanceMaxMinor;
+          walletBalanceMaxMinor =
+            walletBalanceMaxMinor === null || v < walletBalanceMaxMinor ? v : walletBalanceMaxMinor;
         }
       } else {
         const window = getWindowForDimension(now, dim);
         if (!window) continue;
         const isCount = dim.endsWith('_COUNT');
-        const usage = await this.lookupUsage(customerId, profileCode, product, rule.direction, rule.channel, dim, currency, window.windowKey);
-        const limitMinor = !isCount && rule.limit_value_minor !== null ? BigInt(rule.limit_value_minor) : null;
-        const limitCount = isCount && rule.limit_value_count !== null ? rule.limit_value_count : null;
+        const usage = await this.lookupUsage(
+          customerId,
+          profileCode,
+          product,
+          rule.direction,
+          rule.channel,
+          dim,
+          currency,
+          window.windowKey,
+        );
+        const limitMinor =
+          !isCount && rule.limit_value_minor !== null ? BigInt(rule.limit_value_minor) : null;
+        const limitCount =
+          isCount && rule.limit_value_count !== null ? rule.limit_value_count : null;
         const usedMinor = usage ? BigInt(usage.used_amount_minor) : 0n;
         const reservedMinor = usage ? BigInt(usage.reserved_amount_minor) : 0n;
         const usedCount = usage ? usage.used_count : 0;
         const reservedCount = usage ? usage.reserved_count : 0;
-        const remainingMinor = limitMinor !== null ? this.clampNonNegative(limitMinor - usedMinor - reservedMinor) : null;
-        const remainingCount = limitCount !== null ? Math.max(0, limitCount - usedCount - reservedCount) : null;
+        const remainingMinor =
+          limitMinor !== null
+            ? this.clampNonNegative(limitMinor - usedMinor - reservedMinor)
+            : null;
+        const remainingCount =
+          limitCount !== null ? Math.max(0, limitCount - usedCount - reservedCount) : null;
 
         // If a rule of the same dimension already exists for this product (edge
         // case: overlapping configuration), keep the most restrictive remaining
@@ -223,8 +271,16 @@ export class CustomerLimitViewService {
           windows.push(candidate);
         } else {
           const current = windows[existingIndex]!;
-          const currentRemaining = isCount ? current.remainingCount : current.remainingMinor ? BigInt(current.remainingMinor) : null;
-          const candidateRemaining = isCount ? candidate.remainingCount : candidate.remainingMinor ? BigInt(candidate.remainingMinor) : null;
+          const currentRemaining = isCount
+            ? current.remainingCount
+            : current.remainingMinor
+              ? BigInt(current.remainingMinor)
+              : null;
+          const candidateRemaining = isCount
+            ? candidate.remainingCount
+            : candidate.remainingMinor
+              ? BigInt(candidate.remainingMinor)
+              : null;
           const candidateIsMoreRestrictive =
             currentRemaining === null ||
             (candidateRemaining !== null && candidateRemaining < currentRemaining);
@@ -240,9 +296,12 @@ export class CustomerLimitViewService {
       direction,
       currency,
       configured: true,
-      perTransactionMinMinor: perTransactionMinMinor !== null ? perTransactionMinMinor.toString() : null,
-      perTransactionMaxMinor: perTransactionMaxMinor !== null ? perTransactionMaxMinor.toString() : null,
-      walletBalanceMaxMinor: walletBalanceMaxMinor !== null ? walletBalanceMaxMinor.toString() : null,
+      perTransactionMinMinor:
+        perTransactionMinMinor !== null ? perTransactionMinMinor.toString() : null,
+      perTransactionMaxMinor:
+        perTransactionMaxMinor !== null ? perTransactionMaxMinor.toString() : null,
+      walletBalanceMaxMinor:
+        walletBalanceMaxMinor !== null ? walletBalanceMaxMinor.toString() : null,
       windows,
     };
   }
@@ -260,10 +319,19 @@ export class CustomerLimitViewService {
     dimension: string,
     currency: string,
     windowKey: string,
-  ): Promise<{ used_amount_minor: string; used_count: number; reserved_amount_minor: string; reserved_count: number } | null> {
-    const rows: Array<{ used_amount_minor: string; used_count: number; reserved_amount_minor: string; reserved_count: number }> =
-      await this.dataSource.query(
-        `SELECT used_amount_minor::text AS used_amount_minor, used_count,
+  ): Promise<{
+    used_amount_minor: string;
+    used_count: number;
+    reserved_amount_minor: string;
+    reserved_count: number;
+  } | null> {
+    const rows: Array<{
+      used_amount_minor: string;
+      used_count: number;
+      reserved_amount_minor: string;
+      reserved_count: number;
+    }> = await this.dataSource.query(
+      `SELECT used_amount_minor::text AS used_amount_minor, used_count,
                 reserved_amount_minor::text AS reserved_amount_minor, reserved_count
            FROM limit_usages
           WHERE principal_type = 'CUSTOMER'
@@ -275,8 +343,17 @@ export class CustomerLimitViewService {
             AND dimension = $6
             AND currency = $7
             AND window_key = $8`,
-        [customerId, profileCode, product, ruleDirection, ruleChannel, dimension, currency, windowKey],
-      );
+      [
+        customerId,
+        profileCode,
+        product,
+        ruleDirection,
+        ruleChannel,
+        dimension,
+        currency,
+        windowKey,
+      ],
+    );
     return rows[0] ?? null;
   }
 }

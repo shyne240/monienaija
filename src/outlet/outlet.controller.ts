@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { OutletService } from './outlet.service';
 import { TerminalService } from './terminal.service';
@@ -25,7 +35,11 @@ export class OutletController {
   // ----- Outlets -----
   @Post('agents/:agentId/outlets')
   @HttpCode(201)
-  async createOutlet(@Param('agentId') agentId: string, @Body() dto: CreateOutletDto, @Req() req: AuthenticatedRequest) {
+  async createOutlet(
+    @Param('agentId') agentId: string,
+    @Body() dto: CreateOutletDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     const principal = req.authorizationPrincipal;
     return this.outletService.create({
@@ -196,7 +210,10 @@ export class OutletController {
   }
 
   @Get('outlets/:outletId/terminals')
-  async listTerminalsByOutlet(@Param('outletId') outletId: string, @Req() req: AuthenticatedRequest) {
+  async listTerminalsByOutlet(
+    @Param('outletId') outletId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     await this.requireView(req);
     return this.terminalService.listByOutlet(outletId);
   }
@@ -237,14 +254,20 @@ export class OutletController {
 
   @Post('terminals/:terminalId/reactivate')
   @HttpCode(200)
-  async reactivateTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
+  async reactivateTerminal(
+    @Param('terminalId') terminalId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     return this.terminalService.reactivate(terminalId, actor);
   }
 
   @Post('terminals/:terminalId/terminate')
   @HttpCode(200)
-  async terminateTerminal(@Param('terminalId') terminalId: string, @Req() req: AuthenticatedRequest) {
+  async terminateTerminal(
+    @Param('terminalId') terminalId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const actor = await this.requireManage(req);
     return this.terminalService.terminate(terminalId, actor);
   }

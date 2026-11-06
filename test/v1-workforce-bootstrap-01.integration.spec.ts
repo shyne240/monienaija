@@ -202,9 +202,12 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
         },
       ]),
       A2_WORKFORCE_RATE_LIMITS_JSON: JSON.stringify(
-        ['workforce-authentication', 'workforce-bootstrap', 'finance-role-administration', 'privileged-approval'].map(
-          (category) => ({ category, capacity: 100, refillRatePerSecond: 50, enabled: true }),
-        ),
+        [
+          'workforce-authentication',
+          'workforce-bootstrap',
+          'finance-role-administration',
+          'privileged-approval',
+        ].map((category) => ({ category, capacity: 100, refillRatePerSecond: 50, enabled: true })),
       ),
       A2_TRUSTED_PROXY_ADDRESSES_JSON: JSON.stringify(['127.0.0.1', '::1/128']),
     });
@@ -259,9 +262,9 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
       ...baseInput(),
       scopes: ['privileged:execute', 'finance:prepare'],
     });
-    await expect(
-      roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT)),
-    ).rejects.toThrow(/role or scopes not allowed/i);
+    await expect(roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT))).rejects.toThrow(
+      /role or scopes not allowed/i,
+    );
   });
 
   it('4. expired and not-yet-valid statements fail closed (tool refuses to emit; server rejects)', async () => {
@@ -321,9 +324,9 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     await roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT));
     // Exact replay → replayed/conflict (one-time guard fires first once admin exists:
     // either rejection is a fail-closed outcome; assert it never succeeds again).
-    await expect(
-      roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT)),
-    ).rejects.toThrow(/already completed|replayed|conflict/i);
+    await expect(roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT))).rejects.toThrow(
+      /already completed|replayed|conflict/i,
+    );
     // Second, different statement (new nonce) → completion guard still refuses.
     const second = generateBootstrapStatement(baseInput());
     await expect(
@@ -335,9 +338,7 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     await expect(
       roles.consumeBootstrap('not-a-jws', principalFor(ISSUER, SUBJECT)),
     ).rejects.toThrow(/Malformed|compact|JWS/i);
-    await expect(
-      roles.consumeBootstrap('a.b.c', principalFor(ISSUER, SUBJECT)),
-    ).rejects.toThrow();
+    await expect(roles.consumeBootstrap('a.b.c', principalFor(ISSUER, SUBJECT))).rejects.toThrow();
     await expect(roles.consumeBootstrap('', principalFor(ISSUER, SUBJECT))).rejects.toThrow();
   });
 
@@ -352,7 +353,10 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
 
   it('8. MFA assurance remains mandatory for bootstrap', async () => {
     const { statement } = generateBootstrapStatement(baseInput());
-    const passwordOnly: AuthorizationPrincipal = { ...principalFor(ISSUER, SUBJECT), assuranceLevel: 'PASSWORD' };
+    const passwordOnly: AuthorizationPrincipal = {
+      ...principalFor(ISSUER, SUBJECT),
+      assuranceLevel: 'PASSWORD',
+    };
     await expect(roles.consumeBootstrap(statement, passwordOnly)).rejects.toThrow(
       /Bootstrap requires MFA/i,
     );
@@ -360,9 +364,9 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
 
   it('9. statement is environment-bound: a statement minted for another environment is rejected', async () => {
     const { statement } = generateBootstrapStatement({ ...baseInput(), environment: 'staging' });
-    await expect(
-      roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT)),
-    ).rejects.toThrow(/Unknown bootstrap signing key|mismatch/i);
+    await expect(roles.consumeBootstrap(statement, principalFor(ISSUER, SUBJECT))).rejects.toThrow(
+      /Unknown bootstrap signing key|mismatch/i,
+    );
   });
 
   it('10. bootstrap window closed: server-side config disable fails closed', async () => {
@@ -411,19 +415,30 @@ describe('V1-WORKFORCE-BOOTSTRAP-01 — generator vs existing verifier (real PG)
     const cfg = workforceConfiguration(env);
     expect(cfg.enabled).toBe(true);
     expect(cfg.roles.map((r) => r.roleKey).sort()).toEqual(
-      ['SUPER_ADMIN', 'FINANCE_AUDITOR', 'FINANCE_CONTROLLER', 'FINANCE_PREPARER', 'ADMINISTRATOR'].sort(),
+      [
+        'SUPER_ADMIN',
+        'FINANCE_AUDITOR',
+        'FINANCE_CONTROLLER',
+        'FINANCE_PREPARER',
+        'ADMINISTRATOR',
+      ].sort(),
     );
     expect(cfg.bootstrapFinanceAdminScopes).toEqual(['privileged:execute']);
     // Invariant: bootstrap scopes exactly match SUPER_ADMIN scopes.
     const admin = cfg.roles.find((r) => r.roleKey === 'SUPER_ADMIN')!;
     expect([...admin.scopes].sort()).toEqual([...cfg.bootstrapFinanceAdminScopes].sort());
-    expect(cfg.makerCheckerRules.map((r) => r.action).sort()).toEqual(
-      ['FINANCE_CONTROL_POLICY_ACTIVATE', 'FINANCE_ROLE_ASSIGN', 'FINANCE_ROLE_REVOKE'],
-    );
+    expect(cfg.makerCheckerRules.map((r) => r.action).sort()).toEqual([
+      'FINANCE_CONTROL_POLICY_ACTIVATE',
+      'FINANCE_ROLE_ASSIGN',
+      'FINANCE_ROLE_REVOKE',
+    ]);
     expect(
-      ['workforce-authentication', 'workforce-bootstrap', 'finance-role-administration', 'privileged-approval'].every(
-        (c) => cfg.rateLimits.some((r) => r.category === c && r.enabled),
-      ),
+      [
+        'workforce-authentication',
+        'workforce-bootstrap',
+        'finance-role-administration',
+        'privileged-approval',
+      ].every((c) => cfg.rateLimits.some((r) => r.category === c && r.enabled)),
     ).toBe(true);
     // And the shipped default (disabled bootstrap) must parse as well.
     delete env['A2_BOOTSTRAP_ENABLED'];

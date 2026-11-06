@@ -312,15 +312,29 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .get('/api/v1/internal/customers?page=1&limit=2')
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(firstPage.body).toMatchObject({ total: 4, page: 1, limit: 2, totalPages: 2, hasNextPage: true });
+    expect(firstPage.body).toMatchObject({
+      total: 4,
+      page: 1,
+      limit: 2,
+      totalPages: 2,
+      hasNextPage: true,
+    });
     expect(firstPage.body.data).toHaveLength(2);
-    expect(firstPage.body.data.map((item: any) => item.id)).not.toContain(customers.hiddenDeleted.id);
+    expect(firstPage.body.data.map((item: any) => item.id)).not.toContain(
+      customers.hiddenDeleted.id,
+    );
 
     const secondPage = await request(app.getHttpServer())
       .get('/api/v1/internal/customers?page=2&limit=2')
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(secondPage.body).toMatchObject({ total: 4, page: 2, limit: 2, totalPages: 2, hasPreviousPage: true });
+    expect(secondPage.body).toMatchObject({
+      total: 4,
+      page: 2,
+      limit: 2,
+      totalPages: 2,
+      hasPreviousPage: true,
+    });
     expect(secondPage.body.data).toHaveLength(2);
     expect(
       new Set([
@@ -345,7 +359,9 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       legalName: 'Batch One Alpha Legal',
       primaryContact: { type: 'PHONE', maskedValue: '+234*****1234', isVerified: true },
     });
-    expect(new Date(alpha.body.data[0].createdAt as string).toISOString()).toBe('2026-10-20T12:00:00.000Z');
+    expect(new Date(alpha.body.data[0].createdAt as string).toISOString()).toBe(
+      '2026-10-20T12:00:00.000Z',
+    );
     expect(JSON.stringify(alpha.body)).not.toContain(syntheticPhone('1234'));
 
     const contactSearch = await request(app.getHttpServer())
@@ -355,11 +371,16 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
     expect(contactSearch.body.data.map((item: any) => item.id)).toContain(customers.alpha.id);
 
     const filtered = await request(app.getHttpServer())
-      .get('/api/v1/internal/customers?status=ACTIVE&type=BUSINESS&kycLevel=LEVEL_2&kycStatus=PENDING')
+      .get(
+        '/api/v1/internal/customers?status=ACTIVE&type=BUSINESS&kycLevel=LEVEL_2&kycStatus=PENDING',
+      )
       .set(auth(superAdmin.token))
       .expect(200);
     expect(filtered.body.total).toBe(1);
-    expect(filtered.body.data[0]).toMatchObject({ id: customers.beta.id, displayName: 'Batch One Beta' });
+    expect(filtered.body.data[0]).toMatchObject({
+      id: customers.beta.id,
+      displayName: 'Batch One Beta',
+    });
 
     const closed = await request(app.getHttpServer())
       .get('/api/v1/internal/customers?status=CLOSED')
@@ -372,13 +393,19 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .get(`/api/v1/internal/customers?search=${encodeURIComponent('Batch One Gamma Legal')}`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(gamma.body.data[0]).toMatchObject({ id: customers.gamma.id, displayName: 'Batch One Gamma Legal', primaryContact: null });
+    expect(gamma.body.data[0]).toMatchObject({
+      id: customers.gamma.id,
+      displayName: 'Batch One Gamma Legal',
+      primaryContact: null,
+    });
 
     const limitedContact = await request(app.getHttpServer())
       .get('/api/v1/internal/customers?page=1&limit=20')
       .set(auth(administrator.token))
       .expect(200);
-    expect(limitedContact.body.data.find((item: any) => item.id === customers.alpha.id).primaryContact).toBeNull();
+    expect(
+      limitedContact.body.data.find((item: any) => item.id === customers.alpha.id).primaryContact,
+    ).toBeNull();
     const hiddenPhoneSearch = await request(app.getHttpServer())
       .get('/api/v1/internal/customers?search=8110001234')
       .set(auth(administrator.token))
@@ -410,7 +437,12 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .set(auth(superAdmin.token))
       .expect(200);
     expect(addresses.body).toHaveLength(1);
-    expect(addresses.body[0]).toMatchObject({ lineOne: '1 Synthetic Avenue', city: 'Abuja', state: 'FCT', isPrimary: true });
+    expect(addresses.body[0]).toMatchObject({
+      lineOne: '1 Synthetic Avenue',
+      city: 'Abuja',
+      state: 'FCT',
+      isPrimary: true,
+    });
 
     const contacts = await request(app.getHttpServer())
       .get(`/api/v1/customers/${customers.alpha.id}/contact-methods`)
@@ -423,14 +455,21 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
       .get(`/api/v1/internal/customers/${customers.alpha.id}/phone-verification`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(phoneVerification.body.phones[0]).toMatchObject({ isPrimary: true, maskedValue: '+234*****1234' });
+    expect(phoneVerification.body.phones[0]).toMatchObject({
+      isPrimary: true,
+      maskedValue: '+234*****1234',
+    });
     expect(JSON.stringify(phoneVerification.body)).not.toContain(syntheticPhone('1234'));
 
     const safeCustomer = await request(app.getHttpServer())
       .get(`/api/v1/internal/customers/${customers.alpha.id}`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(safeCustomer.body).toMatchObject({ displayName: 'Batch One Alpha', legalName: 'Batch One Alpha Legal', reference: 'mn-••••1234' });
+    expect(safeCustomer.body).toMatchObject({
+      displayName: 'Batch One Alpha',
+      legalName: 'Batch One Alpha Legal',
+      reference: 'mn-••••1234',
+    });
     expect(JSON.stringify(safeCustomer.body)).not.toContain('mn-0000001234');
 
     await request(app.getHttpServer())
@@ -481,19 +520,32 @@ describe('Batch 1 customer servicing (real PostgreSQL + authenticated HTTP)', ()
          (id, source_wallet_id, destination_wallet_id, amount_minor, currency, status,
           idempotency_key, request_hash, created_at, updated_at)
        VALUES ($1,$2,$3,'12345','NGN','FAILED',$4,$5,now(),now())`,
-      [randomUUID(), wallet.id, counterpartyWallet.id, `batch01-transfer-${randomUUID()}`, 'a'.repeat(64)],
+      [
+        randomUUID(),
+        wallet.id,
+        counterpartyWallet.id,
+        `batch01-transfer-${randomUUID()}`,
+        'a'.repeat(64),
+      ],
     );
 
     const walletList = await request(app.getHttpServer())
       .get(`/api/v1/internal/customers/${customers.alpha.id}/wallets`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(walletList.body).toMatchObject({ total: 1, data: [{ id: wallet.id, customerId: customers.alpha.id, currency: 'NGN' }] });
+    expect(walletList.body).toMatchObject({
+      total: 1,
+      data: [{ id: wallet.id, customerId: customers.alpha.id, currency: 'NGN' }],
+    });
     const balance = await request(app.getHttpServer())
       .get(`/api/v1/internal/customers/${customers.alpha.id}/wallets/${wallet.id}/balance`)
       .set(auth(superAdmin.token))
       .expect(200);
-    expect(balance.body).toMatchObject({ walletId: wallet.id, customerId: customers.alpha.id, currency: 'NGN' });
+    expect(balance.body).toMatchObject({
+      walletId: wallet.id,
+      customerId: customers.alpha.id,
+      currency: 'NGN',
+    });
     expect(balance.body.balanceMinor).toBeDefined();
 
     const transactions = await request(app.getHttpServer())

@@ -27,9 +27,14 @@ describe.each(consumers)('Mission 22A — fast-uri loaded by $name', ({ name, ma
   });
 
   it('rejects authority injection through a non-numeric port', () => {
-    expect(() => uri.serialize({
-      scheme: 'http', host: 'trusted.example', port: '@127.0.0.1:8124', path: '/app',
-    })).toThrow('URI port is malformed.');
+    expect(() =>
+      uri.serialize({
+        scheme: 'http',
+        host: 'trusted.example',
+        port: '@127.0.0.1:8124',
+        path: '/app',
+      }),
+    ).toThrow('URI port is malformed.');
   });
 
   it('reports an unclosed bracket host instead of accepting an ambiguous authority', () => {
@@ -44,8 +49,9 @@ describe.each(consumers)('Mission 22A — fast-uri loaded by $name', ({ name, ma
 
   it('rejects a multiple-at authority and keeps valid URI processing intact', () => {
     expect(uri.parse('http://a@b@evil.example/').error).toBe('URI host is malformed.');
-    expect(uri.serialize({ scheme: 'https', host: 'example.test', port: 8443, path: '/health' }))
-      .toBe('https://example.test:8443/health');
+    expect(
+      uri.serialize({ scheme: 'https', host: 'example.test', port: 8443, path: '/health' }),
+    ).toBe('https://example.test:8443/health');
     const ipv6 = uri.parse('http://[::1]:8080/health');
     expect(ipv6.host).toBe('::1');
     expect(ipv6.error).toBeUndefined();
@@ -63,40 +69,57 @@ describe('Mission 22A — Fastify real TCP schema validation and response serial
       type: 'object',
       required: ['name', 'amount'],
       additionalProperties: false,
-      properties: { name: { type: 'string', minLength: 1 }, amount: { type: 'integer', minimum: 1 } },
+      properties: {
+        name: { type: 'string', minLength: 1 },
+        amount: { type: 'integer', minimum: 1 },
+      },
     });
-    app.post<{ Body: { name: string; amount: number } }>('/schema-check', {
-      schema: {
-        body: { $ref: 'https://schemas.example.test/mission-22a.json#' },
-        response: {
-          200: {
-            type: 'object', required: ['status', 'payload'], additionalProperties: false,
-            properties: {
-              status: { type: 'string' },
-              payload: { $ref: 'https://schemas.example.test/mission-22a.json#' },
+    app.post<{ Body: { name: string; amount: number } }>(
+      '/schema-check',
+      {
+        schema: {
+          body: { $ref: 'https://schemas.example.test/mission-22a.json#' },
+          response: {
+            200: {
+              type: 'object',
+              required: ['status', 'payload'],
+              additionalProperties: false,
+              properties: {
+                status: { type: 'string' },
+                payload: { $ref: 'https://schemas.example.test/mission-22a.json#' },
+              },
             },
           },
         },
       },
-    }, (request) => Promise.resolve({ status: 'ok', payload: request.body, notInResponseSchema: 'omitted' }));
+      (request) =>
+        Promise.resolve({ status: 'ok', payload: request.body, notInResponseSchema: 'omitted' }),
+    );
     await app.listen({ host: '0.0.0.0', port: 0 });
     baseUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
   });
 
-  afterAll(async () => { if (app) await app.close(); });
+  afterAll(async () => {
+    if (app) await app.close();
+  });
 
   it('starts and validates/serializes a valid request through external $ref schemas', async () => {
     const response = await fetch(`${baseUrl}/schema-check`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Synthetic Agent', amount: 25 }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: 'ok', payload: { name: 'Synthetic Agent', amount: 25 } });
+    expect(await response.json()).toEqual({
+      status: 'ok',
+      payload: { name: 'Synthetic Agent', amount: 25 },
+    });
   });
 
   it('rejects invalid schema input with 400', async () => {
     const response = await fetch(`${baseUrl}/schema-check`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Synthetic Agent', amount: -1 }),
     });
     expect(response.status).toBe(400);
@@ -104,7 +127,9 @@ describe('Mission 22A — Fastify real TCP schema validation and response serial
 
   it('rejects malformed JSON with 400', async () => {
     const response = await fetch(`${baseUrl}/schema-check`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{broken',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{broken',
     });
     expect(response.status).toBe(400);
   });

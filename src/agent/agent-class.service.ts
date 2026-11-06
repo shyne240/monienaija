@@ -55,10 +55,7 @@ export class AgentClassService {
       command.reference ?? `AGENT-CLASS-${randomUUID().slice(0, 8).toUpperCase()}`,
       'reference',
     );
-    const code = this.normalizeReference(
-      command.code ?? reference,
-      'code',
-    );
+    const code = this.normalizeReference(command.code ?? reference, 'code');
     const description = this.normalizeOptionalText(command.description ?? null, 'description', 500);
     const isActive = command.isActive ?? true;
 
@@ -92,7 +89,15 @@ export class AgentClassService {
           version: 1,
         }),
       );
-      await this.audit(manager, 'AGENT_CLASS', entity.id, 'CREATED', actor, undefined, this.values(entity));
+      await this.audit(
+        manager,
+        'AGENT_CLASS',
+        entity.id,
+        'CREATED',
+        actor,
+        undefined,
+        this.values(entity),
+      );
       return entity;
     });
   }
@@ -100,14 +105,16 @@ export class AgentClassService {
   async getById(id: string): Promise<AgentClass> {
     this.assertUuid(id, 'id');
     const entity = await this.classRepository.findOne({ where: { id } });
-    if (!entity || entity.deletedAt !== null) throw new NotFoundException(`AgentClass ${id} not found`);
+    if (!entity || entity.deletedAt !== null)
+      throw new NotFoundException(`AgentClass ${id} not found`);
     return entity;
   }
 
   async getByReference(reference: string): Promise<AgentClass> {
     const ref = this.normalizeReference(reference, 'reference');
     const entity = await this.classRepository.findOne({ where: { reference: ref } });
-    if (!entity || entity.deletedAt !== null) throw new NotFoundException(`AgentClass ${ref} not found`);
+    if (!entity || entity.deletedAt !== null)
+      throw new NotFoundException(`AgentClass ${ref} not found`);
     return entity;
   }
 
@@ -121,21 +128,35 @@ export class AgentClassService {
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(AgentClass);
       const entity = await repo.findOne({ where: { id } });
-      if (!entity || entity.deletedAt !== null) throw new NotFoundException(`AgentClass ${id} not found`);
+      if (!entity || entity.deletedAt !== null)
+        throw new NotFoundException(`AgentClass ${id} not found`);
       if (command.expectedVersion !== undefined && command.expectedVersion !== entity.version) {
         throw new ConflictException('AgentClass version is stale');
       }
       const previous = this.values(entity);
       if (command.name !== undefined) entity.name = this.normalizeText(command.name, 'name', 160);
-      if (command.description !== undefined) entity.description = this.normalizeOptionalText(command.description, 'description', 500);
+      if (command.description !== undefined)
+        entity.description = this.normalizeOptionalText(command.description, 'description', 500);
       if (command.isActive !== undefined) entity.isActive = command.isActive;
       if (command.requirements !== undefined) entity.requirements = command.requirements;
-      if (command.requiredInformation !== undefined) entity.requiredInformation = command.requiredInformation;
-      if (command.requiredDocumentCategories !== undefined) entity.requiredDocumentCategories = command.requiredDocumentCategories;
-      if (command.applicableServices !== undefined) entity.applicableServices = command.applicableServices;
-      if (command.applicableLimits !== undefined) entity.applicableLimits = command.applicableLimits;
+      if (command.requiredInformation !== undefined)
+        entity.requiredInformation = command.requiredInformation;
+      if (command.requiredDocumentCategories !== undefined)
+        entity.requiredDocumentCategories = command.requiredDocumentCategories;
+      if (command.applicableServices !== undefined)
+        entity.applicableServices = command.applicableServices;
+      if (command.applicableLimits !== undefined)
+        entity.applicableLimits = command.applicableLimits;
       const saved = await repo.save(entity);
-      await this.audit(manager, 'AGENT_CLASS', saved.id, 'UPDATED', actor, previous, this.values(saved));
+      await this.audit(
+        manager,
+        'AGENT_CLASS',
+        saved.id,
+        'UPDATED',
+        actor,
+        previous,
+        this.values(saved),
+      );
       return saved;
     });
   }
@@ -181,17 +202,23 @@ export class AgentClassService {
 
   private normalizeActor(actor: string): string {
     const v = actor?.trim();
-    if (!v || v.length < 1 || v.length > 160) throw new BadRequestException('actor must be 1-160 chars');
+    if (!v || v.length < 1 || v.length > 160)
+      throw new BadRequestException('actor must be 1-160 chars');
     return v;
   }
 
   private normalizeText(value: string, field: string, max: number): string {
     const v = value?.trim();
-    if (!v || v.length < 1 || v.length > max) throw new BadRequestException(`${field} must be 1-${max} chars`);
+    if (!v || v.length < 1 || v.length > max)
+      throw new BadRequestException(`${field} must be 1-${max} chars`);
     return v;
   }
 
-  private normalizeOptionalText(value: string | null | undefined, field: string, max: number): string | null {
+  private normalizeOptionalText(
+    value: string | null | undefined,
+    field: string,
+    max: number,
+  ): string | null {
     if (value === null || value === undefined) return null;
     const v = value.trim();
     if (v.length === 0) return null;
@@ -201,8 +228,10 @@ export class AgentClassService {
 
   private normalizeReference(value: string, field: string): string {
     const v = value.trim();
-    if (!v || v.length < 1 || v.length > 80) throw new BadRequestException(`${field} must be 1-80 chars`);
-    if (!/^[A-Za-z0-9._-]+$/.test(v)) throw new BadRequestException(`${field} must be alphanumeric with .-_`);
+    if (!v || v.length < 1 || v.length > 80)
+      throw new BadRequestException(`${field} must be 1-80 chars`);
+    if (!/^[A-Za-z0-9._-]+$/.test(v))
+      throw new BadRequestException(`${field} must be alphanumeric with .-_`);
     return v;
   }
 

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any */
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -7,7 +7,11 @@ import { pbkdf2Sync, randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 
 import { AppModule } from '../src/app.module';
-import { createIntegrationDataSource, destroyIntegrationDataSource, truncateAllTables } from './support/pg-harness';
+import {
+  createIntegrationDataSource,
+  destroyIntegrationDataSource,
+  truncateAllTables,
+} from './support/pg-harness';
 
 /**
  * V1-MOBILE-IDEMPOTENCY-RECOVERY-AUDIT-01 — PART 3 reproduction.
@@ -49,28 +53,38 @@ describe('V1-MOBILE-IDEMPOTENCY-RECOVERY-AUDIT-01 — ambiguous-timeout retry: s
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   }, 180000);
 
   afterAll(async () => {
     if (app) await app.close().catch(() => undefined);
-    if (dataSource) await destroyIntegrationDataSource(dataSource).catch(() => dataSource.destroy().catch(() => undefined));
+    if (dataSource)
+      await destroyIntegrationDataSource(dataSource).catch(() =>
+        dataSource.destroy().catch(() => undefined),
+      );
   }, 60000);
 
   beforeEach(async () => {
     await truncateAllTables(dataSource);
   });
 
-  async function createCustomerWithPin(label: string): Promise<{ customerId: string; token: string }> {
+  async function createCustomerWithPin(
+    label: string,
+  ): Promise<{ customerId: string; token: string }> {
     const reference = `cust-mir-${label}-${randomUUID()}`;
     const rows: Array<{ id: string }> = await dataSource.query(
       `INSERT INTO customers (reference, customer_type, status, kyc_level, kyc_status) VALUES ($1,'INDIVIDUAL','ACTIVE','LEVEL_1','APPROVED') RETURNING id`,
       [reference],
     );
     const customerId = rows[0]!.id;
-    await dataSource.query(`INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`, [customerId, `Customer ${label}`]);
+    await dataSource.query(
+      `INSERT INTO customer_profiles (customer_id, display_name, is_active) VALUES ($1,$2,true)`,
+      [customerId, `Customer ${label}`],
+    );
     const canonical10 = `8${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     await dataSource.query(
       `INSERT INTO customer_contact_methods (customer_id, type, value, normalized_value, is_primary) VALUES ($1,'PHONE',$2,$3,true)`,
@@ -123,8 +137,16 @@ describe('V1-MOBILE-IDEMPOTENCY-RECOVERY-AUDIT-01 — ambiguous-timeout retry: s
 
     const customer = await createCustomerWithPin('a-retry');
     const recipient = await createCustomerWithPin('a-recipient');
-    const sourceWallet = await ws.createWallet({ customerId: customer.customerId, currency: 'NGN', idempotencyKey: `mir-a-src-${customer.customerId}` });
-    const destWallet = await ws.createWallet({ customerId: recipient.customerId, currency: 'NGN', idempotencyKey: `mir-a-dst-${recipient.customerId}` });
+    const sourceWallet = await ws.createWallet({
+      customerId: customer.customerId,
+      currency: 'NGN',
+      idempotencyKey: `mir-a-src-${customer.customerId}`,
+    });
+    const destWallet = await ws.createWallet({
+      customerId: recipient.customerId,
+      currency: 'NGN',
+      idempotencyKey: `mir-a-dst-${recipient.customerId}`,
+    });
     await fundWallet(sourceWallet.ledgerAccountId, '1000000');
 
     const k1 = `mir-k1-${randomUUID()}`;
@@ -178,8 +200,16 @@ describe('V1-MOBILE-IDEMPOTENCY-RECOVERY-AUDIT-01 — ambiguous-timeout retry: s
 
     const customer = await createCustomerWithPin('b-retry');
     const recipient = await createCustomerWithPin('b-recipient');
-    const sourceWallet = await ws.createWallet({ customerId: customer.customerId, currency: 'NGN', idempotencyKey: `mir-b-src-${customer.customerId}` });
-    const destWallet = await ws.createWallet({ customerId: recipient.customerId, currency: 'NGN', idempotencyKey: `mir-b-dst-${recipient.customerId}` });
+    const sourceWallet = await ws.createWallet({
+      customerId: customer.customerId,
+      currency: 'NGN',
+      idempotencyKey: `mir-b-src-${customer.customerId}`,
+    });
+    const destWallet = await ws.createWallet({
+      customerId: recipient.customerId,
+      currency: 'NGN',
+      idempotencyKey: `mir-b-dst-${recipient.customerId}`,
+    });
     await fundWallet(sourceWallet.ledgerAccountId, '1000000');
 
     const k1 = `mir-k1-${randomUUID()}`;
@@ -228,6 +258,8 @@ describe('V1-MOBILE-IDEMPOTENCY-RECOVERY-AUDIT-01 — ambiguous-timeout retry: s
       [sourceWallet.id, destWallet.id],
     );
     expect(transferRows).toHaveLength(2);
-    expect(transferRows.map((r) => r.id).sort()).toEqual([firstTransferId, retryWithK2.body.id].sort());
+    expect(transferRows.map((r) => r.id).sort()).toEqual(
+      [firstTransferId, retryWithK2.body.id].sort(),
+    );
   });
 });

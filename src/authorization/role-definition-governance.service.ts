@@ -98,7 +98,9 @@ export class RoleDefinitionGovernanceService {
 
   // ------------------------------------------------------------------ submit
 
-  async submit(command: SubmitRoleDefinitionProposalCommand): Promise<RoleDefinitionProposalResult> {
+  async submit(
+    command: SubmitRoleDefinitionProposalCommand,
+  ): Promise<RoleDefinitionProposalResult> {
     const principal = command.principal;
     if (!principal.roles.includes(ROLE_DEFINITION_INITIATOR_ROLE)) {
       throw new ForbiddenException(
@@ -106,7 +108,9 @@ export class RoleDefinitionGovernanceService {
       );
     }
     if (principal.assuranceLevel !== 'MFA') {
-      throw new ForbiddenException('MFA assurance is required to initiate a role definition proposal');
+      throw new ForbiddenException(
+        'MFA assurance is required to initiate a role definition proposal',
+      );
     }
     if (command.proposalType !== 'CREATE' && command.proposalType !== 'MODIFY') {
       throw new BadRequestException('proposalType must be CREATE or MODIFY');
@@ -166,15 +170,20 @@ export class RoleDefinitionGovernanceService {
         isActive: existing.isActive,
         definitionVersion: existing.definitionVersion,
         functionGrants: activeGrants
-          .map((g) => ({ functionCode: g.functionCode, accessType: g.accessType as RoleDefinitionFunctionGrant['accessType'] }))
+          .map((g) => ({
+            functionCode: g.functionCode,
+            accessType: g.accessType as RoleDefinitionFunctionGrant['accessType'],
+          }))
           .sort((a, b) => a.functionCode.localeCompare(b.functionCode)),
       };
     }
 
     const now = command.now ?? new Date();
     const proposalId = randomUUID();
-    const actionType = command.proposalType === 'CREATE' ? 'ROLE_DEFINITION_CREATE' : 'ROLE_DEFINITION_MODIFY';
-    const approvalScope = command.proposalType === 'CREATE' ? 'workforce.role.create' : 'workforce.role.modify';
+    const actionType =
+      command.proposalType === 'CREATE' ? 'ROLE_DEFINITION_CREATE' : 'ROLE_DEFINITION_MODIFY';
+    const approvalScope =
+      command.proposalType === 'CREATE' ? 'workforce.role.create' : 'workforce.role.modify';
     const deactivate = command.deactivate === true;
     const actionFingerprint = sha256(
       canonical({
@@ -247,16 +256,22 @@ export class RoleDefinitionGovernanceService {
     try {
       const saved = await this.dataSource.transaction(async (manager) => {
         const result = await manager.getRepository(RoleDefinitionProposal).save(proposal);
-        await this.auditRecord(manager, result, 'ROLE_DEFINITION_PROPOSAL_SUBMITTED', principal.principalId, {
-          displayName,
-          description,
-          readOnly,
-          functionGrants: grants,
-          deactivate,
-          expectedDefinitionVersion,
-          priorSnapshot,
-          approvalId: proposal.approvalId,
-        });
+        await this.auditRecord(
+          manager,
+          result,
+          'ROLE_DEFINITION_PROPOSAL_SUBMITTED',
+          principal.principalId,
+          {
+            displayName,
+            description,
+            readOnly,
+            functionGrants: grants,
+            deactivate,
+            expectedDefinitionVersion,
+            priorSnapshot,
+            approvalId: proposal.approvalId,
+          },
+        );
         return result;
       });
       return { success: true, proposal: saved };
@@ -264,7 +279,9 @@ export class RoleDefinitionGovernanceService {
       // Best-effort cleanup: do not leave an orphan approval nothing will ever consume, and more
       // importantly do not leave the target role key permanently blocked by the in-flight partial
       // unique index below a proposal row that was never actually created.
-      await this.approvals.cancel({ approvalId: decision.approval.id, principal, now }).catch(() => undefined);
+      await this.approvals
+        .cancel({ approvalId: decision.approval.id, principal, now })
+        .catch(() => undefined);
       if (this.isUniqueViolation(e)) {
         throw new ConflictException(
           `A role definition proposal for ${roleKey} is already in flight (REQUESTED or APPROVED)`,
@@ -276,11 +293,15 @@ export class RoleDefinitionGovernanceService {
 
   // --------------------------------------------------------------- decide
 
-  async approve(command: DecideRoleDefinitionProposalCommand): Promise<RoleDefinitionProposalResult> {
+  async approve(
+    command: DecideRoleDefinitionProposalCommand,
+  ): Promise<RoleDefinitionProposalResult> {
     return this.decide(command, true);
   }
 
-  async reject(command: DecideRoleDefinitionProposalCommand): Promise<RoleDefinitionProposalResult> {
+  async reject(
+    command: DecideRoleDefinitionProposalCommand,
+  ): Promise<RoleDefinitionProposalResult> {
     return this.decide(command, false);
   }
 
@@ -308,27 +329,52 @@ export class RoleDefinitionGovernanceService {
       if (proposal.status === 'EXPIRED') {
         return { success: false, proposal, reason: 'EXPIRED' };
       }
-      throw new ConflictException(`Role definition proposal is ${proposal.status}, not pending decision`);
+      throw new ConflictException(
+        `Role definition proposal is ${proposal.status}, not pending decision`,
+      );
     }
     if (!proposal.approvalId) {
       throw new ConflictException('Role definition proposal has no associated approval record');
     }
 
     const decision = approve
-      ? await this.approvals.approve({ approvalId: proposal.approvalId, principal, comment: command.comment, now })
-      : await this.approvals.reject({ approvalId: proposal.approvalId, principal, comment: command.comment, now });
+      ? await this.approvals.approve({
+          approvalId: proposal.approvalId,
+          principal,
+          comment: command.comment,
+          now,
+        })
+      : await this.approvals.reject({
+          approvalId: proposal.approvalId,
+          principal,
+          comment: command.comment,
+          now,
+        });
 
     const successReason = approve ? 'APPROVED' : 'REJECTED';
     if (decision.reason !== successReason) {
       if (decision.reason === 'EXPIRED') {
-        const saved = await this.markStatus(proposal, 'EXPIRED', SYSTEM_ACTOR, 'Underlying approval expired', now, command.correlationId);
+        const saved = await this.markStatus(
+          proposal,
+          'EXPIRED',
+          SYSTEM_ACTOR,
+          'Underlying approval expired',
+          now,
+          command.correlationId,
+        );
         return { success: false, proposal: saved, reason: 'EXPIRED' };
       }
       // Covers SELF_APPROVAL_FORBIDDEN, MFA_REQUIRED, APPROVAL_SCOPE_MISSING, and any
       // already-decided/consumed/cancelled status reported by the approval service itself.
       // These are unauthorized/invalid decision attempts and must remain auditable even though
       // nothing about the proposal's own state changes.
-      await this.auditDecisionDenied(proposal, principal, decision.reason, command.correlationId, now);
+      await this.auditDecisionDenied(
+        proposal,
+        principal,
+        decision.reason,
+        command.correlationId,
+        now,
+      );
       throw new ForbiddenException(
         `Role definition proposal ${approve ? 'approval' : 'rejection'} denied: ${decision.reason}`,
       );
@@ -367,7 +413,13 @@ export class RoleDefinitionGovernanceService {
       if (proposal.status === 'REQUESTED' && proposal.expiresAt.getTime() <= now.getTime()) {
         proposal.status = 'EXPIRED';
         const saved = await repo.save(proposal);
-        await this.auditRecord(manager, saved, 'ROLE_DEFINITION_PROPOSAL_EXPIRED', SYSTEM_ACTOR, {});
+        await this.auditRecord(
+          manager,
+          saved,
+          'ROLE_DEFINITION_PROPOSAL_EXPIRED',
+          SYSTEM_ACTOR,
+          {},
+        );
         return { success: false, proposal: saved, reason: 'EXPIRED' };
       }
       if (proposal.status !== 'APPROVED') {
@@ -390,16 +442,27 @@ export class RoleDefinitionGovernanceService {
         proposal.status = 'APPLY_FAILED';
         proposal.applyFailureReason = this.describeError(preflightError).slice(0, 500);
         const saved = await repo.save(proposal);
-        await this.auditRecord(manager, saved, 'ROLE_DEFINITION_PROPOSAL_APPLY_FAILED', principal.principalId, {
-          reason: proposal.applyFailureReason,
-        });
-        return { success: false, proposal: saved, reason: proposal.applyFailureReason ?? undefined };
+        await this.auditRecord(
+          manager,
+          saved,
+          'ROLE_DEFINITION_PROPOSAL_APPLY_FAILED',
+          principal.principalId,
+          {
+            reason: proposal.applyFailureReason,
+          },
+        );
+        return {
+          success: false,
+          proposal: saved,
+          reason: proposal.applyFailureReason ?? undefined,
+        };
       }
 
       const consumeResult = await this.approvals.consumeInTransaction(manager, {
         principal,
         approvalId: proposal.approvalId,
-        actionType: proposal.proposalType === 'CREATE' ? 'ROLE_DEFINITION_CREATE' : 'ROLE_DEFINITION_MODIFY',
+        actionType:
+          proposal.proposalType === 'CREATE' ? 'ROLE_DEFINITION_CREATE' : 'ROLE_DEFINITION_MODIFY',
         resource: { type: 'ROLE_DEFINITION_PROPOSAL', id: proposal.id },
         actionFingerprint: proposal.actionFingerprint,
         now,
@@ -409,12 +472,25 @@ export class RoleDefinitionGovernanceService {
         // reasons independent of our own mutation. Nothing else has been written yet — durably
         // record the failure and let the transaction COMMIT that record (not roll it back).
         proposal.status = 'APPLY_FAILED';
-        proposal.applyFailureReason = `Approval consumption failed: ${consumeResult.reason}`.slice(0, 500);
+        proposal.applyFailureReason = `Approval consumption failed: ${consumeResult.reason}`.slice(
+          0,
+          500,
+        );
         const saved = await repo.save(proposal);
-        await this.auditRecord(manager, saved, 'ROLE_DEFINITION_PROPOSAL_APPLY_FAILED', principal.principalId, {
-          reason: consumeResult.reason,
-        });
-        return { success: false, proposal: saved, reason: proposal.applyFailureReason ?? undefined };
+        await this.auditRecord(
+          manager,
+          saved,
+          'ROLE_DEFINITION_PROPOSAL_APPLY_FAILED',
+          principal.principalId,
+          {
+            reason: consumeResult.reason,
+          },
+        );
+        return {
+          success: false,
+          proposal: saved,
+          reason: proposal.applyFailureReason ?? undefined,
+        };
       }
 
       // From here on the approval has already been irreversibly marked CONSUMED in this same
@@ -429,15 +505,24 @@ export class RoleDefinitionGovernanceService {
       proposal.appliedAt = now;
       proposal.appliedRoleId = roleId;
       const saved = await repo.save(proposal);
-      await this.auditRecord(manager, saved, 'ROLE_DEFINITION_PROPOSAL_APPLIED', principal.principalId, {
-        roleId,
-        proposedFunctionGrants: proposal.proposedFunctionGrants,
-        priorSnapshot: proposal.priorSnapshot,
-      });
+      await this.auditRecord(
+        manager,
+        saved,
+        'ROLE_DEFINITION_PROPOSAL_APPLIED',
+        principal.principalId,
+        {
+          roleId,
+          proposedFunctionGrants: proposal.proposedFunctionGrants,
+          priorSnapshot: proposal.priorSnapshot,
+        },
+      );
       await this.audit.record(manager, {
         entityType: 'AUTHORIZATION_ROLE',
         entityId: roleId,
-        action: proposal.proposalType === 'CREATE' ? 'ROLE_DEFINITION_CREATED' : 'ROLE_DEFINITION_MODIFIED',
+        action:
+          proposal.proposalType === 'CREATE'
+            ? 'ROLE_DEFINITION_CREATED'
+            : 'ROLE_DEFINITION_MODIFIED',
         actor: principal.principalId,
         correlationId: command.correlationId ?? undefined,
         previousValues: (proposal.priorSnapshot as unknown as Record<string, unknown>) ?? undefined,
@@ -463,11 +548,17 @@ export class RoleDefinitionGovernanceService {
     return proposal;
   }
 
-  async listProposals(filter?: { status?: string; roleKey?: string }): Promise<RoleDefinitionProposal[]> {
+  async listProposals(filter?: {
+    status?: string;
+    roleKey?: string;
+  }): Promise<RoleDefinitionProposal[]> {
     const where: Record<string, unknown> = {};
     if (filter?.status) where.status = filter.status;
     if (filter?.roleKey) where.targetRoleKey = filter.roleKey;
-    const rows = await this.proposalRepo.find({ where: where as never, order: { createdAt: 'DESC' } });
+    const rows = await this.proposalRepo.find({
+      where: where as never,
+      order: { createdAt: 'DESC' },
+    });
     const now = new Date();
     for (const row of rows) {
       await this.expireIfStale(row, now);
@@ -482,7 +573,14 @@ export class RoleDefinitionGovernanceService {
       (proposal.status === 'REQUESTED' || proposal.status === 'APPROVED') &&
       proposal.expiresAt.getTime() <= now.getTime()
     ) {
-      await this.markStatus(proposal, 'EXPIRED', SYSTEM_ACTOR, 'Proposal expired', now, proposal.correlationId ?? undefined);
+      await this.markStatus(
+        proposal,
+        'EXPIRED',
+        SYSTEM_ACTOR,
+        'Proposal expired',
+        now,
+        proposal.correlationId ?? undefined,
+      );
       return true;
     }
     return false;
@@ -505,9 +603,16 @@ export class RoleDefinitionGovernanceService {
         proposal.decisionReason = decisionReason;
       }
       const saved = await repo.save(proposal);
-      await this.auditRecord(manager, saved, `ROLE_DEFINITION_PROPOSAL_${status}`, actor, {
-        decisionReason,
-      }, correlationId);
+      await this.auditRecord(
+        manager,
+        saved,
+        `ROLE_DEFINITION_PROPOSAL_${status}`,
+        actor,
+        {
+          decisionReason,
+        },
+        correlationId,
+      );
       return saved;
     });
   }
@@ -558,7 +663,10 @@ export class RoleDefinitionGovernanceService {
     });
   }
 
-  private async preflightValidate(manager: EntityManager, proposal: RoleDefinitionProposal): Promise<void> {
+  private async preflightValidate(
+    manager: EntityManager,
+    proposal: RoleDefinitionProposal,
+  ): Promise<void> {
     const roleRepo = manager.getRepository(AuthorizationRole);
     const functionRepo = manager.getRepository(AuthorizationFunction);
     const existing = await roleRepo.findOne({ where: { roleKey: proposal.targetRoleKey } });
@@ -572,7 +680,9 @@ export class RoleDefinitionGovernanceService {
         throw new NotFoundException(`Role ${proposal.targetRoleKey} no longer exists`);
       }
       if (existing.isSystemSeeded) {
-        throw new ForbiddenException(`Role ${proposal.targetRoleKey} is a seeded V1 role and cannot be modified`);
+        throw new ForbiddenException(
+          `Role ${proposal.targetRoleKey} is a seeded V1 role and cannot be modified`,
+        );
       }
       if (proposal.expectedDefinitionVersion !== existing.definitionVersion) {
         throw new ConflictException(
@@ -581,7 +691,11 @@ export class RoleDefinitionGovernanceService {
       }
     }
 
-    await this.validateFunctionGrants(functionRepo, proposal.proposedFunctionGrants, proposal.proposedReadOnly);
+    await this.validateFunctionGrants(
+      functionRepo,
+      proposal.proposedFunctionGrants,
+      proposal.proposedReadOnly,
+    );
   }
 
   private async validateFunctionGrants(
@@ -667,7 +781,9 @@ export class RoleDefinitionGovernanceService {
       roleId = role.id;
     }
 
-    const desired = new Map(proposal.proposedFunctionGrants.map((g) => [g.functionCode, g.accessType]));
+    const desired = new Map(
+      proposal.proposedFunctionGrants.map((g) => [g.functionCode, g.accessType]),
+    );
     const existingRows = await roleFunctionRepo.find({ where: { roleId } as never });
     const existingByCode = new Map(existingRows.map((r) => [r.functionCode, r]));
 
@@ -728,7 +844,9 @@ export class RoleDefinitionGovernanceService {
       throw new BadRequestException('At least one function grant is required');
     }
     if (input.length > MAX_FUNCTION_GRANTS) {
-      throw new BadRequestException(`A role definition proposal may not include more than ${MAX_FUNCTION_GRANTS} function grants`);
+      throw new BadRequestException(
+        `A role definition proposal may not include more than ${MAX_FUNCTION_GRANTS} function grants`,
+      );
     }
     const seen = new Set<string>();
     const normalized: RoleDefinitionFunctionGrant[] = [];
@@ -740,13 +858,18 @@ export class RoleDefinitionGovernanceService {
         throw new BadRequestException('Each function grant requires a valid functionCode');
       }
       if (!VALID_ACCESS_TYPES.has(accessType)) {
-        throw new BadRequestException(`Invalid accessType for ${functionCode}: must be one of VIEW, EXECUTE, INITIATE, APPROVE`);
+        throw new BadRequestException(
+          `Invalid accessType for ${functionCode}: must be one of VIEW, EXECUTE, INITIATE, APPROVE`,
+        );
       }
       if (seen.has(functionCode)) {
         throw new BadRequestException(`Duplicate function grant: ${functionCode}`);
       }
       seen.add(functionCode);
-      normalized.push({ functionCode, accessType: accessType as RoleDefinitionFunctionGrant['accessType'] });
+      normalized.push({
+        functionCode,
+        accessType: accessType as RoleDefinitionFunctionGrant['accessType'],
+      });
     }
     return normalized.sort((a, b) => a.functionCode.localeCompare(b.functionCode));
   }

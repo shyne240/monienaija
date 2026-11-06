@@ -1,11 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument */
 import { randomUUID } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
@@ -60,7 +56,15 @@ export class CustomerTransactionPinService {
         pin.lockedAt = null;
         pin.lockReason = null;
         const saved = await pinRepo.save(pin);
-        await this.audit(manager, 'CUSTOMER_TRANSACTION_PIN', saved.id, 'PIN_ROTATED', actor, previous, this.pinValues(saved));
+        await this.audit(
+          manager,
+          'CUSTOMER_TRANSACTION_PIN',
+          saved.id,
+          'PIN_ROTATED',
+          actor,
+          previous,
+          this.pinValues(saved),
+        );
         return saved;
       }
       pin = await pinRepo.save(
@@ -78,7 +82,15 @@ export class CustomerTransactionPinService {
           version: 1,
         }),
       );
-      await this.audit(manager, 'CUSTOMER_TRANSACTION_PIN', pin.id, 'PIN_CREATED', actor, undefined, this.pinValues(pin));
+      await this.audit(
+        manager,
+        'CUSTOMER_TRANSACTION_PIN',
+        pin.id,
+        'PIN_CREATED',
+        actor,
+        undefined,
+        this.pinValues(pin),
+      );
       return pin;
     });
   }
@@ -86,7 +98,9 @@ export class CustomerTransactionPinService {
   async verifyTransactionPin(
     customerId: string,
     command: { pin: string; actor: string },
-    verificationService: { verify: (pin: string, alg: string, hash: string) => { verified: boolean } },
+    verificationService: {
+      verify: (pin: string, alg: string, hash: string) => { verified: boolean };
+    },
   ): Promise<{ verified: boolean; locked?: boolean; failureReason?: string }> {
     this.assertUuid(customerId, 'customerId');
     const actor = this.normalizeActor(command.actor);
@@ -104,17 +118,27 @@ export class CustomerTransactionPinService {
     const result = verificationService.verify(pin, stored.hashAlgorithm, stored.pinHash);
     if (result.verified) {
       await this.dataSource.transaction(async (manager) => {
-        const fresh = await manager.getRepository(CustomerTransactionPin).findOne({ where: { id: stored.id } });
+        const fresh = await manager
+          .getRepository(CustomerTransactionPin)
+          .findOne({ where: { id: stored.id } });
         if (!fresh) return;
         if (fresh.failedCount > 0) {
           fresh.failedCount = 0;
           await manager.getRepository(CustomerTransactionPin).save(fresh);
         }
-        await this.audit(manager, 'CUSTOMER_TRANSACTION_PIN', stored.id, 'PIN_VERIFIED', actor, undefined, {
-          customerId,
-          pinVersion: stored.pinVersion,
-          outcome: 'VERIFIED',
-        } as unknown as Record<string, unknown>);
+        await this.audit(
+          manager,
+          'CUSTOMER_TRANSACTION_PIN',
+          stored.id,
+          'PIN_VERIFIED',
+          actor,
+          undefined,
+          {
+            customerId,
+            pinVersion: stored.pinVersion,
+            outcome: 'VERIFIED',
+          } as unknown as Record<string, unknown>,
+        );
       });
       return { verified: true };
     }
@@ -130,7 +154,15 @@ export class CustomerTransactionPinService {
         fresh.lockReason = 'Maximum failed PIN attempts reached';
       }
       const saved = await pinRepo.save(fresh);
-      await this.audit(manager, 'CUSTOMER_TRANSACTION_PIN', saved.id, 'PIN_FAILED', actor, previous, this.pinValues(saved));
+      await this.audit(
+        manager,
+        'CUSTOMER_TRANSACTION_PIN',
+        saved.id,
+        'PIN_FAILED',
+        actor,
+        previous,
+        this.pinValues(saved),
+      );
     });
     const reloaded = await this.pinRepository.findOne({ where: { customerId } });
     if (reloaded?.accountLocked) {

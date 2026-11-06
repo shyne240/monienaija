@@ -45,7 +45,9 @@ describe('AgentCashToCashOperationsController', () => {
   let controller: AgentCashToCashOperationsController;
 
   beforeEach(() => {
-    query = jest.fn<Promise<Array<typeof row | { total: string }>>, [string, unknown[]]>((sql) => Promise.resolve(sql.includes('count(*)') ? [{ total: '1' }] : [row]));
+    query = jest.fn<Promise<Array<typeof row | { total: string }>>, [string, unknown[]]>((sql) =>
+      Promise.resolve(sql.includes('count(*)') ? [{ total: '1' }] : [row]),
+    );
     requireFunction = jest.fn().mockResolvedValue(principal.principalId);
     controller = new AgentCashToCashOperationsController(
       { query } as unknown as DataSource,
@@ -92,17 +94,28 @@ describe('AgentCashToCashOperationsController', () => {
   });
 
   test('rejects malformed filters before querying transfer data', async () => {
-    await expect(controller.listTransfers({ authorizationPrincipal: principal }, '1', '20', 'PENDING'))
-      .rejects.toBeInstanceOf(BadRequestException);
-    await expect(controller.listTransfers({ authorizationPrincipal: principal }, '1', '20', undefined, 'bad-id'))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.listTransfers({ authorizationPrincipal: principal }, '1', '20', 'PENDING'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.listTransfers(
+        { authorizationPrincipal: principal },
+        '1',
+        '20',
+        undefined,
+        'bad-id',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(query).not.toHaveBeenCalled();
   });
 
   test('enforces the authorization decision returned by transaction.view', async () => {
-    requireFunction.mockRejectedValue(new ForbiddenException('Authorization denied: FUNCTION_MISSING'));
-    await expect(controller.listTransfers({ authorizationPrincipal: principal }))
-      .rejects.toThrow('Authorization denied: FUNCTION_MISSING');
+    requireFunction.mockRejectedValue(
+      new ForbiddenException('Authorization denied: FUNCTION_MISSING'),
+    );
+    await expect(controller.listTransfers({ authorizationPrincipal: principal })).rejects.toThrow(
+      'Authorization denied: FUNCTION_MISSING',
+    );
     expect(query).not.toHaveBeenCalled();
   });
 });

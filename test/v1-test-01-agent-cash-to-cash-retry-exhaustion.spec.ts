@@ -29,7 +29,10 @@ describe('AgentCashToCashService — bounded SERIALIZABLE retry exhaustion (V1-T
   function makeRetryableSerializationFailure(): QueryFailedError {
     // Mirrors what `pg` surfaces for a genuine serialization_failure: driverError.code '40001'
     // is exactly what `isRetryableTransactionError` checks for.
-    return new QueryFailedError('SELECT 1', [], { code: '40001', message: 'could not serialize access' } as never);
+    return new QueryFailedError('SELECT 1', [], {
+      code: '40001',
+      message: 'could not serialize access',
+    } as never);
   }
 
   function buildService(transactionMock: jest.Mock) {
@@ -41,7 +44,12 @@ describe('AgentCashToCashService — bounded SERIALIZABLE retry exhaustion (V1-T
         return {
           findOne: jest.fn().mockResolvedValue(
             entity?.name === 'WalletAccount'
-              ? { id: randomUUID(), customerId: agentId, currency: 'NGN', ledgerAccountId: randomUUID() }
+              ? {
+                  id: randomUUID(),
+                  customerId: agentId,
+                  currency: 'NGN',
+                  ledgerAccountId: randomUUID(),
+                }
               : { id: randomUUID(), code: 'UNCLAIMED' },
           ),
         };
