@@ -1,0 +1,111 @@
+name: Temporary CI failure diagnostics
+
+on:
+  push:
+    branches:
+      - arena/92fd33dd-monienaija
+    paths:
+      - .github/workflows/ci-failure-diagnostics.yml
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    name: Summarize historical CI failures safely
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retrieve and redact failed job logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          jobs = [125557142957, 125557143419, 125922626335, 125922626764, 127872823330]
+          ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+          timestamp = re.compile(r'^\d{4}-\d\d-\d\dT\S+\s+')
+          path = re.compile(r'((?:src|test)/[\w./-]+\.ts)(?::(\d+)(?::\d+)?)?')
+          markers = {
+              'hook timeout': r'Exceeded timeout of \d+ ms for a hook',
+              'test timeout': r'Exceeded timeout of \d+ ms for a test',
+              'workforce configuration': r'SUPER_ADMIN role is disabled or undefined|Workforce authentication disabled',
+              'outbound guard': r'M25C_TEST_(?:OUTBOUND_NETWORK|DNS|FETCH)_BLOCKED',
+              'database connection': r'ECONNREFUSED|Connection terminated|too many clients|remaining connection slots',
+              'database deadlock': r'deadlock detected|could not serialize',
+              'memory/termination': r'heap out of memory|SIGKILL|ENOMEM|Killed',
+              'typescript compile error': r'error TS\d+',
+          }
+
+          def clean_title(value):
+              value = re.sub(r'https?://\S+|\S+@\S+', '[redacted]', value)
+              value = re.sub(r'\b(?:[A-Za-z0-9_-]{24,}|\d{4,})\b', '[redacted]', value)
+              value = re.sub(r'(?i)\b(password|secret|token|pin|otp)\s*[:=]\s*\S+', r'\1=[redacted]', value)
+              return re.sub(r'[^\w\s.,:;()/\[\]<>+–—›-]', '?', value).strip()[:220]
+
+          def notice(title, data):
+              message = json.dumps(data, ensure_ascii=True, separators=(',', ':'))[:12000]
+              message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title={title}::{message}', flush=True)
+
+          for job in jobs:
+              proc = subprocess.run(
+                  ['gh', 'api', f'/repos/{repo}/actions/jobs/{job}/logs'],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              )
+              if proc.returncode:
+                  print(f'::error::Could not retrieve job {job} log (exit {proc.returncode}); output withheld.', flush=True)
+                  sys.exit(1)
+              raw = ansi.sub('', proc.stdout.decode('utf-8', errors='replace'))
+              lines = [timestamp.sub('', line) for line in raw.splitlines()]
+              failed_suites = []
+              cases = []
+              locations = []
+              summaries = []
+              diagnostics = []
+              for line in lines:
+                  stripped = line.strip()
+                  match = re.search(r'\bFAIL\s+((?:src|test)/[\w./-]+\.spec\.ts)', stripped)
+                  if match and match.group(1) not in failed_suites:
+                      failed_suites.append(match.group(1))
+                  if stripped.startswith('● ') and stripped != '● Console':
+                      cases.append(clean_title(stripped[2:]))
+                  if re.search(r'\bat\b|error TS\d+', stripped):
+                      match = path.search(stripped)
+                      if match and match.group(2):
+                          item = f'{match.group(1)}:{match.group(2)}'
+                          if item not in locations:
+                              locations.append(item)
+                  if re.search(r'(Test Suites:|Tests:|problems? \(\d+ errors?, \d+ warnings?\))', stripped):
+                      safe = re.search(r'(Test Suites:.*|Tests:.*|\d+ problems? \(\d+ errors?, \d+ warnings?\))', stripped)
+                      if safe:
+                          summaries.append(re.sub(r'[^\w\s,:()]+', '', safe.group(1))[:180])
+                  if re.search(r'error TS\d+', stripped):
+                      m = re.search(r'error (TS\d+)', stripped)
+                      if m:
+                          diagnostics.append(m.group(1))
+              reason_counts = {name: len(re.findall(pattern, raw, flags=re.IGNORECASE)) for name, pattern in markers.items()}
+              safe_numbers = []
+              for line in lines:
+                  m = re.match(r'^\s*(Expected|Received)(?: number of calls)?:\s*(true|false|null|undefined|-?\d{1,3})\s*$', line, re.I)
+                  if m:
+                      safe_numbers.append(f'{m.group(1)}={m.group(2)}')
+              notice(f'CI job {job}', {
+                  'log_bytes': len(proc.stdout),
+                  'failed_suites': failed_suites[:40],
+                  'failed_cases': cases[:40],
+                  'locations': locations[:60],
+                  'summaries': summaries[-12:],
+                  'reason_counts': {k: v for k, v in reason_counts.items() if v},
+                  'typescript_codes': sorted(set(diagnostics)),
+                  'safe_expected_received': safe_numbers[:40],
+              })
+          PY
