@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './notification-workspaces.css';
 import {
   ManagedProviderChannel,
   NotificationPermissions,
@@ -127,6 +128,10 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overview, setOverview] = useState<ProviderConfigurationOverview | null>(null);
   const [proposals, setProposals] = useState<ProviderConfigProposal[]>([]);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+  const currentAccess = useRef({ principalId, canView: permissions.canViewProviderConfig });
+  currentAccess.current = { principalId, canView: permissions.canViewProviderConfig };
 
   // SMS (Robase) draft state — API key is kept strictly in ephemeral React state and wiped on submit
   const [smsProvider, setSmsProvider] = useState<'robase' | 'console'>('robase');
@@ -176,6 +181,14 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
   const [queueBanner, setQueueBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
+  useEffect(() => {
+    // Drafts and write-only credentials must never cross principals or a revoked view scope.
+    setSmsApiKey(''); setEmailApiKey(''); setSmsSenderId(''); setSmsReason('');
+    setEmailFromAddress(''); setEmailFromName(''); setEmailReplyTo(''); setEmailReason('');
+    setSmsTestDest(''); setEmailTestDest(''); setSmsFeedback(null); setEmailFeedback(null);
+    setSmsTestMsg(null); setEmailTestMsg(null); setQueueBanner(null);
+  }, [principalId, permissions.canViewProviderConfig]);
+
   const hydrateFormsFromSnapshot = useCallback((data: ProviderConfigurationOverview) => {
     const sms = data.sms;
     setSmsProvider(sms.provider === 'console' ? 'console' : 'robase');
@@ -212,38 +225,45 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         setLoading(false);
         return;
       }
+      const request = ++requestGeneration.current;
+      const valid = () => request === requestGeneration.current && currentAccess.current.canView && currentAccess.current.principalId === principalId;
       setLoading(true);
       setLoadError(null);
+      setProposalsError(null);
       try {
         const [cfgRes, propRes] = await Promise.all([
           NotificationManagementApi.getProviderConfiguration(),
           NotificationManagementApi.listProviderConfigProposals({ limit: 25 }),
         ]);
+        if (!valid()) return;
         if (cfgRes.status === 'BLOCKED') {
           setLoadError(cfgRes.message);
           setOverview(null);
         } else {
+          if (!cfgRes.data?.sms?.gates || !cfgRes.data?.email?.gates || !cfgRes.data?.encryption || !cfgRes.data?.contracts || !cfgRes.data?.worker) throw new Error('Invalid provider configuration response.');
           setOverview(cfgRes.data);
           if (rehydrateDrafts) {
             hydrateFormsFromSnapshot(cfgRes.data);
           }
         }
-        if (propRes.status === 'LIVE') {
+        if (propRes.status === 'LIVE' && Array.isArray(propRes.data)) {
           setProposals(propRes.data);
         } else {
           setProposals([]);
+          setProposalsError(propRes.status === 'BLOCKED' ? propRes.message : 'Invalid provider proposals response.');
         }
       } catch (err) {
-        setLoadError(describeError(err));
+        if (valid()) setLoadError(describeError(err));
       } finally {
-        setLoading(false);
+        if (valid()) setLoading(false);
       }
     },
-    [permissions.canViewProviderConfig, hydrateFormsFromSnapshot],
+    [permissions.canViewProviderConfig, principalId, hydrateFormsFromSnapshot],
   );
 
   useEffect(() => {
     void loadWorkspace(true);
+    return () => { requestGeneration.current += 1; };
   }, [loadWorkspace]);
 
   const handleSubmitSmsProposal = async (e: React.FormEvent) => {
@@ -505,7 +525,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     );
   }
 
-  if (loading && !overview) {
+  if (loading) {
     return (
       <div data-testid="provider-config-loading" style={{ padding: 20, color: 'var(--mn-text-secondary, #52655f)' }}>
         Loading governed SMS (Robase) and Email (Brevo) provider configuration…
@@ -513,7 +533,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
     );
   }
 
-  if (loadError && !overview) {
+  if (loadError) {
     return (
       <div
         data-testid="provider-config-error"
@@ -526,6 +546,8 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
         }}
       >
         <strong>Provider Configuration Unavailable:</strong> {loadError}
+        {overview && <p>Previously loaded configuration is not current. Draft values remain in this workspace.</p>}
+        <button type="button" onClick={() => void loadWorkspace(false)}>Retry configuration</button>
       </div>
     );
   }
@@ -536,7 +558,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
   const emailVisual = lifecycleBadgeVisual(overview.email.lifecycleState);
 
   return (
-    <div data-testid="provider-config-workspace" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="mn-provider-workspace" data-testid="provider-config-workspace" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Top Governance & Server Encryption Key Health Banner */}
       <div
         data-testid="provider-encryption-banner"
@@ -749,7 +771,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     borderRadius: 6,
                     border: '1px solid #2563eb',
                     background: '#eff6ff',
-                    color: '#1d4ed8',
+                    color: 'var(--mn-text-primary, #132b25)',
                     fontSize: 12,
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -984,7 +1006,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 border: 'none',
                 background:
                   permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? '#2563eb'
+                    ? 'var(--mn-action-primary, #075b45)'
                     : '#94a3b8',
                 color: '#ffffff',
                 fontWeight: 600,
@@ -1194,7 +1216,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                     borderRadius: 6,
                     border: '1px solid #2563eb',
                     background: '#eff6ff',
-                    color: '#1d4ed8',
+                    color: 'var(--mn-text-primary, #132b25)',
                     fontSize: 12,
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -1501,7 +1523,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                 border: 'none',
                 background:
                   permissions.canProposeProviderConfig && permissions.hasMfaAssurance
-                    ? '#2563eb'
+                    ? 'var(--mn-action-primary, #075b45)'
                     : '#94a3b8',
                 color: '#ffffff',
                 fontWeight: 600,
@@ -1561,12 +1583,14 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
           </div>
         )}
 
-        {proposals.length === 0 ? (
+        {proposalsError ? (
+          <div role="alert">Provider proposals unavailable: {proposalsError}</div>
+        ) : proposals.length === 0 ? (
           <div style={{ fontSize: 12, color: '#64748b', padding: 12 }}>
             No provider configuration proposals submitted yet.
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }} role="region" aria-label="Provider configuration proposals" tabIndex={0}>
             <table
               data-testid="provider-proposals-table"
               style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}
@@ -1719,7 +1743,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                               padding: '5px 12px',
                               borderRadius: 4,
                               border: 'none',
-                              background: canActivateThis ? '#2563eb' : '#94a3b8',
+                              background: canActivateThis ? 'var(--mn-action-primary, #075b45)' : '#94a3b8',
                               color: '#ffffff',
                               fontWeight: 700,
                               fontSize: 11,

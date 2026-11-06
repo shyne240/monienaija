@@ -8,6 +8,7 @@ import {
   isCandidateProofType,
 } from '../../../../../src/customer-proof-of-address/customer-proof-of-address.constants';
 import { ApiClient } from '../../services/api-client';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
 
 const CANDIDATE_CATEGORIES = Array.from(
@@ -270,6 +271,10 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const previewDialogRef = useRef<HTMLElement>(null);
+  const lifecycleDialogRef = useRef<HTMLFormElement>(null);
+  useDialogFocus(previewDialogRef, Boolean(preview), () => setPreview(null));
+  useDialogFocus(lifecycleDialogRef, Boolean(pendingLifecycle), () => { if (!lifecycleBusy) setPendingLifecycle(null); });
 
   const currentCustomerId = useRef(customerId);
   const loadedIdentityRef = useRef<string | null>(null);
@@ -311,6 +316,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
     loadedIdentityRef.current = identityKey;
 
     setLoadingMore(false);
+    setLoading(canViewMetadata);
     setCapabilitiesError(null);
     setAddressError(null);
     setDocumentError(null);
@@ -342,6 +348,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
           { signal: controller.signal },
         );
         if (!active) return;
+        if (!nextCapabilities || typeof nextCapabilities.enabled !== 'boolean') throw new Error('Invalid Proof of Address capability response.');
         setCapabilities(nextCapabilities);
         if (!nextCapabilities.enabled) return;
 
@@ -363,17 +370,19 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
         ]);
         if (!active) return;
 
-        if ('value' in documentResult) {
+        if ('value' in documentResult && Array.isArray(documentResult.value?.items) && Number.isFinite(documentResult.value.page) && Number.isFinite(documentResult.value.total)) {
           setDocuments(documentResult.value.items);
           setDocumentPage(documentResult.value.page);
           setDocumentTotal(documentResult.value.total);
           setListLoaded(true);
         } else {
-          setDocumentError(errorMessage(documentResult.error, 'Loading document records'));
+          setDocuments([]);
+          setListLoaded(false);
+          setDocumentError('error' in documentResult ? errorMessage(documentResult.error, 'Loading document records') : 'Document records are unavailable: invalid response.');
         }
 
         if (addressResult) {
-          if ('value' in addressResult) {
+          if ('value' in addressResult && Array.isArray(addressResult.value)) {
             const residential = addressResult.value.filter(
               (address) => address.type === 'RESIDENTIAL' && !address.deletedAt,
             );
@@ -389,11 +398,18 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
               setAddressError('No active residential address is available for this customer.');
             }
           } else {
-            setAddressError(errorMessage(addressResult.error, 'Loading residential addresses'));
+            setAddresses([]);
+            setAddressId('');
+            setAddressError('error' in addressResult ? errorMessage(addressResult.error, 'Loading residential addresses') : 'Residential addresses are unavailable: invalid response.');
           }
         }
       } catch (error) {
         if (!active) return;
+        setCapabilities(null);
+        setDocuments([]);
+        setListLoaded(false);
+        setAddresses([]);
+        setAddressId('');
         setCapabilitiesError(errorMessage(error, 'Checking Proof of Address availability'));
       } finally {
         if (active) setLoading(false);
@@ -1212,6 +1228,8 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
           }}
         >
           <section
+            ref={previewDialogRef}
+            tabIndex={-1}
             className="cm-confirm-dialog cm-poa-preview-dialog"
             role="dialog"
             aria-modal="true"
@@ -1265,6 +1283,8 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
       {pendingLifecycle && (
         <div className="cm-modal-backdrop" role="presentation">
           <form
+            ref={lifecycleDialogRef}
+            tabIndex={-1}
             className="cm-confirm-dialog"
             role="dialog"
             aria-modal="true"

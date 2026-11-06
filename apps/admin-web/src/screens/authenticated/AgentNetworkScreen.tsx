@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrollRegion } from '../../design-system/primitives';
+import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import {
   createAgentApplicationDraft,
@@ -262,8 +263,10 @@ export interface AgentNetworkScreenProps {
   onNavigateToSupportTickets?: (agentId: string) => void;
 }
 
-function formatMinor(minorRaw: string | undefined | null, currency = 'NGN'): string {
-  if (minorRaw === undefined || minorRaw === null) return `${currency} 0.00`;
+function formatMinor(minorRaw: string | undefined | null, currency?: string): string {
+  if (minorRaw === undefined || minorRaw === null) return 'Amount unavailable';
+  if (!currency) return `${formatMinorUnits(minorRaw, '').trim()} (currency unavailable)`;
+  if (currency !== 'NGN') return formatMinorUnits(minorRaw, currency);
   try {
     const minor = BigInt(minorRaw);
     const negative = minor < 0n;
@@ -450,20 +453,30 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   const [agentC2CRows, setAgentC2CRows] = useState<AgentCashToCashRow[]>([]);
   const [handledInitialAgentId, setHandledInitialAgentId] = useState<string | null>(null);
 
+  const selectedAgentId = useRef<string | null>(null);
+  const positionRequest = useRef(0);
+  useEffect(() => () => { positionRequest.current += 1; selectedAgentId.current = null; }, []);
+
   const loadPosition = async (agentId: string) => {
+    if (selectedAgentId.current !== agentId) return;
+    const request = ++positionRequest.current;
+    setPosition(null);
     setDetailError('');
     try {
       const pos = await ApiClient.get<AgentFinancialPosition>(
         `/internal/agents/${encodeURIComponent(agentId)}/financial-position`,
       );
+      if (request !== positionRequest.current || selectedAgentId.current !== agentId) return;
+      if (!pos || pos.agentId !== agentId) throw new Error('Financial position did not match the selected Agent.');
       setPosition(pos);
     } catch (e: any) {
-      setDetailError(e?.message || 'Failed to load financial position');
+      if (request === positionRequest.current && selectedAgentId.current === agentId) setDetailError(e?.message || 'Failed to load financial position');
     }
   };
 
   const openDetail = async (a: Agent) => {
     if (!canView) return;
+    selectedAgentId.current = a.id;
     setSelected(a);
     setPosition(null);
     setDetailError('');
@@ -513,10 +526,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       if (request !== agentListRequest.current) return;
       setAgents(rows);
       setTotal(res.total ?? rows.length);
-      if (selected) {
-        const refreshed = rows.find((item) => item.id === selected.id);
-        if (refreshed) setSelected(refreshed);
-      }
+      setSelected((current) => current ? rows.find((item) => item.id === current.id) ?? current : null);
     } catch (e: any) {
       if (request === agentListRequest.current) setError(e?.message || 'Failed to load agents');
     } finally {
@@ -1993,7 +2003,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                   Target in funding
                 </button>
               )}
-              <button type="button" onClick={() => setSelected(null)} style={smallBtn}>
+              <button type="button" onClick={() => { selectedAgentId.current = null; positionRequest.current += 1; setSelected(null); }} style={smallBtn}>
                 Close
               </button>
             </div>
@@ -2029,13 +2039,13 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
             {detailError && <div style={errBox} role="alert">{detailError}</div>}
             {position ? (
               <div style={card}>
-                <strong>Financial Position ({position.currency || 'NGN'} ledger-derived)</strong>
+                <strong>Financial Position ({position.currency || 'currency unavailable'} ledger-derived)</strong>
                 <div>
                   Wallet: {position.walletExists ? <code>{position.walletId}</code> : 'none'}
                   {position.status ? ` (${position.status})` : ''} — Balance:{' '}
-                  <strong>{formatMinor(position.balanceMinor, position.currency || 'NGN')}</strong>
+                  <strong>{formatMinor(position.balanceMinor, position.currency)}</strong>
                   {position.availableBalanceMinor !== undefined && (
-                    <> · Available: {formatMinor(position.availableBalanceMinor, position.currency || 'NGN')}</>
+                    <> · Available: {formatMinor(position.availableBalanceMinor, position.currency)}</>
                   )}
                 </div>
               </div>

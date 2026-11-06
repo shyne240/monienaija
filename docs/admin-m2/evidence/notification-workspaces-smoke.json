@@ -1,0 +1,146 @@
+[
+  {
+    "width": 320,
+    "workspace": "sms-template",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "email-template",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "provider-config",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "sms-template",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "email-template",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "provider-config",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "sms-template",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "email-template",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "provider-config",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "sms-template",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "email-template",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "provider-config",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "sms-template",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "email-template",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "provider-config",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "sms-template",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "email-template",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "provider-config",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "sms-template",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "email-template",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "provider-config",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "sms-template",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "email-template",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "provider-config",
+    "page": 1440,
+    "view": 1440
+  }
+]

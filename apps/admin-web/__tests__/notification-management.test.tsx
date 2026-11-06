@@ -6,6 +6,8 @@ import { NotificationManagementScreen } from '../src/screens/authenticated/Notif
 import { SystemHealthScreen } from '../src/screens/authenticated/SystemHealthScreen';
 import {
   BASELINE_CODE_EVENT_CATALOGUE,
+  BASELINE_CODE_TEMPLATES,
+  deriveNotificationPermissions,
   sanitizeProviderStatusForDisplay,
 } from '../src/services/notification-domain';
 
@@ -1726,4 +1728,14 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
       expect(matrixText).not.toContain('/internal/notifications/change-requests');
     });
   });
+});
+
+
+test('offline template baselines are references, not confirmation of an active registry version', () => {
+  const { NotificationTemplateWorkspace } = require('../src/components/NotificationTemplateWorkspace');
+  const permissions = deriveNotificationPermissions(null);
+  const view = render(<NotificationTemplateWorkspace channel="SMS" events={BASELINE_CODE_EVENT_CATALOGUE} templates={BASELINE_CODE_TEMPLATES} templatesRegistryBlocked emailChannelBlocked={false} permissions={permissions} currentPrincipalId="synthetic" initialEventType="transfer.completed" />);
+  expect(view.getByText(/Active SMS:/).textContent).toContain('Not confirmed');
+  expect(view.getByText('REFERENCE · activation unconfirmed')).toBeTruthy();
+  expect(view.queryByText('ACTIVE')).toBeNull();
 });

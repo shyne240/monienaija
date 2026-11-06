@@ -317,6 +317,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           includeHistory: true,
           editableEventTypes,
         });
+        setGlobalLoadErrors((prev) => { const { templates: _templates, ...rest } = prev; return rest; });
         if (res.status === 'BLOCKED') {
           setTemplatesBlockedMsg(res.message);
           loadedTemplateChannelsRef.current = {
@@ -1865,6 +1866,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           events={events}
           templates={templates}
           templatesRegistryBlocked={Boolean(templatesBlockedMsg)}
+          templatesReadPending={!loadedTemplateChannels.SMS && !globalLoadErrors.templates}
+          templatesReadError={globalLoadErrors.templates}
           emailChannelBlocked={emailChannelBlocked}
           permissions={permissions}
           currentPrincipalId={currentPrincipalId}
@@ -1883,6 +1886,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           events={events}
           templates={templates}
           templatesRegistryBlocked={Boolean(templatesBlockedMsg)}
+          templatesReadPending={!loadedTemplateChannels.EMAIL && !globalLoadErrors.templates}
+          templatesReadError={globalLoadErrors.templates}
           emailChannelBlocked={emailChannelBlocked}
           permissions={permissions}
           currentPrincipalId={currentPrincipalId}

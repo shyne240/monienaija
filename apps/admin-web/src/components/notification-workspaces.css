@@ -1,0 +1,15 @@
+/* Scoped controls within notification configuration; existing policy and network behavior is untouched. */
+.mn-provider-workspace, .mn-template-workspace { min-width: 0; color: var(--mn-text-primary, #132b25); }
+.mn-provider-workspace *, .mn-template-workspace * { box-sizing: border-box; }
+.mn-provider-workspace button, .mn-template-workspace button { min-height: 36px; max-width: 100%; overflow-wrap: anywhere; }
+.mn-provider-workspace input:not([type="checkbox"]), .mn-provider-workspace select, .mn-provider-workspace textarea,
+.mn-template-workspace input:not([type="checkbox"]), .mn-template-workspace select, .mn-template-workspace textarea { min-width: 0; max-width: 100%; min-height: 38px; }
+.mn-provider-workspace :is(button, input, select, textarea, [tabindex]):focus-visible,
+.mn-template-workspace :is(button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
+.mn-provider-workspace [data-testid="provider-proposals-table"] { min-width: 800px; }
+.mn-template-workspace [data-testid="template-version-history-table"] { min-width: 760px; }
+.mn-provider-workspace label { min-width: 0; }
+.mn-provider-workspace, .mn-template-workspace { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .mn-provider-workspace form div[style*="grid-template-columns"] { grid-template-columns: minmax(0, 1fr) !important; }
+}

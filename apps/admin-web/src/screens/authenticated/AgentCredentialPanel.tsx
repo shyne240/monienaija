@@ -1,5 +1,5 @@
-import './operational-surfaces.css';
-import React, { useEffect, useState } from 'react';
+import '../../components/agent-workspaces.css';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { revokeAgentActiveSessions } from '../../services/ordinary-agent-admin-api';
@@ -33,6 +33,9 @@ export const AgentCredentialPanel: React.FC<{
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const generation = useRef(0);
+  const context = useRef({ agentId, canManage });
+  context.current = { agentId, canManage };
 
   useEffect(() => {
     setCredential(null);
@@ -42,10 +45,10 @@ export const AgentCredentialPanel: React.FC<{
     setBoundaryNote('');
     setError('');
     setMessage('');
-    return () => {
-      setCredential(null);
-    };
-  }, [agentId]);
+    setBusy(false);
+    setRevokeBusy(false);
+    return () => { generation.current += 1; };
+  }, [agentId, canManage]);
 
   if (!canManage) return null;
 
@@ -62,6 +65,8 @@ export const AgentCredentialPanel: React.FC<{
       return;
     }
 
+    const current = ++generation.current;
+    const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManage;
     setBusy(true);
     setError('');
     setMessage('');
@@ -71,6 +76,8 @@ export const AgentCredentialPanel: React.FC<{
     try {
       const endpoint = `/internal/admin/agents/${encodeURIComponent(agentId)}/credentials${reissue ? '/reissue' : ''}`;
       const result = await ApiClient.post<TemporaryCredential>(endpoint);
+      if (!valid()) return;
+      if (!result || result.agentId !== agentId) throw new Error('Credential response did not match the selected Agent.');
       setCredential(result);
       setInitialIssued(true);
       setMessage(
@@ -79,6 +86,7 @@ export const AgentCredentialPanel: React.FC<{
           : 'Initial temporary credential issued.',
       );
     } catch (requestError) {
+      if (!valid()) return;
       const status = statusOf(requestError);
       const rawMessage =
         requestError instanceof Error ? requestError.message : 'Credential request failed.';
@@ -95,7 +103,7 @@ export const AgentCredentialPanel: React.FC<{
         );
       }
     } finally {
-      setBusy(false);
+      if (valid()) setBusy(false);
     }
   };
 
@@ -109,12 +117,15 @@ export const AgentCredentialPanel: React.FC<{
       return;
     }
 
+    const current = ++generation.current;
+    const valid = () => generation.current === current && context.current.agentId === agentId && context.current.canManage;
     setRevokeBusy(true);
     setError('');
     setMessage('');
     setBoundaryNote('');
     try {
       const outcome = await revokeAgentActiveSessions(agentId, revokeReason);
+      if (!valid()) return;
       if (outcome.status === 'BLOCKED') {
         setBoundaryNote(outcome.message);
         return;
@@ -127,13 +138,14 @@ export const AgentCredentialPanel: React.FC<{
           : 'Active Agent sessions invalidated.',
       );
     } catch (requestError) {
+      if (!valid()) return;
       const rawMessage =
         requestError instanceof Error
           ? requestError.message
           : 'Failed to invalidate active Agent sessions.';
       setError(rawMessage);
     } finally {
-      setRevokeBusy(false);
+      if (valid()) setRevokeBusy(false);
     }
   };
 
@@ -141,8 +153,9 @@ export const AgentCredentialPanel: React.FC<{
     if (!credential?.temporaryPassword) return;
     try {
       if (navigator?.clipboard?.writeText) {
+        const copiedAgent = agentId;
         await navigator.clipboard.writeText(credential.temporaryPassword);
-        setCopied(true);
+        if (context.current.agentId === copiedAgent && context.current.canManage) setCopied(true);
       }
     } catch {
       setCopied(false);
@@ -150,18 +163,18 @@ export const AgentCredentialPanel: React.FC<{
   };
 
   return (
-    <section style={styles.panel} aria-label="Agent credential and session controls">
-      <h4 style={styles.title}>Credential &amp; session security</h4>
-      <p style={styles.note}>
+    <section className="mn-agent-workspace mn-agent-workspace--stack" aria-label="Agent credential and session controls">
+      <h4 className="mn-agent-workspace__title">Credential &amp; session security</h4>
+      <p className="mn-agent-workspace__description">
         Temporary credentials are returned once, expire after 72 hours, and must be rotated at first login. Reissue revokes the previous credential and its active sessions. Deliver the one-time value to the Agent out-of-band; it is not stored by this screen.
       </p>
       {agentStatus !== 'ACTIVE' ? (
-        <div style={styles.note}>Credential issuance is available only for an ACTIVE Agent.</div>
+        <div className="mn-agent-workspace__description">Credential issuance is available only for an ACTIVE Agent.</div>
       ) : (
-        <div style={styles.actions}>
+        <div className="mn-agent-workspace__actions">
           <button
             type="button"
-            style={styles.button}
+            className="mn-agent-workspace__button"
             disabled={anyBusy || initialIssued}
             onClick={() => void issue(false)}
           >
@@ -169,7 +182,7 @@ export const AgentCredentialPanel: React.FC<{
           </button>
           <button
             type="button"
-            style={styles.reissueButton}
+            className="mn-agent-workspace__button"
             disabled={anyBusy}
             onClick={() => void issue(true)}
           >
@@ -178,19 +191,21 @@ export const AgentCredentialPanel: React.FC<{
         </div>
       )}
 
-      <div style={styles.sessionRow} aria-label="Standalone session revocation">
+      <div className="mn-agent-workspace__controls" aria-label="Standalone session revocation">
+        <label className="mn-agent-workspace__field">Session revocation reason (optional)
         <input
           aria-label="Session revocation reason"
           placeholder="Revocation reason (optional)"
           value={revokeReason}
           onChange={(event) => setRevokeReason(event.target.value)}
-          style={styles.reasonInput}
+          className="mn-agent-workspace__input"
           disabled={anyBusy}
           maxLength={240}
         />
+        </label>
         <button
           type="button"
-          style={styles.revokeButton}
+          className="mn-agent-workspace__button"
           disabled={anyBusy}
           onClick={() => void invalidateSessions()}
         >
@@ -209,7 +224,7 @@ export const AgentCredentialPanel: React.FC<{
       )}
       {error && <div style={styles.error} role="alert">{error}</div>}
       {message && <div style={styles.success} role="status">{message}</div>}
-      {credential && (
+      {credential && credential.agentId === agentId && (
         <div style={styles.secretCard} aria-label="One-time temporary credential">
           <div>
             <strong>One-time temporary password</strong> (Agent <code>{credential.agentId}</code>)
@@ -228,15 +243,15 @@ export const AgentCredentialPanel: React.FC<{
               : 'Not provided'}
           </div>
           <div>{credential.deliveryNotice}</div>
-          <div style={styles.actions}>
+          <div className="mn-agent-workspace__actions">
             {typeof navigator !== 'undefined' && navigator.clipboard && (
-              <button type="button" style={styles.button} onClick={() => void copySecret()}>
+              <button type="button" className="mn-agent-workspace__button" onClick={() => void copySecret()}>
                 {copied ? 'Copied' : 'Copy one-time value'}
               </button>
             )}
             <button
               type="button"
-              style={styles.button}
+              className="mn-agent-workspace__button"
               onClick={() => {
                 setCredential(null);
                 setCopied(false);

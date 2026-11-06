@@ -2,6 +2,7 @@ import './operational-surfaces.css';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { ScrollRegion } from '../../design-system/primitives';
+import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import {
   fetchCashToCashExpiryStatus,
@@ -52,6 +53,8 @@ const PAGE_SIZE = 20;
 const EMPTY_FILTERS: Filters = { status: '', agentId: '', transferId: '', reference: '' };
 
 function formatMinor(value: string, currency: string): string {
+  if (!currency) return `${formatMinorUnits(value, '').trim()} (currency unavailable)`;
+  if (currency !== 'NGN') return formatMinorUnits(value, currency);
   try {
     const minor = BigInt(value);
     const negative = minor < 0n;
@@ -174,14 +177,23 @@ export const CashToCashOperationsScreen: React.FC = () => {
     if (canView) void loadExpiryStatus();
   }, [canView]);
 
+  const journalRequest = useRef(0);
+  const journalContext = useRef({ selectedId: selected?.id, canViewLedger });
+  journalContext.current = { selectedId: selected?.id, canViewLedger };
   useEffect(() => {
     setInspectedJournal(null);
     setInspectedJournalLabel('');
     setJournalError('');
-  }, [selected?.id]);
+    setJournalLoading(false);
+    return () => { journalRequest.current += 1; };
+  }, [selected?.id, canViewLedger]);
 
   const inspectJournal = async (journalId: string, label: string) => {
-    if (!canViewLedger || !journalId || journalLoading) return;
+    if (!canViewLedger || !journalId || journalLoading || !selected) return;
+    const selectedId = selected.id;
+    const request = ++journalRequest.current;
+    const valid = () => request === journalRequest.current && journalContext.current.selectedId === selectedId && journalContext.current.canViewLedger;
+    setInspectedJournal(null);
     setJournalLoading(true);
     setJournalError('');
     setInspectedJournalLabel(label);
@@ -189,12 +201,15 @@ export const CashToCashOperationsScreen: React.FC = () => {
       const journal = await ApiClient.get<LedgerJournalView>(
         `/ledger/journals/${encodeURIComponent(journalId)}`,
       );
+      if (!valid()) return;
+      if (!journal || journal.id !== journalId || !Array.isArray(journal.lines)) throw new Error('Ledger journal response is invalid or does not match the requested journal.');
       setInspectedJournal(journal);
     } catch (err) {
+      if (!valid()) return;
       setInspectedJournal(null);
       setJournalError(err instanceof Error ? err.message : 'Unable to load ledger journal.');
     } finally {
-      setJournalLoading(false);
+      if (valid()) setJournalLoading(false);
     }
   };
 
@@ -407,9 +422,11 @@ export const CashToCashOperationsScreen: React.FC = () => {
           {error}
         </div>
       )}
-      {loading && !result ? (
+      {loading ? (
         <div style={styles.empty}>Loading transfers…</div>
-      ) : error ? null : result?.data.length ? (
+      ) : error ? null : !result ? (
+        <div style={styles.empty}>Loading transfers…</div>
+      ) : result.data.length ? (
         <div style={styles.tableWrap} role="region" aria-label="Cash-to-cash transfers" tabIndex={0}>
           <table style={styles.table}>
             <thead>
@@ -464,7 +481,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         </div>
       )}
 
-      {!error && result && <footer style={styles.pager}>
+      {!loading && !error && result && <footer style={styles.pager}>
         <span>
           {result?.total ?? 0} transfer{result?.total === 1 ? '' : 's'} · Page {result?.page ?? page}
           {result?.totalPages ? ` of ${result.totalPages}` : ''}
@@ -487,7 +504,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         </button>
       </footer>}
 
-      {selected && (
+      {selected && !loading && (
         <section style={styles.detail} aria-label="Cash-to-Cash receipt details">
           <div style={styles.detailHeader}>
             <h3 style={styles.detailTitle}>Transfer receipt and ledger references</h3>

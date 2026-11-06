@@ -1461,7 +1461,10 @@ export const NotificationManagementApi = {
         'Provider configuration proposals endpoint is not available on this server.',
       run: async () => {
         const res = await ApiClient.get<unknown>(endpoint);
-        return sanitizeProviderStatusForDisplay(extractArray<ProviderConfigProposal>(res));
+        const record = res && typeof res === 'object' && !Array.isArray(res) ? res as Record<string, unknown> : null;
+        const rows = Array.isArray(res) ? res : Array.isArray(record?.data) ? record.data : Array.isArray(record?.items) ? record.items : null;
+        if (!rows) throw new Error('Invalid provider proposals response.');
+        return sanitizeProviderStatusForDisplay(rows as ProviderConfigProposal[]);
       },
     });
   },

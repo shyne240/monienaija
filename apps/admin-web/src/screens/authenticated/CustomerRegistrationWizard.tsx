@@ -1692,6 +1692,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           <li
             key={label}
             className={index === step ? 'is-active' : index < step ? 'is-complete' : ''}
+            aria-current={index === step ? 'step' : undefined}
           >
             <span>{index + 1}</span>
             <small>{label}</small>

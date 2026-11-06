@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './agent-workspaces.css';
+import { formatMinorUnits } from '../utils/financial-display';
 import { ApiClient } from '../services/api-client';
 
 export interface PendingFundingQueueItem {
@@ -97,6 +99,7 @@ export async function fetchGlobalFundingInbox(
 }
 
 function formatMinor(value: string, currency: string): string {
+  if (currency !== 'NGN') return formatMinorUnits(value, currency);
   try {
     const minor = BigInt(value);
     const negative = minor < 0n;
@@ -138,6 +141,9 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   const [unauthorizedSessionMessage, setUnauthorizedSessionMessage] = useState('');
   const [inspectedItem, setInspectedItem] = useState<PendingFundingQueueItem | null>(null);
   const [handoffCopiedId, setHandoffCopiedId] = useState<string | null>(null);
+  const generation = useRef(0);
+  const access = useRef({ canReviewFunding, canAccessGlobalInbox });
+  access.current = { canReviewFunding, canAccessGlobalInbox };
 
   const effectiveLoader: (query: AgentFundingInboxQuery) => Promise<AgentFundingInboxPage> =
     useCallback(
@@ -147,7 +153,8 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         }
         if (loadQueue) {
           const rows = await loadQueue();
-          const safeRows = Array.isArray(rows) ? rows : [];
+          if (!Array.isArray(rows)) throw new Error('Invalid funding inbox response.');
+          const safeRows = rows;
           const filtered = safeRows.filter((row) => {
             if (query.status && row.status !== query.status) return false;
             if (query.direction && row.direction !== query.direction) return false;
@@ -174,6 +181,9 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
       targetDirection: 'ALL' | 'FUND' | 'DEFUND',
     ) => {
       if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
+      const current = ++generation.current;
+      const valid = () => generation.current === current && access.current.canReviewFunding && access.current.canAccessGlobalInbox;
+      setLoaded(false);
       setLoading(true);
       setError('');
       setUnauthorizedSessionMessage('');
@@ -184,12 +194,17 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
           ...(targetStatus !== 'ALL' ? { status: targetStatus } : {}),
           ...(targetDirection !== 'ALL' ? { direction: targetDirection } : {}),
         });
-        const rows = Array.isArray(res?.items) ? res.items : [];
+        if (!valid()) return;
+        if (!res || !Array.isArray(res.items) || typeof res.total !== 'number' || !Number.isFinite(res.total) || res.total < 0) throw new Error('Invalid funding inbox response.');
+        const rows = res.items;
         setItems(rows);
-        setTotal(typeof res?.total === 'number' ? res.total : rows.length);
+        setTotal(res.total);
         setLoaded(true);
         setInspectedItem((cur) => (cur ? rows.find((r) => r.id === cur.id) ?? null : null));
       } catch (err: unknown) {
+        if (!valid()) return;
+        setItems([]);
+        setInspectedItem(null);
         const status = (err as { status?: number } | null)?.status;
         const msg = err instanceof Error ? err.message : 'Failed to load global funding inbox.';
         if (status === 403) {
@@ -212,7 +227,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         }
         setError(msg);
       } finally {
-        setLoading(false);
+        if (valid()) setLoading(false);
       }
     },
     [canAccessGlobalInbox, canReviewFunding, effectiveLoader, forbiddenMessage],
@@ -221,6 +236,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   useEffect(() => {
     if (!canReviewFunding || !canAccessGlobalInbox || forbiddenMessage) return;
     void loadPage(page, limit, statusFilter, directionFilter);
+    return () => { generation.current += 1; };
   }, [canReviewFunding, canAccessGlobalInbox, page, limit, statusFilter, directionFilter, refreshTrigger, loadPage, forbiddenMessage]);
 
   if (!canReviewFunding) return null;
@@ -241,13 +257,13 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
   return (
     <section
       aria-label="Global pending funding discovery queue"
-      style={styles.card}
+      className="mn-agent-workspace"
       data-testid="global-funding-inbox"
     >
-      <div style={styles.header}>
+      <div className="mn-agent-workspace__header">
         <div>
-          <h3 style={styles.title}>Global Funding &amp; Defunding Approvals Inbox</h3>
-          <p style={styles.subtitle}>
+          <h3 className="mn-agent-workspace__title">Global Funding &amp; Defunding Approvals Inbox</h3>
+          <p className="mn-agent-workspace__description">
             Live read-only checker discovery (<code>GET /internal/agents/funding-requests</code>). Own maker
             requests are excluded server-side; <code>agent.view</code> is not required.
           </p>
@@ -255,7 +271,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         {canAccessGlobalInbox && !forbiddenMessage && (
           <button
             type="button"
-            style={styles.button}
+            className="mn-agent-workspace__button"
             disabled={loading}
             onClick={() => void loadPage(page, limit, statusFilter, directionFilter)}
           >
@@ -292,8 +308,8 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
         </div>
       ) : (
         <>
-          <div style={styles.filterRow}>
-            <label style={styles.filterLabel}>
+          <div className="mn-agent-workspace__controls">
+            <label className="mn-agent-workspace__field">
               Request status
               <select
                 aria-label="Funding inbox status filter"
@@ -303,7 +319,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setStatusFilter(e.target.value as 'ALL' | 'PENDING' | 'REJECTED' | 'EXECUTED');
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="PENDING">PENDING (awaiting checker action)</option>
                 <option value="EXECUTED">EXECUTED</option>
@@ -312,7 +328,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               </select>
             </label>
 
-            <label style={styles.filterLabel}>
+            <label className="mn-agent-workspace__field">
               Direction
               <select
                 aria-label="Funding inbox direction filter"
@@ -322,7 +338,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setDirectionFilter(e.target.value as 'ALL' | 'FUND' | 'DEFUND');
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="ALL">All directions</option>
                 <option value="FUND">FUND</option>
@@ -330,7 +346,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               </select>
             </label>
 
-            <label style={styles.filterLabel}>
+            <label className="mn-agent-workspace__field">
               Page size
               <select
                 aria-label="Funding inbox page size"
@@ -340,7 +356,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   setLimit(Number(e.target.value));
                   setPage(1);
                 }}
-                style={styles.select}
+                className="mn-agent-workspace__input"
               >
                 <option value="10">10 per page</option>
                 <option value="20">20 per page</option>
@@ -354,7 +370,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               <span>{error}</span>{' '}
               <button
                 type="button"
-                style={styles.smallButton}
+                className="mn-agent-workspace__button"
                 disabled={loading}
                 onClick={() => void loadPage(page, limit, statusFilter, directionFilter)}
               >
@@ -373,8 +389,10 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               excluded by Decision 7 maker-checker separation.
             </div>
           ) : loaded ? (
-            <div style={styles.tableWrap}>
-              <table style={styles.table}>
+            <div>
+              <p className="mn-agent-workspace__description">Scroll horizontally to see all funding instruction columns.</p>
+              <div className="mn-agent-workspace__scroll" role="region" aria-label="Funding instructions table" tabIndex={0}>
+              <table className="mn-agent-workspace__table">
                 <thead>
                   <tr>
                     <th style={styles.th}>Created / Expires</th>
@@ -430,7 +448,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                           <div style={styles.actionGroup}>
                             <button
                               type="button"
-                              style={styles.smallButton}
+                              className="mn-agent-workspace__button"
                               onClick={() =>
                                 setInspectedItem((cur) => (cur?.id === item.id ? null : item))
                               }
@@ -439,7 +457,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                             </button>
                             <button
                               type="button"
-                              style={styles.primaryButton}
+                              className="mn-agent-workspace__button mn-agent-workspace__button--primary"
                               onClick={() =>
                                 onSelectRequest(item.agentId, item.idempotencyKey, {
                                   agentId: item.agentId,
@@ -458,6 +476,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : null}
 
@@ -469,7 +488,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
               <div style={styles.actionGroup}>
                 <button
                   type="button"
-                  style={styles.smallButton}
+                  className="mn-agent-workspace__button"
                   disabled={loading || page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
@@ -477,7 +496,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 </button>
                 <button
                   type="button"
-                  style={styles.smallButton}
+                  className="mn-agent-workspace__button"
                   disabled={loading || page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
@@ -487,7 +506,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
             </div>
           )}
 
-          {inspectedItem && (
+          {loaded && !loading && !error && inspectedItem && (
             <section
               aria-label="Inspected funding request details"
               data-testid="funding-inbox-detail"
@@ -500,7 +519,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 <div style={styles.actionGroup}>
                   <button
                     type="button"
-                    style={styles.primaryButton}
+                    className="mn-agent-workspace__button mn-agent-workspace__button--primary"
                     onClick={() =>
                       onSelectRequest(inspectedItem.agentId, inspectedItem.idempotencyKey, {
                         agentId: inspectedItem.agentId,
@@ -516,7 +535,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                   </button>
                   <button
                     type="button"
-                    style={styles.smallButton}
+                    className="mn-agent-workspace__button"
                     onClick={() => setInspectedItem(null)}
                   >
                     Close details
@@ -602,7 +621,7 @@ export const PendingFundingApprovalsQueue: React.FC<PendingFundingApprovalsQueue
                 {typeof navigator !== 'undefined' && navigator.clipboard && (
                   <button
                     type="button"
-                    style={styles.smallButton}
+                    className="mn-agent-workspace__button"
                     onClick={() => {
                       void navigator.clipboard
                         .writeText(buildHandoffJson(inspectedItem))

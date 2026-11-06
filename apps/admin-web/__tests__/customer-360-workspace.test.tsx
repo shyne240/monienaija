@@ -228,4 +228,63 @@ describe('Batch 1 Customer 360° workspace', () => {
     expect(onNavigate).toHaveBeenCalledWith('transfers', customer.id);
     expect(view.queryByPlaceholderText(/customer id|uuid/i)).toBeNull();
   });
+
+  test('failed and malformed wallet and activity reads do not appear as empty', async () => {
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/wallets')) return Promise.reject(new Error('wallet unavailable'));
+      if (path.includes('/transactions?')) return Promise.resolve({});
+      return Promise.resolve({});
+    });
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    expect(await view.findByText('Wallet information is unavailable.')).toBeTruthy();
+    expect(view.getByText('Recent transactions are unavailable.')).toBeTruthy();
+    expect(view.queryByText('No financial wallets are recorded for this customer.')).toBeNull();
+    expect(view.queryByText('No recent transactions are available.')).toBeNull();
+    expect(view.queryByText('0 wallets')).toBeNull();
+  });
+
+  test('large monetary strings retain exact precision and non-NGN units remain explicit', async () => {
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/wallets')) return Promise.resolve({ data: [{ id:'wallet-big', currency:'NGN', status:'ACTIVE' }] });
+      if (path.endsWith('/wallets/wallet-big/balance')) return Promise.resolve({ currency:'NGN', balanceMinor:'900719925474099301' });
+      if (path.includes('/transactions?')) return Promise.resolve({ items:[{ id:'x', type:'TRANSFER', status:'DONE', amountMinor:'1200', currency:'USD', direction:'OUTGOING', createdAt:'2026-01-01' }] });
+      return Promise.resolve({});
+    });
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    expect(await view.findByText('₦9,007,199,254,740,993.01')).toBeTruthy();
+    expect(view.getByText('USD 1,200 minor units')).toBeTruthy();
+  });
+
+  test('customer tabs use roving focus and arrow keys', async () => {
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    await view.findByText('Ready');
+    const overview = view.getByRole('tab', { name:'Overview' });
+    overview.focus();
+    fireEvent.keyDown(overview, { key:'ArrowRight' });
+    const personal = view.getByRole('tab', { name:'Personal information & contact' });
+    expect(document.activeElement).toBe(personal);
+    expect(personal.getAttribute('aria-selected')).toBe('true');
+    expect(overview.getAttribute('tabindex')).toBe('-1');
+    await view.findByText('1 Synthetic Road');
+  });
+
+  test('lifecycle dialog traps focus, closes with Escape and restores its trigger', async () => {
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()} />);
+    await view.findByText('Ready');
+    const trigger = view.getByRole('button', { name:'Suspend' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const cancel = view.getByRole('button', { name:'Cancel' });
+    const confirm = view.getByRole('button', { name:'Confirm change' });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(cancel, { key:'Tab', shiftKey:true });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(confirm, { key:'Tab' });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(cancel, { key:'Escape' });
+    expect(view.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(ApiClient.patch).not.toHaveBeenCalled();
+  });
+
 });

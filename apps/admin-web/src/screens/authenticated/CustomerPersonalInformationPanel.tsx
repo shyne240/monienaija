@@ -294,13 +294,13 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     requests
       .then(([profileResult, addressResult, contactResult, identityResult]) => {
         if (!active) return;
-        setProfile(profileResult?.value ?? null);
+        setProfile(profileResult?.value && typeof profileResult.value.displayName === 'string' ? profileResult.value : null);
         setProfileStatus(profileResult?.status);
-        setAddresses(addressResult?.value ?? null);
+        setAddresses(Array.isArray(addressResult?.value) ? addressResult.value : null);
         setAddressStatus(addressResult?.status);
-        setContacts(contactResult?.value ?? null);
+        setContacts(Array.isArray(contactResult?.value) ? contactResult.value : null);
         setContactStatus(contactResult?.status);
-        setIdentityDocuments(identityResult?.value ?? null);
+        setIdentityDocuments(Array.isArray(identityResult?.value) ? identityResult.value : null);
         setIdentityStatus(identityResult?.status);
         setLoading(false);
       })

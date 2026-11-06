@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './agent-workspaces.css';
+import { formatMinorUnits } from '../utils/financial-display';
 import { ApiClient } from '../services/api-client';
 
 export const ADMIN_AGENT_UNIFIED_HISTORY_TYPES = [
@@ -97,7 +99,8 @@ export interface AgentUnifiedHistoryPanelProps {
   ) => Promise<AdminAgentUnifiedHistoryResponse>;
 }
 
-function formatMinor(value: string, currency = 'NGN'): string {
+function formatMinor(value: string, currency: string): string {
+  if (currency !== 'NGN') return formatMinorUnits(value, currency);
   try {
     const minor = BigInt(value);
     const neg = minor < 0n;
@@ -210,6 +213,10 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [forbidden, setForbidden] = useState(false);
+  const requestGeneration = useRef(0);
+  const entitled = canViewAgent ?? canViewTransactions ?? false;
+  const currentContext = useRef({ agentId, entitled });
+  currentContext.current = { agentId, entitled };
 
   useEffect(() => {
     setData(null);
@@ -218,13 +225,15 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
     setLimit(20);
     setError('');
     setForbidden(false);
-  }, [agentId]);
-
-  const entitled = canViewAgent ?? canViewTransactions ?? false;
+    setLoading(false);
+    return () => { requestGeneration.current += 1; };
+  }, [agentId, entitled]);
   if (!entitled || !agentId) return null;
 
   const fetchPage = async (targetPage: number, targetLimit: number, targetType: string) => {
     if (loading || forbidden) return;
+    const generation = ++requestGeneration.current;
+    const isCurrent = () => generation === requestGeneration.current && currentContext.current.agentId === agentId && currentContext.current.entitled;
     setLoading(true);
     setError('');
     try {
@@ -233,9 +242,14 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         limit: targetLimit,
         ...(targetType ? { type: targetType } : {}),
       });
+      if (!isCurrent()) return;
+      if (!response || !Array.isArray(response.items) || !response.pagination || typeof response.pagination.page !== 'number' || typeof response.pagination.total !== 'number' || typeof response.pagination.totalPages !== 'number' || typeof response.pagination.hasNextPage !== 'boolean') {
+        throw new Error('Invalid Agent transaction history response.');
+      }
       setData(response);
-      setPage(response.pagination?.page ?? targetPage);
+      setPage(response.pagination.page);
     } catch (err) {
+      if (!isCurrent()) return;
       if (isForbiddenError(err)) {
         setForbidden(true);
         setData(null);
@@ -249,17 +263,17 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         );
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
   return (
-    <div style={styles.box} aria-label="Unified Agent transaction stream">
-      <div style={styles.header}>
-        <strong style={styles.title}>Unified Agent Service Ledger Stream</strong>
+    <section className="mn-agent-workspace" aria-label="Unified Agent transaction stream">
+      <div className="mn-agent-workspace__header">
+        <h4 className="mn-agent-workspace__title">Unified Agent Service Ledger Stream</h4>
         <button
           type="button"
-          style={styles.button}
+          className="mn-agent-workspace__button"
           disabled={loading || forbidden}
           onClick={() => void fetchPage(1, limit, typeFilter)}
         >
@@ -267,7 +281,8 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         </button>
       </div>
 
-      <div style={styles.controls}>
+      <div className="mn-agent-workspace__controls">
+        <label className="mn-agent-workspace__field">Service
         <select
           aria-label="Unified history service filter"
           value={typeFilter}
@@ -277,7 +292,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
             setTypeFilter(next);
             if (data) void fetchPage(1, limit, next);
           }}
-          style={styles.select}
+          className="mn-agent-workspace__input"
         >
           <option value="">All services</option>
           {ADMIN_AGENT_UNIFIED_HISTORY_TYPES.map((serviceType) => (
@@ -286,7 +301,8 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
             </option>
           ))}
         </select>
-
+        </label>
+        <label className="mn-agent-workspace__field">Page size
         <select
           aria-label="Unified history page size"
           value={String(limit)}
@@ -296,12 +312,13 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
             setLimit(nextLimit);
             if (data) void fetchPage(1, nextLimit, typeFilter);
           }}
-          style={styles.select}
+          className="mn-agent-workspace__input"
         >
           <option value="10">10 per page</option>
           <option value="20">20 per page</option>
           <option value="50">50 per page</option>
         </select>
+        </label>
       </div>
 
       {loading && (
@@ -334,29 +351,31 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         </div>
       )}
 
-      {!forbidden && data && (
+      {!loading && !forbidden && data && (
         data.items.length === 0 ? (
           <div style={styles.empty} data-testid="agent-unified-history-empty">
             No unified Agent history entries found.
           </div>
         ) : (
           <>
-            <table style={styles.table}>
+            <p className="mn-agent-workspace__description">Scroll horizontally to see all history columns.</p>
+            <div className="mn-agent-workspace__scroll" role="region" aria-label="Agent history table" tabIndex={0}>
+            <table className="mn-agent-workspace__table">
               <thead>
                 <tr>
-                  <th style={styles.th}>Time</th>
-                  <th style={styles.th}>Service</th>
-                  <th style={styles.th}>Direction</th>
-                  <th style={styles.th}>Amount</th>
-                  <th style={styles.th}>Counterparty</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Reference</th>
+                  <th>Time</th>
+                  <th>Service</th>
+                  <th>Direction</th>
+                  <th>Amount</th>
+                  <th>Counterparty</th>
+                  <th>Status</th>
+                  <th>Reference</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((item) => (
                   <tr key={item.id}>
-                    <td style={styles.td}>
+                    <td>
                       <div>{new Date(item.createdAt).toLocaleString()}</div>
                       {item.completedAt && (
                         <div style={styles.subText}>
@@ -364,11 +383,11 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
                         </div>
                       )}
                     </td>
-                    <td style={styles.td}>
+                    <td>
                       <code>{item.type}</code>
                     </td>
-                    <td style={styles.td}>{item.direction}</td>
-                    <td style={styles.td}>
+                    <td>{item.direction}</td>
+                    <td>
                       <div>
                         <strong>{formatMinor(item.amountMinor, item.currency)}</strong>
                       </div>
@@ -384,8 +403,8 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
                         </div>
                       )}
                     </td>
-                    <td style={styles.td}>{formatCounterparty(item.counterparty)}</td>
-                    <td style={styles.td}>
+                    <td>{formatCounterparty(item.counterparty)}</td>
+                    <td>
                       <div>{item.status}</div>
                       {(item.failureCode || item.failureMessage) && (
                         <div style={styles.failureSubText}>
@@ -393,7 +412,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
                         </div>
                       )}
                     </td>
-                    <td style={styles.td}>
+                    <td>
                       <div>
                         <code>{item.reference || '—'}</code>
                       </div>
@@ -403,14 +422,15 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
                 ))}
               </tbody>
             </table>
-            <div style={styles.pager} data-testid="agent-unified-history-pager">
+            </div>
+            <div className="mn-agent-workspace__pager" data-testid="agent-unified-history-pager">
               <span>
                 Page {data.pagination.page} of {Math.max(1, data.pagination.totalPages)} (
                 {data.pagination.total} total)
               </span>
               <button
                 type="button"
-                style={styles.button}
+                className="mn-agent-workspace__button"
                 disabled={loading || forbidden || data.pagination.page <= 1}
                 onClick={() => void fetchPage(data.pagination.page - 1, limit, typeFilter)}
               >
@@ -418,7 +438,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
               </button>
               <button
                 type="button"
-                style={styles.button}
+                className="mn-agent-workspace__button"
                 disabled={loading || forbidden || !data.pagination.hasNextPage}
                 onClick={() => void fetchPage(data.pagination.page + 1, limit, typeFilter)}
               >
@@ -428,7 +448,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
           </>
         )
       )}
-    </div>
+    </section>
   );
 };
 

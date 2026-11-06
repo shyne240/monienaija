@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import './notification-workspaces.css';
 import {
   ApprovedTemplateVariable,
   EMAIL_BODY_MAX_LENGTH,
@@ -26,6 +27,8 @@ interface NotificationTemplateWorkspaceProps {
   events: NotificationEventCatalogueItem[];
   templates: NotificationTemplateVersion[];
   templatesRegistryBlocked: boolean;
+  templatesReadPending?: boolean;
+  templatesReadError?: string | null;
   emailChannelBlocked: boolean;
   permissions: NotificationPermissions;
   currentPrincipalId: string;
@@ -42,6 +45,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   events,
   templates,
   templatesRegistryBlocked,
+  templatesReadPending = false,
+  templatesReadError = null,
   emailChannelBlocked,
   permissions,
   currentPrincipalId,
@@ -100,9 +105,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   );
 
   const activeVersion = useMemo(
-    () => matchingVersions.find((item) => item.isActive) ?? matchingVersions[0] ?? null,
+    () => matchingVersions.find((item) => item.isActive && item.sourceOrigin !== 'CODE_BASELINE') ?? null,
     [matchingVersions],
   );
+  const referenceVersion = activeVersion ?? matchingVersions[0] ?? null;
+  const activeVersionConfirmed = !templatesRegistryBlocked && !templatesReadPending && !templatesReadError && Boolean(activeVersion);
 
   // Sync editor content whenever the operator switches event or channel, or when live template
   // history finishes loading before the operator begins editing.
@@ -126,9 +133,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       return;
     }
 
-    if (activeVersion) {
-      setSubject(channel === 'EMAIL' ? activeVersion.subject ?? '' : '');
-      setBody(activeVersion.body);
+    if (referenceVersion) {
+      setSubject(channel === 'EMAIL' ? referenceVersion.subject ?? '' : '');
+      setBody(referenceVersion.body);
       if (switchedEventOrChannel) setChangeSummary('');
     } else if (selectedEvent && selectedEvent.templateEditable) {
       if (channel === 'EMAIL') {
@@ -150,7 +157,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       setBody('');
       if (switchedEventOrChannel) setChangeSummary('');
     }
-  }, [selectedEventType, channel, activeVersion?.id]);
+  }, [selectedEventType, channel, referenceVersion?.id]);
 
   const isSecurityLocked = Boolean(
     selectedEvent &&
@@ -388,7 +395,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const displayedPreview = serverPreview ?? localSafePreview;
 
   return (
-    <div style={styles.wrapper} data-testid={`template-workspace-${channel.toLowerCase()}`}>
+    <div className="mn-template-workspace" style={styles.wrapper} data-testid={`template-workspace-${channel.toLowerCase()}`}>
       {/* Integration Status Banner */}
       {(templatesRegistryBlocked || (channel === 'EMAIL' && emailChannelBlocked)) && (
         <div
@@ -423,7 +430,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       {/* Event Selector Header Card */}
       <div style={styles.card}>
         <div style={styles.selectorRow}>
-          <div style={{ flex: 1, minWidth: 260 }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
             <label htmlFor={`template-event-select-${channel}`} style={styles.label}>
               Notification Event ({channel} Channel · Locale <code>en-NG</code>)
             </label>
@@ -450,9 +457,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               <span style={styles.metaPill}>Recipient: {selectedEvent.recipientTarget}</span>
               <span style={styles.metaPill}>
                 Active {channel}:{' '}
-                {activeVersion
-                  ? `v${activeVersion.version} (${activeVersion.sourceOrigin === 'CODE_BASELINE' ? 'Code Baseline' : 'DB'})`
-                  : 'None configured'}
+                {activeVersionConfirmed && activeVersion
+                  ? `v${activeVersion.version} (DB)`
+                  : templatesReadPending ? 'Loading registry…' : 'Not confirmed'}
               </span>
             </div>
           )}
@@ -1025,7 +1032,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       >
         <div style={styles.labelRow}>
           <h3 style={styles.sectionTitle}>
-            🕓 {channel} Template Version History ({matchingVersions.length})
+            🕓 {channel} Template Version {activeVersionConfirmed ? 'History' : 'References'} ({matchingVersions.length})
           </h3>
           {permissions.canManageTemplates && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1059,10 +1066,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
         {matchingVersions.length === 0 ? (
           <div style={styles.emptyBox}>
-            No persisted {channel} template versions exist yet for <code>{selectedEventType}</code>.
+            {templatesReadPending ? 'Loading template registry…' : templatesRegistryBlocked || templatesReadError ? 'Template registry unavailable; history cannot be confirmed.' : <>No persisted {channel} template versions exist yet for <code>{selectedEventType}</code>.</>}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }} role="region" aria-label={`${channel} template versions`} tabIndex={0}>
             <table style={styles.table} data-testid="template-version-history-table">
               <thead>
                 <tr>
@@ -1086,7 +1093,9 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
+                    !templatesReadPending && !templatesReadError && !templatesRegistryBlocked &&
                     !ver.isActive;
+                  const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
 
                   return (
                     <tr key={ver.id}>
@@ -1103,14 +1112,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       <td style={styles.td}>
                         <span
                           style={
-                            ver.isActive
+                            verifiedRegistry && ver.isActive
                               ? styles.activeChip
                               : ver.approvalStatus === 'PENDING_APPROVAL'
                                 ? styles.pendingChip
                                 : styles.mutedChip
                           }
                         >
-                          {ver.isActive ? 'ACTIVE' : ver.approvalStatus}
+                          {ver.sourceOrigin === 'CODE_BASELINE' ? 'REFERENCE · activation unconfirmed' : !verifiedRegistry ? 'STATE UNCONFIRMED' : ver.isActive ? 'ACTIVE' : ver.approvalStatus}
                         </span>
                       </td>
                       {channel === 'EMAIL' && (
@@ -1138,7 +1147,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                               Load v{ver.version}
                             </button>
                           )}
-                          {activeVersion && activeVersion.id !== ver.id && (
+                          {activeVersionConfirmed && activeVersion && activeVersion.id !== ver.id && (
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
@@ -1184,7 +1193,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         )}
 
         {/* Structured Side-by-Side Comparison View */}
-        {comparedVersion && activeVersion && (
+        {comparedVersion && activeVersionConfirmed && activeVersion && (
           <div style={styles.compareBox} data-testid="template-version-comparison">
             <div style={styles.labelRow}>
               <strong>
@@ -1307,6 +1316,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 6,
   },

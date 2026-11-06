@@ -201,7 +201,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
       target: { value: 'DEFUND' },
     });
     await waitFor(() => expect(view.queryByText('AG-001')).toBeNull());
-    fireEvent.click(view.getByRole('button', { name: 'Review in Checker' }));
+    fireEvent.click(await view.findByRole('button', { name: 'Review in Checker' }));
     expect(onSelect).toHaveBeenCalledWith('agent-b', 'idem-b', {
       agentId: 'agent-b',
       idempotencyKey: 'idem-b',

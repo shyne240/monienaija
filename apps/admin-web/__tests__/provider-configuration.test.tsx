@@ -265,6 +265,36 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     window.sessionStorage.clear();
   });
 
+  it('does not present stale configuration or a failed proposals read as current data', async () => {
+    seedPrincipal({ principalId:'issuer:synthetic', roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries','notification.provider.view','notification.provider.configure'] });
+    wireStandardBackendMocks(makeOverviewFixture(), []);
+    const original = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    const view = render(<NotificationManagementScreen />);
+    fireEvent.click(view.getByTestId('notif-tab-providerConfig'));
+    await view.findByTestId('provider-config-workspace');
+    (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => endpoint === '/internal/notifications/provider-config' ? Promise.reject(new ApiError('Synthetic outage', 503)) : original(endpoint));
+    fireEvent.click(view.getByTestId('refresh-provider-config-btn'));
+    expect((await view.findByTestId('provider-config-error')).textContent).toContain('Previously loaded configuration is not current');
+    expect(view.queryByTestId('provider-config-workspace')).toBeNull();
+    expect(view.queryByTestId('submit-sms-proposal-btn')).toBeNull();
+    (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => endpoint.startsWith('/internal/notifications/provider-config/proposals') ? Promise.resolve({ unexpected:true }) : original(endpoint));
+    fireEvent.click(view.getByRole('button', { name:'Retry configuration' }));
+    expect((await view.findByTestId('provider-config-error')).textContent).toContain('Invalid provider proposals response');
+    expect(view.queryByText('No provider configuration proposals submitted yet.')).toBeNull();
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('reports blocked provider proposals without claiming the queue is empty', async () => {
+    seedPrincipal({ principalId:'issuer:synthetic', roles:['SUPER_ADMIN'], scopes:['notification.view_deliveries','notification.provider.view'] });
+    wireStandardBackendMocks(makeOverviewFixture(), []);
+    const original = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => endpoint.startsWith('/internal/notifications/provider-config/proposals') ? Promise.reject(new ApiError('Unavailable', 404)) : original(endpoint));
+    const view = render(<NotificationManagementScreen />);
+    fireEvent.click(view.getByTestId('notif-tab-providerConfig'));
+    await view.findByText(/Provider proposals unavailable/);
+    expect(view.queryByText('No provider configuration proposals submitted yet.')).toBeNull();
+  });
+
   it('1. preserves all 8 existing Notification Management tabs alongside Tab 9 (Provider Configuration) and renders truthful readiness states & SPF/DKIM/DMARC guidance', async () => {
     seedPrincipal({
       principalId: 'issuer:super-admin-1',

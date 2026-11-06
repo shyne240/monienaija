@@ -347,6 +347,35 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     expect(form.get('documentType')).toBe('UTILITY_BILL');
   });
 
+  test('failed document refresh does not present previous records as current or empty', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    const previous = (ApiClient.get as jest.Mock).getMockImplementation()!;
+    (ApiClient.get as jest.Mock).mockImplementation((path: string, options: unknown) =>
+      path === `${rootPath}?page=1&limit=20` ? Promise.reject(new Error('Synthetic unavailable')) : previous(path, options));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Proof of Address records' }));
+    expect(await screen.findByText(/Loading document records.*could not/i)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Utility bill · revision 1' })).toBeNull();
+    expect(screen.queryByText(/No Proof of Address records are stored/i)).toBeNull();
+  });
+
+  test('document lifecycle dialog supports Escape and restores focus without submitting', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    const trigger = screen.getByRole('button', { name: 'Withdraw' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(screen.getByLabelText('Reason (required)'));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
   test('withdrawal requires a non-empty reason and records the action', async () => {
     setPermissions(operationsScopes);
     configureEnabledApi();

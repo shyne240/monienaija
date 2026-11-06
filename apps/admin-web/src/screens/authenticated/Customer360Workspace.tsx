@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
+import { formatFinancialAmount } from '../../utils/financial-display';
+import { useDialogFocus } from '../../utils/use-dialog-focus';
 import { useAuthStore } from '../../store/auth-store';
 import { CustomerPersonalInformationPanel } from './CustomerPersonalInformationPanel';
 import { CustomerProofOfAddressPanel } from './CustomerProofOfAddressPanel';
@@ -77,6 +79,7 @@ interface SafeResult<T> {
 }
 
 interface OverviewData {
+  customerId: string;
   phone: SafeResult<PhoneVerificationSummary>;
   readiness: SafeResult<ReadinessSummary>;
   eligibility: SafeResult<EligibilitySummary>;
@@ -113,13 +116,11 @@ function formatDateTime(value: string | Date | null | undefined): string {
 }
 
 function formatMinorAmount(amountMinor: string | number, currency: string): string {
-  const amount = Number(amountMinor) / 100;
-  if (!Number.isFinite(amount)) return 'Balance unavailable';
-  try {
-    return new Intl.NumberFormat('en-NG', { style: 'currency', currency }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
+  // Unsafe numeric payloads have already lost precision and cannot be displayed as exact.
+  if (typeof amountMinor === 'number' && !Number.isSafeInteger(amountMinor)) return 'Amount unavailable';
+  const value = String(amountMinor);
+  if (!/^-?\d+$/.test(value) || !currency) return 'Amount unavailable';
+  return formatFinancialAmount(value, currency);
 }
 
 async function safeGet<T>(path: string): Promise<SafeResult<T>> {
@@ -151,6 +152,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, Boolean(pendingStatus), () => { if (!isUpdatingStatus) setPendingStatus(null); });
 
   useEffect(() => {
     let active = true;
@@ -180,7 +183,7 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
       transactionsPromise,
       walletsPromise,
     ]).then(async ([phone, readiness, eligibility, transactions, wallets]) => {
-      const walletItems = wallets.value?.data ?? [];
+      const walletItems = Array.isArray(wallets.value?.data) ? wallets.value.data : [];
       const balancePairs = await Promise.all(walletItems.map(async (wallet) => [
         wallet.id,
         await safeGet<{ balanceMinor: string | number; currency: string }>(
@@ -189,11 +192,12 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
       ] as const));
       const balances = Object.fromEntries(balancePairs) as OverviewData['balances'];
       if (!active) return;
-      setOverview({ phone, readiness, eligibility, transactions, wallets, balances });
+      setOverview({ customerId: customer.id, phone, readiness, eligibility, transactions, wallets, balances });
       setOverviewLoading(false);
     }).catch(() => {
       if (!active) return;
       setOverview({
+        customerId: customer.id,
         phone: { value: null },
         readiness: { value: null },
         eligibility: { value: null },
@@ -210,11 +214,33 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
   }, [customer.id, scopesKey, overviewReloadVersion]);
 
   const customerName = displayName(customer);
-  const phone = overview?.phone.value;
+  const visibleOverview = overview?.customerId === customer.id ? overview : null;
+  const phoneData = visibleOverview?.phone.value;
+  const phone = phoneData && Array.isArray(phoneData.phones) && typeof phoneData.activationGate?.verifiedPrimaryPhone === 'boolean' ? phoneData : null;
+  const readinessData = visibleOverview?.readiness.value;
+  const readiness = readinessData && ['READY', 'NOT_READY'].includes(readinessData.status) && Array.isArray(readinessData.missing) ? readinessData : null;
+  const eligibilityData = visibleOverview?.eligibility.value;
+  const eligibility = eligibilityData && typeof eligibilityData.status === 'string' && eligibilityData.status ? eligibilityData : null;
   const primaryPhone = phone?.phones?.find((item) => item.isPrimary) ?? null;
-  const transactionItems = overview?.transactions.value?.items ?? [];
-  const walletItems = overview?.wallets.value?.data ?? [];
+  const transactionItems = Array.isArray(visibleOverview?.transactions.value?.items) ? visibleOverview.transactions.value.items : [];
+  const walletItems = Array.isArray(visibleOverview?.wallets.value?.data) ? visibleOverview.wallets.value.data : [];
+  const walletsAvailable = Array.isArray(visibleOverview?.wallets.value?.data);
+  const transactionsAvailable = Array.isArray(visibleOverview?.transactions.value?.items);
   const walletCountLabel = walletItems.length === 1 ? '1 wallet' : `${walletItems.length} wallets`;
+  const awaitingOverview = overviewLoading || !visibleOverview;
+  const tabs = ['overview', 'personal', 'proof'] as const;
+  const tabIds = ['customer-overview-tab', 'customer-personal-tab', 'customer-proof-address-tab'];
+  const handleTabKey = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    setActiveTab(tabs[next]);
+    document.getElementById(tabIds[next])?.focus();
+  };
 
   const availableStatusActions = useMemo(() => {
     const actions: Array<{ status: string; label: string; tone?: string }> = [];
@@ -288,6 +314,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
           type="button"
           role="tab"
           aria-selected={activeTab === 'overview'}
+          tabIndex={activeTab === 'overview' ? 0 : -1}
+          onKeyDown={(event) => handleTabKey(event, 0)}
           aria-controls="customer-overview-panel"
           onClick={() => setActiveTab('overview')}
         >
@@ -299,6 +327,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
           type="button"
           role="tab"
           aria-selected={activeTab === 'personal'}
+          tabIndex={activeTab === 'personal' ? 0 : -1}
+          onKeyDown={(event) => handleTabKey(event, 1)}
           aria-controls="customer-personal-panel"
           onClick={() => setActiveTab('personal')}
         >
@@ -310,6 +340,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
           type="button"
           role="tab"
           aria-selected={activeTab === 'proof'}
+          tabIndex={activeTab === 'proof' ? 0 : -1}
+          onKeyDown={(event) => handleTabKey(event, 2)}
           aria-controls="customer-proof-address-panel"
           onClick={() => setActiveTab('proof')}
         >
@@ -373,25 +405,25 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
 
             <article className="cm-card">
               <div className="cm-card-heading"><div><p className="cm-eyebrow">ONBOARDING</p><h2>Readiness</h2></div></div>
-              {overviewLoading ? <p className="cm-muted">Loading readiness…</p> : overview?.readiness.value ? (
+              {awaitingOverview ? <p className="cm-muted">Loading readiness…</p> : readiness ? (
                 <>
-                  <p className={`cm-large-value ${overview.readiness.value.status === 'READY' ? 'cm-positive' : 'cm-warning'}`}>
-                    {overview.readiness.value.status === 'READY' ? 'Ready' : 'Not ready'}
+                  <p className={`cm-large-value ${readiness.status === 'READY' ? 'cm-positive' : 'cm-warning'}`}>
+                    {readiness.status === 'READY' ? 'Ready' : 'Not ready'}
                   </p>
-                  <p className="cm-supporting-text">Onboarding state: {overview.readiness.value.onboardingStatus ?? 'Not started'}</p>
-                  <p className="cm-muted">{overview.readiness.value.missing.length} outstanding readiness item{overview.readiness.value.missing.length === 1 ? '' : 's'}</p>
+                  <p className="cm-supporting-text">Onboarding state: {readiness.onboardingStatus ?? 'Not started'}</p>
+                  <p className="cm-muted">{readiness.missing.length} outstanding readiness item{readiness.missing.length === 1 ? '' : 's'}</p>
                 </>
               ) : <p className="cm-muted">{hasFunction('customer.view') ? 'Readiness summary is unavailable.' : 'Readiness is restricted.'}</p>}
             </article>
 
             <article className="cm-card">
               <div className="cm-card-heading"><div><p className="cm-eyebrow">ELIGIBILITY</p><h2>Operating decision</h2></div></div>
-              {overviewLoading ? <p className="cm-muted">Loading eligibility…</p> : overview?.eligibility.value ? (
+              {awaitingOverview ? <p className="cm-muted">Loading eligibility…</p> : eligibility ? (
                 <>
-                  <p className="cm-large-value">{overview.eligibility.value.status}</p>
-                  <p className="cm-muted">Updated {formatDateTime(overview.eligibility.value.statusChangedAt)}</p>
+                  <p className="cm-large-value">{eligibility.status}</p>
+                  <p className="cm-muted">Updated {formatDateTime(eligibility.statusChangedAt)}</p>
                 </>
-              ) : <p className="cm-muted">{overview?.eligibility.status === 404 ? 'No eligibility decision recorded.' : hasFunction('customer.view') ? 'Eligibility summary is unavailable.' : 'Eligibility is restricted.'}</p>}
+              ) : <p className="cm-muted">{visibleOverview?.eligibility.status === 404 ? 'No eligibility decision recorded.' : hasFunction('customer.view') ? 'Eligibility summary is unavailable.' : 'Eligibility is restricted.'}</p>}
             </article>
 
             <CustomerTier3ReadinessPanel
@@ -400,21 +432,22 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
               phoneVerified={phone ? Boolean(phone.activationGate?.verifiedPrimaryPhone) : null}
               kycLevel={customer.kycLevel}
               kycStatus={customer.kycStatus}
-              financialEligibility={overview?.eligibility.value?.status ?? null}
+              financialEligibility={eligibility?.status ?? null}
             />
 
             <article className="cm-card cm-card-wide">
               <div className="cm-card-heading">
                 <div><p className="cm-eyebrow">WALLET</p><h2>Wallet summary</h2></div>
-                {hasFunction('customer.view_wallets') && <span className="cm-chip">{walletCountLabel}</span>}
+                {hasFunction('customer.view_wallets') && !awaitingOverview && walletsAvailable && <span className="cm-chip">{walletCountLabel}</span>}
               </div>
               {!hasFunction('customer.view_wallets') ? <p className="cm-muted">Wallet information is restricted to authorized wallet viewers.</p>
-                : overviewLoading ? <p className="cm-muted">Loading ledger balances…</p>
+                : awaitingOverview ? <p className="cm-muted">Loading ledger balances…</p>
+                  : !walletsAvailable ? <p className="cm-muted" role="status">Wallet information is unavailable.</p>
                   : walletItems.length === 0 ? <p className="cm-empty-state">No financial wallets are recorded for this customer.</p>
                     : (
                       <div className="cm-wallet-grid">
                         {walletItems.map((wallet) => {
-                          const balanceResult = overview?.balances[wallet.id];
+                          const balanceResult = visibleOverview?.balances[wallet.id];
                           return (
                             <div className="cm-wallet-item" key={wallet.id}>
                               <div><span className="cm-wallet-currency">{wallet.currency}</span><span className="cm-secondary-line">{wallet.status}</span></div>
@@ -437,7 +470,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
                 )}
               </div>
               {!hasFunction('customer.view_transactions') ? <p className="cm-muted">Transaction history is restricted to authorized transaction viewers.</p>
-                : overviewLoading ? <p className="cm-muted">Loading recent transactions…</p>
+                : awaitingOverview ? <p className="cm-muted">Loading recent transactions…</p>
+                  : !transactionsAvailable ? <p className="cm-muted" role="status">Recent transactions are unavailable.</p>
                   : transactionItems.length === 0 ? <p className="cm-empty-state">No recent transactions are available.</p>
                     : (
                       <div className="cm-transaction-list">
@@ -480,7 +514,7 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
 
       {pendingStatus && (
         <div className="cm-modal-backdrop" role="presentation">
-          <section className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-confirm-title">
+          <section ref={dialogRef} tabIndex={-1} className="cm-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-confirm-title">
             <p className="cm-eyebrow">LIFECYCLE CHANGE</p>
             <h2 id="cm-confirm-title">Confirm {pendingStatus === 'CLOSED' ? 'customer closure' : pendingStatus.toLowerCase()}</h2>
             <p>Change <strong>{customerName}</strong> from {customer.status} to {pendingStatus}?</p>
