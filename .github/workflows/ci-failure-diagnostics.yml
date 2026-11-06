@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Retrieve and redact failed job logs
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           python3 - <<'PY'
@@ -25,6 +27,7 @@ jobs:
           import re
           import subprocess
           import sys
+          import urllib.parse
 
           repo = os.environ['GITHUB_REPOSITORY']
           jobs = [127872823330, 125922626764, 125557143419, 125922626335, 125557142957]
@@ -54,17 +57,26 @@ jobs:
               print(f'::notice title={title}::{message}', flush=True)
 
           for job in jobs:
-              proc = subprocess.run(
-                  ['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '90',
-                   f'https://api.github.com/repos/{repo}/actions/jobs/{job}/logs'],
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.PIPE,
-              )
-              if proc.returncode:
+              attempts = []
+              for authenticated in (True, False):
+                  args = ['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '90',
+                          '--write-out', '%{stderr}\nCI_HTTP:%{http_code}\nCI_URL:%{url_effective}\n']
+                  if authenticated:
+                      args += ['--config', '-']
+                  args += [f'https://api.github.com/repos/{repo}/actions/jobs/{job}/logs']
+                  config = f'header = "Authorization: Bearer {os.environ["GH_TOKEN"]}"\n'.encode() if authenticated else None
+                  proc = subprocess.run(args, input=config, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                  if proc.returncode == 0:
+                      break
                   detail = proc.stderr.decode('utf-8', errors='replace')
-                  status = re.search(r'error: (\d{3})', detail)
-                  code = status.group(1) if status else 'unknown'
-                  print(f'::error::Could not retrieve job {job} log (curl exit {proc.returncode}, HTTP {code}); output withheld.', flush=True)
+                  status = re.search(r'CI_HTTP:(\d{3})', detail)
+                  effective = re.search(r'CI_URL:([^\n]+)', detail)
+                  host = urllib.parse.urlsplit(effective.group(1)).hostname if effective else 'unknown'
+                  attempts.append({'authenticated': authenticated, 'curl_exit': proc.returncode,
+                                   'http_status': status.group(1) if status else 'unknown', 'host': host})
+              if proc.returncode:
+                  notice(f'CI job {job} retrieval failed', attempts)
+                  print(f'::error::Could not retrieve job {job} log; raw output withheld.', flush=True)
                   sys.exit(1)
               raw = ansi.sub('', proc.stdout.decode('utf-8', errors='replace'))
               lines = [timestamp.sub('', line) for line in raw.splitlines()]
