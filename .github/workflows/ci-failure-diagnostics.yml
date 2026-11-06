@@ -13,139 +13,80 @@ permissions:
 
 jobs:
   inspect:
-    name: Summarize historical CI failures safely
+    name: Classify historical PostgreSQL failures safely
     runs-on: ubuntu-latest
     steps:
-      - name: Retrieve and redact failed job logs
+      - name: Retrieve logs and emit allowlisted aggregate diagnostics
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           python3 - <<'PY'
+          import collections
           import json
           import os
           import re
           import subprocess
           import sys
-          import urllib.parse
 
           repo = os.environ['GITHUB_REPOSITORY']
-          jobs = [127872823330, 125922626764, 125557143419]
+          jobs = [125557143419, 125922626764]
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           timestamp = re.compile(r'^\d{4}-\d\d-\d\dT\S+\s+')
-          path = re.compile(r'((?:src|test)/[\w./-]+\.ts)(?::(\d+)(?::\d+)?)?')
           markers = {
+              'workforce role unavailable': r'SUPER_ADMIN role is disabled or undefined in configuration',
+              'workforce authentication disabled': r'Workforce authentication disabled',
+              'serialization failure': r'could not serialize access|SQLSTATE.?40001',
+              'deadlock detected': r'deadlock detected',
               'hook timeout': r'Exceeded timeout of \d+ ms for a hook',
               'test timeout': r'Exceeded timeout of \d+ ms for a test',
-              'workforce configuration': r'SUPER_ADMIN role is disabled or undefined|Workforce authentication disabled',
               'outbound guard': r'M25C_TEST_(?:OUTBOUND_NETWORK|DNS|FETCH)_BLOCKED',
-              'database connection': r'ECONNREFUSED|Connection terminated|too many clients|remaining connection slots',
-              'database deadlock': r'deadlock detected|could not serialize',
-              'memory/termination': r'heap out of memory|SIGKILL|ENOMEM|Killed',
-              'typescript compile error': r'error TS\d+',
+              'typescript compilation': r'error TS\d+',
           }
-
-          def clean_title(value):
-              value = re.sub(r'https?://\S+|\S+@\S+', '[redacted]', value)
-              value = re.sub(r'\b(?:[A-Za-z0-9_-]{24,}|\d{4,})\b', '[redacted]', value)
-              value = re.sub(r'(?i)\b(password|secret|token|pin|otp)\s*[:=]\s*\S+', r'\1=[redacted]', value)
-              return re.sub(r'[^\w\s.,:;()/\[\]<>+–—›-]', '?', value).strip()[:220]
-
-          def notice(title, data):
-              message = json.dumps(data, ensure_ascii=True, separators=(',', ':'))[:12000]
-              message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::notice title={title}::{message}', flush=True)
+          class_pattern = re.compile(r'^\s*([A-Za-z][A-Za-z0-9]*(?:Exception|Error))(?::|\s*$)')
+          path_pattern = re.compile(r'\b((?:src|test)/[\w./-]+\.ts):(\d+)(?::\d+)?')
+          safe_location = re.compile(r'^(?:src|test)/[\w./-]+\.ts:\d+$')
 
           for job in jobs:
-              attempts = []
-              for authenticated in (True, False):
-                  args = ['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '90',
-                          '--write-out', '%{stderr}\nCI_HTTP:%{http_code}\nCI_URL:%{url_effective}\n']
-                  if authenticated:
-                      args += ['--config', '-']
-                  args += [f'https://api.github.com/repos/{repo}/actions/jobs/{job}/logs']
-                  config = f'header = "Authorization: Bearer {os.environ["GH_TOKEN"]}"\n'.encode() if authenticated else None
-                  proc = subprocess.run(args, input=config, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                  if proc.returncode == 0:
-                      break
-                  detail = proc.stderr.decode('utf-8', errors='replace')
-                  status = re.search(r'CI_HTTP:(\d{3})', detail)
-                  effective = re.search(r'CI_URL:([^\n]+)', detail)
-                  host = urllib.parse.urlsplit(effective.group(1)).hostname if effective else 'unknown'
-                  attempts.append({'authenticated': authenticated, 'curl_exit': proc.returncode,
-                                   'http_status': status.group(1) if status else 'unknown', 'host': host})
+              args = ['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '90',
+                      '--config', '-', f'https://api.github.com/repos/{repo}/actions/jobs/{job}/logs']
+              config = f'header = "Authorization: Bearer {os.environ["GH_TOKEN"]}"\n'.encode()
+              proc = subprocess.run(args, input=config, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
               if proc.returncode:
-                  notice(f'CI job {job} retrieval failed', attempts)
-                  print(f'::error::Could not retrieve job {job} log; raw output withheld.', flush=True)
+                  print(f'::error::Failed to retrieve historical job {job}; response withheld.', flush=True)
                   sys.exit(1)
               raw = ansi.sub('', proc.stdout.decode('utf-8', errors='replace'))
               lines = [timestamp.sub('', line) for line in raw.splitlines()]
-              failed_suites = []
-              cases = []
-              locations = []
-              summaries = []
-              diagnostics = []
-              for line in lines:
-                  stripped = line.strip()
-                  match = re.search(r'\bFAIL\s+((?:src|test)/[\w./-]+\.spec\.ts)', stripped)
-                  if match and match.group(1) not in failed_suites:
-                      failed_suites.append(match.group(1))
-                  if stripped.startswith('● ') and stripped != '● Console':
-                      cases.append(clean_title(stripped[2:]))
-                  if re.search(r'\bat\b|error TS\d+', stripped):
-                      match = path.search(stripped)
-                      if match and match.group(2):
-                          item = f'{match.group(1)}:{match.group(2)}'
-                          if item not in locations:
-                              locations.append(item)
-                  if re.search(r'(Test Suites:|Tests:|problems? \(\d+ errors?, \d+ warnings?\))', stripped):
-                      safe = re.search(r'(Test Suites:.*|Tests:.*|\d+ problems? \(\d+ errors?, \d+ warnings?\))', stripped)
-                      if safe:
-                          summaries.append(re.sub(r'[^\w\s,:()]+', '', safe.group(1))[:180])
-                  if re.search(r'error TS\d+', stripped):
-                      m = re.search(r'error (TS\d+)', stripped)
-                      if m:
-                          diagnostics.append(m.group(1))
-              reason_counts = {name: len(re.findall(pattern, raw, flags=re.IGNORECASE)) for name, pattern in markers.items()}
-              safe_numbers = []
-              for line in lines:
-                  m = re.match(r'^\s*(Expected|Received)(?: number of calls)?:\s*(true|false|null|undefined|-?\d{1,3})\s*$', line, re.I)
-                  if m:
-                      safe_numbers.append(f'{m.group(1)}={m.group(2)}')
-              focus = []
-              for i, line in enumerate(lines):
-                  if '● ' in line and 'concurrent initiation collisions reserve distinct immutable locator pairs' in line:
-                      focus = lines[i:i + 120]
-                      break
-              focused_text = '\n'.join(focus)
-              focused_locations = []
-              for line in focus:
-                  match = path.search(line)
-                  if match and match.group(2):
-                      item = f'{match.group(1)}:{match.group(2)}'
-                      if item not in focused_locations:
-                          focused_locations.append(item)
-              focused_classes = sorted(set(re.findall(r'\b([A-Z][A-Za-z]*(?:Exception|Error))(?::|\b)', focused_text)))
-              known_messages = {
-                  'journal not found': r'Journal [a-f0-9-]+ was not found',
-                  'deadlock detected': r'deadlock detected',
-                  'serialization failure': r'could not serialize|40001|40P01',
-                  'unique violation': r'duplicate key value|23505',
-                  'retry exhaustion': r'retry.{0,30}exhaust|exhaust.{0,30}retry',
-                  'timeout': r'Exceeded timeout of \d+ ms',
-                  'expected assertion': r'expect\(received\)',
-              }
-              notice(f'CI job {job}', {
+              starts = [i for i, line in enumerate(lines)
+                        if re.match(r'^\s*●\s+', line) and not re.match(r'^\s*●\s+Console\s*$', line)]
+              categories = collections.Counter()
+              exception_classes = collections.Counter()
+              locations = collections.Counter()
+              for n, start in enumerate(starts):
+                  end = min(starts[n + 1] if n + 1 < len(starts) else len(lines), start + 150)
+                  block = '\n'.join(lines[start:end])
+                  for name, pattern in markers.items():
+                      if re.search(pattern, block, re.I):
+                          categories[name] += 1
+                  for line in lines[start:end]:
+                      found = class_pattern.match(line)
+                      if found:
+                          exception_classes[found.group(1)] += 1
+                          break
+                  for loc in path_pattern.findall(block):
+                      location = f'{loc[0]}:{loc[1]}'
+                      if safe_location.match(location):
+                          locations[location] += 1
+              output = {
                   'log_bytes': len(proc.stdout),
-                  'failed_suites': failed_suites[:25],
-                  'failed_cases': cases[:5],
-                  'locations': locations[:20],
-                  'summaries': summaries[-10:],
-                  'reason_counts': {k: v for k, v in reason_counts.items() if v},
-                  'typescript_codes': sorted(set(diagnostics)),
-                  'safe_expected_received': safe_numbers[:20],
-                  'focused_error_classes': focused_classes[:20],
-                  'focused_known_messages': [name for name, pat in known_messages.items() if re.search(pat, focused_text, flags=re.IGNORECASE)],
-                  'focused_locations': focused_locations[:20],
-              })
+                  'failed_case_blocks': len(starts),
+                  'case_categories': dict(categories),
+                  'global_known_marker_counts': {name: len(re.findall(pattern, raw, re.I))
+                                                 for name, pattern in markers.items()
+                                                 if re.search(pattern, raw, re.I)},
+                  'exception_classes': dict(exception_classes.most_common(8)),
+                  'common_source_locations': [loc for loc, _ in locations.most_common(10)],
+              }
+              message = json.dumps(output, separators=(',', ':')).replace('%', '%25')
+              print(f'::notice title=Historical PG job {job}::{message}', flush=True)
           PY
