@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Retrieve and redact failed job logs
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           python3 - <<'PY'
@@ -29,7 +27,7 @@ jobs:
           import sys
 
           repo = os.environ['GITHUB_REPOSITORY']
-          jobs = [125557142957, 125557143419, 125922626335, 125922626764, 127872823330]
+          jobs = [127872823330, 125922626764, 125557143419, 125922626335, 125557142957]
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           timestamp = re.compile(r'^\d{4}-\d\d-\d\dT\S+\s+')
           path = re.compile(r'((?:src|test)/[\w./-]+\.ts)(?::(\d+)(?::\d+)?)?')
@@ -57,12 +55,16 @@ jobs:
 
           for job in jobs:
               proc = subprocess.run(
-                  ['gh', 'api', f'/repos/{repo}/actions/jobs/{job}/logs'],
+                  ['curl', '--fail', '--silent', '--show-error', '--location', '--max-time', '90',
+                   f'https://api.github.com/repos/{repo}/actions/jobs/{job}/logs'],
                   stdout=subprocess.PIPE,
                   stderr=subprocess.PIPE,
               )
               if proc.returncode:
-                  print(f'::error::Could not retrieve job {job} log (exit {proc.returncode}); output withheld.', flush=True)
+                  detail = proc.stderr.decode('utf-8', errors='replace')
+                  status = re.search(r'error: (\d{3})', detail)
+                  code = status.group(1) if status else 'unknown'
+                  print(f'::error::Could not retrieve job {job} log (curl exit {proc.returncode}, HTTP {code}); output withheld.', flush=True)
                   sys.exit(1)
               raw = ansi.sub('', proc.stdout.decode('utf-8', errors='replace'))
               lines = [timestamp.sub('', line) for line in raw.splitlines()]
