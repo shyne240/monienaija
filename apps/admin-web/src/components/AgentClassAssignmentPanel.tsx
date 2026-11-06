@@ -146,10 +146,10 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  panel: { padding: 10, border: '1px solid #CBD5E1', borderRadius: 7, background: '#F8FAFC', marginTop: 10 },
+  panel: { padding: 10, border: '1px solid #CBD5E1', borderRadius: 7, background: 'var(--mn-surface-canvas, #f5f8f6)', marginTop: 10 },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 },
-  title: { color: '#032B14', fontSize: 13 },
-  currentLabel: { color: '#334155', fontSize: 12 },
+  title: { color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 13 },
+  currentLabel: { color: 'var(--mn-text-primary, #132b25)', fontSize: 12 },
   dependencyBox: {
     marginTop: 8,
     padding: 9,
@@ -160,11 +160,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     lineHeight: 1.5,
   },
-  note: { marginTop: 6, color: '#64748B', fontSize: 12 },
+  note: { marginTop: 6, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
   form: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 },
-  label: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 600, color: '#334155' },
+  label: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)' },
   input: { padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
-  button: { alignSelf: 'flex-start', padding: '6px 11px', border: '1px solid #0A3D25', borderRadius: 5, background: '#0A3D25', color: '#FFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  button: { alignSelf: 'flex-start', padding: '6px 11px', border: '1px solid var(--mn-action-primary, #0b624a)', borderRadius: 5, background: 'var(--mn-action-primary, #0b624a)', color: '#FFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
   errorBox: { padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 11 },
   successBox: { padding: 8, borderRadius: 5, border: '1px solid #6EE7B7', background: '#ECFDF5', color: '#065F46', fontSize: 11 },
 };

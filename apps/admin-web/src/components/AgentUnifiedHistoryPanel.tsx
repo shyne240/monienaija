@@ -433,19 +433,19 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  box: { marginTop: 10, padding: 10, border: '1px solid #E2E8F0', borderRadius: 6, background: '#FFFFFF' },
+  box: { marginTop: 10, padding: 10, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, background: '#FFFFFF' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  title: { fontSize: 12, color: '#0F172A' },
+  title: { fontSize: 12, color: 'var(--mn-text-primary, #132b25)' },
   controls: { marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' },
   select: { padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
   button: { padding: '5px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#FFF', cursor: 'pointer', fontSize: 11 },
-  loading: { marginTop: 8, color: '#475569', fontSize: 12 },
+  loading: { marginTop: 8, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
   errorBox: { marginTop: 8, padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 11 },
-  empty: { marginTop: 8, color: '#64748B', fontSize: 12 },
+  empty: { marginTop: 8, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 11 },
-  th: { textAlign: 'left', padding: '5px 6px', borderBottom: '1px solid #E2E8F0', color: '#475569' },
-  td: { padding: '6px', borderBottom: '1px solid #F1F5F9', verticalAlign: 'top' },
-  subText: { fontSize: 10, color: '#64748B', marginTop: 2 },
+  th: { textAlign: 'left', padding: '5px 6px', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', color: 'var(--mn-text-secondary, #52655f)' },
+  td: { padding: '6px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', verticalAlign: 'top' },
+  subText: { fontSize: 10, color: 'var(--mn-text-secondary, #52655f)', marginTop: 2 },
   failureSubText: { fontSize: 10, color: '#991B1B', marginTop: 2 },
-  pager: { marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748B' },
+  pager: { marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' },
 };

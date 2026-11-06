@@ -1,0 +1,1794 @@
+[
+  {
+    "width": 320,
+    "key": "dashboard",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "dashboardSettings",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "customers",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "agents",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "agentClasses",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "support",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "transfers",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "cashIn",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "cashOut",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "cashToCashOps",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "ledgerExplorer",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "reconciliation",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "feeRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "commissionRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "rewardRules",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "productCatalogue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "limitCatalogue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "limitAssignments",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "kycQueue",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "complianceCases",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "fraudCases",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "workforceAccess",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "roleGovernance",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "approvalsInbox",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "superAdminRecovery",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "notifications",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "systemHealth",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 320,
+    "key": "auditEvents",
+    "page": 320,
+    "view": 320,
+    "content": 320,
+    "contentWidth": 320
+  },
+  {
+    "width": 360,
+    "key": "dashboard",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "dashboardSettings",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "customers",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "agents",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "agentClasses",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "support",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "transfers",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "cashIn",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "cashOut",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "cashToCashOps",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "ledgerExplorer",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "reconciliation",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "feeRules",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "commissionRules",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "rewardRules",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "productCatalogue",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "limitCatalogue",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "limitAssignments",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "kycQueue",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "complianceCases",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "fraudCases",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "workforceAccess",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "roleGovernance",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "approvalsInbox",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "superAdminRecovery",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "notifications",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "systemHealth",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 360,
+    "key": "auditEvents",
+    "page": 360,
+    "view": 360,
+    "content": 360,
+    "contentWidth": 360
+  },
+  {
+    "width": 390,
+    "key": "dashboard",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "dashboardSettings",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "customers",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "agents",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "agentClasses",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "support",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "transfers",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "cashIn",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "cashOut",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "cashToCashOps",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "ledgerExplorer",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "reconciliation",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "feeRules",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "commissionRules",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "rewardRules",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "productCatalogue",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "limitCatalogue",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "limitAssignments",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "kycQueue",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "complianceCases",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "fraudCases",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "workforceAccess",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "roleGovernance",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "approvalsInbox",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "superAdminRecovery",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "notifications",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "systemHealth",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 390,
+    "key": "auditEvents",
+    "page": 390,
+    "view": 390,
+    "content": 390,
+    "contentWidth": 390
+  },
+  {
+    "width": 768,
+    "key": "dashboard",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "dashboardSettings",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "customers",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "agents",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "agentClasses",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "support",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "transfers",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "cashIn",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "cashOut",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "cashToCashOps",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "ledgerExplorer",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "reconciliation",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "feeRules",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "commissionRules",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "rewardRules",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "productCatalogue",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "limitCatalogue",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "limitAssignments",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "kycQueue",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "complianceCases",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "fraudCases",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "workforceAccess",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "roleGovernance",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "approvalsInbox",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "superAdminRecovery",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "notifications",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "systemHealth",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 768,
+    "key": "auditEvents",
+    "page": 768,
+    "view": 768,
+    "content": 768,
+    "contentWidth": 768
+  },
+  {
+    "width": 769,
+    "key": "dashboard",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "dashboardSettings",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "customers",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "agents",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "agentClasses",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "support",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "transfers",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "cashIn",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "cashOut",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "cashToCashOps",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "ledgerExplorer",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "reconciliation",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "feeRules",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "commissionRules",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "rewardRules",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "productCatalogue",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "limitCatalogue",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "limitAssignments",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "kycQueue",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "complianceCases",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "fraudCases",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "workforceAccess",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "roleGovernance",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "approvalsInbox",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "superAdminRecovery",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "notifications",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "systemHealth",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 769,
+    "key": "auditEvents",
+    "page": 769,
+    "view": 769,
+    "content": 769,
+    "contentWidth": 769
+  },
+  {
+    "width": 1024,
+    "key": "dashboard",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "dashboardSettings",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "customers",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "agents",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "agentClasses",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "support",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "transfers",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "cashIn",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "cashOut",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "cashToCashOps",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "ledgerExplorer",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "reconciliation",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "feeRules",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "commissionRules",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "rewardRules",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "productCatalogue",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "limitCatalogue",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "limitAssignments",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "kycQueue",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "complianceCases",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "fraudCases",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "workforceAccess",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "roleGovernance",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "approvalsInbox",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "superAdminRecovery",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "notifications",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "systemHealth",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1024,
+    "key": "auditEvents",
+    "page": 1024,
+    "view": 1024,
+    "content": 760,
+    "contentWidth": 760
+  },
+  {
+    "width": 1280,
+    "key": "dashboard",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "dashboardSettings",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "customers",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "agents",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "agentClasses",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "support",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "transfers",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "cashIn",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "cashOut",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "cashToCashOps",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "ledgerExplorer",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "reconciliation",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "feeRules",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "commissionRules",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "rewardRules",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "productCatalogue",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "limitCatalogue",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "limitAssignments",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "kycQueue",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "complianceCases",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "fraudCases",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "workforceAccess",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "roleGovernance",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "approvalsInbox",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "superAdminRecovery",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "notifications",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "systemHealth",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1280,
+    "key": "auditEvents",
+    "page": 1280,
+    "view": 1280,
+    "content": 1016,
+    "contentWidth": 1016
+  },
+  {
+    "width": 1440,
+    "key": "dashboard",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "dashboardSettings",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "customers",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "agents",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "agentClasses",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "support",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "transfers",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "cashIn",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "cashOut",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "cashToCashOps",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "ledgerExplorer",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "reconciliation",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "feeRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "commissionRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "rewardRules",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "productCatalogue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "limitCatalogue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "limitAssignments",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "kycQueue",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "complianceCases",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "fraudCases",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "workforceAccess",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "roleGovernance",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "approvalsInbox",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "superAdminRecovery",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "notifications",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "systemHealth",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  },
+  {
+    "width": 1440,
+    "key": "auditEvents",
+    "page": 1440,
+    "view": 1440,
+    "content": 1160,
+    "contentWidth": 1160
+  }
+]

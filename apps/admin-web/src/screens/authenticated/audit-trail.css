@@ -10,3 +10,4 @@
 .mn-audit__table { border-collapse: collapse; min-width: 720px; width: 100%; margin-top: 24px; font-size: 13px; text-align: left; }
 .mn-audit__table th, .mn-audit__table td { padding: 12px; border-bottom: 1px solid var(--mn-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
 .mn-audit__table th { color: var(--mn-text-secondary); background: var(--mn-surface-sunken); }
+.mn-audit .mn-scroll-region__hint { display: block; }

@@ -584,6 +584,24 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     mockBaselineUnintegratedBackend();
   });
 
+  test('failed notification reads do not claim an active pipeline or zero delivery and outbox counts', async () => {
+    seedPrincipal({ scopes: ['notification.view_deliveries', 'notification.provider.view', 'diagnostics.view', 'outbox.view'] });
+    (ApiClient.get as jest.Mock).mockRejectedValue(new ApiError('Service unavailable', 503));
+    const view = render(<NotificationManagementScreen />);
+    await waitFor(() => expect(view.getByTestId('notification-global-load-errors')).toBeTruthy());
+    const sms = within(view.getByRole('region', { name: 'SMS channel status' }));
+    expect(sms.getByText('STATUS UNAVAILABLE')).toBeTruthy();
+    expect(sms.queryByText('PIPELINE ACTIVE')).toBeNull();
+    const health = view.getByRole('region', { name: 'Event catalogue and outbox health' });
+    expect(health.textContent).toMatch(/Pending Shared Outbox:\s*Unavailable/);
+    expect(health.textContent).toMatch(/Total Recorded Deliveries:\s*Unavailable/);
+    fireEvent.click(view.getByTestId('notif-tab-deliveries'));
+    expect(await view.findByText('Delivery records unavailable.')).toBeTruthy();
+    expect(view.queryByText('No notification delivery records matched the selected filters.')).toBeNull();
+    expect(view.queryByTestId('delivery-summary-cards')).toBeNull();
+    expect(view.queryByTestId('notification-deliveries-pager')).toBeNull();
+  });
+
   test('Capability 12: denies access fail-closed and fires zero API calls when principal holds no notification.* scope', () => {
     seedPrincipal({
       roles: ['TREASURY'],

@@ -1,4 +1,7 @@
+import './operational-surfaces.css';
+import { PageHeader } from '../../design-system/primitives';
 import React, { useState, useEffect } from 'react';
+import { formatFinancialAmount } from '../../utils/financial-display';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -167,20 +170,17 @@ export const LedgerOperationsScreen: React.FC = () => {
 
   if (!canViewLedger) {
     return (
-      <div style={styles.container} role="alert">
+      <div className="mn-operational" style={styles.container} role="alert">
         <div style={styles.errorBox}>Ledger account and journal lookup requires <code>ledger.view</code>.</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Ledger Core & Reversals Desk</h2>
-        <p style={styles.subtitle}>Trace double-entry balanced postings, inspect accounts, and reverse errors</p>
-      </div>
+    <div className="mn-operational" style={styles.container}>
+      <PageHeader eyebrow="Finance and ledger" title="Ledger Core & Reversals Desk" description="Inspect accounts and journal postings, and use the existing governed reversal workflow." />
 
-      {error && <div style={styles.errorBox}>{error}</div>}
+      {error && <div style={styles.errorBox} role="alert">{error}</div>}
 
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>⚠️ ADMIN API GAP: Journal Listing & Backlog Search Unavailable</span>
@@ -194,7 +194,7 @@ export const LedgerOperationsScreen: React.FC = () => {
         <div style={styles.leftSection}>
           <div style={styles.sectionHeader}>
             <h3 style={styles.sectionTitle}>Chart of Accounts</h3>
-            <select style={styles.select} value={searchCurrency} onChange={(e) => setSearchCurrency(e.target.value)}>
+            <select aria-label="Account currency" style={styles.select} value={searchCurrency} onChange={(e) => setSearchCurrency(e.target.value)}>
               <option value="">All Currencies</option>
               <option value="NGN">NGN (Naira)</option>
             </select>
@@ -202,7 +202,7 @@ export const LedgerOperationsScreen: React.FC = () => {
 
           {isLoading ? (
             <p style={styles.loadingText}>Fetching ledger accounts...</p>
-          ) : accounts.length === 0 ? (
+          ) : error ? null : accounts.length === 0 ? (
             <p style={styles.emptyText}>No ledger accounts found.</p>
           ) : (
             <div style={styles.accountsGrid}>
@@ -217,7 +217,7 @@ export const LedgerOperationsScreen: React.FC = () => {
                     <span style={styles.metaLabel}>Normal: {acc.normalBalance}</span>
                   </div>
                   <div style={styles.accountBalance}>
-                    ₦{(parseFloat(acc.balanceMinor || '0') / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                    {formatFinancialAmount(acc.balanceMinor, acc.currency)}
                   </div>
                 </div>
               ))}
@@ -231,9 +231,10 @@ export const LedgerOperationsScreen: React.FC = () => {
           
           <form onSubmit={handleSearchJournal} style={styles.searchForm}>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Audit Journal ID (UUID)</label>
+              <label htmlFor="ledger-journal-id" style={styles.label}>Audit Journal ID (UUID)</label>
               <div style={styles.searchRow}>
                 <input
+                  id="ledger-journal-id"
                   type="text"
                   style={styles.input}
                   placeholder="e.g. ecd61345-..."
@@ -261,7 +262,7 @@ export const LedgerOperationsScreen: React.FC = () => {
               </div>
 
               <h5 style={styles.linesTitle}>Double-Entry Postings Lines</h5>
-              <div style={styles.linesTableWrapper}>
+              <div style={styles.linesTableWrapper} role="region" aria-label="Journal posting lines" tabIndex={0}>
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.thRow}>
@@ -275,10 +276,10 @@ export const LedgerOperationsScreen: React.FC = () => {
                       <tr key={l.id} style={styles.tableRow}>
                         <td style={styles.td}>{l.accountId}</td>
                         <td style={styles.td}>
-                          {l.direction === 'DEBIT' ? `₦${(parseFloat(l.amountMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : '-'}
+                          {l.direction === 'DEBIT' ? formatFinancialAmount(l.amountMinor, journal.currency) : '-'}
                         </td>
                         <td style={styles.td}>
-                          {l.direction === 'CREDIT' ? `₦${(parseFloat(l.amountMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : '-'}
+                          {l.direction === 'CREDIT' ? formatFinancialAmount(l.amountMinor, journal.currency) : '-'}
                         </td>
                       </tr>
                     ))}
@@ -294,8 +295,9 @@ export const LedgerOperationsScreen: React.FC = () => {
                   <h5 style={styles.reversalTitle}>Governed Journal Reversal (Maker / Checker)</h5>
                   
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>Audit Reason for Reversal {isController ? '(must match the approved request exactly)' : ''}</label>
+                    <label htmlFor="ledger-reversal-reason" style={styles.label}>Audit Reason for Reversal {isController ? '(must match the approved request exactly)' : ''}</label>
                     <input
+                      id="ledger-reversal-reason"
                       type="text"
                       style={styles.input}
                       placeholder="e.g. Correct posting duplicate entry"
@@ -307,8 +309,9 @@ export const LedgerOperationsScreen: React.FC = () => {
 
                   {isController && (
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Approved Maker-Checker Request ID</label>
+                      <label htmlFor="ledger-approval-id" style={styles.label}>Approved Maker-Checker Request ID</label>
                       <input
+                        id="ledger-approval-id"
                         type="text"
                         style={styles.input}
                         placeholder="e.g. 3f2c1a00-... (from the approved reversal request)"
@@ -338,7 +341,7 @@ export const LedgerOperationsScreen: React.FC = () => {
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -347,17 +350,17 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   gapWarning: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
+    borderColor: 'var(--mn-status-warning, #8c5600)',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
@@ -381,11 +384,13 @@ const styles = {
     display: 'flex',
     gap: '24px',
     alignItems: 'flex-start',
+    flexWrap: 'wrap' as const,
   },
   leftSection: {
-    flex: 1,
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
@@ -394,18 +399,18 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '16px',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: '10px',
   },
   sectionTitle: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: 0,
   },
   select: {
     height: '34px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 10px',
     fontSize: '12px',
@@ -413,14 +418,14 @@ const styles = {
   },
   accountsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
     gap: '16px',
   },
   accountCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '6px',
     padding: '14px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
   },
   accountHeader: {
     display: 'flex',
@@ -431,18 +436,18 @@ const styles = {
   accountName: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   accountCode: {
     fontSize: '11px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontFamily: 'monospace',
   },
   accountMeta: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: '11px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     marginBottom: '10px',
   },
   metaLabel: {
@@ -451,13 +456,14 @@ const styles = {
   accountBalance: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     textAlign: 'right' as const,
   },
   rightSection: {
-    width: '480px',
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
@@ -472,35 +478,37 @@ const styles = {
   label: {
     fontSize: '12px',
     fontWeight: '500',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     marginBottom: '6px',
   },
   searchRow: {
     display: 'flex',
+    flexWrap: 'wrap' as const,
     gap: '10px',
   },
   input: {
-    flex: 1,
+    flex: '1 1 150px',
+    minWidth: 0,
     height: '38px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '13px',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   searchBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
-    padding: '0 16px',
+    padding: '10px 16px',
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -508,11 +516,11 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#EF4444',
+    borderColor: 'var(--mn-status-danger, #b3261e)',
   },
   successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
+    color: 'var(--mn-status-success, #146348)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -520,52 +528,52 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#10B981',
+    borderColor: 'var(--mn-status-success, #146348)',
   },
   journalCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '16px',
   },
   journalTitle: {
     fontSize: '14px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 12px 0',
     borderBottom: '1px dashed #CBD5E1',
     paddingBottom: '6px',
   },
   journalMetaGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
     gap: '8px',
     marginBottom: '16px',
   },
   metaItem: {
     fontSize: '11px',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     wordBreak: 'break-all' as const,
   },
   postedStatus: {
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     fontWeight: 'bold',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   reversedStatus: {
-    color: '#EF4444',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontWeight: 'bold',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   linesTitle: {
     fontSize: '12px',
     fontWeight: 'bold',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 10px 0',
   },
   linesTableWrapper: {
@@ -573,7 +581,7 @@ const styles = {
     marginBottom: '20px',
     backgroundColor: '#FFFFFF',
     borderRadius: '6px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '8px',
   },
   table: {
@@ -587,15 +595,15 @@ const styles = {
   th: {
     textAlign: 'left' as const,
     padding: '6px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '600',
   },
   tableRow: {
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
   },
   td: {
     padding: '8px 6px',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   reversalBlock: {
     marginTop: '16px',
@@ -605,11 +613,11 @@ const styles = {
   reversalTitle: {
     fontSize: '12px',
     fontWeight: 'bold',
-    color: '#EF4444',
+    color: 'var(--mn-status-danger, #b3261e)',
     margin: '0 0 12px 0',
   },
   reverseBtn: {
-    backgroundColor: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger, #b3261e)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -620,12 +628,12 @@ const styles = {
   },
   loadingText: {
     fontSize: '12px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     textAlign: 'center' as const,
   },
   emptyText: {
     fontSize: '12px',
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
     textAlign: 'center' as const,
   },
 };

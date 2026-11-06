@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import './operational-surfaces.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { extractRecords, StructuredColumn, StructuredRecordTable, DataRecord } from '../../components/StructuredData';
@@ -90,6 +92,8 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
+  const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     if (initialTab && canViewTab(initialTab)) setTab(initialTab);
@@ -98,6 +102,7 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
 
   const fetchTab = async (selectedTab: Tab) => {
     if (!canViewTab(selectedTab)) return;
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError('');
     setData(null);
@@ -108,19 +113,21 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
           ApiClient.get('/internal/limit-profiles'),
           ApiClient.get('/internal/limit-rules'),
         ]);
-        setData({ profiles: extractRecords(profiles), rules: extractRecords(rules) } satisfies LimitRegistryData);
+        if (currentRequest === requestId.current) setData({ profiles: extractRecords(profiles), rules: extractRecords(rules) } satisfies LimitRegistryData);
       } else {
-        setData(await ApiClient.get(TAB_ENDPOINTS[selectedTab]));
+        const result = await ApiClient.get(TAB_ENDPOINTS[selectedTab]);
+        if (currentRequest === requestId.current) setData(result);
       }
     } catch (err: any) {
-      setError(err?.message || `Failed to load ${TAB_LABELS[selectedTab].toLowerCase()}`);
+      if (currentRequest === requestId.current) setError(err?.message || `Failed to load ${TAB_LABELS[selectedTab].toLowerCase()}`);
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (canViewTab(tab)) void fetchTab(tab);
+    return () => { requestId.current += 1; };
   }, [tab]);
 
   if (!canView) {
@@ -137,29 +144,45 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
   const rows = tab !== 'limits' && data !== null ? extractRecords(data) : [];
 
   return (
-    <div style={wrap}>
-      <h2 style={h2}>🏷️ Commercial Rule Registries</h2>
-      <p style={sub}>Read-only registry views. Each tab requires its matching read function; this screen does not create, approve, execute, or modify registry entries.</p>
+    <div className="mn-operational" style={wrap}>
+      <PageHeader eyebrow="Commercial administration" title="🏷️ Commercial Rule Registries" description="Read-only registry views. Each tab requires its matching read function; this screen does not create, approve, execute, or modify registry entries." />
       <div style={tabRow} role="tablist" aria-label="Commercial registries">
         {availableTabs.map((candidate) => (
           <button
             key={candidate}
             type="button"
             role="tab"
+            id={`commercial-tab-${candidate}`}
+            aria-controls="commercial-panel"
             aria-selected={tab === candidate}
+            tabIndex={tab === candidate ? 0 : -1}
+            ref={(element) => { tabRefs.current[candidate] = element; }}
+            onKeyDown={(event) => {
+              const index = availableTabs.indexOf(candidate);
+              let next = index;
+              if (event.key === 'ArrowRight') next = (index + 1) % availableTabs.length;
+              else if (event.key === 'ArrowLeft') next = (index - 1 + availableTabs.length) % availableTabs.length;
+              else if (event.key === 'Home') next = 0;
+              else if (event.key === 'End') next = availableTabs.length - 1;
+              else return;
+              event.preventDefault();
+              setTab(availableTabs[next]);
+              tabRefs.current[availableTabs[next]]?.focus();
+            }}
             onClick={() => setTab(candidate)}
             style={tab === candidate ? activeTab : tabBtn}
           >
             {TAB_LABELS[candidate]}
           </button>
         ))}
-        <button type="button" onClick={() => void fetchTab(tab)} style={btn} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
       </div>
+      <button type="button" onClick={() => void fetchTab(tab)} style={btn} disabled={loading}>
+        {loading ? 'Loading…' : 'Refresh'}
+      </button>
 
+      <div id="commercial-panel" role="tabpanel" aria-labelledby={`commercial-tab-${tab}`}>
       {error && <div style={errBox} role="alert">{error}</div>}
-      {loading ? <div style={loadingBox}>Loading {TAB_LABELS[tab].toLowerCase()}…</div> : data !== null ? (
+      {loading ? <div role="status" style={loadingBox}>Loading {TAB_LABELS[tab].toLowerCase()}…</div> : data !== null ? (
         tab === 'limits' ? (
           <div style={limitSections}>
             <section style={card} aria-label="Limit profiles">
@@ -189,10 +212,11 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
             />
           </section>
         )
-      ) : (
+      ) : !error && (
         <div style={empty}>No {TAB_LABELS[tab].toLowerCase()} data loaded yet. Use Refresh to query the existing registry API.</div>
       )}
 
+      </div>
       <div style={note}>
         Commercial decision snapshots are not part of these registry tables. Fee calculation and any future governed configuration changes remain separate existing workflows.
       </div>
@@ -200,18 +224,18 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
   );
 };
 
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, marginBottom: 12 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1200 };
+const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
+const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 12 };
 const tabRow: React.CSSProperties = { display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' };
-const tabBtn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' };
-const activeTab: React.CSSProperties = { ...tabBtn, background: '#032B14', color: '#fff', border: '1px solid #032B14' };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', marginLeft: 'auto' };
+const tabBtn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer' };
+const activeTab: React.CSSProperties = { ...tabBtn, background: 'var(--mn-nav-surface-deep, #082f23)', color: '#fff', border: '1px solid var(--mn-nav-surface-deep, #082f23)' };
+const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer', marginLeft: 'auto' };
 const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 };
-const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B' };
-const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B', background: '#fff', borderRadius: 8, border: '1px dashed #E2E8F0' };
+const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
+const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)', background: '#fff', borderRadius: 8, border: '1px dashed var(--mn-border-subtle, #dde7e2)' };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 12 };
-const sectionTitle: React.CSSProperties = { margin: '0 0 12px', color: '#334155', fontSize: 14 };
+const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 12 };
+const sectionTitle: React.CSSProperties = { margin: '0 0 12px', color: 'var(--mn-text-primary, #132b25)', fontSize: 14 };
 const limitSections: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr', gap: 4 };
-const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: '#64748B', background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' };
+const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 10, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };

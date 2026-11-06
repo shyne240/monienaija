@@ -89,7 +89,7 @@ function lifecycleBadgeVisual(state: ProviderLifecycleState): {
       return {
         label: 'NOT_CONFIGURED · Dark / Fail-Closed',
         bg: '#f1f5f9',
-        fg: '#475569',
+        fg: 'var(--mn-text-secondary, #52655f)',
         border: '#cbd5e1',
         summary: 'No external provider credentials active on this channel.',
       };
@@ -507,7 +507,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
 
   if (loading && !overview) {
     return (
-      <div data-testid="provider-config-loading" style={{ padding: 20, color: '#475569' }}>
+      <div data-testid="provider-config-loading" style={{ padding: 20, color: 'var(--mn-text-secondary, #52655f)' }}>
         Loading governed SMS (Robase) and Email (Brevo) provider configuration…
       </div>
     );
@@ -558,7 +558,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
               ? `AES-256-GCM Secret Encryption Active (${overview.encryption.mode}, key version "${overview.encryption.activeKeyVersion}")`
               : 'Server Secret Encryption Key Not Configured — Credential Storage Fail-Closed'}
           </div>
-          <div style={{ fontSize: 12, color: '#334155', marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: 'var(--mn-text-primary, #132b25)', marginTop: 4 }}>
             {overview.encryption.available
               ? 'Provider API keys entered below are encrypted server-side with AES-256-GCM before PostgreSQL persistence. Stored keys are never returned in GET responses, logs, or audit trails.'
               : 'Configure NOTIFICATION_PROVIDER_ENCRYPTION_KEYRING_JSON or NOTIFICATION_PROVIDER_ENCRYPTION_KEY (32-byte base64) in the backend server environment before saving encrypted Robase or Brevo API keys.'}
@@ -586,7 +586,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 440px), 1fr))',
           gap: 20,
         }}
       >
@@ -626,7 +626,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             </span>
           </div>
 
-          <div style={{ fontSize: 12, color: '#475569' }}>{smsVisual.summary}</div>
+          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>{smsVisual.summary}</div>
 
           {/* 5-Gate Readiness Strip */}
           <div data-testid="sms-readiness-gates" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -786,7 +786,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   {smsTestBusy ? 'Sending…' : 'Send Test SMS'}
                 </button>
               </div>
-              <label style={{ fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input
                   type="checkbox"
                   data-testid="sms-quick-test-confirm"
@@ -1040,7 +1040,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
             </span>
           </div>
 
-          <div style={{ fontSize: 12, color: '#475569' }}>{emailVisual.summary}</div>
+          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>{emailVisual.summary}</div>
 
           {/* 5-Gate Readiness Strip */}
           <div data-testid="email-readiness-gates" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1231,7 +1231,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                   {emailTestBusy ? 'Sending…' : 'Send Test Email'}
                 </button>
               </div>
-              <label style={{ fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input
                   type="checkbox"
                   data-testid="email-quick-test-confirm"
@@ -1622,7 +1622,7 @@ export const ProviderConfigurationWorkspace: React.FC<ProviderConfigurationWorks
                         <div>
                           <strong>{prop.proposerPrincipalId}</strong>
                         </div>
-                        <div style={{ color: '#475569' }}>{prop.reason}</div>
+                        <div style={{ color: 'var(--mn-text-secondary, #52655f)' }}>{prop.reason}</div>
                       </td>
                       <td style={{ padding: 8 }}>
                         <span style={{ fontWeight: 700 }}>{prop.status}</span>

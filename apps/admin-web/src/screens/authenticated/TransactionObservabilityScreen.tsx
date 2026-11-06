@@ -1,7 +1,8 @@
+import './operational-surfaces.css';
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { formatMinorUnits } from '../../utils/financial-display';
+import { formatFinancialAmount, formatMinorUnits } from '../../utils/financial-display';
 
 interface TransactionDetail {
   id: string;
@@ -166,7 +167,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
 
   if (initialCustomerId ? !canViewCustomerTransactions : !canViewGlobalTransactions) {
     return (
-      <div style={styles.container} role="alert">
+      <div className="mn-operational" style={styles.container} role="alert">
         <div style={styles.errorBox}>
           {initialCustomerId
             ? 'Customer transaction history requires customer.view_transactions.'
@@ -177,7 +178,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
   }
 
   return (
-    <div style={styles.container}>
+    <div className="mn-operational" style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>{isCustomerHistoryView ? 'Customer Transaction History' : 'In-House Transaction & Fee Operations'}</h2>
         <p style={styles.subtitle}>
@@ -260,8 +261,8 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
           <form onSubmit={handleSearchTx} style={styles.searchForm}>
             <div style={styles.grid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Select Category</label>
-                <select style={styles.select} value={txType} onChange={(e: any) => setTxType(e.target.value)}>
+                <label htmlFor="transaction-category" style={styles.label}>Select Category</label>
+                <select id="transaction-category" style={styles.select} value={txType} onChange={(e: any) => setTxType(e.target.value)}>
                   <option value="TRANSFER">P2P TRANSFER</option>
                   <option value="DEPOSIT">DEPOSIT FUNDING</option>
                   <option value="WITHDRAWAL">WITHDRAWAL OUTFLOW</option>
@@ -269,9 +270,10 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Transaction ID (UUID)</label>
+                <label htmlFor="transaction-id" style={styles.label}>Transaction ID (UUID)</label>
                 <div style={styles.searchRow}>
                   <input
+                    id="transaction-id"
                     type="text"
                     style={styles.input}
                     placeholder="e.g. 5e6f7g8h-..."
@@ -287,7 +289,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
             </div>
           </form>
 
-          {txError && <div style={styles.errorBox}>{txError}</div>}
+          {txError && <div style={styles.errorBox} role="alert">{txError}</div>}
 
           {txDetail && (
             <div style={styles.txCard}>
@@ -295,13 +297,13 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <div style={styles.txMetaGrid}>
                 <p style={styles.metaItem}><strong>ID:</strong> {txDetail.id}</p>
                 <p style={styles.metaItem}><strong>Status:</strong> <span style={txDetail.status === 'SUCCESS' || txDetail.status === 'COMPLETED' ? styles.successStatus : styles.pendingStatus}>{txDetail.status}</span></p>
-                <p style={styles.metaItem}><strong>Amount:</strong> ₦{(parseFloat(txDetail.amountMinor || '0') / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+                <p style={styles.metaItem}><strong>Amount:</strong> {formatMinorUnits(txDetail.amountMinor, txDetail.currency)}</p>
                 <p style={styles.metaItem}><strong>Reference:</strong> {txDetail.reference || 'N/A'}</p>
                 
                 {txDetail.walletId && <p style={styles.metaItem}><strong>Wallet:</strong> {txDetail.walletId}</p>}
                 {txDetail.sourceWalletId && <p style={styles.metaItem}><strong>Source Wallet:</strong> {txDetail.sourceWalletId}</p>}
                 {txDetail.destinationWalletId && <p style={styles.metaItem}><strong>Dest Wallet:</strong> {txDetail.destinationWalletId}</p>}
-                {txDetail.failureReason && <p style={{ ...styles.metaItem, color: '#EF4444' }}><strong>Failure reason:</strong> {txDetail.failureReason}</p>}
+                {txDetail.failureReason && <p style={{ ...styles.metaItem, color: 'var(--mn-status-danger, #b3261e)' }}><strong>Failure reason:</strong> {txDetail.failureReason}</p>}
                 
                 <p style={styles.metaItem}><strong>Created:</strong> {new Date(txDetail.createdAt).toLocaleString()}</p>
                 {txDetail.completedAt && <p style={styles.metaItem}><strong>Completed:</strong> {new Date(txDetail.completedAt).toLocaleString()}</p>}
@@ -321,12 +323,13 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
           <h3 style={styles.sectionTitle}>Pricing Fee Simulator Tool</h3>
           <p style={styles.infoText}>Deterministic pricing fee engine simulator executing the backend math endpoint.</p>
 
-          {feeError && <div style={styles.errorBox}>{feeError}</div>}
+          {feeError && <div style={styles.errorBox} role="alert">{feeError}</div>}
 
           <form onSubmit={handleCalculateFee} style={styles.form}>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Transaction Amount (NGN)</label>
+              <label htmlFor="fee-amount" style={styles.label}>Transaction Amount (NGN)</label>
               <input
+                id="fee-amount"
                 type="number"
                 style={styles.input}
                 value={amountStr}
@@ -337,8 +340,9 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
 
             <div style={styles.grid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Flat Fee Rule (NGN)</label>
+                <label htmlFor="fee-flat" style={styles.label}>Flat Fee Rule (NGN)</label>
                 <input
+                id="fee-flat"
                   type="number"
                   style={styles.input}
                   value={flatFeeStr}
@@ -348,8 +352,9 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Variable Fee (BPS)</label>
+                <label htmlFor="fee-percent" style={styles.label}>Variable Fee (BPS)</label>
                 <input
+                id="fee-percent"
                   type="number"
                   style={styles.input}
                   value={percentBpsStr}
@@ -360,8 +365,9 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>VAT Tax Rate (BPS)</label>
+              <label htmlFor="fee-vat" style={styles.label}>VAT Tax Rate (BPS)</label>
               <input
+                id="fee-vat"
                 type="number"
                 style={styles.input}
                 value={vatBpsStr}
@@ -381,15 +387,15 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <div style={styles.feeMetaGrid}>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Calculated Net Fee:</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.feeMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.feeMinor, 'NGN')}</span>
                 </div>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Calculated Tax (VAT):</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.vatMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.vatMinor, 'NGN')}</span>
                 </div>
                 <div style={styles.feeRow}>
                   <span style={styles.feeLabel}>Total Gross Outflow:</span>
-                  <span style={styles.feeValue}>₦{(parseFloat(feeResult.totalMinor) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                  <span style={styles.feeValue}>{formatFinancialAmount(feeResult.totalMinor, 'NGN')}</span>
                 </div>
               </div>
             </div>
@@ -402,7 +408,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -411,12 +417,12 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   backButton: {
@@ -425,14 +431,14 @@ const styles = {
     border: '1px solid #D1D5DB',
     borderRadius: '6px',
     background: '#FFFFFF',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     cursor: 'pointer',
   },
   historySection: {
     marginBottom: '24px',
     padding: '20px',
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
   },
   historyHeader: {
@@ -444,7 +450,7 @@ const styles = {
   },
   historyCustomer: {
     margin: '-8px 0 0',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
     wordBreak: 'break-all' as const,
   },
@@ -452,7 +458,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '4px',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
   },
   historyFilter: {
@@ -474,8 +480,8 @@ const styles = {
   },
   historyEmpty: {
     padding: '16px',
-    color: '#64748B',
-    background: '#F8FAFC',
+    color: 'var(--mn-text-secondary, #52655f)',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '6px',
     fontSize: '13px',
   },
@@ -485,7 +491,7 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     marginTop: '12px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: '12px',
   },
   historyPageButton: {
@@ -496,8 +502,8 @@ const styles = {
     cursor: 'pointer',
   },
   gapWarning: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
+    borderColor: 'var(--mn-status-warning, #8c5600)',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
@@ -521,20 +527,22 @@ const styles = {
     display: 'flex',
     gap: '24px',
     alignItems: 'flex-start',
+    flexWrap: 'wrap' as const,
   },
   leftSection: {
-    flex: 1,
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
   sectionTitle: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 16px 0',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: '8px',
   },
   searchForm: {
@@ -542,7 +550,7 @@ const styles = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
     gap: '16px',
   },
   inputGroup: {
@@ -553,17 +561,17 @@ const styles = {
   label: {
     fontSize: '12px',
     fontWeight: '500',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     marginBottom: '6px',
   },
   select: {
     height: '38px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '13px',
     backgroundColor: '#FFFFFF',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   searchRow: {
     display: 'flex',
@@ -572,14 +580,14 @@ const styles = {
   input: {
     flex: 1,
     height: '38px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '13px',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   searchBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -589,8 +597,8 @@ const styles = {
     cursor: 'pointer',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -598,52 +606,52 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#EF4444',
+    borderColor: 'var(--mn-status-danger, #b3261e)',
   },
   txCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '16px',
   },
   txTitle: {
     fontSize: '14px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 12px 0',
     borderBottom: '1px dashed #CBD5E1',
     paddingBottom: '6px',
   },
   txMetaGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
     gap: '12px',
     marginBottom: '16px',
   },
   metaItem: {
     fontSize: '11px',
-    color: '#475569',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     wordBreak: 'break-all' as const,
   },
   successStatus: {
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     fontWeight: 'bold',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   pendingStatus: {
-    color: '#F59E0B',
+    color: 'var(--mn-status-warning, #8c5600)',
     fontWeight: 'bold',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
     padding: '2px 6px',
     borderRadius: '4px',
   },
   readOnlyNotice: {
     marginTop: '16px',
     padding: '12px',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     borderRadius: '6px',
     backgroundColor: '#FFFBEB',
     color: '#92400E',
@@ -651,15 +659,16 @@ const styles = {
     lineHeight: '18px',
   },
   rightSection: {
-    width: '460px',
+    flex: '1 1 340px',
+    minWidth: 0,
     backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '8px',
     padding: '20px',
   },
   infoText: {
     fontSize: '13px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     lineHeight: '18px',
     margin: '0 0 16px 0',
   },
@@ -668,7 +677,7 @@ const styles = {
     flexDirection: 'column' as const,
   },
   submitBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -681,7 +690,7 @@ const styles = {
   },
   feeCard: {
     marginTop: '20px',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '8px',
     border: '1px solid #CBD5E1',
     padding: '16px',
@@ -689,7 +698,7 @@ const styles = {
   feeTitle: {
     fontSize: '14px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 12px 0',
   },
   feeMetaGrid: {
@@ -703,11 +712,11 @@ const styles = {
     fontSize: '13px',
   },
   feeLabel: {
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '500',
   },
   feeValue: {
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     fontWeight: '700',
   },
 };

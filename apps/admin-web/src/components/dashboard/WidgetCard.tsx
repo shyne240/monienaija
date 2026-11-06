@@ -33,7 +33,7 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   children,
 }) => {
   return (
-    <div style={styles.card}>
+    <section style={styles.card}>
       <div style={styles.headerRow}>
         <div>
           <h3 style={styles.title}>{title}</h3>
@@ -50,14 +50,14 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
       )}
 
       {!restricted && loading && (
-        <div style={styles.stateBox}>
+        <div style={styles.stateBox} role="status">
           <div style={styles.spinner} />
           <span style={styles.stateText}>Loading…</span>
         </div>
       )}
 
       {!restricted && !loading && error && (
-        <div style={styles.errorBox}>
+        <div style={styles.errorBox} role="alert">
           <span>⚠️ {error}</span>
         </div>
       )}
@@ -67,7 +67,7 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
       )}
 
       {!restricted && !loading && !error && !empty && children}
-    </div>
+    </section>
   );
 };
 
@@ -77,6 +77,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     border: `1px solid ${colors.border}`,
     padding: 20,
+    minWidth: 0,
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
     display: 'flex',
     flexDirection: 'column',
@@ -146,7 +147,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 8,
     padding: 14,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: colors.borderLight,
     borderRadius: 6,
     color: colors.textMuted,
     fontSize: 12,

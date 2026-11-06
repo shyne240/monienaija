@@ -3,6 +3,8 @@ import { useAuthStore } from '../../store/auth-store';
 import { ApiClient } from '../../services/api-client';
 import { useWidgetData } from '../../components/dashboard/useWidgetData';
 import { WidgetRenderer } from '../../components/dashboard/widgets';
+import { PageHeader } from '../../design-system/primitives';
+import './operational-surfaces.css';
 import type { ResolvedDashboard } from '../../components/dashboard/types';
 
 const DASH = '/internal/a2/workforce/dashboard';
@@ -51,11 +53,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     .sort((a, b) => a.order - b.order);
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>System Administration Dashboard</h2>
-        <p style={styles.subtitle}>Real-time system telemetry and operational monitoring status</p>
-      </div>
+    <div className="mn-operational" style={styles.container}>
+      <PageHeader eyebrow="Overview" title="System Administration Dashboard" description="Your workforce session and assigned operational widgets." />
 
       <div style={styles.grid}>
         <div style={styles.card}>
@@ -101,14 +100,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {dashboard?.description && <p style={styles.subtitle}>{dashboard.description}</p>}
 
       {loading && (
-        <div style={styles.stateBox}>
+        <div style={styles.stateBox} role="status">
           <div style={styles.spinner} />
           <span>Loading your dashboard…</span>
         </div>
       )}
 
       {!loading && error && (
-        <div style={styles.errorBox}>
+        <div style={styles.errorBox} role="alert">
           ⚠️ Unable to load your dashboard: {error}
         </div>
       )}
@@ -135,7 +134,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -144,24 +143,24 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
     gap: '20px',
     marginBottom: '32px',
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'var(--mn-surface-raised, #ffffff)',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '20px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
   },
@@ -170,7 +169,7 @@ const styles = {
     fontWeight: 'bold',
     color: '#1E293B',
     margin: '0 0 16px 0',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     paddingBottom: '8px',
   },
   metaRow: {
@@ -180,11 +179,11 @@ const styles = {
     marginBottom: '10px',
   },
   metaLabel: {
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '500',
   },
   metaValue: {
-    color: '#0F172A',
+    color: 'var(--mn-text-primary, #132b25)',
     fontWeight: '600',
     wordBreak: 'break-all' as const,
   },
@@ -197,8 +196,8 @@ const styles = {
   roleBadge: {
     fontSize: '11px',
     fontWeight: 'bold',
-    color: '#0A3D25',
-    backgroundColor: '#E6F0EB',
+    color: 'var(--mn-action-primary, #0b624a)',
+    backgroundColor: 'var(--mn-surface-mint, #e4f4ec)',
     padding: '4px 8px',
     borderRadius: '4px',
     textTransform: 'uppercase' as const,
@@ -209,13 +208,13 @@ const styles = {
   },
   scopesLabel: {
     fontSize: '12px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '500',
     marginBottom: '8px',
   },
   scopeItem: {
     fontSize: '12px',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     fontFamily: 'monospace',
     marginBottom: '4px',
   },
@@ -229,21 +228,21 @@ const styles = {
   sectionHeader: {
     fontSize: '17px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 16px 0',
   },
   fallbackBadge: {
     fontSize: '11px',
     fontWeight: 600,
     color: '#92400E',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
     padding: '4px 10px',
     borderRadius: '999px',
     marginBottom: '16px',
   },
   widgetGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))',
     gap: '20px',
     alignItems: 'start',
   },
@@ -251,29 +250,29 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 13,
     padding: '12px 0',
   },
   spinner: {
     width: 16,
     height: 16,
-    border: '2px solid #E2E8F0',
-    borderTop: '2px solid #0A3D25',
+    border: '2px solid var(--mn-border-subtle, #dde7e2)',
+    borderTop: '2px solid var(--mn-action-primary, #0b624a)',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
     borderRadius: '6px',
-    border: '1px solid #EF4444',
+    border: '1px solid var(--mn-status-danger, #b3261e)',
   },
   emptyBox: {
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
     fontSize: 13,
     padding: '12px 0',
   },

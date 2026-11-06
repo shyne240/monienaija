@@ -511,7 +511,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   <span
                     style={{
                       fontSize: 12,
-                      color: subject.length > EMAIL_SUBJECT_MAX_LENGTH ? '#DC2626' : '#64748B',
+                      color: subject.length > EMAIL_SUBJECT_MAX_LENGTH ? '#DC2626' : 'var(--mn-text-secondary, #52655f)',
                     }}
                   >
                     {subject.length} / {EMAIL_SUBJECT_MAX_LENGTH} chars
@@ -545,7 +545,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 <span
                   style={{
                     fontSize: 12,
-                    color: body.length > maxBodyLength ? '#DC2626' : '#64748B',
+                    color: body.length > maxBodyLength ? '#DC2626' : 'var(--mn-text-secondary, #52655f)',
                   }}
                   data-testid="template-char-counter"
                 >
@@ -577,11 +577,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
             {/* Detected Variable Token Chips */}
             <div style={styles.tokenStatusBox}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)' }}>
                 Referenced tokens ({detectedTokens.length}):
               </span>
               {detectedTokens.length === 0 ? (
-                <span style={{ fontSize: 12, color: '#64748B' }}>No variables referenced</span>
+                <span style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>No variables referenced</span>
               ) : (
                 <div style={styles.tokenChipRow}>
                   {detectedTokens.map((token) => {
@@ -702,11 +702,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   >
                     <div style={styles.variableHeader}>
                       <code style={styles.variableToken}>{`{{${variable.name}}}`}</code>
-                      <span style={{ fontSize: 11, color: '#475569' }}>
+                      <span style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' }}>
                         Resolver: <code>{variable.sourceSummary}</code>
                       </span>
                     </div>
-                    <p style={{ margin: '4px 0 8px 0', fontSize: 12, color: '#334155' }}>
+                    <p style={{ margin: '4px 0 8px 0', fontSize: 12, color: 'var(--mn-text-primary, #132b25)' }}>
                       {variable.description} · Sample: <strong>{variable.sampleValue}</strong>
                     </p>
                     <div style={styles.variableActions}>
@@ -768,7 +768,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
             {selectedEvent && selectedEvent.approvedVariables.length > 0 && (
               <div>
                 <div
-                  style={{ fontSize: 11, color: '#475569', marginBottom: 6 }}
+                  style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)', marginBottom: 6 }}
                   data-testid="sample-override-scope-hint"
                 >
                   <strong>Local Sample Overrides (Client-Side):</strong> Custom values below update
@@ -781,7 +781,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                     <div key={variable.name}>
                       <label
                         htmlFor={`sample-${channel}-${variable.name}`}
-                        style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#475569' }}
+                        style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--mn-text-secondary, #52655f)' }}
                       >
                         Sample <code>{`{{${variable.name}}}`}</code>
                       </label>
@@ -860,7 +860,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   ...styles.previewFrame,
                   marginBottom: 10,
                   borderColor: '#CBD5E1',
-                  background: '#F8FAFC',
+                  background: 'var(--mn-surface-canvas, #f5f8f6)',
                 }}
                 data-testid="local-custom-override-preview"
               >
@@ -868,7 +868,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   <span style={styles.previewSourceBadge}>
                     Local Safe Preview (Your Custom Sample Overrides Preserved)
                   </span>
-                  <span style={{ fontSize: 11, color: '#475569' }}>
+                  <span style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' }}>
                     {localSafePreview.characterCount} chars
                   </span>
                 </div>
@@ -899,7 +899,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         ? 'Local Safe Whitelist Preview (Custom Sample Overrides)'
                         : 'Local Safe Whitelist Preview'}
                   </span>
-                  <span style={{ fontSize: 11, color: '#475569' }}>
+                  <span style={{ fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' }}>
                     {displayedPreview.characterCount} chars
                     {displayedPreview.estimatedSmsSegments !== null
                       ? ` · ${displayedPreview.estimatedSmsSegments} SMS segment(s)`
@@ -919,11 +919,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                     <div
                       style={{
                         fontSize: 12,
-                        color: '#334155',
+                        color: 'var(--mn-text-primary, #132b25)',
                         marginBottom: 8,
                         padding: '6px 10px',
                         background: '#FFFFFF',
-                        border: '1px solid #E2E8F0',
+                        border: '1px solid var(--mn-border-subtle, #dde7e2)',
                         borderRadius: 4,
                       }}
                     >
@@ -937,7 +937,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         maxWidth: 600,
                         margin: '0 auto',
                         background: '#FFFFFF',
-                        border: '1px solid #E2E8F0',
+                        border: '1px solid var(--mn-border-subtle, #dde7e2)',
                         borderRadius: 8,
                         overflow: 'hidden',
                         fontFamily:
@@ -946,7 +946,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                     >
                       <div
                         style={{
-                          background: '#0F172A',
+                          background: 'var(--mn-text-primary, #132b25)',
                           color: '#FFFFFF',
                           padding: '12px 18px',
                           fontSize: 15,
@@ -956,12 +956,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       >
                         MonieNaija
                       </div>
-                      <div style={{ padding: '16px 18px', color: '#1E293B' }}>
+                      <div style={{ padding: '16px 18px', color: 'var(--mn-text-primary, #132b25)' }}>
                         <div
                           style={{
                             fontSize: 15,
                             fontWeight: 600,
-                            color: '#0F172A',
+                            color: 'var(--mn-text-primary, #132b25)',
                             marginBottom: 10,
                           }}
                         >
@@ -969,7 +969,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         </div>
                         <div
                           data-testid="rendered-preview-body"
-                          style={{ fontSize: 13, lineHeight: 1.55, color: '#1E293B' }}
+                          style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--mn-text-primary, #132b25)' }}
                         >
                           {(displayedPreview.renderedBody || '(empty message body)')
                             .split(/\n{2,}/)
@@ -986,11 +986,11 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       <div
                         style={{
                           padding: '10px 18px',
-                          background: '#F8FAFC',
-                          borderTop: '1px solid #E2E8F0',
+                          background: 'var(--mn-surface-canvas, #f5f8f6)',
+                          borderTop: '1px solid var(--mn-border-subtle, #dde7e2)',
                           fontSize: 11,
                           lineHeight: 1.45,
-                          color: '#64748B',
+                          color: 'var(--mn-text-secondary, #52655f)',
                         }}
                       >
                         This is an automated service notification from MonieNaija. MonieNaija will
@@ -1231,13 +1231,13 @@ const styles: Record<string, React.CSSProperties> = {
   wrapper: { display: 'flex', flexDirection: 'column', gap: 16 },
   card: {
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 10,
     padding: 18,
   },
   blockedBanner: {
     background: '#FFFBEB',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     borderRadius: 10,
     padding: '12px 16px',
     color: '#78350F',
@@ -1254,12 +1254,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   blockedBodyText: { margin: 0, fontSize: 13, lineHeight: 1.45 },
   readonlyNotice: {
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     border: '1px solid #CBD5E1',
     borderRadius: 8,
     padding: '10px 14px',
     fontSize: 13,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   selectorRow: {
     display: 'flex',
@@ -1270,15 +1270,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   eventMetaPills: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   metaPill: {
-    background: '#F1F5F9',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
     border: '1px solid #CBD5E1',
     borderRadius: 999,
     padding: '4px 10px',
     fontSize: 12,
     fontWeight: 600,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
-  eventDescription: { margin: '10px 0 0 0', fontSize: 13, color: '#475569' },
+  eventDescription: { margin: '10px 0 0 0', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' },
   securityLockedBox: {
     marginTop: 12,
     background: '#FEF2F2',
@@ -1297,11 +1297,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   twoColGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
     gap: 16,
   },
-  sectionTitle: { margin: '0 0 8px 0', fontSize: 16, fontWeight: 700, color: '#0F172A' },
-  helperText: { margin: '0 0 12px 0', fontSize: 12, color: '#64748B', lineHeight: 1.45 },
+  sectionTitle: { margin: '0 0 8px 0', fontSize: 16, fontWeight: 700, color: 'var(--mn-text-primary, #132b25)' },
+  helperText: { margin: '0 0 12px 0', fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', lineHeight: 1.45 },
   fieldGroup: { marginBottom: 14 },
   labelRow: {
     display: 'flex',
@@ -1310,7 +1310,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     marginBottom: 6,
   },
-  label: { fontSize: 13, fontWeight: 600, color: '#1E293B', display: 'block' },
+  label: { fontSize: 13, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)', display: 'block' },
   select: {
     width: '100%',
     padding: '9px 12px',
@@ -1346,8 +1346,8 @@ const styles: Record<string, React.CSSProperties> = {
     resize: 'vertical',
   },
   tokenStatusBox: {
-    background: '#F8FAFC',
-    border: '1px solid #E2E8F0',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
     padding: '8px 12px',
     marginBottom: 14,
@@ -1366,7 +1366,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 999,
   },
   invalidTokenChip: {
-    background: '#FEE2E2',
+    background: 'var(--mn-status-danger-bg, #fdebe9)',
     color: '#991B1B',
     fontSize: 12,
     fontWeight: 600,
@@ -1384,7 +1384,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   blockedAlert: {
     background: '#FFFBEB',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     color: '#92400E',
     padding: '10px 12px',
     borderRadius: 8,
@@ -1402,7 +1402,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   buttonRow: { display: 'flex', gap: 10 },
   primaryBtn: {
-    background: '#0F172A',
+    background: 'var(--mn-text-primary, #132b25)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: 8,
@@ -1412,7 +1412,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   primaryBtnDisabled: {
-    background: '#94A3B8',
+    background: 'var(--mn-text-muted, #5b6b66)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: 8,
@@ -1423,7 +1423,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   secondarySmallBtn: {
     background: '#FFFFFF',
-    color: '#0F172A',
+    color: 'var(--mn-text-primary, #132b25)',
     border: '1px solid #CBD5E1',
     borderRadius: 6,
     padding: '5px 10px',
@@ -1442,9 +1442,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   disabledSmallBtn: {
-    background: '#F1F5F9',
-    color: '#94A3B8',
-    border: '1px solid #E2E8F0',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '5px 10px',
     fontSize: 12,
@@ -1453,10 +1453,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   variableList: { display: 'flex', flexDirection: 'column', gap: 10 },
   variableCard: {
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
     padding: '10px 12px',
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
   },
   variableHeader: {
     display: 'flex',
@@ -1475,13 +1475,13 @@ const styles: Record<string, React.CSSProperties> = {
   variableActions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
   sampleGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))',
     gap: 8,
     marginBottom: 12,
   },
   previewFrame: {
-    background: '#0F172A',
-    color: '#F8FAFC',
+    background: 'var(--mn-text-primary, #132b25)',
+    color: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: 8,
     padding: 14,
   },
@@ -1492,7 +1492,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   previewSourceBadge: {
-    background: '#1E293B',
+    background: 'var(--mn-text-primary, #132b25)',
     color: '#93C5FD',
     padding: '2px 8px',
     borderRadius: 999,
@@ -1502,7 +1502,7 @@ const styles: Record<string, React.CSSProperties> = {
   previewSubjectBox: {
     paddingBottom: 8,
     marginBottom: 8,
-    borderBottom: '1px solid #334155',
+    borderBottom: '1px solid var(--mn-text-primary, #132b25)',
     fontSize: 13,
   },
   previewBodyBox: {
@@ -1513,30 +1513,30 @@ const styles: Record<string, React.CSSProperties> = {
   warningList: {
     marginTop: 10,
     paddingTop: 8,
-    borderTop: '1px solid #334155',
+    borderTop: '1px solid var(--mn-text-primary, #132b25)',
     color: '#FCD34D',
     fontSize: 12,
   },
   emptyBox: {
     padding: 14,
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     border: '1px dashed #CBD5E1',
     borderRadius: 8,
     fontSize: 13,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
   th: {
     textAlign: 'left',
     padding: '9px 10px',
-    borderBottom: '2px solid #E2E8F0',
-    color: '#475569',
+    borderBottom: '2px solid var(--mn-border-subtle, #dde7e2)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 12,
     fontWeight: 700,
   },
   td: {
     padding: '9px 10px',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     verticalAlign: 'top',
   },
   activeChip: {
@@ -1548,7 +1548,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   pendingChip: {
-    background: '#FEF3C7',
+    background: 'var(--mn-status-warning-bg, #fff3d9)',
     color: '#92400E',
     padding: '2px 8px',
     borderRadius: 999,
@@ -1556,8 +1556,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   mutedChip: {
-    background: '#F1F5F9',
-    color: '#475569',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-secondary, #52655f)',
     padding: '2px 8px',
     borderRadius: 999,
     fontSize: 11,
@@ -1581,23 +1581,23 @@ const styles: Record<string, React.CSSProperties> = {
   },
   compareBox: {
     marginTop: 14,
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     border: '1px solid #CBD5E1',
     borderRadius: 8,
     padding: 14,
   },
   compareGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
     gap: 12,
     marginTop: 10,
   },
   compareCol: {
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
     padding: 12,
   },
-  compareHeader: { fontWeight: 700, fontSize: 12, color: '#0F172A', marginBottom: 6 },
-  compareBody: { whiteSpace: 'pre-wrap', fontSize: 13, color: '#334155' },
+  compareHeader: { fontWeight: 700, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', marginBottom: 6 },
+  compareBody: { whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--mn-text-primary, #132b25)' },
 };

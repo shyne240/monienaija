@@ -1,3 +1,5 @@
+import './operational-surfaces.css';
+import { PageHeader } from '../../design-system/primitives';
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -101,7 +103,7 @@ export const WorkforceAdminScreen: React.FC = () => {
 
   if (!canView) {
     return (
-      <div style={wrap} role="alert">
+      <div className="mn-operational" style={wrap} role="alert">
         <div style={denied}>
           This screen requires <code>workforce.dashboard.view</code>, <code>workforce.user.create</code>, or <code>workforce.user.suspend</code>.
         </div>
@@ -112,9 +114,8 @@ export const WorkforceAdminScreen: React.FC = () => {
   const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).map((item) => ({ roleKey: item.roleKey, count: item.count }));
 
   return (
-    <div style={wrap}>
-      <h2 style={h2}>👷 Workforce Overview & Support Provisioning</h2>
-      <p style={sub}>The available read-only workforce summary and SUPPORT identity actions are shown only when their matching functions are granted.</p>
+    <div className="mn-operational" style={wrap}>
+      <PageHeader eyebrow="Workforce and governance" title="👷 Workforce Overview & Support Provisioning" description="The available read-only workforce summary and SUPPORT identity actions are shown only when their matching functions are granted." />
 
       {canViewOverview && (
         <section style={overviewCard} aria-label="Workforce overview">
@@ -139,7 +140,7 @@ export const WorkforceAdminScreen: React.FC = () => {
                 emptyMessage="No active role assignments were returned."
               />
             </>
-          ) : <div style={empty}>No overview data was returned by the workforce widget.</div>}
+          ) : !error && <div style={empty}>No overview data was returned by the workforce widget.</div>}
         </section>
       )}
 
@@ -183,25 +184,25 @@ export const WorkforceAdminScreen: React.FC = () => {
   );
 };
 
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const h3: React.CSSProperties = { margin: 0, color: '#334155', fontSize: 16 };
-const h4: React.CSSProperties = { margin: '16px 0 10px', color: '#334155', fontSize: 14 };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, margin: '8px 0 12px' };
-const overviewCard: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 16 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1100 };
+const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
+const h3: React.CSSProperties = { margin: 0, color: 'var(--mn-text-primary, #132b25)', fontSize: 16 };
+const h4: React.CSSProperties = { margin: '16px 0 10px', color: 'var(--mn-text-primary, #132b25)', fontSize: 14 };
+const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, margin: '8px 0 12px' };
+const overviewCard: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 16 };
 const sectionHeading: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 };
-const summaryGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 };
-const summaryCard: React.CSSProperties = { padding: 14, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, color: '#475569', fontSize: 13 };
-const big: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: '#032B14', marginTop: 6 };
-const formCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 };
+const summaryGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12 };
+const summaryCard: React.CSSProperties = { padding: 14, background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 };
+const big: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: 'var(--mn-nav-surface-deep, #082f23)', marginTop: 6 };
+const formCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 };
 const form: React.CSSProperties = { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' };
-const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 220, color: '#475569', fontSize: 12 };
+const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 220, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1' };
 const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#fff', cursor: 'pointer' };
 const dangerBtn: React.CSSProperties = { ...btn, borderColor: '#FCA5A5', background: '#FEF2F2', color: '#991B1B' };
 const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, margin: '10px 0', fontSize: 13 };
 const successBox: React.CSSProperties = { background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: 10, borderRadius: 6, margin: '10px 0', fontSize: 13, overflowWrap: 'anywhere' };
-const loadingBox: React.CSSProperties = { padding: 18, textAlign: 'center', color: '#64748B' };
-const empty: React.CSSProperties = { padding: 16, color: '#64748B', background: '#F8FAFC', borderRadius: 6, fontSize: 13 };
+const loadingBox: React.CSSProperties = { padding: 18, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
+const empty: React.CSSProperties = { padding: 16, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6, fontSize: 13 };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const note: React.CSSProperties = { marginTop: 12, padding: 10, color: '#64748B', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 };
+const note: React.CSSProperties = { marginTop: 12, padding: 10, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, fontSize: 12 };

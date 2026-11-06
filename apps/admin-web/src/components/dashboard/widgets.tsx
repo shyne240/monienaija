@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { colors } from './tokens';
+import { ScrollRegion } from '../../design-system/primitives';
 import { WidgetCard } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
@@ -118,7 +119,7 @@ export const TransactionSummaryWidget: React.FC = () => {
             recognized transaction fees only, not profit — no profit/margin figure is computed anywhere in this dashboard because no
             verified cost-accounting source exists in V1 ({data.commissionNote})
           </p>
-          <table style={styles.table}>
+          <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Type</th>
@@ -141,7 +142,7 @@ export const TransactionSummaryWidget: React.FC = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></ScrollRegion>
           {data.comparison && <p style={styles.note}>{data.comparison.definition}</p>}
         </>
       )}
@@ -198,6 +199,15 @@ export const TransactionTrendWidget: React.FC = () => {
             <span>{daily[0]?.date}</span>
             <span>{daily[daily.length - 1]?.date}</span>
           </div>
+          <details>
+            <summary>View daily trend data</summary>
+            <ScrollRegion label="Daily transaction trend data" hint="Scroll horizontally to view all columns.">
+              <table style={styles.table}>
+                <thead><tr><th scope="col">Date</th><th scope="col">Completed count</th><th scope="col">Completed value</th></tr></thead>
+                <tbody>{daily.map((d) => <tr key={d.date}><td>{d.date}</td><td>{d.completedCount}</td><td>{formatMinor(d.completedValueMinor, data?.currency)}</td></tr>)}</tbody>
+              </table>
+            </ScrollRegion>
+          </details>
         </div>
       )}
     </WidgetCard>
@@ -218,7 +228,7 @@ export const RecentTransactionsWidget: React.FC = () => {
       empty={!!data && rows.length === 0}
     >
       {rows.length > 0 && (
-        <table style={styles.table}>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Type</th>
@@ -243,7 +253,7 @@ export const RecentTransactionsWidget: React.FC = () => {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></ScrollRegion>
       )}
     </WidgetCard>
   );
@@ -263,7 +273,7 @@ export const LedgerSummaryWidget: React.FC = () => {
   return (
     <WidgetCard title="Ledger Summary" description="Ledger debit/credit totals by currency and accounting unit, sourced directly from ledger_journals/ledger_lines." loading={loading} error={error} empty={!!data && rows.length === 0}>
       {rows.length > 0 && (
-        <table style={styles.table}>
+        <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Currency</th>
@@ -284,7 +294,7 @@ export const LedgerSummaryWidget: React.FC = () => {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></ScrollRegion>
       )}
     </WidgetCard>
   );
@@ -433,7 +443,7 @@ export const GenericDirectWidget: React.FC<{
           .filter((k) => typeof first[k] !== 'object' || first[k] === null)
           .slice(0, 5);
         body = (
-          <table style={styles.table}>
+          <ScrollRegion label="Dashboard data table" hint="Scroll horizontally to view all columns."><table style={styles.table}>
             <thead>
               <tr>
                 {keys.map((k) => (
@@ -454,7 +464,7 @@ export const GenericDirectWidget: React.FC<{
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></ScrollRegion>
         );
       }
     } else if (typeof data === 'object') {

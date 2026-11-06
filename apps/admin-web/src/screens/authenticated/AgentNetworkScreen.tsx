@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import './operational-surfaces.css';
+import React, { useEffect, useRef, useState } from 'react';
+import { ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import {
   createAgentApplicationDraft,
@@ -492,18 +494,23 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
     await loadPosition(a.id);
   };
 
+  const agentListRequest = useRef(0);
+
   const fetchAgents = async () => {
     if (!canView) {
       setLoading(false);
       return;
     }
+    const request = ++agentListRequest.current;
     setLoading(true);
     setError('');
     try {
       const params: string[] = [`page=${page}`, `limit=20`];
       if (statusFilter) params.push(`status=${statusFilter}`);
       const res: any = await ApiClient.get(`/internal/agents?${params.join('&')}`);
-      const rows: Agent[] = res.data || (Array.isArray(res) ? res : []);
+      const rows: Agent[] = Array.isArray(res) ? res : res?.data;
+      if (!Array.isArray(rows)) throw new Error('Agent list returned an invalid response.');
+      if (request !== agentListRequest.current) return;
       setAgents(rows);
       setTotal(res.total ?? rows.length);
       if (selected) {
@@ -511,15 +518,16 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         if (refreshed) setSelected(refreshed);
       }
     } catch (e: any) {
-      setError(e?.message || 'Failed to load agents');
+      if (request === agentListRequest.current) setError(e?.message || 'Failed to load agents');
     } finally {
-      setLoading(false);
+      if (request === agentListRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (canView) void fetchAgents();
     else setLoading(false);
+    return () => { agentListRequest.current += 1; };
   }, [page, statusFilter, canView]);
 
   const loadClassCatalog = async () => {
@@ -546,6 +554,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       setApplications(rows);
       setApplicationsLoaded(true);
     } catch (e: any) {
+      setApplicationsLoaded(false);
       setApplicationsError(e?.message || 'Failed to load Agent applications');
     } finally {
       setApplicationsLoading(false);
@@ -1282,7 +1291,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
 
   if (!canView) {
     return (
-      <div style={wrap}>
+      <div className="mn-operational" style={wrap}>
         <div style={denied} data-testid="agent-directory-not-entitled">
           <strong>Not entitled:</strong> Agent directory and Agent receiving-number lookup require{' '}
           <code>agent.view</code>. Your roles: {principal?.roles.join(', ')}
@@ -1296,7 +1305,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   const activeClassOptions = classCatalog.filter((c) => c.isActive !== false);
 
   return (
-    <div style={wrap}>
+    <div className="mn-operational" style={wrap}>
       <h2 style={h2}>🏪 Agent Network Management</h2>
       <p style={sub}>
         Browse agents, inspect ledger-derived financial positions, onboard and review Agent applications, manage outlets/terminals and agent limits, and perform only lifecycle actions granted to this principal.
@@ -1416,7 +1425,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                     }
                     style={{
                       ...inlineInput,
-                      background: editingDraftId ? '#F1F5F9' : '#fff',
+                      background: editingDraftId ? 'var(--mn-surface-sunken, #eef3f0)' : '#fff',
                     }}
                     disabled={onboardingBusy}
                     maxLength={160}
@@ -1697,7 +1706,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
             return visibleApps.length === 0 ? (
               <div style={empty}>No Agent onboarding applications found.</div>
             ) : (
-              <table style={table}>
+              <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
                 <thead>
                   <tr>
                     <th>Reference</th>
@@ -1840,7 +1849,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                     );
                   })}
                 </tbody>
-              </table>
+              </table></ScrollRegion>
             );
           })()}
 
@@ -1908,10 +1917,10 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
       {error && <div style={errBox} role="alert">{error}</div>}
       {loading ? (
         <div style={loadingBox}>Loading agents…</div>
-      ) : agents.length === 0 ? (
+      ) : error ? null : agents.length === 0 ? (
         <div style={empty}>No agents found for this filter.</div>
       ) : (
-        <table style={table}>
+        <ScrollRegion label="Agent records" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
           <thead>
             <tr>
               <th>Reference</th>
@@ -1936,9 +1945,9 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></ScrollRegion>
       )}
-      <div style={pager}>
+      {!loading && !error && <div style={pager}>
         Total: {total} — Page {page}{' '}
         <button
           type="button"
@@ -1956,7 +1965,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
         >
           Next
         </button>
-      </div>
+      </div>}
 
       {selected && (
         <div style={drawer}>
@@ -2243,7 +2252,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                             {editingOutletId === outlet.id && canManageOutletsTerminals && (
                               <form
                                 onSubmit={(e) => void saveOutletMetadata(e, outlet)}
-                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed #E2E8F0' }}
+                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--mn-border-subtle, #dde7e2)' }}
                                 aria-label={`Edit outlet ${outlet.reference}`}
                               >
                                 <input
@@ -2372,7 +2381,7 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
                             {editingTerminalId === terminal.id && canManageOutletsTerminals && (
                               <form
                                 onSubmit={(e) => void saveTerminalMetadata(e, terminal)}
-                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed #E2E8F0' }}
+                                style={{ ...actionRow, marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--mn-border-subtle, #dde7e2)' }}
                                 aria-label={`Edit terminal ${terminal.reference}`}
                               >
                                 <input
@@ -2742,44 +2751,44 @@ export const AgentNetworkScreen: React.FC<AgentNetworkScreenProps> = ({
   );
 };
 
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1100 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const h3: React.CSSProperties = { margin: '0 0 4px', color: '#032B14', fontSize: 16 };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, marginBottom: 16 };
-const smallMuted: React.CSSProperties = { color: '#64748B', fontSize: 12 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1100 };
+const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
+const h3: React.CSSProperties = { margin: '0 0 4px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 };
+const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 16 };
+const smallMuted: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const filters: React.CSSProperties = { display: 'flex', gap: 12, marginTop: 16, marginBottom: 16, alignItems: 'center' };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' };
-const smallBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', fontSize: 12 };
+const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer' };
+const smallBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer', fontSize: 12 };
 const warnBtn: React.CSSProperties = { ...smallBtn, background: '#FFF7ED', borderColor: '#FDBA74' };
 const dangerBtn: React.CSSProperties = { ...smallBtn, background: '#FEF2F2', borderColor: '#FCA5A5' };
 const successBtn: React.CSSProperties = { ...smallBtn, background: '#ECFDF5', borderColor: '#6EE7B7' };
 const inlineInput: React.CSSProperties = { padding: '6px 9px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, background: '#fff' };
-const formGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 };
-const formFieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 };
+const formGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 8 };
+const formFieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', fontWeight: 600 };
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden' };
-const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid #F1F5F9', fontSize: 13, textAlign: 'left' };
+const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', fontSize: 13, textAlign: 'left' };
 const badge = (s: string): React.CSSProperties => ({
   padding: '2px 8px',
   borderRadius: 12,
   fontSize: 11,
   fontWeight: 700,
-  background: s === 'ACTIVE' || s === 'APPROVED' ? '#ECFDF5' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#FFF7ED' : s === 'TERMINATED' || s === 'REJECTED' ? '#FEF2F2' : '#F1F5F9',
-  color: s === 'ACTIVE' || s === 'APPROVED' ? '#065F46' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#92400E' : s === 'TERMINATED' || s === 'REJECTED' ? '#991B1B' : '#334155',
+  background: s === 'ACTIVE' || s === 'APPROVED' ? '#ECFDF5' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#FFF7ED' : s === 'TERMINATED' || s === 'REJECTED' ? '#FEF2F2' : 'var(--mn-surface-sunken, #eef3f0)',
+  color: s === 'ACTIVE' || s === 'APPROVED' ? '#065F46' : s === 'SUSPENDED' || s === 'UNDER_REVIEW' ? '#92400E' : s === 'TERMINATED' || s === 'REJECTED' ? '#991B1B' : 'var(--mn-text-primary, #132b25)',
 });
 const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 13 };
 const successBox: React.CSSProperties = { background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 13 };
 const boundaryBox: React.CSSProperties = { background: '#FFFBEB', border: '1px solid #FCD34D', color: '#78350F', padding: 10, borderRadius: 6, marginTop: 8, marginBottom: 8, fontSize: 12 };
 const noteBox: React.CSSProperties = { background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E3A8A', padding: 10, borderRadius: 6, marginTop: 12, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 };
-const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B' };
-const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B', background: '#fff', borderRadius: 8, border: '1px dashed #E2E8F0' };
-const pager: React.CSSProperties = { marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#64748B' };
+const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
+const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)', background: '#fff', borderRadius: 8, border: '1px dashed var(--mn-border-subtle, #dde7e2)' };
+const pager: React.CSSProperties = { marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const sectionCard: React.CSSProperties = { marginTop: 16, padding: 16, border: '1px solid #E2E8F0', borderRadius: 8, background: '#fff' };
+const sectionCard: React.CSSProperties = { marginTop: 16, padding: 16, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: '#fff' };
 const sectionHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
-const drawer: React.CSSProperties = { marginTop: 16, border: '1px solid #E2E8F0', borderRadius: 8, background: '#fff', overflow: 'hidden' };
-const drawerHead: React.CSSProperties = { padding: 12, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 };
+const drawer: React.CSSProperties = { marginTop: 16, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: '#fff', overflow: 'hidden' };
+const drawerHead: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 };
 const drawerBody: React.CSSProperties = { padding: 16, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 };
-const card: React.CSSProperties = { padding: 12, background: '#F8FAFC', borderRadius: 6, border: '1px solid #E2E8F0' };
+const card: React.CSSProperties = { padding: 12, background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };
 const actionRow: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' };
 const compactList: React.CSSProperties = { listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 6 };
-const compactListItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '6px 8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6 };
+const compactListItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '6px 8px', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6 };

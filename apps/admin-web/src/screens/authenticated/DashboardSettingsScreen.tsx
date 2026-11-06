@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { ScrollRegion } from '../../design-system/primitives';
+import './operational-surfaces.css';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import type {
@@ -116,7 +118,7 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   if (state === 'loading') {
     return (
-      <div style={styles.container}>
+      <div className="mn-operational" style={styles.container}>
         <div style={styles.stateBox}>
           <div style={styles.spinner} />
           <span>Loading dashboard configuration…</span>
@@ -127,7 +129,7 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   if (state === 'forbidden') {
     return (
-      <div style={styles.container}>
+      <div className="mn-operational" style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
@@ -141,7 +143,7 @@ export const DashboardSettingsScreen: React.FC = () => {
 
   if (state === 'error') {
     return (
-      <div style={styles.container}>
+      <div className="mn-operational" style={styles.container}>
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
@@ -154,7 +156,7 @@ export const DashboardSettingsScreen: React.FC = () => {
   }
 
   return (
-    <div style={styles.container}>
+    <div className="mn-operational" style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Dashboard Settings</h2>
         <p style={styles.subtitle}>
@@ -171,7 +173,7 @@ export const DashboardSettingsScreen: React.FC = () => {
       <div style={styles.templateList}>
         {templates.map((t) => (
           <div key={t.templateKey} style={styles.templateRow}>
-            <div style={styles.templateHeaderRow} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
+            <button type="button" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
               <div>
                 <span style={styles.templateKey}>{t.templateKey}</span>
                 <span style={styles.templateDisplayName}>{t.displayName}</span>
@@ -181,7 +183,7 @@ export const DashboardSettingsScreen: React.FC = () => {
                 <span style={styles.widgetCount}>{t.layout?.widgets?.length ?? 0} widgets</span>
                 <span style={styles.expandIcon}>{expandedTemplate === t.templateKey ? '▲' : '▼'}</span>
               </div>
-            </div>
+            </button>
             {expandedTemplate === t.templateKey && (
               <div style={styles.templateDetail}>
                 <p style={styles.templateDescription}>{t.description}</p>
@@ -202,8 +204,8 @@ export const DashboardSettingsScreen: React.FC = () => {
       </div>
 
       <h3 style={styles.sectionHeader}>Role → Dashboard Assignment ({assignments.length})</h3>
-      <div style={styles.assignmentTableWrap}>
-        <table style={styles.table}>
+      <ScrollRegion label="Role dashboard assignments" hint="Scroll horizontally to view all assignment controls.">
+        <div style={styles.assignmentTableWrap}><table style={styles.table}>
           <thead>
             <tr>
               <th style={styles.th}>Role</th>
@@ -228,6 +230,7 @@ export const DashboardSettingsScreen: React.FC = () => {
                     <td style={styles.td}>
                       <select
                         style={styles.select}
+                        aria-label={`Dashboard template for ${a.roleKey}`}
                         value={pendingTemplateByRole[a.roleKey] ?? a.templateKey}
                         onChange={(e) => setPendingTemplateByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
                       >
@@ -241,6 +244,7 @@ export const DashboardSettingsScreen: React.FC = () => {
                     <td style={styles.td}>
                       <input
                         style={styles.reasonInput}
+                        aria-label={`Reason for ${a.roleKey} dashboard change`}
                         type="text"
                         placeholder="Reason for this change (optional)"
                         value={reasonByRole[a.roleKey] ?? ''}
@@ -264,15 +268,15 @@ export const DashboardSettingsScreen: React.FC = () => {
               );
             })}
           </tbody>
-        </table>
-      </div>
+        </table></div>
+      </ScrollRegion>
     </div>
   );
 };
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -281,25 +285,25 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     maxWidth: 720,
   },
   note: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
     marginBottom: 16,
     maxWidth: 720,
   },
   sectionHeader: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '24px 0 12px 0',
   },
   templateList: {
@@ -308,11 +312,16 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
   },
   templateRow: {
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    backgroundColor: 'var(--mn-surface-raised, #ffffff)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
   },
   templateHeaderRow: {
+    width: '100%',
+    border: 0,
+    background: 'transparent',
+    textAlign: 'left',
+    font: 'inherit',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -323,12 +332,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     fontSize: 12,
     fontWeight: 700,
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     marginRight: 10,
   },
   templateDisplayName: {
     fontSize: 13,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   templateMeta: {
     display: 'flex',
@@ -338,34 +347,34 @@ const styles: Record<string, React.CSSProperties> = {
   activeBadge: {
     fontSize: 10,
     fontWeight: 700,
-    color: '#10B981',
-    backgroundColor: '#D1FAE5',
+    color: 'var(--mn-status-success, #146348)',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 8px',
     borderRadius: 10,
   },
   inactiveBadge: {
     fontSize: 10,
     fontWeight: 700,
-    color: '#94A3B8',
-    backgroundColor: '#F1F5F9',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    backgroundColor: 'var(--mn-surface-sunken, #eef3f0)',
     padding: '2px 8px',
     borderRadius: 10,
   },
   widgetCount: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   expandIcon: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
   },
   templateDetail: {
-    borderTop: '1px solid #F1F5F9',
+    borderTop: '1px solid var(--mn-surface-sunken, #eef3f0)',
     padding: '12px 16px',
   },
   templateDescription: {
     fontSize: 12,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: '0 0 10px 0',
   },
   widgetList: {
@@ -373,7 +382,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     paddingLeft: 18,
     fontSize: 12,
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
@@ -382,14 +391,16 @@ const styles: Record<string, React.CSSProperties> = {
   widgetKeyLabel: {
     fontFamily: 'monospace',
     fontSize: 10,
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
   },
   assignmentTableWrap: {
-    backgroundColor: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    backgroundColor: 'var(--mn-surface-raised, #ffffff)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 8,
     padding: 12,
-    overflowX: 'auto',
+    width: 'max-content',
+    minWidth: '100%',
+    boxSizing: 'border-box',
   },
   table: {
     width: '100%',
@@ -399,20 +410,20 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     padding: '8px 10px',
-    borderBottom: '2px solid #E2E8F0',
-    color: '#64748B',
+    borderBottom: '2px solid var(--mn-border-subtle, #dde7e2)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: 600,
     fontSize: 11,
     textTransform: 'uppercase',
   },
   td: {
     padding: '10px',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     verticalAlign: 'top',
   },
   select: {
     height: 32,
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '0 8px',
     fontSize: 12,
@@ -420,15 +431,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   reasonInput: {
     height: 32,
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '0 8px',
     fontSize: 12,
     minWidth: 220,
   },
   saveBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
+    color: 'var(--mn-surface-raised, #ffffff)',
     border: 'none',
     borderRadius: 6,
     padding: '8px 14px',
@@ -440,52 +451,52 @@ const styles: Record<string, React.CSSProperties> = {
   rowSuccess: {
     marginTop: 6,
     fontSize: 11,
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     maxWidth: 220,
   },
   rowError: {
     marginTop: 6,
     fontSize: 11,
-    color: '#EF4444',
+    color: 'var(--mn-status-danger, #b3261e)',
     maxWidth: 220,
   },
   stateBox: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 13,
   },
   spinner: {
     width: 16,
     height: 16,
-    border: '2px solid #E2E8F0',
-    borderTop: '2px solid #0A3D25',
+    border: '2px solid var(--mn-border-subtle, #dde7e2)',
+    borderTop: '2px solid var(--mn-action-primary, #0b624a)',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
   forbiddenBox: {
-    backgroundColor: '#F1F5F9',
-    color: '#64748B',
+    backgroundColor: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 13,
     padding: 16,
     borderRadius: 8,
     maxWidth: 640,
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: 13,
     fontWeight: 500,
     padding: 12,
     borderRadius: 6,
-    border: '1px solid #EF4444',
+    border: '1px solid var(--mn-status-danger, #b3261e)',
     maxWidth: 640,
     marginBottom: 12,
   },
   retryBtn: {
-    backgroundColor: '#0A3D25',
-    color: '#FFFFFF',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
+    color: 'var(--mn-surface-raised, #ffffff)',
     border: 'none',
     borderRadius: 6,
     padding: '10px 16px',
@@ -495,7 +506,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   code: {
     fontFamily: 'monospace',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: 'var(--mn-border-subtle, #dde7e2)',
     padding: '1px 5px',
     borderRadius: 4,
   },

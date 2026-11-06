@@ -1,3 +1,5 @@
+import './operational-surfaces.css';
+import { PageHeader } from '../../design-system/primitives';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -143,7 +145,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
 
   if (!canViewAny) {
     return (
-      <div style={wrap} role="alert">
+      <div className="mn-operational" style={wrap} role="alert">
         <div style={denied}>
           This screen requires at least one of <code>metrics.view</code>, <code>diagnostics.view</code>, <code>outbox.view</code>, or <code>notification.view_deliveries</code>.
         </div>
@@ -152,9 +154,8 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
   }
 
   return (
-    <div style={wrap}>
-      <h2 style={h2}>🩺 System Health</h2>
-      <p style={sub}>Read-only operational data. Each panel is requested only when its matching function is granted.</p>
+    <div className="mn-operational" style={wrap}>
+      <PageHeader eyebrow="System administration" title="🩺 System Health" description="Read-only operational data. Each panel is requested only when its matching function is granted." />
       <button type="button" onClick={() => void fetchAll()} style={btn} disabled={loading}>
         {loading ? 'Loading…' : 'Refresh'}
       </button>
@@ -266,7 +267,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
               {outboxReceiptsError && <div style={{ ...errBox, marginTop: 10 }}>{outboxReceiptsError}</div>}
               {outboxReceipts && (
                 <div style={{ marginTop: 12 }} data-testid="system-health-outbox-receipts-panel">
-                  <h4 style={{ margin: '0 0 6px', fontSize: 13, color: '#334155' }}>
+                  <h4 style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--mn-text-primary, #132b25)' }}>
                     Notification Outbox Receipts (<code>GET /internal/notifications/outbox-receipts</code>)
                   </h4>
                   <StructuredRecordTable
@@ -288,21 +289,21 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
   );
 };
 
-const wrap: React.CSSProperties = { padding: '24px', maxWidth: 1200 };
-const h2: React.CSSProperties = { margin: '0 0 8px', color: '#032B14' };
-const sub: React.CSSProperties = { color: '#64748B', fontSize: 13, marginBottom: 12 };
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', marginBottom: 12 };
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1200 };
+const h2: React.CSSProperties = { margin: '0 0 8px', color: 'var(--mn-nav-surface-deep, #082f23)' };
+const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, marginBottom: 12 };
+const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)', background: '#fff', cursor: 'pointer', marginBottom: 12 };
 const smallBtn: React.CSSProperties = { padding: '7px 11px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#fff', cursor: 'pointer', fontSize: 12 };
 const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 };
-const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: '#64748B' };
+const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, marginBottom: 12 };
-const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 12 };
-const h4: React.CSSProperties = { margin: '0 0 8px', fontSize: 15, color: '#334155' };
-const muted: React.CSSProperties = { color: '#64748B', fontSize: 12, margin: '0 0 10px' };
+const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12, marginBottom: 12 };
+const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 12 };
+const h4: React.CSSProperties = { margin: '0 0 8px', fontSize: 15, color: 'var(--mn-text-primary, #132b25)' };
+const muted: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 12, margin: '0 0 10px' };
 const filterRow: React.CSSProperties = { display: 'flex', alignItems: 'end', gap: 10, flexWrap: 'wrap', marginBottom: 12 };
-const filterLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, color: '#475569', fontSize: 12 };
+const filterLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const select: React.CSSProperties = { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', minWidth: 120 };
 const input: React.CSSProperties = { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 6, minWidth: 180 };
-const pager: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: '#64748B', fontSize: 12 };
-const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: '#64748B', background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' };
+const pager: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
+const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 10, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };

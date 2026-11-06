@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface WidgetDataState<T> {
   data: T | undefined;
@@ -15,27 +15,25 @@ export interface WidgetDataState<T> {
  */
 export function useWidgetData<T>(fetcher: () => Promise<T>, deps: unknown[]): WidgetDataState<T> {
   const [state, setState] = useState<WidgetDataState<T>>({ data: undefined, loading: true, error: null });
-  const cancelledRef = useRef(false);
-
   useEffect(() => {
-    cancelledRef.current = false;
+    let active = true;
     setState({ data: undefined, loading: true, error: null });
 
     (async () => {
       try {
         const result = await fetcher();
-        if (!cancelledRef.current) {
+        if (active) {
           setState({ data: result, loading: false, error: null });
         }
       } catch (err: any) {
-        if (!cancelledRef.current) {
+        if (active) {
           setState({ data: undefined, loading: false, error: err?.message || 'Failed to load widget data.' });
         }
       }
     })();
 
     return () => {
-      cancelledRef.current = true;
+      active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

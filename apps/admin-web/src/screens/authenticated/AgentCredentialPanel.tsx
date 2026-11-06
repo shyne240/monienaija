@@ -1,3 +1,4 @@
+import './operational-surfaces.css';
 import React, { useEffect, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
@@ -251,13 +252,13 @@ export const AgentCredentialPanel: React.FC<{
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  panel: { padding: 12, border: '1px solid #CBD5E1', borderRadius: 7, background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: 10 },
-  title: { margin: 0, color: '#032B14', fontSize: 14 },
-  note: { margin: 0, color: '#475569', fontSize: 12, lineHeight: 1.5 },
+  panel: { padding: 12, border: '1px solid #CBD5E1', borderRadius: 7, background: 'var(--mn-surface-canvas, #f5f8f6)', display: 'flex', flexDirection: 'column', gap: 10 },
+  title: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 14 },
+  note: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12, lineHeight: 1.5 },
   actions: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   sessionRow: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 6, borderTop: '1px dashed #CBD5E1' },
   reasonInput: { padding: '6px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', fontSize: 12, minWidth: 210 },
-  button: { padding: '7px 10px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', color: '#1E293B', cursor: 'pointer' },
+  button: { padding: '7px 10px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
   reissueButton: { padding: '7px 10px', border: '1px solid #FDBA74', borderRadius: 5, background: '#FFF7ED', color: '#9A3412', cursor: 'pointer' },
   revokeButton: { padding: '7px 10px', border: '1px solid #FCA5A5', borderRadius: 5, background: '#FEF2F2', color: '#991B1B', cursor: 'pointer' },
   boundary: { padding: 9, border: '1px solid #FCD34D', borderRadius: 5, background: '#FFFBEB', color: '#78350F', fontSize: 12 },

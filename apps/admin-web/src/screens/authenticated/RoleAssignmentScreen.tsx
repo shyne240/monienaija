@@ -1,3 +1,5 @@
+import './operational-surfaces.css';
+import { PageHeader } from '../../design-system/primitives';
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -111,7 +113,7 @@ export const RoleAssignmentScreen: React.FC = () => {
   };
 
   if (!canManageAnyRoles) {
-    return <div style={styles.container} role="alert"><div style={styles.errorBox}>Role governance requires an applicable workforce role function and the authorized initiator role.</div></div>;
+    return <div className="mn-operational" style={styles.container} role="alert"><div style={styles.errorBox}>Role governance requires an applicable workforce role function and the authorized initiator role.</div></div>;
   }
 
   const title = canManageFinanceRoles && canManageOperationalRoles
@@ -119,11 +121,8 @@ export const RoleAssignmentScreen: React.FC = () => {
     : canManageOperationalRoles ? 'Operational Role Assignments' : 'Finance Role Assignments';
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>{title}</h2>
-        <p style={styles.subtitle}>Use the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API.</p>
-      </div>
+    <div className="mn-operational" style={styles.container}>
+      <PageHeader eyebrow="Workforce and governance" title={title} description="Use the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API." />
 
       {(canManageFinanceRoles && canManageOperationalRoles) && (
         <div style={styles.tabHeader} aria-label="Role governance domain">
@@ -196,21 +195,21 @@ export const RoleAssignmentScreen: React.FC = () => {
 const styles = {
   container: { padding: '24px', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { marginBottom: '24px' },
-  title: { fontSize: '22px', fontWeight: 'bold', color: '#0A3D25', margin: '0 0 6px 0' },
-  subtitle: { fontSize: '14px', color: '#64748B', margin: 0 },
-  tabHeader: { display: 'flex', borderBottom: '1px solid #E2E8F0', marginBottom: '24px', maxWidth: '620px' },
-  tabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '500', color: '#64748B', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' },
-  activeTabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '600', color: '#0A3D25', border: 'none', borderBottom: '2px solid #0A3D25', backgroundColor: 'transparent', cursor: 'pointer' },
-  infoBox: { backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '12px', marginBottom: '16px', maxWidth: '700px', color: '#475569', fontSize: '12px', lineHeight: '18px' },
-  errorBox: { backgroundColor: '#FEE2E2', color: '#991B1B', fontSize: '13px', fontWeight: '500', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #EF4444', maxWidth: '700px' },
-  successBox: { backgroundColor: '#D1FAE5', color: '#065F46', fontSize: '13px', fontWeight: '500', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #10B981', maxWidth: '700px' },
-  card: { backgroundColor: '#FFFFFF', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)', maxWidth: '700px' },
-  cardTitle: { fontSize: '16px', fontWeight: 'bold', color: '#1E293B', margin: '0 0 20px 0', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' },
+  title: { fontSize: '22px', fontWeight: 'bold', color: 'var(--mn-action-primary, #0b624a)', margin: '0 0 6px 0' },
+  subtitle: { fontSize: '14px', color: 'var(--mn-text-secondary, #52655f)', margin: 0 },
+  tabHeader: { display: 'flex', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', marginBottom: '24px', maxWidth: '620px' },
+  tabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '500', color: 'var(--mn-text-secondary, #52655f)', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' },
+  activeTabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '600', color: 'var(--mn-action-primary, #0b624a)', border: 'none', borderBottom: '2px solid var(--mn-action-primary, #0b624a)', backgroundColor: 'transparent', cursor: 'pointer' },
+  infoBox: { backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '12px', marginBottom: '16px', maxWidth: '700px', color: 'var(--mn-text-secondary, #52655f)', fontSize: '12px', lineHeight: '18px' },
+  errorBox: { backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)', color: '#991B1B', fontSize: '13px', fontWeight: '500', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid var(--mn-status-danger, #b3261e)', maxWidth: '700px' },
+  successBox: { backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)', color: '#065F46', fontSize: '13px', fontWeight: '500', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid var(--mn-status-success, #146348)', maxWidth: '700px' },
+  card: { backgroundColor: '#FFFFFF', borderRadius: '8px', border: '1px solid var(--mn-border-subtle, #dde7e2)', padding: '24px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)', maxWidth: '700px' },
+  cardTitle: { fontSize: '16px', fontWeight: 'bold', color: 'var(--mn-text-primary, #132b25)', margin: '0 0 20px 0', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', paddingBottom: '10px' },
   form: { display: 'flex', flexDirection: 'column' as const },
   inputGroup: { display: 'flex', flexDirection: 'column' as const, marginBottom: '16px' },
-  label: { fontSize: '13px', fontWeight: '500', color: '#334155', marginBottom: '6px' },
-  input: { height: '40px', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: '#1E293B' },
-  select: { height: '40px', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: '#1E293B', backgroundColor: '#FFFFFF' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
-  submitBtn: { backgroundColor: '#0A3D25', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-start', minWidth: '220px' },
+  label: { fontSize: '13px', fontWeight: '500', color: 'var(--mn-text-primary, #132b25)', marginBottom: '6px' },
+  input: { height: '40px', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: 'var(--mn-text-primary, #132b25)' },
+  select: { height: '40px', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: 'var(--mn-text-primary, #132b25)', backgroundColor: '#FFFFFF' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px' },
+  submitBtn: { backgroundColor: 'var(--mn-action-primary, #0b624a)', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-start', minWidth: '220px' },
 };

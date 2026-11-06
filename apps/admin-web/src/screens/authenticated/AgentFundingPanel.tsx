@@ -1,3 +1,4 @@
+import './agent-funding.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -411,7 +412,7 @@ export function AgentFundingPanel({
     : null;
 
   return (
-    <section aria-label="Agent funding workflow" style={{ border: '1px solid #CBD5E1', padding: 16, marginTop: 16 }}>
+    <section className="mn-funding" aria-label="Agent funding workflow">
       <h3>Agent funding and defunding</h3>
       {!mfa && <p role="alert">Sign in with MFA before initiating, reviewing or executing funding.</p>}
       {isChecker && !suppliedAgentId && (
@@ -471,7 +472,7 @@ export function AgentFundingPanel({
             Reason
             <input aria-label="Funding reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy || !!draft} maxLength={500} />
           </label>
-          <button disabled={busy || !mfa || !hasFunction(direction) || !!draft} onClick={() => void guarded(initiate)}>
+          <button className="mn-funding__primary" disabled={busy || !mfa || !hasFunction(direction) || !!draft} onClick={() => void guarded(initiate)}>
             Request independent approval
           </button>
           {draft && !selected && (
@@ -534,7 +535,7 @@ export function AgentFundingPanel({
           </p>
           <p>Business reason: {selected.reason}</p>
           {handoffToken && ['REQUESTED', 'APPROVED'].includes(selected.approvalStatus) && (
-            <div style={{ margin: '8px 0', padding: 8, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <div style={{ margin: '8px 0', padding: 8, background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)' }}>
               <strong>Checker handoff package:</strong>{' '}
               <code data-testid="funding-checker-handoff-token">{handoffToken}</code>{' '}
               {typeof navigator !== 'undefined' && navigator.clipboard && (
@@ -555,7 +556,7 @@ export function AgentFundingPanel({
           {isChecker && selected.approvalStatus === 'REQUESTED' && selected.requesterPrincipalId === principal?.principalId && (
             <p role="note">Self-approval blocked: an independent FINANCE_CONTROLLER checker must review this instruction.</p>
           )}
-          <label>
+          <label className="mn-funding__review">
             <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} disabled={busy} />
             I reviewed this Agent, amount, direction and business reason
           </label>

@@ -1,0 +1,13 @@
+/* The existing funding workflow remains unchanged; this scope supplies its visual layout. */
+.mn-funding { margin-top: 16px; padding: clamp(16px, 2vw, 24px); border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: var(--mn-radius-md, 12px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font-family: var(--mn-font-sans, system-ui, sans-serif); overflow-wrap: anywhere; }
+.mn-funding h3 { margin: 0 0 16px; font-size: 17px; line-height: 1.3; color: var(--mn-text-primary, #132b25); }
+.mn-funding label { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 12px 0 8px; color: var(--mn-text-primary, #132b25); font-size: 13px; font-weight: 600; }
+.mn-funding input:not([type="checkbox"]), .mn-funding select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 520px; min-height: 40px; padding: 8px 10px; border: 1px solid var(--mn-border-control, #6d817a); border-radius: var(--mn-radius-sm, 8px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font: inherit; font-weight: 400; }
+.mn-funding button { box-sizing: border-box; min-height: 38px; max-width: 100%; margin: 4px 8px 4px 0; padding: 8px 12px; border: 1px solid var(--mn-border-control, #6d817a); border-radius: var(--mn-radius-sm, 8px); background: var(--mn-surface-raised, #fff); color: var(--mn-text-primary, #132b25); font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.mn-funding .mn-funding__primary { border-color: var(--mn-action-primary, #0b624a); background: var(--mn-action-primary, #0b624a); color: #fff; }
+.mn-funding button:disabled { opacity: .55; cursor: not-allowed; }
+.mn-funding button:focus-visible, .mn-funding input:focus-visible, .mn-funding select:focus-visible { outline: 2px solid var(--mn-focus-ring, #0b624a); outline-offset: 2px; }
+.mn-funding .mn-funding__review { flex-direction: row; align-items: flex-start; line-height: 1.45; }
+.mn-funding p { font-size: 13px; line-height: 1.5; }
+.mn-funding code { overflow-wrap: anywhere; }
+.mn-funding ul { padding: 0; list-style: none; }

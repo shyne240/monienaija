@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import './operational-surfaces.css';
+import React, { useEffect, useRef, useState } from 'react';
 
+import { ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import {
   fetchCashToCashExpiryStatus,
@@ -134,8 +136,11 @@ export const CashToCashOperationsScreen: React.FC = () => {
     }
   };
 
+  const listRequest = useRef(0);
+
   const load = async (targetPage: number, selectedFilters: Filters) => {
     if (!canView) return;
+    const request = ++listRequest.current;
     setLoading(true);
     setError('');
     try {
@@ -146,19 +151,23 @@ export const CashToCashOperationsScreen: React.FC = () => {
       const response = await ApiClient.get<CashToCashResponse>(
         `/internal/admin/cash-to-cash/transfers?${query.toString()}`,
       );
+      if (request !== listRequest.current) return;
+      if (!Array.isArray(response?.data)) throw new Error('Cash-to-Cash list returned an invalid response.');
       setResult(response);
       setSelected((current) => response.data.find((item) => item.id === current?.id) ?? null);
     } catch (loadError) {
+      if (request !== listRequest.current) return;
       setError(loadError instanceof Error ? loadError.message : 'Failed to load Cash-to-Cash operations.');
       setResult(null);
       setSelected(null);
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (canView) void load(page, appliedFilters);
+    return () => { listRequest.current += 1; };
   }, [canView, page, searchRevision]);
 
   useEffect(() => {
@@ -214,7 +223,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
 
   if (!canView) {
     return (
-      <div style={styles.wrap} role="alert">
+      <div className="mn-operational" style={styles.wrap} role="alert">
         <div style={styles.error}>
           Cash-to-Cash operations require <code>transaction.view</code>.
         </div>
@@ -223,7 +232,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
   }
 
   return (
-    <div style={styles.wrap}>
+    <div className="mn-operational" style={styles.wrap}>
       <header style={styles.header}>
         <div>
           <h2 style={styles.title}>Cash-to-Cash Operations</h2>
@@ -257,7 +266,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
       {(expiryStatus || expiryBoundaryMsg || expiryError) && (
         <section style={styles.expiryPanel} aria-label="Cash-to-Cash expiry status">
           <div style={styles.detailHeader}>
-            <strong style={{ fontSize: 13, color: '#032B14' }}>
+            <strong style={{ fontSize: 13, color: 'var(--mn-nav-surface-deep, #082f23)' }}>
               Expiry Worker &amp; Unclaimed Backlog Status (Read-Only)
             </strong>
           </div>
@@ -400,8 +409,8 @@ export const CashToCashOperationsScreen: React.FC = () => {
       )}
       {loading && !result ? (
         <div style={styles.empty}>Loading transfers…</div>
-      ) : result?.data.length ? (
-        <div style={styles.tableWrap}>
+      ) : error ? null : result?.data.length ? (
+        <div style={styles.tableWrap} role="region" aria-label="Cash-to-cash transfers" tabIndex={0}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -455,7 +464,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         </div>
       )}
 
-      <footer style={styles.pager}>
+      {!error && result && <footer style={styles.pager}>
         <span>
           {result?.total ?? 0} transfer{result?.total === 1 ? '' : 's'} · Page {result?.page ?? page}
           {result?.totalPages ? ` of ${result.totalPages}` : ''}
@@ -476,7 +485,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         >
           Next
         </button>
-      </footer>
+      </footer>}
 
       {selected && (
         <section style={styles.detail} aria-label="Cash-to-Cash receipt details">
@@ -593,9 +602,9 @@ export const CashToCashOperationsScreen: React.FC = () => {
               style={{
                 marginTop: 14,
                 padding: 12,
-                border: '1px solid #E2E8F0',
+                border: '1px solid var(--mn-border-subtle, #dde7e2)',
                 borderRadius: 6,
-                background: '#F8FAFC',
+                background: 'var(--mn-surface-canvas, #f5f8f6)',
               }}
               data-testid="c2c-inspected-journal"
             >
@@ -607,13 +616,16 @@ export const CashToCashOperationsScreen: React.FC = () => {
               )}
               {inspectedJournal &&
                 (() => {
+                  const validLines = inspectedJournal.lines.some((line) => line.direction === 'DEBIT') &&
+                    inspectedJournal.lines.some((line) => line.direction === 'CREDIT') && inspectedJournal.lines.every((line) =>
+                    (line.direction === 'DEBIT' || line.direction === 'CREDIT') && /^\d+$/.test(line.amountMinor));
                   const totalDebits = inspectedJournal.lines
                     .filter((l) => l.direction === 'DEBIT')
-                    .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
+                    .reduce((acc, l) => acc + (/^\d+$/.test(l.amountMinor) ? BigInt(l.amountMinor) : 0n), 0n);
                   const totalCredits = inspectedJournal.lines
                     .filter((l) => l.direction === 'CREDIT')
-                    .reduce((acc, l) => acc + BigInt(l.amountMinor), 0n);
-                  const balanced = totalDebits === totalCredits;
+                    .reduce((acc, l) => acc + (/^\d+$/.test(l.amountMinor) ? BigInt(l.amountMinor) : 0n), 0n);
+                  const balanced = validLines && totalDebits === totalCredits;
                   return (
                     <div>
                       <div
@@ -631,12 +643,12 @@ export const CashToCashOperationsScreen: React.FC = () => {
                         </strong>
                         <span>
                           Status: <strong>{inspectedJournal.status}</strong> ·{' '}
-                          <span style={balanced ? styles.claimed : styles.expired}>
-                            {balanced ? 'BALANCED' : 'UNBALANCED'}
+                          <span style={!validLines ? styles.unknown : balanced ? styles.claimed : styles.expired}>
+                            {!validLines ? 'BALANCE UNKNOWN' : balanced ? 'BALANCED' : 'UNBALANCED'}
                           </span>
                         </span>
                       </div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <ScrollRegion label="Journal lines" hint="Scroll horizontally to see all columns."><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                           <tr>
                             <th style={{ textAlign: 'left' }}>Direction</th>
@@ -659,7 +671,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table></ScrollRegion>
                     </div>
                   );
                 })()}
@@ -672,34 +684,35 @@ export const CashToCashOperationsScreen: React.FC = () => {
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: { padding: 24, maxWidth: 1400, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  wrap: { padding: 24, maxWidth: 1400, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' },
-  title: { margin: '0 0 6px', color: '#032B14', fontSize: 22 },
-  subtitle: { margin: 0, color: '#64748B', fontSize: 13 },
-  notice: { margin: '18px 0', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, background: '#F8FAFC', color: '#475569', fontSize: 13, lineHeight: 1.5 },
-  expiryPanel: { padding: 14, marginBottom: 14, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  title: { margin: '0 0 6px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 22 },
+  subtitle: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
+  notice: { margin: '18px 0', padding: 12, border: '1px solid #CBD5E1', borderRadius: 8, background: 'var(--mn-surface-canvas, #f5f8f6)', color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, lineHeight: 1.5 },
+  expiryPanel: { padding: 14, marginBottom: 14, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
   boundaryNote: { marginTop: 8, padding: 10, border: '1px solid #FCD34D', borderRadius: 6, background: '#FFFBEB', color: '#78350F', fontSize: 12 },
-  expiryMetrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginTop: 10 },
-  metricTile: { padding: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 },
-  metricLabel: { fontSize: 11, color: '#64748B' },
-  metricValue: { fontSize: 14, color: '#0F172A' },
-  filters: { display: 'flex', alignItems: 'end', gap: 10, flexWrap: 'wrap', padding: 14, marginBottom: 14, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
-  label: { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 160, color: '#334155', fontSize: 12, fontWeight: 600 },
+  expiryMetrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: 10, marginTop: 10 },
+  metricTile: { padding: 10, background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 },
+  metricLabel: { fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' },
+  metricValue: { fontSize: 14, color: 'var(--mn-text-primary, #132b25)' },
+  filters: { display: 'flex', alignItems: 'end', gap: 10, flexWrap: 'wrap', padding: 14, marginBottom: 14, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
+  label: { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 160, color: 'var(--mn-text-primary, #132b25)', fontSize: 12, fontWeight: 600 },
   input: { padding: '8px 9px', border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400 },
-  button: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', color: '#1E293B', cursor: 'pointer' },
-  primaryButton: { padding: '8px 14px', border: '1px solid #0A3D25', borderRadius: 5, background: '#0A3D25', color: '#fff', fontWeight: 700, cursor: 'pointer' },
+  button: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
+  primaryButton: { padding: '8px 14px', border: '1px solid var(--mn-action-primary, #0b624a)', borderRadius: 5, background: 'var(--mn-action-primary, #0b624a)', color: '#fff', fontWeight: 700, cursor: 'pointer' },
   smallButton: { padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' },
   error: { padding: 11, marginBottom: 12, border: '1px solid #FCA5A5', borderRadius: 6, background: '#FEF2F2', color: '#991B1B', fontSize: 13 },
-  empty: { padding: 24, background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8, color: '#64748B', textAlign: 'center' },
-  tableWrap: { overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  empty: { padding: 24, background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8, color: 'var(--mn-text-secondary, #52655f)', textAlign: 'center' },
+  tableWrap: { overflowX: 'auto', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
   table: { width: '100%', minWidth: 1000, borderCollapse: 'collapse', fontSize: 12 },
   status: { display: 'inline-block', padding: '3px 8px', borderRadius: 12, fontWeight: 700, fontSize: 10 },
   claimed: { background: '#ECFDF5', color: '#065F46' },
   expired: { background: '#FEF2F2', color: '#991B1B' },
   unclaimed: { background: '#FFFBEB', color: '#92400E' },
-  pager: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12, color: '#64748B', fontSize: 13 },
+  unknown: { background: 'var(--mn-surface-canvas, #f5f8f6)', color: 'var(--mn-text-secondary, #52655f)' },
+  pager: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
   detail: { marginTop: 20, padding: 16, border: '1px solid #CBD5E1', borderRadius: 8, background: '#fff' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  detailTitle: { margin: 0, color: '#032B14', fontSize: 16 },
-  details: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginTop: 14, alignItems: 'start' },
+  detailTitle: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 },
+  details: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 12, marginTop: 14, alignItems: 'start' },
 };

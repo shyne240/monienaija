@@ -1,3 +1,5 @@
+import './operational-surfaces.css';
+import { PageHeader } from '../../design-system/primitives';
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -75,18 +77,15 @@ export const ApprovalsScreen: React.FC = () => {
 
   if (!canApprove && !canReviewFunding) {
     return (
-      <div style={styles.container} role="alert">
+      <div className="mn-operational" style={styles.container} role="alert">
         <div style={styles.errorBox}>The configured checker role <code>FINANCE_CONTROLLER</code> and <code>privileged:approve</code> are required for these approval actions.</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Privileged Approvals (Maker-Checker)</h2>
-        <p style={styles.subtitle}>Execute authorized check verifications and system overrides</p>
-      </div>
+    <div className="mn-operational" style={styles.container}>
+      <PageHeader eyebrow="Workforce and governance" title="Privileged Approvals (Maker-Checker)" description="Execute authorized check verifications and system overrides." />
 
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>ℹ️ Approval Discovery Scope</span>
@@ -200,7 +199,7 @@ export const ApprovalsScreen: React.FC = () => {
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -209,17 +208,17 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   gapWarning: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
+    borderColor: 'var(--mn-status-warning, #8c5600)',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
@@ -250,8 +249,8 @@ const styles = {
     lineHeight: '18px',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -259,11 +258,11 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#EF4444',
+    borderColor: 'var(--mn-status-danger, #b3261e)',
   },
   successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
+    color: 'var(--mn-status-success, #146348)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -271,12 +270,12 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#10B981',
+    borderColor: 'var(--mn-status-success, #146348)',
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '24px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
     maxWidth: '600px',
@@ -284,9 +283,9 @@ const styles = {
   cardTitle: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 20px 0',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     paddingBottom: '10px',
   },
   form: {
@@ -301,25 +300,25 @@ const styles = {
   label: {
     fontSize: '13px',
     fontWeight: '500',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     marginBottom: '6px',
   },
   input: {
     height: '40px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '0 12px',
     fontSize: '14px',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   textarea: {
     height: '100px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '12px',
     fontSize: '13px',
     resize: 'none' as const,
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   decisionButtons: {
     display: 'flex',
@@ -327,7 +326,7 @@ const styles = {
     flexWrap: 'wrap' as const,
   },
   submitBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',

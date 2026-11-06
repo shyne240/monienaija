@@ -1,3 +1,4 @@
+import './operational-surfaces.css';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NotificationTemplateWorkspace } from '../../components/NotificationTemplateWorkspace';
 import { ProviderConfigurationWorkspace } from '../../components/ProviderConfigurationWorkspace';
@@ -147,7 +148,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   const [providerBlockedMsg, setProviderBlockedMsg] = useState<string>('');
   const [runtimeConfig, setRuntimeConfig] = useState<SafeRuntimeConfiguration | null>(null);
   const [diagnostics, setDiagnostics] = useState<LiveDiagnosticsSummary | null>(null);
-  const [outboxRows, setOutboxRows] = useState<Array<Record<string, unknown>>>([]);
+  const [outboxRows, setOutboxRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [changeRequests, setChangeRequests] = useState<NotificationChangeRequestRecord[]>([]);
   const [sessionSubmittedChanges, setSessionSubmittedChanges] = useState<
     NotificationChangeRequestRecord[]
@@ -247,18 +248,12 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       });
       if (res.status === 'BLOCKED') {
         setDeliveryChannelBlockedMsg(res.message);
-        setDeliveryPageData({
-          data: [],
-          total: 0,
-          page: 1,
-          limit: deliveryLimit,
-          totalPages: 0,
-          hasNextPage: false,
-        });
+        setDeliveryPageData(null);
       } else {
         setDeliveryPageData(res.data);
       }
     } catch (err: any) {
+      setDeliveryPageData(null);
       setDeliveryError(err?.message || 'Failed to load notification deliveries.');
     } finally {
       setDeliveryLoading(false);
@@ -417,6 +412,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             }
           })
           .catch((err: any) => {
+            setProviderStatus(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
               providerStatus: err?.message || 'Failed to load provider status',
@@ -430,6 +426,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         NotificationManagementApi.getDiagnostics()
           .then(setDiagnostics)
           .catch((err: any) => {
+            setDiagnostics(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
               diagnostics: err?.message || 'Diagnostics unavailable',
@@ -451,6 +448,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         NotificationManagementApi.getOutboxEvents(25)
           .then(setOutboxRows)
           .catch((err: any) => {
+            setOutboxRows(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
               outbox: err?.message || 'Outbox unavailable',
@@ -1092,7 +1090,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   // Capability 12: Top-level fail-closed guard when principal holds zero notification.* scopes
   if (!principal || !permissions.canAccessModule) {
     return (
-      <div style={styles.container} role="alert" data-testid="notification-module-access-denied">
+      <div className="mn-operational" style={styles.container} role="alert" data-testid="notification-module-access-denied">
         <div style={styles.deniedBox}>
           <strong>Access Denied — Notification Management Scope Required</strong>
           <p style={{ margin: '6px 0 0 0', fontSize: 13 }}>
@@ -1107,7 +1105,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
   }
 
   return (
-    <div style={styles.container} data-testid="notification-management-screen">
+    <div className="mn-operational" style={styles.container} data-testid="notification-management-screen">
       {/* Header */}
       <div style={styles.headerRow}>
         <div>
@@ -1170,8 +1168,8 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             <section style={styles.card} aria-label="SMS channel status">
               <div style={styles.cardTitleRow}>
                 <h3 style={styles.cardTitle}>📱 SMS Channel</h3>
-                <span style={styles.liveBadge}>
-                  {providerStatus?.sms?.operationalStatus ?? 'PIPELINE ACTIVE'}
+                <span style={providerStatus ? styles.liveBadge : styles.mutedBadge}>
+                  {providerStatus?.sms?.operationalStatus ?? (!permissions.canViewProviderStatus ? 'SCOPE RESTRICTED' : loadingInitial ? 'LOADING…' : 'STATUS UNAVAILABLE')}
                 </span>
               </div>
               <p style={styles.cardDesc}>
@@ -1303,14 +1301,18 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   <strong>Pending Shared Outbox:</strong>{' '}
                   {diagnostics?.pendingOutbox !== undefined
                     ? diagnostics.pendingOutbox
-                    : permissions.canViewOutbox
-                      ? outboxRows.filter((r) => r.status === 'PENDING' || r.status === 'FAILED').length
-                      : 'Requires diagnostics.view / outbox.view'}
+                    : outboxRows
+                      ? `Unavailable; ${outboxRows.filter((r) => r.status === 'PENDING' || r.status === 'FAILED').length} pending or failed in loaded outbox sample (up to 25)`
+                      : permissions.canViewDiagnostics || permissions.canViewOutbox
+                        ? 'Unavailable'
+                        : 'Requires diagnostics.view / outbox.view'}
                 </div>
                 <div>
                   <strong>Total Recorded Deliveries:</strong>{' '}
                   {permissions.canViewDeliveries
-                    ? deliverySummary.totalAllPages
+                    ? deliveryPageData && !deliveryError && !deliveryChannelBlockedMsg && !deliveryLoading
+                      ? `${deliverySummary.totalAllPages} matching current filters`
+                      : deliveryLoading ? 'Loading…' : 'Unavailable'
                     : 'Requires notification.view_deliveries'}
                 </div>
               </div>
@@ -1329,7 +1331,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               (manual delivery retry and single-step template activation without proposal) remain
               explicitly disabled.
             </p>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
               <table style={styles.table}>
                 <thead>
                   <tr>
@@ -1708,7 +1710,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               preferences and provider state also apply. Proposals show only the loaded approval
               queue (and this session's new receipts); refresh for current status.
             </p>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
               <table style={styles.table} data-testid="notification-events-table">
                 <thead>
                   <tr>
@@ -1743,7 +1745,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                           <div>
                             <code>{row.eventType}</code>
                           </div>
-                          <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                          <div style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', marginTop: 2 }}>
                             {row.description}
                           </div>
                         </td>
@@ -1986,7 +1988,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 No pending or recent notification change requests returned.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
                 <table style={styles.table} data-testid="notification-change-requests-table">
                   <thead>
                     <tr>
@@ -2105,7 +2107,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                                     : 'Execute Approved'}
                               </button>
                             ) : (
-                              <span style={{ fontSize: 12, color: '#64748B' }}>—</span>
+                              <span style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)' }}>—</span>
                             )}
                           </td>
                         </tr>
@@ -2263,7 +2265,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   No notification governance audit events recorded yet.
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
+                <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
                   <table style={styles.table} data-testid="notification-governance-audit-table">
                     <thead>
                       <tr>
@@ -2578,8 +2580,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           ) : (
             <>
               {/* Summary Strip — explicitly distinguishes total matching count across all pages from current loaded page sample */}
+              {deliveryPageData && !deliveryError && !deliveryChannelBlockedMsg && !deliveryLoading && <>
               <div
-                style={{ fontSize: 12, color: '#475569', marginBottom: -4 }}
+                style={{ fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', marginBottom: -4 }}
                 data-testid="delivery-summary-scope-note"
               >
                 Status counts below summarize the{' '}
@@ -2630,6 +2633,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 </div>
               </div>
 
+              </>}
               {/* Filter Form */}
               <form
                 onSubmit={handleApplyDeliveryFilters}
@@ -2894,12 +2898,14 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
               <div style={styles.card}>
                 {deliveryLoading ? (
                   <div style={styles.emptyBox}>Loading notification deliveries…</div>
+                ) : deliveryError || deliveryChannelBlockedMsg || !deliveryPageData ? (
+                  <div style={styles.emptyBox}>Delivery records unavailable.</div>
                 ) : deliveryRows.length === 0 ? (
                   <div style={styles.emptyBox}>
                     No notification delivery records matched the selected filters.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
                     <table style={styles.table} data-testid="notification-deliveries-table">
                       <thead>
                         <tr>
@@ -2970,7 +2976,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                 )}
 
                 {/* Pagination */}
-                <div style={styles.pagerRow} data-testid="notification-deliveries-pager">
+                {deliveryPageData && !deliveryError && !deliveryChannelBlockedMsg && <div style={styles.pagerRow} data-testid="notification-deliveries-pager">
                   <button
                     type="button"
                     style={
@@ -2981,7 +2987,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   >
                     Previous
                   </button>
-                  <span style={{ fontSize: 13, color: '#475569' }}>
+                  <span style={{ fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' }}>
                     Page {deliveryPageData?.page ?? deliveryPage} of{' '}
                     {Math.max(1, deliveryPageData?.totalPages ?? 1)} · Total{' '}
                     {deliveryPageData?.total ?? 0}
@@ -2998,7 +3004,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   >
                     Next
                   </button>
-                </div>
+                </div>}
               </div>
 
               {/* Outbox Materialization Receipts Section (F-04 — QUARANTINED / FAILED / SUPPRESSED / MATERIALIZED / UNSUPPORTED) */}
@@ -3063,7 +3069,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                     No notification outbox receipts matched the selected status filter.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
                     <table style={styles.table} data-testid="outbox-receipts-table">
                       <thead>
                         <tr>
@@ -3130,7 +3136,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                   >
                     Previous
                   </button>
-                  <span style={{ fontSize: 13, color: '#475569' }}>
+                  <span style={{ fontSize: 13, color: 'var(--mn-text-secondary, #52655f)' }}>
                     Page {outboxReceiptPageData?.page ?? outboxReceiptPage} of{' '}
                     {Math.max(1, outboxReceiptPageData?.totalPages ?? 1)} · Total{' '}
                     {outboxReceiptPageData?.total ?? 0}
@@ -3350,19 +3356,19 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     marginBottom: 16,
   },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: '#0F172A' },
-  subtitle: { margin: '4px 0 0 0', fontSize: 13, color: '#64748B', maxWidth: 820 },
+  title: { margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--mn-text-primary, #132b25)' },
+  subtitle: { margin: '4px 0 0 0', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)', maxWidth: 820 },
   tabBar: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 18,
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: 12,
   },
   tabBtn: {
     background: '#FFFFFF',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
     border: '1px solid #CBD5E1',
     borderRadius: 8,
     padding: '8px 13px',
@@ -3371,9 +3377,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   activeTabBtn: {
-    background: '#0F172A',
+    background: 'var(--mn-text-primary, #132b25)',
     color: '#FFFFFF',
-    border: '1px solid #0F172A',
+    border: '1px solid var(--mn-text-primary, #132b25)',
     borderRadius: 8,
     padding: '8px 13px',
     fontSize: 13,
@@ -3383,18 +3389,18 @@ const styles: Record<string, React.CSSProperties> = {
   sectionStack: { display: 'flex', flexDirection: 'column', gap: 16 },
   cardGrid3: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
     gap: 16,
   },
   card: {
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 10,
     padding: 18,
   },
   drawerCard: {
-    background: '#F8FAFC',
-    border: '2px solid #0F172A',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
+    border: '2px solid var(--mn-text-primary, #132b25)',
     borderRadius: 10,
     padding: 18,
   },
@@ -3406,9 +3412,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     marginBottom: 8,
   },
-  cardTitle: { margin: 0, fontSize: 16, fontWeight: 700, color: '#0F172A' },
-  cardDesc: { margin: '0 0 12px 0', fontSize: 13, color: '#475569', lineHeight: 1.45 },
-  kvList: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#1E293B' },
+  cardTitle: { margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--mn-text-primary, #132b25)' },
+  cardDesc: { margin: '0 0 12px 0', fontSize: 13, color: 'var(--mn-text-secondary, #52655f)', lineHeight: 1.45 },
+  kvList: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--mn-text-primary, #132b25)' },
   liveBadge: {
     background: '#DCFCE7',
     color: '#166534',
@@ -3418,24 +3424,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   blockedBadge: {
-    background: '#FEF3C7',
+    background: 'var(--mn-status-warning-bg, #fff3d9)',
     color: '#92400E',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     padding: '2px 8px',
     borderRadius: 999,
     fontSize: 11,
     fontWeight: 700,
   },
   mutedBadge: {
-    background: '#F1F5F9',
-    color: '#475569',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-secondary, #52655f)',
     padding: '2px 8px',
     borderRadius: 999,
     fontSize: 11,
     fontWeight: 600,
   },
   securityChip: {
-    background: '#FEE2E2',
+    background: 'var(--mn-status-danger-bg, #fdebe9)',
     color: '#991B1B',
     padding: '2px 8px',
     borderRadius: 999,
@@ -3451,8 +3457,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   infoChip: {
-    background: '#F1F5F9',
-    color: '#334155',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-primary, #132b25)',
     padding: '2px 8px',
     borderRadius: 999,
     fontSize: 11,
@@ -3476,7 +3482,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   blockedBanner: {
     background: '#FFFBEB',
-    border: '1px solid #F59E0B',
+    border: '1px solid var(--mn-status-warning, #8c5600)',
     color: '#92400E',
     borderRadius: 8,
     padding: '10px 14px',
@@ -3518,10 +3524,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   filterGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))',
     gap: 12,
   },
-  label: { display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 },
+  label: { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)', marginBottom: 4 },
   input: {
     width: '100%',
     boxSizing: 'border-box',
@@ -3543,11 +3549,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 8,
     fontSize: 13,
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     cursor: 'pointer',
   },
   primaryBtn: {
-    background: '#0F172A',
+    background: 'var(--mn-text-primary, #132b25)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: 8,
@@ -3557,7 +3563,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   primaryBtnDisabled: {
-    background: '#94A3B8',
+    background: 'var(--mn-text-muted, #5b6b66)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: 8,
@@ -3578,7 +3584,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   secondaryBtn: {
     background: '#FFFFFF',
-    color: '#0F172A',
+    color: 'var(--mn-text-primary, #132b25)',
     border: '1px solid #CBD5E1',
     borderRadius: 8,
     padding: '8px 14px',
@@ -3588,7 +3594,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   secondarySmallBtn: {
     background: '#FFFFFF',
-    color: '#0F172A',
+    color: 'var(--mn-text-primary, #132b25)',
     border: '1px solid #CBD5E1',
     borderRadius: 6,
     padding: '4px 9px',
@@ -3617,9 +3623,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   disabledSmallBtn: {
-    background: '#F1F5F9',
-    color: '#94A3B8',
-    border: '1px solid #E2E8F0',
+    background: 'var(--mn-surface-sunken, #eef3f0)',
+    color: 'var(--mn-text-muted, #5b6b66)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 6,
     padding: '4px 9px',
     fontSize: 12,
@@ -3630,43 +3636,43 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     padding: '9px 10px',
-    borderBottom: '2px solid #E2E8F0',
-    color: '#475569',
+    borderBottom: '2px solid var(--mn-border-subtle, #dde7e2)',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontSize: 12,
     fontWeight: 700,
   },
   td: {
     padding: '9px 10px',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     verticalAlign: 'top',
   },
   emptyBox: {
     padding: 14,
-    background: '#F8FAFC',
+    background: 'var(--mn-surface-canvas, #f5f8f6)',
     border: '1px dashed #CBD5E1',
     borderRadius: 8,
     fontSize: 13,
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
   },
   kpiRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))',
     gap: 12,
   },
   kpiCard: {
     background: '#FFFFFF',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: 10,
     padding: '12px 16px',
   },
-  kpiLabel: { fontSize: 12, color: '#64748B', fontWeight: 600 },
-  kpiValue: { fontSize: 22, fontWeight: 700, color: '#0F172A', marginTop: 4 },
+  kpiLabel: { fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', fontWeight: 600 },
+  kpiValue: { fontSize: 22, fontWeight: 700, color: 'var(--mn-text-primary, #132b25)', marginTop: 4 },
   pagerRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 14,
     paddingTop: 12,
-    borderTop: '1px solid #E2E8F0',
+    borderTop: '1px solid var(--mn-border-subtle, #dde7e2)',
   },
 };

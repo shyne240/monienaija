@@ -1,0 +1,146 @@
+[
+  {
+    "width": 320,
+    "key": "support",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "key": "feeRules",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "key": "ledgerExplorer",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "key": "support",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "key": "feeRules",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "key": "ledgerExplorer",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "key": "support",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "key": "feeRules",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "key": "ledgerExplorer",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "key": "support",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "key": "feeRules",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "key": "ledgerExplorer",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "key": "support",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "key": "feeRules",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "key": "ledgerExplorer",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "key": "support",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "key": "feeRules",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "key": "ledgerExplorer",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "key": "support",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "key": "feeRules",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "key": "ledgerExplorer",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "key": "support",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "key": "feeRules",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "key": "ledgerExplorer",
+    "page": 1440,
+    "view": 1440
+  }
+]

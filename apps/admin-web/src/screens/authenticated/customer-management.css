@@ -1,14 +1,14 @@
 .customer-management {
-  --cm-ink: #17302d;
-  --cm-muted: #667772;
-  --cm-border: #dce6e2;
-  --cm-panel: #ffffff;
-  --cm-canvas: #f4f8f6;
-  --cm-brand: #0b6a52;
-  --cm-brand-strong: #07533f;
-  --cm-brand-soft: #e8f4ef;
-  --cm-gold: #d8a94f;
-  --cm-danger: #a63d35;
+  --cm-ink: var(--mn-text-primary, #132b25);
+  --cm-muted: var(--mn-text-secondary, #52655f);
+  --cm-border: var(--mn-border-subtle, #dde7e2);
+  --cm-panel: var(--mn-surface-raised, #ffffff);
+  --cm-canvas: var(--mn-surface-canvas, #f5f8f6);
+  --cm-brand: var(--mn-action-primary, #0b624a);
+  --cm-brand-strong: var(--mn-action-primary-hover, #0a5540);
+  --cm-brand-soft: var(--mn-action-primary-soft, #e7f2ec);
+  --cm-gold: var(--mn-accent-gold, #e9bd63);
+  --cm-danger: var(--mn-status-danger, #b3261e);
   color: var(--cm-ink);
   min-height: 100%;
   padding: 28px clamp(16px, 3vw, 36px) 40px;

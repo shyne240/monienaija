@@ -1,3 +1,4 @@
+import './operational-surfaces.css';
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
@@ -381,7 +382,7 @@ export const AgentClassesScreen: React.FC = () => {
 
   if (!canView) {
     return (
-      <div style={styles.wrap} role="alert">
+      <div className="mn-operational" style={styles.wrap} role="alert">
         <div style={styles.error}>
           Agent class listing requires <code>agent.view</code>. Editing also requires{' '}
           <code>agent.manage_classes</code>.
@@ -391,7 +392,7 @@ export const AgentClassesScreen: React.FC = () => {
   }
 
   return (
-    <div style={styles.wrap}>
+    <div className="mn-operational" style={styles.wrap}>
       <header style={styles.header}>
         <div>
           <h2 style={styles.title}>Agent Classes &amp; Service Eligibility</h2>
@@ -447,7 +448,7 @@ export const AgentClassesScreen: React.FC = () => {
       ) : items.length === 0 ? (
         <div style={styles.empty}>No Agent classes returned by the authorized API.</div>
       ) : (
-        <div style={styles.tableWrap}>
+        <div style={styles.tableWrap} role="region" aria-label="Agent classes" tabIndex={0}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -825,48 +826,48 @@ export const AgentClassesScreen: React.FC = () => {
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: { padding: 24, maxWidth: 1250, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  wrap: { padding: 24, maxWidth: 1250, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' },
-  title: { margin: '0 0 6px', color: '#032B14', fontSize: 22 },
-  subtitle: { margin: 0, color: '#64748B', fontSize: 13 },
+  title: { margin: '0 0 6px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 22 },
+  subtitle: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
   headerActions: { display: 'flex', gap: 8 },
   notice: { margin: '18px 0', padding: 12, border: '1px solid #FCD34D', borderRadius: 8, background: '#FFFBEB', color: '#78350F', fontSize: 13, lineHeight: 1.5 },
   governanceBanner: { margin: '0 0 12px', padding: 11, border: '1px solid #BFDBFE', borderRadius: 8, background: '#EFF6FF', color: '#1E3A8A', fontSize: 12, lineHeight: 1.5 },
   warningBox: { margin: '0 0 12px', padding: 11, border: '1px solid #FDBA74', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12, lineHeight: 1.5 },
-  primaryButton: { padding: '9px 14px', border: '1px solid #0A3D25', borderRadius: 6, color: '#fff', background: '#0A3D25', cursor: 'pointer', fontWeight: 700 },
-  secondaryButton: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', color: '#1E293B', cursor: 'pointer' },
+  primaryButton: { padding: '9px 14px', border: '1px solid var(--mn-action-primary, #0b624a)', borderRadius: 6, color: '#fff', background: 'var(--mn-action-primary, #0b624a)', cursor: 'pointer', fontWeight: 700 },
+  secondaryButton: { padding: '8px 12px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
   smallButton: { padding: '5px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 12 },
   error: { padding: 11, marginBottom: 12, border: '1px solid #FCA5A5', borderRadius: 6, background: '#FEF2F2', color: '#991B1B', fontSize: 13 },
   success: { padding: 11, marginBottom: 12, border: '1px solid #6EE7B7', borderRadius: 6, background: '#ECFDF5', color: '#065F46', fontSize: 13 },
-  loading: { padding: 24, textAlign: 'center', color: '#64748B' },
-  empty: { padding: 24, color: '#64748B', textAlign: 'center', background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8 },
-  tableWrap: { width: '100%', overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 },
+  loading: { padding: 24, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' },
+  empty: { padding: 24, color: 'var(--mn-text-secondary, #52655f)', textAlign: 'center', background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 8 },
+  tableWrap: { width: '100%', overflowX: 'auto', background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 },
   table: { width: '100%', borderCollapse: 'collapse', minWidth: 750, fontSize: 13 },
   active: { padding: '3px 8px', borderRadius: 12, background: '#ECFDF5', color: '#065F46', fontSize: 11, fontWeight: 700 },
-  inactive: { padding: '3px 8px', borderRadius: 12, background: '#F1F5F9', color: '#475569', fontSize: 11, fontWeight: 700 },
+  inactive: { padding: '3px 8px', borderRadius: 12, background: 'var(--mn-surface-sunken, #eef3f0)', color: 'var(--mn-text-secondary, #52655f)', fontSize: 11, fontWeight: 700 },
   editor: { marginTop: 20, padding: 16, background: '#fff', border: '1px solid #CBD5E1', borderRadius: 8 },
   editorHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' },
-  sectionTitle: { margin: 0, color: '#032B14', fontSize: 16 },
-  subSectionTitle: { margin: '0 0 4px', color: '#032B14', fontSize: 14 },
+  sectionTitle: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 },
+  subSectionTitle: { margin: '0 0 4px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 14 },
   form: { display: 'flex', flexDirection: 'column', gap: 12 },
-  label: { display: 'flex', flexDirection: 'column', gap: 6, color: '#334155', fontSize: 12, fontWeight: 600 },
+  label: { display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--mn-text-primary, #132b25)', fontSize: 12, fontWeight: 600 },
   input: { width: '100%', boxSizing: 'border-box', padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400 },
   inlineInput: { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontSize: 12, minWidth: 240 },
   textarea: { width: '100%', boxSizing: 'border-box', minHeight: 68, padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, font: 'inherit', fontWeight: 400, resize: 'vertical' },
   jsonArea: { width: '100%', boxSizing: 'border-box', minHeight: 112, padding: 9, border: '1px solid #CBD5E1', borderRadius: 5, fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, fontWeight: 400, resize: 'vertical' },
-  checkboxLabel: { display: 'flex', alignItems: 'center', gap: 8, color: '#334155', fontSize: 13 },
-  serviceFieldset: { margin: 0, padding: 12, border: '1px solid #E2E8F0', borderRadius: 8, background: '#F8FAFC' },
-  serviceLegend: { padding: '0 6px', fontSize: 12, fontWeight: 700, color: '#032B14' },
+  checkboxLabel: { display: 'flex', alignItems: 'center', gap: 8, color: 'var(--mn-text-primary, #132b25)', fontSize: 13 },
+  serviceFieldset: { margin: 0, padding: 12, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, background: 'var(--mn-surface-canvas, #f5f8f6)' },
+  serviceLegend: { padding: '0 6px', fontSize: 12, fontWeight: 700, color: 'var(--mn-nav-surface-deep, #082f23)' },
   serviceActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
-  serviceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 8 },
-  serviceOption: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: 8, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12, color: '#1E293B', cursor: 'pointer' },
-  serviceDesc: { display: 'block', marginTop: 2, color: '#64748B', fontSize: 11 },
-  configGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 },
-  versionNote: { margin: 0, color: '#64748B', fontSize: 12 },
+  serviceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 8 },
+  serviceOption: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: 8, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, fontSize: 12, color: 'var(--mn-text-primary, #132b25)', cursor: 'pointer' },
+  serviceDesc: { display: 'block', marginTop: 2, color: 'var(--mn-text-secondary, #52655f)', fontSize: 11 },
+  configGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 },
+  versionNote: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
   readOnlyDetails: { display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 },
-  pre: { padding: 10, margin: '6px 0 0', maxHeight: 240, overflow: 'auto', background: '#F8FAFC', borderRadius: 5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
-  classLimitsSection: { marginTop: 18, paddingTop: 14, borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 8 },
+  pre: { padding: 10, margin: '6px 0 0', maxHeight: 240, overflow: 'auto', background: 'var(--mn-surface-canvas, #f5f8f6)', borderRadius: 5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+  classLimitsSection: { marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mn-border-subtle, #dde7e2)', display: 'flex', flexDirection: 'column', gap: 8 },
   limitList: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 },
-  limitItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 8px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 12 },
+  limitItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, fontSize: 12 },
   inlineLimitForm: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 },
 };

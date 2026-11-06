@@ -1,3 +1,4 @@
+import './operational-surfaces.css';
 import React, { useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -211,14 +212,14 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
 
   if (!canView) {
     return (
-      <div style={styles.container} role="alert">
+      <div className="mn-operational" style={styles.container} role="alert">
         <div style={styles.errorBox}>This screen requires <code>reconciliation.view</code>.</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
+    <div className="mn-operational" style={styles.container}>
       <div style={styles.header}>
         <h2 style={styles.title}>Independent Reconciliation & Breaks Desk</h2>
         <p style={styles.subtitle}>Audit double-entry ledger balance conservation, check trial balances, and manage breaks</p>
@@ -378,7 +379,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
               </div>
 
               <h4 style={styles.sectionTitle}>Chart of Accounts Trial Balance</h4>
-              <div style={styles.tableWrapper}>
+              <div style={styles.tableWrapper} role="region" aria-label="Financial report table" tabIndex={0}>
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.thRow}>
@@ -401,7 +402,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                         <td style={styles.td}>{r.currency} / {r.accountingUnit}</td>
                         <td style={styles.td}>{formatMinorUnits(r.totalDebitsMinor, r.currency)}</td>
                         <td style={styles.td}>{formatMinorUnits(r.totalCreditsMinor, r.currency)}</td>
-                        <td style={{ ...styles.td, fontWeight: 'bold', color: '#0A3D25' }}>
+                        <td style={{ ...styles.td, fontWeight: 'bold', color: 'var(--mn-action-primary, #0b624a)' }}>
                           {formatMinorUnits(r.balanceMinor, r.currency)}
                         </td>
                         <td style={styles.td}>
@@ -511,7 +512,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
               accountActivityRows.length === 0 ? (
                 <p style={styles.emptyText}>No ledger activity returned for this account.</p>
               ) : (
-                <div style={styles.tableWrapper}>
+                <div style={styles.tableWrapper} role="region" aria-label="Financial report table" tabIndex={0}>
                   <table style={styles.table} data-testid="account-activity-table">
                     <thead>
                       <tr style={styles.thRow}>
@@ -552,7 +553,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: 'clamp(16px, 3vw, 32px)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
   },
   header: {
@@ -561,17 +562,17 @@ const styles = {
   title: {
     fontSize: '22px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 6px 0',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
   },
   gapWarning: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
+    borderColor: 'var(--mn-status-warning, #8c5600)',
     borderWidth: '1px',
     borderStyle: 'solid',
     borderRadius: '6px',
@@ -593,7 +594,7 @@ const styles = {
   },
   tabHeader: {
     display: 'flex',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     marginBottom: '24px',
     maxWidth: '600px',
     flexWrap: 'wrap' as const,
@@ -603,7 +604,7 @@ const styles = {
     padding: '12px',
     fontSize: '14px',
     fontWeight: '500',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     border: 'none',
     borderBottom: '2px solid transparent',
     backgroundColor: 'transparent',
@@ -614,9 +615,9 @@ const styles = {
     padding: '12px',
     fontSize: '14px',
     fontWeight: '600',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     border: 'none',
-    borderBottom: '2px solid #0A3D25',
+    borderBottom: '2px solid var(--mn-action-primary, #0b624a)',
     backgroundColor: 'transparent',
     cursor: 'pointer',
   },
@@ -624,7 +625,7 @@ const styles = {
     marginBottom: '20px',
   },
   actionBtn: {
-    backgroundColor: '#0A3D25',
+    backgroundColor: 'var(--mn-action-primary, #0b624a)',
     color: '#FFFFFF',
     border: 'none',
     borderRadius: '6px',
@@ -634,8 +635,8 @@ const styles = {
     cursor: 'pointer',
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
-    color: '#EF4444',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -643,11 +644,11 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#EF4444',
+    borderColor: 'var(--mn-status-danger, #b3261e)',
   },
   successBox: {
-    backgroundColor: '#D1FAE5',
-    color: '#10B981',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
+    color: 'var(--mn-status-success, #146348)',
     fontSize: '13px',
     fontWeight: '500',
     padding: '12px',
@@ -655,7 +656,7 @@ const styles = {
     marginBottom: '20px',
     borderWidth: '1px',
     borderStyle: 'solid',
-    borderColor: '#10B981',
+    borderColor: 'var(--mn-status-success, #146348)',
   },
   resultsGrid: {
     display: 'grid',
@@ -665,7 +666,7 @@ const styles = {
   summaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '20px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
     alignSelf: 'flex-start' as const,
@@ -673,9 +674,9 @@ const styles = {
   cardTitle: {
     fontSize: '15px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
     margin: '0 0 16px 0',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     paddingBottom: '8px',
   },
   metaRow: {
@@ -685,37 +686,37 @@ const styles = {
     marginBottom: '10px',
   },
   metaLabel: {
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '500',
   },
   metaValue: {
-    color: '#0F172A',
+    color: 'var(--mn-text-primary, #132b25)',
     fontWeight: '600',
   },
   passStatus: {
-    color: '#10B981',
+    color: 'var(--mn-status-success, #146348)',
     fontWeight: 'bold',
-    backgroundColor: '#D1FAE5',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '2px 6px',
     borderRadius: '4px',
     fontSize: '12px',
   },
   failStatus: {
-    color: '#EF4444',
+    color: 'var(--mn-status-danger, #b3261e)',
     fontWeight: 'bold',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
     padding: '2px 6px',
     borderRadius: '4px',
     fontSize: '12px',
   },
   discrepancyCount: {
-    color: '#F59E0B',
+    color: 'var(--mn-status-warning, #8c5600)',
     fontWeight: 'bold',
   },
   checksCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '20px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
   },
@@ -725,7 +726,7 @@ const styles = {
     gap: '14px',
   },
   checkItem: {
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
     paddingBottom: '10px',
   },
   checkHeader: {
@@ -737,34 +738,34 @@ const styles = {
   checkName: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   passBadge: {
     fontSize: '10px',
     fontWeight: 'bold',
-    color: '#10B981',
-    backgroundColor: '#D1FAE5',
+    color: 'var(--mn-status-success, #146348)',
+    backgroundColor: 'var(--mn-status-success-bg, #e4f4ec)',
     padding: '1px 5px',
     borderRadius: '3px',
   },
   failBadge: {
     fontSize: '10px',
     fontWeight: 'bold',
-    color: '#EF4444',
-    backgroundColor: '#FEE2E2',
+    color: 'var(--mn-status-danger, #b3261e)',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
     padding: '1px 5px',
     borderRadius: '3px',
   },
   checkMsg: {
     fontSize: '12px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     margin: 0,
     lineHeight: '16px',
   },
   breaksCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '20px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
   },
@@ -793,16 +794,16 @@ const styles = {
   errorBadge: {
     fontSize: '9px',
     fontWeight: 'bold',
-    color: '#EF4444',
-    backgroundColor: '#FEE2E2',
+    color: 'var(--mn-status-danger, #b3261e)',
+    backgroundColor: 'var(--mn-status-danger-bg, #fdebe9)',
     padding: '1px 5px',
     borderRadius: '3px',
   },
   warnBadge: {
     fontSize: '9px',
     fontWeight: 'bold',
-    color: '#F59E0B',
-    backgroundColor: '#FEF3C7',
+    color: 'var(--mn-status-warning, #8c5600)',
+    backgroundColor: 'var(--mn-status-warning-bg, #fff3d9)',
     padding: '1px 5px',
     borderRadius: '3px',
   },
@@ -823,7 +824,7 @@ const styles = {
   tbContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: '8px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     padding: '24px',
   },
   content: {
@@ -834,17 +835,17 @@ const styles = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
     gap: '16px',
     marginBottom: '24px',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
     borderRadius: '6px',
     padding: '16px',
-    border: '1px solid #E2E8F0',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
   },
   sectionTitle: {
     fontSize: '16px',
     fontWeight: 'bold',
-    color: '#0A3D25',
+    color: 'var(--mn-action-primary, #0b624a)',
     margin: '0 0 16px 0',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: '8px',
   },
   dimensionsGrid: {
@@ -854,8 +855,8 @@ const styles = {
     marginBottom: '28px',
   },
   dimensionCard: {
-    backgroundColor: '#F8FAFC',
-    border: '1px solid #E2E8F0',
+    backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)',
+    border: '1px solid var(--mn-border-subtle, #dde7e2)',
     borderRadius: '6px',
     padding: '14px',
   },
@@ -864,13 +865,13 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '10px',
-    borderBottom: '1px solid #E2E8F0',
+    borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)',
     paddingBottom: '6px',
   },
   dimName: {
     fontSize: '13px',
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   tableWrapper: {
     overflowX: 'auto' as const,
@@ -881,34 +882,34 @@ const styles = {
     fontSize: '13px',
   },
   thRow: {
-    borderBottom: '2px solid #E2E8F0',
+    borderBottom: '2px solid var(--mn-border-subtle, #dde7e2)',
   },
   th: {
     textAlign: 'left' as const,
     padding: '10px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontWeight: '600',
   },
   tableRow: {
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)',
   },
   td: {
     padding: '12px 10px',
-    color: '#334155',
+    color: 'var(--mn-text-primary, #132b25)',
   },
   tdCode: {
     padding: '12px 10px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     fontFamily: 'monospace',
   },
   loadingText: {
     fontSize: '13px',
-    color: '#64748B',
+    color: 'var(--mn-text-secondary, #52655f)',
     textAlign: 'center' as const,
   },
   emptyText: {
     fontSize: '13px',
-    color: '#94A3B8',
+    color: 'var(--mn-text-muted, #5b6b66)',
     textAlign: 'center' as const,
   },
 };
