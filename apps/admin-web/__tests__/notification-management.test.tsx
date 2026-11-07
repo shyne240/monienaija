@@ -1164,6 +1164,8 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     });
     const makerView = render(<NotificationManagementScreen initialTab="smsTemplates" />);
     await waitFor(() => expect(makerView.getByTestId('template-workspace-sms')).toBeTruthy());
+    await makerView.findByTestId('template-version-history-table');
+    await waitFor(() => expect(makerView.getByText(/Active SMS:/).textContent).toContain('v1 (DB)'));
 
     (ApiClient.post as jest.Mock).mockRejectedValue(
       new ApiError('Notification change request denied: UNAUTHORIZED', 403),

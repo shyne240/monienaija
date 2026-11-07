@@ -1250,3 +1250,4 @@
   font-size: 10px;
   line-height: 1.45;
 }
+.cm-wizard-heading h2:focus { outline: 2px solid var(--mn-focus-ring, #a77916); outline-offset: 3px; }

@@ -115,6 +115,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
   const [selectedCustomer, setSelectedCustomer] = useState<DirectoryCustomer | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const requestVersion = useRef(0);
 
   useEffect(() => {
@@ -276,6 +277,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
           canCreateCustomer ? (
             <Button
               variant="primary"
+              ref={createButtonRef}
               onClick={() => setCreateOpen((value) => !value)}
               aria-expanded={createOpen}
               aria-controls={createOpen ? 'mn-dir-registration' : undefined}
@@ -289,7 +291,7 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
       {createOpen && canCreateCustomer && (
         <div className="mn-dir-registration" id="mn-dir-registration">
           <CustomerRegistrationWizard
-            onClose={() => setCreateOpen(false)}
+            onClose={() => { setCreateOpen(false); createButtonRef.current?.focus(); }}
             onCustomerCreated={handleCustomerCreated}
             onOpenCustomer={openRegistrationCustomer}
           />

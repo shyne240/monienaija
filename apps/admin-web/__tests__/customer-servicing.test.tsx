@@ -199,4 +199,11 @@ describe('Batch 1 customer directory', () => {
     await view.findByText('Synthetic Directory Alpha');
     expect(view.queryByRole('button', { name: 'New Customer' })).toBeNull();
   });
+
+  test('closing the embedded registration restores focus to its directory trigger', async () => {
+    setPrincipal(['customer.view','customer.create']);const view=render(<CustomerDirectoryScreen/>);await view.findByText('Synthetic Directory Alpha');
+    const toggle=view.getByRole('button',{name:'New Customer'});toggle.focus();fireEvent.click(toggle);expect(document.activeElement).toBe(view.getByRole('heading',{name:'Customer details'}));
+    fireEvent.click(view.getByRole('region',{name:'New customer registration'}).querySelector('button')!);expect(document.activeElement).toBe(view.getByRole('button',{name:'New Customer'}));
+  });
+
 });

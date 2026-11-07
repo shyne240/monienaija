@@ -1,4 +1,4 @@
-import React, { type FormEvent, useMemo, useRef, useState } from 'react';
+import React, { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   getCustomerCalendarDate,
@@ -149,6 +149,9 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     scopes.includes('customer.view_identity_documents') && scopes.includes('kyc.review');
 
   const [step, setStep] = useState(0);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const wizardRef = useRef<HTMLElement>(null);
+  useEffect(() => { stepHeadingRef.current?.focus(); }, [step]);
   const [customer, setCustomer] = useState<CreatedCustomer | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const [customerType, setCustomerType] = useState<CustomerType>('INDIVIDUAL');
@@ -199,6 +202,9 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length > 0) wizardRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [fieldErrors]);
 
   const progress = useMemo(
     () => (step >= STEPS.length ? 'Complete' : `${step + 1} of ${STEPS.length}`),
@@ -1667,12 +1673,13 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   return (
     <section
       className="cm-create-panel cm-registration-wizard"
+      ref={wizardRef}
       aria-label="New customer registration"
     >
       <div className="cm-wizard-heading">
         <div>
           <p className="cm-eyebrow">DRAFT REGISTRATION · {progress}</p>
-          <h2>{step < 4 ? STEPS[step] : 'Registration summary'}</h2>
+          <h2 ref={stepHeadingRef} tabIndex={-1}>{step < 4 ? STEPS[step] : 'Registration summary'}</h2>
           <p>
             Personal information is saved incrementally so an incomplete DRAFT can be continued in
             Customer 360°.

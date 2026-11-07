@@ -1,9 +1,23 @@
 [
   {
     "width": 320,
+    "workspace": "mobile-drawer-keyboard",
+    "trap": true,
+    "escape": true,
+    "restored": true
+  },
+  {
+    "width": 320,
     "workspace": "registration",
     "page": 320,
     "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
   },
   {
     "width": 320,
@@ -15,7 +29,13 @@
     "width": 320,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 320,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 320,
@@ -31,9 +51,23 @@
   },
   {
     "width": 360,
+    "workspace": "mobile-drawer-keyboard",
+    "trap": true,
+    "escape": true,
+    "restored": true
+  },
+  {
+    "width": 360,
     "workspace": "registration",
     "page": 360,
     "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
   },
   {
     "width": 360,
@@ -45,7 +79,13 @@
     "width": 360,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 360,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 360,
@@ -61,9 +101,23 @@
   },
   {
     "width": 390,
+    "workspace": "mobile-drawer-keyboard",
+    "trap": true,
+    "escape": true,
+    "restored": true
+  },
+  {
+    "width": 390,
     "workspace": "registration",
     "page": 390,
     "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
   },
   {
     "width": 390,
@@ -75,7 +129,13 @@
     "width": 390,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 390,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 390,
@@ -91,9 +151,23 @@
   },
   {
     "width": 768,
+    "workspace": "mobile-drawer-keyboard",
+    "trap": true,
+    "escape": true,
+    "restored": true
+  },
+  {
+    "width": 768,
     "workspace": "registration",
     "page": 768,
     "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
   },
   {
     "width": 768,
@@ -105,7 +179,13 @@
     "width": 768,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 768,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 768,
@@ -118,6 +198,13 @@
     "workspace": "proof",
     "page": 768,
     "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "mobile-drawer-keyboard",
+    "trap": true,
+    "escape": true,
+    "restored": true
   },
   {
     "width": 769,
@@ -127,6 +214,13 @@
   },
   {
     "width": 769,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
+  },
+  {
+    "width": 769,
     "workspace": "overview",
     "page": 769,
     "view": 769
@@ -135,7 +229,13 @@
     "width": 769,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 769,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 769,
@@ -157,6 +257,13 @@
   },
   {
     "width": 1024,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
+  },
+  {
+    "width": 1024,
     "workspace": "overview",
     "page": 1024,
     "view": 1024
@@ -165,7 +272,13 @@
     "width": 1024,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 1024,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 1024,
@@ -187,6 +300,13 @@
   },
   {
     "width": 1280,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
+  },
+  {
+    "width": 1280,
     "workspace": "overview",
     "page": 1280,
     "view": 1280
@@ -195,7 +315,13 @@
     "width": 1280,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 1280,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 1280,
@@ -217,6 +343,13 @@
   },
   {
     "width": 1440,
+    "workspace": "registration-keyboard",
+    "heading": true,
+    "validation": true,
+    "restored": true
+  },
+  {
+    "width": 1440,
     "workspace": "overview",
     "page": 1440,
     "view": 1440
@@ -225,7 +358,13 @@
     "width": 1440,
     "workspace": "lifecycle-keyboard",
     "focused": "Cancel",
+    "trap": true,
     "restored": "Suspend"
+  },
+  {
+    "width": 1440,
+    "workspace": "customer-tabs-keyboard",
+    "arrowRight": true
   },
   {
     "width": 1440,

@@ -489,4 +489,12 @@ describe('CustomerRegistrationWizard', () => {
     expect(view.queryByLabelText(/Document number/)).toBeNull();
     expect(view.queryByText('00000000002')).toBeNull();
   });
+
+  test('moves focus to the current step and the first invalid field without sending a request', () => {
+    const view=render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()}/>);
+    expect(document.activeElement).toBe(view.getByRole('heading',{name:'Customer details'}));
+    fireEvent.click(view.getByRole('button',{name:'Create DRAFT & continue'}));
+    expect(document.activeElement).toBe(view.getByLabelText(/First name/));expect(view.getByLabelText(/First name/).getAttribute('aria-invalid')).toBe('true');expect(ApiClient.post).not.toHaveBeenCalled();
+  });
+
 });

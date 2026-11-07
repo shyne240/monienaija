@@ -32,14 +32,31 @@ const fs = require('fs');
  async function record(width,name) {const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:name,...sizes}); if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/customer-${name}-${width}.png`,fullPage:true});}}
  for(const width of [320,360,390,768,769,1024,1280,1440]){
   await page.setViewportSize({width,height:900});
-  if(width<1024)await page.getByTestId('mobile-menu-toggle').click();await page.getByTestId((width<1024?'mobile-':'')+'nav-customers').click();
-  await page.getByRole('button',{name:'New Customer'}).click(); await page.getByRole('heading',{name:'Customer details'}).waitFor(); await record(width,'registration');
-  await page.getByRole('button',{name:'Close registration'}).click(); await page.getByRole('button',{name:'Open Customer 360° for Synthetic Customer'}).click();
+  if(width<1024){
+   const toggle=page.getByTestId('mobile-menu-toggle');await toggle.focus();await page.keyboard.press('Enter');await page.getByTestId('mobile-menu-close').waitFor();
+   if(!await page.getByTestId('mobile-menu-close').evaluate(el=>document.activeElement===el))throw Error('Drawer did not focus close control');
+   await page.keyboard.press('Shift+Tab');if(!await page.getByTestId('mobile-nav').evaluate(el=>el.contains(document.activeElement)))throw Error('Drawer reverse tab escaped');
+   await page.keyboard.press('Tab');if(!await page.getByTestId('mobile-menu-close').evaluate(el=>document.activeElement===el))throw Error('Drawer forward tab did not wrap');
+   await page.keyboard.press('Escape');if(!await toggle.evaluate(el=>document.activeElement===el))throw Error('Drawer focus not restored');
+   report.push({width,workspace:'mobile-drawer-keyboard',trap:true,escape:true,restored:true});await toggle.click();
+  }
+  await page.getByTestId((width<1024?'mobile-':'')+'nav-customers').click();
+  const create=page.getByRole('button',{name:'New Customer'});await create.focus();await page.keyboard.press('Enter');const heading=page.getByRole('heading',{name:'Customer details'});await heading.waitFor();
+  if(!await heading.evaluate(el=>document.activeElement===el))throw Error('Registration heading did not receive focus');await record(width,'registration');
+  await page.getByRole('button',{name:'Create DRAFT & continue'}).focus();await page.keyboard.press('Enter');const firstName=page.getByLabel(/First name/);if(!await firstName.evaluate(el=>document.activeElement===el && el.getAttribute('aria-invalid')==='true'))throw Error('Registration validation did not focus first invalid field');
+  const wizard=page.getByRole('region',{name:'New customer registration'});await wizard.getByRole('button',{name:'Close',exact:true}).focus();await page.keyboard.press('Enter');
+  if(!await page.getByRole('button',{name:'New Customer'}).evaluate(el=>document.activeElement===el))throw Error('Registration focus not restored');
+  report.push({width,workspace:'registration-keyboard',heading:true,validation:true,restored:true});await page.getByRole('button',{name:'Open Customer 360° for Synthetic Customer'}).click();
   await page.getByText('₦1,234.56').first().waitFor(); await record(width,'overview');
   await page.getByRole('button',{name:'Suspend'}).click(); const dialog=page.getByRole('dialog'); await dialog.waitFor();
-  const firstFocused=await page.evaluate(()=>document.activeElement?.textContent?.trim()); await page.keyboard.press('Escape'); if(await dialog.isVisible())throw Error('Lifecycle dialog did not close on Escape');
-  report.push({width,workspace:'lifecycle-keyboard',focused:firstFocused,restored:await page.evaluate(()=>document.activeElement?.textContent?.trim())});
-  await page.getByRole('tab',{name:'Personal information & contact'}).click(); await page.getByText('1 Synthetic Road').waitFor(); await record(width,'personal');
+  const firstFocused=await page.evaluate(()=>document.activeElement?.textContent?.trim());if(firstFocused!=='Cancel')throw Error('Lifecycle dialog initial focus incorrect');
+  await page.keyboard.press('Shift+Tab');if(!await dialog.getByRole('button',{name:'Confirm change'}).evaluate(el=>document.activeElement===el))throw Error('Lifecycle reverse tab did not wrap');
+  await page.keyboard.press('Tab');if(!await dialog.getByRole('button',{name:'Cancel'}).evaluate(el=>document.activeElement===el))throw Error('Lifecycle forward tab did not wrap');
+  await page.keyboard.press('Escape'); if(await dialog.isVisible())throw Error('Lifecycle dialog did not close on Escape');
+  const restored=await page.evaluate(()=>document.activeElement?.textContent?.trim());if(restored!=='Suspend')throw Error('Lifecycle focus not restored');
+  report.push({width,workspace:'lifecycle-keyboard',focused:firstFocused,trap:true,restored});
+  await page.getByRole('tab',{name:'Overview'}).focus();await page.keyboard.press('ArrowRight');const personal=page.getByRole('tab',{name:'Personal information & contact'});if(!await personal.evaluate(el=>document.activeElement===el && el.getAttribute('aria-selected')==='true'))throw Error('Customer tab keyboard selection failed');
+  report.push({width,workspace:'customer-tabs-keyboard',arrowRight:true});await page.getByText('1 Synthetic Road').waitFor(); await record(width,'personal');
   await page.getByRole('tab',{name:'Proof of Address & physical verification'}).click(); await page.getByRole('heading',{name:'Utility bill · revision 1'}).waitFor(); await record(width,'proof');
   await page.getByRole('button',{name:'← Back to directory'}).click();
  }
