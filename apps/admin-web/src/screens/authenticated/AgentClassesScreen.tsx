@@ -1,5 +1,7 @@
 import './operational-surfaces.css';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import './agent-classes-workspace.css';
 
 import { ApiClient } from '../../services/api-client';
 import {
@@ -139,6 +141,15 @@ export const AgentClassesScreen: React.FC = () => {
   const canViewLimits = hasFunction('limit.view');
   const canModifyLimits = hasFunction('limit.modify');
 
+  const key = `${principal?.principalId ?? ''}:${canView}:${canManage}:${canViewLimits}:${canModifyLimits}`;
+  return <AgentClassesWorkspace key={key} canView={canView} canManage={canManage} canViewLimits={canViewLimits} canModifyLimits={canModifyLimits} />;
+};
+
+const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; canViewLimits: boolean; canModifyLimits: boolean}> = ({canView, canManage, canViewLimits, canModifyLimits}) => {
+  const listGeneration = useRef(0);
+  const limitGeneration = useRef(0);
+  const mutationGeneration = useRef(0);
+  useEffect(() => () => { listGeneration.current += 1; limitGeneration.current += 1; mutationGeneration.current += 1; }, []);
   const [items, setItems] = useState<AgentClassRecord[]>([]);
   const [selected, setSelected] = useState<AgentClassRecord | null>(null);
   const [form, setForm] = useState<AgentClassForm>(EMPTY_FORM);
@@ -146,6 +157,7 @@ export const AgentClassesScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
 
   // Agent class limit assignments state (limit.view read / limit.modify write)
@@ -158,6 +170,9 @@ export const AgentClassesScreen: React.FC = () => {
   const [classLimitProfileCode, setClassLimitProfileCode] = useState('');
 
   const resetClassLimitsState = () => {
+    limitGeneration.current += 1;
+    mutationGeneration.current += 1;
+    setClassLimitsLoading(false);
     setClassLimitsLoaded(false);
     setClassLimits([]);
     setClassLimitsError('');
@@ -167,30 +182,21 @@ export const AgentClassesScreen: React.FC = () => {
 
   const loadClasses = useCallback(async () => {
     if (!canView) return;
-    setLoading(true);
-    setError('');
+    const request = ++listGeneration.current;
+    setLoading(true); setListError('');
     try {
       const response: unknown = await ApiClient.get('/internal/agents/classes');
-      const rows = Array.isArray(response)
-        ? response
-        : (response as { data?: unknown[] } | null)?.data ?? [];
-      setItems(rows as AgentClassRecord[]);
-      if (selected) {
-        const refreshed =
-          (rows as AgentClassRecord[]).find((item) => item.id === selected.id) ?? null;
-        setSelected(refreshed);
-        if (refreshed && !creating) setForm(toForm(refreshed));
-      }
+      const rows = Array.isArray(response) ? response : (response as { data?: unknown } | null)?.data;
+      if (!Array.isArray(rows) || rows.some((row) => !row || typeof row.id !== 'string' || typeof row.reference !== 'string' || typeof row.code !== 'string' || typeof row.name !== 'string' || typeof row.isActive !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1)) throw new Error('Invalid Agent class catalogue response.');
+      if (request === listGeneration.current) setItems(rows as AgentClassRecord[]);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load Agent classes.');
+      if (request === listGeneration.current) { setItems([]); setListError(loadError instanceof Error ? loadError.message : 'Failed to load Agent classes.'); }
     } finally {
-      setLoading(false);
+      if (request === listGeneration.current) setLoading(false);
     }
-  }, [canView, creating, selected]);
-
-  useEffect(() => {
-    if (canView) void loadClasses();
   }, [canView]);
+
+  useEffect(() => { if (canView) void loadClasses(); }, [canView, loadClasses]);
 
   const chooseClass = (agentClass: AgentClassRecord) => {
     setSelected(agentClass);
@@ -228,19 +234,22 @@ export const AgentClassesScreen: React.FC = () => {
 
   const loadClassLimitAssignments = async (agentClassId: string) => {
     if (!canViewLimits || classLimitsLoading) return;
-    setClassLimitsLoading(true);
+    const request = ++limitGeneration.current;
+    setClassLimitsLoading(true); setClassLimitsLoaded(false); setClassLimits([]);
     setClassLimitsError('');
     try {
       const res: any = await ApiClient.get(
         `/internal/limit-assignments/agent-class/${encodeURIComponent(agentClassId)}`,
       );
-      const rows = res?.data || res?.items || (Array.isArray(res) ? res : []);
+      const rows = Array.isArray(res) ? res : res?.data ?? res?.items;
+      if (!Array.isArray(rows) || rows.some((row: any) => !row || typeof row.id !== 'string' || typeof row.limitProfileCode !== 'string' || typeof row.isActive !== 'boolean')) throw new Error('Invalid Agent class limit assignments response.');
+      if (request !== limitGeneration.current) return;
       setClassLimits(rows);
       setClassLimitsLoaded(true);
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to load Agent class limit assignments.');
+      if (request === limitGeneration.current) setClassLimitsError(err?.message || 'Failed to load Agent class limit assignments.');
     } finally {
-      setClassLimitsLoading(false);
+      if (request === limitGeneration.current) setClassLimitsLoading(false);
     }
   };
 
@@ -254,6 +263,7 @@ export const AgentClassesScreen: React.FC = () => {
       );
       return;
     }
+    const request = ++mutationGeneration.current;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
@@ -263,6 +273,7 @@ export const AgentClassesScreen: React.FC = () => {
         subjectId: selected.id,
         limitProfileCode: code,
       });
+      if (request !== mutationGeneration.current) return;
       setClassLimitProfileCode('');
       setClassLimitsMsg(
         canViewLimits
@@ -273,14 +284,15 @@ export const AgentClassesScreen: React.FC = () => {
         await loadClassLimitAssignments(selected.id);
       }
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to assign limit profile to Agent class.');
+      if (request === mutationGeneration.current) setClassLimitsError(err?.message || 'Failed to assign limit profile to Agent class.');
     } finally {
-      setClassLimitsBusy(false);
+      if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
   const toggleClassLimitAssignment = async (assignment: ClassLimitAssignmentRecord) => {
-    if (!selected || !canModifyLimits || classLimitsBusy) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
+    const request = ++mutationGeneration.current;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
@@ -288,8 +300,9 @@ export const AgentClassesScreen: React.FC = () => {
       await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
         subjectType: 'AGENT_CLASS',
         isActive: !assignment.isActive,
-        version: assignment.version ?? 1,
+        version: assignment.version,
       });
+      if (request !== mutationGeneration.current) return;
       setClassLimitsMsg(
         `Class limit ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`,
       );
@@ -297,15 +310,17 @@ export const AgentClassesScreen: React.FC = () => {
         await loadClassLimitAssignments(selected.id);
       }
     } catch (err: any) {
-      setClassLimitsError(err?.message || 'Failed to update Agent class limit assignment.');
+      if (request === mutationGeneration.current) setClassLimitsError(err?.message || 'Failed to update Agent class limit assignment.');
     } finally {
-      setClassLimitsBusy(false);
+      if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
+  const selectedStale = Boolean(selected && !creating && (!items.find(item => item.id === selected.id) || items.find(item => item.id === selected.id)?.version !== selected.version));
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canManage || saving) return;
+    if (!canManage || saving || loading || !!listError || selectedStale) return;
     setError('');
     setMessage('');
 
@@ -324,6 +339,7 @@ export const AgentClassesScreen: React.FC = () => {
       return;
     }
 
+    const request = ++mutationGeneration.current;
     try {
       const config = {
         requirements: parseJsonField(form.requirements, 'Requirements'),
@@ -347,6 +363,8 @@ export const AgentClassesScreen: React.FC = () => {
         if (form.code.trim()) body.code = form.code.trim();
         if (form.description.trim()) body.description = form.description.trim();
         const created = await ApiClient.post<AgentClassRecord>('/internal/agents/classes', body);
+        if (request !== mutationGeneration.current) return;
+        if (!created || typeof created.id !== 'string' || typeof created.reference !== 'string' || typeof created.name !== 'string' || typeof created.version !== 'number') throw new Error('Class creation response is incomplete.');
         setMessage(
           `Agent class ${created.reference} created. New classes start inactive unless explicitly activated.`,
         );
@@ -365,18 +383,20 @@ export const AgentClassesScreen: React.FC = () => {
             expectedVersion: selected.version,
           },
         );
+        if (request !== mutationGeneration.current) return;
+        if (!updated || typeof updated.id !== 'string' || updated.id !== selected.id || typeof updated.reference !== 'string' || typeof updated.name !== 'string' || typeof updated.version !== 'number') throw new Error('Class update response is incomplete.');
         setMessage(`Agent class ${updated.reference} saved at version ${updated.version}.`);
         setSelected(updated);
         setForm(toForm(updated));
         await loadClasses();
       }
     } catch (saveError) {
-      setError(
+      if (request === mutationGeneration.current) setError(
         `${saveError instanceof Error ? saveError.message : 'Unable to save Agent class.'} ` +
           'If the response was lost, refresh the list and inspect the class before retrying.',
       );
     } finally {
-      setSaving(false);
+      if (request === mutationGeneration.current) setSaving(false);
     }
   };
 
@@ -392,30 +412,13 @@ export const AgentClassesScreen: React.FC = () => {
   }
 
   return (
-    <div className="mn-operational" style={styles.wrap}>
-      <header style={styles.header}>
-        <div>
-          <h2 style={styles.title}>Agent Classes &amp; Service Eligibility</h2>
-          <p style={styles.subtitle}>
-            Review class configuration and manage it only with the dedicated authorization function.
-          </p>
-        </div>
+    <div className="mn-operational mn-agent-classes" style={styles.wrap}>
+      <PageHeader eyebrow="Agent network" title="Agent classes & service eligibility" description="Review class configuration and manage it only with the dedicated authorization function." actions={
         <div style={styles.headerActions}>
-          <button
-            type="button"
-            onClick={() => void loadClasses()}
-            style={styles.secondaryButton}
-            disabled={loading}
-          >
-            Refresh
-          </button>
-          {canManage && (
-            <button type="button" onClick={startCreate} style={styles.primaryButton}>
-              Create class
-            </button>
-          )}
+          <button type="button" onClick={() => void loadClasses()} style={styles.secondaryButton} disabled={loading || saving || classLimitsBusy}>Refresh</button>
+          {canManage && <button type="button" onClick={startCreate} style={styles.primaryButton} disabled={loading || saving || classLimitsBusy || !!listError}>Create class</button>}
         </div>
-      </header>
+      } />
 
       <div style={styles.notice} role="note">
         Class fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves <code>null</code>. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes begin inactive.
@@ -432,6 +435,7 @@ export const AgentClassesScreen: React.FC = () => {
           <code>SUPER_ADMIN</code>).
         </div>
       )}
+      {listError && <div style={styles.error} role="alert">Agent class catalogue unavailable: {listError}. Draft values remain in this workspace; refresh before taking action.</div>}
       {error && (
         <div style={styles.error} role="alert">
           {error}
@@ -445,7 +449,7 @@ export const AgentClassesScreen: React.FC = () => {
 
       {loading ? (
         <div style={styles.loading}>Loading Agent classes…</div>
-      ) : items.length === 0 ? (
+      ) : listError ? null : items.length === 0 ? (
         <div style={styles.empty}>No Agent classes returned by the authorized API.</div>
       ) : (
         <div style={styles.tableWrap} role="region" aria-label="Agent classes" tabIndex={0}>
@@ -482,6 +486,7 @@ export const AgentClassesScreen: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => chooseClass(item)}
+                      disabled={saving || classLimitsBusy}
                       style={styles.smallButton}
                     >
                       {canManage ? 'Review / edit' : 'Review'}
@@ -494,7 +499,7 @@ export const AgentClassesScreen: React.FC = () => {
         </div>
       )}
 
-      {(creating || selected) && (
+      {!loading && !listError && (creating || selected) && (
         <section
           style={styles.editor}
           aria-label={creating ? 'Create Agent class' : 'Agent class details'}
@@ -506,6 +511,7 @@ export const AgentClassesScreen: React.FC = () => {
             <button
               type="button"
               style={styles.secondaryButton}
+              disabled={saving || classLimitsBusy}
               onClick={() => {
                 setCreating(false);
                 setSelected(null);
@@ -516,6 +522,7 @@ export const AgentClassesScreen: React.FC = () => {
               Close
             </button>
           </div>
+          {selectedStale && <div style={styles.warningBox} role="alert">The catalogue has changed or this class is no longer listed. Your draft is retained; review and reselect the current class before saving. Reselecting replaces the draft.</div>}
           {canManage ? (
             <form onSubmit={save} style={styles.form}>
               {creating && (
@@ -671,7 +678,7 @@ export const AgentClassesScreen: React.FC = () => {
                   before applying it again.
                 </p>
               )}
-              <button type="submit" style={styles.primaryButton} disabled={saving}>
+              <button type="submit" style={styles.primaryButton} disabled={saving || selectedStale}>
                 {saving ? 'Saving…' : creating ? 'Create inactive class' : 'Save class'}
               </button>
             </form>
@@ -773,13 +780,14 @@ export const AgentClassesScreen: React.FC = () => {
                             <span style={assignment.isActive ? styles.active : styles.inactive}>
                               {assignment.isActive ? 'ACTIVE' : 'INACTIVE'}
                             </span>{' '}
-                            · v{assignment.version ?? 1}
+                            · {Number.isSafeInteger(assignment.version) && (assignment.version ?? 0) > 0 ? `v${assignment.version}` : 'version unavailable'}
                           </span>
                           {canModifyLimits && (
                             <button
                               type="button"
                               style={styles.smallButton}
-                              disabled={classLimitsBusy}
+                              disabled={classLimitsBusy || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
+                              title={!Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1 ? 'Version unavailable; refresh before changing this assignment.' : undefined}
                               onClick={() => void toggleClassLimitAssignment(assignment)}
                             >
                               {assignment.isActive
@@ -826,7 +834,7 @@ export const AgentClassesScreen: React.FC = () => {
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  wrap: { padding: 24, maxWidth: 1250, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  wrap: { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1250, color: 'var(--mn-text-primary, #132b25)', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' },
   title: { margin: '0 0 6px', color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 22 },
   subtitle: { margin: 0, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },

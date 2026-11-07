@@ -130,6 +130,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
 
   test('generic checker UI invokes existing approve and reject routes with the optional audit comment', async () => {
     setPrincipal(['FINANCE_CONTROLLER'], ['privileged:approve']);
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => { const id = path.split('/').slice(-2)[0]; const approved = path.endsWith('/approve'); const reason = approved ? 'APPROVED' : 'REJECTED'; return Promise.resolve({ approved, reason, approval: { id, status: reason } }); });
     const view = render(<ApprovalsScreen />);
     fireEvent.change(view.getByPlaceholderText('e.g. 5e6f7g8h-1234-...'), { target: { value: 'approval-reject-1' } });
     fireEvent.change(view.getByPlaceholderText('Provide context or explanation for auditing...'), { target: { value: 'Not approved: evidence is incomplete.' } });

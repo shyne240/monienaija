@@ -219,7 +219,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
       },
     });
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'APPROVED' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ approved: true, reason: 'APPROVED', approval: { id: 'approval-uuid-555', status: 'APPROVED' } });
 
     const { getByText, getByPlaceholderText } = render(<App />);
 
@@ -238,7 +238,7 @@ describe('Admin Web Portal F1 Shell Tests', () => {
         '/internal/a2/workforce/approvals/approval-uuid-555/approve',
         { comment: 'Approved for pilot compliance check' }
       );
-      expect(getByText('Privileged action checked and approved successfully!')).toBeTruthy();
+      expect(getByText('Approval recorded. The underlying action may require a separate execution step.')).toBeTruthy();
     });
   });
 });

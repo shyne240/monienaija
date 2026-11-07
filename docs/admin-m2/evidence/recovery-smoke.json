@@ -1,0 +1,114 @@
+[
+  {
+    "width": 320,
+    "state": "receipt",
+    "page": 320,
+    "view": 320,
+    "statement": "cleared"
+  },
+  {
+    "width": 320,
+    "state": "unconfirmed",
+    "page": 320,
+    "view": 320,
+    "statement": "cleared"
+  },
+  {
+    "width": 360,
+    "state": "receipt",
+    "page": 360,
+    "view": 360,
+    "statement": "cleared"
+  },
+  {
+    "width": 360,
+    "state": "unconfirmed",
+    "page": 360,
+    "view": 360,
+    "statement": "cleared"
+  },
+  {
+    "width": 390,
+    "state": "receipt",
+    "page": 390,
+    "view": 390,
+    "statement": "cleared"
+  },
+  {
+    "width": 390,
+    "state": "unconfirmed",
+    "page": 390,
+    "view": 390,
+    "statement": "cleared"
+  },
+  {
+    "width": 768,
+    "state": "receipt",
+    "page": 768,
+    "view": 768,
+    "statement": "cleared"
+  },
+  {
+    "width": 768,
+    "state": "unconfirmed",
+    "page": 768,
+    "view": 768,
+    "statement": "cleared"
+  },
+  {
+    "width": 769,
+    "state": "receipt",
+    "page": 769,
+    "view": 769,
+    "statement": "cleared"
+  },
+  {
+    "width": 769,
+    "state": "unconfirmed",
+    "page": 769,
+    "view": 769,
+    "statement": "cleared"
+  },
+  {
+    "width": 1024,
+    "state": "receipt",
+    "page": 1024,
+    "view": 1024,
+    "statement": "cleared"
+  },
+  {
+    "width": 1024,
+    "state": "unconfirmed",
+    "page": 1024,
+    "view": 1024,
+    "statement": "cleared"
+  },
+  {
+    "width": 1280,
+    "state": "receipt",
+    "page": 1280,
+    "view": 1280,
+    "statement": "cleared"
+  },
+  {
+    "width": 1280,
+    "state": "unconfirmed",
+    "page": 1280,
+    "view": 1280,
+    "statement": "cleared"
+  },
+  {
+    "width": 1440,
+    "state": "receipt",
+    "page": 1440,
+    "view": 1440,
+    "statement": "cleared"
+  },
+  {
+    "width": 1440,
+    "state": "unconfirmed",
+    "page": 1440,
+    "view": 1440,
+    "statement": "cleared"
+  }
+]

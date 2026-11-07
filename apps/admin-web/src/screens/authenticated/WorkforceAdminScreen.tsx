@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import { PageHeader } from '../../design-system/primitives';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './workforce-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { DataRecord, StructuredColumn, StructuredRecordTable } from '../../components/StructuredData';
@@ -24,40 +25,53 @@ export const WorkforceAdminScreen: React.FC = () => {
   const canSuspendSupportUser = hasFn('workforce.user.suspend');
   const canView = canViewOverview || canCreateSupportUser || canSuspendSupportUser;
 
+  const key = `${principal?.principalId ?? ''}:${canViewOverview}:${canCreateSupportUser}:${canSuspendSupportUser}`;
+  return <WorkforceWorkspace key={key} canView={canView} canViewOverview={canViewOverview} canCreateSupportUser={canCreateSupportUser} canSuspendSupportUser={canSuspendSupportUser} />;
+};
+
+const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean; canCreateSupportUser: boolean; canSuspendSupportUser: boolean }> = ({canView, canViewOverview, canCreateSupportUser, canSuspendSupportUser}) => {
+  const overviewRequest = useRef(0);
+  const createRequest = useRef(0);
+  const disableRequest = useRef(0);
   const [overview, setOverview] = useState<WorkforceOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [createUsername, setCreateUsername] = useState('');
   const [createRes, setCreateRes] = useState('');
   const [createErr, setCreateErr] = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
   const [disableUserId, setDisableUserId] = useState('');
   const [disableReason, setDisableReason] = useState('');
   const [disableRes, setDisableRes] = useState('');
   const [disableErr, setDisableErr] = useState('');
   const [disableLoading, setDisableLoading] = useState(false);
 
-  const fetchOverview = async () => {
+  const fetchOverview = useCallback(async () => {
     if (!canViewOverview) return;
-    setLoading(true);
-    setError('');
+    const request = ++overviewRequest.current;
+    setLoading(true); setError(''); setOverview(null);
     try {
       const data = await ApiClient.get<WorkforceOverview>('/internal/a2/workforce/dashboard/widgets/workforce-overview');
+      if (request !== overviewRequest.current) return;
+      const validCount = (value: unknown) => value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+      if (!data || !validCount(data.activeWorkforceHeadcount) || !validCount(data.activeSessionCount) || !Array.isArray(data.roleDistribution) || data.roleDistribution.some(item => !item || typeof item.roleKey !== 'string' || typeof item.count !== 'number' || !Number.isSafeInteger(item.count) || item.count < 0)) throw new Error('Invalid workforce overview response.');
       setOverview(data);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load workforce overview');
+      if (request === overviewRequest.current) setError(err?.message || 'Failed to load workforce overview');
     } finally {
-      setLoading(false);
+      if (request === overviewRequest.current) setLoading(false);
     }
-  };
+  }, [canViewOverview]);
 
   useEffect(() => {
     if (canViewOverview) void fetchOverview();
     else setLoading(false);
-  }, [canViewOverview]);
+    return () => { overviewRequest.current += 1; createRequest.current += 1; disableRequest.current += 1; };
+  }, [canViewOverview, fetchOverview]);
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canCreateSupportUser) return;
+    if (!canCreateSupportUser || createLoading) return;
     setCreateRes('');
     setCreateErr('');
     if (!createUsername.trim()) {
@@ -65,20 +79,27 @@ export const WorkforceAdminScreen: React.FC = () => {
       return;
     }
 
+    const request = ++createRequest.current;
+    setCreateLoading(true);
     try {
       const result: any = await ApiClient.post('/internal/admin/support/workforce-users', { username: createUsername.trim() });
+      if (request !== createRequest.current) return;
+      if (!result || typeof result.username !== 'string' || typeof result.supportUserId !== 'string' || typeof result.temporaryPassword !== 'string' || typeof result.passwordExpiresAt !== 'string' || !result.username.trim() || !result.supportUserId.trim() || !result.temporaryPassword.trim() || !result.passwordExpiresAt.trim()) {
+        setCreateErr('The provisioning response was incomplete. The outcome and credential are unconfirmed; check an authorized workforce record before retrying.');
+        return;
+      }
       setCreateRes(`Support user ${result.username} created (ID ${result.supportUserId}). One-time temporary password: ${result.temporaryPassword}. Expires: ${result.passwordExpiresAt}. Deliver this credential out-of-band.`);
       setDisableUserId(result.supportUserId ?? '');
       setCreateUsername('');
       if (canViewOverview) void fetchOverview();
     } catch (err: any) {
-      setCreateErr(err?.message || 'Create failed');
-    }
+      if (request === createRequest.current) setCreateErr(`Provisioning outcome not confirmed; check an authorized workforce record before retrying. ${err?.message || 'Service unavailable.'}`);
+    } finally { if (request === createRequest.current) setCreateLoading(false); }
   };
 
   const handleDisable = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canSuspendSupportUser) return;
+    if (!canSuspendSupportUser || disableLoading) return;
     setDisableRes('');
     setDisableErr('');
     if (!disableUserId.trim()) {
@@ -86,18 +107,20 @@ export const WorkforceAdminScreen: React.FC = () => {
       return;
     }
 
+    const request = ++disableRequest.current;
     setDisableLoading(true);
     try {
       await ApiClient.post(`/internal/admin/support/workforce-users/${encodeURIComponent(disableUserId.trim())}/disable`, {
         reason: disableReason.trim() || undefined,
       });
+      if (request !== disableRequest.current) return;
       setDisableRes(`Support user ${disableUserId.trim()} disabled.`);
       setDisableReason('');
       if (canViewOverview) void fetchOverview();
     } catch (err: any) {
-      setDisableErr(err?.message || 'Disable failed');
+      if (request === disableRequest.current) setDisableErr(`Disable outcome not confirmed; check an authorized workforce record before retrying. ${err?.message || 'Service unavailable.'}`);
     } finally {
-      setDisableLoading(false);
+      if (request === disableRequest.current) setDisableLoading(false);
     }
   };
 
@@ -114,8 +137,8 @@ export const WorkforceAdminScreen: React.FC = () => {
   const roleRows: DataRecord[] = (overview?.roleDistribution ?? []).map((item) => ({ roleKey: item.roleKey, count: item.count }));
 
   return (
-    <div className="mn-operational" style={wrap}>
-      <PageHeader eyebrow="Workforce and governance" title="👷 Workforce Overview & Support Provisioning" description="The available read-only workforce summary and SUPPORT identity actions are shown only when their matching functions are granted." />
+    <div className="mn-operational mn-workforce" style={wrap}>
+      <PageHeader eyebrow="Workforce and governance" title="Workforce Overview & Support Provisioning" description="The available read-only workforce summary and SUPPORT identity actions are shown only when their matching functions are granted." />
 
       {canViewOverview && (
         <section style={overviewCard} aria-label="Workforce overview">
@@ -150,11 +173,11 @@ export const WorkforceAdminScreen: React.FC = () => {
           <p style={sub}>Creates a SUPPORT-type identity. Copy the one-time temporary password from the response and deliver it out-of-band; no credential retrieval flow exists.</p>
           <form onSubmit={handleCreate} style={form}>
             <label style={fieldLabel}>Support username or email
-              <input value={createUsername} onChange={(event) => setCreateUsername(event.target.value)} placeholder="Support username or email" style={input} />
+              <input disabled={createLoading} value={createUsername} onChange={(event) => setCreateUsername(event.target.value)} placeholder="Support username or email" style={input} />
             </label>
-            <button type="submit" style={btn}>Create SUPPORT User</button>
+            <button type="submit" style={btn} disabled={createLoading || !createUsername.trim()}>{createLoading ? 'Creating…' : 'Create SUPPORT User'}</button>
           </form>
-          {createRes && <div style={successBox} role="status">{createRes}</div>}
+          {createRes && <div style={successBox} role="status">{createRes}<div><button type="button" onClick={() => setCreateRes('')}>Dismiss credential</button></div></div>}
           {createErr && <div style={errBox} role="alert">{createErr}</div>}
           <div style={note}>SUPPORT cannot self-provision; the backend requires <code>workforce.user.create</code>.</div>
         </section>
@@ -166,10 +189,10 @@ export const WorkforceAdminScreen: React.FC = () => {
           <p style={sub}>The API has no workforce-user list route. Use the ID returned during provisioning or an ID from an authorized workforce record.</p>
           <form onSubmit={handleDisable} style={form}>
             <label style={fieldLabel}>Support user ID
-              <input value={disableUserId} onChange={(event) => setDisableUserId(event.target.value)} placeholder="SUPPORT user ID" style={input} />
+              <input disabled={disableLoading} value={disableUserId} onChange={(event) => setDisableUserId(event.target.value)} placeholder="SUPPORT user ID" style={input} />
             </label>
             <label style={fieldLabel}>Reason (optional)
-              <input value={disableReason} onChange={(event) => setDisableReason(event.target.value)} placeholder="Reason for disabling access" style={input} />
+              <input disabled={disableLoading} value={disableReason} onChange={(event) => setDisableReason(event.target.value)} placeholder="Reason for disabling access" style={input} />
             </label>
             <button type="submit" style={dangerBtn} disabled={disableLoading || !disableUserId.trim()}>
               {disableLoading ? 'Disabling…' : 'Disable SUPPORT User'}
@@ -190,13 +213,13 @@ const h3: React.CSSProperties = { margin: 0, color: 'var(--mn-text-primary, #132
 const h4: React.CSSProperties = { margin: '16px 0 10px', color: 'var(--mn-text-primary, #132b25)', fontSize: 14 };
 const sub: React.CSSProperties = { color: 'var(--mn-text-secondary, #52655f)', fontSize: 13, margin: '8px 0 12px' };
 const overviewCard: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 16 };
-const sectionHeading: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 };
+const sectionHeading: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 };
 const summaryGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 12 };
 const summaryCard: React.CSSProperties = { padding: 14, background: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 };
 const big: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: 'var(--mn-nav-surface-deep, #082f23)', marginTop: 6 };
 const formCard: React.CSSProperties = { marginTop: 16, padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8 };
 const form: React.CSSProperties = { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' };
-const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 220, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
+const fieldLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 'min(100%, 220px)', color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1' };
 const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#fff', cursor: 'pointer' };
 const dangerBtn: React.CSSProperties = { ...btn, borderColor: '#FCA5A5', background: '#FEF2F2', color: '#991B1B' };

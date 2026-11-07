@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import { PageHeader } from '../../design-system/primitives';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './workforce-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApprovalsQueue';
@@ -23,6 +24,13 @@ export const ApprovalsScreen: React.FC = () => {
     (principal?.scopes.includes('agent.defund') ?? false) &&
     principal?.assuranceLevel === 'MFA';
 
+  const key = `${principal?.principalId ?? ''}:${canApprove}:${canReviewFunding}:${canAccessGlobalFundingInbox}:${principal?.assuranceLevel ?? ''}`;
+  return <ApprovalsWorkspace key={key} principal={principal} canApprove={canApprove} canReviewFunding={canReviewFunding} canAccessGlobalFundingInbox={canAccessGlobalFundingInbox} />;
+};
+
+const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; canApprove: boolean; canReviewFunding: boolean; canAccessGlobalFundingInbox: boolean}> = ({principal, canApprove, canReviewFunding, canAccessGlobalFundingInbox}) => {
+  const decisionGeneration = useRef(0);
+  useEffect(() => () => { decisionGeneration.current += 1; }, []);
   const fundingInboxUnauthorizedReason = !canReviewFunding || canAccessGlobalFundingInbox
     ? null
     : principal?.roles.includes('SUPER_ADMIN')
@@ -43,12 +51,14 @@ export const ApprovalsScreen: React.FC = () => {
   const [decisionAction, setDecisionAction] = useState<'approve' | 'reject' | null>(null);
 
   const handleDecision = async (action: 'approve' | 'reject') => {
-    if (!canApprove) return;
+    if (!canApprove || isLoading) return;
     if (!approvalId.trim()) {
       setError('Approval ID is required');
       return;
     }
 
+    const request = ++decisionGeneration.current;
+    const submittedId = approvalId.trim();
     setIsLoading(true);
     setDecisionAction(action);
     setError('');
@@ -56,17 +66,22 @@ export const ApprovalsScreen: React.FC = () => {
 
     try {
       // Both decision routes exist; the backend remains authoritative for the checker policy.
-      await ApiClient.post(`/internal/a2/workforce/approvals/${approvalId.trim()}/${action}`, {
+      const response = await ApiClient.post<{approved?: boolean; reason?: string; approval?: {id?: string; status?: string}}>(`/internal/a2/workforce/approvals/${encodeURIComponent(submittedId)}/${action}`, {
         comment: comment.trim() || undefined,
       });
+      if (request !== decisionGeneration.current) return;
+      const expected = action === 'approve' ? 'APPROVED' : 'REJECTED';
+      if (!response || response.reason !== expected || response.approved !== (action === 'approve') || response.approval?.status !== expected || response.approval?.id !== submittedId) {
+        setError(response?.reason ? `Decision not confirmed: ${response.reason}. Check the approval and audit trail before retrying.` : 'Decision outcome not confirmed. Check the approval and audit trail before retrying.');
+        return;
+      }
       setSuccess(action);
       setApprovalId('');
       setComment('');
     } catch (err: any) {
-      setError(err?.message || `Failed to ${action} the action override`);
+      if (request === decisionGeneration.current) setError(`Decision outcome not confirmed. Check the approval and audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
     } finally {
-      setIsLoading(false);
-      setDecisionAction(null);
+      if (request === decisionGeneration.current) { setIsLoading(false); setDecisionAction(null); }
     }
   };
 
@@ -84,7 +99,7 @@ export const ApprovalsScreen: React.FC = () => {
   }
 
   return (
-    <div className="mn-operational" style={styles.container}>
+    <div className="mn-operational mn-approvals" style={styles.container}>
       <PageHeader eyebrow="Workforce and governance" title="Privileged Approvals (Maker-Checker)" description="Execute authorized check verifications and system overrides." />
 
       <div style={styles.gapWarning}>
@@ -153,15 +168,16 @@ export const ApprovalsScreen: React.FC = () => {
       )}
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
-      {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Privileged action checked and approved successfully!' : 'Approval decision recorded as rejected successfully.'}</div>}
+      {success && <div style={styles.successBox} role="status">{success === 'approve' ? 'Approval recorded. The underlying action may require a separate execution step.' : 'Approval decision recorded as rejected successfully.'}</div>}
 
       {canApprove && (
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Submit Checker Decision</h3>
         <form onSubmit={handleApproveSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Pending Approval ID (UUID)</label>
+            <label htmlFor="checker-approval-id" style={styles.label}>Pending Approval ID (UUID)</label>
             <input
+              id="checker-approval-id"
               type="text"
               style={styles.input}
               placeholder="e.g. 5e6f7g8h-1234-..."
@@ -172,8 +188,9 @@ export const ApprovalsScreen: React.FC = () => {
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Audit Comment / Verification Notes (Optional)</label>
+            <label htmlFor="checker-comment" style={styles.label}>Audit Comment / Verification Notes (Optional)</label>
             <textarea
+              id="checker-comment"
               style={styles.textarea}
               placeholder="Provide context or explanation for auditing..."
               value={comment}
@@ -334,7 +351,7 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-    minWidth: '180px',
+    minWidth: 'min(100%, 180px)',
   },
   rejectBtn: {
     backgroundColor: '#FEF2F2',
@@ -345,6 +362,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',
-    minWidth: '180px',
+    minWidth: 'min(100%, 180px)',
   },
 };

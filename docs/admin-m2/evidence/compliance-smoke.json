@@ -1,0 +1,146 @@
+[
+  {
+    "width": 320,
+    "workspace": "kycQueue",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "complianceCases",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "fraudCases",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "kycQueue",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "complianceCases",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "fraudCases",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "kycQueue",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "complianceCases",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "fraudCases",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "kycQueue",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "complianceCases",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "fraudCases",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "kycQueue",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "complianceCases",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "fraudCases",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "kycQueue",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "complianceCases",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "fraudCases",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "kycQueue",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "complianceCases",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "fraudCases",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "kycQueue",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "complianceCases",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "fraudCases",
+    "page": 1440,
+    "view": 1440
+  }
+]

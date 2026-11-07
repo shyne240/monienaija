@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import { PageHeader } from '../../design-system/primitives';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './workforce-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -19,6 +20,13 @@ export const RoleAssignmentScreen: React.FC = () => {
   const canRevokeFinance = isSuperAdmin && hasFn('workforce.role.revoke');
   const canAssignOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.assign_operational');
   const canRevokeOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.revoke_operational');
+  const key = `${principal?.principalId ?? ''}:${canAssignFinance}:${canRevokeFinance}:${canAssignOperational}:${canRevokeOperational}`;
+  return <RoleWorkspace key={key} canAssignFinance={canAssignFinance} canRevokeFinance={canRevokeFinance} canAssignOperational={canAssignOperational} canRevokeOperational={canRevokeOperational} />;
+};
+
+const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: boolean; canAssignOperational: boolean; canRevokeOperational: boolean}> = ({canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational}) => {
+  const requestGeneration = useRef(0);
+  useEffect(() => () => { requestGeneration.current += 1; }, []);
   const canManageFinanceRoles = canAssignFinance || canRevokeFinance;
   const canManageOperationalRoles = canAssignOperational || canRevokeOperational;
   const canManageAnyRoles = canManageFinanceRoles || canManageOperationalRoles;
@@ -55,7 +63,7 @@ export const RoleAssignmentScreen: React.FC = () => {
 
   const handleRoleAction = async (event: React.FormEvent) => {
     event.preventDefault();
-    if ((action === 'assign' && !canAssign) || (action === 'revoke' && !canRevoke)) return;
+    if (isLoading || (action === 'assign' && !canAssign) || (action === 'revoke' && !canRevoke)) return;
     if (!targetPrincipalId.trim()) {
       setError('Target Principal ID is required');
       return;
@@ -72,6 +80,7 @@ export const RoleAssignmentScreen: React.FC = () => {
       return;
     }
 
+    const request = ++requestGeneration.current;
     setIsLoading(true);
     setError('');
     setSuccess(false);
@@ -80,6 +89,7 @@ export const RoleAssignmentScreen: React.FC = () => {
       : [];
 
     try {
+      let receipt: any;
       if (action === 'assign') {
         // Existing workforce role assignment endpoint; the backend enforces the selected role's policy.
         const body = {
@@ -89,10 +99,10 @@ export const RoleAssignmentScreen: React.FC = () => {
           effectiveTo: end.toISOString(),
           ...(domain === 'finance' ? { approvalIds: parsedApprovalIds.length > 0 ? parsedApprovalIds : undefined } : {}),
         };
-        await ApiClient.post('/internal/a2/workforce/roles', body);
+        receipt = await ApiClient.post('/internal/a2/workforce/roles', body);
       } else {
         // Existing DELETE route accepts a JSON body for the effective window and approvals.
-        await ApiClient.delete(`/internal/a2/workforce/roles/${encodeURIComponent(targetPrincipalId.trim())}/${roleKey}`, {
+        receipt = await ApiClient.delete(`/internal/a2/workforce/roles/${encodeURIComponent(targetPrincipalId.trim())}/${roleKey}`, {
           body: {
             effectiveFrom: start.toISOString(),
             effectiveTo: end.toISOString(),
@@ -100,15 +110,20 @@ export const RoleAssignmentScreen: React.FC = () => {
           },
         });
       }
+      if (request !== requestGeneration.current) return;
+      if (!receipt || receipt.status !== (action === 'assign' ? 'ACTIVE' : 'REVOKED') || (receipt.principalId && receipt.principalId !== targetPrincipalId.trim()) || (receipt.roleKey && receipt.roleKey !== roleKey)) {
+        setError('Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying.');
+        return;
+      }
       setSuccess(true);
       setTargetPrincipalId('');
       setEffectiveFrom('');
       setEffectiveTo('');
       setApprovalIds('');
     } catch (err: any) {
-      setError(err?.message || `${domain === 'finance' ? 'Finance' : 'Operational'} role ${action} failed`);
+      if (request === requestGeneration.current) setError(`Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
     } finally {
-      setIsLoading(false);
+      if (request === requestGeneration.current) setIsLoading(false);
     }
   };
 
@@ -121,21 +136,21 @@ export const RoleAssignmentScreen: React.FC = () => {
     : canManageOperationalRoles ? 'Operational Role Assignments' : 'Finance Role Assignments';
 
   return (
-    <div className="mn-operational" style={styles.container}>
+    <div className="mn-operational mn-role-workspace" style={styles.container}>
       <PageHeader eyebrow="Workforce and governance" title={title} description="Use the existing workforce role assignment endpoints. Current assignment listing is not available through the V1 API." />
 
       {(canManageFinanceRoles && canManageOperationalRoles) && (
         <div style={styles.tabHeader} aria-label="Role governance domain">
-          <button type="button" style={domain === 'finance' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('finance')}>Finance Roles</button>
-          <button type="button" style={domain === 'operational' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('operational')}>Operational Roles</button>
+          <button type="button" disabled={isLoading} aria-pressed={domain === 'finance'} style={domain === 'finance' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('finance')}>Finance Roles</button>
+          <button type="button" disabled={isLoading} aria-pressed={domain === 'operational'} style={domain === 'operational' ? styles.activeTabBtn : styles.tabBtn} onClick={() => changeDomain('operational')}>Operational Roles</button>
         </div>
       )}
 
       <div style={styles.tabHeader} aria-label="Role assignment action">
-        {canAssign && <button type="button" style={action === 'assign' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('assign'); setError(''); setSuccess(false); }}>
+        {canAssign && <button type="button" disabled={isLoading} aria-pressed={action === 'assign'} style={action === 'assign' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('assign'); setError(''); setSuccess(false); }}>
           {domain === 'finance' ? 'Assign Finance Role' : 'Assign Operational Role'}
         </button>}
-        {canRevoke && <button type="button" style={action === 'revoke' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('revoke'); setError(''); setSuccess(false); }}>
+        {canRevoke && <button type="button" disabled={isLoading} aria-pressed={action === 'revoke'} style={action === 'revoke' ? styles.activeTabBtn : styles.tabBtn} onClick={() => { setAction('revoke'); setError(''); setSuccess(false); }}>
           {domain === 'finance' ? 'Revoke Finance Role' : 'Revoke Operational Role'}
         </button>}
       </div>
@@ -193,11 +208,11 @@ export const RoleAssignmentScreen: React.FC = () => {
 };
 
 const styles = {
-  container: { padding: '24px', fontFamily: 'system-ui, -apple-system, sans-serif' },
+  container: { padding: 'clamp(16px, 3vw, 32px)', fontFamily: 'system-ui, -apple-system, sans-serif' },
   header: { marginBottom: '24px' },
   title: { fontSize: '22px', fontWeight: 'bold', color: 'var(--mn-action-primary, #0b624a)', margin: '0 0 6px 0' },
   subtitle: { fontSize: '14px', color: 'var(--mn-text-secondary, #52655f)', margin: 0 },
-  tabHeader: { display: 'flex', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', marginBottom: '24px', maxWidth: '620px' },
+  tabHeader: { display: 'flex', flexWrap: 'wrap' as const, borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', marginBottom: '24px', maxWidth: '620px' },
   tabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '500', color: 'var(--mn-text-secondary, #52655f)', border: 'none', backgroundColor: 'transparent', cursor: 'pointer' },
   activeTabBtn: { flex: 1, padding: '12px', fontSize: '14px', fontWeight: '600', color: 'var(--mn-action-primary, #0b624a)', border: 'none', borderBottom: '2px solid var(--mn-action-primary, #0b624a)', backgroundColor: 'transparent', cursor: 'pointer' },
   infoBox: { backgroundColor: 'var(--mn-surface-canvas, #f5f8f6)', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '12px', marginBottom: '16px', maxWidth: '700px', color: 'var(--mn-text-secondary, #52655f)', fontSize: '12px', lineHeight: '18px' },
@@ -211,5 +226,5 @@ const styles = {
   input: { height: '40px', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: 'var(--mn-text-primary, #132b25)' },
   select: { height: '40px', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: '6px', padding: '0 12px', fontSize: '14px', color: 'var(--mn-text-primary, #132b25)', backgroundColor: '#FFFFFF' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px' },
-  submitBtn: { backgroundColor: 'var(--mn-action-primary, #0b624a)', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-start', minWidth: '220px' },
+  submitBtn: { backgroundColor: 'var(--mn-action-primary, #0b624a)', color: '#FFFFFF', border: 'none', borderRadius: '6px', padding: '12px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-start', minWidth: 'min(100%, 220px)' },
 };

@@ -90,6 +90,18 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasUserEditedRef = useRef<boolean>(false);
   const lastEventChannelRef = useRef<string>('');
+  const previewGeneration = useRef(0);
+  const previewContext = useRef('');
+  const previewKey = JSON.stringify([currentPrincipalId, permissions.canViewCatalogue, channel, selectedEventType, subject, body, sampleOverrides]);
+  previewContext.current = previewKey;
+  useEffect(() => {
+    previewGeneration.current += 1;
+    setServerPreview(null);
+    setPreviewError('');
+    setPreviewBlockedMessage('');
+    setIsPreviewLoading(false);
+    return () => { previewGeneration.current += 1; };
+  }, [previewKey]);
 
   const selectedEvent = useMemo(
     () => events.find((item) => item.eventType === selectedEventType) ?? null,
@@ -233,6 +245,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleServerPreview = async () => {
     if (!selectedEvent || isSecurityLocked) return;
+    const request = ++previewGeneration.current;
+    const valid = () => request === previewGeneration.current && previewContext.current === previewKey;
     setIsPreviewLoading(true);
     setPreviewError('');
     setPreviewBlockedMessage('');
@@ -252,15 +266,16 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         body,
         sampleVariables: effectiveSamples,
       });
+      if (!valid()) return;
       if (res.status === 'BLOCKED') {
         setPreviewBlockedMessage(res.message);
       } else {
         setServerPreview(res.data);
       }
     } catch (err: any) {
-      setPreviewError(err?.message || 'Server template preview request failed.');
+      if (valid()) setPreviewError(err?.message || 'Server template preview request failed.');
     } finally {
-      setIsPreviewLoading(false);
+      if (valid()) setIsPreviewLoading(false);
     }
   };
 

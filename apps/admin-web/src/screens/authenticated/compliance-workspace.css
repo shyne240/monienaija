@@ -1,0 +1,10 @@
+.mn-compliance > .mn-page-header { margin-bottom: 20px; }
+.mn-compliance input, .mn-compliance select, .mn-compliance button { min-height: 40px; min-width: 0; }
+.mn-compliance table { min-width: 600px; font-size: .875rem; text-align: left; }
+.mn-compliance table th, .mn-compliance table td { padding: 10px; border-bottom: 1px solid var(--mn-border-subtle, #dde7e2); vertical-align: top; }
+.mn-compliance table th { color: var(--mn-text-secondary, #52655f); background: var(--mn-surface-sunken, #eef3f0); }
+.mn-compliance label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mn-compliance label select { margin: 0; max-width: 100%; }
+.mn-compliance :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-compliance form { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items: end !important; }
+.mn-compliance form select, .mn-compliance form input { width: 100%; border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: 6px; padding: 8px; background: #fff; }

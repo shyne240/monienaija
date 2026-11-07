@@ -1,0 +1,12 @@
+.mn-recovery { max-width: 1040px; padding: clamp(16px, 3vw, 32px); display: grid; gap: 20px; }
+.mn-recovery > .mn-page-header { margin-bottom: 0; }
+.mn-recovery__card, .mn-recovery__receipt, .mn-recovery__note { min-width: 0; border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: 12px; padding: clamp(16px, 2.5vw, 24px); background: var(--mn-surface-raised, #fff); overflow-wrap: anywhere; }
+.mn-recovery__card h2, .mn-recovery__receipt h2 { margin: 0 0 8px; font-size: 1.125rem; color: var(--mn-text-primary, #132b25); }
+.mn-recovery__card p, .mn-recovery__receipt p, .mn-recovery__note { color: var(--mn-text-secondary, #52655f); line-height: 1.5; font-size: .875rem; }
+.mn-recovery__form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.mn-recovery__form label { font-size: .875rem; font-weight: 600; }
+.mn-recovery__form textarea { width: 100%; padding: 12px; border: 1px solid var(--mn-border-subtle, #dde7e2); border-radius: 8px; font: .875rem/1.5 monospace; resize: vertical; }
+.mn-recovery__form .mn-recovery__pending { margin: 0; }
+.mn-recovery__receipt { border-color: #8fc8af; background: #f1faf5; }
+.mn-recovery__note { background: var(--mn-surface-sunken, #eef3f0); }
+@media (max-width: 480px) { .mn-recovery__form .mn-btn { width: 100%; } }

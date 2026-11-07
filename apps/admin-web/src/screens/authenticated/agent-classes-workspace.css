@@ -1,0 +1,4 @@
+.mn-agent-classes { min-width: 0; }
+.mn-agent-classes button { min-height: 38px; }
+.mn-agent-classes :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+.mn-agent-classes :is(code, pre, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }

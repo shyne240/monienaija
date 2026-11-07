@@ -1,0 +1,16 @@
+.mn-workforce section { min-width: 0; overflow-wrap: anywhere; }
+.mn-workforce button { min-height: 38px; }
+.mn-workforce input { min-height: 40px; }
+.mn-workforce [role="status"] button { margin-top: 10px; padding: 6px 10px; border: 1px solid #8fc8af; border-radius: 6px; color: #075b45; background: #fff; }
+@media (max-width: 480px) { .mn-workforce form > button { width: 100%; } }
+.mn-role-workspace { max-width: 1100px; }
+.mn-role-workspace button { min-height: 40px; }
+.mn-role-workspace :is(input, select) { min-width: 0; }
+.mn-role-workspace code { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .mn-role-workspace form > button { width: 100%; } }
+.mn-workforce section > div > button { white-space: nowrap; }
+.mn-workforce .mn-data-table { min-width: 320px; }
+.mn-approvals { max-width: 1200px; }
+.mn-approvals :is(input, textarea) { min-width: 0; width: 100%; }
+.mn-approvals button { min-height: 40px; }
+.mn-approvals :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }

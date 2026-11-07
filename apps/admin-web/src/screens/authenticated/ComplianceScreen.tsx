@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
-import React, { useEffect, useState } from 'react';
-import { ScrollRegion } from '../../design-system/primitives';
+import React, { useEffect, useRef, useState } from 'react';
+import './compliance-workspace.css';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -18,6 +19,14 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
   onBackToCustomer,
 }) => {
   const { principal } = useAuthStore();
+  const key = `${principal?.principalId ?? ''}:${[...(principal?.scopes ?? [])].sort().join('|')}:${mode}:${initialCustomerId ?? ''}`;
+  return <ComplianceWorkspace key={key} principal={principal} initialCustomerId={initialCustomerId} initialCategory={initialCategory} mode={mode} onBackToCustomer={onBackToCustomer} />;
+};
+
+const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnType<typeof useAuthStore.getState>['principal']}> = ({principal, initialCustomerId, initialCategory, mode = 'kyc', onBackToCustomer}) => {
+  const lookupGeneration = useRef(0);
+  const mutationGeneration = useRef(0);
+  useEffect(() => () => { lookupGeneration.current += 1; mutationGeneration.current += 1; }, []);
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canViewKyc = hasFn('kyc.view');
   const availableKycStatuses = [
@@ -40,6 +49,7 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
   const [kycReason, setKycReason] = useState('');
   const [assessMsg, setAssessMsg] = useState('');
   const [assessErr, setAssessErr] = useState('');
+  const [assessing, setAssessing] = useState(false);
 
   useEffect(() => {
     if (availableKycStatuses.length > 0 && !availableKycStatuses.includes(kycStatus)) {
@@ -51,20 +61,23 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
     const id = requestedCustomerId.trim();
     if (!id) { setError('Enter a customer UUID'); return; }
     if (!canAccess) return;
+    const request = ++lookupGeneration.current;
+    const valid = () => request === lookupGeneration.current;
     setLoading(true);
     setError('');
     setSearched(false);
     setKyc(null);
     setCases([]);
-    setAssessMsg('');
-    setAssessErr('');
     const errors: string[] = [];
 
     const requests: Promise<void>[] = [];
     if (mode === 'kyc' && canViewKyc) {
       requests.push(
         ApiClient.get(`/customers/${encodeURIComponent(id)}/kyc`)
-          .then((record: any) => setKyc(record))
+          .then((record: any) => {
+            if (record !== null && (!record || typeof record !== 'object' || Array.isArray(record) || typeof (record.level ?? record.kycLevel) !== 'string' || typeof (record.status ?? record.kycStatus) !== 'string' || (record.customerId && record.customerId !== id))) throw new Error('KYC lookup returned an invalid response.');
+            if (valid()) setKyc(record);
+          })
           .catch((err: any) => { errors.push(err?.message || 'KYC assessment lookup failed'); }),
       );
     }
@@ -73,14 +86,15 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
         ApiClient.get(`/customers/${encodeURIComponent(id)}/compliance-cases`)
           .then((response: any) => {
             const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
-            if (!Array.isArray(rows)) throw new Error('Compliance lookup returned an invalid response.');
-            setCases(rows);
+            if (!Array.isArray(rows) || rows.some((row: any) => !row || typeof row.id !== 'string')) throw new Error('Compliance lookup returned an invalid response.');
+            if (valid()) setCases(rows);
           })
           .catch((err: any) => { errors.push(err?.message || 'Compliance case lookup failed'); }),
       );
     }
 
     await Promise.all(requests);
+    if (!valid()) return;
     if (errors.length > 0) setError(errors.join('; '));
     else setSearched(requests.length > 0);
     setLoading(false);
@@ -94,21 +108,24 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
 
   const submitAssessment = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canSubmitKyc || !availableKycStatuses.includes(kycStatus) || !customerId.trim() || !principal?.principalId) return;
-    setAssessErr('');
-    setAssessMsg('');
+    if (assessing || !canSubmitKyc || !availableKycStatuses.includes(kycStatus) || !customerId.trim() || !principal?.principalId) return;
+    const id = customerId.trim();
+    const request = ++mutationGeneration.current;
+    setAssessErr(''); setAssessMsg(''); setAssessing(true);
     try {
-      await ApiClient.post(`/customers/${encodeURIComponent(customerId.trim())}/kyc-assessment`, {
-        level: kycLevel,
-        status: kycStatus,
-        reason: kycReason.trim() || undefined,
-        assessedBy: principal.principalId,
+      const receipt: any = await ApiClient.post(`/customers/${encodeURIComponent(id)}/kyc-assessment`, {
+        level: kycLevel, status: kycStatus, reason: kycReason.trim() || undefined, assessedBy: principal.principalId,
       });
+      if (request !== mutationGeneration.current) return;
+      if (!receipt || typeof receipt.id !== 'string' || receipt.customerId !== id || receipt.level !== kycLevel || receipt.status !== kycStatus) {
+        setAssessErr('Assessment outcome not confirmed. Check the customer assessment and audit trail before retrying.');
+        return;
+      }
       setAssessMsg('KYC assessment submitted.');
-      await fetchForCustomer(customerId);
+      await fetchForCustomer(id);
     } catch (err: any) {
-      setAssessErr(err?.message || 'KYC assessment submission failed');
-    }
+      if (request === mutationGeneration.current) setAssessErr(`Assessment outcome not confirmed. Check the customer assessment and audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
+    } finally { if (request === mutationGeneration.current) setAssessing(false); }
   };
 
   if (!canAccess) {
@@ -129,23 +146,19 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
   );
 
   return (
-    <div className="mn-operational" style={wrap}>
-      <h2 style={h2}>{mode === 'cases' ? '🛡️ Compliance Case Lookup' : '🪪 KYC Assessment Lookup & Review'}</h2>
-      <p style={sub}>
-        {mode === 'cases'
-          ? 'Look up compliance cases for a customer. The screen excludes FRAUD-category rows from its display.'
-          : 'Look up an existing customer KYC assessment and perform only the review decision allowed by your function grants.'}
-      </p>
+    <div className="mn-operational mn-compliance" style={wrap}>
+      <PageHeader eyebrow="Compliance and risk" title={mode === 'cases' ? 'Compliance case lookup' : 'KYC assessment lookup & review'} description={mode === 'cases' ? 'Look up compliance cases for a customer. FRAUD-category rows are excluded from this display.' : 'Look up an existing customer KYC assessment and perform only the review decision allowed by your function grants.'} />
       {initialCustomerId && onBackToCustomer && <button type="button" style={backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button>}
       <div style={searchRow}>
         <input
           aria-label="Customer UUID"
           value={customerId}
-          onChange={(event) => setCustomerId(event.target.value)}
+          onChange={(event) => { lookupGeneration.current += 1; setLoading(false); setCustomerId(event.target.value); setKyc(null); setCases([]); setSearched(false); setError(''); setAssessMsg(''); setAssessErr(''); }}
+          disabled={assessing}
           placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0, 8)}…` : 'Customer UUID'}
           style={input}
         />
-        <button onClick={() => fetchForCustomer()} style={btn} disabled={loading}>{loading ? 'Loading…' : 'Search'}</button>
+        <button onClick={() => fetchForCustomer()} style={btn} disabled={loading || assessing}>{loading ? 'Loading…' : 'Search'}</button>
       </div>
       {initialCustomerId && <div style={note}>Customer context carried from Customer 360°; the customer ID is passed to the scoped lookup endpoint.</div>}
       {error && <div style={errBox} role="alert">{error}</div>}
@@ -191,10 +204,10 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
         <div style={formCard}>
           <h4 style={h4}>Submit KYC assessment decision</h4>
           <form onSubmit={submitAssessment} style={form}>
-            <label>Level <select value={kycLevel} onChange={(event) => setKycLevel(event.target.value)}><option>LEVEL_1</option><option>LEVEL_2</option><option>LEVEL_3</option></select></label>
-            <label>Status <select value={kycStatus} onChange={(event) => setKycStatus(event.target.value)}>{availableKycStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
-            <input aria-label="Assessment reason (optional)" value={kycReason} onChange={(event) => setKycReason(event.target.value)} placeholder="Reason (optional)" style={input}/>
-            <button type="submit" style={btn}>Submit Assessment</button>
+            <label>Level <select disabled={assessing} value={kycLevel} onChange={(event) => setKycLevel(event.target.value)}><option>LEVEL_1</option><option>LEVEL_2</option><option>LEVEL_3</option></select></label>
+            <label>Status <select disabled={assessing} value={kycStatus} onChange={(event) => setKycStatus(event.target.value)}>{availableKycStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+            <label>Assessment reason (optional)<input disabled={assessing} value={kycReason} onChange={(event) => setKycReason(event.target.value)} placeholder="Reason (optional)" style={input}/></label>
+            <button type="submit" style={btn} disabled={assessing || !customerId.trim()}>{assessing ? 'Submitting…' : 'Submit Assessment'}</button>
           </form>
           {assessMsg && <div style={successBox} role="status">{assessMsg}</div>}
           {assessErr && <div style={errBox} role="alert">{assessErr}</div>}

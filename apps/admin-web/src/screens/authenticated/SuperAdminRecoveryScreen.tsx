@@ -1,57 +1,87 @@
 import './operational-surfaces.css';
-import React, { useState } from 'react';
+import './super-admin-recovery.css';
+import React, { useEffect, useRef, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { DataRecord, StructuredKeyValueList } from '../../components/StructuredData';
+import { Alert, Button, PageHeader } from '../../design-system/primitives';
+
+/** A transport success without a recognizable receipt does not prove recovery occurred. */
+function isRecoveryReceipt(value: unknown): value is DataRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const receipt = value as DataRecord;
+  return receipt.operation === 'REVOKE_SUPER_ADMIN'
+    && typeof receipt.recoveryReference === 'string' && receipt.recoveryReference.trim().length > 0
+    && typeof receipt.targetPrincipalId === 'string' && receipt.targetPrincipalId.trim().length > 0
+    && typeof receipt.auditReference === 'string' && receipt.auditReference.trim().length > 0
+    && typeof receipt.revokedSessionCount === 'number' && Number.isSafeInteger(receipt.revokedSessionCount) && receipt.revokedSessionCount >= 0;
+}
 
 export const SuperAdminRecoveryScreen: React.FC = () => {
   const { principal } = useAuthStore();
-  const hasFn = (c: string) => principal?.scopes.includes(c) ?? false;
-  const canView = hasFn('workforce.super_admin.recover');
+  const canView = principal?.scopes.includes('workforce.super_admin.recover') ?? false;
+  const principalId = principal?.principalId ?? '';
+  return <RecoveryWorkspace key={`${principalId}:${canView}`} principalId={principalId} canView={canView} roles={principal?.roles ?? []} />;
+};
+
+const RecoveryWorkspace: React.FC<{ principalId: string; canView: boolean; roles: string[] }> = ({ principalId, canView, roles }) => {
   const [statement, setStatement] = useState('');
   const [result, setResult] = useState<DataRecord | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const generation = useRef(0);
+  const access = useRef({ principalId, canView });
+  access.current = { principalId, canView };
+
+  useEffect(() => {
+    setStatement(''); setResult(null); setError(''); setLoading(false);
+    return () => { generation.current += 1; };
+  }, [principalId, canView]);
 
   const handleRecover = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canView) return;
-    setError(''); setResult(null); setLoading(true);
+    if (!canView || loading || !statement.trim()) return;
+    const request = ++generation.current;
+    const valid = () => request === generation.current && access.current.canView && access.current.principalId === principalId;
+    const submittedStatement = statement;
+    setStatement(''); setError(''); setResult(null); setLoading(true);
     try {
-      const res = await ApiClient.post<DataRecord>('/internal/a2/workforce/super-admin/recovery', { statement });
+      const res = await ApiClient.post<unknown>('/internal/a2/workforce/super-admin/recovery', { statement: submittedStatement });
+      if (!valid()) return;
+      if (!isRecoveryReceipt(res)) {
+        setError('The server response did not include a recognizable recovery receipt. The outcome is unconfirmed; check the audit trail before attempting again.');
+        return;
+      }
       setResult(res);
     } catch (err: any) {
-      setError(err?.message || 'Recovery failed — requires RS256-signed A2RecoveryStatementV1 and ADMINISTRATOR role');
-    } finally { setLoading(false); }
+      if (valid()) {
+        const detail = typeof err?.message === 'string' ? err.message.split(submittedStatement).join('[redacted]').replace(/[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, '[redacted]') : 'Recovery service unavailable.';
+        setError(`The request did not return a confirmed recovery receipt. Check the audit trail before attempting again. ${detail}`);
+      }
+    } finally { if (valid()) setLoading(false); }
   };
 
-  if (!canView) return <div className="mn-operational" style={wrap}><div style={denied}>Requires <code>workforce.super_admin.recover</code> (ADMINISTRATOR only, RS256). Roles: {principal?.roles.join(', ')}</div></div>;
+  if (!canView) return <div className="mn-operational mn-recovery"><Alert tone="warning" title="Access restricted">Requires <code>workforce.super_admin.recover</code> (ADMINISTRATOR only, RS256). Roles: {roles.join(', ') || 'None'}</Alert></div>;
 
   return (
-    <div className="mn-operational" style={wrap}>
-      <h2 style={h2}>🔐 Super-Admin Recovery</h2>
-      <p style={sub}>Consume an externally-signed <code>A2RecoveryStatementV1</code> to revoke a compromised SUPER_ADMIN — ADMINISTRATOR only, RS256 via <code>A2_RECOVERY_JWKS_JSON</code>. This is the sole privileged recovery surface.</p>
-      <form onSubmit={handleRecover} style={form}>
-        <label htmlFor="recovery-statement" style={label}>Recovery Statement (JWT)</label>
-        <textarea id="recovery-statement" value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" style={textarea} rows={6} />
-        <button type="submit" disabled={loading || !statement.trim()} style={btn}>{loading ? 'Executing…' : 'Execute Recovery'}</button>
-      </form>
-      {error && <div style={errBox} role="alert">{error}</div>}
-      {result && <section style={successBox} role="status"><h3 style={resultTitle}>Recovery executed</h3><StructuredKeyValueList data={result} /></section>}
-      <div style={note}>This endpoint is intentionally restricted to ADMINISTRATOR and requires a valid RS256 signature — SUPER_ADMIN itself cannot self-recover (separation of duties).</div>
-    </div>
+    <main className="mn-operational mn-recovery">
+      <PageHeader eyebrow="Workforce governance" title="Super-Admin recovery" description="Consume an externally signed recovery statement to revoke a compromised SUPER_ADMIN assignment and its sessions." />
+      <Alert tone="warning" title="Controlled recovery">
+        This action requires an ADMINISTRATOR with the recovery function and a valid RS256-signed <code>A2RecoveryStatementV1</code>. The signed statement—not the operator alone—authorizes the outcome.
+      </Alert>
+      <section className="mn-recovery__card" aria-labelledby="recovery-form-title">
+        <h2 id="recovery-form-title">Submit recovery statement</h2>
+        <p id="recovery-guidance">Paste the externally signed compact statement. Treat it as sensitive; it is cleared from this form when submitted.</p>
+        <form onSubmit={handleRecover} className="mn-recovery__form">
+          <label htmlFor="recovery-statement">Recovery statement (JWT)</label>
+          <textarea id="recovery-statement" value={statement} onChange={e => setStatement(e.target.value)} placeholder="Paste RS256-signed recovery statement…" rows={6} autoComplete="off" spellCheck={false} aria-describedby="recovery-guidance" disabled={loading} />
+          <Button type="submit" variant="primary" disabled={loading || !statement.trim()}>{loading ? 'Executing…' : 'Execute Recovery'}</Button>
+          {loading && <p role="status" className="mn-recovery__pending">Submitting the recovery request. Do not submit the statement again while its outcome is pending.</p>}
+        </form>
+      </section>
+      {error && <Alert tone="danger" title="Recovery outcome not confirmed">{error}</Alert>}
+      {result && <section className="mn-recovery__receipt" role="status" aria-labelledby="recovery-result-title"><h2 id="recovery-result-title">Recovery executed</h2><p>Retain the recovery and audit references for verification.</p><StructuredKeyValueList data={result} /></section>}
+      <aside className="mn-recovery__note">The recovery service separately verifies the statement and ADMINISTRATOR authority. SUPER_ADMIN cannot perform its own recovery. Use the approved recovery runbook and audit trail for the surrounding ceremony.</aside>
+    </main>
   );
 };
-
-const wrap: React.CSSProperties={padding:'clamp(16px, 3vw, 32px)',maxWidth:900};
-const h2: React.CSSProperties={margin:'0 0 8px',color:'var(--mn-nav-surface-deep, #082f23)'};
-const sub: React.CSSProperties={color:'var(--mn-text-secondary, #52655f)',fontSize:13,marginBottom:16};
-const form: React.CSSProperties={display:'flex',flexDirection:'column',gap:12,marginBottom:16};
-const label: React.CSSProperties={fontSize:12,fontWeight:600,color:'var(--mn-text-secondary, #52655f)'};
-const textarea: React.CSSProperties={padding:'10px',border:'1px solid var(--mn-border-subtle, #dde7e2)',borderRadius:6,fontSize:12,fontFamily:'monospace'};
-const btn: React.CSSProperties={padding:'10px 16px',background:'var(--mn-nav-surface-deep, #082f23)',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,alignSelf:'flex-start'};
-const errBox: React.CSSProperties={background:'#FEF2F2',border:'1px solid #FCA5A5',color:'#991B1B',padding:10,borderRadius:6,fontSize:13};
-const successBox: React.CSSProperties={background:'#ECFDF5',border:'1px solid #6EE7B7',color:'#065F46',padding:10,borderRadius:6,fontSize:13};
-const resultTitle: React.CSSProperties={margin:'0 0 8px',fontSize:14};
-const denied: React.CSSProperties={background:'#FFF7ED',border:'1px solid #FDBA74',color:'#92400E',padding:12,borderRadius:8,fontSize:13};
-const note: React.CSSProperties={marginTop:16,fontSize:12,color:'var(--mn-text-secondary, #52655f)',background:'var(--mn-surface-canvas, #f5f8f6)',padding:10,borderRadius:6,border:'1px solid var(--mn-border-subtle, #dde7e2)'};
