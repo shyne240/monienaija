@@ -66,6 +66,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
   const [changeSummary, setChangeSummary] = useState<string>('');
+  const [draftBaseVersion, setDraftBaseVersion] = useState<number | null>(null);
   const [sampleOverrides, setSampleOverrides] = useState<Record<string, string>>({});
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string>('');
@@ -90,6 +91,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
   const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasUserEditedRef = useRef<boolean>(false);
   const lastEventChannelRef = useRef<string>('');
+  const mounted = useRef(true);
+  const submitInFlight = useRef(false);
+  const activationInFlight = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const previewGeneration = useRef(0);
   const previewContext = useRef('');
   const previewKey = JSON.stringify([currentPrincipalId, permissions.canViewCatalogue, channel, selectedEventType, subject, body, sampleOverrides]);
@@ -145,6 +150,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       return;
     }
 
+    setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
     if (referenceVersion) {
       setSubject(channel === 'EMAIL' ? referenceVersion.subject ?? '' : '');
       setBody(referenceVersion.body);
@@ -169,7 +175,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       setBody('');
       if (switchedEventOrChannel) setChangeSummary('');
     }
-  }, [selectedEventType, channel, referenceVersion?.id]);
+  }, [selectedEventType, channel, referenceVersion?.id, activeVersionConfirmed, activeVersion?.version]);
 
   const isSecurityLocked = Boolean(
     selectedEvent &&
@@ -214,7 +220,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     target: 'subject' | 'body',
     variable: ApprovedTemplateVariable,
   ) => {
-    if (!canEditFields) return;
+    if (!canEditFields || isSubmitting || activatingTemplateId) return;
     hasUserEditedRef.current = true;
     const token = `{{${variable.name}}}`;
     setServerPreview(null);
@@ -281,7 +287,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   const handleSubmitTemplate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!permissions.canManageTemplates) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current) return;
 
     setValidationErrors([]);
     setSubmitError('');
@@ -301,7 +307,12 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       return;
     }
     if (!selectedEvent) return;
+    if (!activeVersionConfirmed || !activeVersion || draftBaseVersion !== activeVersion.version) {
+      setSubmitError('A confirmed, current active template is required. Retain your draft, then reload the active version and review before submitting.');
+      return;
+    }
 
+    submitInFlight.current = true;
     setIsSubmitting(true);
     try {
       const result = await NotificationManagementApi.submitTemplateVersion({
@@ -311,54 +322,53 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
         subject: channel === 'EMAIL' ? subject.trim() : null,
         body: body.trim(),
         changeSummary: changeSummary.trim(),
+        expectedVersion: draftBaseVersion,
       });
+      if (!mounted.current) return;
 
       if (result.status === 'BLOCKED') {
         setSubmitBlockedMessage(result.message);
         return;
       }
 
+      if (result.data.status !== 'PENDING_APPROVAL' || !result.data.approvalId || !result.data.updatedAt) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
       const approvalNote = result.data.approvalId
         ? ` Approval ID: ${result.data.approvalId}.`
         : '';
-      setSubmitSuccessMessage(
-        result.data.status === 'PENDING_APPROVAL'
-          ? `Template version submitted for maker-checker approval.${approvalNote}`
-          : `Template version saved (${result.data.status}).${approvalNote}`,
-      );
+      setSubmitSuccessMessage(`Template version submitted for maker-checker approval.${approvalNote}`);
       setChangeSummary('');
 
       if (onTemplateSubmitted) {
         onTemplateSubmitted(result.data, {
           id:
-            result.data.changeRequestId ??
-            result.data.approvalId ??
-            `local-ref-${Date.now()}`,
+            result.data.changeRequestId ?? result.data.approvalId,
           approvalId: result.data.approvalId ?? null,
           changeType: 'TEMPLATE_CREATE',
           eventType: selectedEvent.eventType,
           channel,
           summary: changeSummary.trim(),
-          status: result.data.status === 'APPLIED' ? 'APPLIED' : 'PENDING_APPROVAL',
+          status: 'PENDING_APPROVAL',
           requestedBy: result.data.requestedBy ?? currentPrincipalId,
-          requestedAt: result.data.updatedAt ?? new Date().toISOString(),
+          requestedAt: result.data.updatedAt,
           proposedSubject: channel === 'EMAIL' ? subject.trim() : null,
           proposedBody: body.trim(),
         });
       }
       if (onRefreshRequested) {
-        await onRefreshRequested();
+        try { await onRefreshRequested(); } catch { if (mounted.current) setSubmitSuccessMessage((message) => `${message} Registry refresh failed; reload before another change.`); }
       }
     } catch (err: any) {
+      if (!mounted.current) return;
       if (err?.status === 403) {
         setSubmitError(
           `Access denied (403): ${err.message || 'Current workforce principal is not authorized to submit notification templates.'}`,
         );
       } else {
-        setSubmitError(err?.message || 'Failed to submit template version.');
+        setSubmitError(`Template proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`);
       }
     } finally {
-      setIsSubmitting(false);
+      submitInFlight.current = false;
+      if (mounted.current) setIsSubmitting(false);
     }
   };
 
@@ -367,7 +377,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
     // historical version is a governed TEMPLATE_ROLLBACK proposal created by the maker
     // (SUPER_ADMIN + MFA); a FINANCE_CONTROLLER checker approves and executes it from the
     // change queue (maker ≠ checker is enforced server-side at approval time).
-    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance) return;
+    if (!permissions.canManageTemplates || !permissions.hasMfaAssurance || submitInFlight.current || activationInFlight.current || !activeVersionConfirmed || !activeVersion) return;
     if (versionRow.sourceOrigin === 'CODE_BASELINE') {
       setActivationFeedback({
         kind: 'blocked',
@@ -377,15 +387,19 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
       return;
     }
 
+    activationInFlight.current = true;
     setActivatingTemplateId(versionRow.id);
     setActivationFeedback(null);
     try {
       const res = await NotificationManagementApi.activateTemplateVersion(versionRow, {
         comment: activationComment.trim() || undefined,
+        expectedVersion: activeVersion.version,
       });
+      if (!mounted.current) return;
       if (res.status === 'BLOCKED') {
         setActivationFeedback({ kind: 'blocked', message: res.message });
       } else {
+        if (res.data.status !== 'PENDING_APPROVAL' || !res.data.approvalId) throw new Error('Rollback proposal outcome not confirmed. Check the approval queue before retrying.');
         setActivationFeedback({
           kind: 'success',
           message:
@@ -394,15 +408,17 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               'A FINANCE_CONTROLLER checker must approve and execute it before this version becomes active.'),
         });
         setActivationComment('');
-        if (onRefreshRequested) await onRefreshRequested();
+        if (onRefreshRequested) { try { await onRefreshRequested(); } catch { if (mounted.current) setActivationFeedback({kind:'success', message:'Rollback proposal confirmed. Registry refresh failed; reload before another change.'}); } }
       }
     } catch (err: any) {
+      if (!mounted.current) return;
       setActivationFeedback({
         kind: 'error',
-        message: err?.message || 'Failed to create the governed rollback proposal.',
+        message: `Rollback proposal outcome not confirmed. Check the approval queue before retrying. ${err?.message || 'Service unavailable.'}`,
       });
     } finally {
-      setActivatingTemplateId(null);
+      activationInFlight.current = false;
+      if (mounted.current) setActivatingTemplateId(null);
     }
   };
 
@@ -456,6 +472,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               data-testid="template-event-select"
               style={styles.select}
               value={selectedEventType}
+              disabled={isSubmitting || Boolean(activatingTemplateId)}
               onChange={(e) => setSelectedEventType(e.target.value)}
             >
               {events.map((item) => (
@@ -660,7 +677,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                 role="alert"
                 data-testid="template-submit-blocked-banner"
               >
-                <strong>BLOCKED — Backend Persistence Not Yet Integrated</strong>
+                <strong>Submission not confirmed</strong>
                 <p style={{ margin: '4px 0 0 0' }}>{submitBlockedMessage}</p>
               </div>
             )}
@@ -677,12 +694,14 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
               </div>
             )}
 
+            {activeVersionConfirmed && activeVersion && draftBaseVersion !== activeVersion.version && <div role="alert">The active template changed since this draft was loaded. Your draft is retained; reload and review the active version before submitting. <button type="button" onClick={() => { hasUserEditedRef.current = false; setSubject(channel === 'EMAIL' ? activeVersion.subject ?? '' : ''); setBody(activeVersion.body); setChangeSummary(''); setDraftBaseVersion(activeVersion.version); }}>Reload active version</button></div>}
+            {permissions.canManageTemplates && !permissions.hasMfaAssurance && <div role="note">MFA session assurance is required to submit template changes.</div>}
             <div style={styles.buttonRow}>
               <button
                 type="submit"
                 data-testid="submit-template-version-btn"
-                disabled={!canEditFields || isSubmitting}
-                style={!canEditFields || isSubmitting ? styles.primaryBtnDisabled : styles.primaryBtn}
+                disabled={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || Boolean(activatingTemplateId)}
+                style={!canEditFields || !permissions.hasMfaAssurance || isSubmitting || activatingTemplateId ? styles.primaryBtnDisabled : styles.primaryBtn}
               >
                 {isSubmitting
                   ? 'Submitting…'
@@ -736,7 +755,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                       <button
                         type="button"
                         data-testid={`insert-var-body-${variable.name}`}
-                        disabled={!canEditFields}
+                        disabled={!canEditFields || isSubmitting || Boolean(activatingTemplateId)}
                         style={canEditFields ? styles.secondarySmallBtn : styles.disabledSmallBtn}
                         onClick={() => insertTokenIntoField('body', variable)}
                       >
@@ -746,7 +765,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                         <button
                           type="button"
                           data-testid={`insert-var-subject-${variable.name}`}
-                          disabled={!canEditFields}
+                          disabled={!canEditFields || isSubmitting || Boolean(activatingTemplateId)}
                           style={canEditFields ? styles.secondarySmallBtn : styles.disabledSmallBtn}
                           onClick={() => insertTokenIntoField('subject', variable)}
                         >
@@ -1109,8 +1128,8 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                   const canActivateRow =
                     permissions.canManageTemplates &&
                     permissions.hasMfaAssurance &&
-                    !templatesReadPending && !templatesReadError && !templatesRegistryBlocked &&
-                    !ver.isActive;
+                    activeVersionConfirmed && !isSubmitting && !activatingTemplateId &&
+                    !ver.isActive && ver.sourceOrigin !== 'CODE_BASELINE';
                   const verifiedRegistry = !templatesReadPending && !templatesReadError && !templatesRegistryBlocked && ver.sourceOrigin !== 'CODE_BASELINE';
 
                   return (
@@ -1155,7 +1174,10 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
                             <button
                               type="button"
                               style={styles.secondarySmallBtn}
+                              disabled={isSubmitting || Boolean(activatingTemplateId)}
                               onClick={() => {
+                                hasUserEditedRef.current = true;
+                                setDraftBaseVersion(activeVersionConfirmed && activeVersion ? activeVersion.version : null);
                                 if (channel === 'EMAIL') setSubject(ver.subject ?? '');
                                 setBody(ver.body);
                               }}

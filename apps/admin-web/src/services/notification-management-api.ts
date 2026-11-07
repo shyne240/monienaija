@@ -66,6 +66,7 @@ export interface CreateTemplateVersionPayload {
   subject: string | null;
   body: string;
   changeSummary: string;
+  expectedVersion: number;
 }
 
 export interface PreviewTemplatePayload {
@@ -496,20 +497,6 @@ async function fetchTemplatePage(
   return rows;
 }
 
-async function fetchActiveTemplateVersion(
-  eventType: string,
-  channel: ManagedNotificationChannel,
-): Promise<number> {
-  const rows = await fetchTemplatePage(eventType, channel, 10);
-  const active = rows.find((row) => row.active);
-  if (!active) {
-    throw new Error(
-      `No ACTIVE ${channel} template version exists for ${eventType}; the registry requires an active baseline before governed changes.`,
-    );
-  }
-  return active.version;
-}
-
 export const NotificationManagementApi = {
   /**
    * ARENA 1 registry — event catalogue & trigger configuration read boundary.
@@ -654,9 +641,10 @@ export const NotificationManagementApi = {
       method: 'POST',
       endpoint: '/internal/notifications/changes',
       blockedExplanation:
-        'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. Draft was validated locally only and was NOT persisted.',
+        'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. Submission was not confirmed; check the approval queue before retrying.',
       run: async () => {
-        const expectedVersion = await fetchActiveTemplateVersion(payload.eventType, payload.channel);
+        const expectedVersion = payload.expectedVersion;
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error('A confirmed active template snapshot is required.');
         const created = await ApiClient.post<RegistryChangeCreation>(
           '/internal/notifications/changes',
           {
@@ -671,6 +659,7 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
+        if (!created || typeof created.approvalId !== 'string' || !created.approvalId.trim() || created.status !== 'REQUESTED' || created.actionType !== 'NOTIFICATION_TEMPLATE_CHANGE' || typeof created.requestedAt !== 'string' || !created.requestedAt.trim()) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,
@@ -691,7 +680,7 @@ export const NotificationManagementApi = {
    */
   async activateTemplateVersion(
     version: NotificationTemplateVersion | string,
-    body: { comment?: string; approvalIds?: string[] },
+    body: { comment?: string; approvalIds?: string[]; expectedVersion: number },
     idempotencyKey = generateNotificationIdempotencyKey(),
   ): Promise<IntegrationResult<NotificationMutationOutcome>> {
     return callTypedBoundary({
@@ -699,14 +688,15 @@ export const NotificationManagementApi = {
       method: 'POST',
       endpoint: '/internal/notifications/changes',
       blockedExplanation:
-        'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. Active production template was NOT changed.',
+        'BLOCKED on ARENA 1: Notification change-request endpoint (POST /internal/notifications/changes) is not yet integrated. The proposal outcome was not confirmed; check the approval queue before retrying.',
       run: async () => {
         if (typeof version === 'string') {
           throw new Error(
             'Activation requires the full template version row (eventType, channel, version) — the registry governs activation through frozen TEMPLATE_ROLLBACK proposals, not template IDs.',
           );
         }
-        const expectedVersion = await fetchActiveTemplateVersion(version.eventType, version.channel);
+        const expectedVersion = body.expectedVersion;
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error('A confirmed active template snapshot is required.');
         const created = await ApiClient.post<RegistryChangeCreation>(
           '/internal/notifications/changes',
           {
@@ -722,6 +712,7 @@ export const NotificationManagementApi = {
           },
           { idempotencyKey },
         );
+        if (!created || typeof created.approvalId !== 'string' || !created.approvalId.trim() || created.status !== 'REQUESTED' || created.actionType !== 'NOTIFICATION_TEMPLATE_CHANGE' || typeof created.requestedAt !== 'string' || !created.requestedAt.trim()) throw new Error('Template proposal outcome not confirmed. Check the approval queue before retrying.');
         return {
           status: 'PENDING_APPROVAL',
           approvalId: created.approvalId,
