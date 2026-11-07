@@ -272,8 +272,9 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const previewDialogRef = useRef<HTMLElement>(null);
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const lifecycleDialogRef = useRef<HTMLFormElement>(null);
-  useDialogFocus(previewDialogRef, Boolean(preview), () => setPreview(null));
+  useDialogFocus(previewDialogRef, Boolean(preview), () => setPreview(null), previewTriggerRef);
   useDialogFocus(lifecycleDialogRef, Boolean(pendingLifecycle), () => { if (!lifecycleBusy) setPendingLifecycle(null); });
 
   const currentCustomerId = useRef(customerId);
@@ -636,7 +637,8 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
     }
   };
 
-  const openPreview = async (document: ProofOfAddressDocument) => {
+  const openPreview = async (document: ProofOfAddressDocument, trigger: HTMLButtonElement) => {
+    previewTriggerRef.current = trigger;
     previewRequest.current?.abort();
     const controller = new AbortController();
     previewRequest.current = controller;
@@ -1046,7 +1048,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
                           <button
                             className="cm-button cm-button-secondary"
                             type="button"
-                            onClick={() => void openPreview(document)}
+                            onClick={(event) => void openPreview(document, event.currentTarget)}
                             disabled={previewLoadingId === document.id}
                           >
                             {previewLoadingId === document.id ? 'Opening preview…' : 'Preview'}

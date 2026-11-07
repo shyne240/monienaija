@@ -50,6 +50,14 @@
     "view": 320
   },
   {
+    "width": 320,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 360,
     "workspace": "mobile-drawer-keyboard",
     "trap": true,
@@ -98,6 +106,14 @@
     "workspace": "proof",
     "page": 360,
     "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
   },
   {
     "width": 390,
@@ -150,6 +166,14 @@
     "view": 390
   },
   {
+    "width": 390,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 768,
     "workspace": "mobile-drawer-keyboard",
     "trap": true,
@@ -200,6 +224,14 @@
     "view": 768
   },
   {
+    "width": 768,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 769,
     "workspace": "mobile-drawer-keyboard",
     "trap": true,
@@ -250,6 +282,14 @@
     "view": 769
   },
   {
+    "width": 769,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 1024,
     "workspace": "registration",
     "page": 1024,
@@ -293,6 +333,14 @@
     "view": 1024
   },
   {
+    "width": 1024,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 1280,
     "workspace": "registration",
     "page": 1280,
@@ -336,6 +384,14 @@
     "view": 1280
   },
   {
+    "width": 1280,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
+  },
+  {
     "width": 1440,
     "workspace": "registration",
     "page": 1440,
@@ -377,5 +433,13 @@
     "workspace": "proof",
     "page": 1440,
     "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "proof-dialogs-keyboard",
+    "preview": true,
+    "withdrawal": true,
+    "escape": true,
+    "restored": true
   }
 ]

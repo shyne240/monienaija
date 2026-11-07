@@ -361,6 +361,26 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     expect(screen.queryByText(/No Proof of Address records are stored/i)).toBeNull();
   });
 
+  test('asynchronous preview restores focus to its trigger even when focus leaves during loading', async () => {
+    setPermissions([...operationsScopes, 'customer.download_proof_of_address']);
+    configureEnabledApi();
+    let resolvePreview!: (blob: Blob) => void;
+    (ApiClient.getBlob as jest.Mock).mockImplementation(() => new Promise<Blob>((resolve) => { resolvePreview = resolve; }));
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    const trigger = screen.getByRole('button', { name: 'Preview' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveProperty('disabled', true);
+    trigger.blur();
+    resolvePreview(new Blob(['synthetic'], { type: 'application/pdf' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Close preview' })).toBe(document.activeElement);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   test('document lifecycle dialog supports Escape and restores focus without submitting', async () => {
     setPermissions(operationsScopes);
     configureEnabledApi();

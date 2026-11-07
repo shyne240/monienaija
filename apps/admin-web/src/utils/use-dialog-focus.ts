@@ -5,13 +5,14 @@ export function useDialogFocus<T extends HTMLElement>(
   dialog: RefObject<T>,
   open: boolean,
   onDismiss: () => void,
+  restoreFocusRef?: RefObject<HTMLElement>,
 ) {
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
   useEffect(() => {
     if (!open || !dialog.current) return;
     const root = dialog.current;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previous = restoreFocusRef?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const focusable = () => Array.from(root.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], iframe, [tabindex]:not([tabindex="-1"])',
     )).filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
