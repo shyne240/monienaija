@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import { CustomerRegistrationWizard } from '../src/screens/authenticated/CustomerRegistrationWizard';
 import { ApiClient } from '../src/services/api-client';
@@ -74,8 +74,8 @@ describe('CustomerRegistrationWizard', () => {
       }
       return Promise.resolve({});
     });
-    (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/customers') return Promise.resolve(createdCustomer);
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body?: { type?: string }) => {
+      if (path === '/customers') return Promise.resolve({ ...createdCustomer, type: body?.type ?? createdCustomer.type });
       if (path.endsWith('/profile'))
         return Promise.resolve({ displayName: 'Synthetic New Customer' });
       if (path.endsWith('/contact-method'))
@@ -89,7 +89,7 @@ describe('CustomerRegistrationWizard', () => {
       if (path === '/customers/registration/otp')
         return Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' });
       if (path === '/customers/registration/otp/verify')
-        return Promise.resolve({ verificationToken: 'synthetic-one-time-verification-token' });
+        return Promise.resolve({ status: 'PHONE_VERIFIED', verificationToken: 'synthetic-one-time-verification-token' });
       if (path.endsWith('/address'))
         return Promise.resolve({ id: 'synthetic-address', type: 'RESIDENTIAL', isPrimary: true });
       if (path.endsWith('/identity-document')) {
@@ -155,6 +155,57 @@ describe('CustomerRegistrationWizard', () => {
     ).toHaveLength(1);
     releaseCustomer?.(createdCustomer);
     expect(await view.findByLabelText(/Primary phone number/)).toBeTruthy();
+  });
+
+  test('closing during draft creation stops follow-up profile requests', async () => {
+    let resolveCreate!: (value: typeof createdCustomer) => void;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => path === '/customers'
+      ? new Promise((resolve) => { resolveCreate = resolve; }) : Promise.resolve({}));
+    const callback = jest.fn();
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={callback} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    view.unmount();
+    await act(async () => { resolveCreate(createdCustomer); });
+    expect(ApiClient.post).toHaveBeenCalledTimes(1);
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  test('a session change stops an in-flight verification from updating contact details', async () => {
+    let resolveVerify!: (value: { status: string; verificationToken: string }) => void;
+    const existingPost = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/otp/verify')
+      ? new Promise((resolve) => { resolveVerify = resolve; }) : existingPost(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target: { value: '+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save contact details' }));
+    await view.findByRole('button', { name: 'Send phone OTP' });
+    fireEvent.click(view.getByRole('button', { name: 'Send phone OTP' }));
+    await view.findByLabelText('One-time code');
+    fireEvent.change(view.getByLabelText('One-time code'), { target: { value: '123456' } });
+    fireEvent.click(view.getByRole('button', { name: 'Verify primary phone' }));
+    const principal = useAuthStore.getState().principal!;
+    act(() => useAuthStore.setState({ sessionId:'new-session', principal:{ ...principal, sessionId:'new-session', principalId:'new-user' } }));
+    await act(async () => { resolveVerify({ status:'PHONE_VERIFIED', verificationToken:'synthetic-token' }); });
+    expect(ApiClient.patch).not.toHaveBeenCalled();
+    expect(view.queryByText(/Primary phone verified/)).toBeNull();
+  });
+
+  test('malformed draft receipt does not trigger a profile request', async () => {
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({ id:'synthetic', type:'INDIVIDUAL', status:'ACTIVE' });
+    const callback = jest.fn();
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={callback} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value: 'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value: 'Customer' } });
+    fireEvent.click(view.getByRole('button', { name: 'Create DRAFT & continue' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(ApiClient.post).toHaveBeenCalledTimes(1);
+    expect(callback).not.toHaveBeenCalled();
   });
 
   test('persists a multi-section DRAFT, verifies phone by OTP, masks identity value, and never auto-activates', async () => {

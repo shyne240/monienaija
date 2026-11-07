@@ -118,7 +118,7 @@ function safeSaveError(error: unknown): string {
   if (status === 409)
     return 'A conflicting record already exists. Review the saved customer details before retrying.';
   if (status === 400) return 'Some details are invalid. Check the required fields and try again.';
-  return 'The information could not be saved. Your draft data is still on this screen; retry safely.';
+  return 'The request outcome could not be confirmed. Check the customer records before retrying.';
 }
 
 function canonicalUiPhone(value: string, country = 'NG'): string {
@@ -138,7 +138,15 @@ function fieldErrorsFrom(error: unknown): Record<string, string> {
   );
 }
 
-export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProps> = ({
+export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type,
+    principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess,
+    principal?.readOnlyPrincipal]);
+  return <CustomerRegistrationWorkspace key={key} {...props} />;
+};
+
+const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> = ({
   onClose,
   onCustomerCreated,
   onOpenCustomer,
@@ -202,6 +210,8 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     if (Object.keys(fieldErrors).length > 0) wizardRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [fieldErrors]);
@@ -253,6 +263,9 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       let savedCustomer = customer;
       if (!savedCustomer) {
         savedCustomer = await ApiClient.post<CreatedCustomer>('/customers', { type: customerType });
+        if (!mounted.current) return;
+        if (!savedCustomer || typeof savedCustomer.id !== 'string' || !savedCustomer.id ||
+            savedCustomer.type !== customerType || savedCustomer.status !== 'DRAFT') throw new Error('Unconfirmed customer receipt');
         setCustomer(savedCustomer);
         onCustomerCreated(savedCustomer);
       }
@@ -292,6 +305,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             registrationProfile,
           );
         } catch (createError) {
+          if (!mounted.current) return;
           // Recover a retry after a committed create whose response was lost.
           if (requestStatus(createError) !== 409) throw createError;
           await ApiClient.patch(
@@ -300,17 +314,19 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           );
         }
       }
+      if (!mounted.current) return;
       setProfileSaved(true);
       setFieldErrors({});
       onCustomerCreated(savedCustomer);
       setNotice('Customer profile saved. The record remains DRAFT.');
       setStep(1);
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -358,8 +374,10 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
         { type, ...body },
       );
     } catch (saveError) {
+      if (!mounted.current) throw saveError;
       if (requestStatus(saveError) === 409) {
         const existing = await recoverContacts(customerId);
+        if (!mounted.current) throw saveError;
         const normalized =
           type === 'PHONE' ? canonicalUiPhone(value, countryCode) : normalizeEmailAddress(value);
         const matched = existing.find((contact) => {
@@ -412,6 +430,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
               phoneContact,
               phoneCountry,
             );
+      if (!mounted.current) return;
       setPhoneContact(savedPhone);
       setPersistedPhone(normalizedPhone.e164);
       if (email.trim()) {
@@ -419,6 +438,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           emailContact && persistedEmail === normalizedEmail
             ? emailContact
             : await saveContact(customer.id, 'EMAIL', normalizedEmail, false, emailContact);
+        if (!mounted.current) return;
         setEmailContact(savedEmail);
         setPersistedEmail(normalizedEmail);
       }
@@ -429,11 +449,12 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       }
       setNotice('Contact details saved. Phone verification is separate from customer activation.');
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -459,17 +480,20 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     setFieldErrors({});
     setNotice(null);
     try {
-      await ApiClient.post('/customers/registration/otp', { phone: normalizedPhone.e164 });
+      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', { phone: normalizedPhone.e164 });
+      if (!mounted.current) return;
+      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED') throw new Error('Unconfirmed OTP request');
       setOtpRequested(true);
       setOtpCode('');
       setVerificationToken('');
-      setNotice('OTP request accepted. Enter the code sent to the saved Nigerian phone number.');
+      setNotice('OTP request accepted; delivery is not confirmed. Enter the code if received.');
     } catch (otpError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
       setError(safeSaveError(otpError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -488,10 +512,12 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
     try {
       let token = verificationToken;
       if (!token) {
-        const verified = await ApiClient.post<{ verificationToken: string }>(
+        const verified = await ApiClient.post<{ status: string; verificationToken: string }>(
           '/customers/registration/otp/verify',
           { phone: normalizedPhone.e164, code: otpCode.trim() },
         );
+        if (!mounted.current) return;
+        if (!verified || verified.status !== 'PHONE_VERIFIED' || typeof verified.verificationToken !== 'string' || !verified.verificationToken.trim()) throw new Error('Unconfirmed verification proof');
         token = verified.verificationToken;
         setVerificationToken(token);
       }
@@ -504,6 +530,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
           verificationToken: token,
         },
       );
+      if (!mounted.current) return;
       setPhoneContact(updated);
       setPersistedPhone(normalizedPhone.e164);
       setOtpRequested(false);
@@ -511,11 +538,12 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       setVerificationToken('');
       setNotice('Primary phone verified. The customer is still DRAFT and is not activated.');
     } catch (verifyError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
       setError(safeSaveError(verifyError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -575,16 +603,18 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             `/customers/${encodeURIComponent(customer.id)}/address`,
             body,
           );
+      if (!mounted.current) return;
       setAddress(saved);
       setFieldErrors({});
       setNotice('Address saved.');
       setStep(3);
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
@@ -719,6 +749,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
             : {}),
         },
       );
+      if (!mounted.current) return;
       setIdentityDocuments((current) =>
         current.map((item) =>
           item.localId === localId
@@ -735,6 +766,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       setNotice('Identity document saved independently. Its number is masked in the result.');
       setFieldErrors({});
     } catch (saveError) {
+      if (!mounted.current) return;
       const serverErrors = fieldErrorsFrom(saveError);
       setIdentityDocuments((current) =>
         current.map((item) =>
@@ -753,7 +785,7 @@ export const CustomerRegistrationWizard: React.FC<CustomerRegistrationWizardProp
       setError(safeSaveError(saveError));
     } finally {
       savingRef.current = false;
-      setIsSaving(false);
+      if (mounted.current) setIsSaving(false);
     }
   };
 
