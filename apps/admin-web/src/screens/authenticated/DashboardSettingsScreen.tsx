@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollRegion } from '../../design-system/primitives';
 import './operational-surfaces.css';
 import { ApiClient, ApiError } from '../../services/api-client';
@@ -38,7 +38,16 @@ type LoadState = 'loading' | 'ready' | 'forbidden' | 'error';
  * never decides on its own that a user may or may not configure dashboards.
  */
 export const DashboardSettingsScreen: React.FC = () => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <DashboardSettingsWorkspace key={key} />;
+};
+
+const DashboardSettingsWorkspace: React.FC = () => {
   const { principal } = useAuthStore();
+  const generation = useRef(0);
+  const savingRef = useRef(false);
+  useEffect(() => () => { generation.current += 1; }, []);
   const canView = principal?.scopes.includes('workforce.dashboard.view') ?? false;
   const canAssign = principal?.scopes.includes('workforce.dashboard.assign') ?? false;
   const [state, setState] = useState<LoadState>('loading');
@@ -52,9 +61,12 @@ export const DashboardSettingsScreen: React.FC = () => {
   const [pendingTemplateByRole, setPendingTemplateByRole] = useState<Record<string, string>>({});
   const [reasonByRole, setReasonByRole] = useState<Record<string, string>>({});
   const [savingRole, setSavingRole] = useState<string | null>(null);
+  const [needsReview, setNeedsReview] = useState<Record<string, boolean>>({});
   const [feedbackByRole, setFeedbackByRole] = useState<Record<string, { kind: 'success' | 'error'; message: string }>>({});
 
   const load = useCallback(async () => {
+    if (savingRef.current) return;
+    const request = ++generation.current;
     setState('loading');
     setErrorMessage('');
     try {
@@ -63,11 +75,21 @@ export const DashboardSettingsScreen: React.FC = () => {
         ApiClient.get<RoleDashboardAssignmentSummary[]>(`${DASH}/assignments`),
         ApiClient.get<WidgetRegistryEntry[]>(`${DASH}/widget-registry`),
       ]);
-      setTemplates(Array.isArray(templatesRes) ? templatesRes : []);
-      setAssignments(Array.isArray(assignmentsRes) ? assignmentsRes : []);
-      setRegistry(Array.isArray(registryRes) ? registryRes : []);
+      if (!Array.isArray(templatesRes) || templatesRes.some(t => !t || typeof t.templateKey !== 'string' || !t.templateKey.trim() || typeof t.displayName !== 'string' || typeof t.isActive !== 'boolean' || !t.layout || !Array.isArray(t.layout.widgets) || t.layout.widgets.some(w => !w || typeof w.widgetKey !== 'string' || typeof w.order !== 'number')) ||
+          !Array.isArray(assignmentsRes) || assignmentsRes.some(a => !a || typeof a.id !== 'string' || !a.id.trim() || typeof a.roleKey !== 'string' || !a.roleKey.trim() || typeof a.templateKey !== 'string' || !a.templateKey.trim()) ||
+          !Array.isArray(registryRes) || registryRes.some(w => !w || typeof w.widgetKey !== 'string' || typeof w.displayName !== 'string') ||
+          new Set(assignmentsRes.map(a => a.roleKey)).size !== assignmentsRes.length || new Set(templatesRes.map(t => t.templateKey)).size !== templatesRes.length) {
+        throw new Error('Invalid dashboard configuration response.');
+      }
+      if (request !== generation.current) return;
+      setTemplates(templatesRes);
+      setAssignments(assignmentsRes);
+      setRegistry(registryRes);
+      setNeedsReview({});
+      setFeedbackByRole({});
       setState('ready');
     } catch (err: any) {
+      if (request !== generation.current) return;
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setState('forbidden');
       } else {
@@ -86,12 +108,15 @@ export const DashboardSettingsScreen: React.FC = () => {
   const activeTemplates = templates.filter((t) => t.isActive);
 
   const handleSave = async (roleKey: string) => {
-    if (!canAssign) return;
+    if (!canAssign || savingRef.current || needsReview[roleKey]) return;
+    const current = assignments.find(a => a.roleKey === roleKey);
     const templateKey = pendingTemplateByRole[roleKey];
-    if (!templateKey) {
+    if (!current || !templateKey || !activeTemplates.some(t => t.templateKey === templateKey)) {
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message: 'Choose a template first.' } }));
       return;
     }
+    const request = ++generation.current;
+    savingRef.current = true;
     setSavingRole(roleKey);
     setFeedbackByRole((prev) => {
       const next = { ...prev };
@@ -103,23 +128,30 @@ export const DashboardSettingsScreen: React.FC = () => {
         templateKey,
         reason: reasonByRole[roleKey]?.trim() || undefined,
       });
+      if (request !== generation.current) return;
+      if (!saved || saved.id !== current.id || saved.roleKey !== roleKey || saved.templateKey !== templateKey || saved.assignedBy !== principal?.principalId || typeof saved.assignedAt !== 'string' || !Number.isFinite(Date.parse(saved.assignedAt))) throw new Error('Unconfirmed assignment receipt.');
+      setPendingTemplateByRole(prev => { const next = { ...prev }; delete next[roleKey]; return next; });
+      setReasonByRole(prev => { const next = { ...prev }; delete next[roleKey]; return next; });
       setAssignments((prev) => {
         const withoutRole = prev.filter((a) => a.roleKey !== roleKey);
         return [...withoutRole, saved].sort((a, b) => a.roleKey.localeCompare(b.roleKey));
       });
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'success', message: `Dashboard for ${roleKey} is now ${templateKey}.` } }));
     } catch (err: any) {
-      const message = err instanceof ApiError ? err.message : err?.message || 'Failed to save assignment.';
+      if (request !== generation.current) return;
+      const rejected = err instanceof ApiError && [400, 401, 403, 404, 409, 422].includes(err.status);
+      const message = rejected ? err.message : 'The assignment outcome could not be confirmed. Reload configuration and review the current assignment before retrying.';
+      if (!rejected) setNeedsReview(prev => ({ ...prev, [roleKey]: true }));
       setFeedbackByRole((prev) => ({ ...prev, [roleKey]: { kind: 'error', message } }));
     } finally {
-      setSavingRole(null);
+      if (request === generation.current) { savingRef.current = false; setSavingRole(null); }
     }
   };
 
   if (state === 'loading') {
     return (
       <div className="mn-operational" style={styles.container}>
-        <div style={styles.stateBox}>
+        <div style={styles.stateBox} role="status">
           <div style={styles.spinner} />
           <span>Loading dashboard configuration…</span>
         </div>
@@ -133,7 +165,7 @@ export const DashboardSettingsScreen: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
-        <div style={styles.forbiddenBox}>
+        <div style={styles.forbiddenBox} role="alert">
           🔒 You do not have permission to view dashboard configuration. This requires the{' '}
           <code style={styles.code}>workforce.dashboard.view</code> function.
         </div>
@@ -147,8 +179,8 @@ export const DashboardSettingsScreen: React.FC = () => {
         <div style={styles.header}>
           <h2 style={styles.title}>Dashboard Settings</h2>
         </div>
-        <div style={styles.errorBox}>⚠️ {errorMessage}</div>
-        <button style={styles.retryBtn} onClick={load}>
+        <div style={styles.errorBox} role="alert">⚠️ {errorMessage}</div>
+        <button type="button" style={styles.retryBtn} onClick={load}>
           Retry
         </button>
       </div>
@@ -163,6 +195,8 @@ export const DashboardSettingsScreen: React.FC = () => {
           Assign which dashboard template each role displays. Assigning a template never grants or changes any permission — it only
           changes which widgets that role's dashboard shows.
         </p>
+        <p style={styles.note}>Assignments do not use an optimistic version. Reload and review the current assignment before making changes; another operator may change it concurrently.</p>
+        <button type="button" style={styles.retryBtn} disabled={savingRole !== null} onClick={() => void load()}>Reload configuration</button>
       </div>
 
       <h3 style={styles.sectionHeader}>Dashboard Templates ({templates.length})</h3>
@@ -173,7 +207,7 @@ export const DashboardSettingsScreen: React.FC = () => {
       <div style={styles.templateList}>
         {templates.map((t) => (
           <div key={t.templateKey} style={styles.templateRow}>
-            <button type="button" style={styles.templateHeaderRow} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
+            <button type="button" style={styles.templateHeaderRow} aria-label={`${t.templateKey}: ${t.displayName}, ${t.isActive ? 'active' : 'inactive'}, ${t.layout.widgets.length} widgets`} aria-expanded={expandedTemplate === t.templateKey} onClick={() => setExpandedTemplate(expandedTemplate === t.templateKey ? null : t.templateKey)}>
               <div>
                 <span style={styles.templateKey}>{t.templateKey}</span>
                 <span style={styles.templateDisplayName}>{t.displayName}</span>
@@ -231,9 +265,11 @@ export const DashboardSettingsScreen: React.FC = () => {
                       <select
                         style={styles.select}
                         aria-label={`Dashboard template for ${a.roleKey}`}
+                        disabled={savingRole !== null || !!needsReview[a.roleKey]}
                         value={pendingTemplateByRole[a.roleKey] ?? a.templateKey}
                         onChange={(e) => setPendingTemplateByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
                       >
+                        {!activeTemplates.some(t => t.templateKey === a.templateKey) && <option value={a.templateKey} disabled>{a.templateKey} (not active)</option>}
                         {activeTemplates.map((t) => (
                           <option key={t.templateKey} value={t.templateKey}>
                             {t.templateKey}
@@ -246,6 +282,8 @@ export const DashboardSettingsScreen: React.FC = () => {
                         style={styles.reasonInput}
                         aria-label={`Reason for ${a.roleKey} dashboard change`}
                         type="text"
+                        disabled={savingRole !== null || !!needsReview[a.roleKey]}
+                        maxLength={500}
                         placeholder="Reason for this change (optional)"
                         value={reasonByRole[a.roleKey] ?? ''}
                         onChange={(e) => setReasonByRole((prev) => ({ ...prev, [a.roleKey]: e.target.value }))}
@@ -253,14 +291,16 @@ export const DashboardSettingsScreen: React.FC = () => {
                     </td>
                     <td style={styles.td}>
                       <button
+                        type="button"
+                        aria-label={`Save dashboard assignment for ${a.roleKey}`}
                         style={styles.saveBtn}
-                        disabled={savingRole === a.roleKey || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
+                        disabled={savingRole !== null || !!needsReview[a.roleKey] || (pendingTemplateByRole[a.roleKey] ?? a.templateKey) === a.templateKey}
                         onClick={() => handleSave(a.roleKey)}
                       >
                         {savingRole === a.roleKey ? 'Saving…' : 'Save'}
                       </button>
                       {feedback && (
-                        <div style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
+                        <div role={feedback.kind === 'success' ? 'status' : 'alert'} style={feedback.kind === 'success' ? styles.rowSuccess : styles.rowError}>{feedback.message}</div>
                       )}
                     </td>
                   </>}
