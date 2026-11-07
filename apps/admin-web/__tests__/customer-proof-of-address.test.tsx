@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ApiClient } from '../src/services/api-client';
 import { useAuthStore } from '../src/store/auth-store';
@@ -122,7 +122,7 @@ function configureEnabledApi(options?: {
     }
     return Promise.reject(new Error(`Unexpected GET ${path}`));
   });
-  (ApiClient.post as jest.Mock).mockResolvedValue({});
+  (ApiClient.post as jest.Mock).mockImplementation((path: string) => Promise.resolve(documentRecord({ documentStatus: path.endsWith('/archive') ? 'ARCHIVED' : 'WITHDRAWN' })));
   (ApiClient.postForm as jest.Mock).mockResolvedValue(documentRecord());
   (ApiClient.getBlob as jest.Mock).mockResolvedValue(
     new Blob(['%PDF-1.4\nsynthetic test document\n%%EOF'], { type: 'application/pdf' }),
@@ -316,10 +316,39 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     );
   });
 
+  test('does not claim a clean upload for a mismatched or inconsistent receipt', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    (ApiClient.postForm as jest.Mock).mockResolvedValueOnce(documentRecord({ customerId: 'another-customer' }))
+      .mockResolvedValueOnce(documentRecord({ documentStatus: 'AVAILABLE', scannerResult: 'UNAVAILABLE' }));
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    fireEvent.change(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)'), { target: { files: [new File(['synthetic'], 'synthetic.pdf', { type: 'application/pdf' })] } });
+    const upload = screen.getByRole('button', { name: 'Upload Proof of Address' });
+    fireEvent.submit(upload.closest('form')!);
+    expect(await screen.findByText(/Upload outcome could not be confirmed/)).toBeTruthy();
+    expect(screen.queryByText(/submission is available with a clean malware scan/)).toBeNull();
+    fireEvent.submit(upload.closest('form')!);
+    expect(await screen.findByText(/Upload outcome could not be confirmed/)).toBeTruthy();
+    expect(ApiClient.postForm).toHaveBeenCalledTimes(2);
+  });
+
+  test('upload replay in withdrawn state is not reported as a new clean upload', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    (ApiClient.postForm as jest.Mock).mockResolvedValueOnce(documentRecord({ documentStatus: 'WITHDRAWN' }));
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    fireEvent.change(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)'), { target: { files: [new File(['synthetic'], 'synthetic.pdf', { type: 'application/pdf' })] } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Upload Proof of Address' }).closest('form')!);
+    expect(await screen.findByText(/currently has status WITHDRAWN/)).toBeTruthy();
+    expect(screen.queryByText(/submission is available with a clean malware scan/)).toBeNull();
+  });
+
   test('replacement locks the original address and classification and creates a new revision request', async () => {
     setPermissions([...operationsScopes, 'customer.download_proof_of_address']);
     configureEnabledApi();
-    (ApiClient.postForm as jest.Mock).mockResolvedValue(documentRecord({ revisionNumber: 2 }));
+    (ApiClient.postForm as jest.Mock).mockResolvedValue(documentRecord({ revisionNumber: 2, supersedesSubmissionId: documentRecord().id }));
     render(<CustomerProofOfAddressPanel customerId={customerId} />);
 
     await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
@@ -345,6 +374,25 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     expect(form.get('residentialAddressId')).toBe(address.id);
     expect(form.get('category')).toBe('UTILITY');
     expect(form.get('documentType')).toBe('UTILITY_BILL');
+  });
+
+  test('malformed or cross-customer document lists are unavailable rather than empty', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi({ documents: [documentRecord({ customerId: 'other-customer' })] });
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    expect(await screen.findByText('Document records are unavailable: invalid response.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Utility bill · revision 1' })).toBeNull();
+    expect(screen.queryByText(/No Proof of Address records/i)).toBeNull();
+  });
+
+  test('a history page from another document is reported as unavailable', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi({ history: [{ ...historyEvent, submissionId: 'other-document' }] });
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'View history' }));
+    expect(await screen.findByText(/Loading document history could not be completed/)).toBeTruthy();
+    expect(screen.queryByText('UPLOADED')).toBeNull();
   });
 
   test('failed document refresh does not present previous records as current or empty', async () => {
@@ -421,6 +469,38 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     expect(
       await screen.findByText(/document was withdrawn. Content access is disabled/i),
     ).toBeTruthy();
+  });
+
+  test('a mismatched withdrawal receipt leaves the action unconfirmed', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce(documentRecord({ id: 'different-document', documentStatus: 'WITHDRAWN' }));
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'Synthetic reason' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm withdrawal' }));
+    expect(await within(dialog).findByText(/Withdrawal outcome could not be confirmed/)).toBeTruthy();
+    expect(screen.queryByText(/document was withdrawn. Content access is disabled/i)).toBeNull();
+  });
+
+  test('late document actions cannot populate a different workforce session', async () => {
+    setPermissions(operationsScopes);
+    configureEnabledApi();
+    let resolveAction!: (value: ReturnType<typeof documentRecord>) => void;
+    (ApiClient.post as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolveAction = resolve; }));
+    render(<CustomerProofOfAddressPanel customerId={customerId} />);
+    await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'Synthetic reason' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm withdrawal' }));
+    const principal = useAuthStore.getState().principal!;
+    act(() => useAuthStore.setState({ sessionId: 'new-session', principal: { ...principal, sessionId: 'new-session', principalId: 'new-user' } }));
+    await act(async () => { resolveAction(documentRecord({ documentStatus: 'WITHDRAWN' })); });
+    expect(screen.queryByText(/document was withdrawn. Content access is disabled/i)).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   test('archive requires a withdrawn record and a separate archive scope', async () => {

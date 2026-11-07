@@ -142,6 +142,12 @@ function errorMessage(error: unknown, action: string): string {
   return `${action} could not be completed. Retry after refreshing the customer records.`;
 }
 
+function mutationErrorMessage(error: unknown, action: string): string {
+  const status = statusOf(error);
+  if (status !== undefined && [400, 401, 403, 404, 409, 413].includes(status)) return errorMessage(error, action);
+  return `${action} outcome could not be confirmed. Refresh the document records and check before retrying.`;
+}
+
 function formatBytes(value: number | string | null | undefined): string {
   const bytes = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(bytes) || bytes < 0) return 'Not recorded';
@@ -189,6 +195,33 @@ function documentTypeLabel(document: ProofOfAddressDocument): string {
   );
 }
 
+function isDocumentPage(value: Page<ProofOfAddressDocument>, customerId: string, page: number): boolean {
+  return Boolean(value && Array.isArray(value.items) && value.page === page && value.limit === PAGE_SIZE &&
+    Number.isSafeInteger(value.total) && value.total >= 0 && value.items.every((document) =>
+      document && typeof document.id === 'string' && Boolean(document.id) && document.customerId === customerId &&
+      typeof document.residentialAddressId === 'string' && typeof document.category === 'string' &&
+      typeof document.documentType === 'string' && typeof document.reviewStatus === 'string' &&
+      ['AVAILABLE', 'QUARANTINED', 'SUPERSEDED', 'WITHDRAWN', 'ARCHIVED'].includes(document.documentStatus) &&
+      Number.isSafeInteger(document.revisionNumber) && document.revisionNumber > 0 &&
+      (document.documentDate == null || typeof document.documentDate === 'string') &&
+      (document.issuerName == null || typeof document.issuerName === 'string') &&
+      (document.originalFileName == null || typeof document.originalFileName === 'string') &&
+      (document.detectedMimeType == null || typeof document.detectedMimeType === 'string') &&
+      (document.scannerResult == null || typeof document.scannerResult === 'string')
+    ));
+}
+
+function isHistoryPage(value: Page<ProofOfAddressHistoryEvent>, submissionId: string, page: number): boolean {
+  return Boolean(value && Array.isArray(value.items) && value.page === page && value.limit === PAGE_SIZE &&
+    Number.isSafeInteger(value.total) && value.total >= 0 && value.items.every((event) =>
+      event && typeof event.id === 'string' && event.submissionId === submissionId &&
+      typeof event.action === 'string' && typeof event.actorRoleKey === 'string' &&
+      (event.previousDocumentStatus == null || typeof event.previousDocumentStatus === 'string') &&
+      (event.newDocumentStatus == null || typeof event.newDocumentStatus === 'string') &&
+      (event.reason == null || typeof event.reason === 'string')
+    ));
+}
+
 function secureRequestKey(): string {
   if (!globalThis.crypto?.getRandomValues) {
     throw new Error('Secure random generation is not available in this browser');
@@ -220,9 +253,15 @@ interface CustomerProofOfAddressPanelProps {
   customerId: string;
 }
 
-export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelProps> = ({
-  customerId,
-}) => {
+export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.customerId, sessionId, principal?.principalId, principal?.sessionId,
+    principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel,
+    principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CustomerProofOfAddressWorkspace key={key} {...props} />;
+};
+
+const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps> = ({ customerId }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const scopesKey = scopes.join('|');
@@ -277,7 +316,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
   useDialogFocus(previewDialogRef, Boolean(preview), () => setPreview(null), previewTriggerRef);
   useDialogFocus(lifecycleDialogRef, Boolean(pendingLifecycle), () => { if (!lifecycleBusy) setPendingLifecycle(null); });
 
-  const currentCustomerId = useRef(customerId);
+  const currentCustomerId = useRef<string | null>(customerId);
   const loadedIdentityRef = useRef<string | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
 
@@ -307,6 +346,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
     setLifecycleReason('');
     setLifecycleBusy(false);
     setLifecycleError(null);
+    return () => { currentCustomerId.current = null; previewRequest.current?.abort(); };
   }, [customerId]);
 
   useEffect(() => {
@@ -371,7 +411,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
         ]);
         if (!active) return;
 
-        if ('value' in documentResult && Array.isArray(documentResult.value?.items) && Number.isFinite(documentResult.value.page) && Number.isFinite(documentResult.value.total)) {
+        if ('value' in documentResult && isDocumentPage(documentResult.value, customerId, 1)) {
           setDocuments(documentResult.value.items);
           setDocumentPage(documentResult.value.page);
           setDocumentTotal(documentResult.value.total);
@@ -476,6 +516,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
         `${apiPath(customerId)}?page=${page}&limit=${PAGE_SIZE}`,
       );
       if (currentCustomerId.current !== customerId) return;
+      if (!isDocumentPage(result, customerId, page)) throw new Error('Invalid document page');
       setDocuments((current) => {
         const existing = new Set(current.map(({ id }) => id));
         return [...current, ...result.items.filter((document) => !existing.has(document.id))];
@@ -511,10 +552,20 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
         idempotencyKey,
       });
       if (currentCustomerId.current !== customerId) return;
+      const validStatus = ['AVAILABLE', 'QUARANTINED', 'SUPERSEDED', 'WITHDRAWN', 'ARCHIVED'].includes(result?.documentStatus);
+      if (!result || typeof result.id !== 'string' || !result.id.trim() || result.customerId !== customerId || result.residentialAddressId !== addressId ||
+          result.category !== category || result.documentType !== documentType ||
+          (replacementTarget && result.supersedesSubmissionId !== replacementTarget.id) || !validStatus ||
+          (result.documentStatus === 'AVAILABLE' && result.scannerResult !== 'CLEAN') ||
+          (result.documentStatus === 'QUARANTINED' && !['INFECTED', 'UNAVAILABLE', 'ERROR'].includes(result.scannerResult ?? ''))) {
+        throw new Error('Unconfirmed upload receipt');
+      }
       setNotice(
         result.documentStatus === 'QUARANTINED'
           ? 'The upload was retained in quarantine because scanning did not return a clean result. Preview and download remain unavailable; this is not a verification or approval decision.'
-          : 'The file passed the malware scan and is stored as a new submission. A clean scan does not verify or approve the evidence.',
+          : result.documentStatus === 'AVAILABLE'
+            ? 'The submission is available with a clean malware scan. A clean scan does not verify or approve the evidence.'
+            : `The matching submission currently has status ${result.documentStatus}. Review its history; this may be a replay of an earlier upload.`,
       );
       setSelectedFile(null);
       setIdempotencyKey(null);
@@ -525,7 +576,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
       refresh();
     } catch (error) {
       if (currentCustomerId.current === customerId) {
-        setActionError(errorMessage(error, 'Upload'));
+        setActionError(mutationErrorMessage(error, 'Upload'));
       }
     } finally {
       if (currentCustomerId.current === customerId) setUploadBusy(false);
@@ -586,6 +637,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
         `${apiPath(customerId)}/${encodeURIComponent(documentId)}/history?page=${page}&limit=${PAGE_SIZE}`,
       );
       if (currentCustomerId.current !== customerId) return;
+      if (!isHistoryPage(result, documentId, page)) throw new Error('Invalid document history page');
       setHistoryByDocument((current) => {
         const previous = current[documentId];
         const items = append ? [...(previous?.items ?? []), ...result.items] : result.items;
@@ -697,8 +749,10 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
     setLifecycleError(null);
     const path = `${apiPath(customerId)}/${encodeURIComponent(document.id)}/${action}`;
     try {
-      await ApiClient.post(path, { reason: lifecycleReason.trim() });
+      const result = await ApiClient.post<ProofOfAddressDocument>(path, { reason: lifecycleReason.trim() });
       if (currentCustomerId.current !== customerId) return;
+      if (!result || result.id !== document.id || result.customerId !== customerId ||
+          result.documentStatus !== (action === 'withdraw' ? 'WITHDRAWN' : 'ARCHIVED')) throw new Error('Unconfirmed lifecycle receipt');
       setPendingLifecycle(null);
       setLifecycleReason('');
       setNotice(
@@ -709,7 +763,7 @@ export const CustomerProofOfAddressPanel: React.FC<CustomerProofOfAddressPanelPr
       refresh();
     } catch (error) {
       if (currentCustomerId.current === customerId) {
-        setLifecycleError(errorMessage(error, action === 'withdraw' ? 'Withdrawal' : 'Archive'));
+        setLifecycleError(mutationErrorMessage(error, action === 'withdraw' ? 'Withdrawal' : 'Archive'));
       }
     } finally {
       if (currentCustomerId.current === customerId) setLifecycleBusy(false);
