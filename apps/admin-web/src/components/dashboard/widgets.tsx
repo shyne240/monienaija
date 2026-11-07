@@ -6,7 +6,7 @@ import { WidgetCard } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
 import { useWidgetData } from './useWidgetData';
-import { isReconciliationWidgetData, isStatusCountData, type ReconciliationWidgetData, type StatusCountData } from './widget-validation';
+import { isReconciliationWidgetData, isStatusCountData, isTransactionSummary, isTransactionTrend, type ReconciliationWidgetData, type StatusCountData } from './widget-validation';
 import {
   formatMinor,
   formatPercent,
@@ -25,6 +25,16 @@ function buildQuery(params: Record<string, string | undefined>): string {
     .filter(([, v]) => v !== undefined && v !== '')
     .map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`);
   return parts.length ? `?${parts.join('&')}` : '';
+}
+
+/** Date inputs describe inclusive calendar days in UTC, as sent to the backend. */
+function periodParams(period: DashboardPeriod, from: string, to: string, maxDays?: number): Record<string, string | undefined> {
+  if (period !== 'custom') return { period };
+  if (!from || !to) throw new Error('Choose both dates for the custom UTC range.');
+  const start = new Date(`${from}T00:00:00.000Z`), end = new Date(`${to}T23:59:59.999Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() > end.getTime()) throw new Error('Choose a valid custom UTC range with the start on or before the end.');
+  if (maxDays && end.getTime() - start.getTime() >= maxDays * 86400000) throw new Error(`Choose a range of at most ${maxDays} UTC days.`);
+  return { period, from: start.toISOString(), to: end.toISOString() };
 }
 
 function deltaTone(value: number | null | undefined): 'positive' | 'negative' | 'neutral' {
@@ -63,15 +73,12 @@ export const TransactionSummaryWidget: React.FC = () => {
   const [compare, setCompare] = useState(false);
 
   const { data, loading, error } = useWidgetData<TransactionSummaryResponse>(
-    () =>
-      ApiClient.get(
-        `${DASH}/widgets/transaction-summary${buildQuery({
-          period,
-          from: period === 'custom' ? from : undefined,
-          to: period === 'custom' ? to : undefined,
-          compare: compare ? 'true' : undefined,
-        })}`,
-      ),
+    async () => {
+      const params = periodParams(period, from, to);
+      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-summary${buildQuery({ ...params, compare: compare ? 'true' : undefined })}`);
+      if (!isTransactionSummary(result, period, compare)) throw new Error('Invalid transaction summary response.');
+      return result as TransactionSummaryResponse;
+    },
     [period, from, to, compare],
   );
 
@@ -158,14 +165,12 @@ export const TransactionTrendWidget: React.FC = () => {
   const [to, setTo] = useState('');
 
   const { data, loading, error } = useWidgetData<TransactionTrendResponse>(
-    () =>
-      ApiClient.get(
-        `${DASH}/widgets/transaction-trend${buildQuery({
-          period,
-          from: period === 'custom' ? from : undefined,
-          to: period === 'custom' ? to : undefined,
-        })}`,
-      ),
+    async () => {
+      const params = periodParams(period, from, to, 92);
+      const result: unknown = await ApiClient.get(`${DASH}/widgets/transaction-trend${buildQuery(params)}`);
+      if (!isTransactionTrend(result, period)) throw new Error('Invalid transaction trend response.');
+      return result as TransactionTrendResponse;
+    },
     [period, from, to],
   );
 

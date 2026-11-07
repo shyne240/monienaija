@@ -39,3 +39,28 @@ export function isStatusCountData(value: unknown, widgetKey: string): value is S
       !value.byStatus.every((row: unknown) => object(row) && text(row.status) && count(row.count))) return false;
   return widgetKey !== 'agent-lifecycle-summary' || count(value.pendingApplicationCount);
 }
+
+export function isTransactionSummary(value: unknown, period: string, compare: boolean): boolean {
+  if (!object(value) || value.period !== period || !timestamp(value.from) || !timestamp(value.to) || Date.parse(value.from) > Date.parse(value.to) ||
+      !text(value.currency) || !count(value.totalCompletedCount) || !count(value.totalFailedCount) || !count(value.totalPendingCount) ||
+      !minor(value.totalCompletedValueMinor) || !minor(value.totalFeeRevenueMinor) ||
+      !(value.successRatePercent === null || (typeof value.successRatePercent === 'number' && Number.isFinite(value.successRatePercent) && value.successRatePercent >= 0 && value.successRatePercent <= 100)) ||
+      typeof value.feeRevenueNote !== 'string' || typeof value.commissionNote !== 'string' || !Array.isArray(value.byType)) return false;
+  if (!value.byType.every((row: unknown) => object(row) && ['W2W','C2W','W2C','C2C'].includes(row.type) &&
+      count(row.completedCount) && count(row.failedCount) && count(row.pendingCount) && minor(row.completedValueMinor) &&
+      (row.feeRevenueMinor === null || minor(row.feeRevenueMinor)))) return false;
+  if (compare && !object(value.comparison)) return false;
+  if (value.comparison !== undefined) {
+    const comparison = value.comparison;
+    if (!object(comparison) || typeof comparison.definition !== 'string' ||
+        ![comparison.completedCountChangePercent, comparison.completedValueChangePercent].every(v => v === null || (typeof v === 'number' && Number.isFinite(v)))) return false;
+  }
+  return true;
+}
+
+export function isTransactionTrend(value: unknown, period: string): boolean {
+  return object(value) && value.period === period && timestamp(value.from) && timestamp(value.to) &&
+    Date.parse(value.from) <= Date.parse(value.to) && text(value.currency) && typeof value.definition === 'string' &&
+    Array.isArray(value.daily) && value.daily.every((row: unknown) => object(row) && /^\d{4}-\d{2}-\d{2}$/.test(row.date) &&
+      timestamp(row.date) && count(row.completedCount) && minor(row.completedValueMinor));
+}
