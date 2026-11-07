@@ -19,7 +19,7 @@ test('audit distinguishes initial, failed and empty search', async () => {
   (ApiClient.get as jest.Mock).mockRejectedValueOnce(new Error('Audit unavailable')).mockResolvedValueOnce([]);
   render(<AuditTrailScreen />);
   expect(screen.queryByText(/No audit events/)).toBeNull();
-  expect(screen.getByLabelText('Entity UUID (optional)')).toBeTruthy();
+  expect(screen.getByLabelText('Entity ID (optional)')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
   expect(await screen.findByText('Audit unavailable')).toBeTruthy();
   expect(screen.queryByText(/No audit events/)).toBeNull();
