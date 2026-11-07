@@ -91,6 +91,7 @@ export interface OutboxReceiptQueryFilters {
 
 export interface ControlledTestSendOutcome {
   status: 'SENT' | 'PENDING_APPROVAL' | 'FAILED';
+  provider?: string | null;
   deliveryId?: string | null;
   approvalId?: string | null;
   providerRef?: string | null;
@@ -1031,8 +1032,12 @@ export const NotificationManagementApi = {
           { channel: payload.channel, destination: payload.destination },
           { idempotencyKey },
         );
+        if (!res || res.channel !== payload.channel || !['SENT', 'FAILED'].includes(res.status) || typeof res.provider !== 'string' || !res.provider.trim()) {
+          throw new Error('Test-send response did not match the requested channel.');
+        }
         return {
           status: res.status,
+          provider: res.provider,
           deliveryId: null,
           approvalId: null,
           providerRef: res.providerRef ?? null,
@@ -1467,7 +1472,16 @@ export const NotificationManagementApi = {
         const res = await ApiClient.get<unknown>(endpoint);
         const record = res && typeof res === 'object' && !Array.isArray(res) ? res as Record<string, unknown> : null;
         const rows = Array.isArray(res) ? res : Array.isArray(record?.data) ? record.data : Array.isArray(record?.items) ? record.items : null;
-        if (!rows) throw new Error('Invalid provider proposals response.');
+        if (!rows || rows.some((value: unknown) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
+          const row = value as Partial<ProviderConfigProposal>;
+          return typeof row.id !== 'string' || !row.id.trim() || !['SMS', 'EMAIL'].includes(row.channel ?? '') ||
+            !['REQUESTED', 'APPROVED', 'REJECTED', 'ACTIVATED'].includes(row.status ?? '') ||
+            typeof row.proposerPrincipalId !== 'string' || !row.proposerPrincipalId.trim() ||
+            typeof row.proposedProvider !== 'string' || !row.proposedProvider.trim() || typeof row.proposedEnabled !== 'boolean' ||
+            !Number.isSafeInteger(row.expectedVersion) || (row.expectedVersion as number) < 0 ||
+            typeof row.credentialAction !== 'string' || typeof row.reason !== 'string';
+        })) throw new Error('Invalid provider proposals response.');
         return sanitizeProviderStatusForDisplay(rows as ProviderConfigProposal[]);
       },
     });

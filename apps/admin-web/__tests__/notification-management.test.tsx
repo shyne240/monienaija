@@ -1739,3 +1739,17 @@ test('offline template baselines are references, not confirmation of an active r
   expect(view.getByText('REFERENCE · activation unconfirmed')).toBeTruthy();
   expect(view.queryByText('ACTIVE')).toBeNull();
 });
+
+test('a console test response is shown as simulation, not live delivery', async () => {
+    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'SMS',provider:'console',correlationId:'synthetic-correlation',providerRef:null});
+    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+    expect((await view.findByTestId('test-send-outcome-banner')).textContent).toContain('Console simulation only; no live provider delivery was confirmed.');
+  });
+
+  test('a test-send receipt for another channel is not shown as sent', async () => {
+    mockIntegratedRegistryBackend();seedPrincipal({roles:['OPERATIONS'],scopes:['notification.view_deliveries','notification.test_send']});
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({status:'SENT',channel:'EMAIL',provider:'console',correlationId:'synthetic-correlation',providerRef:null});
+    const view=render(<NotificationManagementScreen initialTab="testSend"/>);fireEvent.change(view.getByTestId('test-send-destination-input'),{target:{value:'08030000100'}});fireEvent.click(view.getByTestId('test-send-workforce-attestation'));fireEvent.click(view.getByTestId('submit-test-send-btn'));
+    expect((await view.findByTestId('test-send-error-banner')).textContent).toContain('Test-send outcome not confirmed');expect(view.queryByTestId('test-send-outcome-banner')).toBeNull();
+  });

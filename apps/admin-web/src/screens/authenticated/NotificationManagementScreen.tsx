@@ -1106,7 +1106,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           `Access denied (403): ${err.message || 'Workforce principal lacks dual-control permission for test-send.'}`,
         );
       } else {
-        setTestError(err?.message || 'Controlled test-send request failed.');
+        setTestError(`Test-send outcome not confirmed. Check delivery records before retrying. ${err?.message || 'Service unavailable.'}`);
       }
     } finally {
       setIsSendingTest(false);
@@ -3319,6 +3319,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   data-testid="test-send-outcome-banner"
                 >
                   <strong>Test-Send Status: {testOutcome.status}</strong>
+                  {testOutcome.status === 'SENT' && testOutcome.provider === 'console' && <p>Console simulation only; no live provider delivery was confirmed.</p>}
                   <div style={{ marginTop: 4, fontSize: 12 }}>
                     {testOutcome.deliveryId && (
                       <span>

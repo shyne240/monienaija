@@ -279,7 +279,7 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     expect(view.queryByTestId('submit-sms-proposal-btn')).toBeNull();
     (ApiClient.get as jest.Mock).mockImplementation((endpoint: string) => endpoint.startsWith('/internal/notifications/provider-config/proposals') ? Promise.resolve({ unexpected:true }) : original(endpoint));
     fireEvent.click(view.getByRole('button', { name:'Retry configuration' }));
-    expect((await view.findByTestId('provider-config-error')).textContent).toContain('Invalid provider proposals response');
+    expect((await view.findByText(/Provider proposals unavailable/)).textContent).toContain('Invalid provider proposals response');
     expect(view.queryByText('No provider configuration proposals submitted yet.')).toBeNull();
     expect(ApiClient.post).not.toHaveBeenCalled();
   });
@@ -810,4 +810,39 @@ describe('Governed SMS (Robase) & Email (Brevo) Provider Configuration Workspace
     };
     expect(validateProviderConfigProposalDraft(validResendWithoutDns, false)).toEqual([]);
   });
+
+  it('retains a stale provider draft but blocks submission until an explicit reset', async () => {
+    seedPrincipal({principalId:'issuer:maker',roles:['SUPER_ADMIN'],scopes:['notification.provider.view','notification.provider.configure']});
+    const overview=makeOverviewFixture();wireStandardBackendMocks(overview,[]);
+    const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);await view.findByTestId('provider-config-workspace');
+    fireEvent.change(view.getByTestId('sms-reason-input'),{target:{value:'Synthetic draft'}});
+    overview.sms={...overview.sms,version:overview.sms.version+1};fireEvent.click(view.getByTestId('refresh-provider-config-btn'));
+    expect(await view.findByText(/SMS configuration changed since this draft was loaded/)).toBeTruthy();
+    expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('Synthetic draft');expect((view.getByTestId('submit-sms-proposal-btn') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByRole('button',{name:'Reset SMS draft from current configuration'}));expect((view.getByTestId('sms-reason-input') as HTMLInputElement).value).toBe('');expect((view.getByTestId('submit-sms-proposal-btn') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('does not confirm a checker response for another proposal', async () => {
+    seedPrincipal({principalId:'issuer:checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure']});
+    const proposal={id:'prop-1',channel:'SMS',status:'REQUESTED',expectedVersion:0,proposedProvider:'console',proposedEnabled:false,credentialAction:'CLEAR',proposerPrincipalId:'issuer:maker',reason:'Synthetic reason'} as ProviderConfigProposal;
+    wireStandardBackendMocks(makeOverviewFixture(),[proposal]);(ApiClient.post as jest.Mock).mockResolvedValue({...proposal,id:'other',status:'APPROVED'});
+    const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);fireEvent.click(await view.findByTestId('approve-provider-proposal-prop-1'));
+    expect((await view.findByTestId('provider-queue-banner')).textContent).toContain('Outcome not confirmed');expect(view.getByTestId('provider-queue-banner').textContent).not.toContain('approved.');
+  });
+
+  it('rejects malformed provider proposal rows rather than treating them as a valid queue', async () => {
+    seedPrincipal({principalId:'issuer:checker',roles:['FINANCE_CONTROLLER'],scopes:['notification.provider.view','notification.provider.configure']});
+    wireStandardBackendMocks(makeOverviewFixture(),[{} as ProviderConfigProposal]);const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);
+    expect(await view.findByText(/Provider proposals unavailable/)).toBeTruthy();expect(view.queryByText('No provider configuration proposals submitted yet.')).toBeNull();
+  });
+
+
+  it('wipes an emailed credential and does not echo an error containing it on uncertainty', async () => {
+    seedPrincipal({principalId:'issuer:maker',roles:['SUPER_ADMIN'],scopes:['notification.provider.view','notification.provider.configure']});
+    wireStandardBackendMocks(makeOverviewFixture(),[]);const secret='xkeysib-'+'a1b2c3d4e5f60718'.repeat(4)+'-Fake9';
+    (ApiClient.post as jest.Mock).mockRejectedValue(new Error(`Synthetic failure with ${secret}`));
+    const view=render(<NotificationManagementScreen initialTab="providerConfig"/>);await view.findByTestId('provider-config-workspace');fireEvent.change(view.getByTestId('email-credential-action-select'),{target:{value:'SET_ENCRYPTED'}});fireEvent.change(view.getByTestId('email-api-key-input'),{target:{value:secret}});fireEvent.change(view.getByTestId('email-reason-input'),{target:{value:'Synthetic rotation'}});fireEvent.click(view.getByTestId('submit-email-proposal-btn'));
+    expect((await view.findByTestId('email-proposal-feedback')).textContent).toContain('Proposal outcome not confirmed');expect(view.container.textContent).not.toContain(secret);expect((view.getByTestId('email-api-key-input') as HTMLInputElement).value).toBe('');
+  });
+
 });
