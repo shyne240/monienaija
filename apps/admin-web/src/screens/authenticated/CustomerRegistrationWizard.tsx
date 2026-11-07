@@ -121,6 +121,13 @@ function safeSaveError(error: unknown): string {
   return 'The request outcome could not be confirmed. Check the customer records before retrying.';
 }
 
+function matchesCustomerReceipt(value: unknown, customerId: string, recordId?: string): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.customerId === customerId && typeof record.id === 'string' && Boolean(record.id.trim()) &&
+    (!recordId || record.id === recordId);
+}
+
 function canonicalUiPhone(value: string, country = 'NG'): string {
   const parsed = normalizePhoneNumber(value, country);
   return parsed.valid ? (parsed.e164 ?? '') : '';
@@ -293,28 +300,14 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
               nationality: normalizeIsoCountryCode(nationality) ?? undefined,
             };
 
-      if (profileSaved) {
-        await ApiClient.patch(
-          `/customers/${encodeURIComponent(savedCustomer.id)}/profile`,
-          profile,
-        );
-      } else {
-        try {
-          await ApiClient.post(
-            `/customers/${encodeURIComponent(savedCustomer.id)}/registration-profile`,
-            registrationProfile,
-          );
-        } catch (createError) {
-          if (!mounted.current) return;
-          // Recover a retry after a committed create whose response was lost.
-          if (requestStatus(createError) !== 409) throw createError;
-          await ApiClient.patch(
-            `/customers/${encodeURIComponent(savedCustomer.id)}/profile`,
-            profile,
-          );
-        }
-      }
+      const savedProfile = profileSaved
+        ? await ApiClient.patch(`/customers/${encodeURIComponent(savedCustomer.id)}/profile`, profile)
+        : await ApiClient.post(`/customers/${encodeURIComponent(savedCustomer.id)}/registration-profile`, registrationProfile);
       if (!mounted.current) return;
+      // A 409 may reflect another operator's profile, not necessarily our retry. Never overwrite it blindly.
+      if (!matchesCustomerReceipt(savedProfile, savedCustomer.id) || typeof savedProfile.displayName !== 'string') {
+        throw new Error('Unconfirmed profile receipt');
+      }
       setProfileSaved(true);
       setFieldErrors({});
       onCustomerCreated(savedCustomer);
@@ -362,26 +355,24 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
       isPrimary,
       ...(type === 'PHONE' ? { phoneCountry: countryCode } : {}),
     };
-    if (previous) {
-      return ApiClient.patch<ContactRecord>(
-        `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(previous.id)}`,
-        body,
-      );
-    }
     try {
-      return await ApiClient.post<ContactRecord>(
-        `/customers/${encodeURIComponent(customerId)}/contact-method`,
-        { type, ...body },
-      );
+      const saved = previous
+        ? await ApiClient.patch<ContactRecord>(`/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(previous.id)}`, body)
+        : await ApiClient.post<ContactRecord>(`/customers/${encodeURIComponent(customerId)}/contact-method`, { type, ...body });
+      if (!mounted.current) throw new Error('Workspace closed');
+      if (!matchesCustomerReceipt(saved, customerId, previous?.id) || saved.type !== type || saved.isPrimary !== isPrimary) {
+        throw new Error('Unconfirmed contact receipt');
+      }
+      return saved;
     } catch (saveError) {
       if (!mounted.current) throw saveError;
-      if (requestStatus(saveError) === 409) {
+      if (!previous && requestStatus(saveError) === 409) {
         const existing = await recoverContacts(customerId);
         if (!mounted.current) throw saveError;
         const normalized =
           type === 'PHONE' ? canonicalUiPhone(value, countryCode) : normalizeEmailAddress(value);
         const matched = existing.find((contact) => {
-          if (contact.type !== type) return false;
+          if (!matchesCustomerReceipt(contact, customerId) || contact.type !== type || contact.isPrimary !== isPrimary) return false;
           const stored =
             type === 'PHONE'
               ? canonicalUiPhone(contact.value ?? '', countryCode)
@@ -531,6 +522,8 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
         },
       );
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(updated, customer.id, phoneContact.id) || updated.type !== 'PHONE' ||
+          typeof updated.verifiedAt !== 'string' || !Number.isFinite(Date.parse(updated.verifiedAt))) throw new Error('Unconfirmed phone verification receipt');
       setPhoneContact(updated);
       setPersistedPhone(normalizedPhone.e164);
       setOtpRequested(false);
@@ -604,6 +597,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
             body,
           );
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customer.id, address?.id) || saved.type !== addressType || saved.isPrimary !== true) throw new Error('Unconfirmed address receipt');
       setAddress(saved);
       setFieldErrors({});
       setNotice('Address saved.');
@@ -750,6 +744,7 @@ const CustomerRegistrationWorkspace: React.FC<CustomerRegistrationWizardProps> =
         },
       );
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customer.id) || saved.type !== document.type || typeof saved.maskedDocumentNumber !== 'string') throw new Error('Unconfirmed identity receipt');
       setIdentityDocuments((current) =>
         current.map((item) =>
           item.localId === localId

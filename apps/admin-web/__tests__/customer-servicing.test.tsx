@@ -170,7 +170,7 @@ describe('Batch 1 customer directory', () => {
     };
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => {
       if (path === '/customers') return Promise.resolve(created);
-      if (path.endsWith('/registration-profile')) return Promise.resolve({ displayName: 'Synthetic New Customer' });
+      if (path.endsWith('/registration-profile')) return Promise.resolve({ id: 'profile-created', customerId: 'cust-created', displayName: 'Synthetic New Customer' });
       return Promise.resolve({});
     });
 

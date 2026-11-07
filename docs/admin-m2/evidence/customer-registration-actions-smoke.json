@@ -1,0 +1,66 @@
+[
+  {
+    "width": 320,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "synthetic registration receipts",
+    "confirmed": true,
+    "profileConflictNotOverwritten": true,
+    "page": 1440,
+    "view": 1440
+  }
+]

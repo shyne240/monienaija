@@ -66,6 +66,7 @@ describe('CustomerRegistrationWizard', () => {
       if (path.endsWith('/contact-methods/synthetic-phone-contact')) {
         return Promise.resolve({
           id: 'synthetic-phone-contact',
+          customerId: 'synthetic-customer-id',
           type: 'PHONE',
           maskedValue: '+234*****0001',
           isPrimary: true,
@@ -74,13 +75,16 @@ describe('CustomerRegistrationWizard', () => {
       }
       return Promise.resolve({});
     });
-    (ApiClient.post as jest.Mock).mockImplementation((path: string, body?: { type?: string }) => {
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body?: { type?: string; issuingCountry?: string }) => {
       if (path === '/customers') return Promise.resolve({ ...createdCustomer, type: body?.type ?? createdCustomer.type });
+      if (path.endsWith('/registration-profile'))
+        return Promise.resolve({ id: 'synthetic-profile', customerId: 'synthetic-customer-id', displayName: 'Synthetic New Customer' });
       if (path.endsWith('/profile'))
-        return Promise.resolve({ displayName: 'Synthetic New Customer' });
+        return Promise.resolve({ id: 'synthetic-profile', customerId: 'synthetic-customer-id', displayName: 'Synthetic New Customer' });
       if (path.endsWith('/contact-method'))
         return Promise.resolve({
           id: 'synthetic-phone-contact',
+          customerId: 'synthetic-customer-id',
           type: 'PHONE',
           maskedValue: '+234*****0001',
           isPrimary: true,
@@ -91,14 +95,15 @@ describe('CustomerRegistrationWizard', () => {
       if (path === '/customers/registration/otp/verify')
         return Promise.resolve({ status: 'PHONE_VERIFIED', verificationToken: 'synthetic-one-time-verification-token' });
       if (path.endsWith('/address'))
-        return Promise.resolve({ id: 'synthetic-address', type: 'RESIDENTIAL', isPrimary: true });
+        return Promise.resolve({ id: 'synthetic-address', customerId: 'synthetic-customer-id', type: 'RESIDENTIAL', isPrimary: true });
       if (path.endsWith('/identity-document')) {
         identitySequence += 1;
         return Promise.resolve({
           id: `synthetic-identity-${identitySequence}`,
-          type: 'NIN',
+          customerId: 'synthetic-customer-id',
+          type: body?.type ?? 'NIN',
           maskedDocumentNumber: `••••••${String(identitySequence).padStart(4, '0')}`,
-          issuingCountry: 'NG',
+          issuingCountry: body?.issuingCountry ?? 'NG',
           issuedAt: null,
           expiresAt: null,
         });
@@ -135,7 +140,7 @@ describe('CustomerRegistrationWizard', () => {
           releaseCustomer = resolve;
         });
       }
-      return Promise.resolve({ displayName: 'Synthetic New Customer' });
+      return Promise.resolve({ id:'synthetic-profile', customerId:'synthetic-customer-id', displayName: 'Synthetic New Customer' });
     });
     const view = render(
       <CustomerRegistrationWizard
@@ -206,6 +211,108 @@ describe('CustomerRegistrationWizard', () => {
     expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
     expect(ApiClient.post).toHaveBeenCalledTimes(1);
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  test('a conflicting registration profile is never overwritten automatically', async () => {
+    const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/registration-profile')
+      ? Promise.reject(Object.assign(new Error('profile exists'), { status:409 })) : post(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value:'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value:'Customer' } });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    expect(await view.findByText(/conflicting record already exists/i)).toBeTruthy();
+    expect(ApiClient.patch).not.toHaveBeenCalled();
+    expect(view.queryByLabelText(/Primary phone number/)).toBeNull();
+  });
+
+  test('a profile receipt for another customer does not advance registration', async () => {
+    const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/registration-profile')
+      ? Promise.resolve({ id:'profile', customerId:'other-customer', displayName:'Synthetic Customer' }) : post(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value:'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value:'Customer' } });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByLabelText(/Primary phone number/)).toBeNull();
+  });
+
+  test('a mismatched phone receipt stops the contact workflow', async () => {
+    const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/contact-method')
+      ? Promise.resolve({ id:'phone', customerId:'other-customer', type:'PHONE', isPrimary:true }) : post(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value:'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value:'Customer' } });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target:{ value:'+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name:'Save contact details' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect((view.getByRole('button', { name:'Send phone OTP' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(ApiClient.post).not.toHaveBeenCalledWith('/customers/registration/otp', expect.anything());
+  });
+
+  test('phone verification requires a verified matching contact receipt', async () => {
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ id:'synthetic-phone-contact', customerId:'synthetic-customer-id', type:'PHONE', isPrimary:true, verifiedAt:null });
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target: { value:'Synthetic' } });
+    fireEvent.change(view.getByLabelText(/Last name/), { target: { value:'Customer' } });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target:{ value:'+2348012340001' } });
+    fireEvent.click(view.getByRole('button', { name:'Save contact details' }));
+    await view.findByRole('button', { name:'Send phone OTP' });
+    fireEvent.click(view.getByRole('button', { name:'Send phone OTP' }));
+    await view.findByLabelText('One-time code');
+    fireEvent.change(view.getByLabelText('One-time code'), { target:{ value:'123456' } });
+    fireEvent.click(view.getByRole('button', { name:'Verify primary phone' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/Primary phone verified/)).toBeNull();
+  });
+
+  test('an address receipt for a different customer does not advance registration', async () => {
+    const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/address')
+      ? Promise.resolve({ id:'address', customerId:'other-customer', type:'RESIDENTIAL', isPrimary:true }) : post(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target:{value:'Synthetic'} });
+    fireEvent.change(view.getByLabelText(/Last name/), { target:{value:'Customer'} });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target:{value:'+2348012340001'} });
+    fireEvent.click(view.getByRole('button', { name:'Save contact details' }));
+    await view.findByText(/Contact details saved/);
+    fireEvent.click(view.getByRole('button', { name:'Continue to address' }));
+    fireEvent.change(view.getByLabelText(/Address line 1/), { target:{value:'1 Synthetic Road'} });
+    fireEvent.change(view.getByLabelText(/^City/), { target:{value:'Abuja'} });
+    fireEvent.change(view.getByLabelText(/State \/ province/), { target:{value:'FCT'} });
+    fireEvent.click(view.getByRole('button', { name:'Save address & continue' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByLabelText(/Document number/)).toBeNull();
+  });
+
+  test('an identity receipt with a different type does not mark the document saved', async () => {
+    const post = (ApiClient.post as jest.Mock).getMockImplementation()!;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string, body: unknown) => path.endsWith('/identity-document')
+      ? Promise.resolve({ id:'identity', customerId:'synthetic-customer-id', type:'BVN', maskedDocumentNumber:'••••0001' }) : post(path, body));
+    const view = render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()} />);
+    fireEvent.change(view.getByLabelText(/First name/), { target:{value:'Synthetic'} });
+    fireEvent.change(view.getByLabelText(/Last name/), { target:{value:'Customer'} });
+    fireEvent.click(view.getByRole('button', { name:'Create DRAFT & continue' }));
+    await view.findByLabelText(/Primary phone number/);
+    fireEvent.change(view.getByLabelText(/Primary phone number/), { target:{value:'+2348012340001'} });
+    fireEvent.click(view.getByRole('button', { name:'Save contact details' }));
+    await view.findByText(/Contact details saved/);
+    fireEvent.click(view.getByRole('button', { name:'Continue to address' }));
+    fireEvent.click(view.getByRole('button', { name:'Save address & continue' }));
+    await view.findByLabelText(/Document number/);
+    fireEvent.change(view.getByLabelText(/Document number/), { target:{value:'00000000001'} });
+    fireEvent.click(view.getByRole('button', { name:'Save this document' }));
+    expect((await view.findAllByText(/request outcome could not be confirmed/i)).length).toBeGreaterThan(0);
+    expect(view.queryByText('••••0001 · Saved')).toBeNull();
+    expect((view.getByLabelText(/Document number/) as HTMLInputElement).value).toBe('00000000001');
   });
 
   test('persists a multi-section DRAFT, verifies phone by OTP, masks identity value, and never auto-activates', async () => {
@@ -466,11 +573,12 @@ describe('CustomerRegistrationWizard', () => {
     (ApiClient.post as jest.Mock).mockImplementation(
       (path: string, body?: Record<string, unknown>) => {
         if (path === '/customers') return Promise.resolve(createdCustomer);
-        if (path.endsWith('/profile'))
-          return Promise.resolve({ displayName: 'Synthetic New Customer' });
+        if (path.endsWith('/registration-profile') || path.endsWith('/profile'))
+          return Promise.resolve({ id:'synthetic-profile', customerId:'synthetic-customer-id', displayName: 'Synthetic New Customer' });
         if (path.endsWith('/contact-method')) {
           return Promise.resolve({
             id: 'synthetic-phone-contact',
+            customerId: 'synthetic-customer-id',
             type: 'PHONE',
             maskedValue: '+234*****0001',
             isPrimary: true,
@@ -489,6 +597,7 @@ describe('CustomerRegistrationWizard', () => {
           }
           return Promise.resolve({
             id: 'synthetic-identity-saved',
+            customerId: 'synthetic-customer-id',
             type: 'NIN',
             maskedDocumentNumber: '••••••0001',
             issuingCountry: 'NG',
