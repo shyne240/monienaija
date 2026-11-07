@@ -1171,13 +1171,26 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
       {/* Navigation Tabs */}
       <div style={styles.tabBar} role="tablist" aria-label="Notification management sections">
-        {visibleTabs.map((tabItem) => (
+        {visibleTabs.map((tabItem, index) => (
           <button
             key={tabItem.key}
+            id={`notification-tab-${tabItem.key}`}
             type="button"
             role="tab"
             data-testid={`notif-tab-${tabItem.key}`}
             aria-selected={activeTab === tabItem.key}
+            aria-controls={`notification-panel-${tabItem.key}`}
+            tabIndex={activeTab === tabItem.key ? 0 : -1}
+            onKeyDown={(event) => {
+              let next = index;
+              if (event.key === 'ArrowRight') next = (index + 1) % visibleTabs.length;
+              else if (event.key === 'ArrowLeft') next = (index + visibleTabs.length - 1) % visibleTabs.length;
+              else if (event.key === 'Home') next = 0;
+              else if (event.key === 'End') next = visibleTabs.length - 1;
+              else return;
+              event.preventDefault();
+              document.getElementById(`notification-tab-${visibleTabs[next].key}`)?.focus();
+            }}
             style={activeTab === tabItem.key ? styles.activeTabBtn : styles.tabBtn}
             onClick={() => setActiveTab(tabItem.key)}
           >
@@ -1186,6 +1199,10 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         ))}
       </div>
 
+      {visibleTabs.filter((tabItem) => tabItem.key !== activeTab).map((tabItem) => (
+        <div key={tabItem.key} id={`notification-panel-${tabItem.key}`} role="tabpanel" aria-labelledby={`notification-tab-${tabItem.key}`} hidden />
+      ))}
+      <div role="tabpanel" id={`notification-panel-${activeTab}`} aria-labelledby={`notification-tab-${activeTab}`}>
       {/* TAB 1: OVERVIEW (Capability 1) */}
       {activeTab === 'overview' && (
         <div style={styles.sectionStack} data-testid="notif-panel-overview">
@@ -3375,6 +3392,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           />
         </div>
       )}
+      </div>
     </div>
   );
 };

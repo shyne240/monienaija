@@ -1250,6 +1250,27 @@ describe('ARENA 2 — SMS & Email Notification Management Console', () => {
     expect((ApiClient.get as jest.Mock).mock.calls.length).toBe(1);
   });
 
+  test('notification tabs support manual keyboard navigation and associated panels', async () => {
+    mockBaselineUnintegratedBackend();
+    seedPrincipal({});
+    const view = render(<NotificationManagementScreen />);
+    const overview = view.getByTestId('notif-tab-overview');
+    const events = view.getByTestId('notif-tab-events');
+    overview.focus();
+    fireEvent.keyDown(overview, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(events);
+    expect(overview.getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(events);
+    expect(events.getAttribute('aria-selected')).toBe('true');
+    expect(view.getByRole('tabpanel').id).toBe(events.getAttribute('aria-controls'));
+    fireEvent.keyDown(events, { key: 'End' });
+    const lastTab = view.getByTestId('notif-tab-testSend');
+    expect(document.activeElement).toBe(lastTab);
+    fireEvent.keyDown(lastTab, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(overview);
+    await waitFor(() => expect(view.getByTestId('notif-panel-events')).toBeTruthy());
+  });
+
   describe('Mission 25D — Notification Admin Web Completeness Remediation (F-01 .. F-13)', () => {
     test('N-02 / F-05: skips template registry HTTP requests on Overview, loads single channel lazily, and NEVER queries non-editable SECURITY events', async () => {
       mockIntegratedRegistryBackend();
