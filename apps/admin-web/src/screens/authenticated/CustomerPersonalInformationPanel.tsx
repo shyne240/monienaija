@@ -167,7 +167,7 @@ function messageFor(error: unknown): string {
   if (status === 404) return 'The requested customer data is no longer available.';
   if (status === 409)
     return 'A conflicting record already exists. Refresh the customer data and review it.';
-  return 'The change could not be saved. Retry without leaving this page.';
+  return 'The request outcome could not be confirmed. Refresh customer data and check before retrying.';
 }
 
 async function safeGet<T>(path: string): Promise<ReadResult<T>> {
@@ -210,7 +210,15 @@ function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
   };
 }
 
-export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = ({
+export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformationPanelProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.customerId, props.customerType, sessionId, principal?.principalId,
+    principal?.sessionId, principal?.type, principal?.roles, principal?.scopes,
+    principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CustomerPersonalInformationWorkspace key={key} {...props} />;
+};
+
+const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformationPanelProps> = ({
   customerId,
   customerType = 'INDIVIDUAL',
   onProfileUpdated,
@@ -235,6 +243,11 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [reloadVersion, setReloadVersion] = useState(0);
 
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
@@ -422,6 +435,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
             `/customers/${encodeURIComponent(customerId)}/profile`,
             body,
           );
+      if (!mounted.current) return;
       setProfile(saved);
       setProfileForm(profileFormFrom(saved));
       setProfileEditing(false);
@@ -432,11 +446,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -558,6 +573,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       } else {
         await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
       }
+      if (!mounted.current) return;
       setAddressForm(null);
       setAddressId(null);
       setFieldErrors({});
@@ -566,11 +582,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError));
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -627,6 +644,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           ...body,
         });
       }
+      if (!mounted.current) return;
       setContactForm(null);
       setFieldErrors({});
       setNotice(
@@ -634,11 +652,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError, contactForm.type === 'PHONE' ? 'phone' : 'email'));
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -662,6 +681,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
     setNotice(null);
     try {
       await ApiClient.post('/customers/registration/otp', { phone: normalized.e164 });
+      if (!mounted.current) return;
       setVerifyContactId(contact.id);
       setVerifyPhoneValue(normalized.e164);
       setOtpRequested(true);
@@ -669,11 +689,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       setVerificationToken('');
       setNotice('OTP request accepted. Enter the one-time code sent to the phone number.');
     } catch (otpError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
       setError(messageFor(otpError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -697,6 +718,10 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           '/customers/registration/otp/verify',
           { phone: normalized.e164, code: otpCode.trim() },
         );
+        if (!mounted.current) return;
+        if (!result || typeof result.verificationToken !== 'string' || !result.verificationToken.trim()) {
+          throw new Error('Verification token unavailable');
+        }
         token = result.verificationToken;
         setVerificationToken(token);
       }
@@ -710,6 +735,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           verificationToken: token,
         },
       );
+      if (!mounted.current) return;
       setOtpRequested(false);
       setOtpCode('');
       setVerificationToken('');
@@ -718,11 +744,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       onVerificationUpdated?.();
       refresh();
     } catch (verifyError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(verifyError));
       setError(messageFor(verifyError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -815,6 +842,7 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
           body,
         );
       }
+      if (!mounted.current) return;
       setIdentityForm(null);
       setFieldErrors({});
       setNotice(
@@ -822,11 +850,12 @@ export const CustomerPersonalInformationPanel: React.FC<CustomerPersonalInformat
       );
       refresh();
     } catch (saveError) {
+      if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(saveError, 'documentNumber'));
       setError(messageFor(saveError));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 

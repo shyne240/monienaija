@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import { CustomerPersonalInformationPanel } from '../src/screens/authenticated/CustomerPersonalInformationPanel';
 import { ApiClient } from '../src/services/api-client';
@@ -571,6 +571,57 @@ describe('CustomerPersonalInformationPanel', () => {
     });
     expect(await view.findByText(/Primary · Verified/)).toBeTruthy();
     expect(view.queryByText('synthetic-one-time-verification-token')).toBeNull();
+  });
+
+  test('a late profile save never updates a different customer', async () => {
+    setReadMocks();
+    let resolveSave!: (value: typeof profileInitial) => void;
+    (ApiClient.patch as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const onProfileUpdated = jest.fn();
+    const view = render(<CustomerPersonalInformationPanel customerId="old-customer" onProfileUpdated={onProfileUpdated} />);
+    await view.findByText('Synthetic Customer');
+    fireEvent.click(view.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Old customer edited' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save profile' }));
+    view.rerender(<CustomerPersonalInformationPanel customerId="new-customer" onProfileUpdated={onProfileUpdated} />);
+    await view.findByText('Synthetic Customer');
+    await act(async () => { resolveSave({ ...profileInitial, displayName: 'Old customer edited' }); });
+    expect(onProfileUpdated).not.toHaveBeenCalled();
+    expect(view.queryByText('Old customer edited')).toBeNull();
+  });
+
+  test('a late OTP verification cannot update a contact after the workforce session changes', async () => {
+    setReadMocks();
+    let resolveVerify!: (value: { verificationToken: string }) => void;
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => path.endsWith('/otp/verify')
+      ? new Promise((resolve) => { resolveVerify = resolve; })
+      : Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' }));
+    const callback = jest.fn();
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} onVerificationUpdated={callback} />);
+    await view.findByText(/Primary · Not verified/);
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    await view.findByLabelText('One-time code');
+    fireEvent.change(view.getByLabelText('One-time code'), { target: { value: '123456' } });
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    const principal = useAuthStore.getState().principal!;
+    act(() => useAuthStore.setState({ sessionId: 'new-session', principal: { ...principal, sessionId: 'new-session', principalId: 'new-user' } }));
+    await act(async () => { resolveVerify({ verificationToken: 'synthetic-token' }); });
+    expect(ApiClient.patch).not.toHaveBeenCalled();
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  test('a malformed OTP verification response never submits a contact update', async () => {
+    setReadMocks();
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => path.endsWith('/otp/verify')
+      ? Promise.resolve({}) : Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' }));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    await view.findByText(/Primary · Not verified/);
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    await view.findByLabelText('One-time code');
+    fireEvent.change(view.getByLabelText('One-time code'), { target: { value: '123456' } });
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(ApiClient.patch).not.toHaveBeenCalled();
   });
 
   test('F-25H-01 & F-25H-02: across all 11 workforce roles, never requests or mutates customer preferences, never displays preference values, and renders enforced self-service restriction policy', async () => {
