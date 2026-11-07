@@ -2,96 +2,112 @@
   {
     "width": 320,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
   {
     "width": 320,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
   {
     "width": 360,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
   {
     "width": 360,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
   {
     "width": 390,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
   {
     "width": 390,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
   {
     "width": 768,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
   {
     "width": 768,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
   {
     "width": 769,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
   {
     "width": 769,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
   {
     "width": 1024,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
   {
     "width": 1024,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
   {
     "width": 1280,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
   {
     "width": 1280,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
   {
     "width": 1440,
     "workspace": "workforceAccess",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   },
   {
     "width": 1440,
     "workspace": "roleGovernance",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   }
