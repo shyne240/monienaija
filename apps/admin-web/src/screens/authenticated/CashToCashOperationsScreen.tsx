@@ -1,7 +1,8 @@
 import './operational-surfaces.css';
+import './cash-to-cash-workspace.css';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { ScrollRegion } from '../../design-system/primitives';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { formatMinorUnits } from '../../utils/financial-display';
 import { ApiClient } from '../../services/api-client';
 import {
@@ -91,8 +92,16 @@ interface LedgerJournalView {
   lines: LedgerJournalLineView[];
 }
 
+const validTransfer = (row: any): boolean => row && typeof row.id === 'string' && typeof row.agentId === 'string' && typeof row.beneficiaryPhoneMasked === 'string' && typeof row.currency === 'string' && typeof row.status === 'string' && ['principalMinor', 'feeMinor', 'vatMinor', 'totalMinor'].every(key => typeof row[key] === 'string' && /^\d+$/.test(row[key]));
 export const CashToCashOperationsScreen: React.FC = () => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CashToCashWorkspace key={key} />;
+};
+const CashToCashWorkspace: React.FC = () => {
   const { principal } = useAuthStore();
+  const expiryRequest = useRef(0);
+  useEffect(() => () => { expiryRequest.current++; }, []);
   const canView = principal?.scopes.includes('transaction.view') ?? false;
   const canViewLedger = principal?.scopes.includes('ledger.view') ?? false;
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -116,11 +125,14 @@ export const CashToCashOperationsScreen: React.FC = () => {
 
   const loadExpiryStatus = async () => {
     if (!canView || expiryLoading) return;
+    const request = ++expiryRequest.current;
+    setExpiryStatus(null);
     setExpiryLoading(true);
     setExpiryError('');
     setExpiryBoundaryMsg('');
     try {
       const outcome = await fetchCashToCashExpiryStatus();
+      if (request !== expiryRequest.current) return;
       if (outcome.status === 'BLOCKED') {
         setExpiryStatus(null);
         setExpiryBoundaryMsg(outcome.message);
@@ -128,14 +140,16 @@ export const CashToCashOperationsScreen: React.FC = () => {
         setExpiryStatus(outcome.data);
       } else {
         setExpiryStatus(null);
+        setExpiryError('Expiry status could not be confirmed from the response.');
       }
     } catch (err) {
+      if (request !== expiryRequest.current) return;
       setExpiryStatus(null);
       setExpiryError(
         err instanceof Error ? err.message : 'Unable to load Cash-to-Cash expiry status.',
       );
     } finally {
-      setExpiryLoading(false);
+      if (request === expiryRequest.current) setExpiryLoading(false);
     }
   };
 
@@ -155,7 +169,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         `/internal/admin/cash-to-cash/transfers?${query.toString()}`,
       );
       if (request !== listRequest.current) return;
-      if (!Array.isArray(response?.data)) throw new Error('Cash-to-Cash list returned an invalid response.');
+      if (!Array.isArray(response?.data) || !response.data.every(validTransfer) || !Number.isSafeInteger(response.total) || response.total < 0 || response.page !== targetPage || !Number.isSafeInteger(response.totalPages) || response.totalPages < 0) throw new Error('Cash-to-Cash list returned an invalid or mismatched response.');
       setResult(response);
       setSelected((current) => response.data.find((item) => item.id === current?.id) ?? null);
     } catch (loadError) {
@@ -202,7 +216,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         `/ledger/journals/${encodeURIComponent(journalId)}`,
       );
       if (!valid()) return;
-      if (!journal || journal.id !== journalId || !Array.isArray(journal.lines)) throw new Error('Ledger journal response is invalid or does not match the requested journal.');
+      if (!journal || journal.id !== journalId || typeof journal.currency !== 'string' || typeof journal.status !== 'string' || !Array.isArray(journal.lines) || journal.lines.some(line => !line || typeof line.id !== 'string' || typeof line.accountId !== 'string' || typeof line.direction !== 'string' || typeof line.amountMinor !== 'string')) throw new Error('Ledger journal response is invalid or does not match the requested journal.');
       setInspectedJournal(journal);
     } catch (err) {
       if (!valid()) return;
@@ -247,33 +261,11 @@ export const CashToCashOperationsScreen: React.FC = () => {
   }
 
   return (
-    <div className="mn-operational" style={styles.wrap}>
-      <header style={styles.header}>
-        <div>
-          <h2 style={styles.title}>Cash-to-Cash Operations</h2>
-          <p style={styles.subtitle}>
-            Paginated, read-only investigation and receipt references for Agent V1 transfers.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            style={styles.button}
-            onClick={() => void loadExpiryStatus()}
-            disabled={expiryLoading}
-          >
-            {expiryLoading ? 'Checking expiry…' : 'Refresh expiry status'}
-          </button>
-          <button
-            type="button"
-            style={styles.button}
-            onClick={() => void load(page, appliedFilters)}
-            disabled={loading}
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-      </header>
+    <div className="mn-operational mn-c2c" style={styles.wrap}>
+      <PageHeader eyebrow="Money movement" title="Cash-to-Cash Operations" description="Paginated, read-only investigation and receipt references for Agent V1 transfers." actions={<div className="mn-c2c__actions">
+          <button type="button" style={styles.button} onClick={() => void loadExpiryStatus()} disabled={expiryLoading}>{expiryLoading ? 'Checking expiry…' : 'Refresh expiry status'}</button>
+          <button type="button" style={styles.button} onClick={() => void load(page, appliedFilters)} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+      </div>} />
       <div style={styles.notice} role="note">
         This surface does not reveal transfer codes or internal idempotency/fingerprint data and cannot claim, refund, release, or manually expire a transfer. Cash handover and unresolved KYC/expiry policies remain separate operational decisions.
       </div>
@@ -417,6 +409,7 @@ export const CashToCashOperationsScreen: React.FC = () => {
         </button>
       </form>
 
+      <p className="mn-c2c__hint">Filter edits are applied when you select Search.</p>
       {error && (
         <div style={styles.error} role="alert">
           {error}
@@ -727,7 +720,7 @@ const styles: Record<string, React.CSSProperties> = {
   expired: { background: '#FEF2F2', color: '#991B1B' },
   unclaimed: { background: '#FFFBEB', color: '#92400E' },
   unknown: { background: 'var(--mn-surface-canvas, #f5f8f6)', color: 'var(--mn-text-secondary, #52655f)' },
-  pager: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
+  pager: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12, color: 'var(--mn-text-secondary, #52655f)', fontSize: 13 },
   detail: { marginTop: 20, padding: 16, border: '1px solid #CBD5E1', borderRadius: 8, background: '#fff' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   detailTitle: { margin: 0, color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 16 },

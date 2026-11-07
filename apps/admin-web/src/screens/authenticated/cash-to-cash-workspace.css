@@ -1,0 +1,10 @@
+.mn-c2c { color: var(--mn-text-primary); }
+.mn-c2c__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mn-c2c__hint { color: var(--mn-text-secondary); font-size: 13px; }
+.mn-c2c :is(button, input, select) { min-height: 40px; min-width: 0; }
+.mn-c2c :is(code, dd, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-c2c dt { font-size: 12px; font-weight: 650; color: var(--mn-text-secondary); }
+.mn-c2c dd { margin: 4px 0 0; }
+.mn-c2c table th, .mn-c2c table td { padding: 9px 10px; border-bottom: 1px solid var(--mn-border-subtle); vertical-align: top; text-align: left; }
+.mn-c2c table th { color: var(--mn-text-secondary); background: var(--mn-surface-sunken); }
+@media (max-width: 600px) { .mn-c2c form label { flex: 1 1 100%; } }

@@ -138,7 +138,7 @@ test('Cash-to-Cash list discards an older search response', async () => {
   render(<CashToCashOperationsScreen />);
   fireEvent.change(screen.getByLabelText('Reference'), { target:{ value:'current' } });
   fireEvent.submit(screen.getByRole('form', { name:'Cash-to-Cash filters' }));
-  const row = (id: string) => ({ id, agentId:'a', agentReference:null, beneficiaryPhoneMasked:'***', status:'UNCLAIMED', principalMinor:'1200', currency:'USD', redemptionMethod:null, expiresAt:'2026-01-01', claimedAt:null, createdAt:'2026-01-01' });
+  const row = (id: string) => ({ id, agentId:'a', agentReference:null, beneficiaryPhoneMasked:'***', status:'UNCLAIMED', principalMinor:'1200', feeMinor:'0', vatMinor:'0', totalMinor:'1200', currency:'USD', redemptionMethod:null, expiresAt:'2026-01-01', claimedAt:null, createdAt:'2026-01-01' });
   await act(async () => { current.resolve({ data:[row('current')], total:1, page:1, limit:20, totalPages:1 }); await current.promise; });
   expect(screen.getByText('current')).toBeTruthy();
   expect(screen.getByText('USD 1,200 minor units')).toBeTruthy();
