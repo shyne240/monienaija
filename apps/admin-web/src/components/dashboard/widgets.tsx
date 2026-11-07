@@ -6,6 +6,7 @@ import { WidgetCard } from './WidgetCard';
 import { KpiTile } from './KpiTile';
 import { PeriodControls } from './PeriodControls';
 import { useWidgetData } from './useWidgetData';
+import { isReconciliationWidgetData, isStatusCountData, type ReconciliationWidgetData, type StatusCountData } from './widget-validation';
 import {
   formatMinor,
   formatPercent,
@@ -300,22 +301,22 @@ export const LedgerSummaryWidget: React.FC = () => {
   );
 };
 
-interface ReconciliationStatusResponse {
-  report: { status: string; generatedAt: string; checks: Array<{ name: string; status: string; message: string }> };
-  trialBalance: { balanced: boolean; dimensions: Array<{ currency: string; accountingUnit: string; balanced: boolean }> };
-}
-
 export const ReconciliationStatusWidget: React.FC = () => {
-  const { data, loading, error } = useWidgetData<ReconciliationStatusResponse>(() => ApiClient.get(`${DASH}/widgets/reconciliation-status`), []);
+  const { data, loading, error } = useWidgetData<ReconciliationWidgetData>(async () => {
+    const response: unknown = await ApiClient.get(`${DASH}/widgets/reconciliation-status`);
+    if (!isReconciliationWidgetData(response)) throw new Error('Invalid reconciliation widget response.');
+    return response;
+  }, []);
   return (
-    <WidgetCard title="Reconciliation Status" description="The latest independent reconciliation run and trial balance." loading={loading} error={error}>
+    <WidgetCard title="Reconciliation Status" description="Independent reconciliation and trial-balance reports, generated separately." loading={loading} error={error}>
       {data && (
         <>
           <div style={styles.kpiRow}>
-            <KpiTile label="Run Status" value={data.report?.status ?? '—'} />
-            <KpiTile label="Trial Balance" value={data.trialBalance?.balanced ? 'Balanced' : 'Out of balance'} deltaTone={data.trialBalance?.balanced ? 'positive' : 'negative'} />
+            <KpiTile label="Run Status" value={data.report.status} caption={`Reconciliation: ${formatDate(data.report.generatedAt)}`} />
+            <KpiTile label="Trial Balance" value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'} caption={`Trial balance: ${formatDate(data.trialBalance.generatedAt)}`} />
           </div>
-          {Array.isArray(data.report?.checks) && data.report.checks.length > 0 && (
+          {data.trialBalance.dimensions.length === 0 && <p style={styles.note}>No trial-balance dimensions were returned; the reported balance does not establish account activity.</p>}
+          {data.report.checks.length > 0 && (
             <ul style={styles.list}>
               {data.report.checks.map((c) => (
                 <li key={c.name} style={styles.listItem}>
@@ -368,16 +369,20 @@ export const StatusCountWidget: React.FC<{
   description: string;
   actions?: React.ReactNode;
 }> = ({ widgetKey, title, description, actions }) => {
-  const { data, loading, error } = useWidgetData<any>(() => ApiClient.get(`${DASH}/widgets/${widgetKey}`), [widgetKey]);
+  const { data, loading, error } = useWidgetData<StatusCountData>(async () => {
+    const response: unknown = await ApiClient.get(`${DASH}/widgets/${widgetKey}`);
+    if (!isStatusCountData(response, widgetKey)) throw new Error('Invalid status summary response.');
+    return response;
+  }, [widgetKey]);
 
   const rows: Array<{ label: string; count: number }> = [];
   let pendingApplicationCount: number | undefined;
   if (data) {
     if (Array.isArray(data.byStatus)) {
-      for (const r of data.byStatus) rows.push({ label: String(r.status), count: Number(r.count ?? 0) });
+      for (const r of data.byStatus) rows.push({ label: String(r.status), count: r.count });
     }
     if (Array.isArray(data.byCategoryStatus)) {
-      for (const r of data.byCategoryStatus) rows.push({ label: `${r.category} / ${r.status}`, count: Number(r.count ?? 0) });
+      for (const r of data.byCategoryStatus) rows.push({ label: `${r.category} / ${r.status}`, count: r.count });
     }
     if (typeof data.pendingApplicationCount === 'number') {
       pendingApplicationCount = data.pendingApplicationCount;
