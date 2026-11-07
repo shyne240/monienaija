@@ -20,11 +20,13 @@ export const RoleAssignmentScreen: React.FC = () => {
   const canRevokeFinance = isSuperAdmin && hasFn('workforce.role.revoke');
   const canAssignOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.assign_operational');
   const canRevokeOperational = (isAdministrator || isSuperAdmin) && hasFn('workforce.role.revoke_operational');
-  const key = `${principal?.principalId ?? ''}:${canAssignFinance}:${canRevokeFinance}:${canAssignOperational}:${canRevokeOperational}`;
-  return <RoleWorkspace key={key} canAssignFinance={canAssignFinance} canRevokeFinance={canRevokeFinance} canAssignOperational={canAssignOperational} canRevokeOperational={canRevokeOperational} />;
+  const principalId = principal?.principalId ?? '';
+  const hasMfa = principal?.assuranceLevel === 'MFA';
+  const key = JSON.stringify([principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational]);
+  return <RoleWorkspace key={key} principalId={principalId} hasMfa={hasMfa} canAssignFinance={canAssignFinance} canRevokeFinance={canRevokeFinance} canAssignOperational={canAssignOperational} canRevokeOperational={canRevokeOperational} />;
 };
 
-const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: boolean; canAssignOperational: boolean; canRevokeOperational: boolean}> = ({canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational}) => {
+const RoleWorkspace: React.FC<{principalId: string; hasMfa: boolean; canAssignFinance: boolean; canRevokeFinance: boolean; canAssignOperational: boolean; canRevokeOperational: boolean}> = ({principalId, hasMfa, canAssignFinance, canRevokeFinance, canAssignOperational, canRevokeOperational}) => {
   const requestGeneration = useRef(0);
   useEffect(() => () => { requestGeneration.current += 1; }, []);
   const canManageFinanceRoles = canAssignFinance || canRevokeFinance;
@@ -63,9 +65,13 @@ const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: bool
 
   const handleRoleAction = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (isLoading || (action === 'assign' && !canAssign) || (action === 'revoke' && !canRevoke)) return;
+    if (isLoading || (action === 'assign' && (!canAssign || !hasMfa)) || (action === 'revoke' && !canRevoke)) return;
     if (!targetPrincipalId.trim()) {
       setError('Target Principal ID is required');
+      return;
+    }
+    if (targetPrincipalId.trim() === principalId) {
+      setError('Self assignment or revocation is prohibited.');
       return;
     }
     if (!effectiveFrom.trim() || !effectiveTo.trim()) {
@@ -111,7 +117,7 @@ const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: bool
         });
       }
       if (request !== requestGeneration.current) return;
-      if (!receipt || receipt.status !== (action === 'assign' ? 'ACTIVE' : 'REVOKED') || (receipt.principalId && receipt.principalId !== targetPrincipalId.trim()) || (receipt.roleKey && receipt.roleKey !== roleKey)) {
+      if (!receipt || receipt.status !== (action === 'assign' ? 'ACTIVE' : 'REVOKED') || receipt.principalId !== targetPrincipalId.trim() || receipt.roleKey !== roleKey) {
         setError('Role change outcome is unconfirmed. Check an authorized workforce record or audit trail before retrying.');
         return;
       }
@@ -162,6 +168,7 @@ const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: bool
         Finance role changes use the existing governed workflow. Approval IDs may be required by the backend for the current assignment state; this form does not create or infer approvals.
       </div>}
 
+      {action === 'assign' && !hasMfa && <div style={styles.infoBox} role="note">MFA session assurance is required before submitting a role assignment.</div>}
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
       {success && <div style={styles.successBox} role="status">
         {domain === 'finance' ? 'Finance' : 'Operational'} role {action === 'assign' ? 'assigned' : 'revoked'} successfully.
@@ -198,7 +205,7 @@ const RoleWorkspace: React.FC<{canAssignFinance: boolean; canRevokeFinance: bool
             <input id="role-approval-ids" type="text" style={styles.input} placeholder="e.g. UUID-1, UUID-2" value={approvalIds} onChange={(event) => setApprovalIds(event.target.value)} disabled={isLoading} />
           </div>}
 
-          <button type="submit" disabled={isLoading || (action === 'assign' ? !canAssign : !canRevoke)} style={styles.submitBtn}>
+          <button type="submit" disabled={isLoading || (action === 'assign' ? !canAssign || !hasMfa : !canRevoke)} style={styles.submitBtn}>
             {isLoading ? 'Executing Request…' : action === 'assign' ? 'Commit Role Assignment' : 'Execute Revocation'}
           </button>
         </form>

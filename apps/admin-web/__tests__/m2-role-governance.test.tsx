@@ -21,3 +21,9 @@ test('an inconsistent role receipt does not claim success',async()=>{
  render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));
  expect(await screen.findByText(/outcome is unconfirmed/i)).toBeTruthy();expect(screen.queryByText('Finance role assigned successfully.')).toBeNull();
 });
+test('a status-only receipt cannot prove which role or principal changed',async()=>{
+ (ApiClient.post as jest.Mock).mockResolvedValue({status:'ACTIVE'});render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));expect(await screen.findByText(/outcome is unconfirmed/i)).toBeTruthy();expect(screen.queryByText('Finance role assigned successfully.')).toBeNull();
+});
+test('role assignment requires MFA and clears draft when assurance changes',()=>{
+ render(<RoleAssignmentScreen/>);fill();act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,assuranceLevel:'PASSWORD'}})));expect((screen.getByLabelText('Target Principal ID (e.g. issuer:subject)') as HTMLInputElement).value).toBe('');expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/MFA session assurance is required/)).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();
+});

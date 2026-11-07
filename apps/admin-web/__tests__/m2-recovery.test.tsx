@@ -36,3 +36,9 @@ test('a recovery result and statement cannot cross principal or permission chang
   expect(screen.getByText('Access restricted')).toBeTruthy();
   expect(screen.queryByRole('button', {name:'Execute Recovery'})).toBeNull();
 });
+
+test('a new session for the same operator clears a recovery statement', () => {
+  render(<SuperAdminRecoveryScreen />);fireEvent.change(screen.getByLabelText('Recovery statement (JWT)'),{target:{value:'synthetic.signed.statement'}});
+  act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));
+  expect((screen.getByLabelText('Recovery statement (JWT)') as HTMLTextAreaElement).value).toBe('');
+});

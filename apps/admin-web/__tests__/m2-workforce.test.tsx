@@ -38,3 +38,16 @@ test('incomplete provisioning response is not presented as a valid one-time cred
   expect(await screen.findByText(/provisioning response was incomplete/i)).toBeTruthy();
   expect(screen.queryByText(/One-time temporary password:/)).toBeNull();
 });
+
+test('disable confirms the requested identity and DISABLED status, not just HTTP success', async () => {
+  principal('one',['workforce.user.suspend']);(ApiClient.post as jest.Mock).mockResolvedValueOnce({id:'other',status:'DISABLED'}).mockResolvedValueOnce({id:'user-1',status:'DISABLED'});
+  render(<WorkforceAdminScreen />);fireEvent.change(screen.getByPlaceholderText('SUPPORT user ID'),{target:{value:'user-1'}});fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));
+  expect(await screen.findByText(/Disable outcome not confirmed/)).toBeTruthy();expect(screen.queryByText('Support user user-1 disabled.')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Disable SUPPORT User'}));expect(await screen.findByText('Support user user-1 disabled.')).toBeTruthy();
+});
+
+test('a new session for the same operator clears one-time credentials', async () => {
+  principal('one',['workforce.user.create']);(ApiClient.post as jest.Mock).mockResolvedValue({username:'synthetic',supportUserId:'one-id',temporaryPassword:'synthetic-secret',passwordExpiresAt:'2027-01-01'});
+  render(<WorkforceAdminScreen />);fireEvent.change(screen.getByLabelText('Support username or email'),{target:{value:'synthetic'}});fireEvent.click(screen.getByRole('button',{name:'Create SUPPORT User'}));await screen.findByText(/synthetic-secret/);
+  act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));expect(screen.queryByText(/synthetic-secret/)).toBeNull();
+});

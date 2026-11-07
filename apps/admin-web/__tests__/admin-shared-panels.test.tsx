@@ -103,6 +103,7 @@ describe('Admin Web shared-screen improvements', () => {
   test('Workforce overview maps the current API shape and SUPPORT disable uses its guarded endpoint', async () => {
     setPrincipal(['ADMINISTRATOR'], ['workforce.dashboard.view', 'workforce.user.suspend']);
     (ApiClient.get as jest.Mock).mockResolvedValue({ activeWorkforceHeadcount: 7, roleDistribution: [{ roleKey: 'OPERATIONS', count: 3 }], activeSessionCount: 2 });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'support-user-42', status: 'DISABLED' });
 
     const view = render(<WorkforceAdminScreen />);
     expect(await view.findByText('Active workforce headcount')).toBeTruthy();

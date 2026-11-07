@@ -21,7 +21,7 @@ export const SuperAdminRecoveryScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('workforce.super_admin.recover') ?? false;
   const principalId = principal?.principalId ?? '';
-  return <RecoveryWorkspace key={`${principalId}:${canView}`} principalId={principalId} canView={canView} roles={principal?.roles ?? []} />;
+  return <RecoveryWorkspace key={JSON.stringify([principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, canView])} principalId={principalId} canView={canView} roles={principal?.roles ?? []} />;
 };
 
 const RecoveryWorkspace: React.FC<{ principalId: string; canView: boolean; roles: string[] }> = ({ principalId, canView, roles }) => {

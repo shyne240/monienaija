@@ -23,3 +23,8 @@ test('late approval result is not presented to a different checker',async()=>{
  act(()=>principal('two'));await act(async()=>{resolve({approved:true,reason:'APPROVED',approval:{id:'synthetic-id',status:'APPROVED'}});await pending;});
  expect(screen.queryByText(/Approval recorded/)).toBeNull();expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
 });
+test('a new session for the same checker clears the prior decision draft',()=>{
+ render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
+ act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,sessionId:'new-session'}})));
+ expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
+});

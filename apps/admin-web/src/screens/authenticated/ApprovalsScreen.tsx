@@ -24,7 +24,7 @@ export const ApprovalsScreen: React.FC = () => {
     (principal?.scopes.includes('agent.defund') ?? false) &&
     principal?.assuranceLevel === 'MFA';
 
-  const key = `${principal?.principalId ?? ''}:${canApprove}:${canReviewFunding}:${canAccessGlobalFundingInbox}:${principal?.assuranceLevel ?? ''}`;
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, canApprove, canReviewFunding, canAccessGlobalFundingInbox]);
   return <ApprovalsWorkspace key={key} principal={principal} canApprove={canApprove} canReviewFunding={canReviewFunding} canAccessGlobalFundingInbox={canAccessGlobalFundingInbox} />;
 };
 

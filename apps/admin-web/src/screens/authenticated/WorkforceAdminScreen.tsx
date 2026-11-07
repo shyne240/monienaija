@@ -25,7 +25,7 @@ export const WorkforceAdminScreen: React.FC = () => {
   const canSuspendSupportUser = hasFn('workforce.user.suspend');
   const canView = canViewOverview || canCreateSupportUser || canSuspendSupportUser;
 
-  const key = `${principal?.principalId ?? ''}:${canViewOverview}:${canCreateSupportUser}:${canSuspendSupportUser}`;
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, canViewOverview, canCreateSupportUser, canSuspendSupportUser]);
   return <WorkforceWorkspace key={key} canView={canView} canViewOverview={canViewOverview} canCreateSupportUser={canCreateSupportUser} canSuspendSupportUser={canSuspendSupportUser} />;
 };
 
@@ -110,10 +110,14 @@ const WorkforceWorkspace: React.FC<{ canView: boolean; canViewOverview: boolean;
     const request = ++disableRequest.current;
     setDisableLoading(true);
     try {
-      await ApiClient.post(`/internal/admin/support/workforce-users/${encodeURIComponent(disableUserId.trim())}/disable`, {
+      const result: any = await ApiClient.post(`/internal/admin/support/workforce-users/${encodeURIComponent(disableUserId.trim())}/disable`, {
         reason: disableReason.trim() || undefined,
       });
       if (request !== disableRequest.current) return;
+      if (!result || result.id !== disableUserId.trim() || result.status !== 'DISABLED') {
+        setDisableErr('Disable outcome not confirmed; check an authorized workforce record before retrying.');
+        return;
+      }
       setDisableRes(`Support user ${disableUserId.trim()} disabled.`);
       setDisableReason('');
       if (canViewOverview) void fetchOverview();
