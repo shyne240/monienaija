@@ -31,6 +31,9 @@ interface TicketMessage {
 }
 
 const PAGE_SIZE = 20;
+function validTicket(value: any): value is Ticket {
+  return value && typeof value.id === 'string' && !!value.id && ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(value.status) && Number.isInteger(value.version) && value.version >= 1 && typeof value.createdAt === 'string' && typeof value.updatedAt === 'string' && (value.assignedTo == null || typeof value.assignedTo === 'string');
+}
 const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
   OPEN: ['IN_PROGRESS', 'RESOLVED', 'CLOSED'],
   IN_PROGRESS: ['RESOLVED', 'CLOSED'],
@@ -38,15 +41,19 @@ const ALLOWED_STATUS_TRANSITIONS: Record<string, string[]> = {
   CLOSED: [],
 };
 
-export const SupportTicketsScreen: React.FC<{
+interface SupportProps {
   initialCustomerId?: string;
   initialAgentId?: string;
   onBackToAgent?: () => void;
-}> = ({
-  initialCustomerId,
-  initialAgentId,
-  onBackToAgent,
-}) => {
+}
+
+export const SupportTicketsScreen: React.FC<SupportProps> = (props) => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal, props.initialCustomerId, props.initialAgentId]);
+  return <SupportWorkspace key={key} {...props} />;
+};
+
+const SupportWorkspace: React.FC<SupportProps> = ({ initialCustomerId, initialAgentId, onBackToAgent }) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('customer.manage_support_case') ?? false;
   const customerFilter = initialCustomerId || '';
@@ -75,6 +82,14 @@ export const SupportTicketsScreen: React.FC<{
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState('');
   const listRequestId = useRef(0);
+  const detailRequestId = useRef(0);
+  const activeTicketId = useRef<string | null>(null);
+  const messageRequestId = useRef(0);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const inFlight = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [needsReload, setNeedsReload] = useState(false);
+  useEffect(() => () => { detailRequestId.current += 1; messageRequestId.current += 1; }, []);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const fetchList = async () => {
@@ -88,10 +103,11 @@ export const SupportTicketsScreen: React.FC<{
       if (appliedAgentFilter.trim()) query.set('agentId', appliedAgentFilter.trim());
       const response: any = await ApiClient.get(`/internal/support/tickets?${query.toString()}`);
       const rows = Array.isArray(response) ? response : response?.items ?? response?.data;
-      if (!Array.isArray(rows)) throw new Error('Ticket search returned an invalid response.');
+      const count = response?.pagination?.total ?? response?.total ?? rows?.length;
+      if (!Array.isArray(rows) || !rows.every((row: any) => row && typeof row.id === 'string' && !!row.id && typeof row.status === 'string' && typeof row.createdAt === 'string') || !Number.isSafeInteger(count) || count < rows.length) throw new Error('Ticket search returned an invalid response.');
       if (requestId !== listRequestId.current) return;
       setTickets(rows);
-      setTotal(Number(response?.pagination?.total ?? response?.total ?? rows.length));
+      setTotal(count);
     } catch (err: any) {
       if (requestId === listRequestId.current) setError(err?.message || 'Failed to load tickets');
     } finally {
@@ -99,111 +115,108 @@ export const SupportTicketsScreen: React.FC<{
     }
   };
 
+  const latestFetchList = useRef(fetchList);
+  latestFetchList.current = fetchList;
+
   useEffect(() => {
     if (canView) void fetchList();
     else setLoading(false);
     return () => { listRequestId.current += 1; };
   }, [page, status, customerFilter, appliedAgentFilter, canView]);
 
-  const fetchMessages = async (ticketId: string) => {
+  const fetchMessages = async (ticketId: string, detailId = detailRequestId.current) => {
+    const requestId = ++messageRequestId.current;
+    const current = () => requestId === messageRequestId.current && detailId === detailRequestId.current;
     setMessagesLoading(true);
     setMessagesError('');
     try {
-      const response: any = await ApiClient.get(`/internal/support/tickets/${ticketId}/messages`);
-      const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
-      if (!Array.isArray(rows)) throw new Error('Ticket messages returned an invalid response.');
-      setMessages(rows);
+      const response: unknown = await ApiClient.get(`/internal/support/tickets/${ticketId}/messages`);
+      if (!Array.isArray(response) || !response.every((row: any) => row && typeof row.id === 'string' && row.ticketId === ticketId && typeof row.body === 'string' && typeof row.authorType === 'string' && typeof row.isInternal === 'boolean' && typeof row.createdAt === 'string')) throw new Error('Ticket messages returned an invalid response.');
+      if (current()) setMessages(response);
     } catch (err: any) {
-      setMessagesError(err?.message || 'Failed to load ticket messages');
-      setMessages([]);
+      if (current()) { setMessagesError(err?.message || 'Failed to load ticket messages'); setMessages([]); }
     } finally {
-      setMessagesLoading(false);
+      if (current()) setMessagesLoading(false);
     }
   };
 
   const open = async (ticket: Ticket) => {
-    if (!canView) return;
-    setSelected(null);
-    setMessages([]);
-    setDetailErr('');
-    setMessagesError('');
-    setMsgRes('');
-    setAssignedToInput(ticket.assignedTo ?? '');
+    if (!canView || inFlight.current) return;
+    setNeedsReload(false);
+    const requestId = ++detailRequestId.current;
+    activeTicketId.current = null;
+    messageRequestId.current += 1;
+    setSelected(null); setMessages([]); setDetailErr(''); setMessagesError(''); setMsgRes('');
+    setMsgBody(''); setIsInternalNote(false); setAssignedToInput(''); setDetailLoading(true); setMessagesLoading(false);
     try {
       const detail = await ApiClient.get<Ticket>(`/internal/support/tickets/${ticket.id}`);
-      setSelected(detail);
-      setAssignedToInput(detail.assignedTo ?? '');
-      void fetchMessages(detail.id);
+      if (!validTicket(detail) || detail.id !== ticket.id) throw new Error('Ticket detail returned an invalid response.');
+      if (requestId !== detailRequestId.current) return;
+      activeTicketId.current = detail.id;
+      setSelected(detail); setAssignedToInput(detail.assignedTo ?? '');
+      void fetchMessages(detail.id, requestId);
     } catch (err: any) {
-      setDetailErr(err?.message || 'Failed to load ticket');
-      setSelected(ticket);
-      void fetchMessages(ticket.id);
+      if (requestId === detailRequestId.current) setDetailErr(err?.message || 'Failed to load ticket');
+    } finally {
+      if (requestId === detailRequestId.current) setDetailLoading(false);
+    }
+  };
+
+  const closeDetail = () => {
+    detailRequestId.current += 1; messageRequestId.current += 1; activeTicketId.current = null;
+    setSelected(null); setMessages([]); setMsgBody(''); setIsInternalNote(false); setMsgRes(''); setDetailErr('');
+  };
+
+  const runMutation = async (work: (ticket: Ticket, current: () => boolean) => Promise<void>) => {
+    if (!canView || !selected || activeTicketId.current !== selected.id || needsReload || inFlight.current) return;
+    const requestId = detailRequestId.current;
+    const current = () => requestId === detailRequestId.current;
+    inFlight.current = true; setSaving(true); setDetailErr(''); setMsgRes('');
+    try { await work(selected, current); }
+    catch (err: any) {
+      if (current()) { setNeedsReload(true); setDetailErr(`${err?.message || 'Action failed'}. The outcome may be uncertain or the ticket may have changed; reload and inspect before retrying.`); }
+    } finally {
+      inFlight.current = false;
+      if (current()) setSaving(false);
     }
   };
 
   const doStatus = async (newStatus: string) => {
-    if (!canView || !selected || !ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes(newStatus)) return;
-    setDetailErr('');
-    setMsgRes('');
-    try {
-      const updated = await ApiClient.post<Ticket>(`/internal/support/tickets/${selected.id}/status`, { status: newStatus, version: selected.version });
-      setSelected(updated);
-      setMsgRes(`Status → ${newStatus}`);
-      void fetchList();
-    } catch (err: any) {
-      setDetailErr(err?.message || 'Status update failed');
-    }
+    if (!selected || !ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes(newStatus)) return;
+    await runMutation(async (ticket, current) => {
+      if (!Number.isInteger(ticket.version)) throw new Error('Ticket version is unavailable');
+      const updated = await ApiClient.post<Ticket>(`/internal/support/tickets/${ticket.id}/status`, { status: newStatus, version: ticket.version });
+      if (!validTicket(updated) || updated.id !== ticket.id || updated.status !== newStatus || updated.version! <= ticket.version!) throw new Error('Status receipt did not match the requested update');
+      if (!current()) return;
+      setSelected(updated); setMsgRes(`Status → ${newStatus}`); void latestFetchList.current();
+    });
   };
 
   const assignTicket = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canView || !selected) return;
-    if (selected.status === 'RESOLVED' || selected.status === 'CLOSED') {
-      setDetailErr(`Cannot assign a ticket in ${selected.status} status.`);
-      return;
-    }
+    if (!selected || selected.status === 'RESOLVED' || selected.status === 'CLOSED') return;
     const assignedTo = assignedToInput.trim();
-    if (!assignedTo) {
-      setDetailErr('Assignee principal ID is required.');
-      return;
-    }
-    setDetailErr('');
-    setMsgRes('');
-    try {
-      const updated = await ApiClient.post<Ticket>(`/internal/support/tickets/${selected.id}/assign`, {
-        assignedTo,
-        version: selected.version,
-      });
-      setSelected(updated);
-      setAssignedToInput(updated.assignedTo ?? assignedTo);
-      setMsgRes(`Ticket assigned to ${updated.assignedTo ?? assignedTo}.`);
-      void fetchList();
-    } catch (err: any) {
-      setDetailErr(err?.message || 'Ticket assignment failed');
-    }
+    if (!assignedTo) { setDetailErr('Assignee principal ID is required.'); return; }
+    await runMutation(async (ticket, current) => {
+      if (!Number.isInteger(ticket.version)) throw new Error('Ticket version is unavailable');
+      const updated = await ApiClient.post<Ticket>(`/internal/support/tickets/${ticket.id}/assign`, { assignedTo, version: ticket.version });
+      if (!validTicket(updated) || updated.id !== ticket.id || updated.assignedTo !== assignedTo || updated.version! < ticket.version! || (updated.version === ticket.version && ticket.assignedTo !== assignedTo)) throw new Error('Assignment receipt did not match the requested update');
+      if (!current()) return;
+      setSelected(updated); setAssignedToInput(updated.assignedTo ?? ''); setMsgRes(`Ticket assigned to ${assignedTo}.`); void latestFetchList.current();
+    });
   };
 
   const addMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canView || !msgBody.trim() || !selected) return;
-    if (selected.status === 'CLOSED') {
-      setDetailErr('Cannot add a message to a closed ticket.');
-      return;
-    }
-    setDetailErr('');
-    setMsgRes('');
-    try {
-      await ApiClient.post(`/internal/support/tickets/${selected.id}/messages`, {
-        body: msgBody.trim(),
-        isInternal: isInternalNote,
-      });
-      setMsgBody('');
-      setMsgRes(isInternalNote ? 'Internal note added.' : 'Customer-visible message added.');
-      setIsInternalNote(false);
-      await fetchMessages(selected.id);
-    } catch (err: any) {
-      setDetailErr(err?.message || 'Message failed');
-    }
+    if (!selected || selected.status === 'CLOSED' || !msgBody.trim()) return;
+    const body = msgBody.trim(); const isInternal = isInternalNote;
+    await runMutation(async (ticket, current) => {
+      const receipt = await ApiClient.post<TicketMessage>(`/internal/support/tickets/${ticket.id}/messages`, { body, isInternal });
+      if (!receipt || typeof receipt.id !== 'string' || !receipt.id || receipt.ticketId !== ticket.id || receipt.body !== body || receipt.isInternal !== isInternal || receipt.authorId !== principal?.principalId || receipt.authorType !== principal?.type) throw new Error('Message receipt did not match the submitted message');
+      if (!current()) return;
+      setMsgBody(''); setMsgRes(isInternal ? 'Internal note added.' : 'Customer-visible message added.'); setIsInternalNote(false);
+      void fetchMessages(ticket.id);
+    });
   };
 
   if (!canView) {
@@ -288,7 +301,7 @@ export const SupportTicketsScreen: React.FC<{
                 ) : '—'}
               </td>
               <td>{ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : '—'}</td>
-              <td><button type="button" onClick={() => void open(ticket)} style={smallBtn}>View</button></td>
+              <td><button type="button" onClick={() => void open(ticket)} disabled={saving} style={smallBtn}>View</button></td>
             </tr>
           ))}</tbody>
         </table></ScrollRegion>
@@ -299,9 +312,11 @@ export const SupportTicketsScreen: React.FC<{
         <button type="button" disabled={page >= totalPages || loading} onClick={() => setPage((current) => current + 1)} style={smallBtn}>Next</button>
       </div>}
 
+      {detailLoading && <div role="status" style={loadingBox}>Loading ticket…</div>}
+      {!selected && detailErr && <div style={errBox} role="alert">{detailErr}</div>}
       {selected && (
         <section style={drawer} aria-label="Support ticket detail">
-          <div style={drawerHead}><strong>Ticket {selected.reference || selected.id.slice(0, 8)}</strong><button type="button" onClick={() => setSelected(null)} style={smallBtn}>Close</button></div>
+          <div style={drawerHead}><strong>Ticket {selected.reference || selected.id.slice(0, 8)}</strong><button type="button" onClick={closeDetail} disabled={saving} style={smallBtn}>Close</button></div>
           <div style={drawerBody}>
             <div><strong>Status:</strong> {selected.status} {selected.priority && <>· Priority {selected.priority}</>} {selected.category && <>· Category <code>{selected.category}</code></>}</div>
             <div><strong>Subject:</strong> {selected.subject || '—'}</div>
@@ -322,19 +337,20 @@ export const SupportTicketsScreen: React.FC<{
             )}
             {detailErr && <div style={errBox} role="alert">{detailErr}</div>}
             {msgRes && <div style={successBox} role="status">{msgRes}</div>}
+            {needsReload && <button type="button" onClick={() => void open(selected)} style={smallBtn}>Reload ticket and inspect</button>}
 
             <form onSubmit={assignTicket} style={formRow} aria-label="Assign support ticket">
               <label style={fieldLabel}>Assignee principal ID
-                <input value={assignedToInput} onChange={(event) => setAssignedToInput(event.target.value)} placeholder="Assignee principal ID" style={input} />
+                <input disabled={saving || needsReload} value={assignedToInput} onChange={(event) => setAssignedToInput(event.target.value)} placeholder="Assignee principal ID" style={input} />
               </label>
-              <button type="submit" style={btn} disabled={!assignedToInput.trim() || selected.status === 'RESOLVED' || selected.status === 'CLOSED'}>Assign Ticket</button>
+              <button type="submit" style={btn} disabled={saving || needsReload || !assignedToInput.trim() || selected.status === 'RESOLVED' || selected.status === 'CLOSED'}>Assign Ticket</button>
             </form>
             <div style={helpText}>Assignment uses an existing workforce principal ID; the API does not provide an assignee directory. Resolved and closed tickets cannot be reassigned.</div>
 
             <div style={actionRow}>
-              <button type="button" onClick={() => void doStatus('IN_PROGRESS')} style={btn} disabled={!ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('IN_PROGRESS')}>Mark In Progress</button>
-              <button type="button" onClick={() => void doStatus('RESOLVED')} style={successBtn} disabled={!ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('RESOLVED')}>Resolve</button>
-              <button type="button" onClick={() => void doStatus('CLOSED')} style={dangerBtn} disabled={!ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('CLOSED')}>Close</button>
+              <button type="button" onClick={() => void doStatus('IN_PROGRESS')} style={btn} disabled={saving || needsReload || !ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('IN_PROGRESS')}>Mark In Progress</button>
+              <button type="button" onClick={() => void doStatus('RESOLVED')} style={successBtn} disabled={saving || needsReload || !ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('RESOLVED')}>Resolve</button>
+              <button type="button" onClick={() => void doStatus('CLOSED')} style={dangerBtn} disabled={saving || needsReload || !ALLOWED_STATUS_TRANSITIONS[selected.status]?.includes('CLOSED')}>Close</button>
             </div>
 
             <section style={messageSection} aria-label="Ticket messages">
@@ -358,17 +374,18 @@ export const SupportTicketsScreen: React.FC<{
             </section>
 
             <form onSubmit={addMessage} style={formRow} aria-label="Add customer-visible message">
-              <input aria-label="Message" value={msgBody} onChange={(event) => setMsgBody(event.target.value)} placeholder="Add customer-visible message…" style={input} />
+              <input disabled={saving || needsReload} aria-label="Message" value={msgBody} onChange={(event) => setMsgBody(event.target.value)} placeholder="Add customer-visible message…" style={input} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', whiteSpace: 'nowrap' }}>
                 <input
                   type="checkbox"
+                  disabled={saving || needsReload}
                   aria-label="Internal operator note"
                   checked={isInternalNote}
                   onChange={(event) => setIsInternalNote(event.target.checked)}
                 />
                 Internal note
               </label>
-              <button type="submit" style={btn} disabled={!msgBody.trim() || selected.status === 'CLOSED'}>Send</button>
+              <button type="submit" style={btn} disabled={saving || needsReload || !msgBody.trim() || selected.status === 'CLOSED'}>Send</button>
             </form>
             {selected.status === 'CLOSED' && <div style={helpText}>Closed tickets cannot receive new messages.</div>}
           </div>

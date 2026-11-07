@@ -88,7 +88,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
     });
     (ApiClient.post as jest.Mock).mockImplementation((path: string) => path.endsWith('/assign')
       ? Promise.resolve(updatedTicket)
-      : Promise.resolve({ id: 'message-2' }));
+      : Promise.resolve({ id: 'message-2', ticketId: ticket.id, authorType: 'OPERATOR', authorId: 'issuer:SUPPORT', body: 'We are checking the transaction.', isInternal: false, createdAt: '2026-10-23T10:03:00.000Z' }));
 
     const view = render(<SupportTicketsScreen />);
     expect(await view.findByText('Total 25 — Page 1 of 2')).toBeTruthy();
@@ -109,6 +109,7 @@ describe('Admin Web batch 02: existing support and approval actions', () => {
       });
     });
 
+    await view.findByText('Ticket assigned to issuer:support-operator.');
     fireEvent.change(view.getByPlaceholderText('Add customer-visible message…'), { target: { value: 'We are checking the transaction.' } });
     fireEvent.click(view.getByRole('button', { name: 'Send' }));
     await waitFor(() => {

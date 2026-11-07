@@ -1,0 +1,66 @@
+[
+  {
+    "width": 320,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "mismatchedReceiptBlocked": true,
+    "matchingReceiptConfirmed": true,
+    "keyboardFocus": true,
+    "page": 1440,
+    "view": 1440
+  }
+]
