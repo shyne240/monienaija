@@ -226,7 +226,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const customerName = displayName(customer);
   const visibleOverview = overview?.customerId === customer.id ? overview : null;
   const phoneData = visibleOverview?.phone.value;
-  const phone = phoneData && Array.isArray(phoneData.phones) && typeof phoneData.activationGate?.verifiedPrimaryPhone === 'boolean' ? phoneData : null;
+  const phone = phoneData && phoneData.customerId === customer.id && Array.isArray(phoneData.phones) && typeof phoneData.activationGate?.verifiedPrimaryPhone === 'boolean' ? phoneData : null;
   const readinessData = visibleOverview?.readiness.value;
   const readiness = readinessData && ['READY', 'NOT_READY'].includes(readinessData.status) && Array.isArray(readinessData.missing) ? readinessData : null;
   const eligibilityData = visibleOverview?.eligibility.value;
@@ -448,6 +448,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
               kycLevel={customer.kycLevel}
               kycStatus={customer.kycStatus}
               financialEligibility={eligibility?.status ?? null}
+              signalsLoading={awaitingOverview}
             />
 
             <article className="cm-card cm-card-wide">
