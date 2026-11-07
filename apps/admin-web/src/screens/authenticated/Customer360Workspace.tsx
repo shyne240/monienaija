@@ -134,7 +134,15 @@ async function safeGet<T>(path: string): Promise<SafeResult<T>> {
   }
 }
 
-export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
+export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.customer.id, sessionId, principal?.principalId, principal?.sessionId,
+    principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel,
+    principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <Customer360WorkspaceContent key={key} {...props} />;
+};
+
+const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   customer,
   onBack,
   onCustomerUpdated,
@@ -153,6 +161,8 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useDialogFocus(dialogRef, Boolean(pendingStatus), () => { if (!isUpdatingStatus) setPendingStatus(null); });
 
   useEffect(() => {
@@ -268,18 +278,23 @@ export const Customer360Workspace: React.FC<Customer360WorkspaceProps> = ({
       const updated = await ApiClient.patch<DirectoryCustomer>(`/customers/${encodeURIComponent(customer.id)}`, {
         status: pendingStatus,
       });
+      if (!mounted.current) return;
+      if (!updated || updated.id !== customer.id || updated.status !== pendingStatus) throw new Error('Unconfirmed lifecycle receipt');
       onCustomerUpdated({ ...customer, ...updated });
       setActionMessage(`Customer status updated to ${pendingStatus}.`);
       setPendingStatus(null);
     } catch (error) {
+      if (!mounted.current) return;
       const status = error && typeof error === 'object' && 'status' in error
         ? Number((error as { status?: unknown }).status)
         : undefined;
       setActionError(status === 400 || status === 409
         ? 'The status change was blocked by a customer lifecycle rule.'
-        : 'The customer status could not be updated. Try again or contact an administrator.');
+        : status === 401 || status === 403 || status === 404
+          ? 'The customer status change was rejected or the customer is unavailable.'
+          : 'The customer status change could not be confirmed. Refresh the customer record before retrying.');
     } finally {
-      setIsUpdatingStatus(false);
+      if (mounted.current) setIsUpdatingStatus(false);
     }
   };
 

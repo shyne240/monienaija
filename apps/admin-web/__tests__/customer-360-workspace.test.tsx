@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import { Customer360Workspace, type DirectoryCustomer } from '../src/screens/authenticated/Customer360Workspace';
 import { ApiClient } from '../src/services/api-client';
@@ -216,6 +216,32 @@ describe('Batch 1 Customer 360° workspace', () => {
       });
       expect(onCustomerUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUSPENDED' }));
     });
+  });
+
+  test('lifecycle success requires the requested customer and target status', async () => {
+    const callback = jest.fn();
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...customer, id: 'different-customer', status: 'SUSPENDED' });
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />);
+    await view.findByRole('heading', { name: 'Synthetic Customer 360' });
+    fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
+    expect(await view.findByText(/status change could not be confirmed/)).toBeTruthy();
+    expect(callback).not.toHaveBeenCalled();
+    expect(view.queryByText(/Customer status updated to/)).toBeNull();
+  });
+
+  test('late lifecycle changes cannot update a newly selected customer', async () => {
+    let resolvePatch!: (value: DirectoryCustomer) => void;
+    (ApiClient.patch as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => { resolvePatch = resolve; }));
+    const callback = jest.fn();
+    const view = render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={callback} />);
+    await view.findByRole('heading', { name: 'Synthetic Customer 360' });
+    fireEvent.click(view.getByRole('button', { name: 'Suspend' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm change' }));
+    view.rerender(<Customer360Workspace customer={{ ...customer, id:'other', displayName:'Other Customer' }} onBack={jest.fn()} onCustomerUpdated={callback} />);
+    await act(async () => { resolvePatch({ ...customer, status:'SUSPENDED' }); });
+    expect(callback).not.toHaveBeenCalled();
+    expect(view.queryByText(/Customer status updated to/)).toBeNull();
   });
 
   test('the transaction deep link carries the selected customer context without a UUID form', async () => {

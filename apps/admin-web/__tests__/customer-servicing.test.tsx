@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 import App from '../src/App';
 import { CustomerDirectoryScreen } from '../src/screens/authenticated/CustomerDirectoryScreen';
@@ -96,6 +96,16 @@ describe('Batch 1 customer directory', () => {
       return Promise.resolve(directoryResponse());
     });
     (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'cust-created', reference: 'mn-••••9876' });
+  });
+
+  test('a new workforce session never inherits the previous customer directory', async () => {
+    const view = render(<CustomerDirectoryScreen />);
+    await view.findByText('Synthetic Directory Alpha');
+    (ApiClient.get as jest.Mock).mockRejectedValue(new Error('unavailable'));
+    const principal = useAuthStore.getState().principal!;
+    act(() => useAuthStore.setState({ sessionId:'new-session', principal:{ ...principal, principalId:'new-user', sessionId:'new-session' } }));
+    expect(await view.findByText('Customer records could not be loaded. Try again.')).toBeTruthy();
+    expect(view.queryByText('Synthetic Directory Alpha')).toBeNull();
   });
 
   test('uses the authorized, paginated workforce API and displays masked directory fields', async () => {

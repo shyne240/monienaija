@@ -92,10 +92,15 @@ function kycPresentation(kycStatus: string): { tone: StatusTone; shape: StatusSh
   }
 }
 
-export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = ({
-  onNavigate,
-  selectedCustomerId,
-}) => {
+export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type,
+    principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess,
+    principal?.readOnlyPrincipal]);
+  return <CustomerDirectoryWorkspace key={key} {...props} />;
+};
+
+const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ onNavigate, selectedCustomerId }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const canCreateCustomer = scopes.includes('customer.create');
