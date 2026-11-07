@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './agent-workspaces.css';
+import './agent-governance.css';
 
 export interface AgentClassOption {
   id: string;
@@ -73,20 +74,15 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
   };
 
   return (
-    <section aria-label="Agent class governance assignment" className="mn-agent-workspace">
-      <div className="mn-agent-workspace__header">
-        <h4 className="mn-agent-workspace__title">Class Governance &amp; Reclassification</h4>
-        <span className="mn-agent-workspace__description">
-          Current:{' '}
-          {currentClass
-            ? `${currentClass.name} (${currentClass.code})`
-            : currentClassId || 'Unassigned'}
-        </span>
+    <section aria-label="Agent class governance assignment" className="mn-agent-workspace agent-governance">
+      <div className="agent-governance__header">
+        <div><p className="agent-governance__eyebrow">AGENT GOVERNANCE</p><h4 className="mn-agent-workspace__title">Class Governance &amp; Reclassification</h4><p className="mn-agent-workspace__description">Review the Agent’s assigned class and the availability of governed reclassification.</p></div>
       </div>
+      <div className="agent-governance__fact"><span>Current assigned class</span><strong>{currentClass ? `${currentClass.name} (${currentClass.code})` : currentClassId || 'Unassigned'}</strong></div>
 
       {!onReclassify ? (
         <div>
-          <div style={styles.dependencyBox} role="note" data-testid="agent-reclassify-dependency">
+          <div className="agent-governance__boundary" role="note" data-testid="agent-reclassify-dependency">
             <strong>Policy-Blocked Capability:</strong> Post-activation Agent class reassignment (
             <code>PATCH /internal/admin/agents/:id/class</code>) is not enabled in V1 policy. While{' '}
             <code>agent.manage_classes</code> governs the class catalogue, an active Agent&apos;s assigned
@@ -96,15 +92,15 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
           <button
             type="button"
             disabled
-            className="mn-agent-workspace__button"
+            className="mn-agent-workspace__button agent-governance__blocked-action"
           >
             Reclassify Agent (Policy blocked)
           </button>
         </div>
       ) : !canManageClasses ? (
-        <div style={styles.note}>Reclassification requires <code>agent.manage_classes</code>.</div>
+        <div className="agent-governance__boundary">Reclassification requires <code>agent.manage_classes</code>.</div>
       ) : (
-        <form onSubmit={handleSubmit} className="mn-agent-workspace__controls">
+        <form onSubmit={handleSubmit} className="mn-agent-workspace__controls agent-governance__form">
           <label className="mn-agent-workspace__field">
             Target active class
             <select
@@ -146,34 +142,10 @@ export const AgentClassAssignmentPanel: React.FC<AgentClassAssignmentPanelProps>
           >
             {busy ? 'Updating…' : 'Reclassify Agent'}
           </button>
-          {error && <div style={styles.errorBox} role="alert">{error}</div>}
-          {message && <div style={styles.successBox} role="status">{message}</div>}
+          {error && <div className="agent-governance__feedback agent-governance__feedback--error" role="alert">{error}</div>}
+          {message && <div className="agent-governance__feedback agent-governance__feedback--success" role="status">{message}</div>}
         </form>
       )}
     </section>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: { padding: 10, border: '1px solid #CBD5E1', borderRadius: 7, background: 'var(--mn-surface-canvas, #f5f8f6)', marginTop: 10 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 },
-  title: { color: 'var(--mn-nav-surface-deep, #082f23)', fontSize: 13 },
-  currentLabel: { color: 'var(--mn-text-primary, #132b25)', fontSize: 12 },
-  dependencyBox: {
-    marginTop: 8,
-    padding: 9,
-    borderRadius: 5,
-    border: '1px solid #FDE68A',
-    background: '#FFFBEB',
-    color: '#78350F',
-    fontSize: 11,
-    lineHeight: 1.5,
-  },
-  note: { marginTop: 6, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
-  form: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 },
-  label: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--mn-text-primary, #132b25)' },
-  input: { padding: '6px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
-  button: { alignSelf: 'flex-start', padding: '6px 11px', border: '1px solid var(--mn-action-primary, #0b624a)', borderRadius: 5, background: 'var(--mn-action-primary, #0b624a)', color: '#FFF', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  errorBox: { padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 11 },
-  successBox: { padding: 8, borderRadius: 5, border: '1px solid #6EE7B7', background: '#ECFDF5', color: '#065F46', fontSize: 11 },
 };
