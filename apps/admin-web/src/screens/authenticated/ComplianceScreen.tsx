@@ -4,6 +4,7 @@ import './compliance-workspace.css';
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { validCustomerCase } from '../../utils/compliance-case';
 
 interface ComplianceScreenProps {
   initialCustomerId?: string;
@@ -19,7 +20,7 @@ export const ComplianceScreen: React.FC<ComplianceScreenProps> = ({
   onBackToCustomer,
 }) => {
   const { principal } = useAuthStore();
-  const key = `${principal?.principalId ?? ''}:${[...(principal?.scopes ?? [])].sort().join('|')}:${mode}:${initialCustomerId ?? ''}`;
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.scopes, principal?.roles, mode, initialCustomerId, initialCategory]);
   return <ComplianceWorkspace key={key} principal={principal} initialCustomerId={initialCustomerId} initialCategory={initialCategory} mode={mode} onBackToCustomer={onBackToCustomer} />;
 };
 
@@ -75,10 +76,10 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
       requests.push(
         ApiClient.get(`/customers/${encodeURIComponent(id)}/kyc`)
           .then((record: any) => {
-            if (record !== null && (!record || typeof record !== 'object' || Array.isArray(record) || typeof (record.level ?? record.kycLevel) !== 'string' || typeof (record.status ?? record.kycStatus) !== 'string' || (record.customerId && record.customerId !== id))) throw new Error('KYC lookup returned an invalid response.');
+            if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.level !== 'string' || typeof record.status !== 'string' || record.customerId !== id) throw new Error('KYC lookup returned an invalid response.');
             if (valid()) setKyc(record);
           })
-          .catch((err: any) => { errors.push(err?.message || 'KYC assessment lookup failed'); }),
+          .catch((err: any) => { errors.push(err?.status === 404 ? 'Customer or current KYC assessment not found.' : err?.message || 'KYC assessment lookup failed'); }),
       );
     }
     if (mode === 'cases' && canManageCases) {
@@ -86,7 +87,7 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
         ApiClient.get(`/customers/${encodeURIComponent(id)}/compliance-cases`)
           .then((response: any) => {
             const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
-            if (!Array.isArray(rows) || rows.some((row: any) => !row || typeof row.id !== 'string')) throw new Error('Compliance lookup returned an invalid response.');
+            if (!Array.isArray(rows) || rows.some((row: unknown) => !validCustomerCase(row, id))) throw new Error('Compliance lookup returned an invalid response.');
             if (valid()) setCases(rows);
           })
           .catch((err: any) => { errors.push(err?.message || 'Compliance case lookup failed'); }),
@@ -149,15 +150,15 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
     <div className="mn-operational mn-compliance" style={wrap}>
       <PageHeader eyebrow="Compliance and risk" title={mode === 'cases' ? 'Compliance case lookup' : 'KYC assessment lookup & review'} description={mode === 'cases' ? 'Look up compliance cases for a customer. FRAUD-category rows are excluded from this display.' : 'Look up an existing customer KYC assessment and perform only the review decision allowed by your function grants.'} />
       {initialCustomerId && onBackToCustomer && <button type="button" style={backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button>}
-      <div style={searchRow}>
+      <div className="mn-compliance__search">
+        <label>Customer UUID
         <input
-          aria-label="Customer UUID"
           value={customerId}
           onChange={(event) => { lookupGeneration.current += 1; setLoading(false); setCustomerId(event.target.value); setKyc(null); setCases([]); setSearched(false); setError(''); setAssessMsg(''); setAssessErr(''); }}
           disabled={assessing}
           placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0, 8)}…` : 'Customer UUID'}
           style={input}
-        />
+        /></label>
         <button onClick={() => fetchForCustomer()} style={btn} disabled={loading || assessing}>{loading ? 'Loading…' : 'Search'}</button>
       </div>
       {initialCustomerId && <div style={note}>Customer context carried from Customer 360°; the customer ID is passed to the scoped lookup endpoint.</div>}
@@ -192,11 +193,11 @@ const ComplianceWorkspace: React.FC<ComplianceScreenProps & {principal: ReturnTy
           </div>
           {visibleCases.length > 0 ? (
             <ScrollRegion label="Compliance cases" hint="Scroll horizontally to see all columns."><table style={table}>
-              <thead><tr><th>ID</th><th>Category</th><th>Status</th><th>Reason</th></tr></thead>
-              <tbody>{visibleCases.map((item: any) => <tr key={item.id}><td style={mono}>{item.id.slice(0, 8)}…</td><td>{item.category || item.type}</td><td><span style={badge(item.status)}>{item.status}</span></td><td>{item.reason || item.description || '—'}</td></tr>)}</tbody>
+              <thead><tr><th>Case number</th><th>Category</th><th>Status</th><th>Severity</th></tr></thead>
+              <tbody>{visibleCases.map((item: any) => <tr key={item.id}><td style={mono}>{item.caseNumber}</td><td>{item.category}</td><td><span style={badge(item.status)}>{item.status}</span></td><td>{item.severity}</td></tr>)}</tbody>
             </table></ScrollRegion>
           ) : !loading && searched && !error && <div style={empty}>No compliance cases match this customer and category filter.</div>}
-          <div style={note}>The current customer compliance controller does not accept a category filter or enforce catalogue function checks. This UI filters displayed rows only; backend access remains a documented authorization gap.</div>
+          <div style={note}>The server returns cases in the categories authorized by your active role grants. This view applies its category filter to the returned cases; the server remains authoritative.</div>
         </>
       )}
 

@@ -4,6 +4,7 @@ import './compliance-workspace.css';
 import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
+import { validCustomerCase } from '../../utils/compliance-case';
 
 interface RiskFraudScreenProps {
   initialCustomerId?: string;
@@ -13,7 +14,7 @@ interface RiskFraudScreenProps {
 export const RiskFraudScreen: React.FC<RiskFraudScreenProps> = ({ initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('risk_fraud.manage_fraud_case') ?? false;
-  const key = `${principal?.principalId ?? ''}:${canView}:${initialCustomerId ?? ''}`;
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, canView, initialCustomerId]);
   return <FraudWorkspace key={key} canView={canView} initialCustomerId={initialCustomerId} onBackToCustomer={onBackToCustomer} />;
 };
 const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({canView, initialCustomerId, onBackToCustomer}) => {
@@ -31,10 +32,10 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
     const id = requestedId.trim(); const request = ++generation.current;
     setLoading(true); setError(''); setCases([]); setSearched(false);
     try {
-      // The controller does not implement a category query; the screen filters the returned list.
+      // The server limits categories by current grants; this screen displays only FRAUD rows.
       const res: any = await ApiClient.get(`/customers/${encodeURIComponent(id)}/compliance-cases`);
       const all = Array.isArray(res) ? res : res?.data ?? res?.items;
-      if (!Array.isArray(all) || all.some((row: any) => !row || typeof row.id !== 'string')) throw new Error('Fraud case lookup returned an invalid response.');
+      if (!Array.isArray(all) || all.some((row: unknown) => !validCustomerCase(row, id))) throw new Error('Fraud case lookup returned an invalid response.');
       if (request !== generation.current) return;
       setCases(all.filter((c:any)=>(c.category||c.type)==='FRAUD'));
       setSearched(true);
@@ -50,11 +51,11 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
     <div className="mn-operational mn-compliance" style={wrap}>
       <PageHeader eyebrow="Compliance and risk" title="Fraud case lookup" description={`This screen displays FRAUD-category compliance cases for a customer. ${initialCustomerId ? 'Customer ID pre-filled from Customer 360°.' : 'Search by customer UUID.'}`} />
       {initialCustomerId && onBackToCustomer && <button type="button" onClick={onBackToCustomer} style={btn}>← Back to Customer 360°</button>}
-      <div style={row}><input aria-label="Customer UUID" value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : "Customer UUID"} style={input}/><button onClick={()=>void fetchFraud()} style={btn} disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</button></div>
+      <div className="mn-compliance__search"><label>Customer UUID<input value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : "Customer UUID"} style={input}/></label><button onClick={()=>void fetchFraud()} style={btn} disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</button></div>
       {initialCustomerId && <div style={note}>🔗 Customer pre-filled — no manual UUID paste.</div>}
       {error && <div style={errBox} role="alert">{error}</div>}
-      {cases.length>0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table style={table}><thead><tr><th>ID</th><th>Status</th><th>Reason</th><th>Created</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td style={mono}>{c.id.slice(0,8)}…</td><td><span style={badge(c.status)}>{c.status}</span></td><td>{c.reason||'-'}</td><td>{c.createdAt? new Date(c.createdAt).toLocaleString(): '-'}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div style={empty}>No FRAUD cases — empty is expected unless risk events were created.</div>}
-      <div style={note}>The current compliance-case list endpoint returns all categories and has no catalogue function check. FRAUD filtering happens in this UI only; backend category isolation is a documented authorization gap and is not replaced by this screen guard.</div>
+      {cases.length>0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table style={table}><thead><tr><th>Case number</th><th>Status</th><th>Severity</th><th>Opened</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td style={mono}>{c.caseNumber}</td><td><span style={badge(c.status)}>{c.status}</span></td><td>{c.severity}</td><td>{c.openedAt && Number.isFinite(Date.parse(c.openedAt)) ? new Date(c.openedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div style={empty}>No FRAUD cases — empty is expected unless risk events were created.</div>}
+      <div style={note}>The server returns cases in the categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.</div>
     </div>
   );
 };
