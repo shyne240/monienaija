@@ -20,3 +20,13 @@ test('editing diagnostics filters invalidates late results',async()=>{
 test('an old assignment read cannot cross to another principal',async()=>{
  const pending=deferred();let calls=0;(ApiClient.get as jest.Mock).mockImplementation(()=>++calls===1?pending.promise:Promise.resolve({data:[]}));render(<LimitAssignmentScreen/>);act(()=>principal('two'));await screen.findByText('No matching limit assignments.');await act(async()=>{pending.resolve({data:[row]});await pending.promise;});expect(screen.queryByText('CLASS_STANDARD')).toBeNull();
 });
+test('assignment pagination preserves applied filters and uses the server page',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>{
+   if(url.includes('page=2')) return Promise.resolve({data:[{...row,id:'page-two',limitProfileCode:'SECOND_PROFILE',version:2}],total:21,page:2,totalPages:2});
+   return Promise.resolve({data:[{...row,version:1}],total:21,page:1,totalPages:2});
+ });
+ render(<LimitAssignmentScreen/>);await screen.findByText('CLASS_STANDARD');fireEvent.change(screen.getByLabelText('Assignment subject type'),{target:{value:'AGENT_CLASS'}});fireEvent.click(screen.getByRole('button',{name:'Filter assignments'}));await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText('SECOND_PROFILE')).toBeTruthy();expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-assignments?page=2&subjectType=AGENT_CLASS');expect(screen.getByText('21 assignments · Page 2 of 2')).toBeTruthy();
+});
+test('assignment page metadata cannot claim a different requested page',async()=>{
+ (ApiClient.get as jest.Mock).mockImplementation((url:string)=>Promise.resolve({data:[{...row,version:1}],total:21,page:1,totalPages:2}));render(<LimitAssignmentScreen/>);await screen.findByText('21 assignments · Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next assignments'}));expect(await screen.findByText(/invalid or mismatched page/)).toBeTruthy();expect(screen.queryByText('21 assignments · Page 1 of 2')).toBeNull();
+});

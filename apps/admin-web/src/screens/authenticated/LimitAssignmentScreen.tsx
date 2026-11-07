@@ -111,7 +111,8 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [assignmentsSearched, setAssignmentsSearched] = useState(false);
-  const [assignmentsTotal, setAssignmentsTotal] = useState<number | null>(null);
+  const [assignmentPage, setAssignmentPage] = useState<{ page: number; total: number; totalPages: number } | null>(null);
+  const [appliedAssignmentFilters, setAppliedAssignmentFilters] = useState({ subjectType: '', subjectId: '', limitProfileCode: '', isActive: '' });
   const [assignBusy, setAssignBusy] = useState(false);
   const [classAssignBusy, setClassAssignBusy] = useState(false);
   const [loading, setLoading] = useState(canReadAssignments);
@@ -142,22 +143,24 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
   const [usageError, setUsageError] = useState('');
   const [reservationError, setReservationError] = useState('');
 
-  const fetchAssignments = async (overrideFilters?: typeof assignmentFilters) => {
+  const fetchAssignments = async (overrideFilters?: typeof assignmentFilters, requestedPage = 1) => {
     if (!canReadAssignments) {
       setLoading(false);
       return;
     }
     const generation = ++generations.current.assignments;
-    setAssignments([]); setAssignmentsSearched(false); setAssignmentsTotal(null);
+    setAssignments([]); setAssignmentsSearched(false); setAssignmentPage(null);
+    const activeFilters = overrideFilters ?? assignmentFilters;
+    setAppliedAssignmentFilters(activeFilters);
     setLoading(true);
     setError('');
     try {
       let endpoint: string;
       if (initialCustomerId) {
-        endpoint = `/internal/limit-assignments/customer/${encodeURIComponent(initialCustomerId)}`;
+        endpoint = `/internal/limit-assignments/customer/${encodeURIComponent(initialCustomerId)}${requestedPage > 1 ? `?page=${requestedPage}` : ''}`;
       } else {
-        const activeFilters = overrideFilters ?? assignmentFilters;
         const query = new URLSearchParams();
+        if (requestedPage > 1) query.set('page', String(requestedPage));
         Object.entries(activeFilters).forEach(([key, value]) => {
           if (value.trim()) query.set(key, value.trim());
         });
@@ -168,8 +171,10 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
       if (generation !== generations.current.assignments) return;
       const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
       if (!Array.isArray(rows) || !rows.every(validAssignment)) throw new Error('Limit assignments returned an invalid response.');
+      const hasPageInfo = Number.isSafeInteger(response?.page) && Number.isSafeInteger(response?.total) && Number.isSafeInteger(response?.totalPages);
+      if (hasPageInfo && (response.page !== requestedPage || response.total < rows.length || response.totalPages < 0 || response.page < 1)) throw new Error('Limit assignments returned an invalid or mismatched page.');
       setAssignments(rows); setAssignmentsSearched(true);
-      setAssignmentsTotal(Number.isSafeInteger(response?.total) && response.total >= rows.length ? response.total : null);
+      setAssignmentPage(hasPageInfo ? { page: response.page, total: response.total, totalPages: response.totalPages } : null);
     } catch (err: any) {
       if (generation === generations.current.assignments) setError(err?.message || 'Failed to load limit assignments');
     } finally {
@@ -546,7 +551,12 @@ const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToC
               </tbody>
             </table></ScrollRegion>
           )}
-          {assignmentsSearched && assignmentsTotal !== null && assignmentsTotal > assignments.length && <p style={note}>Showing the first {assignments.length} of {assignmentsTotal} assignments. Narrow the filters to inspect additional records.</p>}
+          {assignmentsSearched && assignmentPage && <div className="mn-limit-assignment__pager" aria-label="Assignment pagination">
+            <span>{assignmentPage.total} assignment{assignmentPage.total === 1 ? '' : 's'} · Page {assignmentPage.page}{assignmentPage.totalPages > 0 ? ` of ${assignmentPage.totalPages}` : ' (no results)'}</span>
+            <button type="button" style={btn} disabled={loading || assignmentPage.page <= 1} onClick={() => void fetchAssignments(appliedAssignmentFilters, assignmentPage.page - 1)}>Previous assignments</button>
+            <button type="button" style={btn} disabled={loading || assignmentPage.page >= assignmentPage.totalPages} onClick={() => void fetchAssignments(appliedAssignmentFilters, assignmentPage.page + 1)}>Next assignments</button>
+          </div>}
+          {assignmentsSearched && !assignmentPage && <p style={note}>Assignment pagination is not confirmed by this response.</p>}
         </>
       )}
 

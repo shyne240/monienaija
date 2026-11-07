@@ -1,3 +1,4 @@
 .mn-limit-assignment { font-family: var(--mn-font-sans); color: var(--mn-text-primary); }
 .mn-limit-assignment :is(button, input, select) { min-height: 40px; min-width: 0; }
 .mn-limit-assignment :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-limit-assignment__pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; color: var(--mn-text-secondary); font-size: 13px; }
