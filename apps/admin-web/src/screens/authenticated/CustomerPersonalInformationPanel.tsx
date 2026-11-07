@@ -26,6 +26,7 @@ import {
 import { countryNameForCode, isNigeriaIdentityType } from './CountrySelect';
 
 interface ProfileRecord {
+  id?: string;
   displayName: string;
   legalName: string | null;
   firstName: string | null;
@@ -195,6 +196,13 @@ function fieldErrorsFrom(error: unknown, valueField = 'value'): Record<string, s
       return typeof message === 'string' ? [[name, message]] : [];
     }),
   );
+}
+
+function matchesCustomerReceipt(value: unknown, customerId: string, recordId?: string | null): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.customerId === customerId && typeof record.id === 'string' && Boolean(record.id.trim()) &&
+    (!recordId || record.id === recordId);
 }
 
 function profileFormFrom(profile: ProfileRecord | null): ProfileFormState {
@@ -436,6 +444,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
             body,
           );
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, profile?.id) || typeof saved.displayName !== 'string' ||
+          (saved.legalName !== null && typeof saved.legalName !== 'string')) throw new Error('Unconfirmed profile receipt');
       setProfile(saved);
       setProfileForm(profileFormFrom(saved));
       setProfileEditing(false);
@@ -565,15 +575,14 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     setError(null);
     setNotice(null);
     try {
-      if (addressId) {
-        await ApiClient.patch(
+      const saved = addressId
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
-      }
+        )
+        : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/address`, body);
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, addressId)) throw new Error('Unconfirmed address receipt');
       setAddressForm(null);
       setAddressId(null);
       setFieldErrors({});
@@ -633,18 +642,17 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     setError(null);
     setNotice(null);
     try {
-      if (contactForm.id) {
-        await ApiClient.patch(
+      const saved = contactForm.id
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(contactForm.id)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/contact-method`, {
+        )
+        : await ApiClient.post(`/customers/${encodeURIComponent(customerId)}/contact-method`, {
           type: contactForm.type,
           ...body,
         });
-      }
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, contactForm.id) || saved.type !== contactForm.type) throw new Error('Unconfirmed contact receipt');
       setContactForm(null);
       setFieldErrors({});
       setNotice(
@@ -680,14 +688,15 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     setFieldErrors({});
     setNotice(null);
     try {
-      await ApiClient.post('/customers/registration/otp', { phone: normalized.e164 });
+      const receipt = await ApiClient.post<{ status: string }>('/customers/registration/otp', { phone: normalized.e164 });
       if (!mounted.current) return;
+      if (!receipt || receipt.status !== 'OTP_REQUEST_ACCEPTED') throw new Error('Unconfirmed OTP request');
       setVerifyContactId(contact.id);
       setVerifyPhoneValue(normalized.e164);
       setOtpRequested(true);
       setOtpCode('');
       setVerificationToken('');
-      setNotice('OTP request accepted. Enter the one-time code sent to the phone number.');
+      setNotice('OTP request accepted; delivery is not confirmed. Enter the one-time code if received.');
     } catch (otpError) {
       if (!mounted.current) return;
       setFieldErrors(fieldErrorsFrom(otpError));
@@ -714,19 +723,19 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     try {
       let token = verificationToken;
       if (!token) {
-        const result = await ApiClient.post<{ verificationToken: string }>(
+        const result = await ApiClient.post<{ status: string; verificationToken: string }>(
           '/customers/registration/otp/verify',
           { phone: normalized.e164, code: otpCode.trim() },
         );
         if (!mounted.current) return;
-        if (!result || typeof result.verificationToken !== 'string' || !result.verificationToken.trim()) {
+        if (!result || result.status !== 'PHONE_VERIFIED' || typeof result.verificationToken !== 'string' || !result.verificationToken.trim()) {
           throw new Error('Verification token unavailable');
         }
         token = result.verificationToken;
         setVerificationToken(token);
       }
       const contact = contacts?.find((item) => item.id === verifyContactId);
-      await ApiClient.patch(
+      const saved = await ApiClient.patch(
         `/customers/${encodeURIComponent(customerId)}/contact-methods/${encodeURIComponent(verifyContactId)}`,
         {
           value: normalized.e164,
@@ -736,6 +745,8 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
         },
       );
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, verifyContactId) || saved.type !== 'PHONE' ||
+          typeof saved.verifiedAt !== 'string' || !Number.isFinite(Date.parse(saved.verifiedAt))) throw new Error('Unconfirmed phone verification receipt');
       setOtpRequested(false);
       setOtpCode('');
       setVerificationToken('');
@@ -831,18 +842,17 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
     setError(null);
     setNotice(null);
     try {
-      if (identityForm.id) {
-        await ApiClient.patch(
+      const saved = identityForm.id
+        ? await ApiClient.patch(
           `/customers/${encodeURIComponent(customerId)}/identity-documents/${encodeURIComponent(identityForm.id)}`,
           body,
-        );
-      } else {
-        await ApiClient.post(
+        )
+        : await ApiClient.post(
           `/customers/${encodeURIComponent(customerId)}/identity-document`,
           body,
         );
-      }
       if (!mounted.current) return;
+      if (!matchesCustomerReceipt(saved, customerId, identityForm.id) || saved.type !== identityForm.type) throw new Error('Unconfirmed identity receipt');
       setIdentityForm(null);
       setFieldErrors({});
       setNotice(

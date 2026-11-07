@@ -16,6 +16,8 @@ jest.mock('../src/services/api-client', () => ({
 }));
 
 const profileInitial = {
+  id: 'synthetic-profile',
+  customerId: 'synthetic-customer-id',
   displayName: 'Synthetic Customer',
   legalName: 'Synthetic Customer Legal',
   firstName: 'Synthetic',
@@ -55,6 +57,7 @@ function setReadMocks() {
   let currentProfile = { ...profileInitial };
   let currentContact = {
     id: 'synthetic-phone-contact',
+    customerId: 'synthetic-customer-id',
     type: 'PHONE',
     value: '+2348012340001',
     isPrimary: true,
@@ -62,6 +65,7 @@ function setReadMocks() {
   };
   let currentIdentity = {
     id: 'synthetic-identity',
+    customerId: 'synthetic-customer-id',
     type: 'NIN',
     maskedDocumentNumber: '••••••0001',
     issuingCountry: 'NG',
@@ -98,12 +102,14 @@ function setReadMocks() {
         } as typeof currentContact;
         return Promise.resolve({
           id: currentContact.id,
+          customerId: currentContact.customerId,
           type: currentContact.type,
           maskedValue: '+234*****0001',
           isPrimary: currentContact.isPrimary,
           verifiedAt: currentContact.verifiedAt,
         });
       }
+      if (path.includes('/addresses/')) return Promise.resolve({ id: path.split('/').pop(), customerId: 'synthetic-customer-id' });
       return Promise.resolve({});
     },
   );
@@ -417,6 +423,7 @@ describe('CustomerPersonalInformationPanel', () => {
         if (path.endsWith('/identity-document')) {
           const added = {
             id: 'synthetic-identity-added',
+            customerId: 'synthetic-customer-id',
             type: body.type,
             maskedDocumentNumber: '••••••0004',
             issuingCountry: body.issuingCountry,
@@ -535,7 +542,7 @@ describe('CustomerPersonalInformationPanel', () => {
       if (path === '/customers/registration/otp')
         return Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' });
       if (path === '/customers/registration/otp/verify')
-        return Promise.resolve({ verificationToken: 'synthetic-one-time-verification-token' });
+        return Promise.resolve({ status: 'PHONE_VERIFIED', verificationToken: 'synthetic-one-time-verification-token' });
       return Promise.resolve({});
     });
     const onVerificationUpdated = jest.fn();
@@ -573,6 +580,75 @@ describe('CustomerPersonalInformationPanel', () => {
     expect(view.queryByText('synthetic-one-time-verification-token')).toBeNull();
   });
 
+  test('profile receipt must identify the requested customer', async () => {
+    setReadMocks();
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ ...profileInitial, customerId: 'other-customer' });
+    const callback = jest.fn();
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={callback} />);
+    await view.findByText('Synthetic Customer');
+    fireEvent.click(view.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(view.getByLabelText(/Display name/), { target: { value: 'Changed' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save profile' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(callback).not.toHaveBeenCalled();
+    expect(view.queryByText(/Personal information saved/)).toBeNull();
+  });
+
+  test('address and contact receipts must identify the requested records', async () => {
+    setReadMocks();
+    const oldGet = (ApiClient.get as jest.Mock).getMockImplementation();
+    (ApiClient.get as jest.Mock).mockImplementation((path: string) => path.endsWith('/addresses')
+      ? Promise.resolve([{ id: 'address-1', customerId: 'synthetic-customer-id', type: 'RESIDENTIAL', lineOne: 'Synthetic road', lineTwo: null, city: 'Abuja', state: 'FCT', country: 'NG', postalCode: null, isPrimary: true }])
+      : oldGet?.(path));
+    (ApiClient.patch as jest.Mock).mockImplementation((path: string) => Promise.resolve(path.includes('/addresses/')
+      ? { id: 'other-address', customerId: 'synthetic-customer-id' }
+      : { id: 'synthetic-phone-contact', customerId: 'other-customer', type: 'PHONE' }));
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    const addressCard = (await view.findByRole('heading', { name: 'Residential and mailing addresses' })).closest('article')!;
+    fireEvent.click(within(addressCard).getByRole('button', { name: 'Edit' }));
+    fireEvent.change(view.getByLabelText(/Address line 1/), { target: { value: 'Changed road' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save address' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/Address correction saved/)).toBeNull();
+    fireEvent.click(within(addressCard).getByRole('button', { name: 'Cancel' }));
+    const contactCard = view.getByRole('heading', { name: 'Phones and email' }).closest('article')!;
+    fireEvent.click(within(contactCard).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(view.getByLabelText('Mark as primary'));
+    fireEvent.click(view.getByRole('button', { name: 'Save contact' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/Contact correction saved/)).toBeNull();
+  });
+
+  test('identity receipt with a different type is not reported as saved', async () => {
+    setReadMocks();
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ id: 'synthetic-identity', customerId: 'synthetic-customer-id', type: 'BVN' });
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    const identityCard = (await view.findByRole('heading', { name: 'Supported identity metadata' })).closest('article')!;
+    fireEvent.click(within(identityCard).getByRole('button', { name: 'Edit' }));
+    fireEvent.change(view.getByLabelText(/Document number/), { target: { value: '00000000002' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save identity details' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/Identity metadata saved/)).toBeNull();
+  });
+
+  test('an unverified contact receipt is not presented as a verified phone', async () => {
+    setReadMocks();
+    (ApiClient.post as jest.Mock).mockImplementation((path: string) => path.endsWith('/otp/verify')
+      ? Promise.resolve({ status: 'PHONE_VERIFIED', verificationToken: 'synthetic-proof' })
+      : Promise.resolve({ status: 'OTP_REQUEST_ACCEPTED' }));
+    (ApiClient.patch as jest.Mock).mockResolvedValueOnce({ id: 'synthetic-phone-contact', customerId: 'synthetic-customer-id', type: 'PHONE', verifiedAt: null });
+    const callback = jest.fn();
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} onVerificationUpdated={callback} />);
+    await view.findByText(/Primary · Not verified/);
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    await view.findByLabelText('One-time code');
+    fireEvent.change(view.getByLabelText('One-time code'), { target: { value: '123456' } });
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/Phone verified. The customer remains/)).toBeNull();
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   test('a late profile save never updates a different customer', async () => {
     setReadMocks();
     let resolveSave!: (value: typeof profileInitial) => void;
@@ -608,6 +684,17 @@ describe('CustomerPersonalInformationPanel', () => {
     await act(async () => { resolveVerify({ verificationToken: 'synthetic-token' }); });
     expect(ApiClient.patch).not.toHaveBeenCalled();
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  test('a malformed OTP request response is not represented as accepted', async () => {
+    setReadMocks();
+    (ApiClient.post as jest.Mock).mockResolvedValueOnce({});
+    const view = render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()} />);
+    await view.findByText(/Primary · Not verified/);
+    fireEvent.click(view.getByRole('button', { name: 'Verify phone' }));
+    expect(await view.findByText(/request outcome could not be confirmed/i)).toBeTruthy();
+    expect(view.queryByText(/OTP request accepted/)).toBeNull();
+    expect(view.queryByLabelText('One-time code')).toBeNull();
   });
 
   test('a malformed OTP verification response never submits a contact update', async () => {
