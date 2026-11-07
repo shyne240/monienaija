@@ -32,14 +32,35 @@ interface DashboardScreenProps {
  * own data") and are deliberately excluded from the generic widget list below to avoid showing the
  * same information twice.
  */
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({
-  onNavigateToCustomers,
-  onNavigateToAgents,
-}) => {
-  const { principal } = useAuthStore();
+function validDashboard(value: unknown): value is ResolvedDashboard {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const dashboard = value as ResolvedDashboard;
+  return typeof dashboard.templateKey === 'string' && !!dashboard.templateKey.trim() &&
+    typeof dashboard.displayName === 'string' && typeof dashboard.description === 'string' &&
+    typeof dashboard.isFallback === 'boolean' && (dashboard.fallbackReason === undefined || typeof dashboard.fallbackReason === 'string') && Array.isArray(dashboard.widgets) &&
+    dashboard.widgets.every(w => w && typeof w.widgetKey === 'string' && !!w.widgetKey.trim() &&
+      Number.isFinite(w.order) && typeof w.displayName === 'string' && typeof w.description === 'string' &&
+      (w.fetchMode === 'proxy' || w.fetchMode === 'direct') && typeof w.kind === 'string' &&
+      typeof w.authorized === 'boolean' && (w.title === undefined || typeof w.title === 'string') &&
+      (w.endpoint === undefined || typeof w.endpoint === 'string')) &&
+    new Set(dashboard.widgets.map(w => w.widgetKey)).size === dashboard.widgets.length;
+}
 
+export const DashboardScreen: React.FC<DashboardScreenProps> = (props) => {
+  const principal = useAuthStore(state => state.principal);
+  if (!principal) return null;
+  const key = JSON.stringify([principal.principalId, principal.sessionId, principal.type, principal.roles, principal.scopes, principal.assuranceLevel, principal.customerAccess, principal.readOnlyPrincipal]);
+  return <DashboardWorkspace key={key} {...props} />;
+};
+
+const DashboardWorkspace: React.FC<DashboardScreenProps> = ({ onNavigateToCustomers, onNavigateToAgents }) => {
+  const { principal } = useAuthStore();
   const { data: dashboard, loading, error } = useWidgetData<ResolvedDashboard>(
-    () => ApiClient.get(`${DASH}/my-dashboard`),
+    async () => {
+      const value: unknown = await ApiClient.get(`${DASH}/my-dashboard`);
+      if (!validDashboard(value)) throw new Error('Invalid dashboard response.');
+      return value;
+    },
     [],
   );
 

@@ -1,3 +1,5 @@
+import { formatFinancialAmount } from '../../utils/financial-display';
+
 /**
  * V1-ADMIN-CONFIGURABLE-DASHBOARD-PLATFORM-02
  *
@@ -138,21 +140,13 @@ export interface RecentTransactionRow {
   completedAt: string | null;
 }
 
-/** Formats a minor-unit integer string (kobo) as whole Naira with thousands separators. */
-export function formatMinor(minor: string | number | null | undefined, currency = 'NGN'): string {
+/** Display exact NGN kobo as naira; retain other currencies in their authoritative minor units. */
+export function formatMinor(minor: string | number | null | undefined, currency?: string): string {
   if (minor === null || minor === undefined) return '—';
-  const symbol = currency === 'NGN' ? '₦' : `${currency} `;
-  try {
-    const asBigInt = BigInt(minor);
-    const negative = asBigInt < BigInt(0);
-    const abs = negative ? -asBigInt : asBigInt;
-    const naira = abs / BigInt(100);
-    const kobo = abs % BigInt(100);
-    const wholePart = naira.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return `${negative ? '-' : ''}${symbol}${wholePart}.${kobo.toString().padStart(2, '0')}`;
-  } catch {
-    return String(minor);
-  }
+  if (typeof minor === 'number' && !Number.isSafeInteger(minor)) return 'Amount unavailable';
+  const raw = String(minor);
+  if (!/^-?\d+$/.test(raw) || typeof currency !== 'string' || !currency.trim()) return 'Amount unavailable';
+  return formatFinancialAmount(raw, currency);
 }
 
 export function formatPercent(value: number | null | undefined): string {

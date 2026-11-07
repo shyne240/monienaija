@@ -616,6 +616,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         return Promise.resolve({
           templateKey: 'agent-ops',
           displayName: 'Agent Operations Dashboard',
+          description: 'Synthetic Agent operations',
           isFallback: false,
           widgets: [
             {
@@ -624,7 +625,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
               description: 'Counts by Agent lifecycle status.',
               order: 1,
               authorized: true,
-              fetchMode: 'widget',
+              fetchMode: 'proxy',
+              kind: 'status-breakdown',
             },
           ],
         });
@@ -750,6 +752,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
         return Promise.resolve({
           templateKey: 'super-admin',
           displayName: 'Super Admin Dashboard',
+          description: 'Synthetic administration',
           isFallback: false,
           widgets: [
             {
@@ -759,6 +762,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
               order: 1,
               authorized: true,
               fetchMode: 'direct',
+              kind: 'table',
               endpoint: '/internal/agents/applications',
             },
           ],
