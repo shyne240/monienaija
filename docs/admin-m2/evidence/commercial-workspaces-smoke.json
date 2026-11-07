@@ -1,0 +1,290 @@
+[
+  {
+    "width": 320,
+    "workspace": "feeRules",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "commissionRules",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "rewardRules",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "productCatalogue",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "limitCatalogue",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "limitAssignments",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "feeRules",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "commissionRules",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "rewardRules",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "productCatalogue",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "limitCatalogue",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "limitAssignments",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "feeRules",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "commissionRules",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "rewardRules",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "productCatalogue",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "limitCatalogue",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "limitAssignments",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "feeRules",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "commissionRules",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "rewardRules",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "productCatalogue",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "limitCatalogue",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "limitAssignments",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "feeRules",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "commissionRules",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "rewardRules",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "productCatalogue",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "limitCatalogue",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "limitAssignments",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "feeRules",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "commissionRules",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "rewardRules",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "productCatalogue",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "limitCatalogue",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "limitAssignments",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "feeRules",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "commissionRules",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "rewardRules",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "productCatalogue",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "limitCatalogue",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "limitAssignments",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "feeRules",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "commissionRules",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "rewardRules",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "productCatalogue",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "limitCatalogue",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "limitAssignments",
+    "page": 1440,
+    "view": 1440
+  }
+]

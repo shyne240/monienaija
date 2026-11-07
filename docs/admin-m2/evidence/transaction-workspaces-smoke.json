@@ -1,0 +1,146 @@
+[
+  {
+    "width": 320,
+    "workspace": "transfers",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "cashIn",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "cashOut",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "transfers",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "cashIn",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "cashOut",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "transfers",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "cashIn",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "cashOut",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "transfers",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "cashIn",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "cashOut",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "transfers",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "cashIn",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "cashOut",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "transfers",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "cashIn",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "cashOut",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "transfers",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "cashIn",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "cashOut",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "transfers",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "cashIn",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "cashOut",
+    "page": 1440,
+    "view": 1440
+  }
+]

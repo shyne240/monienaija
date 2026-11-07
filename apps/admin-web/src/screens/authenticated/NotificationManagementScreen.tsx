@@ -84,7 +84,12 @@ const TABS: readonly TabDefinition[] = [
   { key: 'providerConfig', label: '9. Provider Configuration' },
 ];
 
-export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationAdminTab }> = ({
+export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationAdminTab }> = (props) => {
+  const principal = useAuthStore((state) => state.principal);
+  const contextKey = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <NotificationManagementWorkspace key={contextKey} {...props} />;
+};
+const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdminTab }> = ({
   initialTab = 'overview',
 }) => {
   const { principal } = useAuthStore();
@@ -143,7 +148,11 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     SMS: false,
     EMAIL: false,
   });
-  const [templatesBlockedMsg, setTemplatesBlockedMsg] = useState<string>('');
+  const [templateBlocked, setTemplateBlocked] = useState({ SMS: '', EMAIL: '' });
+  const [templateErrors, setTemplateErrors] = useState({ SMS: '', EMAIL: '' });
+  const templateGenerations = useRef({ SMS: 0, EMAIL: 0 });
+  const refreshGeneration = useRef(0);
+  useEffect(() => () => { templateGenerations.current.SMS++; templateGenerations.current.EMAIL++; refreshGeneration.current++; }, []);
   const [providerStatus, setProviderStatus] = useState<NotificationProviderStatus | null>(null);
   const [providerBlockedMsg, setProviderBlockedMsg] = useState<string>('');
   const [runtimeConfig, setRuntimeConfig] = useState<SafeRuntimeConfiguration | null>(null);
@@ -302,6 +311,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       if (!permissions.canViewCatalogue) return;
       if (!force && loadedTemplateChannelsRef.current[channel]) return;
 
+      const generation = ++templateGenerations.current[channel];
+      setTemplateErrors(prev => ({...prev, [channel]: ''}));
+      setTemplateBlocked(prev => ({...prev, [channel]: ''}));
       const editableEventTypes = catalogueEvents
         .filter(
           (item) =>
@@ -312,21 +324,21 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         .map((item) => item.eventType);
 
       try {
+        if (editableEventTypes.length === 0) throw new Error('No editable events available to check the template registry.');
         const res = await NotificationManagementApi.listTemplates({
           channel,
           includeHistory: true,
           editableEventTypes,
         });
-        setGlobalLoadErrors((prev) => { const { templates: _templates, ...rest } = prev; return rest; });
+        if (generation !== templateGenerations.current[channel]) return;
         if (res.status === 'BLOCKED') {
-          setTemplatesBlockedMsg(res.message);
+          setTemplateBlocked(prev => ({...prev, [channel]: res.message}));
           loadedTemplateChannelsRef.current = {
             ...loadedTemplateChannelsRef.current,
             [channel]: true,
           };
           setLoadedTemplateChannels((prev) => ({ ...prev, [channel]: true }));
         } else {
-          setTemplatesBlockedMsg('');
           const normalized = res.data.map((row) => ({
             ...row,
             sourceOrigin: row.sourceOrigin ?? ('DATABASE' as const),
@@ -344,10 +356,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           setLoadedTemplateChannels((prev) => ({ ...prev, [channel]: true }));
         }
       } catch (err: any) {
-        setGlobalLoadErrors((prev) => ({
-          ...prev,
-          templates: err?.message || `Failed to load ${channel} notification templates`,
-        }));
+        if (generation !== templateGenerations.current[channel]) return;
+        setTemplateErrors(prev => ({ ...prev, [channel]: err?.message || `Failed to load ${channel} notification templates` }));
+        loadedTemplateChannelsRef.current = { ...loadedTemplateChannelsRef.current, [channel]: true };
+        setLoadedTemplateChannels(prev => ({ ...prev, [channel]: true }));
       }
     },
     [permissions.canViewCatalogue],
@@ -359,6 +371,10 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       return;
     }
 
+    const generation = ++refreshGeneration.current;
+    templateGenerations.current.SMS++; templateGenerations.current.EMAIL++;
+    setTemplateErrors({ SMS: '', EMAIL: '' });
+    setTemplateBlocked({ SMS: '', EMAIL: '' });
     setLoadingInitial(true);
     setGlobalLoadErrors({});
     loadedTemplateChannelsRef.current = { SMS: false, EMAIL: false };
@@ -371,6 +387,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       tasks.push(
         NotificationManagementApi.listEvents()
           .then((res) => {
+            if (generation !== refreshGeneration.current) return;
             if (res.status === 'BLOCKED') {
               setEventsBlockedMsg(res.message);
               setEventsSource('OFFLINE_REFERENCE');
@@ -390,6 +407,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             }
           })
           .catch((err: any) => {
+            if (generation !== refreshGeneration.current) return;
             setEventsSource('OFFLINE_REFERENCE');
             setEvents(BASELINE_CODE_EVENT_CATALOGUE);
             setGlobalLoadErrors((prev) => ({
@@ -404,6 +422,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       tasks.push(
         NotificationManagementApi.getProviderStatus()
           .then((res) => {
+            if (generation !== refreshGeneration.current) return;
             if (res.status === 'BLOCKED') {
               setProviderBlockedMsg(res.message);
               setProviderStatus(null);
@@ -413,6 +432,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             }
           })
           .catch((err: any) => {
+            if (generation !== refreshGeneration.current) return;
             setProviderStatus(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
@@ -425,8 +445,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     if (permissions.canViewDiagnostics) {
       tasks.push(
         NotificationManagementApi.getDiagnostics()
-          .then(setDiagnostics)
+          .then((value) => { if (generation === refreshGeneration.current) setDiagnostics(value); })
           .catch((err: any) => {
+            if (generation !== refreshGeneration.current) return;
             setDiagnostics(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
@@ -437,7 +458,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
 
       tasks.push(
         NotificationManagementApi.getSafeRuntimeConfig()
-          .then(setRuntimeConfig)
+          .then((value) => { if (generation === refreshGeneration.current) setRuntimeConfig(value); })
           .catch(() => {
             // Non-fatal auxiliary metadata gated strictly by diagnostics.view
           }),
@@ -447,8 +468,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     if (permissions.canViewOutbox) {
       tasks.push(
         NotificationManagementApi.getOutboxEvents(25)
-          .then(setOutboxRows)
+          .then((value) => { if (generation === refreshGeneration.current) setOutboxRows(value); })
           .catch((err: any) => {
+            if (generation !== refreshGeneration.current) return;
             setOutboxRows(null);
             setGlobalLoadErrors((prev) => ({
               ...prev,
@@ -466,6 +488,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
       tasks.push(
         NotificationManagementApi.listChangeRequests()
           .then((res) => {
+            if (generation !== refreshGeneration.current) return;
             if (res.status === 'BLOCKED') {
               setChangeRequestsBlockedMsg(res.message);
               setChangeRequests([]);
@@ -480,6 +503,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
             }
           })
           .catch((err: any) => {
+            if (generation !== refreshGeneration.current) return;
             setGlobalLoadErrors((prev) => ({
               ...prev,
               changeRequests: err?.message || 'Failed to load notification change requests',
@@ -491,7 +515,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     if (permissions.canViewAudit) {
       tasks.push(
         NotificationManagementApi.listNotificationGovernanceAudit(20)
-          .then(setAuditRows)
+          .then((value) => { if (generation === refreshGeneration.current) setAuditRows(value); })
           .catch(() => {
             // Non-fatal audit lookup
           }),
@@ -499,6 +523,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
     }
 
     await Promise.all(tasks);
+    if (generation !== refreshGeneration.current) return;
     if (
       permissions.canViewCatalogue &&
       (activeTabRef.current === 'smsTemplates' || activeTabRef.current === 'emailTemplates')
@@ -509,7 +534,7 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
         true,
       );
     }
-    setLoadingInitial(false);
+    if (generation === refreshGeneration.current) setLoadingInitial(false);
   }, [permissions, fetchTemplatesForChannel]);
 
   useEffect(() => {
@@ -1415,11 +1440,13 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
                       <code>notification.manage_templates</code>
                     </td>
                     <td style={styles.td}>
-                      {templatesBlockedMsg ? (
+                      {templateBlocked.SMS || templateBlocked.EMAIL ? (
                         <span style={styles.blockedBadge}>BLOCKED</span>
-                      ) : (
+                      ) : templateErrors.SMS || templateErrors.EMAIL ? (
+                        <span style={styles.blockedBadge}>UNAVAILABLE</span>
+                      ) : loadedTemplateChannels.SMS && loadedTemplateChannels.EMAIL ? (
                         <span style={styles.liveBadge}>LIVE</span>
-                      )}
+                      ) : <span>NOT FULLY CHECKED</span>}
                     </td>
                   </tr>
                   <tr>
@@ -1865,9 +1892,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           channel="SMS"
           events={events}
           templates={templates}
-          templatesRegistryBlocked={Boolean(templatesBlockedMsg)}
-          templatesReadPending={!loadedTemplateChannels.SMS && !globalLoadErrors.templates}
-          templatesReadError={globalLoadErrors.templates}
+          templatesRegistryBlocked={Boolean(templateBlocked.SMS)}
+          templatesReadPending={!loadedTemplateChannels.SMS && !templateErrors.SMS}
+          templatesReadError={templateErrors.SMS}
           emailChannelBlocked={emailChannelBlocked}
           permissions={permissions}
           currentPrincipalId={currentPrincipalId}
@@ -1885,9 +1912,9 @@ export const NotificationManagementScreen: React.FC<{ initialTab?: NotificationA
           channel="EMAIL"
           events={events}
           templates={templates}
-          templatesRegistryBlocked={Boolean(templatesBlockedMsg)}
-          templatesReadPending={!loadedTemplateChannels.EMAIL && !globalLoadErrors.templates}
-          templatesReadError={globalLoadErrors.templates}
+          templatesRegistryBlocked={Boolean(templateBlocked.EMAIL)}
+          templatesReadPending={!loadedTemplateChannels.EMAIL && !templateErrors.EMAIL}
+          templatesReadError={templateErrors.EMAIL}
           emailChannelBlocked={emailChannelBlocked}
           permissions={permissions}
           currentPrincipalId={currentPrincipalId}

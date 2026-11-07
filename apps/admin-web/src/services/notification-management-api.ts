@@ -488,7 +488,11 @@ async function fetchTemplatePage(
   }
   const query = new URLSearchParams({ eventType, channel, limit: String(limit) });
   const res = await ApiClient.get<unknown>(`/internal/notifications/templates?${query.toString()}`);
-  return extractArray<RegistryTemplateRow>(res);
+  const validList = Array.isArray(res) || Boolean(res && typeof res === 'object' && ['data', 'items', 'templates'].some(key => Array.isArray((res as Record<string, unknown>)[key])));
+  if (!validList) throw new Error('Template registry returned an invalid list.');
+  const rows = extractArray<RegistryTemplateRow>(res);
+  if (rows.some(row => !row || typeof row.id !== 'string' || row.eventType !== eventType || row.channel !== channel || typeof row.locale !== 'string' || !Number.isSafeInteger(row.version) || row.version < 1 || typeof row.active !== 'boolean' || typeof row.body !== 'string')) throw new Error('Template registry returned invalid or mismatched versions.');
+  return rows;
 }
 
 async function fetchActiveTemplateVersion(

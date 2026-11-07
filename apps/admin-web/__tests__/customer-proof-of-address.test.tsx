@@ -309,7 +309,7 @@ describe('Customer Proof of Address and readiness interfaces', () => {
       await screen.findByText(/clean scan does not verify or approve the evidence/i),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
     expect(ApiClient.getBlob).toHaveBeenCalledWith(
       `${rootPath}/${documentRecord().id}/content?disposition=attachment`,

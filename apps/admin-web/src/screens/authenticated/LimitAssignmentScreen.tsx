@@ -1,7 +1,8 @@
 import './operational-surfaces.css';
-import React, { useEffect, useState } from 'react';
+import './limit-assignment.css';
+import React, { useEffect, useRef, useState } from 'react';
 import { StructuredRecordTable, type DataRecord, type StructuredColumn } from '../../components/StructuredData';
-import { ScrollRegion } from '../../design-system/primitives';
+import { PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -87,8 +88,18 @@ function buildQuery(filters: object, page: number): string {
   return query.toString();
 }
 
-export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
+const validAssignment = (row: any): boolean => row && typeof row.id === 'string' && typeof row.subjectType === 'string' && typeof row.limitProfileCode === 'string' && typeof row.isActive === 'boolean';
+const validReceipt = (row: any, subjectType: string, subjectId: string, code: string): boolean => validAssignment(row) && row.subjectType === subjectType && row.subjectId === subjectId && row.limitProfileCode === code && Number.isSafeInteger(row.version) && row.version > 0;
+const validPage = (page: any, expected: number): page is DiagnosticsResult => page && page.page === expected && Number.isSafeInteger(page.limit) && page.limit > 0 && Number.isSafeInteger(page.total) && page.total >= 0 && Number.isSafeInteger(page.totalPages) && page.totalPages >= 0 && Array.isArray(page.data) && page.data.every((row: any) => row && typeof row === 'object' && !Array.isArray(row));
+export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = (props) => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([props.initialCustomerId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <LimitAssignmentWorkspace key={key} {...props} />;
+};
+const LimitAssignmentWorkspace: React.FC<{ initialCustomerId?: string; onBackToCustomer?: () => void }> = ({ initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
+  const generations = useRef({ assignments:0, usage:0, reservations:0, classes:0, assign:0, classAssign:0, toggle:0 });
+  useEffect(() => () => { for (const key of Object.keys(generations.current) as Array<keyof typeof generations.current>) generations.current[key]++; }, []);
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canReadAssignments = hasFn('limit.view');
   const canAssignAgent = hasFn('agent.assign_limit');
@@ -99,6 +110,10 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   const canMutateAnyRow = canAssignAgent || canModifyLimits;
 
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignmentsSearched, setAssignmentsSearched] = useState(false);
+  const [assignmentsTotal, setAssignmentsTotal] = useState<number | null>(null);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [classAssignBusy, setClassAssignBusy] = useState(false);
   const [loading, setLoading] = useState(canReadAssignments);
   const [error, setError] = useState('');
   const [assignmentFilters, setAssignmentFilters] = useState({
@@ -132,6 +147,8 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       setLoading(false);
       return;
     }
+    const generation = ++generations.current.assignments;
+    setAssignments([]); setAssignmentsSearched(false); setAssignmentsTotal(null);
     setLoading(true);
     setError('');
     try {
@@ -148,11 +165,15 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
         endpoint = qs ? `/internal/limit-assignments?${qs}` : '/internal/limit-assignments';
       }
       const response: any = await ApiClient.get(endpoint);
-      setAssignments(response.data || response.items || (Array.isArray(response) ? response : []));
+      if (generation !== generations.current.assignments) return;
+      const rows = Array.isArray(response) ? response : response?.data ?? response?.items;
+      if (!Array.isArray(rows) || !rows.every(validAssignment)) throw new Error('Limit assignments returned an invalid response.');
+      setAssignments(rows); setAssignmentsSearched(true);
+      setAssignmentsTotal(Number.isSafeInteger(response?.total) && response.total >= rows.length ? response.total : null);
     } catch (err: any) {
-      setError(err?.message || 'Failed to load limit assignments');
+      if (generation === generations.current.assignments) setError(err?.message || 'Failed to load limit assignments');
     } finally {
-      setLoading(false);
+      if (generation === generations.current.assignments) setLoading(false);
     }
   };
 
@@ -163,54 +184,63 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
 
   const loadUsages = async (page = 1) => {
     if (!canViewDiagnostics) return;
+    const generation = ++generations.current.usage;
     setUsageLoading(true);
     setUsageError('');
     setUsageResult(null);
     try {
       const query = buildQuery(usageFilters, page);
       const response = await ApiClient.get<DiagnosticsResult>(`/internal/limit-usages?${query}`);
+      if (generation !== generations.current.usage) return;
+      if (!validPage(response, page)) throw new Error('Diagnostics returned an invalid or mismatched page.');
       setUsageResult(response);
     } catch (err: any) {
-      setUsageError(err?.message || 'Failed to load usage diagnostics');
+      if (generation === generations.current.usage) setUsageError(err?.message || 'Failed to load usage diagnostics');
     } finally {
-      setUsageLoading(false);
+      if (generation === generations.current.usage) setUsageLoading(false);
     }
   };
 
   const loadReservations = async (page = 1) => {
     if (!canViewDiagnostics) return;
+    const generation = ++generations.current.reservations;
     setReservationLoading(true);
     setReservationError('');
     setReservationResult(null);
     try {
       const query = buildQuery(reservationFilters, page);
       const response = await ApiClient.get<DiagnosticsResult>(`/internal/limit-reservations?${query}`);
+      if (generation !== generations.current.reservations) return;
+      if (!validPage(response, page)) throw new Error('Diagnostics returned an invalid or mismatched page.');
       setReservationResult(response);
     } catch (err: any) {
-      setReservationError(err?.message || 'Failed to load reservation diagnostics');
+      if (generation === generations.current.reservations) setReservationError(err?.message || 'Failed to load reservation diagnostics');
     } finally {
-      setReservationLoading(false);
+      if (generation === generations.current.reservations) setReservationLoading(false);
     }
   };
 
   const loadAgentClassesCatalog = async () => {
     if (!canViewAgentClasses || classOptionsLoading) return;
-    setClassOptionsLoading(true);
+    const generation = ++generations.current.classes;
+    setClassOptions([]); setClassOptionsLoading(true);
     setClassResultErr('');
     try {
       const res: any = await ApiClient.get('/internal/agents/classes');
-      const rows = Array.isArray(res) ? res : res?.data || [];
+      if (generation !== generations.current.classes) return;
+      const rows = Array.isArray(res) ? res : res?.data;
+      if (!Array.isArray(rows) || rows.some((row: any) => !row || typeof row.id !== 'string' || typeof row.name !== 'string' || typeof row.code !== 'string')) throw new Error('Agent classes returned an invalid response.');
       setClassOptions(rows);
     } catch (err: any) {
-      setClassResultErr(err?.message || 'Failed to load Agent classes');
+      if (generation === generations.current.classes) setClassResultErr(err?.message || 'Failed to load Agent classes');
     } finally {
-      setClassOptionsLoading(false);
+      if (generation === generations.current.classes) setClassOptionsLoading(false);
     }
   };
 
   const handleAssign = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canAssignAgent) return;
+    if (!canAssignAgent || assignBusy) return;
     setResult('');
     setResultErr('');
     if (!agentId.trim() || !profileCode.trim()) {
@@ -218,12 +248,16 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       return;
     }
     const normalizedCode = profileCode.trim().toUpperCase();
+    const subjectId = agentId.trim();
+    const generation = ++generations.current.assign; setAssignBusy(true);
     try {
-      await ApiClient.post('/internal/limit-assignments', {
+      const receipt = await ApiClient.post('/internal/limit-assignments', {
         limitProfileCode: normalizedCode,
         subjectType: 'AGENT',
-        subjectId: agentId.trim(),
+        subjectId,
       });
+      if (generation !== generations.current.assign) return;
+      if (!validReceipt(receipt, 'AGENT', subjectId, normalizedCode) || (receipt as any).isActive !== true) throw new Error('Assignment receipt was incomplete or mismatched.');
       setResult(
         canReadAssignments
           ? `Assigned profile ${normalizedCode} to agent ${agentId.trim()}`
@@ -233,13 +267,13 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
         void fetchAssignments();
       }
     } catch (err: any) {
-      setResultErr(err?.message || 'Assign failed — requires agent.assign_limit (AGENT_NETWORK_MANAGER)');
-    }
+      if (generation === generations.current.assign) setResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`);
+    } finally { if (generation === generations.current.assign) setAssignBusy(false); }
   };
 
   const handleAssignAgentClass = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canModifyLimits) return;
+    if (!canModifyLimits || classAssignBusy) return;
     setClassResult('');
     setClassResultErr('');
     if (!agentClassId.trim() || !classProfileCode.trim()) {
@@ -251,12 +285,16 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
       setClassResultErr('Profile code must be 3–80 uppercase letters, digits, or underscores.');
       return;
     }
+    const subjectId = agentClassId.trim();
+    const generation = ++generations.current.classAssign; setClassAssignBusy(true);
     try {
-      await ApiClient.post('/internal/limit-assignments', {
+      const receipt = await ApiClient.post('/internal/limit-assignments', {
         limitProfileCode: normalizedCode,
         subjectType: 'AGENT_CLASS',
-        subjectId: agentClassId.trim(),
+        subjectId,
       });
+      if (generation !== generations.current.classAssign) return;
+      if (!validReceipt(receipt, 'AGENT_CLASS', subjectId, normalizedCode) || (receipt as any).isActive !== true) throw new Error('Assignment receipt was incomplete or mismatched.');
       setClassResult(
         canReadAssignments
           ? `Assigned profile ${normalizedCode} to Agent Class ${agentClassId.trim()}`
@@ -267,27 +305,30 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
         void fetchAssignments();
       }
     } catch (err: any) {
-      setClassResultErr(err?.message || 'Agent Class limit assignment failed — requires limit.modify');
-    }
+      if (generation === generations.current.classAssign) setClassResultErr(`Assignment outcome not confirmed; check assignments before retrying. ${err?.message || 'Service unavailable.'}`);
+    } finally { if (generation === generations.current.classAssign) setClassAssignBusy(false); }
   };
 
   const handleToggleSubjectAssignment = async (assignment: any) => {
     if (toggleBusyId) return;
     const isAgent = assignment.subjectType === 'AGENT' && canAssignAgent;
     const isAgentClass = assignment.subjectType === 'AGENT_CLASS' && canModifyLimits;
-    if (!isAgent && !isAgentClass) return;
+    if ((!isAgent && !isAgentClass) || !Number.isSafeInteger(assignment.version) || assignment.version < 1 || typeof assignment.isActive !== 'boolean') return;
 
     setResult('');
     setResultErr('');
     setClassResult('');
     setClassResultErr('');
+    const generation = ++generations.current.toggle;
     setToggleBusyId(assignment.id);
     try {
-      await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
+      const receipt: any = await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
         subjectType: assignment.subjectType,
         isActive: !assignment.isActive,
-        version: assignment.version ?? 1,
+        version: assignment.version,
       });
+      if (generation !== generations.current.toggle) return;
+      if (!validReceipt(receipt, assignment.subjectType, assignment.subjectId, assignment.limitProfileCode) || receipt.id !== assignment.id || receipt.isActive !== !assignment.isActive || receipt.version <= assignment.version) throw new Error('Update receipt was incomplete or mismatched.');
       const label = assignment.subjectType === 'AGENT_CLASS' ? 'Agent Class' : 'Agent';
       const msg = `${label} limit assignment ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`;
       if (assignment.subjectType === 'AGENT_CLASS') setClassResult(msg);
@@ -296,11 +337,12 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
         void fetchAssignments();
       }
     } catch (err: any) {
-      const errText = err?.message || 'Failed to update limit assignment';
+      if (generation !== generations.current.toggle) return;
+      const errText = `Assignment update not confirmed; refresh before retrying. ${err?.message || 'Service unavailable.'}`;
       if (assignment.subjectType === 'AGENT_CLASS') setClassResultErr(errText);
       else setResultErr(errText);
     } finally {
-      setToggleBusyId(null);
+      if (generation === generations.current.toggle) setToggleBusyId(null);
     }
   };
 
@@ -316,8 +358,8 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
   }
 
   return (
-    <div className="mn-operational" style={wrap}>
-      <h2 style={h2}>📏 Limit Assignments</h2>
+    <div className="mn-operational mn-limit-assignment" style={wrap}>
+      <PageHeader eyebrow="Commercial administration" title="Limit Assignments" description="Review assignments and read-only usage or reservation diagnostics." />
       <p style={sub}>
         View existing assignments with <code>limit.view</code>, assign per-Agent profiles with{' '}
         <code>agent.assign_limit</code>, and manage <code>AGENT_CLASS</code> assignments with{' '}
@@ -349,6 +391,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
           {!initialCustomerId && (
             <form
               aria-label="Assignment filters"
+              onChangeCapture={() => { generations.current.assignments++; setLoading(false); setAssignments([]); setAssignmentsSearched(false); setError(''); }}
               onSubmit={(event) => {
                 event.preventDefault();
                 void fetchAssignments();
@@ -442,7 +485,9 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
           )}
           {loading ? (
             <div style={loadingBox}>Loading assignments…</div>
-          ) : error ? null : assignments.length === 0 ? (
+          ) : error ? null : !assignmentsSearched ? (
+            <div style={empty}>Apply filters to load assignments.</div>
+          ) : assignments.length === 0 ? (
             <div style={empty}>No matching limit assignments.</div>
           ) : (
             <ScrollRegion label="Limit assignments" hint="Scroll horizontally to see all columns."><table className="mn-data-table" style={table}>
@@ -472,7 +517,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
                           {assignment.isActive ? 'ACTIVE' : 'INACTIVE'}
                         </span>
                       </td>
-                      <td>{assignment.version ?? 1}</td>
+                      <td>{Number.isSafeInteger(assignment.version) && assignment.version > 0 ? assignment.version : 'Unavailable'}</td>
                       <td>
                         {assignment.effectiveFrom
                           ? new Date(assignment.effectiveFrom).toLocaleString()
@@ -484,7 +529,8 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
                             <button
                               type="button"
                               style={smallLink}
-                              disabled={toggleBusyId === assignment.id}
+                              disabled={Boolean(toggleBusyId) || !Number.isSafeInteger(assignment.version) || assignment.version < 1}
+                              title={!Number.isSafeInteger(assignment.version) || assignment.version < 1 ? 'Refresh to obtain a verified version before updating.' : undefined}
                               onClick={() => void handleToggleSubjectAssignment(assignment)}
                             >
                               {assignment.isActive ? 'Deactivate' : 'Activate'}
@@ -500,6 +546,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
               </tbody>
             </table></ScrollRegion>
           )}
+          {assignmentsSearched && assignmentsTotal !== null && assignmentsTotal > assignments.length && <p style={note}>Showing the first {assignments.length} of {assignmentsTotal} assignments. Narrow the filters to inspect additional records.</p>}
         </>
       )}
 
@@ -509,6 +556,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
           <form onSubmit={handleAssign} style={form}>
             <input
               aria-label="Agent UUID"
+              disabled={assignBusy}
               value={agentId}
               onChange={(event) => setAgentId(event.target.value)}
               placeholder="Agent UUID"
@@ -516,13 +564,14 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             />
             <input
               aria-label="Agent limit profile code"
+              disabled={assignBusy}
               value={profileCode}
               onChange={(event) => setProfileCode(event.target.value)}
               placeholder="Profile code (e.g. AGENT_STANDARD)"
               style={inlineFormInput}
             />
-            <button type="submit" style={btn}>
-              Assign
+            <button type="submit" style={btn} disabled={assignBusy}>
+              {assignBusy ? 'Assigning…' : 'Assign'}
             </button>
           </form>
           {result && (
@@ -557,6 +606,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             {classOptions.length > 0 && (
               <select
                 aria-label="Select Agent class"
+                disabled={classAssignBusy}
                 value={agentClassId}
                 onChange={(event) => setAgentClassId(event.target.value)}
                 style={inlineFormInput}
@@ -571,6 +621,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             )}
             <input
               aria-label="Agent class UUID"
+                disabled={classAssignBusy}
               value={agentClassId}
               onChange={(event) => setAgentClassId(event.target.value)}
               placeholder="Agent Class UUID"
@@ -578,13 +629,14 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             />
             <input
               aria-label="Agent class limit profile code"
+                disabled={classAssignBusy}
               value={classProfileCode}
               onChange={(event) => setClassProfileCode(event.target.value)}
               placeholder="Profile code (e.g. AGENT_CLASS_STANDARD)"
               style={inlineFormInput}
             />
-            <button type="submit" style={btn}>
-              Assign to class
+            <button type="submit" style={btn} disabled={classAssignBusy}>
+              {classAssignBusy ? 'Assigning…' : 'Assign to class'}
             </button>
           </form>
           {classResult && (
@@ -608,7 +660,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
           <section style={diagnosticCard} aria-label="Limit usage diagnostics">
             <h3 style={sectionTitle}>Usage Diagnostics</h3>
             <p style={sectionHelp}>Inspect recorded and reserved usage by principal, profile, product, and window.</p>
-            <form onSubmit={(event) => { event.preventDefault(); void loadUsages(1); }} style={filterGrid}>
+            <form onChangeCapture={() => { generations.current.usage++; setUsageLoading(false); setUsageResult(null); setUsageError(''); }} onSubmit={(event) => { event.preventDefault(); void loadUsages(1); }} style={filterGrid}>
               {textFilter('Profile code', usageFilters.limitProfileCode, (value) => setUsageFilters((current) => ({ ...current, limitProfileCode: value })))}
               {textFilter('Principal type', usageFilters.principalType, (value) => setUsageFilters((current) => ({ ...current, principalType: value })))}
               {textFilter('Principal ID', usageFilters.principalId, (value) => setUsageFilters((current) => ({ ...current, principalId: value })))}
@@ -624,7 +676,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             {usageError && <div style={errBox} role="alert">{usageError}</div>}
             {usageLoading ? <div style={loadingBox}>Loading usage diagnostics…</div> : usageResult && (
               <>
-                <div style={resultSummary}>Total {usageResult.total} · Page {usageResult.page} of {Math.max(1, usageResult.totalPages)}</div>
+                <div style={resultSummary}>Total {usageResult.total} · Page {usageResult.page}{usageResult.totalPages > 0 ? ` of ${usageResult.totalPages}` : ' (no results)'}</div>
                 <StructuredRecordTable rows={usageResult.data} columns={USAGE_COLUMNS} emptyMessage="No usage rows match these filters." />
                 <div style={pager}>
                   <button type="button" style={smallLink} disabled={usageResult.page <= 1 || usageLoading} onClick={() => void loadUsages(usageResult.page - 1)}>Previous</button>
@@ -637,7 +689,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
           <section style={diagnosticCard} aria-label="Limit reservation diagnostics">
             <h3 style={sectionTitle}>Reservation Diagnostics</h3>
             <p style={sectionHelp}>Read reservation status, age, and correlation references. No recovery mutation is offered here.</p>
-            <form onSubmit={(event) => { event.preventDefault(); void loadReservations(1); }} style={filterGrid}>
+            <form onChangeCapture={() => { generations.current.reservations++; setReservationLoading(false); setReservationResult(null); setReservationError(''); }} onSubmit={(event) => { event.preventDefault(); void loadReservations(1); }} style={filterGrid}>
               <label style={fieldLabel}>Status
                 <select value={reservationFilters.status} onChange={(event) => setReservationFilters((current) => ({ ...current, status: event.target.value }))} style={input}>
                   <option value="">All statuses</option><option value="RESERVED">RESERVED</option><option value="COMMITTED">COMMITTED</option><option value="RELEASED">RELEASED</option>
@@ -664,7 +716,7 @@ export const LimitAssignmentScreen: React.FC<{ initialCustomerId?: string; onBac
             {reservationError && <div style={errBox} role="alert">{reservationError}</div>}
             {reservationLoading ? <div style={loadingBox}>Loading reservation diagnostics…</div> : reservationResult && (
               <>
-                <div style={resultSummary}>Total {reservationResult.total} · Page {reservationResult.page} of {Math.max(1, reservationResult.totalPages)}{reservationResult.staleThresholdMinutes !== undefined && <> · Stale threshold {reservationResult.staleThresholdMinutes} min</>}</div>
+                <div style={resultSummary}>Total {reservationResult.total} · Page {reservationResult.page}{reservationResult.totalPages > 0 ? ` of ${reservationResult.totalPages}` : ' (no results)'}{reservationResult.staleThresholdMinutes !== undefined && <> · Stale threshold {reservationResult.staleThresholdMinutes} min</>}</div>
                 <StructuredRecordTable rows={reservationResult.data} columns={RESERVATION_COLUMNS} emptyMessage="No reservations match these filters." />
                 <div style={pager}>
                   <button type="button" style={smallLink} disabled={reservationResult.page <= 1 || reservationLoading} onClick={() => void loadReservations(reservationResult.page - 1)}>Previous</button>

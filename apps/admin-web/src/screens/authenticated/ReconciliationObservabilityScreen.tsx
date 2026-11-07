@@ -1,5 +1,7 @@
 import './operational-surfaces.css';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import './reconciliation-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatMinorUnits } from '../../utils/financial-display';
@@ -113,9 +115,22 @@ interface FinanceVerificationReport {
   accountActivity: AccountActivitySummary[];
 }
 
+const minor = (value: unknown) => typeof value === 'string' && /^-?\d+$/.test(value);
+const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const isDimension = (row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && typeof row.balanced === 'boolean' && (!row.balanced || BigInt(row.totalDebitsMinor) === BigInt(row.totalCreditsMinor));
+const isAccountRow = (row: any) => row && typeof row.accountId === 'string' && typeof row.accountCode === 'string' && typeof row.accountName === 'string' && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalDebitsMinor) && minor(row.totalCreditsMinor) && minor(row.balanceMinor);
+const validRun = (r: any) => r && ['PASS','WARNING','ERROR'].includes(r.status) && typeof r.generatedAt === 'string' && Array.isArray(r.checks) && r.checks.every((c: any) => c && typeof c.name === 'string' && ['PASS','WARNING','ERROR'].includes(c.status) && typeof c.message === 'string') && r.binding && count(r.binding.summary?.bindingsChecked) && count(r.binding.summary?.discrepancies) && Array.isArray(r.binding.discrepancies) && r.binding.discrepancies.every((d: any) => d && typeof d.key === 'string' && typeof d.type === 'string' && typeof d.message === 'string');
+const validTrial = (r: any) => r && typeof r.generatedAt === 'string' && typeof r.balanced === 'boolean' && Array.isArray(r.dimensions) && r.dimensions.every(isDimension) && (!r.balanced || r.dimensions.every((d: any) => d.balanced)) && Array.isArray(r.rows) && r.rows.every(isAccountRow);
+const validFinance = (r: any) => r && typeof r.generatedAt === 'string' && r.journalIntegrity && typeof r.journalIntegrity.balanced === 'boolean' && count(r.journalIntegrity.totalJournals) && count(r.journalIntegrity.invalidJournals) && count(r.journalIntegrity.orphanLines) && (!r.journalIntegrity.balanced || (r.journalIntegrity.invalidJournals === 0 && r.journalIntegrity.orphanLines === 0)) && [r.totalAssets, r.totalLiabilities].every(rows => Array.isArray(rows) && rows.every((row: any) => row && typeof row.currency === 'string' && typeof row.accountingUnit === 'string' && minor(row.totalBalanceMinor)));
+
 export const ReconciliationObservabilityScreen: React.FC = () => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('reconciliation.view') ?? false;
+  return <ReconciliationWorkspace key={`${principal?.principalId ?? ''}:${canView}`} canView={canView} />;
+};
+const ReconciliationWorkspace: React.FC<{canView: boolean}> = ({canView}) => {
+  const generations = useRef({run:0, trial:0, finance:0, activity:0});
+  useEffect(() => () => { generations.current.run++; generations.current.trial++; generations.current.finance++; generations.current.activity++; }, []);
   const [activeTab, setActiveTab] = useState<'runs' | 'trial-balance' | 'finance'>('runs');
 
   // Reconciliation Runs State
@@ -139,6 +154,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
 
   const handleRunReconciliation = async () => {
     if (!canView) return;
+    const request = ++generations.current.run;
     setRunError('');
     setReport(null);
     setRunLoading(true);
@@ -146,16 +162,19 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
     try {
       // GET /internal/reconciliation/report (triggers dynamic PG matching runs)
       const res = await ApiClient.get<ReconciliationReport>('/internal/reconciliation/report');
+      if (request !== generations.current.run) return;
+      if (!validRun(res)) throw new Error('Reconciliation report returned an invalid response.');
       setReport(res);
     } catch (err: any) {
-      setRunError(err?.message || 'Reconciliation run failed.');
+      if (request === generations.current.run) setRunError(err?.message || 'Reconciliation run failed.');
     } finally {
-      setRunLoading(false);
+      if (request === generations.current.run) setRunLoading(false);
     }
   };
 
   const handleLoadTrialBalance = async () => {
     if (!canView) return;
+    const request = ++generations.current.trial;
     setTbError('');
     setTbReport(null);
     setTbLoading(true);
@@ -163,25 +182,30 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
     try {
       // GET /internal/reconciliation/trial-balance
       const res = await ApiClient.get<TrialBalanceReport>('/internal/reconciliation/trial-balance');
+      if (request !== generations.current.trial) return;
+      if (!validTrial(res)) throw new Error('Trial balance returned an invalid or inconsistent response.');
       setTbReport(res);
     } catch (err: any) {
-      setTbError(err?.message || 'Trial balance query failed.');
+      if (request === generations.current.trial) setTbError(err?.message || 'Trial balance query failed.');
     } finally {
-      setTbLoading(false);
+      if (request === generations.current.trial) setTbLoading(false);
     }
   };
 
   const handleLoadFinanceVerification = async () => {
     if (!canView) return;
+    const request = ++generations.current.finance;
     setFinanceError('');
     setFinanceLoading(true);
     try {
       const res = await ApiClient.get<FinanceVerificationReport>('/internal/reconciliation/finance');
+      if (request !== generations.current.finance) return;
+      if (!validFinance(res)) throw new Error('Finance verification returned an invalid or inconsistent response.');
       setFinanceReport(res);
     } catch (err: any) {
-      setFinanceError(err?.message || 'Finance verification query failed.');
+      if (request === generations.current.finance) setFinanceError(err?.message || 'Finance verification query failed.');
     } finally {
-      setFinanceLoading(false);
+      if (request === generations.current.finance) setFinanceLoading(false);
     }
   };
 
@@ -192,6 +216,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
       setActivityError('Ledger Account UUID is required.');
       return;
     }
+    const request = ++generations.current.activity;
     setAccountActivityId(id);
     setActivityError('');
     setAccountActivityRows(null);
@@ -200,13 +225,13 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
       const rows = await ApiClient.get<AccountActivitySummary[]>(
         `/internal/reconciliation/accounts/${encodeURIComponent(id)}/activity`,
       );
-      if (!Array.isArray(rows)) throw new Error('Account activity returned an invalid response.');
+      if (!Array.isArray(rows) || rows.some(row => !isAccountRow(row) || row.accountId !== id || !count(row.entryCount))) throw new Error('Account activity returned an invalid or mismatched response.');
+      if (request !== generations.current.activity) return;
       setAccountActivityRows(rows);
     } catch (err: any) {
-      setAccountActivityRows(null);
-      setActivityError(err?.message || 'Account activity lookup failed.');
+      if (request === generations.current.activity) { setAccountActivityRows(null); setActivityError(err?.message || 'Account activity lookup failed.'); }
     } finally {
-      setActivityLoading(false);
+      if (request === generations.current.activity) setActivityLoading(false);
     }
   };
 
@@ -219,11 +244,8 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
   }
 
   return (
-    <div className="mn-operational" style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Independent Reconciliation & Breaks Desk</h2>
-        <p style={styles.subtitle}>Audit double-entry ledger balance conservation, check trial balances, and manage breaks</p>
-      </div>
+    <div className="mn-operational mn-reconciliation" style={styles.container}>
+      <PageHeader eyebrow="Finance and ledger" title="Independent Reconciliation & Breaks Desk" description="Review reported ledger balance conservation, trial balances and reconciliation breaks." />
 
       <div style={styles.gapWarning}>
         <span style={styles.gapTitle}>⚠️ In-House Simulated Settlement Boundaries</span>
@@ -235,18 +257,21 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
       <div style={styles.tabHeader}>
         <button
           style={activeTab === 'runs' ? styles.activeTabBtn : styles.tabBtn}
+          aria-pressed={activeTab === 'runs'}
           onClick={() => { setActiveTab('runs'); setRunError(''); }}
         >
           ⚙️ Run Verification Audits
         </button>
         <button
           style={activeTab === 'trial-balance' ? styles.activeTabBtn : styles.tabBtn}
+          aria-pressed={activeTab === 'trial-balance'}
           onClick={() => { setActiveTab('trial-balance'); setTbError(''); handleLoadTrialBalance(); }}
         >
           ⚖️ General Trial Balance
         </button>
         <button
           style={activeTab === 'finance' ? styles.activeTabBtn : styles.tabBtn}
+          aria-pressed={activeTab === 'finance'}
           onClick={() => { setActiveTab('finance'); setFinanceError(''); void handleLoadFinanceVerification(); }}
         >
           🏦 Finance Verification &amp; Activity
@@ -265,7 +290,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
             </button>
           </div>
 
-          {runError && <div style={styles.errorBox}>{runError}</div>}
+          {runError && <div style={styles.errorBox} role="alert">{runError}</div>}
 
           {report && (
             <div style={styles.resultsGrid}>
@@ -337,7 +362,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
         </div>
       ) : activeTab === 'trial-balance' ? (
         <div style={styles.content}>
-          {tbError && <div style={styles.errorBox}>{tbError}</div>}
+          {tbError && <div style={styles.errorBox} role="alert">{tbError}</div>}
 
           {tbLoading ? (
             <p style={styles.loadingText}>Fetching Trial Balance...</p>
@@ -468,13 +493,13 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
               <div style={styles.summaryCard}>
                 <h4 style={styles.cardTitle}>Assets vs Liabilities</h4>
                 {financeReport.totalAssets.map((item) => (
-                  <div key={`asset:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
+                  <div className="mn-reconciliation__total" key={`asset:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
                     <span style={styles.metaLabel}>ASSET ({item.currency}/{item.accountingUnit}):</span>
                     <span style={styles.metaValue}>{formatMinorUnits(item.totalBalanceMinor, item.currency)}</span>
                   </div>
                 ))}
                 {financeReport.totalLiabilities.map((item) => (
-                  <div key={`liab:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
+                  <div className="mn-reconciliation__total" key={`liab:${item.currency}:${item.accountingUnit}`} style={styles.metaRow}>
                     <span style={styles.metaLabel}>LIABILITY ({item.currency}/{item.accountingUnit}):</span>
                     <span style={styles.metaValue}>{formatMinorUnits(item.totalBalanceMinor, item.currency)}</span>
                   </div>
@@ -492,6 +517,7 @@ export const ReconciliationObservabilityScreen: React.FC = () => {
                 placeholder="Ledger Account UUID"
                 value={accountActivityId}
                 onChange={(e) => {
+                  generations.current.activity += 1;
                   setAccountActivityId(e.target.value);
                   setAccountActivityRows(null);
                   setActivityError('');

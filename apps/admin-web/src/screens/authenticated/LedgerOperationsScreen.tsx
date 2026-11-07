@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
 import { PageHeader } from '../../design-system/primitives';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import './ledger-workspace.css';
 import { formatFinancialAmount } from '../../utils/financial-display';
 import { ApiClient, ApiError } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -32,11 +33,20 @@ interface Journal {
   reference?: string;
   description?: string;
   createdAt: string;
+  reversalOfJournalId?: string | null;
   lines: JournalLine[];
 }
 
+const validJournal = (value: any, id: string): value is Journal => value && value.id === id && typeof value.status === 'string' && typeof value.currency === 'string' && typeof value.accountingUnit === 'string' && Array.isArray(value.lines) && value.lines.every((line: any) => line && typeof line.id === 'string' && typeof line.accountId === 'string' && ['DEBIT','CREDIT'].includes(line.direction) && typeof line.amountMinor === 'string' && /^\d+$/.test(line.amountMinor));
+
 export const LedgerOperationsScreen: React.FC = () => {
   const { principal } = useAuthStore();
+  const key = `${principal?.principalId ?? ''}:${[...(principal?.scopes ?? [])].sort().join('|')}:${[...(principal?.roles ?? [])].sort().join('|')}`;
+  return <LedgerWorkspace key={key} principal={principal} />;
+};
+const LedgerWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']}> = ({principal}) => {
+  const generations = useRef({accounts:0, journal:0, reversal:0});
+  useEffect(() => () => { generations.current.accounts++; generations.current.journal++; generations.current.reversal++; }, []);
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [searchCurrency, setSearchCurrency] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -72,17 +82,20 @@ export const LedgerOperationsScreen: React.FC = () => {
       setIsLoading(false);
       return;
     }
-    setIsLoading(true);
+    const request = ++generations.current.accounts;
+    setIsLoading(true); setAccounts([]);
     setError('');
     try {
       // GET /ledger/accounts
       const query = searchCurrency ? `?currency=${searchCurrency}` : '';
       const list = await ApiClient.get<LedgerAccount[]>(`/ledger/accounts${query}`);
-      setAccounts(list || []);
+      if (request !== generations.current.accounts) return;
+      if (!Array.isArray(list) || list.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.code !== 'string' || typeof a.currency !== 'string' || typeof a.balanceMinor !== 'string' || !/^-?\d+$/.test(a.balanceMinor))) throw new Error('Ledger account list returned an invalid response.');
+      setAccounts(list);
     } catch (err: any) {
-      setError(err?.message || 'Failed to fetch ledger accounts.');
+      if (request === generations.current.accounts) setError(err?.message || 'Failed to fetch ledger accounts.');
     } finally {
-      setIsLoading(false);
+      if (request === generations.current.accounts) setIsLoading(false);
     }
   };
 
@@ -93,11 +106,13 @@ export const LedgerOperationsScreen: React.FC = () => {
 
   const handleSearchJournal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canViewLedger) return;
+    if (!canViewLedger || reversalLoading) return;
     if (!searchJournalId.trim()) {
       setJournalError('Journal ID is required');
       return;
     }
+    const request = ++generations.current.journal;
+    const id = searchJournalId.trim();
     setJournalError('');
     setJournal(null);
     setJournalLoading(true);
@@ -106,17 +121,22 @@ export const LedgerOperationsScreen: React.FC = () => {
 
     try {
       // GET /ledger/journals/:id
-      const res = await ApiClient.get<Journal>(`/ledger/journals/${searchJournalId.trim()}`);
+      const res = await ApiClient.get<Journal>(`/ledger/journals/${encodeURIComponent(id)}`);
+      if (request !== generations.current.journal) return;
+      if (!validJournal(res, id)) throw new Error('Journal response is invalid or does not match the requested ID.');
       setJournal(res);
     } catch (err: any) {
-      setJournalError(err?.message || 'Journal entry not found.');
+      if (request === generations.current.journal) setJournalError(err?.message || 'Journal entry not found.');
     } finally {
-      setJournalLoading(false);
+      if (request === generations.current.journal) setJournalLoading(false);
     }
   };
 
   const handleReverseJournal = async () => {
-    if (!canViewLedger || !journal || (!isPreparer && !isController)) return;
+    if (!canViewLedger || !journal || reversalLoading || (!isPreparer && !isController)) return;
+    if (isController && !reversalApprovalId.trim()) { setReversalSuccess(''); setReversalError('Approved maker-checker request ID (approvalId) is required.'); return; }
+    const generation = ++generations.current.reversal;
+    const journalId = journal.id;
     setReversalError('');
     setReversalSuccess('');
     setReversalLoading(true);
@@ -127,33 +147,40 @@ export const LedgerOperationsScreen: React.FC = () => {
       if (isController) {
         // Checker-execution (P0-B): consumes the APPROVED maker-checker request. The reason
         // must match the approved maker request exactly — it is fingerprint-bound server-side.
-        if (!reversalApprovalId.trim()) {
-          throw new Error('Approved maker-checker request ID (approvalId) is required.');
-        }
-        await ApiClient.post(`/ledger/journals/${journal.id}/reversal`, {
+        const receipt = await ApiClient.post<Journal>(`/ledger/journals/${encodeURIComponent(journalId)}/reversal`, {
           idempotencyKey,
           reason: reversalReason.trim(),
           approvalId: reversalApprovalId.trim(),
         }, {
           idempotencyKey,
         });
+        if (generation !== generations.current.reversal) return;
+        if (!receipt || typeof receipt.id !== 'string' || receipt.status !== 'POSTED' || receipt.reversalOfJournalId !== journalId) throw new Error('Reversal receipt was incomplete or mismatched.');
         setReversalSuccess('Governed journal reversal executed from the approved request.');
         setReversalReason('');
         setReversalApprovalId('');
 
         // Reload journal to view status changes
-        const res = await ApiClient.get<Journal>(`/ledger/journals/${journal.id}`);
-        setJournal(res);
-        fetchAccounts();
+        try {
+          const res = await ApiClient.get<Journal>(`/ledger/journals/${encodeURIComponent(journalId)}`);
+          if (generation !== generations.current.reversal) return;
+          if (!validJournal(res, journalId)) throw new Error('Journal refresh returned invalid data.');
+          setJournal(res);
+          void fetchAccounts();
+        } catch (refreshError: any) {
+          if (generation === generations.current.reversal) { setJournal(null); setJournalError(`Reversal was recorded, but journal refresh failed: ${refreshError?.message || 'Service unavailable.'}`); }
+        }
       } else if (isPreparer) {
         // Maker request (P0-B): the backend computes the deterministic action fingerprint of the
         // ACTUAL reversal request (LEDGER_JOURNAL_REVERSAL / LEDGER_JOURNAL) — the client never
         // supplies one. The result is a PENDING maker-checker request a FINANCE_CONTROLLER must
         // independently approve before it can be executed.
-        const request = await ApiClient.post<{ approvalId: string; actionFingerprint: string }>(
-          `/ledger/journals/${journal.id}/reversal-request`,
+        const request = await ApiClient.post<{ approvalId: string; actionFingerprint: string; status: string; resourceId: string }>(
+          `/ledger/journals/${encodeURIComponent(journalId)}/reversal-request`,
           { reason: reversalReason.trim() },
         );
+        if (generation !== generations.current.reversal) return;
+        if (!request || typeof request.approvalId !== 'string' || !request.approvalId || request.status !== 'REQUESTED' || request.resourceId !== journalId || typeof request.actionFingerprint !== 'string' || !request.actionFingerprint) throw new Error('Reversal request receipt was incomplete or mismatched.');
         setReversalSuccess(
           `Reversal maker request created (request ID ${request.approvalId}). Awaiting independent FINANCE_CONTROLLER approval.`,
         );
@@ -162,9 +189,9 @@ export const LedgerOperationsScreen: React.FC = () => {
         throw new Error('Unauthorized operational action.');
       }
     } catch (err: any) {
-      setReversalError(err?.message || 'Journal reversal command rejected.');
+      if (generation === generations.current.reversal) setReversalError(`Reversal outcome not confirmed. Check the journal and approval/audit records before retrying. ${err?.message || 'Service unavailable.'}`);
     } finally {
-      setReversalLoading(false);
+      if (generation === generations.current.reversal) setReversalLoading(false);
     }
   };
 
@@ -177,7 +204,7 @@ export const LedgerOperationsScreen: React.FC = () => {
   }
 
   return (
-    <div className="mn-operational" style={styles.container}>
+    <div className="mn-operational mn-ledger" style={styles.container}>
       <PageHeader eyebrow="Finance and ledger" title="Ledger Core & Reversals Desk" description="Inspect accounts and journal postings, and use the existing governed reversal workflow." />
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
@@ -192,7 +219,7 @@ export const LedgerOperationsScreen: React.FC = () => {
       <div style={styles.splitLayout}>
         {/* Chart of Accounts */}
         <div style={styles.leftSection}>
-          <div style={styles.sectionHeader}>
+          <div className="mn-ledger__section-head" style={styles.sectionHeader}>
             <h3 style={styles.sectionTitle}>Chart of Accounts</h3>
             <select aria-label="Account currency" style={styles.select} value={searchCurrency} onChange={(e) => setSearchCurrency(e.target.value)}>
               <option value="">All Currencies</option>
@@ -239,17 +266,19 @@ export const LedgerOperationsScreen: React.FC = () => {
                   style={styles.input}
                   placeholder="e.g. ecd61345-..."
                   value={searchJournalId}
-                  onChange={(e) => setSearchJournalId(e.target.value)}
-                  disabled={journalLoading}
+                  onChange={(e) => { setSearchJournalId(e.target.value); setJournal(null); setJournalError(''); setReversalSuccess(''); setReversalError(''); }}
+                  disabled={journalLoading || reversalLoading}
                 />
-                <button type="submit" disabled={journalLoading} style={styles.searchBtn}>
+                <button type="submit" disabled={journalLoading || reversalLoading} style={styles.searchBtn}>
                   {journalLoading ? 'Loading...' : 'Audit Journal'}
                 </button>
               </div>
             </div>
           </form>
 
-          {journalError && <div style={styles.errorBox}>{journalError}</div>}
+          {journalError && <div style={styles.errorBox} role="alert">{journalError}</div>}
+          {reversalError && <div style={styles.errorBox} role="alert">{reversalError}</div>}
+          {reversalSuccess && <div style={styles.successBox} role="status">{reversalSuccess}</div>}
 
           {journal && (
             <div style={styles.journalCard}>
@@ -287,8 +316,6 @@ export const LedgerOperationsScreen: React.FC = () => {
                 </table>
               </div>
 
-              {reversalError && <div style={styles.errorBox}>{reversalError}</div>}
-              {reversalSuccess && <div style={styles.successBox}>{reversalSuccess}</div>}
 
               {journal.status === 'POSTED' && (isPreparer || isController) && (
                 <div style={styles.reversalBlock}>

@@ -1,0 +1,3 @@
+.mn-system-health { color: var(--mn-text-primary); font-family: var(--mn-font-sans); }
+.mn-system-health button, .mn-system-health input, .mn-system-health select { min-height: 40px; min-width: 0; }
+.mn-system-health :is(code, [role="alert"]) { overflow-wrap: anywhere; }

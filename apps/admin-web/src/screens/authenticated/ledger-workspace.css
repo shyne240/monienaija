@@ -1,0 +1,5 @@
+.mn-ledger { max-width: 1300px; }
+.mn-ledger button, .mn-ledger input, .mn-ledger select { min-height: 40px; min-width: 0; }
+.mn-ledger :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-ledger__section-head { flex-wrap: wrap; gap: 10px; }
+.mn-ledger__section-head select { flex: 0 0 auto; }

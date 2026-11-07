@@ -1,5 +1,7 @@
 import './operational-surfaces.css';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader } from '../../design-system/primitives';
+import './transaction-workspace.css';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatFinancialAmount, formatMinorUnits } from '../../utils/financial-display';
@@ -50,10 +52,24 @@ interface TransactionObservabilityProps {
   onBackToCustomer?: () => void;
 }
 
+/** Convert naira to kobo exactly, without binary floating-point rounding. */
+function parseNaira(value: string, label: string): string {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+  if (!match) throw new Error(`${label} must be a non-negative amount with at most two decimal places.`);
+  return (BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))).toString();
+}
+
 export const TransactionObservabilityScreen: React.FC<TransactionObservabilityProps> = ({ initialType, initialCustomerId, onBackToCustomer }) => {
   const { principal } = useAuthStore();
   const canViewGlobalTransactions = principal?.scopes.includes('transaction.view') ?? false;
   const canViewCustomerTransactions = principal?.scopes.includes('customer.view_transactions') ?? false;
+  const key = `${principal?.principalId ?? ''}:${canViewGlobalTransactions}:${canViewCustomerTransactions}:${initialType ?? ''}:${initialCustomerId ?? ''}`;
+  return <TransactionWorkspace key={key} initialType={initialType} initialCustomerId={initialCustomerId} onBackToCustomer={onBackToCustomer} canViewGlobalTransactions={canViewGlobalTransactions} canViewCustomerTransactions={canViewCustomerTransactions} />;
+};
+const TransactionWorkspace: React.FC<TransactionObservabilityProps & {canViewGlobalTransactions: boolean; canViewCustomerTransactions: boolean}> = ({initialType, initialCustomerId, onBackToCustomer, canViewGlobalTransactions, canViewCustomerTransactions}) => {
+  const traceGeneration = useRef(0);
+  const feeGeneration = useRef(0);
+  useEffect(() => () => { traceGeneration.current += 1; feeGeneration.current += 1; }, []);
   const isCustomerHistoryView = Boolean(initialCustomerId) && canViewCustomerTransactions;
   const [searchTxId, setSearchTxId] = useState('');
   const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER'>((initialType as any) || 'TRANSFER');
@@ -95,7 +111,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
     )
       .then((response) => {
         if (!active) return;
-        if (!Array.isArray(response?.items) || !response?.pagination) {
+        if (!Array.isArray(response?.items) || response.items.some(item => !item || typeof item.id !== 'string' || typeof item.type !== 'string' || typeof item.status !== 'string' || typeof item.direction !== 'string' || typeof item.currency !== 'string' || typeof item.amountMinor !== 'string' || !/^-?\d+$/.test(item.amountMinor) || typeof item.createdAt !== 'string') || !response?.pagination || !Number.isSafeInteger(response.pagination.total) || response.pagination.total < 0 || !Number.isSafeInteger(response.pagination.totalPages) || response.pagination.totalPages < 0) {
           throw new Error('Transaction history returned an invalid response.');
         }
         setHistoryItems(response.items);
@@ -118,35 +134,42 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
       setTxError('Transaction ID (UUID) is required');
       return;
     }
+    const request = ++traceGeneration.current;
+    const requestedId = searchTxId.trim();
     setTxError('');
     setTxDetail(null);
     setTxLoading(true);
 
     try {
       let endpoint = '';
-      if (txType === 'DEPOSIT') endpoint = `/deposits/${searchTxId.trim()}`;
-      else if (txType === 'WITHDRAWAL') endpoint = `/withdrawals/${searchTxId.trim()}`;
-      else endpoint = `/transfers/${searchTxId.trim()}`;
+      if (txType === 'DEPOSIT') endpoint = `/deposits/${encodeURIComponent(requestedId)}`;
+      else if (txType === 'WITHDRAWAL') endpoint = `/withdrawals/${encodeURIComponent(requestedId)}`;
+      else endpoint = `/transfers/${encodeURIComponent(requestedId)}`;
 
       const res = await ApiClient.get<TransactionDetail>(endpoint);
+      if (request !== traceGeneration.current) return;
+      if (!res || res.id !== requestedId || typeof res.status !== 'string' || typeof res.currency !== 'string' || typeof res.amountMinor !== 'string' || !/^-?\d+$/.test(res.amountMinor) || typeof res.createdAt !== 'string') throw new Error('Transaction lookup returned an invalid or mismatched record.');
       setTxDetail(res);
     } catch (err: any) {
-      setTxError(err?.message || 'Transaction record not found.');
+      if (request === traceGeneration.current) setTxError(err?.message || 'Transaction record not found.');
     } finally {
-      setTxLoading(false);
+      if (request === traceGeneration.current) setTxLoading(false);
     }
   };
 
   const handleCalculateFee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canViewGlobalTransactions) return;
+    const request = ++feeGeneration.current;
     setFeeError('');
     setFeeResult(null);
     setFeeLoading(true);
 
     try {
-      const amountMinor = Math.round(parseFloat(amountStr) * 100).toString();
-      const flatFeeMinor = Math.round(parseFloat(flatFeeStr) * 100).toString();
+      const amountMinor = parseNaira(amountStr, 'Transaction amount');
+      const flatFeeMinor = parseNaira(flatFeeStr, 'Flat fee');
+      if (BigInt(amountMinor) <= 0n) throw new Error('Transaction amount must be greater than zero.');
+      if (!/^\d+$/.test(percentBpsStr.trim()) || !/^\d+$/.test(vatBpsStr.trim())) throw new Error('Fee and VAT basis points must be non-negative whole numbers.');
 
       // POST /fees/calculate
       const res = await ApiClient.post<FeeResult>('/fees/calculate', {
@@ -157,11 +180,13 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
         percentageBps: percentBpsStr,
         vatBps: vatBpsStr,
       });
+      if (request !== feeGeneration.current) return;
+      if (!res || ![res.feeMinor, res.vatMinor, res.totalMinor].every(value => typeof value === 'string' && /^\d+$/.test(value)) || BigInt(res.totalMinor) !== BigInt(amountMinor) + BigInt(res.feeMinor) + BigInt(res.vatMinor)) throw new Error('Fee simulation returned an invalid or inconsistent result.');
       setFeeResult(res);
     } catch (err: any) {
-      setFeeError(err?.message || 'Fee calculation failed.');
+      if (request === feeGeneration.current) setFeeError(err?.message || 'Fee calculation failed.');
     } finally {
-      setFeeLoading(false);
+      if (request === feeGeneration.current) setFeeLoading(false);
     }
   };
 
@@ -178,18 +203,8 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
   }
 
   return (
-    <div className="mn-operational" style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>{isCustomerHistoryView ? 'Customer Transaction History' : 'In-House Transaction & Fee Operations'}</h2>
-        <p style={styles.subtitle}>
-          {isCustomerHistoryView
-            ? 'Read-only, customer-scoped transaction history from the existing unified history service.'
-            : 'Read-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.'}
-        </p>
-        {isCustomerHistoryView && onBackToCustomer && (
-          <button type="button" style={styles.backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button>
-        )}
-      </div>
+    <div className="mn-operational mn-transactions" style={styles.container}>
+      <PageHeader eyebrow="Transactions and finance" title={isCustomerHistoryView ? 'Customer transaction history' : 'Transaction trace & fee simulation'} description={isCustomerHistoryView ? 'Read-only, customer-scoped transaction history from the existing unified history service.' : 'Read-only transaction tracing and fee simulation; no settlement or financial commands run from this screen.'} actions={isCustomerHistoryView && onBackToCustomer ? <button type="button" style={styles.backButton} onClick={onBackToCustomer}>← Back to Customer 360°</button> : undefined} />
 
       {canViewGlobalTransactions && (
         <div style={styles.gapWarning}>
@@ -227,7 +242,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
           {historyLoading ? <p style={styles.historyEmpty}>Loading transaction history…</p> : historyError ? null : historyItems.length === 0 ? (
             <p style={styles.historyEmpty}>No transactions found for this customer and type filter.</p>
           ) : (
-            <div style={styles.historyTableWrap}>
+            <div style={styles.historyTableWrap} role="region" aria-label="Customer transaction history table" tabIndex={0}>
               <table style={styles.historyTable}>
                 <thead><tr><th>Type</th><th>Status</th><th>Direction</th><th>Amount</th><th>Reference</th><th>Created</th></tr></thead>
                 <tbody>
@@ -262,7 +277,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
             <div style={styles.grid}>
               <div style={styles.inputGroup}>
                 <label htmlFor="transaction-category" style={styles.label}>Select Category</label>
-                <select id="transaction-category" style={styles.select} value={txType} onChange={(e: any) => setTxType(e.target.value)}>
+                <select id="transaction-category" style={styles.select} value={txType} disabled={txLoading} onChange={(e: any) => { setTxType(e.target.value); setTxDetail(null); setTxError(''); }}>
                   <option value="TRANSFER">P2P TRANSFER</option>
                   <option value="DEPOSIT">DEPOSIT FUNDING</option>
                   <option value="WITHDRAWAL">WITHDRAWAL OUTFLOW</option>
@@ -278,7 +293,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
                     style={styles.input}
                     placeholder="e.g. 5e6f7g8h-..."
                     value={searchTxId}
-                    onChange={(e) => setSearchTxId(e.target.value)}
+                    onChange={(e) => { setSearchTxId(e.target.value); setTxDetail(null); setTxError(''); }}
                     disabled={txLoading}
                   />
                   <button type="submit" disabled={txLoading} style={styles.searchBtn}>
@@ -330,10 +345,10 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
               <label htmlFor="fee-amount" style={styles.label}>Transaction Amount (NGN)</label>
               <input
                 id="fee-amount"
-                type="number"
+                type="text" inputMode="decimal"
                 style={styles.input}
                 value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
+                onChange={(e) => { setAmountStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                 disabled={feeLoading}
               />
             </div>
@@ -343,10 +358,10 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
                 <label htmlFor="fee-flat" style={styles.label}>Flat Fee Rule (NGN)</label>
                 <input
                 id="fee-flat"
-                  type="number"
+                  type="text" inputMode="decimal"
                   style={styles.input}
                   value={flatFeeStr}
-                  onChange={(e) => setFlatFeeStr(e.target.value)}
+                  onChange={(e) => { setFlatFeeStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                   disabled={feeLoading}
                 />
               </div>
@@ -358,7 +373,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
                   type="number"
                   style={styles.input}
                   value={percentBpsStr}
-                  onChange={(e) => setPercentBpsStr(e.target.value)}
+                  onChange={(e) => { setPercentBpsStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                   disabled={feeLoading}
                 />
               </div>
@@ -371,7 +386,7 @@ export const TransactionObservabilityScreen: React.FC<TransactionObservabilityPr
                 type="number"
                 style={styles.input}
                 value={vatBpsStr}
-                onChange={(e) => setVatBpsStr(e.target.value)}
+                onChange={(e) => { setVatBpsStr(e.target.value); setFeeResult(null); setFeeError(''); }}
                 disabled={feeLoading}
               />
             </div>

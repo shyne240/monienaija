@@ -1,0 +1,3 @@
+.mn-limit-assignment { font-family: var(--mn-font-sans); color: var(--mn-text-primary); }
+.mn-limit-assignment :is(button, input, select) { min-height: 40px; min-width: 0; }
+.mn-limit-assignment :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }

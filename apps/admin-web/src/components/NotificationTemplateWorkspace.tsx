@@ -411,6 +411,7 @@ export const NotificationTemplateWorkspace: React.FC<NotificationTemplateWorkspa
 
   return (
     <div className="mn-template-workspace" style={styles.wrapper} data-testid={`template-workspace-${channel.toLowerCase()}`}>
+      {templatesReadError && <div role="alert" style={styles.blockedBanner}>Template registry unavailable: {templatesReadError}. Displayed data is not confirmed current.</div>}
       {/* Integration Status Banner */}
       {(templatesRegistryBlocked || (channel === 'EMAIL' && emailChannelBlocked)) && (
         <div

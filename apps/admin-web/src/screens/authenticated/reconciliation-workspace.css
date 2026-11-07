@@ -1,0 +1,7 @@
+.mn-reconciliation { max-width: 1300px; }
+.mn-reconciliation button { min-height: 40px; }
+.mn-reconciliation input { min-height: 40px; min-width: 0; }
+.mn-reconciliation :is(code, [role="alert"], [role="status"]) { overflow-wrap: anywhere; }
+.mn-reconciliation__total { gap: 8px 16px; flex-wrap: wrap; }
+.mn-reconciliation__total > span { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .mn-reconciliation__total > span { flex-basis: 100%; } }

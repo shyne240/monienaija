@@ -121,9 +121,9 @@ const SCREEN_MARKERS: Record<NavKey, RegExp> = {
   agents: /Agent Network Management/i,
   agentClasses: /Agent Classes & Service Eligibility/i,
   support: /Support Tickets/i,
-  transfers: /In-House Transaction & Fee Operations/i,
-  cashIn: /In-House Transaction & Fee Operations/i,
-  cashOut: /In-House Transaction & Fee Operations/i,
+  transfers: /Transaction trace & fee simulation/i,
+  cashIn: /Transaction trace & fee simulation/i,
+  cashOut: /Transaction trace & fee simulation/i,
   cashToCashOps: /Cash-to-Cash Operations/i,
   ledgerExplorer: /Ledger Core & Reversals Desk/i,
   reconciliation: /Independent Reconciliation & Breaks Desk/i,
@@ -226,6 +226,7 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
         fireEvent.click(getByTestId(`nav-${key}`));
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
+      if (!SCREEN_MARKERS[key].test(container.textContent ?? '')) throw new Error(`Missing screen marker for ${key} (${roleKey})`);
       expect(container.textContent).toMatch(SCREEN_MARKERS[key]);
     }
   });

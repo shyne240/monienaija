@@ -80,7 +80,17 @@ const LIMIT_RULE_COLUMNS: StructuredColumn[] = [
   { key: 'isActive', label: 'Active' }, { key: 'priority', label: 'Priority' },
 ];
 
-export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialTab }) => {
+const validRegistry = (payload: unknown): boolean => {
+  const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : null;
+  const rows = Array.isArray(payload) ? payload : record ? ['data', 'items', 'rows', 'records', 'results'].map(key => record[key]).find(Array.isArray) : null;
+  return Array.isArray(rows) && rows.every(row => row && typeof row === 'object' && !Array.isArray(row));
+};
+export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = (props) => {
+  const principal = useAuthStore(state => state.principal);
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <CommercialRulesWorkspace key={key} {...props} />;
+};
+const CommercialRulesWorkspace: React.FC<{ initialTab?: Tab }> = ({ initialTab }) => {
   const { principal } = useAuthStore();
   const hasFn = (code: string) => principal?.scopes.includes(code) ?? false;
   const canViewTab = (candidate: Tab) => hasFn(TAB_FUNCTIONS[candidate]);
@@ -113,9 +123,11 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
           ApiClient.get('/internal/limit-profiles'),
           ApiClient.get('/internal/limit-rules'),
         ]);
+        if (!validRegistry(profiles) || !validRegistry(rules)) throw new Error('Limit registry returned an invalid response.');
         if (currentRequest === requestId.current) setData({ profiles: extractRecords(profiles), rules: extractRecords(rules) } satisfies LimitRegistryData);
       } else {
         const result = await ApiClient.get(TAB_ENDPOINTS[selectedTab]);
+        if (!validRegistry(result)) throw new Error(`${TAB_LABELS[selectedTab]} registry returned an invalid response.`);
         if (currentRequest === requestId.current) setData(result);
       }
     } catch (err: any) {
@@ -145,7 +157,7 @@ export const CommercialRulesScreen: React.FC<{ initialTab?: Tab }> = ({ initialT
 
   return (
     <div className="mn-operational" style={wrap}>
-      <PageHeader eyebrow="Commercial administration" title="🏷️ Commercial Rule Registries" description="Read-only registry views. Each tab requires its matching read function; this screen does not create, approve, execute, or modify registry entries." />
+      <PageHeader eyebrow="Commercial administration" title="Commercial Rule Registries" description="Read-only registry views. Each tab requires its matching read function; this screen does not create, approve, execute, or modify registry entries." />
       <div style={tabRow} role="tablist" aria-label="Commercial registries">
         {availableTabs.map((candidate) => (
           <button
@@ -235,7 +247,7 @@ const errBox: React.CSSProperties = { background: '#FEF2F2', border: '1px solid 
 const loadingBox: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)' };
 const empty: React.CSSProperties = { padding: 20, textAlign: 'center', color: 'var(--mn-text-secondary, #52655f)', background: '#fff', borderRadius: 8, border: '1px dashed var(--mn-border-subtle, #dde7e2)' };
 const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
-const card: React.CSSProperties = { padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 12 };
+const card: React.CSSProperties = { minWidth: 0, padding: 16, background: '#fff', border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 8, marginBottom: 12 };
 const sectionTitle: React.CSSProperties = { margin: '0 0 12px', color: 'var(--mn-text-primary, #132b25)', fontSize: 14 };
-const limitSections: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr', gap: 4 };
+const limitSections: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 4 };
 const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 10, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };

@@ -1,0 +1,98 @@
+[
+  {
+    "width": 320,
+    "workspace": "systemHealth",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "auditEvents",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "systemHealth",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "auditEvents",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "systemHealth",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "auditEvents",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "systemHealth",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "auditEvents",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "systemHealth",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "auditEvents",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "systemHealth",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "auditEvents",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "systemHealth",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "auditEvents",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "systemHealth",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "auditEvents",
+    "page": 1440,
+    "view": 1440
+  }
+]

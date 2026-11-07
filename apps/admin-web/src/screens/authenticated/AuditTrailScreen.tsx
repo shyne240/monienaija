@@ -4,7 +4,12 @@ import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import './audit-trail.css';
 
-export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
+export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = (props) => {
+  const principal = useAuthStore((state) => state.principal);
+  const contextKey = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <AuditTrailWorkspace key={contextKey} {...props} />;
+};
+const AuditTrailWorkspace: React.FC<{ initialCustomerId?: string }> = ({ initialCustomerId }) => {
   const { principal } = useAuthStore();
   const canView = principal?.scopes.includes('audit.search') ?? false;
   const [customerId, setCustomerId] = useState(initialCustomerId || '');
@@ -24,7 +29,7 @@ export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = ({ ini
       const res: any = await ApiClient.get(`/internal/audit?${query.toString()}`);
       if (currentRequest !== requestId.current) return;
       const rows = Array.isArray(res) ? res : res?.data ?? res?.items;
-      if (!Array.isArray(rows)) throw new Error('Audit search returned an invalid response.');
+      if (!Array.isArray(rows) || rows.some((row: unknown) => !row || typeof row !== 'object' || Array.isArray(row))) throw new Error('Audit search returned an invalid response.');
       setEvents(rows);
       setSearched(true);
     } catch (e: any) { if (currentRequest === requestId.current) setError(e?.message || 'Failed to load audit trail'); }
@@ -46,7 +51,7 @@ export const AuditTrailScreen: React.FC<{ initialCustomerId?: string }> = ({ ini
       <section className="mn-audit__panel" aria-label="Audit search">
         <form className="mn-audit__form" onSubmit={e => { e.preventDefault(); void fetchEvents(); }}>
           <Field label="Entity UUID (optional)" htmlFor="audit-entity" className="mn-audit__field">
-            <input id="audit-entity" className="mn-audit__input" value={customerId} onChange={e => setCustomerId(e.target.value)} placeholder="Leave empty for a global search" />
+            <input id="audit-entity" className="mn-audit__input" value={customerId} onChange={e => { requestId.current += 1; setCustomerId(e.target.value); setEvents([]); setSearched(false); setError(''); setLoading(false); }} placeholder="Leave empty for a global search" />
           </Field>
           <Button type="submit" variant="primary" disabled={loading}>{loading ? 'Searching…' : 'Search'}</Button>
         </form>

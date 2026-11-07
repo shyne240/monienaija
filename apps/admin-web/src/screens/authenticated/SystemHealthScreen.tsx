@@ -1,6 +1,7 @@
 import './operational-surfaces.css';
+import './system-health.css';
 import { PageHeader } from '../../design-system/primitives';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { DataRecord, extractRecords, StructuredColumn, StructuredKeyValueList, StructuredRecordTable } from '../../components/StructuredData';
@@ -36,8 +37,20 @@ const OUTBOX_COLUMNS: StructuredColumn[] = [
   { key: 'availableAt', label: 'Available' }, { key: 'lastError', label: 'Last error' },
 ];
 
-export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> = ({ onOpenNotifications }) => {
+const isRecord = (value: unknown): value is DataRecord => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const validList = (value: unknown): boolean => {
+  const rows = Array.isArray(value) ? value : isRecord(value) ? ['data','items','rows','records','results'].map(key => value[key]).find(Array.isArray) : null;
+  return Array.isArray(rows) && rows.every(isRecord);
+};
+export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> = (props) => {
+  const principal = useAuthStore((state) => state.principal);
+  const contextKey = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <SystemHealthWorkspace key={contextKey} {...props} />;
+};
+const SystemHealthWorkspace: React.FC<{ onOpenNotifications?: () => void }> = ({ onOpenNotifications }) => {
   const { principal } = useAuthStore();
+  const generations = useRef({health:0, receipts:0});
+  useEffect(() => () => { generations.current.health++; generations.current.receipts++; }, []);
   const canViewMetrics = principal?.scopes.includes('metrics.view') ?? false;
   const canViewDiagnostics = principal?.scopes.includes('diagnostics.view') ?? false;
   const canViewOutbox = principal?.scopes.includes('outbox.view') ?? false;
@@ -68,37 +81,45 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
 
   const fetchOutboxReceiptsOnDemand = useCallback(async (statusFilter = '') => {
     if (!canViewDeliveries) return;
+    const generation = ++generations.current.receipts;
+    setOutboxReceipts(null);
     setOutboxReceiptsLoading(true);
     setOutboxReceiptsError('');
     try {
       const q = new URLSearchParams({ page: '1', limit: '20' });
       if (statusFilter) q.set('status', statusFilter);
       const res = await ApiClient.get(`/internal/notifications/outbox-receipts?${q.toString()}`);
+      if (generation !== generations.current.receipts) return;
+      if (!validList(res)) throw new Error('Notification outbox receipts returned an invalid response.');
       setOutboxReceipts(res);
     } catch (err: any) {
-      setOutboxReceiptsError(err?.message || 'Notification outbox receipts unavailable');
+      if (generation === generations.current.receipts) setOutboxReceiptsError(err?.message || 'Notification outbox receipts unavailable');
     } finally {
-      setOutboxReceiptsLoading(false);
+      if (generation === generations.current.receipts) setOutboxReceiptsLoading(false);
     }
   }, [canViewDeliveries]);
 
   const fetchAll = useCallback(async () => {
+    const generation = ++generations.current.health;
     setLoading(true);
     setLoadErrors({});
     const requests: Promise<void>[] = [];
 
     if (canViewMetrics) {
-      requests.push(ApiClient.get('/internal/metrics').then(setMetrics).catch((err: any) => {
+      requests.push(ApiClient.get('/internal/metrics').then(value => { if (!isRecord(value) || !isRecord(value.metrics)) throw new Error('Metrics returned an invalid response.'); if (generation === generations.current.health) setMetrics(value); }).catch((err: any) => {
+        if (generation !== generations.current.health) return;
         setLoadErrors((prev) => ({ ...prev, metrics: err?.message || 'Metrics unavailable' }));
       }));
     }
     if (canViewDiagnostics) {
-      requests.push(ApiClient.get<DataRecord>('/internal/diagnostics').then(setDiagnostics).catch((err: any) => {
+      requests.push(ApiClient.get<DataRecord>('/internal/diagnostics').then(value => { if (!isRecord(value) || typeof value.status !== 'string') throw new Error('Diagnostics returned an invalid response.'); if (generation === generations.current.health) setDiagnostics(value); }).catch((err: any) => {
+        if (generation !== generations.current.health) return;
         setLoadErrors((prev) => ({ ...prev, diagnostics: err?.message || 'Diagnostics unavailable' }));
       }));
     }
     if (canViewOutbox) {
-      requests.push(ApiClient.get('/internal/outbox').then(setOutbox).catch((err: any) => {
+      requests.push(ApiClient.get('/internal/outbox').then(value => { if (!validList(value)) throw new Error('Outbox returned an invalid response.'); if (generation === generations.current.health) setOutbox(value); }).catch((err: any) => {
+        if (generation !== generations.current.health) return;
         setLoadErrors((prev) => ({ ...prev, outbox: err?.message || 'Outbox unavailable' }));
       }));
     }
@@ -108,13 +129,14 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
       if (appliedDeliveryFilters.channel) query.set('channel', appliedDeliveryFilters.channel);
       if (appliedDeliveryFilters.recipientType) query.set('recipientType', appliedDeliveryFilters.recipientType);
       if (appliedDeliveryFilters.eventType) query.set('eventType', appliedDeliveryFilters.eventType);
-      requests.push(ApiClient.get(`/internal/notifications/deliveries?${query.toString()}`).then(setDeliveries).catch((err: any) => {
+      requests.push(ApiClient.get(`/internal/notifications/deliveries?${query.toString()}`).then(value => { if (!isRecord(value) || !validList(value) || !Number.isSafeInteger(value.total) || (value.total as number) < 0 || value.page !== deliveryPage || typeof value.hasNextPage !== 'boolean') throw new Error('Notification deliveries returned an invalid or mismatched response.'); if (generation === generations.current.health) setDeliveries(value); }).catch((err: any) => {
+        if (generation !== generations.current.health) return;
         setLoadErrors((prev) => ({ ...prev, deliveries: err?.message || 'Notification deliveries unavailable' }));
       }));
     }
 
     await Promise.all(requests);
-    setLoading(false);
+    if (generation === generations.current.health) setLoading(false);
   }, [canViewMetrics, canViewDiagnostics, canViewOutbox, canViewDeliveries, deliveryPage, appliedDeliveryFilters]);
 
   useEffect(() => {
@@ -154,8 +176,8 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
   }
 
   return (
-    <div className="mn-operational" style={wrap}>
-      <PageHeader eyebrow="System administration" title="🩺 System Health" description="Read-only operational data. Each panel is requested only when its matching function is granted." />
+    <div className="mn-operational mn-system-health" style={wrap}>
+      <PageHeader eyebrow="System administration" title="System Health" description="Read-only operational data. Each panel is requested only when its matching function is granted." />
       <button type="button" onClick={() => void fetchAll()} style={btn} disabled={loading}>
         {loading ? 'Loading…' : 'Refresh'}
       </button>
@@ -214,9 +236,9 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
                   </button>
                 )}
               </div>
-              <p style={muted}>
+              {!loadErrors.deliveries && <p style={muted}>
                 Read-only delivery diagnostics. Showing loaded page ({deliveryRows.length} rows on Page {deliveryCurrentPage}) out of {deliveryTotal} matching delivery records.
-              </p>
+              </p>}
               <form onSubmit={applyDeliveryFilters} style={filterRow}>
                 <label style={filterLabel}>Status
                   <select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)} style={select}>
@@ -264,7 +286,7 @@ export const SystemHealthScreen: React.FC<{ onOpenNotifications?: () => void }> 
                   </div>
                 </>
               )}
-              {outboxReceiptsError && <div style={{ ...errBox, marginTop: 10 }}>{outboxReceiptsError}</div>}
+              {outboxReceiptsError && <div role="alert" style={{ ...errBox, marginTop: 10 }}>{outboxReceiptsError}</div>}
               {outboxReceipts && (
                 <div style={{ marginTop: 12 }} data-testid="system-health-outbox-receipts-panel">
                   <h4 style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--mn-text-primary, #132b25)' }}>
@@ -305,5 +327,5 @@ const filterRow: React.CSSProperties = { display: 'flex', alignItems: 'end', gap
 const filterLabel: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const select: React.CSSProperties = { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 6, background: '#fff', minWidth: 120 };
 const input: React.CSSProperties = { padding: '7px 9px', border: '1px solid #CBD5E1', borderRadius: 6, minWidth: 180 };
-const pager: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
+const pager: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 };
 const note: React.CSSProperties = { marginTop: 16, fontSize: 12, color: 'var(--mn-text-secondary, #52655f)', background: 'var(--mn-surface-canvas, #f5f8f6)', padding: 10, borderRadius: 6, border: '1px solid var(--mn-border-subtle, #dde7e2)' };

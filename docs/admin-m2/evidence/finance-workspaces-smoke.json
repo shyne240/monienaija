@@ -1,0 +1,98 @@
+[
+  {
+    "width": 320,
+    "workspace": "ledgerExplorer",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 320,
+    "workspace": "reconciliation",
+    "page": 320,
+    "view": 320
+  },
+  {
+    "width": 360,
+    "workspace": "ledgerExplorer",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 360,
+    "workspace": "reconciliation",
+    "page": 360,
+    "view": 360
+  },
+  {
+    "width": 390,
+    "workspace": "ledgerExplorer",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 390,
+    "workspace": "reconciliation",
+    "page": 390,
+    "view": 390
+  },
+  {
+    "width": 768,
+    "workspace": "ledgerExplorer",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 768,
+    "workspace": "reconciliation",
+    "page": 768,
+    "view": 768
+  },
+  {
+    "width": 769,
+    "workspace": "ledgerExplorer",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 769,
+    "workspace": "reconciliation",
+    "page": 769,
+    "view": 769
+  },
+  {
+    "width": 1024,
+    "workspace": "ledgerExplorer",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1024,
+    "workspace": "reconciliation",
+    "page": 1024,
+    "view": 1024
+  },
+  {
+    "width": 1280,
+    "workspace": "ledgerExplorer",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1280,
+    "workspace": "reconciliation",
+    "page": 1280,
+    "view": 1280
+  },
+  {
+    "width": 1440,
+    "workspace": "ledgerExplorer",
+    "page": 1440,
+    "view": 1440
+  },
+  {
+    "width": 1440,
+    "workspace": "reconciliation",
+    "page": 1440,
+    "view": 1440
+  }
+]

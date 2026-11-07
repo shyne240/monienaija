@@ -128,7 +128,7 @@ describe('Admin Web Portal W3 Ledger Operations & Reversals Tests', () => {
       .mockResolvedValueOnce({ ...mockJournal, status: 'REVERSED' }) // reload journal
       .mockResolvedValueOnce([]); // reload accounts list
 
-    (ApiClient.post as jest.Mock).mockResolvedValue({ status: 'REVERSED' });
+    (ApiClient.post as jest.Mock).mockResolvedValue({ id: 'reversal-uuid', status: 'POSTED', reversalOfJournalId: 'journal-uuid-999' });
 
     const { getByText, getByPlaceholderText, findByText, container } = render(<App />);
 
