@@ -48,16 +48,16 @@ describe('Admin Web shared-screen improvements', () => {
   test('Limit registry reads use the existing profile and rule endpoints and render structured rows', async () => {
     setPrincipal(['SUPER_ADMIN'], ['limit.view']);
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
-      if (path === '/internal/limit-profiles') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true }]);
-      if (path === '/internal/limit-rules') return Promise.resolve({ data: [{ id: 'rule-1', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', currency: 'NGN', dimension: 'PER_DAY', limitValueMinor: '2500000', isActive: true }] });
+      if (path === '/internal/limit-profiles?page=1&limit=20') return Promise.resolve([{ code: 'AGENT_STANDARD', name: 'Agent Standard', kind: 'AGENT', status: 'ACTIVE', enabled: true }]);
+      if (path === '/internal/limit-rules?page=1&limit=20') return Promise.resolve({ data: [{ id: 'rule-1', limitProfileCode: 'AGENT_STANDARD', product: 'CASH_IN', currency: 'NGN', dimension: 'PER_DAY', limitValueMinor: '2500000', isActive: true }], total: 1, page: 1, limit: 20, totalPages: 1, hasNextPage: false });
       return Promise.resolve([]);
     });
 
     const view = render(<CommercialRulesScreen initialTab="limits" />);
     expect((await view.findAllByText('AGENT_STANDARD')).length).toBeGreaterThan(0);
     expect((await view.findAllByText('CASH_IN')).length).toBeGreaterThan(0);
-    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-profiles');
-    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-rules');
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-profiles?page=1&limit=20');
+    expect(ApiClient.get).toHaveBeenCalledWith('/internal/limit-rules?page=1&limit=20');
     expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/limit-catalogue');
     expect(view.container.querySelector('pre')).toBeNull();
   });

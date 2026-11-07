@@ -318,11 +318,11 @@ describe('V1-MENU-VISIBILITY-11-ROLES — implemented routes for all catalogue r
     });
     (ApiClient.get as jest.Mock).mockImplementation(() => new Promise(() => {}));
     const screen = render(<CommercialRulesScreen initialTab="fees" />);
-    expect(screen.getByText('Fees')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Fees' })).toBeTruthy();
     expect(screen.queryByText('Commissions')).toBeNull();
     expect(screen.queryByText('Products')).toBeNull();
-    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules'));
-    expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules');
+    await waitFor(() => expect(ApiClient.get).toHaveBeenCalledWith('/internal/fee-rules?page=1&limit=20'));
+    expect(ApiClient.get).not.toHaveBeenCalledWith('/internal/commission-rules?page=1&limit=20');
   });
 
   test('ledger read screen does not use SUPER_ADMIN role alone as a substitute for ledger.view', () => {
