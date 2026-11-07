@@ -1,7 +1,8 @@
 import './operational-surfaces.css';
 import React, { useState, useEffect, useRef } from 'react';
 import './compliance-workspace.css';
-import { PageHeader, ScrollRegion } from '../../design-system/primitives';
+import './compliance-redesign.css';
+import { Button, PageHeader, ScrollRegion } from '../../design-system/primitives';
 import { ApiClient } from '../../services/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { validCustomerCase } from '../../utils/compliance-case';
@@ -48,20 +49,27 @@ const FraudWorkspace: React.FC<RiskFraudScreenProps & {canView: boolean}> = ({ca
   if(!canView) return <div className="mn-operational" style={wrap} role="alert"><div style={denied}>Fraud case lookup requires <code>risk_fraud.manage_fraud_case</code>.</div></div>;
 
   return (
-    <div className="mn-operational mn-compliance" style={wrap}>
+    <div className="mn-operational mn-compliance compliance-workspace" style={wrap}>
       <PageHeader eyebrow="Compliance and risk" title="Fraud case lookup" description={`This screen displays FRAUD-category compliance cases for a customer. ${initialCustomerId ? 'Customer ID pre-filled from Customer 360°.' : 'Search by customer UUID.'}`} />
-      {initialCustomerId && onBackToCustomer && <button type="button" onClick={onBackToCustomer} style={btn}>← Back to Customer 360°</button>}
-      <div className="mn-compliance__search"><label>Customer UUID<input value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : "Customer UUID"} style={input}/></label><button onClick={()=>void fetchFraud()} style={btn} disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</button></div>
-      {initialCustomerId && <div style={note}>🔗 Customer pre-filled — no manual UUID paste.</div>}
-      {error && <div style={errBox} role="alert">{error}</div>}
-      {cases.length>0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table style={table}><thead><tr><th>Case number</th><th>Status</th><th>Severity</th><th>Opened</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td style={mono}>{c.caseNumber}</td><td><span style={badge(c.status)}>{c.status}</span></td><td>{c.severity}</td><td>{c.openedAt && Number.isFinite(Date.parse(c.openedAt)) ? new Date(c.openedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div style={empty}>No FRAUD cases — empty is expected unless risk events were created.</div>}
-      <div style={note}>The server returns cases in the categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.</div>
+      {initialCustomerId && onBackToCustomer && <Button onClick={onBackToCustomer}>← Back to Customer 360°</Button>}
+      <div className="compliance-workspace__boundary" role="note"><strong>Authorized case categories</strong><span>The server returns cases in categories authorized by your active role grants. This view displays FRAUD cases from those results; the server remains authoritative.</span></div>
+      <section className="compliance-workspace__panel" aria-labelledby="fraud-search-heading">
+        <div className="compliance-workspace__heading"><div><p className="compliance-workspace__eyebrow">CUSTOMER LOOKUP</p><h2 id="fraud-search-heading">Find a customer</h2><p>Use a customer UUID to search authorized FRAUD cases.</p></div></div>
+        <form className="compliance-workspace__lookup" onSubmit={event=>{event.preventDefault();void fetchFraud();}}>
+          <label>Customer UUID<input value={customerId} onChange={e=>{generation.current += 1;setCustomerId(e.target.value);setCases([]);setSearched(false);setError('');setLoading(false);}} placeholder={initialCustomerId ? `Customer ${initialCustomerId.slice(0,8)}…` : 'Customer UUID'} /></label>
+          <Button type="submit" variant="primary" disabled={loading}>{loading?'Loading…':'Search FRAUD cases'}</Button>
+        </form>
+        {initialCustomerId && <p className="compliance-workspace__hint">Customer context carried from Customer 360°.</p>}
+      </section>
+      <section className="compliance-workspace__panel" aria-labelledby="fraud-results-heading">
+        <div className="compliance-workspace__heading"><div><p className="compliance-workspace__eyebrow">AUTHORIZED RECORDS</p><h2 id="fraud-results-heading">Fraud cases</h2><p>Only FRAUD-category cases in the returned results are shown.</p></div>{searched && !error && <span className="compliance-workspace__count">{cases.length} shown</span>}</div>
+        {error && <div className="compliance-workspace__state compliance-workspace__state--error" role="alert">{error}</div>}
+        {loading && <div className="compliance-workspace__state" role="status">Loading fraud cases…</div>}
+        {!loading && !searched && !error && <div className="compliance-workspace__state">Search for a customer to view records.</div>}
+        {!loading && !error && cases.length > 0 ? <ScrollRegion label="Fraud cases" hint="Scroll horizontally to see all columns."><table className="compliance-workspace__table"><thead><tr><th scope="col">Case number</th><th scope="col">Status</th><th scope="col">Severity</th><th scope="col">Opened</th></tr></thead><tbody>{cases.map((c:any)=><tr key={c.id}><td><code>{c.caseNumber}</code></td><td><span className="compliance-workspace__badge">{c.status}</span></td><td>{c.severity}</td><td>{c.openedAt && Number.isFinite(Date.parse(c.openedAt)) ? new Date(c.openedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table></ScrollRegion> : !loading && searched && !error && <div className="compliance-workspace__state">No FRAUD cases were returned for this customer.</div>}
+      </section>
     </div>
   );
 };
-const wrap: React.CSSProperties={padding:'clamp(16px, 3vw, 32px)',maxWidth:1100}; const h2: React.CSSProperties={margin:'0 0 8px',color:'var(--mn-nav-surface-deep, #082f23)'}; const sub: React.CSSProperties={color:'var(--mn-text-secondary, #52655f)',fontSize:13,marginBottom:16};
-const row: React.CSSProperties={display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}; const input: React.CSSProperties={flex:1,padding:'8px 10px',borderRadius:6,border:'1px solid var(--mn-border-subtle, #dde7e2)'}; const btn: React.CSSProperties={padding:'8px 14px',borderRadius:6,border:'1px solid var(--mn-border-subtle, #dde7e2)',background:'#fff',cursor:'pointer'};
-const errBox: React.CSSProperties={background:'#FEF2F2',border:'1px solid #FCA5A5',color:'#991B1B',padding:10,borderRadius:6,marginBottom:12,fontSize:13};
-const table: React.CSSProperties={width:'100%',borderCollapse:'collapse',background:'#fff',borderRadius:8,overflow:'hidden'}; const badge=(s:string):React.CSSProperties=>({padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:700,background:'#FEF2F2',color:'#991B1B'});
-const mono: React.CSSProperties={fontFamily:'monospace',fontSize:12}; const empty: React.CSSProperties={padding:20,textAlign:'center',color:'var(--mn-text-secondary, #52655f)',background:'#fff',borderRadius:8,border:'1px dashed var(--mn-border-subtle, #dde7e2)'};
-const denied: React.CSSProperties={background:'#FFF7ED',border:'1px solid #FDBA74',color:'#92400E',padding:12,borderRadius:8,fontSize:13}; const note: React.CSSProperties={marginTop:16,fontSize:12,color:'var(--mn-text-secondary, #52655f)',background:'var(--mn-surface-canvas, #f5f8f6)',padding:10,borderRadius:6,border:'1px solid var(--mn-border-subtle, #dde7e2)'};
+const wrap: React.CSSProperties = { padding: 'clamp(16px, 3vw, 32px)', maxWidth: 1440 };
+const denied: React.CSSProperties = { background: '#FFF7ED', border: '1px solid #FDBA74', color: '#92400E', padding: 12, borderRadius: 8, fontSize: 13 };
