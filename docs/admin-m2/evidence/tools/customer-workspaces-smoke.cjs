@@ -1,3 +1,4 @@
+const assertVisibleLabels = require('./assert-visible-labels.cjs');
 // Synthetic customer fixtures: every non-GET is rejected; no live backend actions.
 const { chromium: playwright } = require('playwright-core');
 const chromium = require('@sparticuz/chromium').default;
@@ -30,7 +31,7 @@ const fs = require('fs');
  });
  await page.goto('http://127.0.0.1:5173/'); await page.evaluate(()=>{localStorage.setItem('admin_workforce_token','synthetic');localStorage.setItem('admin_workforce_session_id','synthetic');localStorage.setItem('admin_workforce_principal',JSON.stringify({type:'OPERATOR',principalId:'synthetic',sessionId:'synthetic',audience:'workforce-admin',roles:['OPERATIONS'],scopes:['customer.view','customer.create','customer.view_address','customer.view_contact_methods','customer.view_identity_documents','customer.view_transactions','customer.view_wallets','customer.suspend','customer.view_proof_of_address_metadata','customer.upload_proof_of_address','customer.download_proof_of_address','customer.withdraw_proof_of_address'],customerAccess:'NONE',assuranceLevel:'MFA'}));});await page.reload({waitUntil:'networkidle'});
  const report=[];
- async function record(width,name) {const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:name,...sizes}); if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/customer-${name}-${width}.png`,fullPage:true});}}
+ async function record(width,name) {await assertVisibleLabels(page);const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:name,visibleLabelMechanisms:true,...sizes}); if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/customer-${name}-${width}.png`,fullPage:true});}}
  for(const width of [320,360,390,768,769,1024,1280,1440]){
   await page.setViewportSize({width,height:900});
   if(width<1024){

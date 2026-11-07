@@ -1,3 +1,4 @@
+const assertVisibleLabels = require('./assert-visible-labels.cjs');
 // Synthetic reads only. No backend and no mutation requests are permitted.
 const { chromium: playwright } = require('playwright-core');
 const chromium = require('@sparticuz/chromium').default;
@@ -33,10 +34,11 @@ const fs = require('fs');
     await page.getByText('synthetic-wallet').waitFor();
     await page.getByRole('button', { name:'Load unified stream' }).click();
     await page.getByText('TX-SYNTHETIC').waitFor();
+    await assertVisibleLabels(page);
     for (const name of ['Agent credential and session controls', 'Agent class governance assignment', 'Unified Agent transaction stream', 'Agent Transaction PIN support controls']) {
       const region = page.getByRole('region', { name }); await region.waitFor();
       const sizes = await page.evaluate(() => ({ page:document.documentElement.scrollWidth, view:document.documentElement.clientWidth }));
-      report.push({ width, workspace:name, ...sizes });
+      report.push({ width, workspace:name, visibleLabelMechanisms:true, ...sizes });
 
     }
     if ([320,1440].includes(width)) { await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/agent-detail-loaded-${width}.png`, fullPage:true}); }

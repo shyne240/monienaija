@@ -9,6 +9,7 @@
   {
     "width": 320,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
@@ -22,6 +23,7 @@
   {
     "width": 320,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
@@ -40,12 +42,14 @@
   {
     "width": 320,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
   {
     "width": 320,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 320,
     "view": 320
   },
@@ -67,6 +71,7 @@
   {
     "width": 360,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
@@ -80,6 +85,7 @@
   {
     "width": 360,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
@@ -98,12 +104,14 @@
   {
     "width": 360,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
   {
     "width": 360,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 360,
     "view": 360
   },
@@ -125,6 +133,7 @@
   {
     "width": 390,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
@@ -138,6 +147,7 @@
   {
     "width": 390,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
@@ -156,12 +166,14 @@
   {
     "width": 390,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
   {
     "width": 390,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 390,
     "view": 390
   },
@@ -183,6 +195,7 @@
   {
     "width": 768,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
@@ -196,6 +209,7 @@
   {
     "width": 768,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
@@ -214,12 +228,14 @@
   {
     "width": 768,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
   {
     "width": 768,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 768,
     "view": 768
   },
@@ -241,6 +257,7 @@
   {
     "width": 769,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
@@ -254,6 +271,7 @@
   {
     "width": 769,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
@@ -272,12 +290,14 @@
   {
     "width": 769,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
   {
     "width": 769,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 769,
     "view": 769
   },
@@ -292,6 +312,7 @@
   {
     "width": 1024,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
@@ -305,6 +326,7 @@
   {
     "width": 1024,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
@@ -323,12 +345,14 @@
   {
     "width": 1024,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
   {
     "width": 1024,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 1024,
     "view": 1024
   },
@@ -343,6 +367,7 @@
   {
     "width": 1280,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
@@ -356,6 +381,7 @@
   {
     "width": 1280,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
@@ -374,12 +400,14 @@
   {
     "width": 1280,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
   {
     "width": 1280,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 1280,
     "view": 1280
   },
@@ -394,6 +422,7 @@
   {
     "width": 1440,
     "workspace": "registration",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   },
@@ -407,6 +436,7 @@
   {
     "width": 1440,
     "workspace": "overview",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   },
@@ -425,12 +455,14 @@
   {
     "width": 1440,
     "workspace": "personal",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   },
   {
     "width": 1440,
     "workspace": "proof",
+    "visibleLabelMechanisms": true,
     "page": 1440,
     "view": 1440
   },

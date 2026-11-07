@@ -1,3 +1,4 @@
+const assertVisibleLabels = require('./assert-visible-labels.cjs');
 // All responses, including mutation receipts, are synthetic and intercepted in the browser.
 const {chromium:playwright}=require('playwright-core');const chromium=require('@sparticuz/chromium').default;const fs=require('fs');
 (async()=>{
@@ -21,7 +22,7 @@ const {chromium:playwright}=require('playwright-core');const chromium=require('@
    const review=page.getByRole('button',{name:'Review in Checker'});await review.focus();await page.keyboard.press('Enter');const acknowledgment=page.getByLabel('I reviewed this Agent, amount, direction and business reason');await acknowledgment.waitFor();await acknowledgment.focus();await page.keyboard.press('Space');await page.keyboard.press('Tab');
    const approve=page.getByRole('button',{name:'Approve funding instruction'});if(!await approve.evaluate(el=>document.activeElement===el))throw Error('Approval button not reachable after keyboard review');await page.keyboard.press('Enter');
    const execute=page.getByRole('button',{name:'Execute approved instruction'});await execute.waitFor();await acknowledgment.focus();await page.keyboard.press('Space');await page.keyboard.press('Tab');if(!await execute.evaluate(el=>document.activeElement===el))throw Error('Execution button not reachable after keyboard review');await page.keyboard.press('Enter');await page.getByText(/Posting confirmed/).waitFor();
-   const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:'synthetic checker approval and posting receipt',keyboard:true,...sizes});if([320,1440].includes(width))await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/funding-checker-${width}.png`,fullPage:true});
+   await assertVisibleLabels(page);const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,workspace:'synthetic checker approval and posting receipt',keyboard:true,visibleLabelMechanisms:true,...sizes});if([320,1440].includes(width))await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/funding-checker-${width}.png`,fullPage:true});
  }
  fs.writeFileSync(`${process.cwd()}/docs/admin-m2/evidence/funding-checker-smoke.json`,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({total:report.length,overflow:report.filter(x=>x.page>x.view)},null,2));await browser.close();
 })().catch(error=>{console.error(error);process.exit(1)});
