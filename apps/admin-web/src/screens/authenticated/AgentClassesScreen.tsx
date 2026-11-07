@@ -141,7 +141,7 @@ export const AgentClassesScreen: React.FC = () => {
   const canViewLimits = hasFunction('limit.view');
   const canModifyLimits = hasFunction('limit.modify');
 
-  const key = `${principal?.principalId ?? ''}:${canView}:${canManage}:${canViewLimits}:${canModifyLimits}`;
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
   return <AgentClassesWorkspace key={key} canView={canView} canManage={canManage} canViewLimits={canViewLimits} canModifyLimits={canModifyLimits} />;
 };
 
@@ -167,6 +167,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
   const [classLimitsError, setClassLimitsError] = useState('');
   const [classLimitsMsg, setClassLimitsMsg] = useState('');
   const [classLimits, setClassLimits] = useState<ClassLimitAssignmentRecord[]>([]);
+  const [classLimitsPage, setClassLimitsPage] = useState<{ page: number; total: number; totalPages: number; hasNextPage: boolean } | null>(null);
   const [classLimitProfileCode, setClassLimitProfileCode] = useState('');
 
   const resetClassLimitsState = () => {
@@ -175,6 +176,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     setClassLimitsLoading(false);
     setClassLimitsLoaded(false);
     setClassLimits([]);
+    setClassLimitsPage(null);
     setClassLimitsError('');
     setClassLimitsMsg('');
     setClassLimitProfileCode('');
@@ -232,19 +234,27 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     });
   };
 
-  const loadClassLimitAssignments = async (agentClassId: string) => {
+  const loadClassLimitAssignments = async (agentClassId: string, page = 1) => {
     if (!canViewLimits || classLimitsLoading) return;
     const request = ++limitGeneration.current;
-    setClassLimitsLoading(true); setClassLimitsLoaded(false); setClassLimits([]);
+    setClassLimitsLoading(true); setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null);
     setClassLimitsError('');
     try {
       const res: any = await ApiClient.get(
-        `/internal/limit-assignments/agent-class/${encodeURIComponent(agentClassId)}`,
+        `/internal/limit-assignments/agent-class/${encodeURIComponent(agentClassId)}?page=${page}&limit=20`,
       );
-      const rows = Array.isArray(res) ? res : res?.data ?? res?.items;
-      if (!Array.isArray(rows) || rows.some((row: any) => !row || typeof row.id !== 'string' || typeof row.limitProfileCode !== 'string' || typeof row.isActive !== 'boolean')) throw new Error('Invalid Agent class limit assignments response.');
+      if (!res || res.page !== page || !Number.isSafeInteger(res.limit) || res.limit < 1 ||
+          !Number.isSafeInteger(res.total) || res.total < 0 || !Number.isSafeInteger(res.totalPages) ||
+          res.totalPages !== Math.ceil(res.total / res.limit) || res.hasNextPage !== (page < res.totalPages) ||
+          !Array.isArray(res.data) || res.data.length > res.limit ||
+          res.data.some((row: any) => !row || typeof row.id !== 'string' || !row.id.trim() ||
+            typeof row.limitProfileCode !== 'string' || !row.limitProfileCode.trim() ||
+            row.subjectType !== 'AGENT_CLASS' || row.subjectId !== agentClassId || typeof row.isActive !== 'boolean')) {
+        throw new Error('Invalid Agent class limit assignments response.');
+      }
       if (request !== limitGeneration.current) return;
-      setClassLimits(rows);
+      setClassLimits(res.data);
+      setClassLimitsPage({ page, total: res.total, totalPages: res.totalPages, hasNextPage: res.hasNextPage });
       setClassLimitsLoaded(true);
     } catch (err: any) {
       if (request === limitGeneration.current) setClassLimitsError(err?.message || 'Failed to load Agent class limit assignments.');
@@ -253,9 +263,14 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     }
   };
 
+  const matchesLimitReceipt = (row: any, classId: string, code: string, active: boolean, id?: string, version?: number) =>
+    row && typeof row.id === 'string' && !!row.id.trim() && (!id || row.id === id) &&
+    row.subjectType === 'AGENT_CLASS' && row.subjectId === classId && row.limitProfileCode === code &&
+    row.isActive === active && Number.isSafeInteger(row.version) && row.version > (version ?? 0);
+
   const assignClassLimitProfile = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !canModifyLimits || classLimitsBusy) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading) return;
     const code = classLimitProfileCode.trim().toUpperCase();
     if (!/^[A-Z0-9_]{3,80}$/.test(code)) {
       setClassLimitsError(
@@ -268,12 +283,13 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
     setClassLimitsError('');
     setClassLimitsMsg('');
     try {
-      await ApiClient.post('/internal/limit-assignments', {
+      const receipt = await ApiClient.post('/internal/limit-assignments', {
         subjectType: 'AGENT_CLASS',
         subjectId: selected.id,
         limitProfileCode: code,
       });
       if (request !== mutationGeneration.current) return;
+      if (!matchesLimitReceipt(receipt, selected.id, code, true)) throw new Error('Unconfirmed class limit assignment receipt.');
       setClassLimitProfileCode('');
       setClassLimitsMsg(
         canViewLimits
@@ -284,33 +300,34 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         await loadClassLimitAssignments(selected.id);
       }
     } catch (err: any) {
-      if (request === mutationGeneration.current) setClassLimitsError(err?.message || 'Failed to assign limit profile to Agent class.');
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setClassLimitsError('The assignment outcome could not be confirmed. Review the class limits before retrying.'); }
     } finally {
       if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
   };
 
   const toggleClassLimitAssignment = async (assignment: ClassLimitAssignmentRecord) => {
-    if (!selected || !canModifyLimits || classLimitsBusy || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
+    if (!selected || !canModifyLimits || classLimitsBusy || saving || classLimitsLoading || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1) return;
     const request = ++mutationGeneration.current;
     setClassLimitsBusy(true);
     setClassLimitsError('');
     setClassLimitsMsg('');
     try {
-      await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
+      const receipt = await ApiClient.patch(`/internal/limit-assignments/${encodeURIComponent(assignment.id)}`, {
         subjectType: 'AGENT_CLASS',
         isActive: !assignment.isActive,
         version: assignment.version,
       });
       if (request !== mutationGeneration.current) return;
+      if (!matchesLimitReceipt(receipt, selected.id, assignment.limitProfileCode, !assignment.isActive, assignment.id, assignment.version)) throw new Error('Unconfirmed class limit update receipt.');
       setClassLimitsMsg(
         `Class limit ${assignment.limitProfileCode} ${assignment.isActive ? 'deactivated' : 'activated'}.`,
       );
       if (canViewLimits) {
-        await loadClassLimitAssignments(selected.id);
+        await loadClassLimitAssignments(selected.id, classLimitsPage?.page ?? 1);
       }
     } catch (err: any) {
-      if (request === mutationGeneration.current) setClassLimitsError(err?.message || 'Failed to update Agent class limit assignment.');
+      if (request === mutationGeneration.current) { setClassLimitsLoaded(false); setClassLimits([]); setClassLimitsPage(null); setClassLimitsError('The update outcome could not be confirmed. Reload class limits and inspect the assignment before retrying.'); }
     } finally {
       if (request === mutationGeneration.current) setClassLimitsBusy(false);
     }
@@ -320,7 +337,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canManage || saving || loading || !!listError || selectedStale) return;
+    if (!canManage || saving || classLimitsBusy || classLimitsLoading || loading || !!listError || selectedStale) return;
     setError('');
     setMessage('');
 
@@ -364,7 +381,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
         if (form.description.trim()) body.description = form.description.trim();
         const created = await ApiClient.post<AgentClassRecord>('/internal/agents/classes', body);
         if (request !== mutationGeneration.current) return;
-        if (!created || typeof created.id !== 'string' || typeof created.reference !== 'string' || typeof created.name !== 'string' || typeof created.version !== 'number') throw new Error('Class creation response is incomplete.');
+        if (!created || typeof created.id !== 'string' || !created.id.trim() || typeof created.reference !== 'string' || !created.reference.trim() || typeof created.code !== 'string' || !created.code.trim() || created.name !== form.name.trim() || created.isActive !== form.isActive || !Number.isSafeInteger(created.version) || created.version < 1 || (form.reference.trim() && created.reference !== form.reference.trim()) || (form.code.trim() && created.code !== form.code.trim())) throw new Error('Class creation response is incomplete.');
         setMessage(
           `Agent class ${created.reference} created. New classes start inactive unless explicitly activated.`,
         );
@@ -384,7 +401,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
           },
         );
         if (request !== mutationGeneration.current) return;
-        if (!updated || typeof updated.id !== 'string' || updated.id !== selected.id || typeof updated.reference !== 'string' || typeof updated.name !== 'string' || typeof updated.version !== 'number') throw new Error('Class update response is incomplete.');
+        if (!updated || updated.id !== selected.id || updated.reference !== selected.reference || updated.code !== selected.code || updated.name !== form.name.trim() || updated.isActive !== form.isActive || !Number.isSafeInteger(updated.version) || updated.version <= selected.version) throw new Error('Class update response is incomplete.');
         setMessage(`Agent class ${updated.reference} saved at version ${updated.version}.`);
         setSelected(updated);
         setForm(toForm(updated));
@@ -421,7 +438,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
       } />
 
       <div style={styles.notice} role="note">
-        Class fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves <code>null</code>. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes begin inactive.
+        Class fields are policy-bearing configuration. Applicable services are restricted to validated canonical Ordinary Agent V1 service identifiers; leaving all services unchecked saves <code>null</code>. Blank JSON fields are saved as <code>null</code>; no capability or regulatory defaults are supplied. New classes default to inactive; activation must be selected explicitly.
       </div>
       {!canManage && (
         <div
@@ -678,8 +695,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   before applying it again.
                 </p>
               )}
-              <button type="submit" style={styles.primaryButton} disabled={saving || selectedStale}>
-                {saving ? 'Saving…' : creating ? 'Create inactive class' : 'Save class'}
+              <button type="submit" style={styles.primaryButton} disabled={saving || classLimitsBusy || classLimitsLoading || selectedStale}>
+                {saving ? 'Saving…' : creating ? (form.isActive ? 'Create active class' : 'Create inactive class') : 'Save class'}
               </button>
             </form>
           ) : (
@@ -726,8 +743,8 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                   <button
                     type="button"
                     style={styles.smallButton}
-                    disabled={classLimitsLoading}
-                    onClick={() => void loadClassLimitAssignments(selected.id)}
+                    disabled={classLimitsLoading || classLimitsBusy || saving}
+                    onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage?.page ?? 1)}
                   >
                     {classLimitsLoading
                       ? 'Loading…'
@@ -768,8 +785,9 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                 <div style={{ marginTop: 8 }}>
                   {classLimits.length === 0 ? (
                     <div style={styles.versionNote}>
-                      No <code>AGENT_CLASS</code> limit assignments configured for{' '}
-                      <code>{selected.reference}</code>.
+                      {classLimitsPage?.total === 0
+                        ? <>No <code>AGENT_CLASS</code> limit assignments configured for <code>{selected.reference}</code>.</>
+                        : 'No assignments on this page. Return to an earlier page to review current results.'}
                     </div>
                   ) : (
                     <ul style={styles.limitList}>
@@ -786,7 +804,7 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                             <button
                               type="button"
                               style={styles.smallButton}
-                              disabled={classLimitsBusy || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
+                              disabled={classLimitsBusy || classLimitsLoading || saving || !Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1}
                               title={!Number.isSafeInteger(assignment.version) || (assignment.version ?? 0) < 1 ? 'Version unavailable; refresh before changing this assignment.' : undefined}
                               onClick={() => void toggleClassLimitAssignment(assignment)}
                             >
@@ -798,6 +816,13 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {classLimitsPage && (classLimitsPage.totalPages > 1 || classLimitsPage.page > 1) && (
+                    <nav aria-label="Class limit assignment pages" style={styles.inlineLimitForm}>
+                      <button type="button" style={styles.smallButton} disabled={classLimitsPage.page <= 1 || classLimitsBusy || saving} onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage.page - 1)}>Previous</button>
+                      <span>Page {classLimitsPage.page} of {Math.max(classLimitsPage.totalPages, 1)} · {classLimitsPage.total} assignments</span>
+                      <button type="button" style={styles.smallButton} disabled={!classLimitsPage.hasNextPage || classLimitsBusy || saving} onClick={() => void loadClassLimitAssignments(selected.id, classLimitsPage.page + 1)}>Next</button>
+                    </nav>
                   )}
                 </div>
               )}
@@ -814,12 +839,12 @@ const AgentClassesWorkspace: React.FC<{canView: boolean; canManage: boolean; can
                     value={classLimitProfileCode}
                     onChange={(event) => setClassLimitProfileCode(event.target.value)}
                     style={styles.inlineInput}
-                    disabled={classLimitsBusy}
+                    disabled={classLimitsBusy || classLimitsLoading || saving}
                   />
                   <button
                     type="submit"
                     style={styles.smallButton}
-                    disabled={classLimitsBusy}
+                    disabled={classLimitsBusy || classLimitsLoading || saving}
                   >
                     Assign class limit
                   </button>

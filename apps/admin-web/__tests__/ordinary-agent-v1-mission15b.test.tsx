@@ -435,8 +435,8 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
 
     (ApiClient.get as jest.Mock).mockImplementation((path: string) => {
       if (path === '/internal/agents/classes') return Promise.resolve([legacyClass]);
-      if (path === `/internal/limit-assignments/agent-class/${CLASS_ID}`) {
-        return Promise.resolve([
+      if (path === `/internal/limit-assignments/agent-class/${CLASS_ID}?page=1&limit=20`) {
+        return Promise.resolve({data:[
           {
             id: 'cls-lim-1',
             subjectType: 'AGENT_CLASS',
@@ -445,7 +445,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
             isActive: true,
             version: 2,
           },
-        ]);
+        ], page:1, limit:20, total:1, totalPages:1, hasNextPage:false});
       }
       return Promise.resolve([]);
     });
@@ -454,7 +454,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
       applicableServices: ['CASH_IN', 'CASH_TO_CASH'],
       version: 5,
     });
-    (ApiClient.post as jest.Mock).mockResolvedValue({});
+    (ApiClient.post as jest.Mock).mockResolvedValue({id:'new-limit',subjectType:'AGENT_CLASS',subjectId:CLASS_ID,limitProfileCode:'AGENT_CLASS_TIER2',isActive:true,version:1});
 
     const classesView = render(<AgentClassesScreen />);
     fireEvent.click(await classesView.findByRole('button', { name: 'Review / edit' }));
@@ -485,6 +485,7 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     );
 
     // Load and manage AGENT_CLASS limit assignments directly inside AgentClassesScreen
+    await waitFor(() => expect((classesView.getByRole('button', { name: 'Load class limit assignments' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(classesView.getByRole('button', { name: 'Load class limit assignments' }));
     expect(await classesView.findByText('AGENT_CLASS_STD')).toBeTruthy();
 
