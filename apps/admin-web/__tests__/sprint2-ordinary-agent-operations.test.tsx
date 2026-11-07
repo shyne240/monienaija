@@ -98,7 +98,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           approvalApprovedBy: 'checker-fc-1',
           checkerPrincipalId: 'checker-fc-1',
         } as any;
-        return Promise.resolve({ reason: 'APPROVED' });
+        return Promise.resolve({ approved:true, reason: 'APPROVED', approval:{id:pendingReq.approvalId,status:'APPROVED'} });
       }
       if (url.endsWith('/execute')) {
         currentState = {

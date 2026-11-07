@@ -141,7 +141,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           approvalApprovedBy: 'checker-fc-99',
           checkerPrincipalId: 'checker-fc-99',
         };
-        return Promise.resolve({ reason: 'APPROVED' });
+        return Promise.resolve({ approved: true, reason: 'APPROVED', approval: {id: baseRequest.approvalId, status: 'APPROVED'} });
       }
       if (url === `/internal/agents/funding-requests/${baseRequest.id}/execute`) {
         liveRow = {
@@ -152,7 +152,7 @@ describe('Sprint 3 Admin Web Integration — Live Funding Inbox, Receiving-Numbe
           checkerPrincipalId: 'checker-fc-99',
           journalId: 'jrn-executed-101',
         };
-        return Promise.resolve({ status: 'COMPLETED', journalId: 'jrn-executed-101' });
+        return Promise.resolve({ status: 'COMPLETED', journalId: 'jrn-executed-101', agentId:baseRequest.agentId, amountMinor:baseRequest.amountMinor, currency:baseRequest.currency, idempotencyKey:baseRequest.idempotencyKey, requestHash:baseRequest.requestHash });
       }
       return Promise.resolve({});
     });

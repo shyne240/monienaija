@@ -43,6 +43,35 @@ interface FundingRequest {
 interface FundingResult {
   status: 'COMPLETED' | 'REPLAYED';
   journalId: string;
+  agentId: string;
+  amountMinor: string;
+  currency: string;
+  idempotencyKey: string;
+  requestHash: string;
+}
+
+function validInstruction(value: unknown, agentId: string): value is Instruction {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const draft = value as Instruction;
+  return draft.agentId === agentId && (draft.direction === 'FUND' || draft.direction === 'DEFUND')
+    && typeof draft.amountMinor === 'string' && /^[1-9]\d*$/.test(draft.amountMinor) && draft.currency === 'NGN'
+    && typeof draft.idempotencyKey === 'string' && !!draft.idempotencyKey.trim()
+    && typeof draft.reason === 'string' && !!draft.reason.trim();
+}
+
+function validFundingRequest(value: unknown, agentId: string): value is FundingRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as FundingRequest;
+  return row.agentId === agentId && typeof row.id === 'string' && !!row.id.trim()
+    && typeof row.approvalId === 'string' && !!row.approvalId.trim()
+    && (row.direction === 'FUND' || row.direction === 'DEFUND')
+    && typeof row.amountMinor === 'string' && /^[1-9]\d*$/.test(row.amountMinor) && row.currency === 'NGN'
+    && typeof row.idempotencyKey === 'string' && !!row.idempotencyKey.trim()
+    && typeof row.requestHash === 'string' && !!row.requestHash.trim()
+    && ['PENDING', 'REJECTED', 'EXECUTED'].includes(row.status)
+    && typeof row.approvalStatus === 'string' && !!row.approvalStatus.trim()
+    && typeof row.reason === 'string' && !!row.reason.trim()
+    && typeof row.requesterPrincipalId === 'string' && !!row.requesterPrincipalId.trim();
 }
 
 interface CheckerHandoffToken {
@@ -114,18 +143,23 @@ export function parseCheckerHandoffInput(raw: string): {
   return { agentId: trimmed };
 }
 
-export function AgentFundingPanel({
-  agentId: suppliedAgentId,
-  initialIdempotencyKey,
-  selectedInboxTarget = null,
-  onCheckerOutcome,
-}: {
+interface AgentFundingPanelProps {
   agentId?: string;
   initialIdempotencyKey?: string;
   selectedInboxTarget?: SelectedFundingInboxTarget | null;
   onCheckerOutcome?: (outcome: AgentFundingCheckerOutcome) => void;
-}) {
+}
+
+export function AgentFundingPanel(props: AgentFundingPanelProps) {
   const { principal } = useAuthStore();
+  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, props.agentId, props.initialIdempotencyKey, props.selectedInboxTarget?.revision]);
+  return <AgentFundingWorkspace key={key} {...props} />;
+}
+
+function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey, selectedInboxTarget = null, onCheckerOutcome }: AgentFundingPanelProps) {
+  const { principal } = useAuthStore();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [agentId, setAgentId] = useState(suppliedAgentId ?? '');
   const [direction, setDirection] = useState<'FUND' | 'DEFUND'>('FUND');
   const [amount, setAmount] = useState('');
@@ -135,6 +169,7 @@ export function AgentFundingPanel({
   const [handoffCopied, setHandoffCopied] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [draft, setDraft] = useState<Instruction | null>(null);
+  const [storageError, setStorageError] = useState(false);
   const [items, setItems] = useState<FundingRequest[]>([]);
   const [selected, setSelected] = useState<FundingRequest | null>(null);
   const [reviewed, setReviewed] = useState(false);
@@ -198,20 +233,24 @@ export function AgentFundingPanel({
   ) {
     if (!targetAgentId) throw new Error('Agent ID is required');
     const query = instructionKey ? `?idempotencyKey=${encodeURIComponent(instructionKey)}` : '';
+    setItems([]);
+    setSelected(null);
+    setReviewed(false);
     const rows = await ApiClient.get<FundingRequest[]>(
       `/internal/agents/${encodeURIComponent(targetAgentId)}/funding-requests${query}`,
     );
+    if (!mounted.current) return;
+    if (!Array.isArray(rows) || rows.some(row => !validFundingRequest(row, targetAgentId) || (instructionKey && row.idempotencyKey !== instructionKey))) throw new Error('Invalid funding instruction response');
     setItems(rows);
-    const selectedRow =
-      (preferredRequestId ? rows.find((row) => row.id === preferredRequestId) : undefined) ??
-      rows.find((row) => row.id === selected?.id) ??
-      rows[0] ??
-      null;
+    const selectedRow = preferredRequestId
+      ? rows.find((row) => row.id === preferredRequestId) ?? null
+      : rows.find((row) => row.id === selected?.id) ?? rows[0] ?? null;
     setSelected(selectedRow);
     setReviewed(false);
     setRejectionReason('');
     setHandoffCopied(false);
-    if (!rows.length) setMessage('No visible instruction found. Keep any recovery key until its outcome is resolved.');
+    if (preferredRequestId && !selectedRow) setMessage('The selected instruction was not returned. Refresh the inbox before reviewing another request.');
+    else if (!rows.length) setMessage('No visible instruction found. Keep any recovery key until its outcome is resolved.');
   }
 
   async function guarded(task: () => Promise<void>) {
@@ -222,12 +261,13 @@ export function AgentFundingPanel({
     try {
       await task();
     } catch (error) {
+      if (!mounted.current) return;
       setMessage(
         `${error instanceof Error ? error.message : 'Request failed'}. Outcome may be uncertain. Refresh and recover the same instruction; do not submit a replacement.`,
       );
     } finally {
       inFlight.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -239,11 +279,18 @@ export function AgentFundingPanel({
     setMessage('');
     try {
       const stored = localStorage.getItem(key);
-      const candidate = stored ? (JSON.parse(stored) as Instruction) : null;
-      setDraft(candidate?.agentId === trimmedAgentId ? candidate : null);
+      const candidate: unknown = stored ? JSON.parse(stored) : null;
+      if (candidate !== null && !validInstruction(candidate, trimmedAgentId)) throw new Error('Invalid retained instruction');
+      setStorageError(false);
+      setDraft(candidate as Instruction | null);
+      if (candidate) {
+        const retained = candidate as Instruction;
+        setDirection(retained.direction); setAmount(retained.amountMinor); setReason(retained.reason);
+      } else { setAmount(''); setReason(''); }
     } catch {
       setDraft(null);
-      setMessage('Recovery storage is unreadable. Resolve previous instructions before creating another.');
+      setStorageError(true);
+      setMessage('');
     }
     const autoLoad = pendingAutoLoadRef.current;
     if (autoLoad && autoLoad.agentId === trimmedAgentId && mfa) {
@@ -278,7 +325,7 @@ export function AgentFundingPanel({
   }
 
   async function initiate() {
-    if (!isMaker || !mfa || !hasFunction(direction)) return;
+    if (!isMaker || !mfa || !hasFunction(direction) || storageError) return;
     if (!trimmedAgentId || !/^[1-9]\d*$/.test(amount.trim()) || !reason.trim()) {
       throw new Error('Agent ID, positive integer kobo amount and reason are required');
     }
@@ -301,9 +348,11 @@ export function AgentFundingPanel({
       `/internal/agents/${encodeURIComponent(target)}/${requestedDirection.toLowerCase()}-request`,
       body,
     );
+    if (!mounted.current) return;
+    if (!validFundingRequest(created, target) || created.direction !== requestedDirection || created.idempotencyKey !== instruction.idempotencyKey || created.amountMinor !== instruction.amountMinor || created.currency !== instruction.currency || created.reason !== instruction.reason || created.requesterPrincipalId !== principal?.principalId) throw new Error('Funding request receipt is not confirmed');
     setSelected(created);
     setItems((old) => [created, ...old.filter((row) => row.id !== created.id)]);
-    setMessage(`Instruction ${created.id}: ${created.approvalStatus}. Await an independent checker.`);
+    setMessage(`Instruction ${created.id}: ${created.approvalStatus}. ${created.approvalStatus === 'REQUESTED' ? 'Await an independent checker.' : 'Review the current instruction state before any further action.'}`);
   }
 
   async function decide(action: 'approve' | 'reject') {
@@ -312,8 +361,10 @@ export function AgentFundingPanel({
       !reviewed ||
       !isChecker ||
       !mfa ||
+      !hasFunction(selected.direction) ||
+      selected.agentId !== trimmedAgentId ||
       selected.requesterPrincipalId === principal?.principalId ||
-      selected.approvalStatus !== 'REQUESTED'
+      selected.approvalStatus !== 'REQUESTED' || selected.status !== 'PENDING'
     ) return;
 
     let decision: 'APPROVED' | 'REJECTED';
@@ -324,24 +375,28 @@ export function AgentFundingPanel({
         `/internal/agents/funding-requests/${selected.id}/reject`,
         { reason: rejection },
       );
-      if (result.status !== 'REJECTED' || result.approvalStatus !== 'REJECTED') {
+      if (!mounted.current) return;
+      if (!validFundingRequest(result, selected.agentId) || result.id !== selected.id || result.approvalId !== selected.approvalId || result.idempotencyKey !== selected.idempotencyKey || result.requestHash !== selected.requestHash || result.status !== 'REJECTED' || result.approvalStatus !== 'REJECTED') {
         throw new Error('Funding rejection is not confirmed');
       }
       decision = 'REJECTED';
       setRejectionReason('');
     } else {
-      const result = await ApiClient.post<{ reason: string }>(
+      const result = await ApiClient.post<{ approved: boolean; reason: string; approval?: {id: string; status: string} }>(
         `/internal/a2/workforce/approvals/${selected.approvalId}/approve`,
         { comment: 'Reviewed Agent, amount, direction and business reason in funding workflow' },
       );
-      if (result.reason !== 'APPROVED') {
-        throw new Error(result.reason || 'Decision not confirmed');
+      if (!mounted.current) return;
+      if (!result || result.approved !== true || result.reason !== 'APPROVED' || result.approval?.id !== selected.approvalId || result.approval?.status !== 'APPROVED') {
+        throw new Error(result?.reason && result.reason !== 'APPROVED' ? result.reason : 'Decision not confirmed');
       }
       decision = 'APPROVED';
     }
 
-    await load(selected.idempotencyKey);
-    setMessage(`Decision confirmed: ${decision}`);
+    let refreshFailed = false;
+    try { await load(selected.idempotencyKey); } catch { refreshFailed = true; }
+    if (!mounted.current) return;
+    setMessage(`Decision confirmed: ${decision}${refreshFailed ? '. Refresh failed; reload the instruction before another action' : ''}`);
     onCheckerOutcome?.({
       action: decision,
       requestId: selected.id,
@@ -355,6 +410,7 @@ export function AgentFundingPanel({
       !isChecker ||
       !mfa ||
       selected.approvalApprovedBy !== principal?.principalId ||
+      !((selected.approvalStatus === 'APPROVED' && selected.status === 'PENDING') || (selected.approvalStatus === 'CONSUMED' && selected.status === 'EXECUTED' && selected.checkerPrincipalId === principal?.principalId)) ||
       !reviewed ||
       !hasFunction(selected.direction)
     ) return;
@@ -366,11 +422,14 @@ export function AgentFundingPanel({
       `/internal/agents/funding-requests/${selected.id}/execute`,
       {},
     );
-    if (!['COMPLETED', 'REPLAYED'].includes(result.status) || !result.journalId) {
+    if (!mounted.current) return;
+    if (!result || !['COMPLETED', 'REPLAYED'].includes(result.status) || typeof result.journalId !== 'string' || !result.journalId.trim() || result.agentId !== selected.agentId || result.amountMinor !== selected.amountMinor || result.currency !== selected.currency || result.idempotencyKey !== selected.idempotencyKey || result.requestHash !== selected.requestHash) {
       throw new Error('Posting is not confirmed');
     }
-    await load(selected.idempotencyKey);
-    setMessage(`${result.status}: journal ${result.journalId}. Posting confirmed.`);
+    let refreshFailed = false;
+    try { await load(selected.idempotencyKey); } catch { refreshFailed = true; }
+    if (!mounted.current) return;
+    setMessage(`${result.status}: journal ${result.journalId}. Posting confirmed.${refreshFailed ? ' Refresh failed; reload the instruction before another action.' : ''}`);
     onCheckerOutcome?.({
       action: 'EXECUTED',
       requestId: selected.id,
@@ -378,22 +437,25 @@ export function AgentFundingPanel({
     });
   }
 
-  const selectedTerminal =
-    selected && ['REJECTED', 'CANCELLED', 'EXPIRED', 'CONSUMED'].includes(selected.approvalStatus);
+  const selectedTerminal = selected && (
+    ['CANCELLED', 'EXPIRED'].includes(selected.approvalStatus) ||
+    (selected.status === 'REJECTED' && selected.approvalStatus === 'REJECTED') ||
+    (selected.status === 'EXECUTED' && selected.approvalStatus === 'CONSUMED')
+  );
   const canDecide =
     isChecker &&
     hasFunction(selected?.direction ?? direction) &&
-    selected?.approvalStatus === 'REQUESTED' &&
+    selected?.approvalStatus === 'REQUESTED' && selected.status === 'PENDING' &&
     selected.requesterPrincipalId !== principal?.principalId;
   const canExecute =
     isChecker &&
     hasFunction(selected?.direction ?? direction) &&
-    selected?.approvalStatus === 'APPROVED' &&
+    selected?.approvalStatus === 'APPROVED' && selected.status === 'PENDING' &&
     selected.approvalApprovedBy === principal?.principalId;
   const canRecover =
     isChecker &&
     hasFunction(selected?.direction ?? direction) &&
-    selected?.approvalStatus === 'CONSUMED' &&
+    selected?.approvalStatus === 'CONSUMED' && selected.status === 'EXECUTED' &&
     selected.checkerPrincipalId === principal?.principalId;
 
   const visibleItems = items.filter((row) =>
@@ -415,6 +477,7 @@ export function AgentFundingPanel({
     <section className="mn-funding" aria-label="Agent funding workflow">
       <h3>Agent funding and defunding</h3>
       {!mfa && <p role="alert">Sign in with MFA before initiating, reviewing or executing funding.</p>}
+      {storageError && <p role="alert">Recovery storage is unreadable. Resolve previous instructions before creating another.</p>}
       {isChecker && !suppliedAgentId && (
         <div style={{ marginBottom: 10 }}>
           <label>
@@ -472,11 +535,11 @@ export function AgentFundingPanel({
             Reason
             <input aria-label="Funding reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy || !!draft} maxLength={500} />
           </label>
-          <button className="mn-funding__primary" disabled={busy || !mfa || !hasFunction(direction) || !!draft} onClick={() => void guarded(initiate)}>
+          <button className="mn-funding__primary" disabled={busy || !mfa || !hasFunction(direction) || !!draft || storageError} onClick={() => void guarded(initiate)}>
             Request independent approval
           </button>
           {draft && !selected && (
-            <button disabled={busy || !mfa} onClick={() => void guarded(initiate)}>
+            <button disabled={busy || !mfa || !hasFunction(draft.direction)} onClick={() => void guarded(initiate)}>
               Retry original approval request
             </button>
           )}
