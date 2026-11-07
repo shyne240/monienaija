@@ -64,3 +64,45 @@ export function isTransactionTrend(value: unknown, period: string): boolean {
     Array.isArray(value.daily) && value.daily.every((row: unknown) => object(row) && /^\d{4}-\d{2}-\d{2}$/.test(row.date) &&
       timestamp(row.date) && count(row.completedCount) && minor(row.completedValueMinor));
 }
+
+export function isRecentTransactions(value: unknown): boolean {
+  return Array.isArray(value) && value.every(row => object(row) && ['W2W','C2W','W2C','C2C'].includes(row.type) &&
+    text(row.reference) && text(row.currency) && text(row.status) && timestamp(row.createdAt) && minor(row.amountMinor) &&
+    (row.feeMinor === null || minor(row.feeMinor)) && (row.completedAt === null || timestamp(row.completedAt)));
+}
+export function isLedgerSummary(value: unknown): boolean {
+  return Array.isArray(value) && value.every(row => object(row) && text(row.currency) && text(row.accounting_unit) &&
+    typeof row.journal_count === 'string' && /^\d+$/.test(row.journal_count) && minor(row.debits_minor) && minor(row.credits_minor));
+}
+export function isWorkforceOverview(value: unknown): boolean {
+  return object(value) && count(value.activeWorkforceHeadcount) && count(value.activeSessionCount) &&
+    Array.isArray(value.roleDistribution) && value.roleDistribution.every((row: unknown) => object(row) && text(row.roleKey) && count(row.count));
+}
+export function isAuditEntries(value: unknown): boolean {
+  return Array.isArray(value) && value.every(row => object(row) && text(row.id) && text(row.entityType) &&
+    text(row.action) && text(row.actor) && timestamp(row.occurredAt));
+}
+export type DirectWidgetKey = 'system-health' | 'role-governance-queue' | 'agent-applications-queue' | 'support-ticket-queue';
+export const DIRECT_ENDPOINTS: Record<DirectWidgetKey, string> = {
+  'system-health': '/internal/metrics',
+  'role-governance-queue': '/internal/a2/workforce/role-definitions/proposals',
+  'agent-applications-queue': '/internal/agents/applications',
+  'support-ticket-queue': '/internal/support/tickets',
+};
+export interface DirectWidgetData { rows?: Array<Record<string, unknown>>; metrics?: Record<string, string>; generatedAt?: string; total?: number; }
+export function parseDirectWidget(value: unknown, key: DirectWidgetKey): DirectWidgetData | null {
+  if (key === 'system-health') {
+    if (!object(value) || !timestamp(value.generatedAt) || !object(value.metrics) || Object.values(value.metrics).some(v => typeof v !== 'string')) return null;
+    return { metrics: value.metrics, generatedAt: value.generatedAt };
+  }
+  let rows: unknown = value;
+  let total: number | undefined;
+  if (key === 'support-ticket-queue') {
+    if (!object(value) || !object(value.pagination) || !count(value.pagination.total) || !Array.isArray(value.items)) return null;
+    rows = value.items; total = value.pagination.total;
+  }
+  if (!Array.isArray(rows)) return null;
+  if (!rows.every(row => object(row) && text(row.id) && text(row.status) &&
+    (key === 'role-governance-queue' ? text(row.targetRoleKey) && text(row.proposalType) : text(row.reference)))) return null;
+  return { rows, total };
+}
