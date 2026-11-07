@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 import { ApiClient } from '../../services/api-client';
 import { revokeAgentActiveSessions } from '../../services/ordinary-agent-admin-api';
+import { useAuthStore } from '../../store/auth-store';
 
 interface TemporaryCredential {
   agentId: string;
@@ -19,15 +20,24 @@ function statusOf(error: unknown): number | undefined {
   return Number.isFinite(status) ? status : undefined;
 }
 
-export const AgentCredentialPanel: React.FC<{
+interface AgentCredentialPanelProps {
   agentId: string;
   agentStatus: string;
   canManage: boolean;
-}> = ({ agentId, agentStatus, canManage }) => {
+}
+
+export const AgentCredentialPanel: React.FC<AgentCredentialPanelProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.agentId, props.agentStatus, sessionId, principal?.principalId, principal?.sessionId,
+    principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel,
+    principal?.customerAccess, principal?.readOnlyPrincipal, props.canManage]);
+  return <AgentCredentialWorkspace key={key} {...props} />;
+};
+
+const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId, agentStatus, canManage }) => {
   const [credential, setCredential] = useState<TemporaryCredential | null>(null);
   const [busy, setBusy] = useState(false);
   const [revokeBusy, setRevokeBusy] = useState(false);
-  const [revokeReason, setRevokeReason] = useState('');
   const [boundaryNote, setBoundaryNote] = useState('');
   const [initialIssued, setInitialIssued] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -41,7 +51,6 @@ export const AgentCredentialPanel: React.FC<{
     setCredential(null);
     setInitialIssued(false);
     setCopied(false);
-    setRevokeReason('');
     setBoundaryNote('');
     setError('');
     setMessage('');
@@ -77,7 +86,13 @@ export const AgentCredentialPanel: React.FC<{
       const endpoint = `/internal/admin/agents/${encodeURIComponent(agentId)}/credentials${reissue ? '/reissue' : ''}`;
       const result = await ApiClient.post<TemporaryCredential>(endpoint);
       if (!valid()) return;
-      if (!result || result.agentId !== agentId) throw new Error('Credential response did not match the selected Agent.');
+      if (!result || result.agentId !== agentId || typeof result.credentialId !== 'string' || !result.credentialId.trim() ||
+          typeof result.temporaryPassword !== 'string' || !result.temporaryPassword || result.rotationRequired !== true ||
+          (result.passwordExpiresAt !== null && (typeof result.passwordExpiresAt !== 'string' || !Number.isFinite(Date.parse(result.passwordExpiresAt)))) ||
+          typeof result.deliveryNotice !== 'string' || !result.deliveryNotice.trim()) {
+        setError('Credential response could not be confirmed. The result may be uncertain; check the Agent access state before retrying.');
+        return;
+      }
       setCredential(result);
       setInitialIssued(true);
       setMessage(
@@ -88,19 +103,10 @@ export const AgentCredentialPanel: React.FC<{
     } catch (requestError) {
       if (!valid()) return;
       const status = statusOf(requestError);
-      const rawMessage =
-        requestError instanceof Error ? requestError.message : 'Credential request failed.';
-      if (!reissue && status === 409) {
-        setInitialIssued(true);
-        setError(
-          `${rawMessage} Use "Reissue + invalidate sessions" if the Agent requires a replacement temporary password.`,
-        );
-      } else if (status === 400 || status === 403 || status === 404 || status === 409) {
-        setError(rawMessage);
+      if (status === 400 || status === 403 || status === 404 || status === 409) {
+        setError(`Credential request was rejected (HTTP ${status}). Check the Agent status and existing credential before choosing an action.`);
       } else {
-        setError(
-          `${rawMessage} The result may be uncertain. Do not reissue again until the Agent access state is checked.`,
-        );
+        setError('Credential request outcome may be uncertain. Check the Agent access state before retrying.');
       }
     } finally {
       if (valid()) setBusy(false);
@@ -124,26 +130,25 @@ export const AgentCredentialPanel: React.FC<{
     setMessage('');
     setBoundaryNote('');
     try {
-      const outcome = await revokeAgentActiveSessions(agentId, revokeReason);
+      const outcome = await revokeAgentActiveSessions(agentId);
       if (!valid()) return;
       if (outcome.status === 'BLOCKED') {
         setBoundaryNote(outcome.message);
         return;
       }
-      setRevokeReason('');
       const count = outcome.data.revokedCount;
-      setMessage(
-        typeof count === 'number'
-          ? `Active Agent sessions invalidated (${count} session${count === 1 ? '' : 's'} revoked).`
-          : 'Active Agent sessions invalidated.',
-      );
+      if (outcome.data.agentId !== agentId || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+        setError('Session revocation response could not be confirmed. Check the Agent access state before retrying.');
+        return;
+      }
+      setMessage(`Active Agent sessions invalidated (${count} session${count === 1 ? '' : 's'} revoked).`);
     } catch (requestError) {
       if (!valid()) return;
       const rawMessage =
         requestError instanceof Error
           ? requestError.message
           : 'Failed to invalidate active Agent sessions.';
-      setError(rawMessage);
+      setError(`${rawMessage} Session revocation may be unconfirmed; check the Agent access state before retrying.`);
     } finally {
       if (valid()) setRevokeBusy(false);
     }
@@ -192,17 +197,7 @@ export const AgentCredentialPanel: React.FC<{
       )}
 
       <div className="mn-agent-workspace__controls" aria-label="Standalone session revocation">
-        <label className="mn-agent-workspace__field">Session revocation reason (optional)
-        <input
-          aria-label="Session revocation reason"
-          placeholder="Revocation reason (optional)"
-          value={revokeReason}
-          onChange={(event) => setRevokeReason(event.target.value)}
-          className="mn-agent-workspace__input"
-          disabled={anyBusy}
-          maxLength={240}
-        />
-        </label>
+        <p className="mn-agent-workspace__description">The server records an administrative revocation; this endpoint does not record a custom reason.</p>
         <button
           type="button"
           className="mn-agent-workspace__button"
@@ -219,7 +214,7 @@ export const AgentCredentialPanel: React.FC<{
           role="note"
           data-testid="agent-session-revoke-arena1-boundary"
         >
-          <strong>Cross-Arena Integration Boundary:</strong> {boundaryNote}
+          <strong>Session revocation unavailable:</strong> {boundaryNote}
         </div>
       )}
       {error && <div style={styles.error} role="alert">{error}</div>}

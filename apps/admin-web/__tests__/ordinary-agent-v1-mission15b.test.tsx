@@ -392,9 +392,6 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     expect(credView.getByRole('button', { name: 'Invalidate active sessions' })).toBeTruthy();
 
     (ApiClient.post as jest.Mock).mockRejectedValueOnce(new ApiError('Not Found', 404));
-    fireEvent.change(credView.getByLabelText('Session revocation reason'), {
-      target: { value: 'Device lost at desk' },
-    });
     fireEvent.click(credView.getByRole('button', { name: 'Invalidate active sessions' }));
     expect((await credView.findByTestId('agent-session-revoke-arena1-boundary')).textContent).toContain(
       `/internal/admin/agents/${AGENT_ID}/sessions/revoke`,
@@ -405,7 +402,6 @@ describe('Mission 15B — Ordinary Agent V1 Admin Web Completion', () => {
     await waitFor(() =>
       expect(ApiClient.post).toHaveBeenCalledWith(
         `/internal/admin/agents/${AGENT_ID}/sessions/revoke`,
-        { reason: 'Device lost at desk' },
       ),
     );
     expect((await credView.findByRole('status')).textContent).toContain(

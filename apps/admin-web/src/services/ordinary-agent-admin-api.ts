@@ -435,7 +435,12 @@ export async function revokeAgentActiveSessions(
         : ApiClient.post<Record<string, unknown> | null>(endpoint),
   );
 
-  if (result.status === 'BLOCKED') return result;
+  if (result.status === 'BLOCKED') return {
+    ...result,
+    message: result.httpStatus === 404
+      ? `Session revocation endpoint or Agent was not found (POST ${endpoint}, HTTP 404). Revocation was not confirmed.`
+      : result.message,
+  };
 
   const raw = result.data && typeof result.data === 'object' ? result.data : {};
   // Arena 1 returns `{ agentId, revokedSessionCount }` (admin-agent-credentials.controller.ts).

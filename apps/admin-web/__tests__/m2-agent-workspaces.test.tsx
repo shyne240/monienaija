@@ -6,6 +6,7 @@ import { AgentCredentialPanel } from '../src/screens/authenticated/AgentCredenti
 import { AgentNetworkScreen } from '../src/screens/authenticated/AgentNetworkScreen';
 import { useAuthStore } from '../src/store/auth-store';
 import { ApiClient } from '../src/services/api-client';
+import { revokeAgentActiveSessions } from '../src/services/ordinary-agent-admin-api';
 
 jest.mock('../src/services/api-client', () => ({ ApiClient: { post: jest.fn(), get: jest.fn() } }));
 jest.mock('../src/services/ordinary-agent-admin-api', () => ({ ...jest.requireActual('../src/services/ordinary-agent-admin-api'), revokeAgentActiveSessions: jest.fn() }));
@@ -68,6 +69,46 @@ test('a late one-time credential is not displayed under a different Agent', asyn
   expect(screen.queryByText('synthetic-secret')).toBeNull();
   expect(screen.queryByText('Initial temporary credential issued.')).toBeNull();
   expect((screen.getByRole('button', { name: 'Issue initial credential' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('credential result is not presented as issued when the receipt is incomplete', async () => {
+  (ApiClient.post as jest.Mock).mockResolvedValueOnce({ agentId: 'agent', credentialId: 'id' });
+  render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Issue initial credential' }));
+  expect(await screen.findByText(/Credential response could not be confirmed/)).toBeTruthy();
+  expect(screen.queryByText('Initial temporary credential issued.')).toBeNull();
+  expect(screen.queryByTestId('temporary-agent-password')).toBeNull();
+});
+
+test('session revocation requires a matching Agent and a non-negative integer count', async () => {
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  (revokeAgentActiveSessions as jest.Mock)
+    .mockResolvedValueOnce({ status: 'LIVE', data: { agentId: 'other', revokedCount: 2 } })
+    .mockResolvedValueOnce({ status: 'LIVE', data: { agentId: 'agent', revokedCount: -1 } })
+    .mockResolvedValueOnce({ status: 'LIVE', data: { agentId: 'agent', revokedCount: 0 } });
+  render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage />);
+  const button = screen.getByRole('button', { name: 'Invalidate active sessions' });
+  fireEvent.click(button);
+  expect(await screen.findByText(/Session revocation response could not be confirmed/)).toBeTruthy();
+  expect(screen.queryByText(/Active Agent sessions invalidated/)).toBeNull();
+  fireEvent.click(button);
+  expect(await screen.findByText(/Session revocation response could not be confirmed/)).toBeTruthy();
+  fireEvent.click(button);
+  expect(await screen.findByText('Active Agent sessions invalidated (0 sessions revoked).')).toBeTruthy();
+  jest.restoreAllMocks();
+});
+
+test('a credential response from a previous session is discarded even for the same Agent and grants', async () => {
+  const principal = { type: 'OPERATOR' as const, principalId: 'old-user', sessionId: 'old-session', audience: 'workforce-admin' as const, roles: ['AGENT_NETWORK_MANAGER'], scopes: ['agent.manage_credentials'], customerAccess: 'NONE' as const, assuranceLevel: 'MFA' as const };
+  useAuthStore.setState({ principal, sessionId: 'old-session' });
+  const pending = deferred<unknown>();
+  (ApiClient.post as jest.Mock).mockReturnValueOnce(pending.promise);
+  render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Issue initial credential' }));
+  act(() => useAuthStore.setState({ principal: { ...principal, principalId: 'new-user', sessionId: 'new-session' }, sessionId: 'new-session' }));
+  await act(async () => { pending.resolve({ agentId: 'agent', credentialId: 'id', temporaryPassword: 'synthetic-secret', rotationRequired: true, passwordExpiresAt: null, deliveryNotice: 'test' }); await pending.promise; });
+  expect(screen.queryByText('synthetic-secret')).toBeNull();
+  expect(screen.queryByText('Initial temporary credential issued.')).toBeNull();
 });
 
 test('funding inbox discards obsolete refreshes and never treats failed reads as empty', async () => {
