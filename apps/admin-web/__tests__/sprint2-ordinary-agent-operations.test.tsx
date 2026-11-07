@@ -416,7 +416,7 @@ describe('Sprint 2 Ordinary Agent V1 Admin Web Operational Workflows', () => {
           createdAt: '2026-10-26T10:00:00.000Z',
         },
       ],
-      pagination: { page: 1, limit: 10, total: 1, totalPages: 1, hasNextPage: false },
+      pagination: { page: 1, limit: 20, total: 1, totalPages: 1, hasNextPage: false },
     });
     const historyView = render(
       <AgentUnifiedHistoryPanel

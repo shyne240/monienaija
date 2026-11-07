@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './agent-workspaces.css';
+import './agent-history.css';
 import { formatMinorUnits } from '../utils/financial-display';
 import { ApiClient } from '../services/api-client';
+import { useAuthStore } from '../store/auth-store';
 
 export const ADMIN_AGENT_UNIFIED_HISTORY_TYPES = [
   'CASH_IN',
@@ -200,7 +202,34 @@ function formatCounterparty(counterparty?: AdminAgentHistoryCounterparty | null)
   return parts.length > 0 ? parts.join(' · ') : '—';
 }
 
-export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> = ({
+function validHistoryPage(response: AdminAgentUnifiedHistoryResponse, page: number, limit: number): boolean {
+  const p = response?.pagination;
+  return !!response && Array.isArray(response.items) && !!p && p.page === page && p.limit === limit &&
+    Number.isSafeInteger(p.total) && p.total >= response.items.length && Number.isSafeInteger(p.totalPages) &&
+    p.totalPages === Math.ceil(p.total / limit) && p.hasNextPage === (page < p.totalPages) && response.items.length <= limit &&
+    response.items.every(item => item && typeof item.id === 'string' && !!item.id && typeof item.type === 'string' &&
+      typeof item.status === 'string' && typeof item.direction === 'string' && typeof item.currency === 'string' && !!item.currency &&
+      typeof item.amountMinor === 'string' && /^-?\d+$/.test(item.amountMinor) && typeof item.createdAt === 'string' &&
+      (item.reference === null || typeof item.reference === 'string') &&
+      (item.feeMinor === undefined || typeof item.feeMinor === 'string' && /^-?\d+$/.test(item.feeMinor)) &&
+      (!item.counterparty || typeof item.counterparty.ownerType === 'string' &&
+        (item.counterparty.display == null || typeof item.counterparty.display === 'string') &&
+        (item.counterparty.identifierMasked == null || typeof item.counterparty.identifierMasked === 'string')) &&
+      (!item.commission || typeof item.commission.amountMinor === 'string' && /^-?\d+$/.test(item.commission.amountMinor) && typeof item.commission.currency === 'string' && typeof item.commission.status === 'string'));
+}
+
+function formatHistoryDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleString();
+}
+
+export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> = (props) => {
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([props.agentId, sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel, principal?.customerAccess, principal?.readOnlyPrincipal]);
+  return <AgentHistoryWorkspace key={key} {...props} />;
+};
+
+const AgentHistoryWorkspace: React.FC<AgentUnifiedHistoryPanelProps> = ({
   agentId,
   canViewAgent,
   canViewTransactions,
@@ -243,7 +272,7 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
         ...(targetType ? { type: targetType } : {}),
       });
       if (!isCurrent()) return;
-      if (!response || !Array.isArray(response.items) || !response.pagination || typeof response.pagination.page !== 'number' || typeof response.pagination.total !== 'number' || typeof response.pagination.totalPages !== 'number' || typeof response.pagination.hasNextPage !== 'boolean') {
+      if (!validHistoryPage(response, targetPage, targetLimit)) {
         throw new Error('Invalid Agent transaction history response.');
       }
       setData(response);
@@ -268,204 +297,62 @@ export const AgentUnifiedHistoryPanel: React.FC<AgentUnifiedHistoryPanelProps> =
   };
 
   return (
-    <section className="mn-agent-workspace" aria-label="Unified Agent transaction stream">
-      <div className="mn-agent-workspace__header">
-        <h4 className="mn-agent-workspace__title">Unified Agent Service Ledger Stream</h4>
-        <button
-          type="button"
-          className="mn-agent-workspace__button"
-          disabled={loading || forbidden}
-          onClick={() => void fetchPage(1, limit, typeFilter)}
-        >
+    <section className="mn-agent-workspace agent-history" aria-label="Unified Agent transaction stream">
+      <div className="agent-history__header">
+        <div>
+          <p className="agent-history__eyebrow">AGENT ACTIVITY · READ ONLY</p>
+          <h4 className="mn-agent-workspace__title">Unified Agent Service Ledger Stream</h4>
+          <p className="agent-history__intro">Review this Agent’s service transactions, including recorded fees, commissions and counterparties. Amounts and statuses are returned by the service.</p>
+        </div>
+        <button type="button" className="mn-agent-workspace__button agent-history__load" disabled={loading || forbidden} onClick={() => void fetchPage(1, limit, typeFilter)}>
           {loading ? 'Loading…' : data ? 'Refresh unified stream' : 'Load unified stream'}
         </button>
       </div>
-
-      <div className="mn-agent-workspace__controls">
+      <div className="agent-history__filters">
         <label className="mn-agent-workspace__field">Service
-        <select
-          aria-label="Unified history service filter"
-          value={typeFilter}
-          disabled={loading || forbidden}
-          onChange={(e) => {
-            const next = e.target.value;
-            setTypeFilter(next);
-            if (data) void fetchPage(1, limit, next);
-          }}
-          className="mn-agent-workspace__input"
-        >
-          <option value="">All services</option>
-          {ADMIN_AGENT_UNIFIED_HISTORY_TYPES.map((serviceType) => (
-            <option key={serviceType} value={serviceType}>
-              {serviceType}
-            </option>
-          ))}
-        </select>
+          <select aria-label="Unified history service filter" value={typeFilter} disabled={loading || forbidden}
+            onChange={(e) => { const next = e.target.value; setTypeFilter(next); if (data) void fetchPage(1, limit, next); }} className="mn-agent-workspace__input">
+            <option value="">All services</option>
+            {ADMIN_AGENT_UNIFIED_HISTORY_TYPES.map(serviceType => <option key={serviceType} value={serviceType}>{serviceType}</option>)}
+          </select>
         </label>
         <label className="mn-agent-workspace__field">Page size
-        <select
-          aria-label="Unified history page size"
-          value={String(limit)}
-          disabled={loading || forbidden}
-          onChange={(e) => {
-            const nextLimit = Number(e.target.value) || 20;
-            setLimit(nextLimit);
-            if (data) void fetchPage(1, nextLimit, typeFilter);
-          }}
-          className="mn-agent-workspace__input"
-        >
-          <option value="10">10 per page</option>
-          <option value="20">20 per page</option>
-          <option value="50">50 per page</option>
-        </select>
+          <select aria-label="Unified history page size" value={String(limit)} disabled={loading || forbidden}
+            onChange={(e) => { const next = Number(e.target.value) || 20; setLimit(next); if (data) void fetchPage(1, next, typeFilter); }} className="mn-agent-workspace__input">
+            <option value="10">10 per page</option><option value="20">20 per page</option><option value="50">50 per page</option>
+          </select>
         </label>
       </div>
-
-      {loading && (
-        <div
-          style={styles.loading}
-          role="status"
-          data-testid="agent-unified-history-loading"
-        >
-          Loading unified Agent transaction history…
+      {!loading && !forbidden && !error && !data && <p className="agent-history__initial">Choose a service or page size, then load the stream. This view does not initiate transactions.</p>}
+      {loading && <div className="agent-history__state" role="status" data-testid="agent-unified-history-loading">Loading unified Agent transaction history…</div>}
+      {forbidden && <div className="agent-history__state agent-history__state--error" role="alert" data-testid="agent-unified-history-forbidden">You are not authorized to view unified transaction history for this Agent (403 Forbidden).</div>}
+      {!forbidden && error && <div className="agent-history__state agent-history__state--error" role="alert" data-testid="agent-unified-history-error">{error}</div>}
+      {!loading && !forbidden && data && <>
+        <div className="agent-history__results" role="status"><strong>Transaction history</strong><span>{data.items.length} shown on this page · {data.pagination.total} total</span></div>
+        {data.items.length === 0 ? <div className="agent-history__state" data-testid="agent-unified-history-empty">{data.pagination.page === 1 && data.pagination.total === 0 ? 'No unified Agent history entries found.' : 'No unified Agent history entries found on this page.'}</div> :
+          <ol className="agent-history__list" aria-label="Agent transactions">
+            {data.items.map(item => <li className="agent-history__item" key={item.id}>
+              <div className="agent-history__item-head">
+                <div><p className="agent-history__service">{item.type}</p><strong className="agent-history__amount">{formatMinor(item.amountMinor, item.currency)}</strong><p className="agent-history__direction">{item.direction}</p></div>
+                <div className="agent-history__status"><span>{item.status}</span><small>Created {formatHistoryDate(item.createdAt)}</small>{item.completedAt && <small>Completed: {formatHistoryDate(item.completedAt)}</small>}</div>
+              </div>
+              <dl className="agent-history__facts">
+                <div><dt>Reference</dt><dd><code>{item.reference || '—'}</code></dd>{item.narration && <small>{item.narration}</small>}</div>
+                <div><dt>Counterparty</dt><dd>{formatCounterparty(item.counterparty)}</dd></div>
+                {(item.feeMinor && item.feeMinor !== '0' || item.commission) && <div><dt>Fee and commission</dt>
+                  {item.feeMinor && item.feeMinor !== '0' && <dd>Fee: {formatMinor(item.feeMinor, item.currency)}</dd>}
+                  {item.commission && <dd>Commission: {formatMinor(item.commission.amountMinor, item.commission.currency)} ({item.commission.status})</dd>}
+                </div>}
+                {(item.failureCode || item.failureMessage) && <div className="agent-history__failure"><dt>Failure detail</dt><dd>{[item.failureCode, item.failureMessage].filter(Boolean).join(': ')}</dd></div>}
+              </dl>
+            </li>)}
+          </ol>}
+        <div className="agent-history__pager" data-testid="agent-unified-history-pager">
+          <span>Page {data.pagination.page}{data.pagination.page <= Math.max(1, data.pagination.totalPages) ? ` of ${Math.max(1, data.pagination.totalPages)}` : ' (beyond last page)'} ({data.pagination.total} total)</span>
+          <div><button type="button" className="mn-agent-workspace__button" disabled={loading || forbidden || data.pagination.page <= 1} onClick={() => void fetchPage(data.pagination.page - 1, limit, typeFilter)}>Previous</button>
+          <button type="button" className="mn-agent-workspace__button" disabled={loading || forbidden || !data.pagination.hasNextPage} onClick={() => void fetchPage(data.pagination.page + 1, limit, typeFilter)}>Next</button></div>
         </div>
-      )}
-
-      {forbidden && (
-        <div
-          style={styles.errorBox}
-          role="alert"
-          data-testid="agent-unified-history-forbidden"
-        >
-          You are not authorized to view unified transaction history for this Agent (403 Forbidden).
-        </div>
-      )}
-
-      {!forbidden && error && (
-        <div
-          style={styles.errorBox}
-          role="alert"
-          data-testid="agent-unified-history-error"
-        >
-          {error}
-        </div>
-      )}
-
-      {!loading && !forbidden && data && (
-        data.items.length === 0 ? (
-          <div style={styles.empty} data-testid="agent-unified-history-empty">
-            No unified Agent history entries found.
-          </div>
-        ) : (
-          <>
-            <p className="mn-agent-workspace__description">Scroll horizontally to see all history columns.</p>
-            <div className="mn-agent-workspace__scroll" role="region" aria-label="Agent history table" tabIndex={0}>
-            <table className="mn-agent-workspace__table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Service</th>
-                  <th>Direction</th>
-                  <th>Amount</th>
-                  <th>Counterparty</th>
-                  <th>Status</th>
-                  <th>Reference</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <div>{new Date(item.createdAt).toLocaleString()}</div>
-                      {item.completedAt && (
-                        <div style={styles.subText}>
-                          Completed: {new Date(item.completedAt).toLocaleString()}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <code>{item.type}</code>
-                    </td>
-                    <td>{item.direction}</td>
-                    <td>
-                      <div>
-                        <strong>{formatMinor(item.amountMinor, item.currency)}</strong>
-                      </div>
-                      {item.feeMinor && item.feeMinor !== '0' && (
-                        <div style={styles.subText}>
-                          Fee: {formatMinor(item.feeMinor, item.currency)}
-                        </div>
-                      )}
-                      {item.commission && (
-                        <div style={styles.subText}>
-                          Commission: {formatMinor(item.commission.amountMinor, item.commission.currency)}{' '}
-                          ({item.commission.status})
-                        </div>
-                      )}
-                    </td>
-                    <td>{formatCounterparty(item.counterparty)}</td>
-                    <td>
-                      <div>{item.status}</div>
-                      {(item.failureCode || item.failureMessage) && (
-                        <div style={styles.failureSubText}>
-                          {[item.failureCode, item.failureMessage].filter(Boolean).join(': ')}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div>
-                        <code>{item.reference || '—'}</code>
-                      </div>
-                      {item.narration && <div style={styles.subText}>{item.narration}</div>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-            <div className="mn-agent-workspace__pager" data-testid="agent-unified-history-pager">
-              <span>
-                Page {data.pagination.page} of {Math.max(1, data.pagination.totalPages)} (
-                {data.pagination.total} total)
-              </span>
-              <button
-                type="button"
-                className="mn-agent-workspace__button"
-                disabled={loading || forbidden || data.pagination.page <= 1}
-                onClick={() => void fetchPage(data.pagination.page - 1, limit, typeFilter)}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="mn-agent-workspace__button"
-                disabled={loading || forbidden || !data.pagination.hasNextPage}
-                onClick={() => void fetchPage(data.pagination.page + 1, limit, typeFilter)}
-              >
-                Next
-              </button>
-            </div>
-          </>
-        )
-      )}
+      </>}
     </section>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  box: { marginTop: 10, padding: 10, border: '1px solid var(--mn-border-subtle, #dde7e2)', borderRadius: 6, background: '#FFFFFF' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  title: { fontSize: 12, color: 'var(--mn-text-primary, #132b25)' },
-  controls: { marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' },
-  select: { padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 },
-  button: { padding: '5px 9px', border: '1px solid #CBD5E1', borderRadius: 5, background: '#FFF', cursor: 'pointer', fontSize: 11 },
-  loading: { marginTop: 8, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
-  errorBox: { marginTop: 8, padding: 8, borderRadius: 5, border: '1px solid #FCA5A5', background: '#FEF2F2', color: '#991B1B', fontSize: 11 },
-  empty: { marginTop: 8, color: 'var(--mn-text-secondary, #52655f)', fontSize: 12 },
-  table: { width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 11 },
-  th: { textAlign: 'left', padding: '5px 6px', borderBottom: '1px solid var(--mn-border-subtle, #dde7e2)', color: 'var(--mn-text-secondary, #52655f)' },
-  td: { padding: '6px', borderBottom: '1px solid var(--mn-surface-sunken, #eef3f0)', verticalAlign: 'top' },
-  subText: { fontSize: 10, color: 'var(--mn-text-secondary, #52655f)', marginTop: 2 },
-  failureSubText: { fontSize: 10, color: '#991B1B', marginTop: 2 },
-  pager: { marginTop: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--mn-text-secondary, #52655f)' },
 };
