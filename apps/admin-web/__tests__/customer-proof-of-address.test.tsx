@@ -276,6 +276,7 @@ describe('Customer Proof of Address and readiness interfaces', () => {
   test('uploads multipart metadata with a stable idempotency key and can request a download', async () => {
     setPermissions([...operationsScopes, 'customer.download_proof_of_address']);
     configureEnabledApi();
+    (ApiClient.postForm as jest.Mock).mockImplementation((_path: string, body: FormData) => Promise.resolve(documentRecord({ originalFileName: (body.get('file') as File).name, fileSizeBytes: String((body.get('file') as File).size), issuerName: body.get('issuerName'), documentDate: body.get('documentDate') })));
     const anchorClick = jest
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => {});
@@ -329,14 +330,26 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     expect(await screen.findByText(/Upload outcome could not be confirmed/)).toBeTruthy();
     expect(screen.queryByText(/submission is available with a clean malware scan/)).toBeNull();
     fireEvent.submit(upload.closest('form')!);
+    expect(ApiClient.postForm).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)').matches(':disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name:'Refresh records for upload review' }));
+    await waitFor(() => expect((screen.getByRole('button',{name:'I reviewed the records and history'}) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{name:'I reviewed the records and history'}));
+    fireEvent.click(screen.getByRole('button',{name:'Retry same upload'}));
+    await waitFor(() => expect(ApiClient.postForm).toHaveBeenCalledTimes(2));
+    expect((ApiClient.postForm as jest.Mock).mock.calls[0][2]).toEqual((ApiClient.postForm as jest.Mock).mock.calls[1][2]);
+    const firstBody = (ApiClient.postForm as jest.Mock).mock.calls[0][1] as FormData;
+    const retryBody = (ApiClient.postForm as jest.Mock).mock.calls[1][1] as FormData;
+    for (const name of ['file', 'category', 'documentType', 'residentialAddressId', 'issuerName', 'documentDate', 'supersedesSubmissionId']) {
+      expect(retryBody.get(name)).toEqual(firstBody.get(name));
+    }
     expect(await screen.findByText(/Upload outcome could not be confirmed/)).toBeTruthy();
-    expect(ApiClient.postForm).toHaveBeenCalledTimes(2);
   });
 
   test('upload replay in withdrawn state is not reported as a new clean upload', async () => {
     setPermissions(operationsScopes);
     configureEnabledApi();
-    (ApiClient.postForm as jest.Mock).mockResolvedValueOnce(documentRecord({ documentStatus: 'WITHDRAWN' }));
+    (ApiClient.postForm as jest.Mock).mockResolvedValueOnce(documentRecord({ documentStatus: 'WITHDRAWN', originalFileName: 'synthetic.pdf', fileSizeBytes: '9', issuerName: null, documentDate: null }));
     render(<CustomerProofOfAddressPanel customerId={customerId} />);
     await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
     fireEvent.change(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)'), { target: { files: [new File(['synthetic'], 'synthetic.pdf', { type: 'application/pdf' })] } });
@@ -625,4 +638,56 @@ describe('Customer Proof of Address and readiness interfaces', () => {
 
 test('read-only session can view evidence but cannot upload, withdraw or archive despite write grants',async()=>{
  setPermissions([...operationsScopes,'customer.archive_proof_of_address']);useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));configureEnabledApi();render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByText(/utility-bill.pdf/);expect(screen.queryByRole('button',{name:'Upload Proof of Address'})).toBeNull();expect(screen.queryByRole('button',{name:'Withdraw'})).toBeNull();expect(screen.queryByRole('button',{name:'Archive withdrawn record'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.postForm).not.toHaveBeenCalled();
+});
+
+test('uncertain withdrawal is locked until a fresh record and its history are reviewed',async()=>{
+ setPermissions(operationsScopes);configureEnabledApi();(ApiClient.post as jest.Mock).mockResolvedValueOnce(documentRecord({id:'wrong',documentStatus:'WITHDRAWN'}));render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByRole('heading',{name:'Utility bill · revision 1'});fireEvent.click(screen.getByRole('button',{name:'Withdraw'}));const dialog=screen.getByRole('dialog');fireEvent.change(within(dialog).getByLabelText('Reason (required)'),{target:{value:'Synthetic reason'}});fireEvent.click(within(dialog).getByRole('button',{name:'Confirm withdrawal'}));expect(await within(dialog).findByText(/outcome could not be confirmed/)).toBeTruthy();expect((within(dialog).getByRole('button',{name:'Confirm withdrawal'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(within(dialog).getByRole('button',{name:'Cancel'}));expect((screen.getByRole('button',{name:'Withdraw'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Refresh Proof of Address records'}));await screen.findByRole('heading',{name:'Utility bill · revision 1'});expect((screen.getByRole('button',{name:'I reviewed this document and history'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'View history'}));await screen.findByText('UPLOADED');expect((screen.getByRole('button',{name:'I reviewed this document and history'}) as HTMLButtonElement).disabled).toBe(false);fireEvent.click(screen.getByRole('button',{name:'I reviewed this document and history'}));expect((screen.getByRole('button',{name:'Withdraw'}) as HTMLButtonElement).disabled).toBe(false);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+test('failed document refresh cannot unlock an unconfirmed upload retry',async()=>{
+ setPermissions(operationsScopes);configureEnabledApi();(ApiClient.postForm as jest.Mock).mockRejectedValueOnce(new Error('network'));render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByRole('heading',{name:'Utility bill · revision 1'});fireEvent.change(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)'),{target:{files:[new File(['synthetic'],'synthetic.pdf',{type:'application/pdf'})]}});fireEvent.submit(screen.getByRole('button',{name:'Upload Proof of Address'}).closest('form')!);await screen.findByText(/Upload outcome could not be confirmed/);const old=(ApiClient.get as jest.Mock).getMockImplementation()!;(ApiClient.get as jest.Mock).mockImplementation((path:string,opts:unknown)=>path===`${rootPath}?page=1&limit=20`?Promise.reject(new Error('unavailable')):old(path,opts));fireEvent.click(screen.getByRole('button',{name:'Refresh records for upload review'}));await screen.findByText(/Loading document records.*could not/i);expect((screen.getByRole('button',{name:'I reviewed the records and history'}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:'Retry same upload'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.postForm).toHaveBeenCalledTimes(1);
+});
+test('lifecycle actions serialize synchronously',async()=>{
+ setPermissions(operationsScopes);configureEnabledApi();let resolve!:(v:any)=>void;const pending=new Promise(r=>resolve=r);(ApiClient.post as jest.Mock).mockReturnValueOnce(pending);render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByRole('heading',{name:'Utility bill · revision 1'});fireEvent.click(screen.getByRole('button',{name:'Withdraw'}));const dialog=screen.getByRole('dialog');fireEvent.change(within(dialog).getByLabelText('Reason (required)'),{target:{value:'Synthetic reason'}});const form=dialog as HTMLFormElement;fireEvent.submit(form);fireEvent.submit(form);expect(ApiClient.post).toHaveBeenCalledTimes(1);await act(async()=>{resolve(documentRecord({documentStatus:'WITHDRAWN'}));await pending;});
+});
+
+test('a lifecycle conflict requires a fresh record and history review', async () => {
+  setPermissions(operationsScopes);
+  configureEnabledApi();
+  (ApiClient.post as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+  render(<CustomerProofOfAddressPanel customerId={customerId} />);
+  await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'Synthetic reason' } });
+  fireEvent.submit(dialog);
+  expect(await within(dialog).findByText(/action conflicted/)).toBeTruthy();
+  expect((within(dialog).getByRole('button', { name: 'Confirm withdrawal' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  expect((screen.getByRole('button', { name: 'Withdraw' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('an unconfirmed upload needs explicit discard and cannot double-submit', async () => {
+  setPermissions(operationsScopes);
+  configureEnabledApi();
+  let reject!: (reason: Error) => void;
+  const pending = new Promise((_resolve, fail) => { reject = fail; });
+  (ApiClient.postForm as jest.Mock).mockReturnValueOnce(pending);
+  render(<CustomerProofOfAddressPanel customerId={customerId} />);
+  await screen.findByRole('heading', { name: 'Utility bill · revision 1' });
+  fireEvent.change(screen.getByLabelText('Document file (PDF, JPG, JPEG, PNG)'), { target: { files: [new File(['synthetic'], 'synthetic.pdf', { type: 'application/pdf' })] } });
+  const form = screen.getByRole('button', { name: 'Upload Proof of Address' }).closest('form')!;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  expect(ApiClient.postForm).toHaveBeenCalledTimes(1);
+  await act(async () => { reject(new Error('network')); await pending.catch(() => undefined); });
+  expect(await screen.findByText(/Upload outcome could not be confirmed/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Abandon pending upload' }));
+  expect(screen.getByText(/original may already exist/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep pending upload' }));
+  expect(screen.getByRole('button', { name: 'Retry same upload' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Abandon pending upload' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard pending upload' }));
+  expect(screen.queryByRole('button', { name: 'Retry same upload' })).toBeNull();
+  expect(ApiClient.postForm).toHaveBeenCalledTimes(1);
 });

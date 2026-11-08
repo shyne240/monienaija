@@ -297,9 +297,16 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [fileInputKey, setFileInputKey] = useState(0);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const mutationLock = useRef(false);
+  const listGeneration = useRef(0);
+  const [pendingUpload, setPendingUpload] = useState<{ file: File; key: string; addressId: string; category: string; documentType: string; issuerName: string; documentDate: string; supersedesId: string | null } | null>(null);
+  const [uploadReviewRead, setUploadReviewRead] = useState(false);
+  const [uploadReviewed, setUploadReviewed] = useState(false);
+  const [confirmAbandonUpload, setConfirmAbandonUpload] = useState(false);
   const [replacementTarget, setReplacementTarget] = useState<ProofOfAddressDocument | null>(null);
 
   const [historyByDocument, setHistoryByDocument] = useState<Record<string, HistoryState>>({});
+  const historyGeneration = useRef<Record<string, number>>({});
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -310,6 +317,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const [lifecycleReason, setLifecycleReason] = useState('');
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleReviews, setLifecycleReviews] = useState<Record<string, boolean>>({});
   const previewDialogRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const lifecycleDialogRef = useRef<HTMLFormElement>(null);
@@ -416,6 +424,8 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
           setDocumentPage(documentResult.value.page);
           setDocumentTotal(documentResult.value.total);
           setListLoaded(true);
+          setUploadReviewRead(true);
+          setLifecycleReviews(current => Object.fromEntries(Object.keys(current).map(id => [id, documentResult.value.items.some(item => item.id === id)])));
         } else {
           setDocuments([]);
           setListLoaded(false);
@@ -477,7 +487,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
     };
   }, [preview?.objectUrl]);
 
-  const refresh = () => setReloadVersion((version) => version + 1);
+  const refresh = () => { listGeneration.current++; setListLoaded(false); setLoading(true); setUploadReviewRead(false); setUploadReviewed(false); setLifecycleReviews(current => Object.fromEntries(Object.keys(current).map(id => [id, false]))); setReloadVersion((version) => version + 1); };
   const hasMoreDocuments = documentPage * PAGE_SIZE < documentTotal;
   const latestIds = latestRevisionIds(documents);
   const canShowUploadForm = canUpload && capabilities?.enabled === true;
@@ -507,7 +517,8 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   );
 
   const loadMoreDocuments = async () => {
-    if (loadingMore || !hasMoreDocuments) return;
+    if (loadingMore || loading || !listLoaded || !hasMoreDocuments) return;
+    const generation = listGeneration.current;
     setLoadingMore(true);
     setDocumentError(null);
     const page = documentPage + 1;
@@ -515,8 +526,9 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
       const result = await ApiClient.get<Page<ProofOfAddressDocument>>(
         `${apiPath(customerId)}?page=${page}&limit=${PAGE_SIZE}`,
       );
-      if (currentCustomerId.current !== customerId) return;
+      if (currentCustomerId.current !== customerId || generation !== listGeneration.current) return;
       if (!isDocumentPage(result, customerId, page)) throw new Error('Invalid document page');
+      setLifecycleReviews(current => ({ ...current, ...Object.fromEntries(result.items.filter(item => Object.prototype.hasOwnProperty.call(current, item.id)).map(item => [item.id, true])) }));
       setDocuments((current) => {
         const existing = new Set(current.map(({ id }) => id));
         return [...current, ...result.items.filter((document) => !existing.has(document.id))];
@@ -524,61 +536,66 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
       setDocumentPage(result.page);
       setDocumentTotal(result.total);
     } catch (error) {
-      if (currentCustomerId.current === customerId) {
+      if (currentCustomerId.current === customerId && generation === listGeneration.current) {
         setDocumentError(errorMessage(error, 'Loading more document records'));
       }
     } finally {
-      if (currentCustomerId.current === customerId) setLoadingMore(false);
+      if (currentCustomerId.current === customerId && generation === listGeneration.current) setLoadingMore(false);
     }
   };
 
-  const uploadDocument = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canSubmitUpload || !selectedFile || !idempotencyKey || !addressId || uploadBusy) return;
+  const uploadDocument = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (mutationLock.current || !canUpload || !canViewAddress || !capabilities?.enabled || !listLoaded || loading || uploadBusy || lifecycleBusy || pendingLifecycle) return;
+    if (pendingUpload && (!uploadReviewRead || !uploadReviewed)) return;
+    if (!pendingUpload && (!canSubmitUpload || !selectedFile || !idempotencyKey || !addressId)) return;
+    const attempt = pendingUpload ?? { file: selectedFile!, key: idempotencyKey!, addressId, category, documentType, issuerName: issuerName.trim(), documentDate, supersedesId: replacementTarget?.id ?? null };
+    mutationLock.current = true;
     setUploadBusy(true);
     setActionError(null);
     setNotice(null);
     try {
       const body = new window.FormData();
-      body.append('file', selectedFile, selectedFile.name);
-      body.append('residentialAddressId', addressId);
-      body.append('category', category);
-      body.append('documentType', documentType);
-      if (issuerName.trim()) body.append('issuerName', issuerName.trim());
-      if (documentDate) body.append('documentDate', documentDate);
-      if (replacementTarget) body.append('supersedesSubmissionId', replacementTarget.id);
-
-      const result = await ApiClient.postForm<ProofOfAddressDocument>(apiPath(customerId), body, {
-        idempotencyKey,
-      });
+      body.append('file', attempt.file, attempt.file.name);
+      body.append('residentialAddressId', attempt.addressId);
+      body.append('category', attempt.category);
+      body.append('documentType', attempt.documentType);
+      if (attempt.issuerName) body.append('issuerName', attempt.issuerName);
+      if (attempt.documentDate) body.append('documentDate', attempt.documentDate);
+      if (attempt.supersedesId) body.append('supersedesSubmissionId', attempt.supersedesId);
+      const result = await ApiClient.postForm<ProofOfAddressDocument>(apiPath(customerId), body, { idempotencyKey: attempt.key });
       if (currentCustomerId.current !== customerId) return;
       const validStatus = ['AVAILABLE', 'QUARANTINED', 'SUPERSEDED', 'WITHDRAWN', 'ARCHIVED'].includes(result?.documentStatus);
-      if (!result || typeof result.id !== 'string' || !result.id.trim() || result.customerId !== customerId || result.residentialAddressId !== addressId ||
-          result.category !== category || result.documentType !== documentType ||
-          (replacementTarget && result.supersedesSubmissionId !== replacementTarget.id) || !validStatus ||
+      if (!result || typeof result.id !== 'string' || !result.id.trim() || result.customerId !== customerId || result.residentialAddressId !== attempt.addressId ||
+          result.category !== attempt.category || result.documentType !== attempt.documentType ||
+          (result.supersedesSubmissionId ?? null) !== attempt.supersedesId ||
+          (result.issuerName ?? null) !== (attempt.issuerName || null) ||
+          (result.documentDate ?? null) !== (attempt.documentDate || null) ||
+          result.originalFileName !== attempt.file.name || Number(result.fileSizeBytes) !== attempt.file.size ||
+          result.detectedMimeType !== attempt.file.type.split(';', 1)[0]?.trim().toLowerCase() || !validStatus ||
           (result.documentStatus === 'AVAILABLE' && result.scannerResult !== 'CLEAN') ||
           (result.documentStatus === 'QUARANTINED' && !['INFECTED', 'UNAVAILABLE', 'ERROR'].includes(result.scannerResult ?? ''))) {
         throw new Error('Unconfirmed upload receipt');
       }
-      setNotice(
-        result.documentStatus === 'QUARANTINED'
-          ? 'The upload was retained in quarantine because scanning did not return a clean result. Preview and download remain unavailable; this is not a verification or approval decision.'
-          : result.documentStatus === 'AVAILABLE'
-            ? 'The submission is available with a clean malware scan. A clean scan does not verify or approve the evidence.'
-            : `The matching submission currently has status ${result.documentStatus}. Review its history; this may be a replay of an earlier upload.`,
-      );
-      setSelectedFile(null);
-      setIdempotencyKey(null);
-      setFileInputKey((key) => key + 1);
-      setIssuerName('');
-      setDocumentDate('');
-      setReplacementTarget(null);
+      setNotice(result.documentStatus === 'QUARANTINED'
+        ? 'The upload was retained in quarantine because scanning did not return a clean result. Preview and download remain unavailable; this is not a verification or approval decision.'
+        : result.documentStatus === 'AVAILABLE'
+          ? 'The submission is available with a clean malware scan. A clean scan does not verify or approve the evidence.'
+          : `The matching submission currently has status ${result.documentStatus}. Review its history; this may be a replay of an earlier upload.`);
+      setPendingUpload(null); setUploadReviewed(false); setConfirmAbandonUpload(false);
+      setSelectedFile(null); setIdempotencyKey(null); setFileInputKey(key => key + 1);
+      setIssuerName(''); setDocumentDate(''); setReplacementTarget(null);
       refresh();
     } catch (error) {
       if (currentCustomerId.current === customerId) {
-        setActionError(mutationErrorMessage(error, 'Upload'));
+        const status = statusOf(error);
+        if (pendingUpload || ![400, 401, 403, 413].includes(status ?? 0)) {
+          setPendingUpload(attempt); setUploadReviewRead(false); setUploadReviewed(false);
+          setActionError('Upload outcome could not be confirmed. Refresh and inspect document records and history before retrying the same request.');
+        } else setActionError(mutationErrorMessage(error, 'Upload'));
       }
     } finally {
+      mutationLock.current = false;
       if (currentCustomerId.current === customerId) setUploadBusy(false);
     }
   };
@@ -620,6 +637,9 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   };
 
   const loadHistory = async (documentId: string, page: number, append: boolean) => {
+    const listVersion = listGeneration.current;
+    const historyVersion = (historyGeneration.current[documentId] ?? 0) + 1;
+    historyGeneration.current[documentId] = historyVersion;
     setHistoryByDocument((current) => ({
       ...current,
       [documentId]: {
@@ -636,7 +656,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
       const result = await ApiClient.get<Page<ProofOfAddressHistoryEvent>>(
         `${apiPath(customerId)}/${encodeURIComponent(documentId)}/history?page=${page}&limit=${PAGE_SIZE}`,
       );
-      if (currentCustomerId.current !== customerId) return;
+      if (currentCustomerId.current !== customerId || listVersion !== listGeneration.current || historyGeneration.current[documentId] !== historyVersion) return;
       if (!isHistoryPage(result, documentId, page)) throw new Error('Invalid document history page');
       setHistoryByDocument((current) => {
         const previous = current[documentId];
@@ -656,7 +676,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
         };
       });
     } catch (error) {
-      if (currentCustomerId.current !== customerId) return;
+      if (currentCustomerId.current !== customerId || listVersion !== listGeneration.current || historyGeneration.current[documentId] !== historyVersion) return;
       setHistoryByDocument((current) => ({
         ...current,
         [documentId]: {
@@ -675,6 +695,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const toggleHistory = (documentId: string) => {
     const existing = historyByDocument[documentId];
     if (existing?.visible) {
+      historyGeneration.current[documentId] = (historyGeneration.current[documentId] ?? 0) + 1;
       setHistoryByDocument((current) => ({
         ...current,
         [documentId]: { ...existing, visible: false },
@@ -743,7 +764,9 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
 
   const confirmLifecycleAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!pendingLifecycle || !lifecycleReason.trim() || lifecycleBusy || (pendingLifecycle.action === 'withdraw' ? !canWithdraw : !canArchive)) return;
+    if (!pendingLifecycle || !listLoaded || loading || !documents.some(current => current.id === pendingLifecycle.document.id && current.documentStatus === pendingLifecycle.document.documentStatus) || lifecycleBusy || uploadBusy || mutationLock.current || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, pendingLifecycle.document.id) || (pendingLifecycle.action === 'withdraw' ? !canWithdraw : !canArchive)) return;
+    if (!lifecycleReason.trim() || lifecycleReason.trim().length > 1000 || /[\x00-\x1f\x7f]/.test(lifecycleReason.trim())) { setLifecycleError('Use a reason of 1–1000 characters without control characters.'); return; }
+    mutationLock.current = true;
     const { document, action } = pendingLifecycle;
     setLifecycleBusy(true);
     setLifecycleError(null);
@@ -763,14 +786,18 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
       refresh();
     } catch (error) {
       if (currentCustomerId.current === customerId) {
-        setLifecycleError(mutationErrorMessage(error, action === 'withdraw' ? 'Withdrawal' : 'Archive'));
+        const status = statusOf(error);
+        if (![400, 401, 403, 404, 413].includes(status ?? 0)) setLifecycleReviews(current => ({ ...current, [document.id]: false }));
+        setLifecycleError(status === 409 ? 'The document action conflicted. Refresh and inspect its status and history before another action.' : mutationErrorMessage(error, action === 'withdraw' ? 'Withdrawal' : 'Archive'));
       }
     } finally {
+      mutationLock.current = false;
       if (currentCustomerId.current === customerId) setLifecycleBusy(false);
     }
   };
 
   const startLifecycleAction = (document: ProofOfAddressDocument, action: LifecycleAction) => {
+    if (!listLoaded || loading || mutationLock.current || uploadBusy || pendingUpload || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id) || !documents.some(current => current.id === document.id && current.documentStatus === document.documentStatus) || (action === 'withdraw' ? !canWithdraw : !canArchive)) return;
     setPendingLifecycle({ document, action });
     setLifecycleReason('');
     setLifecycleError(null);
@@ -859,7 +886,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                     The replacement keeps the original residential address and candidate
                     classification. A new revision is created; previous records remain in history.
                     {canUpload && (
-                      <button className="cm-text-button" type="button" onClick={cancelReplacement}>
+                      <button className="cm-text-button" type="button" disabled={Boolean(pendingUpload) || uploadBusy} onClick={cancelReplacement}>
                         Cancel replacement
                       </button>
                     )}
@@ -871,7 +898,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                   </div>
                 )}
                 <form className="cm-poa-upload-form" onSubmit={uploadDocument}>
-                  <fieldset disabled={!canUpload || Boolean(uploadUnavailableReason) || uploadBusy}>
+                  <fieldset disabled={!canUpload || Boolean(uploadUnavailableReason) || uploadBusy || lifecycleBusy || Boolean(pendingUpload)}>
                     <div className="cm-wizard-field-grid cm-poa-metadata-preview">
                       <label htmlFor="cm-poa-category">
                         Candidate category
@@ -984,6 +1011,15 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                     </div>
                   </fieldset>
                 </form>
+                <p className="cm-muted">Pending upload data and its retry key are kept only in this workspace. Leaving, refreshing the browser or changing session loses them; inspect document records before a later upload.</p>
+                {pendingUpload && <div className="cm-policy-notice cm-policy-notice-warning" role="status">
+                  <p>Retained request: {pendingUpload.file.name} · {pendingUpload.category} / {pendingUpload.documentType} · address {pendingUpload.addressId}{pendingUpload.supersedesId ? ` · replaces ${pendingUpload.supersedesId}` : ''} · issuer {pendingUpload.issuerName || 'not provided'} · document date {pendingUpload.documentDate || 'not provided'}.</p>
+                  <p>The earlier upload may exist. Refresh and inspect the records and history, including other pages. A page refresh does not prove that no upload exists. Retry uses the same file, metadata and request key.</p>
+                  <button type="button" className="cm-button cm-button-secondary" disabled={uploadBusy || lifecycleBusy} onClick={refresh}>Refresh records for upload review</button>{' '}
+                  <button type="button" className="cm-button cm-button-secondary" disabled={!uploadReviewRead || loading || uploadBusy} onClick={() => setUploadReviewed(true)}>I reviewed the records and history</button>{' '}
+                  <button type="button" className="cm-button cm-button-primary" disabled={!uploadReviewRead || !uploadReviewed || uploadBusy || loading || lifecycleBusy} onClick={() => void uploadDocument()}>Retry same upload</button>{' '}
+                  {!confirmAbandonUpload ? <button type="button" className="cm-text-button" disabled={uploadBusy} onClick={() => setConfirmAbandonUpload(true)}>Abandon pending upload</button> : <div><p>The original may already exist. Discard the retained retry key and file?</p><button type="button" onClick={() => setConfirmAbandonUpload(false)}>Keep pending upload</button>{' '}<button type="button" onClick={() => { setPendingUpload(null); setSelectedFile(null); setIdempotencyKey(null); setFileInputKey(key => key + 1); setConfirmAbandonUpload(false); setActionError(null); setNotice('The earlier upload may already exist. Inspect records and history before submitting a new upload.'); }}>Discard pending upload</button></div>}
+                </div>}
               </section>
             )}
 
@@ -998,7 +1034,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                 className="cm-text-button"
                 type="button"
                 onClick={refresh}
-                disabled={loading}
+                disabled={loading || uploadBusy || lifecycleBusy || Boolean(pendingLifecycle)}
                 aria-label="Refresh Proof of Address records"
               >
                 Refresh
@@ -1122,7 +1158,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-secondary"
                           type="button"
                           onClick={() => beginReplacement(document)}
-                          disabled={uploadBusy}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Replace with a new revision
                         </button>
@@ -1132,6 +1168,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-danger"
                           type="button"
                           onClick={() => startLifecycleAction(document, 'withdraw')}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Withdraw
                         </button>
@@ -1141,6 +1178,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                           className="cm-button cm-button-secondary"
                           type="button"
                           onClick={() => startLifecycleAction(document, 'archive')}
+                          disabled={uploadBusy || lifecycleBusy || !listLoaded || Boolean(pendingUpload) || Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id)}
                         >
                           Archive withdrawn record
                         </button>
@@ -1155,6 +1193,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                         </button>
                       )}
                     </div>
+                    {Object.prototype.hasOwnProperty.call(lifecycleReviews, document.id) && <div role="status" className="cm-policy-notice cm-policy-notice-warning">The previous document action was not confirmed or conflicted. Refresh and inspect this record and its history before another action. <button type="button" disabled={!lifecycleReviews[document.id] || loading || !history?.visible || history.loading || Boolean(history.error)} onClick={() => setLifecycleReviews(current => { const next = { ...current }; delete next[document.id]; return next; })}>I reviewed this document and history</button></div>}
                     {!canDownload && contentAvailable && (
                       <p className="cm-muted">
                         Preview and download are hidden because this role has no document-content
@@ -1390,7 +1429,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
                     : 'cm-button cm-button-primary'
                 }
                 type="submit"
-                disabled={lifecycleBusy || !lifecycleReason.trim()}
+                disabled={lifecycleBusy || !lifecycleReason.trim() || Object.prototype.hasOwnProperty.call(lifecycleReviews, pendingLifecycle.document.id)}
               >
                 {lifecycleBusy
                   ? 'Saving…'
