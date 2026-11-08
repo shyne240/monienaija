@@ -309,4 +309,36 @@ describe('Agent funding maker-checker panel', () => {
     expect(await view.findByText(/Funding request receipt is not confirmed/)).toBeTruthy();expect(view.queryByText(/Await an independent checker/)).toBeNull();expect(JSON.parse(localStorage.getItem('monienaija.agent-funding.v1:maker-1:agent-1')!).idempotencyKey).toBe(IDEMPOTENCY_KEY);
   });
 
+
+test('read-only checker can load instructions but cannot decide or execute', async () => {
+ setPrincipal('FINANCE_CONTROLLER','checker-2',['agent.fund']);
+ useAuthStore.setState(state=>({principal:{...state.principal!,readOnlyPrincipal:true}}));
+ (ApiClient.get as jest.Mock).mockResolvedValue([fundingRequest('REQUESTED')]);
+ const view=render(<AgentFundingPanel agentId="agent-1" />);
+ fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));
+ fireEvent.click(await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)}));
+ fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));
+ expect(view.queryByRole('button',{name:'Approve funding instruction'})).toBeNull();
+ expect(view.queryByRole('button',{name:'Reject funding instruction'})).toBeNull();
+ expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('unconfirmed funding decision requires a fresh instruction load and new review',async()=>{
+ setPrincipal('FINANCE_CONTROLLER','checker-2',['agent.fund']);
+ (ApiClient.get as jest.Mock).mockResolvedValue([fundingRequest('REQUESTED')]);
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+ const view=render(<AgentFundingPanel agentId="agent-1" />);
+ fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));fireEvent.click(await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)}));
+ fireEvent.click(view.getByLabelText('I reviewed this Agent, amount, direction and business reason'));fireEvent.click(view.getByRole('button',{name:'Approve funding instruction'}));
+ expect(await view.findByText(/Outcome may be uncertain/)).toBeTruthy();expect(view.queryByRole('button',{name:'Approve funding instruction'})).toBeNull();
+ fireEvent.click(view.getByRole('button',{name:'Load funding instructions'}));fireEvent.click(await view.findByRole('button',{name:new RegExp(`${REQUEST_ID}.*REQUESTED`)}));
+ expect((view.getByRole('button',{name:'Approve funding instruction'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+});
+
+test('read-only maker cannot submit a funding request',()=>{
+ setPrincipal('AGENT_NETWORK_MANAGER','maker-1',['agent.fund']);useAuthStore.setState(state=>({principal:{...state.principal!,readOnlyPrincipal:true}}));
+ const view=render(<AgentFundingPanel agentId="agent-1" />);fireEvent.change(view.getByLabelText('Funding amount in kobo'),{target:{value:'100'}});fireEvent.change(view.getByLabelText('Funding reason'),{target:{value:'review'}});
+ expect((view.getByRole('button',{name:'Request independent approval'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
 });

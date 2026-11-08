@@ -151,8 +151,8 @@ interface AgentFundingPanelProps {
 }
 
 export function AgentFundingPanel(props: AgentFundingPanelProps) {
-  const { principal } = useAuthStore();
-  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, props.agentId, props.initialIdempotencyKey, props.selectedInboxTarget?.revision]);
+  const { principal, sessionId } = useAuthStore();
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, principal?.readOnlyPrincipal, props.agentId, props.initialIdempotencyKey, props.selectedInboxTarget?.revision]);
   return <AgentFundingWorkspace key={key} {...props} />;
 }
 
@@ -183,6 +183,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   const hasFunction = (value: 'FUND' | 'DEFUND') =>
     principal?.scopes.includes(value === 'FUND' ? 'agent.fund' : 'agent.defund') === true;
   const mfa = principal?.assuranceLevel === 'MFA';
+  const canWrite = !principal?.readOnlyPrincipal;
 
   const pendingAutoLoadRef = useRef<{
     agentId: string;
@@ -262,6 +263,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
       await task();
     } catch (error) {
       if (!mounted.current) return;
+      setItems([]); setSelected(null); setReviewed(false);
       setMessage(
         `${error instanceof Error ? error.message : 'Request failed'}. Outcome may be uncertain. Refresh and recover the same instruction; do not submit a replacement.`,
       );
@@ -325,7 +327,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   }
 
   async function initiate() {
-    if (!isMaker || !mfa || !hasFunction(direction) || storageError) return;
+    if (!canWrite || !isMaker || !mfa || !hasFunction(direction) || storageError) return;
     if (!trimmedAgentId || !/^[1-9]\d*$/.test(amount.trim()) || !reason.trim()) {
       throw new Error('Agent ID, positive integer kobo amount and reason are required');
     }
@@ -358,6 +360,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   async function decide(action: 'approve' | 'reject') {
     if (
       !selected ||
+      !canWrite ||
       !reviewed ||
       !isChecker ||
       !mfa ||
@@ -407,6 +410,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
   async function execute() {
     if (
       !selected ||
+      !canWrite ||
       !isChecker ||
       !mfa ||
       selected.approvalApprovedBy !== principal?.principalId ||
@@ -443,17 +447,17 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
     (selected.status === 'EXECUTED' && selected.approvalStatus === 'CONSUMED')
   );
   const canDecide =
-    isChecker &&
+    canWrite && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'REQUESTED' && selected.status === 'PENDING' &&
     selected.requesterPrincipalId !== principal?.principalId;
   const canExecute =
-    isChecker &&
+    canWrite && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'APPROVED' && selected.status === 'PENDING' &&
     selected.approvalApprovedBy === principal?.principalId;
   const canRecover =
-    isChecker &&
+    canWrite && isChecker &&
     hasFunction(selected?.direction ?? direction) &&
     selected?.approvalStatus === 'CONSUMED' && selected.status === 'EXECUTED' &&
     selected.checkerPrincipalId === principal?.principalId;
@@ -535,11 +539,11 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
             Reason
             <input aria-label="Funding reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy || !!draft} maxLength={500} />
           </label>
-          <button className="mn-funding__primary" disabled={busy || !mfa || !hasFunction(direction) || !!draft || storageError} onClick={() => void guarded(initiate)}>
+          <button className="mn-funding__primary" disabled={busy || !canWrite || !mfa || !hasFunction(direction) || !!draft || storageError} onClick={() => void guarded(initiate)}>
             Request independent approval
           </button>
           {draft && !selected && (
-            <button disabled={busy || !mfa || !hasFunction(draft.direction)} onClick={() => void guarded(initiate)}>
+            <button disabled={busy || !canWrite || !mfa || !hasFunction(draft.direction)} onClick={() => void guarded(initiate)}>
               Retry original approval request
             </button>
           )}
@@ -659,6 +663,7 @@ function AgentFundingWorkspace({ agentId: suppliedAgentId, initialIdempotencyKey
           {selected.journalId && <p>Journal reference: {selected.journalId}</p>}
         </div>
       )}
+      {!canWrite && <p role="note">This session is read-only; funding requests and decisions are unavailable.</p>}
       {message && <p role="status">{message}</p>}
     </section>
   );

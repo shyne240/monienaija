@@ -10,7 +10,7 @@ import { PendingFundingApprovalsQueue } from '../../components/PendingFundingApp
 import { AgentFundingPanel, SelectedFundingInboxTarget } from './AgentFundingPanel';
 
 export const ApprovalsScreen: React.FC = () => {
-  const { principal } = useAuthStore();
+  const { principal, sessionId } = useAuthStore();
   const canApprove =
     principal?.roles.includes('FINANCE_CONTROLLER') === true &&
     (principal?.scopes.includes('privileged:approve') ?? false);
@@ -26,11 +26,13 @@ export const ApprovalsScreen: React.FC = () => {
     (principal?.scopes.includes('agent.defund') ?? false) &&
     principal?.assuranceLevel === 'MFA';
 
-  const key = JSON.stringify([principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, canApprove, canReviewFunding, canAccessGlobalFundingInbox]);
+  const key = JSON.stringify([sessionId, principal?.principalId, principal?.sessionId, principal?.type, principal?.assuranceLevel, principal?.roles, principal?.scopes, principal?.readOnlyPrincipal, canApprove, canReviewFunding, canAccessGlobalFundingInbox]);
   return <ApprovalsWorkspace key={key} principal={principal} canApprove={canApprove} canReviewFunding={canReviewFunding} canAccessGlobalFundingInbox={canAccessGlobalFundingInbox} />;
 };
 
 const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.getState>['principal']; canApprove: boolean; canReviewFunding: boolean; canAccessGlobalFundingInbox: boolean}> = ({principal, canApprove, canReviewFunding, canAccessGlobalFundingInbox}) => {
+  const canWrite = !principal?.readOnlyPrincipal;
+  const [unconfirmedIds, setUnconfirmedIds] = useState<Record<string, boolean>>({});
   const decisionGeneration = useRef(0);
   useEffect(() => () => { decisionGeneration.current += 1; }, []);
   const fundingInboxUnauthorizedReason = !canReviewFunding || canAccessGlobalFundingInbox
@@ -63,14 +65,14 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
   useEffect(() => { if (success && !pendingDecision) successRef.current?.focus(); }, [success, pendingDecision]);
 
   const handleDecision = (action: 'approve' | 'reject') => {
-    if (!canApprove || isLoading || pendingDecision || inFlight.current) return;
+    if (!canApprove || !canWrite || isLoading || pendingDecision || inFlight.current || unconfirmedIds[approvalId.trim()]) return;
     setError(''); setSuccess(null); setReceiptId('');
     if (!approvalId.trim()) { setError('Approval ID is required'); return; }
     setPendingDecision({ action, id: approvalId.trim(), comment: comment.trim() });
   };
 
   const confirmDecision = async () => {
-    if (!canApprove || isLoading || inFlight.current || !pendingDecision) return;
+    if (!canApprove || !canWrite || isLoading || inFlight.current || !pendingDecision || unconfirmedIds[pendingDecision.id]) return;
     const { action, id, comment: submittedComment } = pendingDecision;
     const request = ++decisionGeneration.current;
     inFlight.current = true; setIsLoading(true); setDecisionAction(action); setError(''); setSuccess(null);
@@ -79,11 +81,12 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
       if (request !== decisionGeneration.current) return;
       const expected = action === 'approve' ? 'APPROVED' : 'REJECTED';
       if (!response || response.reason !== expected || response.approved !== (action === 'approve') || response.approval?.status !== expected || response.approval?.id !== id) {
+        setUnconfirmedIds(current => ({ ...current, [id]: true }));
         setError(response?.reason ? `Decision not confirmed: ${response.reason}. Check the approval and audit trail before retrying.` : 'Decision outcome not confirmed. Check the approval and audit trail before retrying.'); return;
       }
       setSuccess(action); setReceiptId(id); setApprovalId(''); setComment('');
     } catch (err: any) {
-      if (request === decisionGeneration.current) setError(`Decision outcome not confirmed. Check the approval and audit trail before retrying. ${err?.message || 'Service unavailable.'}`);
+      if (request === decisionGeneration.current) { setUnconfirmedIds(current => ({ ...current, [id]: true })); setError(`Decision outcome not confirmed. Check the approval and audit trail before retrying. ${err?.message || 'Service unavailable.'}`); }
     } finally {
       inFlight.current = false;
       if (request === decisionGeneration.current) { setIsLoading(false); setDecisionAction(null); setPendingDecision(null); }
@@ -180,7 +183,9 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
 
       {canApprove && <section id="generic-checker-workspace" className="approvals-redesign__panel approvals-redesign__generic" tabIndex={-1} aria-label="Generic checker decision">
       <p className="approvals-redesign__eyebrow">KNOWN APPROVAL ID</p><h2>Generic checker decision</h2><p className="approvals-redesign__intro">Review the pending action in an authorized record before deciding. A decision may require a separate execution step.</p>
+      {!canWrite && <p role="note">This session is read-only. Checker decisions cannot be submitted.</p>}
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      {unconfirmedIds[approvalId.trim()] && <div className="approvals-redesign__boundary" role="status"><strong>Decision review required</strong><span>The decision may already have occurred. This screen has no generic approval read endpoint; inspect the authoritative approval and audit trail elsewhere before another action. This local lock is lost when leaving or changing session, and review cannot exclude a late commit.</span><button type="button" onClick={() => { setUnconfirmedIds(current => { const next = { ...current }; delete next[approvalId.trim()]; return next; }); setError(''); }}>I reviewed the approval and audit trail</button></div>}
       {success && <div ref={successRef} tabIndex={-1} style={styles.successBox} role="status"><span>{success === 'approve' ? 'Approval recorded. The underlying action may require a separate execution step.' : 'Approval decision recorded as rejected successfully.'}</span><div>Approval ID: <code>{receiptId}</code></div></div>}
 
       {canApprove && (
@@ -213,10 +218,10 @@ const ApprovalsWorkspace: React.FC<{principal: ReturnType<typeof useAuthStore.ge
           </div>
 
           <div style={styles.decisionButtons}>
-            <button ref={approveRef} type="submit" disabled={isLoading || Boolean(pendingDecision) || !approvalId.trim()} style={styles.submitBtn}>
+            <button ref={approveRef} type="submit" disabled={isLoading || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} style={styles.submitBtn}>
               {isLoading && decisionAction === 'approve' ? 'Approving…' : 'Sign & Approve Action'}
             </button>
-            <button ref={rejectRef} type="button" disabled={isLoading || Boolean(pendingDecision) || !approvalId.trim()} onClick={() => handleDecision('reject')} style={styles.rejectBtn}>
+            <button ref={rejectRef} type="button" disabled={isLoading || !canWrite || Boolean(pendingDecision) || !approvalId.trim() || Boolean(unconfirmedIds[approvalId.trim()])} onClick={() => handleDecision('reject')} style={styles.rejectBtn}>
               {isLoading && decisionAction === 'reject' ? 'Rejecting…' : 'Reject Action'}
             </button>
           </div>

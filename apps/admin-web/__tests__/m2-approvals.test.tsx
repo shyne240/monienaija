@@ -46,3 +46,29 @@ test('review is single flight and focuses the matching receipt after success',as
 test('a session change closes a pending review before submission',()=>{
  render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});fireEvent.click(screen.getByRole('button',{name:'Sign & Approve Action'}));act(()=>principal('two'));expect(screen.queryByRole('dialog')).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
 });
+
+test('read-only checker can inspect the workspace but cannot submit a decision, including after a session transition',()=>{
+ render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
+ act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,readOnlyPrincipal:true}})));
+ expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
+ fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
+ expect((screen.getByRole('button',{name:'Sign & Approve Action'}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole('button',{name:'Reject Action'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('button',{name:'Sign & Approve Action'}));expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('unconfirmed generic decisions lock that approval until an explicit external review acknowledgement',async()=>{
+ (ApiClient.post as jest.Mock).mockRejectedValue(new Error('network lost'));
+ render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});fireEvent.click(screen.getByRole('button',{name:'Sign & Approve Action'}));fireEvent.click(screen.getByRole('button',{name:'Confirm decision'}));
+ expect(await screen.findByText(/This screen has no generic approval read endpoint/)).toBeTruthy();
+ expect((screen.getByRole('button',{name:'Sign & Approve Action'}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole('button',{name:'Reject Action'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'other-id'}});fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
+ expect((screen.getByRole('button',{name:'Reject Action'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.post).toHaveBeenCalledTimes(1);
+ fireEvent.click(screen.getByRole('button',{name:'I reviewed the approval and audit trail'}));expect((screen.getByRole('button',{name:'Reject Action'}) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('store session change clears generic approval draft even if principal session is unchanged',()=>{
+ useAuthStore.setState({sessionId:'old'});render(<ApprovalsScreen/>);fireEvent.change(screen.getByLabelText('Pending Approval ID (UUID)'),{target:{value:'synthetic-id'}});
+ act(()=>useAuthStore.setState({sessionId:'new'}));expect((screen.getByLabelText('Pending Approval ID (UUID)') as HTMLInputElement).value).toBe('');
+});

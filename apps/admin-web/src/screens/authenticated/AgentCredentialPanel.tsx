@@ -31,7 +31,7 @@ export const AgentCredentialPanel: React.FC<AgentCredentialPanelProps> = (props)
   const key = JSON.stringify([props.agentId, props.agentStatus, sessionId, principal?.principalId, principal?.sessionId,
     principal?.type, principal?.roles, principal?.scopes, principal?.assuranceLevel,
     principal?.customerAccess, principal?.readOnlyPrincipal, props.canManage]);
-  return <AgentCredentialWorkspace key={key} {...props} />;
+  return <AgentCredentialWorkspace key={key} {...props} canManage={props.canManage && !principal?.readOnlyPrincipal} />;
 };
 
 const AgentCredentialWorkspace: React.FC<AgentCredentialPanelProps> = ({ agentId, agentStatus, canManage }) => {

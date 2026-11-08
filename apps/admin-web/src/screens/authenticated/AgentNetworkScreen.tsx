@@ -337,22 +337,22 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
     (principal?.roles.includes('AGENT_NETWORK_MANAGER') === true ||
       principal?.roles.includes('FINANCE_CONTROLLER') === true) &&
     (hasFn('agent.fund') || hasFn('agent.defund'));
-  const canSuspend = hasFn('agent.suspend');
-  const canTerminate = hasFn('agent.terminate');
-  const canReactivate = hasFn('agent.reactivate');
-  const canActivate = hasFn('agent.activate');
+  const canSuspend = hasFn('agent.suspend') && !principal?.readOnlyPrincipal;
+  const canTerminate = hasFn('agent.terminate') && !principal?.readOnlyPrincipal;
+  const canReactivate = hasFn('agent.reactivate') && !principal?.readOnlyPrincipal;
+  const canActivate = hasFn('agent.activate') && !principal?.readOnlyPrincipal;
   const canLifecycle = canSuspend || canTerminate || canReactivate || canActivate;
-  const canManageCredentials = hasFn('agent.manage_credentials');
+  const canManageCredentials = hasFn('agent.manage_credentials') && !principal?.readOnlyPrincipal;
   const canReviewApplications = hasFn('agent.review_application') && (principal?.type === 'OPERATOR' || principal?.type === 'PRIVILEGED');
   const canChangeApplications = canReviewApplications && !principal?.readOnlyPrincipal;
-  const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals');
-  const canAssignLimit = hasFn('agent.assign_limit');
+  const canManageOutletsTerminals = hasFn('agent.manage_outlets_terminals') && !principal?.readOnlyPrincipal;
+  const canAssignLimit = hasFn('agent.assign_limit') && !principal?.readOnlyPrincipal;
   const isOperatorOrPrivilegedWorkforce = ['OPERATOR', 'SERVICE', 'PRIVILEGED'].includes(
     principal?.type ?? '',
   );
   const canViewReceivingNumber = canView && isOperatorOrPrivilegedWorkforce;
   const canViewUnifiedHistory = canView && isOperatorOrPrivilegedWorkforce;
-  const canManageClasses = hasFn('agent.manage_classes');
+  const canManageClasses = hasFn('agent.manage_classes') && !principal?.readOnlyPrincipal;
   const canViewLimitCatalog = hasFn('limit.view');
   const canViewTransactions = hasFn('transaction.view') && isOperatorOrPrivilegedWorkforce;
   const canManageSupport = hasFn('customer.manage_support_case');
@@ -916,7 +916,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
   };
 
   const doLifecycle = async (action: keyof typeof lifecycleFunctions, id: string) => {
-    if (!hasFn(lifecycleFunctions[action]) || lifecycleBusy) return;
+    if (principal?.readOnlyPrincipal || !hasFn(lifecycleFunctions[action]) || lifecycleBusy) return;
     if (selected && !canPerformAgentLifecycle(action, selected.status)) return;
     setLifecycleBusy(true);
     setActionErr('');
@@ -2233,7 +2233,7 @@ const AgentNetworkWorkspace: React.FC<AgentNetworkScreenProps> = ({
               </div>
             ) : (
               <div style={denied}>
-                Lifecycle actions require <code>agent.suspend / terminate / reactivate / activate</code>.
+                {principal?.readOnlyPrincipal ? 'Lifecycle actions are unavailable in a read-only session.' : <>Lifecycle actions require <code>agent.suspend / terminate / reactivate / activate</code>.</>}
               </div>
             )}
             {actionMsg && <div style={successBox} role="status">{actionMsg}</div>}

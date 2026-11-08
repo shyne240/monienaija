@@ -204,3 +204,18 @@ test('late Agent reclassification completion does not change the new Agent works
   expect(screen.queryByText('Agent class updated.')).toBeNull();
   expect((screen.getByLabelText('Class change reason') as HTMLInputElement).value).toBe('');
 });
+
+test('read-only Agent detail keeps permitted reads and hides lifecycle and credential writes',async()=>{
+ const scopes=['agent.view','agent.suspend','agent.terminate','agent.reactivate','agent.activate','agent.manage_credentials','agent.manage_outlets_terminals','agent.assign_limit','agent.manage_classes','limit.view'];
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'reader',sessionId:'reader',audience:'workforce-admin',roles:[],scopes,customerAccess:'NONE',assuranceLevel:'MFA',readOnlyPrincipal:true}});
+ const agent={id:'agent',reference:'AG-READ',status:'ACTIVE',agentClassId:null,createdAt:'2026-01-01',updatedAt:'2026-01-01'};
+ (ApiClient.get as jest.Mock).mockImplementation((path:string)=>path.startsWith('/internal/agents?')?Promise.resolve({data:[agent],total:1}):Promise.resolve([]));
+ render(<AgentNetworkScreen/>);await screen.findByText('AG-READ');fireEvent.click(screen.getByRole('button',{name:'View'}));
+ expect(screen.queryByRole('button',{name:'Suspend'})).toBeNull();expect(screen.queryByRole('button',{name:'Terminate'})).toBeNull();expect(screen.queryByRole('button',{name:'Issue initial credential'})).toBeNull();
+ expect(screen.getByLabelText('Agent outlets and terminals')).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('credential component independently blocks read-only principals even when passed canManage',()=>{
+ useAuthStore.setState({principal:{type:'OPERATOR',principalId:'reader',sessionId:'reader',audience:'workforce-admin',roles:[],scopes:['agent.manage_credentials'],customerAccess:'NONE',assuranceLevel:'MFA',readOnlyPrincipal:true}});
+ render(<AgentCredentialPanel agentId="agent" agentStatus="ACTIVE" canManage/>);expect(screen.queryByRole('button',{name:'Issue initial credential'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
+});

@@ -1,7 +1,7 @@
 // All checker outcomes are synthetic and intercepted; no backend decisions are made.
 const assert=require('assert');const assertVisibleLabels=require('./assert-visible-labels.cjs');
 const {chromium:playwright}=require('playwright-core');const chromium=require('@sparticuz/chromium').default;const fs=require('fs');
-(async()=>{const browser=await playwright.launch({executablePath:await chromium.executablePath(),args:chromium.args,headless:true});const page=await browser.newPage({viewport:{width:320,height:900}});let calls=0;
+(async()=>{const browser=await playwright.launch({executablePath:await chromium.executablePath(),args:chromium.args.filter(a=>a!=='--single-process'),headless:true});const page=await browser.newPage({viewport:{width:320,height:900}});let calls=0;
  await page.route('**/api/v1/**',route=>{const r=route.request(),u=new URL(r.url());let body;
   if(r.method()==='POST'&&u.pathname.endsWith('/approvals/synthetic-id/approve')){calls++;body={approved:false,reason:'SELF_APPROVAL_FORBIDDEN',approval:{id:'synthetic-id',status:'REQUESTED'}};}
   else if(r.method()==='POST'&&u.pathname.endsWith('/approvals/synthetic-id/reject')){calls++;body={approved:false,reason:'REJECTED',approval:{id:'synthetic-id',status:'REJECTED'}};}
@@ -19,6 +19,7 @@ const {chromium:playwright}=require('playwright-core');const chromium=require('@
   if([320,1440].includes(width))await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/approvals-review-${width}.png`,fullPage:true});
   const dialogSize=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));await page.keyboard.press('Escape');assert(await trigger.evaluate(el=>document.activeElement===el));assert.equal(calls,report.length*2);
   await page.keyboard.press('Enter');await page.getByRole('button',{name:'Confirm decision'}).click();await page.getByText(/Decision not confirmed: SELF_APPROVAL_FORBIDDEN/).waitFor();
+  assert(await page.getByRole('button',{name:'Reject Action'}).isDisabled());await page.getByRole('button',{name:'I reviewed the approval and audit trail'}).click();
   await page.getByRole('button',{name:'Reject Action'}).click();await page.getByRole('dialog',{name:'Confirm rejection'}).waitFor();await page.getByRole('button',{name:'Confirm decision'}).click();await page.getByText('Approval decision recorded as rejected successfully.').waitFor();assert(await page.getByRole('status').evaluate(el=>document.activeElement===el));assert((await page.getByRole('status').innerText()).includes('synthetic-id'));
   await assertVisibleLabels(page);const size=await page.evaluate(()=>({page:document.documentElement.scrollWidth,view:document.documentElement.clientWidth}));report.push({width,keyboardReview:true,deniedAndRejectedIntercepted:true,visibleLabelMechanisms:true,...size,dialogPage:dialogSize.page,dialogView:dialogSize.view});
   if([320,1440].includes(width)){await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`${process.cwd()}/docs/admin-m2/evidence/approvals-redesign-${width}.png`,fullPage:true});}
