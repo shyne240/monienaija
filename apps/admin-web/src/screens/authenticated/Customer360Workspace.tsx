@@ -156,6 +156,8 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewReloadVersion, setOverviewReloadVersion] = useState(0);
+  const statusLock = useRef(false);
+  const [statusUnconfirmed, setStatusUnconfirmed] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -254,6 +256,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
 
   const availableStatusActions = useMemo(() => {
     const actions: Array<{ status: string; label: string; tone?: string }> = [];
+    if (principal?.readOnlyPrincipal) return actions;
     if (customer.status === 'DRAFT' && hasFunction('customer.activate')) {
       actions.push({ status: 'ACTIVE', label: 'Activate' });
     }
@@ -267,10 +270,11 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       actions.push({ status: 'CLOSED', label: 'Close customer', tone: 'danger' });
     }
     return actions;
-  }, [customer.status, scopesKey]);
+  }, [customer.status, scopesKey, principal?.readOnlyPrincipal]);
 
   const confirmStatusChange = async () => {
-    if (!pendingStatus || !principal || isUpdatingStatus) return;
+    if (!pendingStatus || !principal || principal.readOnlyPrincipal || statusUnconfirmed || isUpdatingStatus || statusLock.current) return;
+    statusLock.current = true;
     setIsUpdatingStatus(true);
     setActionError(null);
     setActionMessage(null);
@@ -288,12 +292,14 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       const status = error && typeof error === 'object' && 'status' in error
         ? Number((error as { status?: unknown }).status)
         : undefined;
+      if (![400, 401, 403, 404, 409].includes(status ?? 0)) setStatusUnconfirmed(true);
       setActionError(status === 400 || status === 409
         ? 'The status change was blocked by a customer lifecycle rule.'
         : status === 401 || status === 403 || status === 404
           ? 'The customer status change was rejected or the customer is unavailable.'
-          : 'The customer status change could not be confirmed. Refresh the customer record before retrying.');
+          : 'The customer status change could not be confirmed. Return to the directory, refresh and review the customer record before any later action. This safeguard is local to this workspace.');
     } finally {
+      statusLock.current = false;
       if (mounted.current) setIsUpdatingStatus(false);
     }
   };
@@ -365,7 +371,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
       </div>
 
       {actionMessage && <div className="cm-notice" role="status">{actionMessage}</div>}
-      {actionError && <div className="cm-error" role="alert">{actionError}</div>}
+      {actionError && !pendingStatus && <div className="cm-error" role="alert">{actionError}</div>}
 
       {activeTab === 'overview' ? (
         <section id="customer-overview-panel" role="tabpanel" aria-labelledby="customer-overview-tab" className="cm-workspace-content">
@@ -402,6 +408,7 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
                       key={action.status}
                       className={`cm-button ${action.tone === 'danger' ? 'cm-button-danger' : 'cm-button-primary'}`}
                       type="button"
+                      disabled={statusUnconfirmed}
                       onClick={() => { setPendingStatus(action.status); setActionError(null); }}
                     >
                       {action.label}
@@ -537,9 +544,10 @@ const Customer360WorkspaceContent: React.FC<Customer360WorkspaceProps> = ({
             {pendingStatus === 'ACTIVE' && (
               <p className="cm-confirm-note">Activation will be rejected unless the customer has a verified primary phone.</p>
             )}
+            {actionError && <div className="cm-error" role="alert">{actionError}</div>}
             <div className="cm-actions-row">
               <button className="cm-button cm-button-secondary" type="button" disabled={isUpdatingStatus} onClick={() => setPendingStatus(null)}>Cancel</button>
-              <button className="cm-button cm-button-primary" type="button" disabled={isUpdatingStatus} onClick={confirmStatusChange}>
+              <button className="cm-button cm-button-primary" type="button" disabled={isUpdatingStatus || statusUnconfirmed} onClick={confirmStatusChange}>
                 {isUpdatingStatus ? 'Updating…' : 'Confirm change'}
               </button>
             </div>

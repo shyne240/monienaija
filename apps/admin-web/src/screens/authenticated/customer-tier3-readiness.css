@@ -14,7 +14,7 @@
 .cm-tier3-signal{min-width:0;background:#f5f8f6;border:1px solid #e0eae4;border-radius:7px;padding:12px;overflow-wrap:anywhere}
 .cm-tier3-signal dt{font-size:12px;font-weight:600;color:#52655f;line-height:1.35}
 .cm-tier3-signal dd{font-size:14px;font-weight:700;color:#183d2e;margin:5px 0;line-height:1.4}
-.cm-tier3-signal small{display:block;font-size:11px;line-height:1.45;color:#52655f}
+.cm-tier3-signal small{display:block;margin-top:5px;font-size:11px;font-weight:400;line-height:1.45;color:#52655f}
 .cm-tier3__footer{margin:14px 0 0;color:#52655f;font-size:12px;line-height:1.55}
 @media(max-width:1120px){.cm-tier3__groups{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:520px){.cm-tier3-signals{grid-template-columns:minmax(0,1fr)}.cm-tier3__group{padding:12px}}

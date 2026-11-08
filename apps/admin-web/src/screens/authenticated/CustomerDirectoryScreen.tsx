@@ -39,6 +39,21 @@ const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS'];
 const KYC_LEVELS = ['NONE', 'LEVEL_1', 'LEVEL_2', 'LEVEL_3'];
 const KYC_STATUSES = ['NOT_STARTED', 'PENDING', 'APPROVED', 'REJECTED'];
 
+function isDirectoryCustomer(value: any): value is DirectoryCustomer {
+  return value && typeof value.id === 'string' && !!value.id.trim() && typeof value.reference === 'string' &&
+    typeof value.type === 'string' && typeof value.status === 'string' && typeof value.kycLevel === 'string' &&
+    typeof value.kycStatus === 'string' && (typeof value.createdAt === 'string' || value.createdAt instanceof Date) &&
+    (value.displayName == null || typeof value.displayName === 'string') && (value.legalName == null || typeof value.legalName === 'string') &&
+    (value.primaryContact == null || (typeof value.primaryContact.type === 'string' && typeof value.primaryContact.maskedValue === 'string' && typeof value.primaryContact.isVerified === 'boolean'));
+}
+function validDirectory(value: any, page: number, limit: number): value is CustomerDirectoryResponse {
+  return value && Array.isArray(value.data) && value.data.every(isDirectoryCustomer) && new Set(value.data.map((item: DirectoryCustomer) => item.id)).size === value.data.length &&
+    Number.isSafeInteger(value.total) && value.total >= 0 && value.page === page && value.limit === limit &&
+    Number.isSafeInteger(value.totalPages) && value.totalPages === Math.ceil(value.total / limit) &&
+    value.hasNextPage === (page * limit < value.total) && value.hasPreviousPage === (page > 1) &&
+    value.data.length <= Math.min(limit, Math.max(0, value.total - (page - 1) * limit));
+}
+
 function formatDate(value: string | Date | null | undefined): string {
   if (!value) return 'Not recorded';
   const date = value instanceof Date ? value : new Date(value);
@@ -103,7 +118,8 @@ export const CustomerDirectoryScreen: React.FC<CustomerDirectoryScreenProps> = (
 const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ onNavigate, selectedCustomerId }) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
-  const canCreateCustomer = scopes.includes('customer.create');
+  const canViewCustomer = scopes.includes('customer.view');
+  const canCreateCustomer = canViewCustomer && scopes.includes('customer.create') && !principal?.readOnlyPrincipal;
 
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -114,6 +130,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const [kycLevel, setKycLevel] = useState('');
   const [kycStatus, setKycStatus] = useState('');
   const [directory, setDirectory] = useState<CustomerDirectoryResponse | null>(null);
+  const [appliedQuery, setAppliedQuery] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -124,6 +141,9 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const registrationRef = useRef<CustomerRegistrationWizardHandle>(null);
   const [registrationBusy, setRegistrationBusy] = useState(false);
   const requestVersion = useRef(0);
+  const createOpenRef = useRef(createOpen);
+  createOpenRef.current = createOpen;
+  useEffect(() => () => { requestVersion.current++; }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -144,12 +164,14 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   }, [page, pageSize, search, status, type, kycLevel, kycStatus]);
 
   useEffect(() => {
+    if (!canViewCustomer) { setIsLoading(false); return; }
     let active = true;
     setIsLoading(true);
     setError(null);
     ApiClient.get<CustomerDirectoryResponse>(`/internal/customers?${queryString}`)
       .then((response) => {
-        if (active) setDirectory(response);
+        if (!validDirectory(response, page, pageSize) || response.data.some(customer => (status && customer.status !== status) || (type && customer.type !== type) || (kycLevel && customer.kycLevel !== kycLevel) || (kycStatus && customer.kycStatus !== kycStatus))) throw new Error('Invalid or mismatched customer directory response');
+        if (active) { setDirectory(response); setAppliedQuery(queryString); }
       })
       .catch((loadError: unknown) => {
         if (active) setError(safeErrorMessage(loadError));
@@ -160,23 +182,16 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     return () => {
       active = false;
     };
-  }, [queryString, reloadVersion]);
+  }, [queryString, reloadVersion, canViewCustomer, page, pageSize]);
 
   useEffect(() => {
     const version = ++requestVersion.current;
-    if (!selectedCustomerId) {
+    if (!canViewCustomer || !selectedCustomerId) {
       setSelectionError(null);
       return;
     }
-    if (createOpen) {
+    if (createOpenRef.current) {
       setSelectionError('Close registration before opening a different customer.');
-      return;
-    }
-
-    const listedCustomer = directory?.data?.find((customer) => customer.id === selectedCustomerId);
-    if (listedCustomer) {
-      setSelectedCustomer(listedCustomer);
-      setSelectionError(null);
       return;
     }
 
@@ -185,6 +200,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     ApiClient.get<DirectoryCustomer>(`/internal/customers/${encodeURIComponent(selectedCustomerId)}`)
       .then((customer) => {
         if (active && version === requestVersion.current) {
+          if (!isDirectoryCustomer(customer) || customer.id !== selectedCustomerId) { setSelectionError('The selected customer response could not be confirmed.'); return; }
           setSelectedCustomer(customer);
         }
       })
@@ -196,7 +212,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     return () => {
       active = false;
     };
-  }, [selectedCustomerId, directory, createOpen]);
+  }, [selectedCustomerId, canViewCustomer]);
 
   const handleCustomerCreated = () => {
     setPage(1);
@@ -206,14 +222,18 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   };
 
   const openRegistrationCustomer = async (customerId: string) => {
+    const version = ++requestVersion.current;
     setCreateOpen(false);
     setSelectionError(null);
     try {
       const customer = await ApiClient.get<DirectoryCustomer>(
         `/internal/customers/${encodeURIComponent(customerId)}`,
       );
+      if (version !== requestVersion.current) return;
+      if (!isDirectoryCustomer(customer) || customer.id !== customerId) throw new Error('Mismatched customer');
       setSelectedCustomer(customer);
     } catch {
+      if (version !== requestVersion.current) return;
       setSelectionError('The saved customer is not available to this workforce role.');
       setReloadVersion((value) => value + 1);
     }
@@ -229,11 +249,13 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     setReloadVersion((value) => value + 1);
   };
 
+  if (!canViewCustomer) return <main className="customer-management"><Alert tone="danger" title="Customer directory unavailable">This session requires customer.view to access customer records.</Alert></main>;
+
   if (selectedCustomer) {
     return (
       <Customer360Workspace
         customer={selectedCustomer}
-        onBack={() => setSelectedCustomer(null)}
+        onBack={() => { requestVersion.current++; setIsLoading(true); setSelectedCustomer(null); setReloadVersion(value => value + 1); }}
         onCustomerUpdated={handleCustomerUpdated}
         onNavigate={onNavigate}
       />
@@ -250,10 +272,11 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     setPage(1);
   };
 
-  const retry = () => setReloadVersion((value) => value + 1);
+  const retry = () => { setIsLoading(true); setReloadVersion((value) => value + 1); };
 
   const activeFilterCount = [searchInput, status, type, kycLevel, kycStatus].filter(Boolean).length;
-  const previousDataVisible = Boolean(directory) && (isLoading || Boolean(error));
+  const filtersPending = searchInput.trim() !== search;
+  const previousDataVisible = Boolean(directory) && (isLoading || Boolean(error) || filtersPending || appliedQuery !== queryString);
   const hasRows = (directory?.data ?? []).length > 0;
 
   // Truthful result text: an unknown total is never presented as zero.
@@ -262,6 +285,8 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
     countLabel = directory
       ? 'Customer count unconfirmed — showing previously loaded results'
       : 'Customer count unavailable';
+  } else if (previousDataVisible && directory) {
+    countLabel = 'Customer count unconfirmed — filters or results are being updated';
   } else if (isLoading && !directory) {
     countLabel = 'Loading customers…';
   } else {
@@ -272,7 +297,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
   const currentPage = directory?.page ?? page;
   const currentLimit = directory?.limit ?? pageSize;
   const totalPages = Math.max(directory?.totalPages ?? 0, 1);
-  const totalKnown = !error && typeof directory?.total === 'number';
+  const totalKnown = !error && !isLoading && !previousDataVisible && typeof directory?.total === 'number';
   const total = directory?.total ?? 0;
   const rangeStart = totalKnown && total > 0 ? (currentPage - 1) * currentLimit + 1 : null;
   const rangeEnd = totalKnown && rangeStart !== null ? Math.min(currentPage * currentLimit, total) : null;
@@ -321,6 +346,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
                 id="mn-dir-search"
                 className="mn-input mn-input--search"
                 type="search"
+                maxLength={120}
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Name, reference or authorized contact"
@@ -545,9 +571,9 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => setSelectedCustomer(customer)}
-                        disabled={createOpen}
-                        title={createOpen ? 'Close registration before opening another customer.' : undefined}
+                        onClick={() => { requestVersion.current++; setSelectedCustomer(customer); }}
+                        disabled={createOpen || previousDataVisible}
+                        title={createOpen ? 'Close registration before opening another customer.' : previousDataVisible ? 'Wait for current results before opening a customer.' : undefined}
                         aria-label={`Open Customer 360° for ${displayName(customer)}`}
                       >
                         Open Customer 360°
@@ -574,14 +600,14 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
           <span className="mn-dir-pagination__summary">
             {rangeStart !== null && rangeEnd !== null
               ? `Showing ${rangeStart}–${rangeEnd} of ${total}`
-              : hasRows
+              : error || isLoading || hasRows
                 ? 'Result range unconfirmed'
                 : 'No matching records'}
           </span>
           <div className="mn-dir-pagination__controls">
             <Button
               variant="secondary"
-              disabled={isLoading || !directory?.hasPreviousPage}
+              disabled={isLoading || previousDataVisible || !directory?.hasPreviousPage}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
               Previous
@@ -591,7 +617,7 @@ const CustomerDirectoryWorkspace: React.FC<CustomerDirectoryScreenProps> = ({ on
             </span>
             <Button
               variant="secondary"
-              disabled={isLoading || !directory?.hasNextPage}
+              disabled={isLoading || previousDataVisible || !directory?.hasNextPage}
               onClick={() => setPage((current) => current + 1)}
             >
               Next

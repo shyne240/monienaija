@@ -267,10 +267,10 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
   const scopesKey = scopes.join('|');
   const canViewMetadata = scopes.includes('customer.view_proof_of_address_metadata');
   const canViewAddress = scopes.includes('customer.view_address');
-  const canUpload = scopes.includes('customer.upload_proof_of_address');
+  const canUpload = scopes.includes('customer.upload_proof_of_address') && !principal?.readOnlyPrincipal;
   const canDownload = scopes.includes('customer.download_proof_of_address');
-  const canWithdraw = scopes.includes('customer.withdraw_proof_of_address');
-  const canArchive = scopes.includes('customer.archive_proof_of_address');
+  const canWithdraw = scopes.includes('customer.withdraw_proof_of_address') && !principal?.readOnlyPrincipal;
+  const canArchive = scopes.includes('customer.archive_proof_of_address') && !principal?.readOnlyPrincipal;
 
   const [capabilities, setCapabilities] = useState<ProofOfAddressCapabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
@@ -743,7 +743,7 @@ const CustomerProofOfAddressWorkspace: React.FC<CustomerProofOfAddressPanelProps
 
   const confirmLifecycleAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!pendingLifecycle || !lifecycleReason.trim() || lifecycleBusy) return;
+    if (!pendingLifecycle || !lifecycleReason.trim() || lifecycleBusy || (pendingLifecycle.action === 'withdraw' ? !canWithdraw : !canArchive)) return;
     const { document, action } = pendingLifecycle;
     setLifecycleBusy(true);
     setLifecycleError(null);

@@ -676,3 +676,7 @@ describe('CustomerRegistrationWizard', () => {
   });
 
 });
+
+test('registration is unavailable in a read-only session even when customer.create is granted',()=>{
+ jest.clearAllMocks();setPrincipal();useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));const view=render(<CustomerRegistrationWizard onClose={jest.fn()} onCustomerCreated={jest.fn()} onOpenCustomer={jest.fn()}/>);expect(view.getByRole('alert').textContent).toContain('unavailable for this session');expect(ApiClient.post).not.toHaveBeenCalled();
+});

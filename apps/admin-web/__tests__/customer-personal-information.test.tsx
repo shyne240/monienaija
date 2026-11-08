@@ -885,3 +885,7 @@ describe('CustomerPersonalInformationPanel', () => {
     expect('listCustomerPreferenceHistory' in NotificationManagementApi).toBe(false);
   });
 });
+
+test('read-only session retains reads but hides profile, contact, address and identity edits',async()=>{
+ jest.clearAllMocks();setPrincipal();useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));setReadMocks();const view=render(<CustomerPersonalInformationPanel customerId="synthetic-customer-id" onProfileUpdated={jest.fn()}/>);await view.findByText('Synthetic Customer');expect(view.queryByRole('button',{name:'Edit profile'})).toBeNull();expect(view.queryByRole('button',{name:'Add contact'})).toBeNull();expect(view.queryByRole('button',{name:'Add address'})).toBeNull();expect(view.queryByRole('button',{name:'Verify phone'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.patch).not.toHaveBeenCalled();
+});

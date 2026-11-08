@@ -20,7 +20,7 @@ interface Signal { label: string; value: string; explanation: string }
 const SignalList: React.FC<{ signals: Signal[] }> = ({ signals }) => (
   <dl className="cm-tier3-signals">
     {signals.map(signal => <div className="cm-tier3-signal" key={signal.label}>
-      <dt>{signal.label}</dt><dd>{signal.value}</dd><small>{signal.explanation}</small>
+      <dt>{signal.label}</dt><dd>{signal.value}<small>{signal.explanation}</small></dd>
     </div>)}
   </dl>
 );

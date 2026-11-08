@@ -622,3 +622,7 @@ describe('Customer Proof of Address and readiness interfaces', () => {
     ).toBeTruthy();
   });
 });
+
+test('read-only session can view evidence but cannot upload, withdraw or archive despite write grants',async()=>{
+ setPermissions([...operationsScopes,'customer.archive_proof_of_address']);useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));configureEnabledApi();render(<CustomerProofOfAddressPanel customerId={customerId}/>);await screen.findByText(/utility-bill.pdf/);expect(screen.queryByRole('button',{name:'Upload Proof of Address'})).toBeNull();expect(screen.queryByRole('button',{name:'Withdraw'})).toBeNull();expect(screen.queryByRole('button',{name:'Archive withdrawn record'})).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();expect(ApiClient.postForm).not.toHaveBeenCalled();
+});

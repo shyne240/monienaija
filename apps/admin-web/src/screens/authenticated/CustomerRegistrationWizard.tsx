@@ -164,6 +164,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 }, ref) => {
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
+  const canRegister = scopes.includes('customer.create') && !principal?.readOnlyPrincipal;
   const canManageIdentity =
     scopes.includes('customer.view_identity_documents') && scopes.includes('kyc.review');
 
@@ -267,7 +268,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (savingRef.current) return;
+    if (!canRegister || savingRef.current) return;
     const errors = validateProfileFields(
       {
         customerType,
@@ -417,7 +418,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveContacts = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current) return;
     const validationErrors = {
       ...validateContactFields('PHONE', phone, phoneCountry),
       ...(email.trim() ? validateContactFields('EMAIL', email) : {}),
@@ -481,7 +482,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const requestPhoneOtp = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!customer || !phoneContact || savingRef.current) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError(
         'The current OTP flow supports valid Nigerian phone numbers only. Other countries can be saved unverified.',
@@ -520,7 +521,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const verifyPhone = async () => {
     const normalizedPhone = normalizePhoneNumber(phone, phoneCountry);
-    if (!customer || !phoneContact || savingRef.current || !otpRequested) return;
+    if (!canRegister || !customer || !phoneContact || savingRef.current || !otpRequested) return;
     if (!normalizedPhone.valid || !normalizedPhone.e164 || normalizedPhone.country !== 'NG') {
       setError('The current OTP flow supports valid Nigerian phone numbers only.');
       return;
@@ -572,7 +573,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customer || savingRef.current) return;
+    if (!canRegister || !customer || savingRef.current) return;
     const anyAddressField = [lineOne, lineTwo, city, stateOrProvince, postalCode].some((value) =>
       normalizeCustomerText(value),
     );
@@ -670,7 +671,7 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
 
   const saveIdentityDocument = async (localId: string) => {
     const document = identityDocuments.find((item) => item.localId === localId);
-    if (!customer || savingRef.current || !document || document.saved) return;
+    if (!canRegister || !customer || savingRef.current || !document || document.saved) return;
     const documentNumber = normalizeCustomerText(document.documentNumber);
     const duplicateDraft = identityDocuments.some(
       (item) =>
@@ -1728,6 +1729,8 @@ const CustomerRegistrationWorkspace = forwardRef<CustomerRegistrationWizardHandl
       </div>
     );
   };
+
+  if (!canRegister) return <section role="alert">Customer registration is unavailable for this session.</section>;
 
   return (
     <section

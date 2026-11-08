@@ -314,3 +314,13 @@ describe('Batch 1 Customer 360° workspace', () => {
   });
 
 });
+
+test('read-only principal cannot use lifecycle actions despite lifecycle scopes',async()=>{
+ jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend','customer.close','customer.activate']);useAuthStore.setState(state=>({principal:state.principal?{...state.principal,readOnlyPrincipal:true}:null}));mockCustomerReads();const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);await view.findByRole('heading',{name:'Synthetic Customer 360'});expect(view.queryByRole('button',{name:'Suspend'})).toBeNull();expect(view.queryByRole('button',{name:'Close customer'})).toBeNull();expect(ApiClient.patch).not.toHaveBeenCalled();
+});
+test('unconfirmed lifecycle outcome cannot be retried in the same workspace',async()=>{
+ jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend']);mockCustomerReads();(ApiClient.patch as jest.Mock).mockResolvedValueOnce({...customer,id:'other',status:'SUSPENDED'});const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);fireEvent.click(view.getByRole('button',{name:'Suspend'}));fireEvent.click(view.getByRole('button',{name:'Confirm change'}));expect(await view.findByText(/status change could not be confirmed/)).toBeTruthy();expect((view.getByRole('button',{name:'Confirm change'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.click(view.getByRole('button',{name:'Cancel'}));expect((view.getByRole('button',{name:'Suspend'}) as HTMLButtonElement).disabled).toBe(true);expect(ApiClient.patch).toHaveBeenCalledTimes(1);
+});
+test('lifecycle confirmation synchronously prevents duplicate writes',async()=>{
+ jest.clearAllMocks();setPrincipal(['customer.view','customer.suspend']);mockCustomerReads();let resolve!:(value:any)=>void;const pending=new Promise(r=>resolve=r);(ApiClient.patch as jest.Mock).mockReturnValueOnce(pending);const view=render(<Customer360Workspace customer={customer} onBack={jest.fn()} onCustomerUpdated={jest.fn()}/>);fireEvent.click(view.getByRole('button',{name:'Suspend'}));const confirm=view.getByRole('button',{name:'Confirm change'});fireEvent.click(confirm);fireEvent.click(confirm);expect(ApiClient.patch).toHaveBeenCalledTimes(1);await act(async()=>{resolve({...customer,status:'SUSPENDED'});await pending;});
+});

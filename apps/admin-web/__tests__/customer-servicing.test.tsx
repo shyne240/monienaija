@@ -39,10 +39,10 @@ const dashboard = {
 function directoryResponse(data = [customer], page = 1, hasNextPage = false) {
   return {
     data,
-    total: hasNextPage ? 21 : data.length,
+    total: hasNextPage || page > 1 ? 21 : data.length,
     page,
     limit: 20,
-    totalPages: hasNextPage ? 2 : 1,
+    totalPages: hasNextPage || page > 1 ? 2 : Math.ceil(data.length / 20),
     hasNextPage,
     hasPreviousPage: page > 1,
   };

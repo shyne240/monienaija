@@ -235,14 +235,14 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   const { principal } = useAuthStore();
   const scopes = principal?.scopes ?? [];
   const hasFunction = (code: string) => scopes.includes(code);
-  const canWriteProfile = hasFunction('customer.create');
+  const canWriteProfile = hasFunction('customer.create') && !principal?.readOnlyPrincipal;
   const canViewProfile = hasFunction('customer.view');
   const canViewAddress = hasFunction('customer.view_address');
   const canWriteAddress = canViewAddress && canWriteProfile;
   const canViewContacts = hasFunction('customer.view_contact_methods');
   const canWriteContacts = canViewContacts && canWriteProfile;
   const canViewIdentity = hasFunction('customer.view_identity_documents');
-  const canWriteIdentity = canViewIdentity && hasFunction('kyc.review');
+  const canWriteIdentity = canViewIdentity && hasFunction('kyc.review') && !principal?.readOnlyPrincipal;
   const scopesKey = scopes.join('|');
 
   const [loading, setLoading] = useState(true);
@@ -670,7 +670,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
   };
 
   const requestOtp = async (contact: ContactRecord) => {
-    if (busyRef.current) return;
+    if (!canWriteContacts || busyRef.current) return;
     if (!contact.value) {
       setError(
         'The contact value is masked by the API, so it cannot be submitted to the existing OTP flow.',
@@ -709,7 +709,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
 
   const verifyPhone = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!verifyContactId || busyRef.current || !otpRequested) return;
+    if (!canWriteContacts || !verifyContactId || busyRef.current || !otpRequested) return;
     const normalized = normalizePhoneNumber(verifyPhoneValue, 'NG');
     if (!normalized.valid || !normalized.e164 || normalized.country !== 'NG') {
       setError('The existing OTP flow can verify Nigerian phone numbers only.');
@@ -1240,7 +1240,7 @@ const CustomerPersonalInformationWorkspace: React.FC<CustomerPersonalInformation
                       <span className="cm-secondary-line">Current OTP flow is Nigeria-only</span>
                     ))}
                 </div>
-                {verifyContactId === contact.id && otpRequested && (
+                {canWriteContacts && verifyContactId === contact.id && otpRequested && (
                   <form className="cm-otp-form cm-contact-otp" noValidate onSubmit={verifyPhone}>
                     <label htmlFor="c360-otp-code">
                       One-time code
