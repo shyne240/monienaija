@@ -62,6 +62,7 @@ describe('Admin Web operational role governance', () => {
     fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
     fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
     fireEvent.click(view.getByRole('button', { name: 'Commit Role Assignment' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
     await waitFor(() => {
       expect(ApiClient.post).toHaveBeenCalledWith('/internal/a2/workforce/roles', {
@@ -83,6 +84,7 @@ describe('Admin Web operational role governance', () => {
     fireEvent.change(view.getByLabelText('Effective From'), { target: { value: '2026-10-23T10:00' } });
     fireEvent.change(view.getByLabelText('Effective To'), { target: { value: '2027-10-23T10:00' } });
     fireEvent.click(view.getByRole('button', { name: 'Execute Revocation' }));
+    fireEvent.click(view.getByRole('button', { name: 'Confirm role change' }));
 
     await waitFor(() => {
       expect(ApiClient.delete).toHaveBeenCalledWith('/internal/a2/workforce/roles/issuer%3Aoperator-28/TREASURY', {

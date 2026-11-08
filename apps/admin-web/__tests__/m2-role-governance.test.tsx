@@ -9,7 +9,7 @@ function fill() {fireEvent.change(screen.getByLabelText('Target Principal ID (e.
 beforeEach(()=>{jest.resetAllMocks();principal('one',['workforce.role.assign','workforce.role.assign_operational']);});
 test('role governance freezes action context while submitting and ignores completion after a principal change',async()=>{
  let resolve!: (v:any)=>void;const pending=new Promise<any>(r=>{resolve=r});(ApiClient.post as jest.Mock).mockReturnValue(pending);
- render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));
+ render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));
  expect((screen.getByRole('button',{name:'Operational Roles'}) as HTMLButtonElement).disabled).toBe(true);
  act(()=>principal('two',['workforce.role.assign','workforce.role.assign_operational']));
  await act(async()=>{resolve({status:'ACTIVE'});await pending;});
@@ -18,12 +18,32 @@ test('role governance freezes action context while submitting and ignores comple
 });
 test('an inconsistent role receipt does not claim success',async()=>{
  (ApiClient.post as jest.Mock).mockResolvedValue({status:'REVOKED'});
- render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));
+ render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));
  expect(await screen.findByText(/outcome is unconfirmed/i)).toBeTruthy();expect(screen.queryByText('Finance role assigned successfully.')).toBeNull();
 });
 test('a status-only receipt cannot prove which role or principal changed',async()=>{
- (ApiClient.post as jest.Mock).mockResolvedValue({status:'ACTIVE'});render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));expect(await screen.findByText(/outcome is unconfirmed/i)).toBeTruthy();expect(screen.queryByText('Finance role assigned successfully.')).toBeNull();
+ (ApiClient.post as jest.Mock).mockResolvedValue({status:'ACTIVE'});render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));expect(await screen.findByText(/outcome is unconfirmed/i)).toBeTruthy();expect(screen.queryByText('Finance role assigned successfully.')).toBeNull();
 });
 test('role assignment requires MFA and clears draft when assurance changes',()=>{
  render(<RoleAssignmentScreen/>);fill();act(()=>useAuthStore.setState(state=>({principal:{...state.principal!,assuranceLevel:'PASSWORD'}})));expect((screen.getByLabelText('Target Principal ID (e.g. issuer:subject)') as HTMLInputElement).value).toBe('');expect((screen.getByRole('button',{name:'Commit Role Assignment'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/MFA session assurance is required/)).toBeTruthy();expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+
+test('review captures the role, principal and UTC window; Escape cancels and restores focus without a write',()=>{
+ render(<RoleAssignmentScreen/>);fill();const trigger=screen.getByRole('button',{name:'Commit Role Assignment'});fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Confirm role assignment'});expect(dialog.textContent).toContain('synthetic-target');expect(dialog.textContent).toContain('FINANCE_PREPARER');expect(dialog.textContent).toContain(new Date('2026-10-23T10:00').toISOString());
+ expect(document.activeElement).toBe(screen.getByRole('button',{name:'Cancel'}));fireEvent.keyDown(document,{key:'Tab',shiftKey:true});expect(document.activeElement).toBe(screen.getByRole('button',{name:'Confirm role change'}));
+ fireEvent.keyDown(document,{key:'Escape'});expect(screen.queryByRole('dialog')).toBeNull();expect(document.activeElement).toBe(trigger);expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('review freezes finance approvals and a session change dismisses the review',()=>{
+ render(<RoleAssignmentScreen/>);fill();fireEvent.change(screen.getByLabelText('Related Maker-Checker Approval IDs (comma separated, when required)'),{target:{value:'approval-a, approval-b'}});
+ fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));expect(screen.getByRole('dialog').textContent).toContain('approval-a, approval-b');expect((screen.getByLabelText('Target Principal ID (e.g. issuer:subject)') as HTMLInputElement).disabled).toBe(true);
+ act(()=>principal('two',['workforce.role.assign']));expect(screen.queryByRole('dialog')).toBeNull();expect(ApiClient.post).not.toHaveBeenCalled();
+});
+
+test('in-flight review is single flight and cannot be dismissed while executing',async()=>{
+ let resolve!:(v:any)=>void;const pending=new Promise<any>(r=>{resolve=r});(ApiClient.post as jest.Mock).mockReturnValue(pending);render(<RoleAssignmentScreen/>);fill();fireEvent.click(screen.getByRole('button',{name:'Commit Role Assignment'}));fireEvent.click(screen.getByRole('button',{name:'Confirm role change'}));
+ expect(document.activeElement).toBe(screen.getByRole('dialog'));fireEvent.keyDown(document,{key:'Escape'});expect(screen.getByRole('dialog')).toBeTruthy();expect(ApiClient.post).toHaveBeenCalledTimes(1);
+ await act(async()=>{resolve({status:'ACTIVE',principalId:'synthetic-target',roleKey:'FINANCE_PREPARER'});await pending;});expect(screen.getByText('Finance role assigned successfully.')).toBeTruthy();expect(screen.getByText(/Target:/).textContent).toContain('synthetic-target');
 });
