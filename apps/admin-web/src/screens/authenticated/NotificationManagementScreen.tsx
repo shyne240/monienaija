@@ -203,6 +203,11 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [deliveryPageData, setDeliveryPageData] = useState<NotificationDeliveryPage | null>(null);
   const [deliveryLoading, setDeliveryLoading] = useState<boolean>(false);
   const [deliveryError, setDeliveryError] = useState<string>('');
+  const [deliveryFilterError, setDeliveryFilterError] = useState<string>('');
+  const deliveryReadGeneration = useRef(0);
+  const outboxReadGeneration = useRef(0);
+  const deliveryInspectorRef = useRef<HTMLElement | null>(null);
+  const deliveryOriginRef = useRef<HTMLButtonElement | null>(null);
   const [deliveryChannelBlockedMsg, setDeliveryChannelBlockedMsg] = useState<string>('');
   const [deliveryPage, setDeliveryPage] = useState<number>(1);
   const [deliveryLimit, setDeliveryLimit] = useState<number>(20);
@@ -244,9 +249,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   const [testError, setTestError] = useState<string>('');
   const [isSendingTest, setIsSendingTest] = useState<boolean>(false);
 
-  const fetchDeliveries = useCallback(async () => {
+  const fetchDeliveries = useCallback(async (preserveInspector = false) => {
     if (!permissions.canViewDeliveries) return;
+    const generation = ++deliveryReadGeneration.current;
     setDeliveryLoading(true);
+    setDeliveryPageData(null);
+    if (!preserveInspector) setSelectedDelivery(null);
     setDeliveryError('');
     setDeliveryChannelBlockedMsg('');
     try {
@@ -259,6 +267,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         eventType: appliedFilters.eventType || undefined,
         recipientId: appliedFilters.recipientId || undefined,
       });
+      if (generation !== deliveryReadGeneration.current) return;
       if (res.status === 'BLOCKED') {
         setDeliveryChannelBlockedMsg(res.message);
         setDeliveryPageData(null);
@@ -266,16 +275,19 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
         setDeliveryPageData(res.data);
       }
     } catch (err: any) {
+      if (generation !== deliveryReadGeneration.current) return;
       setDeliveryPageData(null);
       setDeliveryError(err?.message || 'Failed to load notification deliveries.');
     } finally {
-      setDeliveryLoading(false);
+      if (generation === deliveryReadGeneration.current) setDeliveryLoading(false);
     }
   }, [permissions.canViewDeliveries, deliveryPage, deliveryLimit, appliedFilters]);
 
   const fetchOutboxReceipts = useCallback(async () => {
     if (!permissions.canViewDeliveries) return;
+    const generation = ++outboxReadGeneration.current;
     setOutboxReceiptLoading(true);
+    setOutboxReceiptPageData(null);
     setOutboxReceiptError('');
     setOutboxReceiptBlockedMsg('');
     try {
@@ -286,23 +298,19 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           ? (outboxReceiptStatusFilter as any)
           : undefined,
       });
+      if (generation !== outboxReadGeneration.current) return;
       if (res.status === 'BLOCKED') {
         setOutboxReceiptBlockedMsg(res.message);
-        setOutboxReceiptPageData({
-          data: [],
-          total: 0,
-          page: 1,
-          limit: 20,
-          totalPages: 0,
-          hasNextPage: false,
-        });
+        setOutboxReceiptPageData(null);
       } else {
         setOutboxReceiptPageData(res.data);
       }
     } catch (err: any) {
+      if (generation !== outboxReadGeneration.current) return;
+      setOutboxReceiptPageData(null);
       setOutboxReceiptError(err?.message || 'Failed to load notification outbox receipts.');
     } finally {
-      setOutboxReceiptLoading(false);
+      if (generation === outboxReadGeneration.current) setOutboxReceiptLoading(false);
     }
   }, [permissions.canViewDeliveries, outboxReceiptPage, outboxReceiptStatusFilter]);
 
@@ -570,6 +578,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     if (permissions.canAccessModule && permissions.canViewDeliveries) {
       void fetchDeliveries();
     }
+    return () => { deliveryReadGeneration.current += 1; };
   }, [permissions.canAccessModule, permissions.canViewDeliveries, fetchDeliveries]);
 
   useEffect(() => {
@@ -580,7 +589,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
     ) {
       void fetchOutboxReceipts();
     }
+    return () => { outboxReadGeneration.current += 1; };
   }, [permissions.canAccessModule, permissions.canViewDeliveries, activeTab, fetchOutboxReceipts]);
+
+  useEffect(() => {
+    if (selectedDelivery) deliveryInspectorRef.current?.focus();
+  }, [selectedDelivery]);
 
   // Derived Overview Metrics (explicitly scoped to the loaded page slice vs total matching count)
   const deliveryRows = deliveryPageData?.data ?? [];
@@ -1013,13 +1027,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
   // Handlers — Deliveries Filtering & Retry (Capability 10)
   const handleApplyDeliveryFilters = (e: React.FormEvent) => {
     e.preventDefault();
-    setDeliveryError('');
+    setDeliveryFilterError('');
     if (filterRecipientId.trim() && !isUuidString(filterRecipientId)) {
-      setDeliveryError('Recipient ID filter must be a valid UUID.');
+      setDeliveryFilterError('Recipient ID filter must be a valid UUID.');
       return;
     }
     if (filterEventType.trim().length > 180) {
-      setDeliveryError('Event type filter must be at most 180 characters.');
+      setDeliveryFilterError('Event type filter must be at most 180 characters.');
       return;
     }
     setDeliveryPage(1);
@@ -1056,7 +1070,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
           message: `Manual retry queued (${res.data.status}). Financial ledger state is never re-executed on notification retry.`,
         });
         setManualRetryReason('');
-        await fetchDeliveries();
+        await fetchDeliveries(true);
       }
     } catch (err: any) {
       setManualRetryFeedback({
@@ -2605,6 +2619,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
       {/* TAB 7: DELIVERIES, FAILURES & RETRIES (Capability 10) */}
       {activeTab === 'deliveries' && (
         <div style={styles.sectionStack} data-testid="notif-panel-deliveries">
+          <div className="notification-redesign__section-heading"><p>DELIVERY OPERATIONS</p><h2>Deliveries &amp; receipts</h2><span>Filter recorded deliveries, inspect an individual outcome and review outbox materialization receipts separately. Opening this view does not retry or send notifications.</span></div>
           {!permissions.canViewDeliveries ? (
             <div style={styles.deniedBox} role="alert" data-testid="deliveries-scope-denied">
               Viewing notification delivery history requires{' '}
@@ -2670,9 +2685,13 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               {/* Filter Form */}
               <form
                 onSubmit={handleApplyDeliveryFilters}
+                className="notification-redesign__delivery-filters"
                 style={styles.card}
                 aria-label="Filter notification deliveries"
               >
+                <p className="notification-redesign__eyebrow">SEARCH RECORDED DELIVERIES</p>
+                <h3>Delivery filters</h3>
+                <p>Changes apply only when you select Apply Filters. Page size applies immediately.</p>
                 <div style={styles.filterGrid}>
                   <div>
                     <label htmlFor="deliv-status-filter" style={styles.label}>
@@ -2758,7 +2777,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     />
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'center' }}>
+                <div className="notification-redesign__delivery-actions" style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button type="submit" style={styles.primaryBtn} data-testid="apply-delivery-filters-btn">
                     Apply Filters
                   </button>
@@ -2771,7 +2790,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       setFilterRecipientType('');
                       setFilterEventType('');
                       setFilterRecipientId('');
-                      setDeliveryError('');
+                      setDeliveryFilterError('');
                       setDeliveryPage(1);
                       setAppliedFilters({
                         status: '',
@@ -2784,7 +2803,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   >
                     Clear Filters
                   </button>
+                  <label htmlFor="deliveries-page-size" style={styles.label}>Rows per page</label>
                   <select
+                    id="deliveries-page-size"
                     aria-label="Deliveries page size"
                     style={{ ...styles.select, width: 120 }}
                     value={String(deliveryLimit)}
@@ -2810,22 +2831,23 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                 </div>
               )}
 
-              {deliveryError && (
+              {(deliveryFilterError || deliveryError) && (
                 <div style={styles.errorAlert} role="alert" data-testid="delivery-filter-error">
-                  {deliveryError}
+                  {deliveryFilterError || deliveryError}
                 </div>
               )}
 
               {/* Delivery Inspector Drawer */}
               {selectedDelivery && (
                 <section
+                  ref={deliveryInspectorRef} tabIndex={-1} className="notification-redesign__delivery-inspector"
                   style={styles.drawerCard}
                   aria-label="Delivery diagnostic inspector"
                   data-testid="delivery-inspector-panel"
                 >
                   <div style={styles.cardTitleRow}>
                     <h3 style={styles.cardTitle}>
-                      🔎 Delivery & Retry Diagnostics — <code>{selectedDelivery.id}</code>
+                      Delivery & Retry Diagnostics — <code>{selectedDelivery.id}</code>
                     </h3>
                     <button
                       type="button"
@@ -2833,11 +2855,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                       onClick={() => {
                         setSelectedDelivery(null);
                         setManualRetryFeedback(null);
+                        setManualRetryReason('');
+                        if (deliveryOriginRef.current?.isConnected) deliveryOriginRef.current.focus();
                       }}
                     >
                       Close Inspector
                     </button>
                   </div>
+                  <p className="notification-redesign__inspector-note">This is the delivery snapshot captured when the inspector opened. Refresh the list and reopen it to inspect newer data.</p>
                   <div style={styles.kvList}>
                     <div>
                       <strong>Event:</strong> <code>{selectedDelivery.eventType}</code> · Event Key:{' '}
@@ -2928,7 +2953,9 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
               )}
 
               {/* Deliveries Table */}
-              <div style={styles.card}>
+              <section style={styles.card} className="notification-redesign__delivery-results" aria-label="Delivery results">
+                <p className="notification-redesign__eyebrow">RECORDED DELIVERIES</p><h3>Delivery results</h3>
+                <p>Filters applied: {appliedFilters.status || 'All statuses'} · {appliedFilters.channel || 'All channels'} · {appliedFilters.recipientType || 'All recipient types'}{appliedFilters.eventType ? ` · ${appliedFilters.eventType}` : ''}{appliedFilters.recipientId ? ` · ${appliedFilters.recipientId}` : ''}</p>
                 {deliveryLoading ? (
                   <div style={styles.emptyBox}>Loading notification deliveries…</div>
                 ) : deliveryError || deliveryChannelBlockedMsg || !deliveryPageData ? (
@@ -2938,7 +2965,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     No notification delivery records matched the selected filters.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
+                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Delivery records table" tabIndex={0}>
                     <table style={styles.table} data-testid="notification-deliveries-table">
                       <thead>
                         <tr>
@@ -2992,9 +3019,12 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                               <button
                                 type="button"
                                 data-testid={`inspect-delivery-${row.id}`}
+                                aria-label={`Inspect delivery ${row.id}`}
                                 style={styles.secondarySmallBtn}
-                                onClick={() => {
+                                onClick={(event) => {
+                                  deliveryOriginRef.current = event.currentTarget;
                                   setSelectedDelivery(row);
+                                  setManualRetryReason('');
                                   setManualRetryFeedback(null);
                                 }}
                               >
@@ -3038,19 +3068,20 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                     Next
                   </button>
                 </div>}
-              </div>
+                <p className="notification-redesign__table-hint">Scroll horizontally to inspect all delivery columns.</p>
+              </section>
 
               {/* Outbox Materialization Receipts Section (F-04 — QUARANTINED / FAILED / SUPPRESSED / MATERIALIZED / UNSUPPORTED) */}
               <section
                 style={styles.card}
+                className="notification-redesign__outbox-results"
                 aria-label="Notification outbox materialization receipts"
                 data-testid="outbox-receipts-section"
               >
                 <div style={styles.cardTitleRow}>
                   <div>
                     <h3 style={styles.cardTitle}>
-                      📥 Outbox Materialization Receipts (
-                      <code>GET /internal/notifications/outbox-receipts</code>)
+                      Outbox Materialization Receipts
                     </h3>
                     <p style={styles.cardDesc}>
                       Tracks outbox-to-notification materialization outcomes, including{' '}
@@ -3097,12 +3128,14 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
 
                 {outboxReceiptLoading ? (
                   <div style={styles.emptyBox}>Loading outbox materialization receipts…</div>
-                ) : (outboxReceiptPageData?.data ?? []).length === 0 ? (
+                ) : outboxReceiptError || outboxReceiptBlockedMsg || !outboxReceiptPageData ? (
+                  <div style={styles.emptyBox}>Outbox receipts unavailable.</div>
+                ) : outboxReceiptPageData.data.length === 0 ? (
                   <div style={styles.emptyBox}>
                     No notification outbox receipts matched the selected status filter.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Notification records table" tabIndex={0}>
+                  <div style={{ overflowX: 'auto' }} role="region" aria-label="Outbox receipts table" tabIndex={0}>
                     <table style={styles.table} data-testid="outbox-receipts-table">
                       <thead>
                         <tr>
@@ -3158,7 +3191,7 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   </div>
                 )}
 
-                <div style={styles.pagerRow} data-testid="outbox-receipts-pager">
+                {outboxReceiptPageData && !outboxReceiptError && !outboxReceiptBlockedMsg && !outboxReceiptLoading && <div style={styles.pagerRow} data-testid="outbox-receipts-pager">
                   <button
                     type="button"
                     style={
@@ -3186,7 +3219,8 @@ const NotificationManagementWorkspace: React.FC<{ initialTab?: NotificationAdmin
                   >
                     Next
                   </button>
-                </div>
+                </div>}
+                <p className="notification-redesign__table-hint">Scroll horizontally to inspect all receipt columns.</p>
               </section>
             </>
           )}

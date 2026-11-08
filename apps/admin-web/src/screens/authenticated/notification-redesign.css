@@ -29,3 +29,11 @@
 .notification-redesign__trigger-drawer:focus-visible{outline:2px solid var(--mn-focus-ring);outline-offset:3px}
 .notification-redesign__table-hint{margin:8px 0 0!important}
 @media(max-width:600px){.notification-redesign__event-filter-heading>button{width:100%}}
+.notification-redesign__delivery-filters,.notification-redesign__delivery-results,.notification-redesign__outbox-results{min-width:0;box-shadow:0 2px 12px rgba(19,43,37,.04)}
+.notification-redesign__delivery-filters h3,.notification-redesign__delivery-results h3{margin:4px 0;color:#173d2e;font-size:17px}
+.notification-redesign__delivery-filters>p:not(.notification-redesign__eyebrow),.notification-redesign__delivery-results>p:not(.notification-redesign__eyebrow){margin:0 0 12px;color:#52655f;font-size:13px;line-height:1.5}
+.notification-redesign__delivery-inspector:focus-visible{outline:2px solid var(--mn-focus-ring, #0b624a);outline-offset:3px}
+.notification-redesign [data-testid="notification-deliveries-table"]{min-width:1000px}
+.notification-redesign [data-testid="outbox-receipts-table"]{min-width:800px}
+@media(max-width:600px){.notification-redesign__delivery-actions button{flex:1 1 100%}.notification-redesign__delivery-actions select{flex:1 1 auto}}
+.notification-redesign__inspector-note{font-size:12px;line-height:1.5;color:#52655f;margin:0 0 12px}
